@@ -73,8 +73,9 @@ const jsonLd = {
 export default function SEOLanding() {
   return (
     <SEOPageLayout
-      title="Réseau social sécurisé gratuit sans publicité — Alternative Facebook Instagram"
-      description="Forsure est le réseau social sécurisé français 100% gratuit, sans publicité ni tracking. Messagerie chiffrée, modération IA, protection des données. L'alternative éthique à Facebook, Instagram et TikTok."
+      title="À propos de Forsure — Mission du réseau social éthique français"
+      description="Découvrez la mission de Forsure : un réseau social éthique français, 100% gratuit, sans publicité ni tracking. Une alternative respectueuse à Facebook, Instagram et TikTok."
+      url="https://forsure.fans/a-propos"
       jsonLd={jsonLd}
     >
       {/* Hero */}

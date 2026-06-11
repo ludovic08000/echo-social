@@ -8,6 +8,8 @@ import { generateVideoUrl } from '@/lib/urlUtils';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { guessVideoMime } from '@/lib/videoCompat';
+import { useQualityTracker } from '@/hooks/useQualityTracker';
+
 
 interface VideoCardProps {
   video: ShortVideo;
@@ -27,6 +29,19 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
   const toggleSave = useToggleVideoSave();
   const shareVideo = useShareVideo();
   const recordView = useRecordVideoView();
+  const quality = useQualityTracker({
+    surface: 'video',
+    contentId: video.id,
+    authorId: (video as any).user_id ?? null,
+    durationMs: (video.duration_seconds || 0) * 1000,
+  });
+
+  // Quality enter/leave driven by isActive
+  useEffect(() => {
+    if (isActive) quality.onEnter();
+    else quality.onLeave();
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // ── Core autoplay logic: react to isActive prop ──
   useEffect(() => {
@@ -133,15 +148,18 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
 
   const handleSave = () => {
     toggleSave.mutate({ videoId: video.id, isSaved: video.is_saved || false });
+    if (!video.is_saved) quality.onSave();
   };
 
   const handleShare = async () => {
     try {
       shareVideo.mutate({ videoId: video.id });
+      quality.onShare();
     } catch {
       // Error handled by ShareButton
     }
   };
+
 
   const videoUrl = generateVideoUrl(video.id);
 

@@ -1,272 +1,394 @@
-/**
- * useMessageQueue - React hook for the persistent local message queue.
- * 
- * Strategy:
- * - When E2EE is ready: encrypt + send directly (instant, no queue)
- * - When E2EE is active but not ready yet: queue with retry until encryption available
- * - Zeus conversations: send plaintext directly
- * - NEVER sends plaintext for encrypted conversations
- */
-
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
+import { safeUUID } from '@/e2ee-session';
+import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
+import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
+import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
+import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
+import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
+import { encryptArchive, setMessageArchiveBody } from '@/lib/messaging/archive/archiveKey';
+import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
+
+export interface OutboundMessage {
+  localId: string;
+  traceId: string;
+  conversationId: string;
+  senderId: string;
+  plaintext: string;
+  encryptedBody: string | null;
+  imageUrl: string | null;
+  status: 'draft' | 'pending_local' | 'encrypting' | 'waiting_secure_channel' | 'sending' | 'sent' | 'retry_pending' | 'failed_visible';
+  retryCount: number;
+  maxRetries: number;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+  serverId: string | null;
+}
+
+export function buildMultiDeviceParentEnvelope(localId: string, traceId?: string): string {
+  return JSON.stringify({
+    encryptionMode: 'multi_device',
+    v: PROTOCOL_VERSION,
+    ct: 'device_copies',
+    ts: Date.now(),
+    __lid: localId,
+    ...(traceId ? { __tid: traceId } : {}),
+  });
+}
+
+function inferMediaBody(body: string, imageUrl?: string | null): string {
+  const trimmed = body.trim();
+  if (trimmed) return body;
+  if (!imageUrl) return '';
+
+  const lower = imageUrl.toLowerCase().split('?')[0];
+  if (lower.endsWith('.gif') || lower.includes('image/gif')) return '🎞️ GIF';
+  if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.includes('video')) return '🎬 Vidéo';
+  return '📷 Photo';
+}
+
+function isSpecialMessage(body: string, imageUrl?: string | null): boolean {
+  if (imageUrl) return true;
+  return (
+    body.includes('\x00MKEY:') ||
+    body.startsWith('🎙️ voice:') ||
+    body === '📷 Photo' ||
+    body === '🎬 Vidéo' ||
+    body === '🎞️ GIF'
+  );
+}
+
+export function shouldArchiveMessageBody({
+  sanitized,
+  isSpecial,
+  viewOnce,
+  encryptedSuccessfully,
+  encryptionWasRequired,
+}: {
+  sanitized: string;
+  isSpecial: boolean;
+  viewOnce?: boolean;
+  encryptedSuccessfully: boolean;
+  encryptionWasRequired: boolean;
+}): boolean {
+  if (!(encryptedSuccessfully || encryptionWasRequired)) return false;
+  if (viewOnce) return false;
+  if (!isSpecial) return true;
+  return hasMediaKey(sanitized);
+}
 
 export function useMessageQueue(
   conversationId: string,
-  encrypt: ((plaintext: string) => Promise<string>) | null,
+  encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
   isEncryptionReady: boolean,
   isEncryptionActive: boolean,
+  onMessageSent?: (localId: string) => void | Promise<void>,
+  allowPlaintext = false,
+  onPlaintextCached?: (serverId: string, plaintext: string) => void,
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [rawPendingMessages, setRawPendingMessages] = useState<OutboundMessage[]>([]);
-  // Volatile plaintext cache — never persisted, survives only in memory
-  const plaintextCacheRef = useRef<Map<string, string>>(new Map());
-  const handlerIdRef = useRef(crypto.randomUUID());
-  const encryptRef = useRef(encrypt);
-  const readyRef = useRef(isEncryptionReady);
-  const activeRef = useRef(isEncryptionActive);
+  const [pendingMessages, setPendingMessages] = useState<OutboundMessage[]>([]);
 
-  // Keep refs fresh
-  encryptRef.current = encrypt;
-  readyRef.current = isEncryptionReady;
-  activeRef.current = isEncryptionActive;
-
-  // Register handlers with the queue (for queued messages that need retry)
   useEffect(() => {
-    if (!user || !conversationId) return;
-
-    messageQueue.registerHandlers(conversationId, handlerIdRef.current, {
-      encrypt: async (plaintext: string, _convId: string) => {
-        if (!activeRef.current) {
-          throw new Error('Encryption not active');
-        }
-        // Do not gate on local readyRef here: it can lag behind real crypto readiness.
-        // Let encrypt() attempt directly and report concrete key state errors.
-        if (!encryptRef.current) {
-          throw new Error('Encryption initializing');
-        }
-        return encryptRef.current(plaintext);
-      },
-      send: async (msg: OutboundMessage) => {
-        if (!msg.encryptedBody) {
-          throw new Error('Message not encrypted');
-        }
-
-        const outboundId = msg.serverId ?? crypto.randomUUID();
-        msg.serverId = outboundId;
-
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            id: outboundId,
-            conversation_id: msg.conversationId,
-            sender_id: msg.senderId,
-            body: msg.encryptedBody,
-            image_url: msg.imageUrl,
-          });
-
-        if (error?.code === '23505') return outboundId;
-        if (error) throw error;
-
-        await supabase
-          .from('conversations')
-          .update({ updated_at: new Date().toISOString() })
-          .eq('id', msg.conversationId);
-
-        queryClient.invalidateQueries({ queryKey: ['messages', msg.conversationId] });
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-
-        return outboundId;
-      },
-      isReady: (_convId: string) => {
-        return readyRef.current && activeRef.current;
-      },
-    });
-
-    messageQueue.resumeForConversation(conversationId);
-
-    return () => {
-      messageQueue.unregisterHandlers(conversationId, handlerIdRef.current);
-    };
-  }, [user, conversationId, queryClient]);
-
-  // Resume pending messages when encryption becomes ready
-  useEffect(() => {
-    if (isEncryptionReady && isEncryptionActive && conversationId) {
-      messageQueue.resumeForConversation(conversationId);
-    }
-  }, [isEncryptionReady, isEncryptionActive, conversationId]);
-
-  // Subscribe to queue updates + auto-cleanup old stuck messages
-  useEffect(() => {
-    const unsub = messageQueue.subscribe((msgs) => {
-      const forConv = msgs.filter(m => m.conversationId === conversationId);
-      setRawPendingMessages(forConv);
-    });
-
-    // Clean up stuck messages older than 60s on mount
-    messageQueue.getPendingMessages(conversationId).then(async (msgs) => {
-      const now = Date.now();
-      const stuckThreshold = 60_000;
-      for (const msg of msgs) {
-        if ((msg.status === 'waiting_secure_channel' || msg.status === 'retry_pending') &&
-            now - msg.createdAt > stuckThreshold) {
-          await messageQueue.removeMessage(msg.localId);
-        }
-      }
-      const remaining = msgs.filter(m =>
-        !((m.status === 'waiting_secure_channel' || m.status === 'retry_pending') && now - m.createdAt > stuckThreshold)
-      );
-      setRawPendingMessages(remaining);
-    });
-
-    return unsub;
+    setPendingMessages([]);
   }, [conversationId]);
 
-  // Resume on network restore
-  useEffect(() => {
-    const handler = () => {
-      if (navigator.onLine) messageQueue.resumeForConversation(conversationId);
-    };
-    window.addEventListener('online', handler);
-    return () => window.removeEventListener('online', handler);
-  }, [conversationId]);
+  const sendMessage = useCallback(async (body: string, imageUrl?: string | null, extra?: { view_once?: boolean; document_url?: string | null; document_name?: string | null; document_mime?: string | null; document_size_bytes?: number | null }) => {
+    const effectiveBody = inferMediaBody(body, imageUrl);
+    if (!user || (!effectiveBody.trim() && !imageUrl)) return;
 
-  // Resume on page visibility
-  useEffect(() => {
-    const handler = () => {
-      if (document.visibilityState === 'visible') messageQueue.resumeForConversation(conversationId);
-    };
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
-  }, [conversationId]);
+    const isSpecial = isSpecialMessage(effectiveBody, imageUrl);
 
-  /**
-   * Send a message:
-   * - If E2EE ready → encrypt + send directly (instant)
-   * - If E2EE active but not ready → queue for retry (message stays encrypted when sent)
-   * - If not encrypted (Zeus) → send plaintext directly
-   */
-  const sendMessage = useCallback(async (body: string, imageUrl?: string | null) => {
-    if (!user || !body.trim()) return;
-
-    const isSpecial = body.startsWith('🎙️ voice:') || body === '📷 Photo';
     if (!isSpecial) {
-      const validation = validateMessage(body);
+      const validation = validateMessage(effectiveBody);
       if (!validation.valid) throw new Error(validation.error);
     }
 
-    const sanitized = isSpecial ? body : sanitizeMessageBody(body);
+    const sanitized = isSpecial ? effectiveBody : sanitizeMessageBody(effectiveBody);
+    const now = Date.now();
+    const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
+    const traceId = safeUUID();
 
-    console.log('[MSG] sendMessage called', {
-      isEncryptionActive,
-      hasEncrypt: !!encrypt,
-      conversationId,
-    });
-
-    // Case 1: Not an encrypted conversation (Zeus) → plaintext direct
-    if (!isEncryptionActive) {
-      console.log('[MSG] Non-encrypted conversation, sending plaintext');
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          body: sanitized,
-          image_url: imageUrl || null,
-        });
-      if (error) throw error;
-      if (!isSpecial) recordSentMessage(sanitized);
-      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      return;
-    }
-
-    // Case 2: Try encrypt + send directly
-    if (encrypt) {
-      try {
-        console.log('[MSG] Attempting direct encrypt...');
-        const encrypted = await encrypt(sanitized);
-        if (encrypted && encrypted !== sanitized && encrypted.startsWith('{')) {
-          console.log('[MSG] ✅ Encrypt success, inserting to DB...');
-          const { error } = await supabase
-            .from('messages')
-            .insert({
-              conversation_id: conversationId,
-              sender_id: user.id,
-              body: encrypted,
-              image_url: imageUrl || null,
-            });
-          if (error) {
-            console.error('[MSG] ❌ DB insert failed:', error);
-            throw error;
-          }
-          console.log('[MSG] ✅ Message delivered!');
-          if (!isSpecial) recordSentMessage(sanitized);
-          queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
-          return;
-        }
-        console.warn('[MSG] Encrypt returned invalid output:', encrypted?.substring(0, 50));
-      } catch (e) {
-          const errMessage = e instanceof Error ? e.message : String(e);
-          const normalized = errMessage.toLowerCase();
-          const requiresSecurityVerification =
-            normalized.includes('clé de sécurité') ||
-            normalized.includes('cle de securite') ||
-            normalized.includes('vérification requise') ||
-            normalized.includes('verification requise') ||
-            normalized.includes('fingerprint');
-
-          console.error('[MSG] ❌ Direct encrypt failed:', errMessage);
-
-          if (requiresSecurityVerification) {
-            throw new Error('Validation de sécurité requise : appuie sur OK en haut avant d\'envoyer.');
-          }
-      }
-    } else {
-      console.warn('[MSG] No encrypt function available, queuing');
-    }
-
-    // Case 3: encrypt not available yet → queue (will encrypt + send when ready)
-    console.log('[MSG] Queuing message for later delivery');
-    await messageQueue.enqueue({
+    // Optimistic UI: bubble appears instantly while crypto + insert run.
+    const optimistic: OutboundMessage = {
+      localId,
+      traceId,
       conversationId,
       senderId: user.id,
       plaintext: sanitized,
-      imageUrl,
+      encryptedBody: null,
+      imageUrl: imageUrl || null,
+      status: 'encrypting',
+      retryCount: 0,
+      maxRetries: 3,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+      serverId: null,
+    };
+    setPendingMessages(prev => [...prev, optimistic]);
+
+    const updatePending = (patch: Partial<OutboundMessage>) => {
+      setPendingMessages(prev => prev.map(m =>
+        m.localId === localId
+          ? { ...m, ...patch, updatedAt: Date.now() }
+          : m,
+      ));
+    };
+
+    // Session freshness must be confirmed before any encrypted send.
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const liveUserId = sess.session?.user?.id;
+      if (!liveUserId || liveUserId !== user.id) {
+        setPendingMessages(prev => prev.filter(m => m.localId !== localId));
+        throw new Error('Session expirée — reconnectez-vous pour envoyer.');
+      }
+    } catch (e) {
+      console.warn('[MSG_SEND] getSession failed; aborting encrypted send', e);
+      updatePending({
+        status: 'failed_visible',
+        lastError: 'Session expiree - reconnectez-vous pour envoyer.',
+      });
+      throw e instanceof Error
+        ? e
+        : new Error('Session expiree - reconnectez-vous pour envoyer.');
+    }
+
+    let bodyToStore = sanitized;
+    let encryptedSuccessfully = false;
+    let storedMultiDeviceEnvelope = false;
+
+    if (isEncryptionActive && !allowPlaintext) {
+      try {
+        await ensureUserE2EEIdentity(user.id);
+      } catch (error) {
+        console.warn('[MSG_SEND] identity bootstrap failed; continuing with compatibility send', {
+          localId,
+          conversationId,
+          error,
+        });
+      }
+
+      if (encrypt) {
+        try {
+          if (!isEncryptionReady) {
+            console.info('[MSG_SEND] encryption readiness flag false; attempting encrypt anyway', {
+              localId,
+              conversationId,
+            });
+          }
+
+          const encryptedPayload = await encrypt(sanitized, localId);
+          if (encryptedPayload && encryptedPayload !== sanitized) {
+            try {
+              const identityKeys = await getOrCreateIdentityKeys(user.id);
+              const publicBundle = await exportPublicKeyBundle(identityKeys);
+              bodyToStore = await wrapOutboundSecureMessage({
+                userId: user.id,
+                fingerprint: publicBundle.fingerprint,
+                encryptedBody: encryptedPayload,
+                conversationId,
+                localId,
+              });
+              encryptedSuccessfully = true;
+            } catch (wrapError) {
+              console.warn('[MSG_SEND] secure wrapper failed; using raw encrypted payload', {
+                localId,
+                conversationId,
+                wrapError,
+              });
+              bodyToStore = encryptedPayload;
+              encryptedSuccessfully = true;
+            }
+          }
+        } catch (encryptError) {
+          // STRICT E2EE: never send plaintext when encryption was required.
+          // Safety-number / fingerprint mismatch and any other crypto failure
+          // must surface to the UI (user can re-trust identity) and the
+          // multi-device fan-out below will still deliver encrypted copies
+          // to peer devices via message_device_copies.
+          const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
+          const normalized = errMsg
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+          const isSafetyMismatch =
+            normalized.includes('cle de securite du contact modifiee') ||
+            normalized.includes('safety number changed') ||
+            normalized.includes('security key changed') ||
+            normalized.includes('verification obligatoire avant envoi') ||
+            normalized.includes('fingerprint changed');
+
+          console.warn('[MSG_SEND] encrypt failed; will NOT send plaintext (strict E2EE)', {
+            localId,
+            conversationId,
+            isSafetyMismatch,
+            encryptError,
+          });
+
+          if (isSafetyMismatch) {
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', {
+                detail: { conversationId, localId, reason: errMsg },
+              }));
+            } catch {}
+            updatePending({ status: 'failed_visible', lastError: errMsg });
+            throw encryptError instanceof Error
+              ? encryptError
+              : new Error(errMsg);
+          }
+
+          // For non-safety failures (missing peer bundle, transient ratchet
+          // bootstrap), attempt the fan-out path: store a current-protocol
+          // multi-device parent envelope and rely on per-device copies for
+          // delivery. This is encrypted-only; no plaintext body is persisted.
+          bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
+          storedMultiDeviceEnvelope = true;
+          updatePending({ encryptedBody: bodyToStore, status: 'waiting_secure_channel', lastError: errMsg });
+        }
+      } else {
+        console.warn('[MSG_SEND] encrypt handler missing; compatibility send will continue', {
+          localId,
+          conversationId,
+          isEncryptionReady,
+        });
+      }
+    }
+
+    if (isEncryptionActive && !allowPlaintext && !encryptedSuccessfully && !storedMultiDeviceEnvelope) {
+      console.warn('[MSG_SEND] blocked non-v5/plaintext fallback for E2EE conversation', {
+        localId,
+        conversationId,
+        isEncryptionReady,
+        hasEncryptHandler: !!encrypt,
+      });
+      updatePending({
+        status: 'failed_visible',
+        lastError: 'Chiffrement v5 indisponible - restaurez les cles avant envoi.',
+      });
+      throw new Error('Chiffrement v5 indisponible - restaurez les cles avant envoi.');
+    }
+
+    // Long-life encrypted archive: done in background after INSERT (retroactive RPC path).
+    // Removes ~50-200ms from perceived send latency.
+    const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
+
+    updatePending({ status: 'sending' });
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        body: bodyToStore,
+        image_url: imageUrl || null,
+        ...(extra || {}),
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('[MSG_SEND] database insert failed', { conversationId, localId, error });
+      updatePending({ status: 'failed_visible', lastError: error.message });
+      throw error;
+    }
+
+    console.info('[MSG_SEND] message inserted', {
+      localId,
+      conversationId,
+      serverId: data?.id,
+      encryptedSuccessfully,
+      storedMultiDeviceEnvelope,
+      hasMedia: !!imageUrl,
     });
-  }, [user, conversationId, isEncryptionActive, encrypt, queryClient]);
 
-  /** Retry a failed message */
+    if (!isSpecial) recordSentMessage(sanitized);
+    if (data?.id) {
+      onPlaintextCached?.(data.id, sanitized);
+
+      // Background archive (non-blocking)
+      if (shouldArchiveMessageBody({
+        sanitized,
+        isSpecial,
+        viewOnce: extra?.view_once === true,
+        encryptedSuccessfully,
+        encryptionWasRequired,
+      })) {
+        void (async () => {
+          try {
+            const retroactive = await encryptArchive(sanitized, conversationId, user.id);
+            if (retroactive) {
+              const ok = await setMessageArchiveBody(data!.id, retroactive);
+              if (ok) {
+                console.info('[MSG_SEND] archive_body retroactively set via RPC', {
+                  messageId: data!.id,
+                  localId,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('[MSG_SEND] retroactive archive failed', { messageId: data!.id, localId, e });
+          }
+        })();
+      }
+
+      // Multi-device fan-out: encrypt the plaintext per recipient device
+      // (sender's other devices + each participant's devices) so iOS / Windows /
+      // Android all receive a readable copy via message_device_copies.
+      // Non-fatal: per-conv ratchet still delivers to the bootstrapping device.
+      if (encryptedSuccessfully || encryptionWasRequired) {
+        void fanoutMessageCopies({
+          messageId: data.id,
+          conversationId,
+          senderUserId: user.id,
+          plaintext: sanitized,
+        }).catch((fanoutError) => {
+          console.warn('[MSG_SEND] multi-device fanout failed', {
+            localId,
+            conversationId,
+            messageId: data.id,
+            fanoutError,
+          });
+        });
+      }
+      // Critical for iOS/Safari: after the server ACK, persist the newest
+      // ratchet state + sender plaintext/media key into the encrypted backup
+      // immediately so a WebView cache purge doesn't make recent messages blank.
+      void import('@/lib/crypto/accountKeyBackup')
+        .then(({ requestImmediateBackup }) => requestImmediateBackup('message-sent'))
+        .catch(() => {});
+      await onMessageSent?.(localId);
+      // Remove optimistic bubble — realtime/refetch will surface the server copy
+      setPendingMessages(prev => prev.filter(m => m.localId !== localId));
+    }
+
+    queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+  }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
+
   const retryMessage = useCallback(async (localId: string) => {
-    await messageQueue.retryMessage(localId);
+    setPendingMessages(prev => prev.map(m =>
+      m.localId === localId
+        ? { ...m, status: 'failed_visible', lastError: 'Relancez l’envoi après initialisation du chiffrement', updatedAt: Date.now() }
+        : m
+    ));
   }, []);
 
-  /** Remove a failed message */
   const removeMessage = useCallback(async (localId: string) => {
-    await messageQueue.removeMessage(localId);
-    plaintextCacheRef.current.delete(localId);
-    setRawPendingMessages(prev => prev.filter(m => m.localId !== localId));
+    setPendingMessages(prev => prev.filter(m => m.localId !== localId));
   }, []);
-
-  // Enrich pending messages with volatile plaintext from memory cache
-  const pendingMessages = rawPendingMessages.map(m => ({
-    ...m,
-    plaintext: m.plaintext || plaintextCacheRef.current.get(m.localId) || '',
-  }));
 
   return {
     pendingMessages,
     sendMessage,
     retryMessage,
     removeMessage,
-    /** Whether sending is instant (E2EE ready) or queued */
-    isInstant: !isEncryptionActive || isEncryptionReady,
+    isInstant: !isEncryptionActive || allowPlaintext || isEncryptionReady,
   };
 }

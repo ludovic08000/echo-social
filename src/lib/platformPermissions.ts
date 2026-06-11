@@ -11,7 +11,11 @@ export async function requestMediaPermissions(
 ): Promise<{ granted: boolean; error?: string }> {
   try {
     const constraints: MediaStreamConstraints = {};
-    if (options.audio) constraints.audio = true;
+    if (options.audio) constraints.audio = {
+      echoCancellation: true,
+      noiseSuppression: false,
+      autoGainControl: false,
+    };
     if (options.video) constraints.video = true;
 
     const stream = await navigator.mediaDevices.getUserMedia(constraints);

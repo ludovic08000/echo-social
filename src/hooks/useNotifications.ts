@@ -6,7 +6,7 @@ import { groupNotifications, type GroupedNotification } from '@/lib/feedAlgorith
 export interface Notification {
   id: string;
   user_id: string;
-  type: 'like' | 'comment' | 'sale' | 'friend_request' | 'friend_accepted' | 'message' | 'reaction' | 'story_view';
+  type: 'like' | 'comment' | 'sale' | 'friend_request' | 'friend_accepted' | 'message' | 'reaction' | 'story_view' | 'new_device';
   actor_id: string;
   post_id: string | null;
   read_at: string | null;
@@ -115,17 +115,19 @@ export function useMarkAsRead() {
 
         if (error) throw error;
       } else {
+        // "Tout marquer comme lu" → on supprime carrément les notifications
+        // de l'utilisateur pour vider la liste à l'écran.
         const { error } = await supabase
           .from('notifications')
-          .update({ read_at: new Date().toISOString() })
-          .eq('user_id', user.id)
-          .is('read_at', null);
+          .delete()
+          .eq('user_id', user.id);
 
         if (error) throw error;
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
     },
   });
 }

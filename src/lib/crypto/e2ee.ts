@@ -21,7 +21,7 @@ import {
 } from './constants';
 import {
   randomBytes, bufferToBase64, base64ToBuffer,
-  concatBuffers, encodeString, decodeString,
+  concatBuffers, encodeString, decodeString, importOkpPublicKeyFromBase64,
 } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import {
@@ -157,16 +157,22 @@ export async function decryptMessage(
   sessionKey: CryptoKey,
   peerSigningKeyBase64?: string,
 ): Promise<{ plaintext: string; verified: boolean; fingerprint: string }> {
-  const envelope: EncryptedEnvelope = hardGlobals.jsonParse(envelopeStr);
+  const parsed = hardGlobals.jsonParse(envelopeStr);
+  const { __lid: _ignoredLocalId, ...envelope } = parsed as EncryptedEnvelope & { __lid?: string };
 
   // Accept v1 (legacy P-384) and v2 (X25519) envelopes
   if (envelope.v > PROTOCOL_VERSION) {
     throw new Error('Unsupported encryption protocol version');
   }
 
-  // Replay protection: reject > 7 days
-  if (Date.now() - envelope.ts > 7 * 24 * 60 * 60 * 1000) {
-    throw new Error('Message too old (possible replay attack)');
+  // NOTE: We intentionally do NOT reject by absolute timestamp anymore.
+  // Anti-replay is enforced by the per-conversation `seq` counter (this file)
+  // and by Double Ratchet header counters (pn/n) — both refuse duplicate or
+  // out-of-window numbers. A timestamp-based cutoff broke historical reads
+  // after a key restore (PIN re-unlock, multi-device sync) without adding
+  // any real protection beyond what the counters already provide.
+  if (typeof envelope.ts !== 'number' || envelope.ts <= 0) {
+    throw new Error('Envelope timestamp invalide');
   }
 
   const ivBytes = base64ToBuffer(envelope.iv);
@@ -192,9 +198,9 @@ export async function decryptMessage(
         ? { name: 'Ed25519' } as any
         : { name: 'ECDSA', namedCurve: 'P-384' };
 
-      const peerSigningKey = await hardCrypto.importKey(
-        'raw', peerSigningRaw, importAlgo, true, ['verify']
-      );
+      const peerSigningKey = envelope.v >= 2
+        ? await importOkpPublicKeyFromBase64(peerSigningKeyBase64, 'Ed25519', ['verify'], true)
+        : await hardCrypto.importKey('raw', peerSigningRaw, importAlgo, true, ['verify']);
 
       const signatureData = concatBuffers(
         ivBytes,

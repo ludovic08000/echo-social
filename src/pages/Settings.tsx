@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useUXMode } from '@/hooks/useUXMode';
-import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby } from 'lucide-react';
+import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby, Smartphone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
@@ -15,6 +15,8 @@ import { WellbeingSettingsPanel } from '@/components/settings/WellbeingSettingsP
 import { ContentPreferencesPanel } from '@/components/settings/ContentPreferencesPanel';
 import { AccessibilitySettingsPanel } from '@/components/settings/AccessibilitySettingsPanel';
 import { ParentalControlPanel } from '@/components/settings/ParentalControlPanel';
+import { DevicesPanel } from '@/components/settings/DevicesPanel';
+import { MessagingPinGate } from '@/components/MessagingPinGate';
 import { Button } from '@/components/ui/button';
 
 export default function Settings() {
@@ -142,6 +144,20 @@ export default function Settings() {
                 Contrôle parental
               </h2>
               <ParentalControlPanel />
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'devices' && (
+          <div className="animate-fade-in">
+            <section className="premium-card p-5">
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-primary" />
+                Appareils connectés
+              </h2>
+              <MessagingPinGate>
+                <DevicesPanel />
+              </MessagingPinGate>
             </section>
           </div>
         )}

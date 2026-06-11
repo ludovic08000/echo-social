@@ -7,6 +7,7 @@ import { fr } from 'date-fns/locale';
 import { useStories, useCreateStory, useViewStory, useDeleteStory, useStoryViewers, GroupedStories } from '@/hooks/useStories';
 import { useCreateConversation, useSendMessage } from '@/hooks/useMessages';
 import { useAuth } from '@/lib/auth';
+import { useProfile } from '@/hooks/useProfile';
 import { UserAvatar } from './UserAvatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ const QUICK_REACTIONS = [
 export function StoriesBar() {
   const { data: groupedStories, isLoading } = useStories();
   const { user } = useAuth();
+  const { data: myProfile } = useProfile();
   const [selectedGroup, setSelectedGroup] = useState<GroupedStories | null>(null);
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
@@ -217,9 +219,12 @@ export function StoriesBar() {
 
     try {
       const conversation = await createConversation.mutateAsync(currentStory.user_id);
+      // Attach the story media (image/video URL) so the recipient sees the
+      // exact story being replied to right inside the chat bubble.
       await sendMessage.mutateAsync({
         conversationId: conversation.id,
-        body: `Réponse à la story : ${message.trim()}`,
+        body: `↩️ Réponse à votre story : ${message.trim()}`,
+        imageUrl: currentStory.image_url || undefined,
       });
       setReplyText('');
       resumeTimer();
@@ -270,27 +275,36 @@ export function StoriesBar() {
           onKeyDown={(e) => { if (e.key === 'Enter') fileInputRef.current?.click(); }}
           className="flex-shrink-0 w-[110px] h-[190px] rounded-2xl overflow-hidden relative group cursor-pointer shadow-md hover:shadow-lg transition-shadow duration-200"
         >
-          {/* Background gradient */}
-          <div className="absolute inset-0 bg-gradient-to-b from-muted/80 to-muted" />
-          {/* User photo top section */}
-          <div className="relative h-[130px] w-full flex items-center justify-center">
-            {user && (
-              <UserAvatar src={null} alt="Moi" size="lg" />
+          {/* User photo - top portion */}
+          <div className="absolute inset-x-0 top-0 h-[125px] overflow-hidden">
+            {myProfile?.avatar_url ? (
+              <img
+                src={myProfile.avatar_url}
+                alt="Ma story"
+                className="w-full h-full object-cover"
+                loading="eager"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-primary/30 to-accent/40 flex items-center justify-center">
+                <UserAvatar src={null} alt="Moi" size="lg" />
+              </div>
             )}
           </div>
-          {/* iOS-style floating plus button */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-[112px] z-10">
-            <div className="w-9 h-9 rounded-full border-[3px] border-card shadow-lg flex items-center justify-center bg-blue-500">
+          {/* White bottom section with label */}
+          <div className="absolute inset-x-0 bottom-0 h-[65px] bg-card flex items-end justify-center pb-2.5">
+            <span className="text-[12px] font-semibold text-foreground text-center leading-tight px-2">
+              Créer une<br />story
+            </span>
+          </div>
+          {/* Floating plus button straddling the divide */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-[107px] z-10">
+            <div className="w-9 h-9 rounded-full border-[3px] border-card shadow-md flex items-center justify-center bg-primary">
               {isCreating ? (
                 <Loader2 className="w-4 h-4 animate-spin text-white" />
               ) : (
                 <Plus className="w-5 h-5 text-white" strokeWidth={3} />
               )}
             </div>
-          </div>
-          {/* Bottom label */}
-          <div className="relative h-[60px] flex items-end justify-center pb-2.5 bg-card rounded-b-2xl">
-            <span className="text-[11px] font-semibold text-foreground text-center leading-tight">Créer une<br/>story</span>
           </div>
         </div>
 
@@ -432,13 +446,7 @@ export function StoriesBar() {
 
             {/* RIGHT: STORY VIEWER */}
             <div className="flex-1 flex items-center justify-center relative">
-              {/* Mobile close button */}
-              <button
-                onClick={closeViewer}
-                className="md:hidden absolute top-4 left-4 z-30 w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              {/* Single close button is in the header on the right */}
 
               {/* Previous group arrow */}
               {groupedStories && (groupedStories.findIndex(g => g.user_id === selectedGroup.user_id) > 0) && (
@@ -538,7 +546,7 @@ export function StoriesBar() {
                       exit={{ scale: 0.98, opacity: 0 }}
                       transition={{ duration: 0.3 }}
                       src={currentStory.image_url}
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain bg-black"
                       autoPlay
                       muted
                       playsInline
@@ -553,7 +561,7 @@ export function StoriesBar() {
                       transition={{ duration: 0.3 }}
                       src={currentStory.image_url}
                       alt="Story"
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain bg-black"
                     />
                   )}
                 </AnimatePresence>

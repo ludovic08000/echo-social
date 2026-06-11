@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { trackAICall } from '@/lib/aiEngine';
-import { toast } from 'sonner';
 
 /**
  * Simple heuristic to detect if text is likely NOT French.
@@ -48,7 +47,28 @@ export function useMessageTranslation() {
   const [translating, setTranslating] = useState<string | null>(null);
   const autoTranslatedRef = useRef<Set<string>>(new Set());
 
+  const isEncryptedPayload = useCallback((text: string) => {
+    if (!text || !text.startsWith('{')) return false;
+    return text.includes('"ct"') || text.includes('"hdr"') || text.includes('"kem"');
+  }, []);
+
+  const sanitizeTranslation = useCallback((text: string | null | undefined) => {
+    if (!text?.trim()) return null;
+    return isEncryptedPayload(text) ? null : text;
+  }, [isEncryptedPayload]);
+
+  useEffect(() => {
+    setTranslations(prev => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([, value]) => sanitizeTranslation(value) !== null)
+      );
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, [sanitizeTranslation]);
+
   const doTranslate = useCallback(async (messageId: string, text: string): Promise<string | null> => {
+    if (!text?.trim() || isEncryptedPayload(text)) return null;
+
     const start = performance.now();
     try {
       const { data, error } = await supabase.functions.invoke('zeus', {
@@ -61,14 +81,15 @@ export function useMessageTranslation() {
       });
       trackAICall('msg-translate', Math.round(performance.now() - start), !error && !data?.error);
       if (error || data?.error) return null;
-      return data?.result || null;
+      return sanitizeTranslation(data?.result || null);
     } catch {
       return null;
     }
-  }, []);
+  }, [isEncryptedPayload, sanitizeTranslation]);
 
-  /** Manual toggle: click to translate / click again to hide */
   const translate = useCallback(async (messageId: string, text: string) => {
+    if (!text?.trim() || isEncryptedPayload(text)) return;
+
     if (translations[messageId]) {
       setTranslations(prev => {
         const next = { ...prev };
@@ -82,25 +103,21 @@ export function useMessageTranslation() {
     const result = await doTranslate(messageId, text);
     if (result) {
       setTranslations(prev => ({ ...prev, [messageId]: result }));
-    } else {
-      toast.error('Erreur de traduction');
     }
     setTranslating(null);
-  }, [translations, doTranslate]);
+  }, [translations, doTranslate, isEncryptedPayload]);
 
-  /** Auto-translate a batch of messages that appear non-French */
   const autoTranslateMessages = useCallback((messages: Array<{ id: string; body: string; sender_id: string }>, currentUserId: string | undefined) => {
     if (!currentUserId) return;
 
     for (const msg of messages) {
-      // Only auto-translate messages from others, not already translated/attempted
       if (msg.sender_id === currentUserId) continue;
       if (translations[msg.id]) continue;
       if (autoTranslatedRef.current.has(msg.id)) continue;
+      if (isEncryptedPayload(msg.body)) continue;
 
       if (isLikelyNonFrench(msg.body)) {
         autoTranslatedRef.current.add(msg.id);
-        // Fire and forget — no loading state for auto
         doTranslate(msg.id, msg.body).then(result => {
           if (result) {
             setTranslations(prev => ({ ...prev, [msg.id]: result }));
@@ -108,7 +125,7 @@ export function useMessageTranslation() {
         });
       }
     }
-  }, [translations, doTranslate]);
+  }, [translations, doTranslate, isEncryptedPayload]);
 
   return { translations, translating, translate, autoTranslateMessages };
 }

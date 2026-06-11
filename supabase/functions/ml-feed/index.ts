@@ -44,7 +44,7 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
       .limit(500),
     supabase
       .from("user_interests")
-      .select("interest")
+      .select("interest_value")
       .eq("user_id", userId)
       .limit(20),
     supabase
@@ -57,7 +57,7 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
   ]);
 
   const signals = signalsRes.data || [];
-  const interests = (interestsRes.data || []).map((i: any) => i.interest);
+  const interests = (interestsRes.data || []).map((i: any) => i.interest_value);
   const likes = likesRes.data || [];
 
   // Compute dwell time stats
@@ -111,15 +111,31 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
   };
 }
 
+/**
+ * Strip PII (emails, URLs, @mentions, phone numbers) and aggressively truncate
+ * post text before forwarding to the AI gateway. Returns "" if user opted out.
+ */
+function sanitizeForAI(text: string | null | undefined, allowed: boolean): string {
+  if (!allowed || !text) return "";
+  return text
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]")
+    .replace(/https?:\/\/\S+/gi, "[link]")
+    .replace(/@[\w.-]+/g, "[user]")
+    .replace(/\+?\d[\d\s().-]{7,}/g, "[phone]")
+    .slice(0, 40)
+    .trim();
+}
+
 async function aiScorePosts(
   profile: UserProfile,
   posts: any[],
-  userId: string
+  userId: string,
+  aiPersonalizationAllowed: boolean
 ): Promise<Record<string, number>> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY || posts.length === 0) return {};
 
-  // Prepare compact post summaries for AI
+  // Prepare compact post summaries for AI — body_preview is sanitized + truncated
   const postSummaries = posts.slice(0, 40).map((p: any) => ({
     id: p.id,
     age_h: Math.round((Date.now() - new Date(p.created_at).getTime()) / 3600000),
@@ -127,7 +143,7 @@ async function aiScorePosts(
     comments: p.comments_count || 0,
     has_media: !!p.image_url,
     body_len: (p.body || "").length,
-    body_preview: (p.body || "").slice(0, 100),
+    body_preview: sanitizeForAI(p.body, aiPersonalizationAllowed),
     is_friend: p._is_friend || false,
   }));
 
@@ -221,7 +237,8 @@ Posts : ${JSON.stringify(postSummaries)}`;
 async function aiRecommend(
   profile: UserProfile,
   candidatePosts: any[],
-  seenPostIds: Set<string>
+  seenPostIds: Set<string>,
+  aiPersonalizationAllowed: boolean
 ): Promise<string[]> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY || candidatePosts.length === 0) return [];
@@ -232,7 +249,7 @@ async function aiRecommend(
 
   const summaries = unseen.map((p: any) => ({
     id: p.id,
-    body_preview: (p.body || "").slice(0, 120),
+    body_preview: sanitizeForAI(p.body, aiPersonalizationAllowed),
     likes: p.likes_count || 0,
     comments: p.comments_count || 0,
     has_media: !!p.image_url,
@@ -333,6 +350,14 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const action = body.action;
 
+    // Privacy-aware: check if user opted out of AI personalization (post body forwarding)
+    const { data: privacyRow } = await supabase
+      .from("privacy_settings")
+      .select("ai_personalization_enabled")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const aiPersonalizationAllowed = (privacyRow as any)?.ai_personalization_enabled !== false;
+
     // ══════════════════════════════
     // TRACK — Record behavior signal
     // ══════════════════════════════
@@ -407,8 +432,8 @@ Deno.serve(async (req) => {
         _is_friend: friendIds.has(p.user_id),
       }));
 
-      // AI scoring
-      const aiScores = await aiScorePosts(profile, enrichedPosts, user.id);
+      // AI scoring (privacy-aware)
+      const aiScores = await aiScorePosts(profile, enrichedPosts, user.id, aiPersonalizationAllowed);
 
       return new Response(JSON.stringify({ scores: aiScores, profile_summary: {
         interests: profile.topInterests.slice(0, 5),
@@ -461,7 +486,7 @@ Deno.serve(async (req) => {
         (p: any) => !friendIds.has(p.user_id) && p.user_id !== user.id
       );
 
-      const recommendedIds = await aiRecommend(profile, discoveryPosts, seenPostIds);
+      const recommendedIds = await aiRecommend(profile, discoveryPosts, seenPostIds, aiPersonalizationAllowed);
 
       return new Response(JSON.stringify({
         recommended_post_ids: recommendedIds,

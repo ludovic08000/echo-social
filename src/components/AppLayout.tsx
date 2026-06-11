@@ -9,6 +9,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { Bell, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import BrandLogo from '@/components/BrandLogo';
+import forsureWordmark from '@/assets/forsure-wordmark.png';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
 import { useScreenSize } from '@/hooks/useScreenSize';
@@ -43,14 +44,8 @@ function MobileHeader() {
           <Link to="/feed" className="flex items-center">
             <BrandLogo className="h-6 w-auto" />
           </Link>
-          <div className="flex items-center gap-2">
-            <Link to="/login">
-              <Button variant="ghost" size="sm" className="text-xs">Connexion</Button>
-            </Link>
-            <Link to="/signup">
-              <Button size="sm" className="text-xs">S'inscrire</Button>
-            </Link>
-          </div>
+          <div />
+
         </div>
       </header>
     );
@@ -58,33 +53,35 @@ function MobileHeader() {
 
   return (
     <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/10 safe-area-pt">
-      <div className="flex items-center justify-between h-12 px-3">
+      <div className="flex items-center justify-between h-[68px] px-4">
          <Link to="/feed" className="flex items-center">
-           <BrandLogo className="h-6 w-auto" />
+           <img src={forsureWordmark} alt="Forsure — Connecter · Partager · Avancer" className="h-11 sm:h-12 md:h-14 w-auto select-none dark:invert drop-shadow-sm" draggable={false} />
          </Link>
         
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2.5">
           <UXModeSwitchCompact />
 
           {/* Notification button — glassmorphism capsule */}
           <Link 
             to="/notifications" 
-            className="relative group w-9 h-9 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
+            aria-label="Notifications"
+            className="relative group w-12 h-12 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
           >
-            <Bell className="w-[17px] h-[17px] transition-transform duration-300 group-hover:scale-110" strokeWidth={1.8} />
+            <Bell className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" strokeWidth={2} aria-hidden="true" />
             {unreadCount && unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1 ring-2 ring-background shadow-sm animate-scale-in" />
+              <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold flex items-center justify-center px-1 ring-2 ring-background shadow-sm animate-scale-in" />
             )}
           </Link>
 
           {/* Messages button — glassmorphism capsule */}
           <button 
-            onClick={() => isMobile ? navigate('/messages') : openChat()}
-            className="relative group w-9 h-9 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
+            onClick={() => openChat()}
+            aria-label="Messages"
+            className="relative group w-12 h-12 rounded-2xl bg-gradient-to-br from-accent/60 to-secondary/40 backdrop-blur-md border border-border/15 flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/25 hover:shadow-[0_0_12px_hsl(var(--primary)/0.12)] transition-all duration-300 active:scale-90"
           >
-            <MessageCircle className="w-[17px] h-[17px] transition-transform duration-300 group-hover:scale-110" strokeWidth={1.8} />
+            <MessageCircle className="w-6 h-6 transition-transform duration-300 group-hover:scale-110" strokeWidth={2} aria-hidden="true" />
             {unreadMessages > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center px-1 ring-2 ring-background shadow-sm animate-scale-in">
+              <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold flex items-center justify-center px-1 ring-2 ring-background shadow-sm animate-scale-in">
                 {unreadMessages > 9 ? '9+' : unreadMessages}
               </span>
             )}
@@ -93,7 +90,7 @@ function MobileHeader() {
           {/* Avatar — premium ring */}
           <Link
             to={`/profile/${user.id}`}
-            className="w-9 h-9 rounded-2xl overflow-hidden border-2 border-transparent bg-gradient-to-br from-primary/20 to-accent/30 p-[2px] hover:from-primary/40 hover:to-primary/20 transition-all duration-300 active:scale-90"
+            className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-transparent bg-gradient-to-br from-primary/20 to-accent/30 p-[2px] hover:from-primary/40 hover:to-primary/20 transition-all duration-300 active:scale-90"
           >
             <div className="w-full h-full rounded-[calc(1rem-2px)] overflow-hidden">
               <UserAvatar src={profile?.avatar_url} alt={profile?.name || ''} size="sm" />
@@ -128,7 +125,7 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
 
       <main className="pb-16">
         {fullWidth ? (
-          <div className="mx-auto max-w-[1280px]">
+          <div className="w-full">
             {children}
           </div>
         ) : (

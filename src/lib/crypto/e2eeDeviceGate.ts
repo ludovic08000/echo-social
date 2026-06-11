@@ -29,6 +29,28 @@ export class E2EEDeviceGateError extends Error {
   }
 }
 
+const TRUST_CACHE_TTL_MS = 20_000;
+const trustCache = new Map<string, { expiresAt: number; result: E2EEDeviceGateResult }>();
+
+export function clearE2EEDeviceGateCache(userId?: string) {
+  if (!userId) {
+    trustCache.clear();
+    return;
+  }
+  trustCache.delete(userId);
+}
+
+if (typeof window !== 'undefined') {
+  const clearFromEvent = (event: Event) => {
+    const userId = (event as CustomEvent<{ userId?: string }>).detail?.userId;
+    clearE2EEDeviceGateCache(userId);
+  };
+  window.addEventListener('forsure:e2ee-device-trust-required', clearFromEvent);
+  window.addEventListener('forsure:e2ee-device-trusted', clearFromEvent);
+  window.addEventListener('forsure:e2ee-device-revoked', clearFromEvent);
+  window.addEventListener('forsure-keys-restored', clearFromEvent);
+}
+
 /**
  * Hard gate before E2EE send/sync/fanout/backup.
  *
@@ -42,6 +64,11 @@ export async function assertE2EETrustedBrowserDevice(
   userId: string,
   location?: Pick<BrowserDeviceInfo, 'country' | 'region' | 'city' | 'ipHash'>,
 ): Promise<E2EEDeviceGateResult> {
+  const cached = !location ? trustCache.get(userId) : undefined;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
+  }
+
   const assessment = await assessCurrentBrowserDevice(userId, location);
 
   if (assessment.riskLevel === 'blocked') {
@@ -60,9 +87,18 @@ export async function assertE2EETrustedBrowserDevice(
     throw new E2EEDeviceGateError('BLOCKED_UNTRUSTED_DEVICE', assessment);
   }
 
-  return {
+  const result = {
     ok: true,
     status: 'READY',
     assessment,
   };
+
+  if (!location) {
+    trustCache.set(userId, {
+      expiresAt: Date.now() + TRUST_CACHE_TTL_MS,
+      result,
+    });
+  }
+
+  return result;
 }

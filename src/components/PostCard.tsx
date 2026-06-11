@@ -26,6 +26,8 @@ import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { imagePresets } from '@/lib/imageOptimize';
 import { useMLTracking } from '@/hooks/useMLFeed';
+import { useMLViewTracker, trackMLSignal, cachePostAuthor } from '@/hooks/useMLTracker';
+import { useQualityTracker, trackQuality } from '@/hooks/useQualityTracker';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,7 +60,7 @@ interface PostCardProps {
 }
 
 export const PostCard = memo(function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const deletePost = useDeletePost();
   const { data: isPostAuthorCreator } = useIsCreator(post.user_id);
@@ -74,9 +76,24 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
   const { trackView, startDwell, endDwell, trackInteraction } = useMLTracking();
+  // New ML pipeline tracker (auto view + dwell + skip detection)
+  const mlRef = useMLViewTracker(post.id) as React.MutableRefObject<HTMLElement | null>;
   const cardRef = useRef<HTMLElement>(null);
+  // Cache author for live session re-ranking signals (boost/penalty per author)
+  useEffect(() => { cachePostAuthor(post.id, post.user_id); }, [post.id, post.user_id]);
+  const setRefs = useCallback((node: HTMLElement | null) => {
+    cardRef.current = node;
+    mlRef.current = node;
+  }, [mlRef]);
 
-  // ML tracking: IntersectionObserver for view + dwell
+  // Quality tracker (watch_time / completion / skip_fast / ios_perf)
+  const quality = useQualityTracker({
+    surface: 'post',
+    contentId: post.id,
+    authorId: post.user_id,
+  });
+
+  // Legacy ML tracking (kept for back-compat with useMLFeed dashboard)
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !user) return;
@@ -86,8 +103,10 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         if (entry.isIntersecting) {
           trackView(post.id, { content_type: contentType });
           startDwell(post.id);
+          quality.onEnter();
         } else {
           endDwell(post.id, { content_type: contentType });
+          quality.onLeave();
         }
       },
       { threshold: 0.5 }
@@ -108,7 +127,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         .eq('post_id', post.id);
       return count || 0;
     },
-    enabled: isVideoPost,
+    enabled: isVideoPost && !loading && !!user,
     staleTime: 60_000,
   });
 
@@ -129,7 +148,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         .slice(0, 2)
         .map(([type]) => type);
     },
-    enabled: post.likes_count > 0,
+    enabled: post.likes_count > 0 && !loading,
     staleTime: 60_000,
   });
 
@@ -139,7 +158,15 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
     supabase.from('post_views').upsert({
       post_id: post.id,
       user_id: user.id,
-    }, { onConflict: 'post_id,user_id' }).then(() => {});
+    }, {
+      onConflict: 'post_id,user_id',
+      ignoreDuplicates: true,
+    }).then(({ error }) => {
+      if (error) {
+        setViewTracked(false);
+        console.warn('[PostCard] post view tracking failed:', error.message);
+      }
+    });
   };
 
   useEffect(() => {
@@ -181,6 +208,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   };
 
   const handleCommentClick = () => {
+    if (user) trackMLSignal(user.id, post.id, 'comment');
     if (onCommentClick) {
       onCommentClick();
     } else {
@@ -191,7 +219,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article ref={cardRef} className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] transition-all duration-300 shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)]">
+    <article ref={setRefs} className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] transition-all duration-300 shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)]">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -235,8 +263,8 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         <div className="flex items-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
-                <MoreHorizontal className="w-5 h-5" />
+              <button aria-label="Options de la publication" className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+                <MoreHorizontal className="w-5 h-5" aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="rounded-xl border-border/30 shadow-lg">
@@ -250,7 +278,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   className="w-full justify-start p-0"
                 />
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSaved(!saved)}>
+              <DropdownMenuItem onClick={() => { setSaved(!saved); if (user) trackMLSignal(user.id, post.id, saved ? 'hide' : 'click'); if (!saved) quality.onSave(); }}>
                 <Bookmark className={cn("w-4 h-4 mr-2", saved && "fill-current")} />
                 {saved ? 'Retirer' : 'Enregistrer'}
               </DropdownMenuItem>
@@ -264,6 +292,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                 <DropdownMenuItem 
                   onClick={async () => {
                     try {
+                      if (user) trackMLSignal(user.id, post.id, 'report');
                       await reportUser.mutateAsync({
                         reportedUserId: post.user_id,
                         reportType: 'inappropriate_content',

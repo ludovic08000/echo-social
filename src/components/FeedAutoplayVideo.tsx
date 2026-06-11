@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { Play, VolumeX, Volume2 } from 'lucide-react';
+import { VolumeX, Volume2 } from 'lucide-react';
 
 interface FeedAutoplayVideoProps {
   src: string;
@@ -13,9 +13,26 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [userPaused, setUserPaused] = useState(false);
   const hasTrackedPlay = useRef(false);
+  const isVisibleRef = useRef(false);
 
-  // IntersectionObserver: autoplay when 60% visible, pause when not
+  const tryPlay = (vid: HTMLVideoElement) => {
+    vid.muted = true;
+    vid.defaultMuted = true;
+    vid.playsInline = true;
+    vid.setAttribute('muted', '');
+    vid.setAttribute('playsinline', '');
+    vid.setAttribute('webkit-playsinline', '');
+
+    const playPromise = vid.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        setIsPlaying(false);
+      });
+    }
+  };
+
   useEffect(() => {
     const vid = videoRef.current;
     const container = containerRef.current;
@@ -23,24 +40,41 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
-          vid.muted = true;
-          vid.play().catch(() => {});
-          setIsPlaying(true);
-          if (!hasTrackedPlay.current) {
-            hasTrackedPlay.current = true;
-            onPlay?.();
+        const shouldAutoplay = entry.isIntersecting && entry.intersectionRatio >= 0.35;
+        isVisibleRef.current = shouldAutoplay;
+
+        if (shouldAutoplay) {
+          if (vid.readyState < 2) {
+            vid.load();
+            requestAnimationFrame(() => tryPlay(vid));
+          } else {
+            tryPlay(vid);
           }
         } else {
           vid.pause();
           setIsPlaying(false);
         }
       },
-      { threshold: 0.6 }
+      { threshold: [0, 0.2, 0.35, 0.6] }
     );
 
+    const retryWhenReady = () => {
+      if (isVisibleRef.current && vid.paused) {
+        tryPlay(vid);
+      }
+    };
+
     observer.observe(container);
-    return () => observer.disconnect();
+    vid.addEventListener('loadedmetadata', retryWhenReady);
+    vid.addEventListener('loadeddata', retryWhenReady);
+    vid.addEventListener('canplay', retryWhenReady);
+
+    return () => {
+      observer.disconnect();
+      vid.removeEventListener('loadedmetadata', retryWhenReady);
+      vid.removeEventListener('loadeddata', retryWhenReady);
+      vid.removeEventListener('canplay', retryWhenReady);
+    };
   }, [onPlay]);
 
   const toggleMute = (e: React.MouseEvent) => {
@@ -56,8 +90,10 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
     const vid = videoRef.current;
     if (!vid) return;
     if (vid.paused) {
+      setUserPaused(false);
       vid.play().catch(() => {});
     } else {
+      setUserPaused(true);
       vid.pause();
     }
   };
@@ -67,6 +103,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
       <video
         ref={videoRef}
         src={src}
+        autoPlay
         loop
         muted
         playsInline
@@ -78,14 +115,24 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
         className="w-full h-full object-cover"
         onLoadedMetadata={() => onMediaLoaded?.()}
         onLoadedData={() => onMediaLoaded?.()}
-        onPlay={() => setIsPlaying(true)}
+        onCanPlay={() => {
+          if (videoRef.current && isVisibleRef.current && videoRef.current.paused) {
+            tryPlay(videoRef.current);
+          }
+        }}
+        onPlay={() => {
+          setIsPlaying(true);
+          if (!hasTrackedPlay.current) {
+            hasTrackedPlay.current = true;
+            onPlay?.();
+          }
+        }}
         onPause={() => setIsPlaying(false)}
         onError={() => onVideoError?.()}
         onClick={togglePlay}
         onPointerDown={(e) => e.stopPropagation()}
       />
 
-      {/* Mute toggle */}
       <button
         onClick={toggleMute}
         className="absolute bottom-3 right-3 z-10 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
@@ -93,14 +140,6 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
         {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
       </button>
 
-      {/* Play indicator when paused - tap to resume */}
-      {!isPlaying && (
-        <div className="absolute inset-0 flex items-center justify-center cursor-pointer" onClick={togglePlay}>
-          <div className="w-14 h-14 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
-            <Play className="w-7 h-7 text-white fill-white" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

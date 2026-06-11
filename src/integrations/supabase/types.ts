@@ -151,39 +151,54 @@ export type Database = {
       }
       active_calls: {
         Row: {
+          accepted_by: string[] | null
           answered_at: string | null
           call_type: string
           callee_id: string
           caller_id: string
+          caller_ids: string[] | null
           conversation_id: string
           created_at: string
+          declined_by: string[] | null
           encrypted_call_key: string | null
           ended_at: string | null
           id: string
+          is_group: boolean
+          room_id: string | null
           status: string
         }
         Insert: {
+          accepted_by?: string[] | null
           answered_at?: string | null
           call_type?: string
           callee_id: string
           caller_id: string
+          caller_ids?: string[] | null
           conversation_id: string
           created_at?: string
+          declined_by?: string[] | null
           encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
+          is_group?: boolean
+          room_id?: string | null
           status?: string
         }
         Update: {
+          accepted_by?: string[] | null
           answered_at?: string | null
           call_type?: string
           callee_id?: string
           caller_id?: string
+          caller_ids?: string[] | null
           conversation_id?: string
           created_at?: string
+          declined_by?: string[] | null
           encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
+          is_group?: boolean
+          room_id?: string | null
           status?: string
         }
         Relationships: []
@@ -507,6 +522,39 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_engine_events: {
+        Row: {
+          action: string | null
+          created_at: string
+          id: string
+          latency_ms: number
+          module_id: string
+          source: string
+          success: boolean
+          user_id: string | null
+        }
+        Insert: {
+          action?: string | null
+          created_at?: string
+          id?: string
+          latency_ms?: number
+          module_id: string
+          source: string
+          success?: boolean
+          user_id?: string | null
+        }
+        Update: {
+          action?: string | null
+          created_at?: string
+          id?: string
+          latency_ms?: number
+          module_id?: string
+          source?: string
+          success?: boolean
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       ai_feedback: {
         Row: {
           ai_decision: string
@@ -769,6 +817,42 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_pin_state: {
+        Row: {
+          attempts_count: number
+          attempts_window_start: string
+          created_at: string
+          kdf_version: number
+          locked_until: string | null
+          pin_wrap_master: string
+          salt: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempts_count?: number
+          attempts_window_start?: string
+          created_at?: string
+          kdf_version?: number
+          locked_until?: string | null
+          pin_wrap_master: string
+          salt: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempts_count?: number
+          attempts_window_start?: string
+          created_at?: string
+          kdf_version?: number
+          locked_until?: string | null
+          pin_wrap_master?: string
+          salt?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       banned_emails: {
         Row: {
           associated_user_id: string | null
@@ -856,6 +940,51 @@ export type Database = {
           is_active?: boolean
           reason?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      call_history: {
+        Row: {
+          call_id: string | null
+          call_type: string
+          callee_id: string
+          caller_id: string
+          conversation_id: string
+          duration_seconds: number
+          ended_at: string
+          final_status: string
+          id: string
+          is_group: boolean
+          participants: string[] | null
+          started_at: string
+        }
+        Insert: {
+          call_id?: string | null
+          call_type?: string
+          callee_id: string
+          caller_id: string
+          conversation_id: string
+          duration_seconds?: number
+          ended_at?: string
+          final_status: string
+          id?: string
+          is_group?: boolean
+          participants?: string[] | null
+          started_at?: string
+        }
+        Update: {
+          call_id?: string | null
+          call_type?: string
+          callee_id?: string
+          caller_id?: string
+          conversation_id?: string
+          duration_seconds?: number
+          ended_at?: string
+          final_status?: string
+          id?: string
+          is_group?: boolean
+          participants?: string[] | null
+          started_at?: string
         }
         Relationships: []
       }
@@ -1029,30 +1158,106 @@ export type Database = {
           },
         ]
       }
+      comment_moderation_alerts: {
+        Row: {
+          ai_reasoning: string | null
+          category: string
+          comment_id: string | null
+          created_at: string
+          evidence_text: string
+          id: string
+          post_id: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          severity: string
+          status: string
+          strike_count: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_reasoning?: string | null
+          category: string
+          comment_id?: string | null
+          created_at?: string
+          evidence_text: string
+          id?: string
+          post_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          severity?: string
+          status?: string
+          strike_count?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_reasoning?: string | null
+          category?: string
+          comment_id?: string | null
+          created_at?: string
+          evidence_text?: string
+          id?: string
+          post_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          severity?: string
+          status?: string
+          strike_count?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_moderation_alerts_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_moderation_alerts_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_moderation_alerts_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comments: {
         Row: {
           body: string
           created_at: string
           id: string
+          is_zeus_reply: boolean
           parent_id: string | null
           post_id: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           body: string
           created_at?: string
           id?: string
+          is_zeus_reply?: boolean
           parent_id?: string | null
           post_id: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           body?: string
           created_at?: string
           id?: string
+          is_zeus_reply?: boolean
           parent_id?: string | null
           post_id?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1126,6 +1331,44 @@ export type Database = {
           },
         ]
       }
+      conversation_archive_keys: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          kdf_version: number
+          rotated_at: string | null
+          user_id: string
+          wrapped_key: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          kdf_version?: number
+          rotated_at?: string | null
+          user_id: string
+          wrapped_key: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          kdf_version?: number
+          rotated_at?: string | null
+          user_id?: string
+          wrapped_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_archive_keys_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_participants: {
         Row: {
           conversation_id: string
@@ -1162,6 +1405,8 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          disappearing_seconds: number | null
+          enable_sender_keys: boolean
           id: string
           is_group: boolean
           name: string | null
@@ -1170,6 +1415,8 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          disappearing_seconds?: number | null
+          enable_sender_keys?: boolean
           id?: string
           is_group?: boolean
           name?: string | null
@@ -1178,6 +1425,8 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          disappearing_seconds?: number | null
+          enable_sender_keys?: boolean
           id?: string
           is_group?: boolean
           name?: string | null
@@ -1229,6 +1478,57 @@ export type Database = {
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      crypto_error_logs: {
+        Row: {
+          context: string
+          conversation_id: string | null
+          created_at: string
+          error_code: string
+          error_message: string
+          id: string
+          metadata: Json | null
+          my_device_id: string | null
+          peer_device_id: string | null
+          peer_user_id: string | null
+          severity: string
+          stack: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          context: string
+          conversation_id?: string | null
+          created_at?: string
+          error_code: string
+          error_message: string
+          id?: string
+          metadata?: Json | null
+          my_device_id?: string | null
+          peer_device_id?: string | null
+          peer_user_id?: string | null
+          severity?: string
+          stack?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          context?: string
+          conversation_id?: string | null
+          created_at?: string
+          error_code?: string
+          error_message?: string
+          id?: string
+          metadata?: Json | null
+          my_device_id?: string | null
+          peer_device_id?: string | null
+          peer_user_id?: string | null
+          severity?: string
+          stack?: string | null
+          user_agent?: string | null
           user_id?: string
         }
         Relationships: []
@@ -1299,6 +1599,45 @@ export type Database = {
         }
         Relationships: []
       }
+      device_copy_retry_requests: {
+        Row: {
+          attempts: number
+          created_at: string
+          id: string
+          last_error: string | null
+          message_id: string
+          requester_device_id: string
+          requester_user_id: string
+          sender_user_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          message_id: string
+          requester_device_id: string
+          requester_user_id: string
+          sender_user_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          message_id?: string
+          requester_device_id?: string
+          requester_user_id?: string
+          sender_user_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       device_fingerprints: {
         Row: {
           created_at: string
@@ -1338,6 +1677,111 @@ export type Database = {
         }
         Relationships: []
       }
+      device_keys: {
+        Row: {
+          city: string | null
+          country: string | null
+          created_at: string
+          device_hash: string
+          device_label: string | null
+          id: string
+          ip_address: string | null
+          last_seen_at: string
+          region: string | null
+          revoked_at: string | null
+          status: string
+          trusted_at: string | null
+          user_agent: string | null
+          user_id: string
+          verification_sent_at: string | null
+          verification_token: string | null
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device_hash: string
+          device_label?: string | null
+          id?: string
+          ip_address?: string | null
+          last_seen_at?: string
+          region?: string | null
+          revoked_at?: string | null
+          status?: string
+          trusted_at?: string | null
+          user_agent?: string | null
+          user_id: string
+          verification_sent_at?: string | null
+          verification_token?: string | null
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device_hash?: string
+          device_label?: string | null
+          id?: string
+          ip_address?: string | null
+          last_seen_at?: string
+          region?: string | null
+          revoked_at?: string | null
+          status?: string
+          trusted_at?: string | null
+          user_agent?: string | null
+          user_id?: string
+          verification_sent_at?: string | null
+          verification_token?: string | null
+        }
+        Relationships: []
+      }
+      device_link_requests: {
+        Row: {
+          approved_at: string | null
+          approver_device_id: string | null
+          claimed_at: string | null
+          created_at: string
+          encrypted_payload: string | null
+          expires_at: string
+          id: string
+          requester_device_id: string
+          requester_label: string | null
+          requester_public_key: Json
+          status: string
+          token_hash: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approver_device_id?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          encrypted_payload?: string | null
+          expires_at?: string
+          id?: string
+          requester_device_id: string
+          requester_label?: string | null
+          requester_public_key: Json
+          status?: string
+          token_hash: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          approver_device_id?: string | null
+          claimed_at?: string | null
+          created_at?: string
+          encrypted_payload?: string | null
+          expires_at?: string
+          id?: string
+          requester_device_id?: string
+          requester_label?: string | null
+          requester_public_key?: Json
+          status?: string
+          token_hash?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       device_link_tokens: {
         Row: {
           claimed_at: string | null
@@ -1365,6 +1809,302 @@ export type Database = {
           id?: string
           token_hash?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      device_one_time_prekeys: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          opk_id: number
+          public_key: string
+          signature: string | null
+          signature_version: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          id?: string
+          opk_id: number
+          public_key: string
+          signature?: string | null
+          signature_version?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          opk_id?: number
+          public_key?: string
+          signature?: string | null
+          signature_version?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      device_prekey_repair_requests: {
+        Row: {
+          created_at: string
+          id: string
+          owner_device_id: string
+          owner_user_id: string
+          reason: string
+          reporter_user_id: string
+          resolved_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          owner_device_id: string
+          owner_user_id: string
+          reason?: string
+          reporter_user_id: string
+          resolved_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          owner_device_id?: string
+          owner_user_id?: string
+          reason?: string
+          reporter_user_id?: string
+          resolved_at?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      device_primary_repair_requests: {
+        Row: {
+          candidate_device_ids: string[]
+          created_at: string
+          id: string
+          reason: string
+          resolved_at: string | null
+          user_id: string
+        }
+        Insert: {
+          candidate_device_ids?: string[]
+          created_at?: string
+          id?: string
+          reason: string
+          resolved_at?: string | null
+          user_id: string
+        }
+        Update: {
+          candidate_device_ids?: string[]
+          created_at?: string
+          id?: string
+          reason?: string
+          resolved_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      device_signed_prekeys: {
+        Row: {
+          created_at: string
+          device_id: string
+          expires_at: string
+          id: string
+          is_active: boolean
+          is_last_resort: boolean
+          keys_epoch: number
+          public_key: string
+          signature: string
+          signature_version: number
+          spk_id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          is_last_resort?: boolean
+          keys_epoch?: number
+          public_key: string
+          signature: string
+          signature_version?: number
+          spk_id: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          is_last_resort?: boolean
+          keys_epoch?: number
+          public_key?: string
+          signature?: string
+          signature_version?: number
+          spk_id?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      e2ee_kt_leaves: {
+        Row: {
+          epoch: number
+          leaf_hash: string
+          leaf_index: number
+          log_id: number
+        }
+        Insert: {
+          epoch: number
+          leaf_hash: string
+          leaf_index: number
+          log_id: number
+        }
+        Update: {
+          epoch?: number
+          leaf_hash?: string
+          leaf_index?: number
+          log_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "e2ee_kt_leaves_epoch_fkey"
+            columns: ["epoch"]
+            isOneToOne: false
+            referencedRelation: "e2ee_kt_tree_heads"
+            referencedColumns: ["epoch"]
+          },
+          {
+            foreignKeyName: "e2ee_kt_leaves_log_id_fkey"
+            columns: ["log_id"]
+            isOneToOne: false
+            referencedRelation: "e2ee_transparency_log"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      e2ee_kt_signing_keys: {
+        Row: {
+          active: boolean
+          algorithm: string
+          created_at: string
+          id: string
+          public_key_jwk: Json
+          retired_at: string | null
+        }
+        Insert: {
+          active?: boolean
+          algorithm?: string
+          created_at?: string
+          id?: string
+          public_key_jwk: Json
+          retired_at?: string | null
+        }
+        Update: {
+          active?: boolean
+          algorithm?: string
+          created_at?: string
+          id?: string
+          public_key_jwk?: Json
+          retired_at?: string | null
+        }
+        Relationships: []
+      }
+      e2ee_kt_tree_heads: {
+        Row: {
+          created_at: string
+          epoch: number
+          leaf_count: number
+          prev_epoch: number | null
+          root_hash: string
+          signature: string
+          signing_key_id: string
+        }
+        Insert: {
+          created_at?: string
+          epoch: number
+          leaf_count: number
+          prev_epoch?: number | null
+          root_hash: string
+          signature: string
+          signing_key_id: string
+        }
+        Update: {
+          created_at?: string
+          epoch?: number
+          leaf_count?: number
+          prev_epoch?: number | null
+          root_hash?: string
+          signature?: string
+          signing_key_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "e2ee_kt_tree_heads_prev_epoch_fkey"
+            columns: ["prev_epoch"]
+            isOneToOne: false
+            referencedRelation: "e2ee_kt_tree_heads"
+            referencedColumns: ["epoch"]
+          },
+        ]
+      }
+      e2ee_transparency_log: {
+        Row: {
+          created_at: string
+          device_id: string | null
+          event_type: string
+          fingerprint: string | null
+          id: number
+          identity_epoch: number | null
+          included_in_epoch: number | null
+          leaf_hash: string | null
+          payload: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id?: string | null
+          event_type: string
+          fingerprint?: string | null
+          id?: number
+          identity_epoch?: number | null
+          included_in_epoch?: number | null
+          leaf_hash?: string | null
+          payload?: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string | null
+          event_type?: string
+          fingerprint?: string | null
+          id?: number
+          identity_epoch?: number | null
+          included_in_epoch?: number | null
+          leaf_hash?: string | null
+          payload?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
+      edge_rate_limits: {
+        Row: {
+          count: number
+          key: string
+          window_start: string
+        }
+        Insert: {
+          count?: number
+          key: string
+          window_start?: string
+        }
+        Update: {
+          count?: number
+          key?: string
+          window_start?: string
         }
         Relationships: []
       }
@@ -1728,6 +2468,33 @@ export type Database = {
           },
         ]
       }
+      feed_score_tamper_events: {
+        Row: {
+          applied_algo: string | null
+          created_at: string
+          id: number
+          post_count: number | null
+          requested_algo: string | null
+          user_id: string | null
+        }
+        Insert: {
+          applied_algo?: string | null
+          created_at?: string
+          id?: number
+          post_count?: number | null
+          requested_algo?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          applied_algo?: string | null
+          created_at?: string
+          id?: number
+          post_count?: number | null
+          requested_algo?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       friend_group_members: {
         Row: {
           added_at: string
@@ -2046,6 +2813,27 @@ export type Database = {
         }
         Relationships: []
       }
+      invalid_e2ee_devices: {
+        Row: {
+          created_at: string
+          device_id: string
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          reason?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          reason?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       journal_entries: {
         Row: {
           body: string
@@ -2245,6 +3033,78 @@ export type Database = {
           },
         ]
       }
+      login_alerts: {
+        Row: {
+          city: string | null
+          country: string | null
+          created_at: string
+          device_hash: string
+          email_sent: boolean
+          id: string
+          ip_address: string | null
+          region: string | null
+          resolved: string | null
+          resolved_at: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device_hash: string
+          email_sent?: boolean
+          id?: string
+          ip_address?: string | null
+          region?: string | null
+          resolved?: string | null
+          resolved_at?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device_hash?: string
+          email_sent?: boolean
+          id?: string
+          ip_address?: string | null
+          region?: string | null
+          resolved?: string | null
+          resolved_at?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      login_attempts: {
+        Row: {
+          created_at: string
+          email_hash: string | null
+          id: string
+          ip_address: string | null
+          success: boolean
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          email_hash?: string | null
+          id?: string
+          ip_address?: string | null
+          success: boolean
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          email_hash?: string | null
+          id?: string
+          ip_address?: string | null
+          success?: boolean
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       message_deletions: {
         Row: {
           created_at: string
@@ -2274,33 +3134,210 @@ export type Database = {
           },
         ]
       }
+      message_device_copies: {
+        Row: {
+          created_at: string
+          delivered_at: string | null
+          encrypted_body: string
+          id: string
+          message_id: string
+          read_at: string | null
+          recipient_device_id: string
+          recipient_user_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          delivered_at?: string | null
+          encrypted_body: string
+          id?: string
+          message_id: string
+          read_at?: string | null
+          recipient_device_id: string
+          recipient_user_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }
+        Update: {
+          created_at?: string
+          delivered_at?: string | null
+          encrypted_body?: string
+          id?: string
+          message_id?: string
+          read_at?: string | null
+          recipient_device_id?: string
+          recipient_user_id?: string
+          sender_device_id?: string
+          sender_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_device_copies_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_device_retry_requests: {
+        Row: {
+          attempt_count: number
+          created_at: string
+          id: string
+          last_error: string | null
+          message_id: string
+          requester_device_id: string
+          requester_user_id: string
+          sender_user_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          message_id: string
+          requester_device_id: string
+          requester_user_id: string
+          sender_user_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          message_id?: string
+          requester_device_id?: string
+          requester_user_id?: string
+          sender_user_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_device_retry_requests_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_reactions: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji: string
+          id?: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_read_receipts: {
+        Row: {
+          conversation_id: string
+          device_id: string
+          message_id: string
+          read_at: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          device_id: string
+          message_id: string
+          read_at?: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          device_id?: string
+          message_id?: string
+          read_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
+          archive_body: string | null
           body: string
+          body_kind: string
           conversation_id: string
           created_at: string
+          document_mime: string | null
+          document_name: string | null
+          document_size_bytes: number | null
+          document_url: string | null
+          expires_at: string | null
           id: string
           image_url: string | null
           sender_id: string
           status: string
+          view_once: boolean
+          viewed_at: string | null
         }
         Insert: {
+          archive_body?: string | null
           body: string
+          body_kind?: string
           conversation_id: string
           created_at?: string
+          document_mime?: string | null
+          document_name?: string | null
+          document_size_bytes?: number | null
+          document_url?: string | null
+          expires_at?: string | null
           id?: string
           image_url?: string | null
           sender_id: string
           status?: string
+          view_once?: boolean
+          viewed_at?: string | null
         }
         Update: {
+          archive_body?: string | null
           body?: string
+          body_kind?: string
           conversation_id?: string
           created_at?: string
+          document_mime?: string | null
+          document_name?: string | null
+          document_size_bytes?: number | null
+          document_url?: string | null
+          expires_at?: string | null
           id?: string
           image_url?: string | null
           sender_id?: string
           status?: string
+          view_once?: boolean
+          viewed_at?: string | null
         }
         Relationships: [
           {
@@ -2333,6 +3370,496 @@ export type Database = {
           created_at?: string
           id?: string
           minor_user_id?: string
+        }
+        Relationships: []
+      }
+      ml_fraud_signals: {
+        Row: {
+          created_at: string
+          details: Json | null
+          id: string
+          resolved: boolean | null
+          resolved_at: string | null
+          resolved_by: string | null
+          risk_score: number
+          signal_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          resolved?: boolean | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          risk_score?: number
+          signal_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          resolved?: boolean | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          risk_score?: number
+          signal_type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ml_interactions: {
+        Row: {
+          created_at: string
+          day_of_week: number
+          dwell_ms: number | null
+          hour_of_day: number
+          id: string
+          is_weekend: boolean
+          post_id: string
+          scroll_depth: number | null
+          signal_type: string
+          user_id: string
+          weight: number
+        }
+        Insert: {
+          created_at?: string
+          day_of_week?: number
+          dwell_ms?: number | null
+          hour_of_day?: number
+          id?: string
+          is_weekend?: boolean
+          post_id: string
+          scroll_depth?: number | null
+          signal_type: string
+          user_id: string
+          weight?: number
+        }
+        Update: {
+          created_at?: string
+          day_of_week?: number
+          dwell_ms?: number | null
+          hour_of_day?: number
+          id?: string
+          is_weekend?: boolean
+          post_id?: string
+          scroll_depth?: number | null
+          signal_type?: string
+          user_id?: string
+          weight?: number
+        }
+        Relationships: []
+      }
+      ml_model_config: {
+        Row: {
+          description: string | null
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          description?: string | null
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          description?: string | null
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
+      ml_model_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          interactions_analyzed: number | null
+          metrics: Json | null
+          posts_processed: number | null
+          run_type: string
+          started_at: string
+          status: string
+          users_processed: number | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          interactions_analyzed?: number | null
+          metrics?: Json | null
+          posts_processed?: number | null
+          run_type?: string
+          started_at?: string
+          status?: string
+          users_processed?: number | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          interactions_analyzed?: number | null
+          metrics?: Json | null
+          posts_processed?: number | null
+          run_type?: string
+          started_at?: string
+          status?: string
+          users_processed?: number | null
+        }
+        Relationships: []
+      }
+      ml_models: {
+        Row: {
+          accuracy: number | null
+          config: Json | null
+          created_at: string
+          description: string | null
+          domain: string
+          f1_score: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          precision_score: number | null
+          recall_score: number | null
+          total_correct: number | null
+          total_predictions: number | null
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          accuracy?: number | null
+          config?: Json | null
+          created_at?: string
+          description?: string | null
+          domain: string
+          f1_score?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          precision_score?: number | null
+          recall_score?: number | null
+          total_correct?: number | null
+          total_predictions?: number | null
+          updated_at?: string
+          version?: string
+        }
+        Update: {
+          accuracy?: number | null
+          config?: Json | null
+          created_at?: string
+          description?: string | null
+          domain?: string
+          f1_score?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          precision_score?: number | null
+          recall_score?: number | null
+          total_correct?: number | null
+          total_predictions?: number | null
+          updated_at?: string
+          version?: string
+        }
+        Relationships: []
+      }
+      ml_post_embeddings: {
+        Row: {
+          created_at: string
+          embedding: string | null
+          last_trained_at: string
+          post_id: string
+          training_samples: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          embedding?: string | null
+          last_trained_at?: string
+          post_id: string
+          training_samples?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          embedding?: string | null
+          last_trained_at?: string
+          post_id?: string
+          training_samples?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_post_embeddings_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: true
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_post_embeddings_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: true
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_post_features: {
+        Row: {
+          avg_watch_time_ms: number | null
+          ctr: number
+          embedding: string | null
+          embedding_updated_at: string | null
+          engagement_score: number
+          engagement_velocity: number
+          extracted_at: string
+          has_media: boolean
+          hashtags: string[]
+          language: string | null
+          negative_count: number
+          positive_count: number
+          post_id: string
+          quality_score: number
+          revenue_score: number
+          sentiment: number
+          topics: string[]
+          updated_at: string
+          view_count: number
+          watch_sample_count: number | null
+          wellbeing_score: number
+        }
+        Insert: {
+          avg_watch_time_ms?: number | null
+          ctr?: number
+          embedding?: string | null
+          embedding_updated_at?: string | null
+          engagement_score?: number
+          engagement_velocity?: number
+          extracted_at?: string
+          has_media?: boolean
+          hashtags?: string[]
+          language?: string | null
+          negative_count?: number
+          positive_count?: number
+          post_id: string
+          quality_score?: number
+          revenue_score?: number
+          sentiment?: number
+          topics?: string[]
+          updated_at?: string
+          view_count?: number
+          watch_sample_count?: number | null
+          wellbeing_score?: number
+        }
+        Update: {
+          avg_watch_time_ms?: number | null
+          ctr?: number
+          embedding?: string | null
+          embedding_updated_at?: string | null
+          engagement_score?: number
+          engagement_velocity?: number
+          extracted_at?: string
+          has_media?: boolean
+          hashtags?: string[]
+          language?: string | null
+          negative_count?: number
+          positive_count?: number
+          post_id?: string
+          quality_score?: number
+          revenue_score?: number
+          sentiment?: number
+          topics?: string[]
+          updated_at?: string
+          view_count?: number
+          watch_sample_count?: number | null
+          wellbeing_score?: number
+        }
+        Relationships: []
+      }
+      ml_predictions: {
+        Row: {
+          confidence: number
+          created_at: string
+          domain: string
+          id: string
+          is_correct: boolean | null
+          latency_ms: number | null
+          model_id: string | null
+          prediction: Json
+          target_id: string | null
+          target_type: string | null
+          user_id: string | null
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          domain: string
+          id?: string
+          is_correct?: boolean | null
+          latency_ms?: number | null
+          model_id?: string | null
+          prediction: Json
+          target_id?: string | null
+          target_type?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          domain?: string
+          id?: string
+          is_correct?: boolean | null
+          latency_ms?: number | null
+          model_id?: string | null
+          prediction?: Json
+          target_id?: string | null
+          target_type?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_predictions_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "ml_models"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_training_feedback: {
+        Row: {
+          corrected_label: string
+          created_at: string
+          domain: string
+          feedback_source: string | null
+          id: string
+          original_label: string | null
+          prediction_id: string | null
+          reason: string | null
+          reviewer_id: string | null
+        }
+        Insert: {
+          corrected_label: string
+          created_at?: string
+          domain: string
+          feedback_source?: string | null
+          id?: string
+          original_label?: string | null
+          prediction_id?: string | null
+          reason?: string | null
+          reviewer_id?: string | null
+        }
+        Update: {
+          corrected_label?: string
+          created_at?: string
+          domain?: string
+          feedback_source?: string | null
+          id?: string
+          original_label?: string | null
+          prediction_id?: string | null
+          reason?: string | null
+          reviewer_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_training_feedback_prediction_id_fkey"
+            columns: ["prediction_id"]
+            isOneToOne: false
+            referencedRelation: "ml_predictions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_user_embeddings: {
+        Row: {
+          created_at: string
+          embedding: string | null
+          last_trained_at: string
+          training_samples: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          embedding?: string | null
+          last_trained_at?: string
+          training_samples?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          embedding?: string | null
+          last_trained_at?: string
+          training_samples?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ml_user_profiles: {
+        Row: {
+          author_affinity: Json
+          avg_dwell_ms: number | null
+          avg_session_dwell_ms: number
+          created_at: string
+          daily_activity: Json
+          embedding: string | null
+          embedding_updated_at: string | null
+          hashtag_weights: Json
+          hourly_activity: Json
+          last_trained_at: string | null
+          preferred_content_length: string | null
+          topic_weights: Json
+          total_interactions: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          author_affinity?: Json
+          avg_dwell_ms?: number | null
+          avg_session_dwell_ms?: number
+          created_at?: string
+          daily_activity?: Json
+          embedding?: string | null
+          embedding_updated_at?: string | null
+          hashtag_weights?: Json
+          hourly_activity?: Json
+          last_trained_at?: string | null
+          preferred_content_length?: string | null
+          topic_weights?: Json
+          total_interactions?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          author_affinity?: Json
+          avg_dwell_ms?: number | null
+          avg_session_dwell_ms?: number
+          created_at?: string
+          daily_activity?: Json
+          embedding?: string | null
+          embedding_updated_at?: string | null
+          hashtag_weights?: Json
+          hourly_activity?: Json
+          last_trained_at?: string | null
+          preferred_content_length?: string | null
+          topic_weights?: Json
+          total_interactions?: number
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -2463,6 +3990,7 @@ export type Database = {
           actor_id: string
           created_at: string
           id: string
+          metadata: Json | null
           post_id: string | null
           read_at: string | null
           type: Database["public"]["Enums"]["notification_type"]
@@ -2472,6 +4000,7 @@ export type Database = {
           actor_id: string
           created_at?: string
           id?: string
+          metadata?: Json | null
           post_id?: string | null
           read_at?: string | null
           type: Database["public"]["Enums"]["notification_type"]
@@ -2481,6 +4010,7 @@ export type Database = {
           actor_id?: string
           created_at?: string
           id?: string
+          metadata?: Json | null
           post_id?: string | null
           read_at?: string | null
           type?: Database["public"]["Enums"]["notification_type"]
@@ -2917,6 +4447,8 @@ export type Database = {
       }
       privacy_settings: {
         Row: {
+          ai_data_sharing_enabled: boolean
+          ai_personalization_enabled: boolean
           analytics_enabled: boolean
           comments_allowed: string
           created_at: string
@@ -2936,6 +4468,8 @@ export type Database = {
           wall_visibility: string
         }
         Insert: {
+          ai_data_sharing_enabled?: boolean
+          ai_personalization_enabled?: boolean
           analytics_enabled?: boolean
           comments_allowed?: string
           created_at?: string
@@ -2955,6 +4489,8 @@ export type Database = {
           wall_visibility?: string
         }
         Update: {
+          ai_data_sharing_enabled?: boolean
+          ai_personalization_enabled?: boolean
           analytics_enabled?: boolean
           comments_allowed?: string
           created_at?: string
@@ -3309,6 +4845,48 @@ export type Database = {
         }
         Relationships: []
       }
+      quality_events: {
+        Row: {
+          author_id: string | null
+          content_id: string
+          created_at: string
+          event_type: string
+          id: number
+          is_ios: boolean
+          metadata: Json
+          session_id: string
+          surface: string
+          user_id: string | null
+          value: number
+        }
+        Insert: {
+          author_id?: string | null
+          content_id: string
+          created_at?: string
+          event_type: string
+          id?: number
+          is_ios?: boolean
+          metadata?: Json
+          session_id: string
+          surface: string
+          user_id?: string | null
+          value?: number
+        }
+        Update: {
+          author_id?: string | null
+          content_id?: string
+          created_at?: string
+          event_type?: string
+          id?: number
+          is_ios?: boolean
+          metadata?: Json
+          session_id?: string
+          surface?: string
+          user_id?: string | null
+          value?: number
+        }
+        Relationships: []
+      }
       rate_limits: {
         Row: {
           action_count: number
@@ -3372,6 +4950,96 @@ export type Database = {
           restrict_stories?: boolean
           restricted_user_id?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      sealed_delivery_tokens: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          recipient_user_id: string
+          token_hash: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          recipient_user_id: string
+          token_hash: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          recipient_user_id?: string
+          token_hash?: string
+        }
+        Relationships: []
+      }
+      sealed_sender_events: {
+        Row: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at: string
+          id: number
+          recipient_user_id: string | null
+          sender_hint_hash: string | null
+        }
+        Insert: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at?: string
+          id?: number
+          recipient_user_id?: string | null
+          sender_hint_hash?: string | null
+        }
+        Update: {
+          anonymous_sender_tag?: string
+          conversation_id?: string
+          created_at?: string
+          id?: number
+          recipient_user_id?: string | null
+          sender_hint_hash?: string | null
+        }
+        Relationships: []
+      }
+      sealed_sender_messages: {
+        Row: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at: string
+          delivered_at: string | null
+          delivery_state: string
+          id: string
+          read_at: string | null
+          recipient_user_id: string
+          sealed_header: Json
+          sealed_payload: string
+        }
+        Insert: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_state?: string
+          id?: string
+          read_at?: string | null
+          recipient_user_id: string
+          sealed_header?: Json
+          sealed_payload: string
+        }
+        Update: {
+          anonymous_sender_tag?: string
+          conversation_id?: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_state?: string
+          id?: string
+          read_at?: string | null
+          recipient_user_id?: string
+          sealed_header?: Json
+          sealed_payload?: string
         }
         Relationships: []
       }
@@ -3453,6 +5121,45 @@ export type Database = {
           id?: string
           is_active?: boolean
           min_severity?: string
+        }
+        Relationships: []
+      }
+      security_auto_mitigations: {
+        Row: {
+          action_result: Json | null
+          autonomy_level: number | null
+          confidence_score: number | null
+          created_at: string
+          id: string
+          incident_id: string | null
+          mitigation_type: string
+          reason: string
+          severity: string | null
+          source_ip: string | null
+        }
+        Insert: {
+          action_result?: Json | null
+          autonomy_level?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          incident_id?: string | null
+          mitigation_type: string
+          reason: string
+          severity?: string | null
+          source_ip?: string | null
+        }
+        Update: {
+          action_result?: Json | null
+          autonomy_level?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          incident_id?: string | null
+          mitigation_type?: string
+          reason?: string
+          severity?: string | null
+          source_ip?: string | null
         }
         Relationships: []
       }
@@ -3765,6 +5472,100 @@ export type Database = {
           },
         ]
       }
+      sender_key_distribution: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          delivered: boolean
+          encrypted_skdm: string
+          id: string
+          recipient_device_id: string
+          recipient_user_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          delivered?: boolean
+          encrypted_skdm: string
+          id?: string
+          recipient_device_id: string
+          recipient_user_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          delivered?: boolean
+          encrypted_skdm?: string
+          id?: string
+          recipient_device_id?: string
+          recipient_user_id?: string
+          sender_device_id?: string
+          sender_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sender_key_distribution_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sender_key_state: {
+        Row: {
+          chain_key_b64: string
+          conversation_id: string
+          created_at: string
+          id: string
+          is_owner: boolean
+          iteration: number
+          sender_device_id: string
+          sender_user_id: string
+          signing_priv_jwk: Json | null
+          signing_pub_b64: string
+          updated_at: string
+        }
+        Insert: {
+          chain_key_b64: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          is_owner?: boolean
+          iteration?: number
+          sender_device_id: string
+          sender_user_id: string
+          signing_priv_jwk?: Json | null
+          signing_pub_b64: string
+          updated_at?: string
+        }
+        Update: {
+          chain_key_b64?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          is_owner?: boolean
+          iteration?: number
+          sender_device_id?: string
+          sender_user_id?: string
+          signing_priv_jwk?: Json | null
+          signing_pub_b64?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sender_key_state_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       short_videos: {
         Row: {
           caption: string | null
@@ -3819,6 +5620,36 @@ export type Database = {
           user_id?: string
           video_url?: string
           view_count?: number
+        }
+        Relationships: []
+      }
+      signed_device_lists: {
+        Row: {
+          created_at: string
+          device_ids: string[]
+          list_version: number
+          signature: string | null
+          signer_device_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_ids?: string[]
+          list_version?: number
+          signature?: string | null
+          signer_device_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_ids?: string[]
+          list_version?: number
+          signature?: string | null
+          signer_device_id?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -3907,6 +5738,24 @@ export type Database = {
           },
         ]
       }
+      stripe_processed_events: {
+        Row: {
+          event_id: string
+          event_type: string
+          processed_at: string
+        }
+        Insert: {
+          event_id: string
+          event_type: string
+          processed_at?: string
+        }
+        Update: {
+          event_id?: string
+          event_type?: string
+          processed_at?: string
+        }
+        Relationships: []
+      }
       suppressed_emails: {
         Row: {
           created_at: string
@@ -3928,6 +5777,135 @@ export type Database = {
           id?: string
           metadata?: Json | null
           reason?: string
+        }
+        Relationships: []
+      }
+      threat_decisions: {
+        Row: {
+          action_taken: string
+          category: string
+          confidence: number
+          created_at: string
+          decided_by: string | null
+          detector: string
+          endpoint: string
+          id: string
+          ip: string | null
+          payload_hash: string | null
+          reason: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action_taken: string
+          category: string
+          confidence: number
+          created_at?: string
+          decided_by?: string | null
+          detector: string
+          endpoint: string
+          id?: string
+          ip?: string | null
+          payload_hash?: string | null
+          reason?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action_taken?: string
+          category?: string
+          confidence?: number
+          created_at?: string
+          decided_by?: string | null
+          detector?: string
+          endpoint?: string
+          id?: string
+          ip?: string | null
+          payload_hash?: string | null
+          reason?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      threat_model_weights: {
+        Row: {
+          accuracy: number | null
+          active: boolean
+          bias: number
+          f1: number | null
+          id: string
+          notes: string | null
+          precision_score: number | null
+          recall: number | null
+          samples_used: number
+          trained_at: string
+          version: number
+          weights: Json
+        }
+        Insert: {
+          accuracy?: number | null
+          active?: boolean
+          bias?: number
+          f1?: number | null
+          id?: string
+          notes?: string | null
+          precision_score?: number | null
+          recall?: number | null
+          samples_used?: number
+          trained_at?: string
+          version: number
+          weights: Json
+        }
+        Update: {
+          accuracy?: number | null
+          active?: boolean
+          bias?: number
+          f1?: number | null
+          id?: string
+          notes?: string | null
+          precision_score?: number | null
+          recall?: number | null
+          samples_used?: number
+          trained_at?: string
+          version?: number
+          weights?: Json
+        }
+        Relationships: []
+      }
+      threat_training_samples: {
+        Row: {
+          category: string | null
+          created_at: string
+          endpoint: string | null
+          features: Json
+          id: string
+          label: number
+          source: string
+          used_in_version: number | null
+          weight: number
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          endpoint?: string | null
+          features: Json
+          id?: string
+          label: number
+          source: string
+          used_in_version?: number | null
+          weight?: number
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          endpoint?: string | null
+          features?: Json
+          id?: string
+          label?: number
+          source?: string
+          used_in_version?: number | null
+          weight?: number
         }
         Relationships: []
       }
@@ -4077,31 +6055,40 @@ export type Database = {
       }
       user_backups: {
         Row: {
+          backup_type: string
           created_at: string
           encrypted_blob: string
           id: string
           iv: string
+          master_key_iv: string | null
           salt: string
           user_id: string
           version: number
+          wrapped_master_key: string | null
         }
         Insert: {
+          backup_type?: string
           created_at?: string
           encrypted_blob: string
           id?: string
           iv: string
+          master_key_iv?: string | null
           salt: string
           user_id: string
           version?: number
+          wrapped_master_key?: string | null
         }
         Update: {
+          backup_type?: string
           created_at?: string
           encrypted_blob?: string
           id?: string
           iv?: string
+          master_key_iv?: string | null
           salt?: string
           user_id?: string
           version?: number
+          wrapped_master_key?: string | null
         }
         Relationships: []
       }
@@ -4180,6 +6167,138 @@ export type Database = {
         }
         Relationships: []
       }
+      user_crypto_state: {
+        Row: {
+          client_key_published_at: string | null
+          created_at: string
+          fingerprint: string | null
+          identity_epoch: number
+          key_slot_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_key_published_at?: string | null
+          created_at?: string
+          fingerprint?: string | null
+          identity_epoch?: number
+          key_slot_id?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_key_published_at?: string | null
+          created_at?: string
+          fingerprint?: string | null
+          identity_epoch?: number
+          key_slot_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_device_signatures: {
+        Row: {
+          device_id: string
+          id: string
+          primary_device_id: string
+          primary_pub_b64: string
+          revoked_at: string | null
+          signature_b64: string
+          signed_at: string
+          user_id: string
+        }
+        Insert: {
+          device_id: string
+          id?: string
+          primary_device_id: string
+          primary_pub_b64: string
+          revoked_at?: string | null
+          signature_b64: string
+          signed_at?: string
+          user_id: string
+        }
+        Update: {
+          device_id?: string
+          id?: string
+          primary_device_id?: string
+          primary_pub_b64?: string
+          revoked_at?: string | null
+          signature_b64?: string
+          signed_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_devices: {
+        Row: {
+          created_at: string
+          crypto_invalid_at: string | null
+          crypto_invalid_reason: string | null
+          device_fingerprint: string | null
+          device_id: string
+          device_name: string | null
+          device_public_key: string
+          id: string
+          is_active: boolean
+          is_primary: boolean
+          last_seen_at: string
+          platform: string | null
+          prekey_repair_requested_at: string | null
+          revoke_reason: string | null
+          revoked_at: string | null
+          stale_at: string | null
+          updated_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          crypto_invalid_at?: string | null
+          crypto_invalid_reason?: string | null
+          device_fingerprint?: string | null
+          device_id: string
+          device_name?: string | null
+          device_public_key: string
+          id?: string
+          is_active?: boolean
+          is_primary?: boolean
+          last_seen_at?: string
+          platform?: string | null
+          prekey_repair_requested_at?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          stale_at?: string | null
+          updated_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          crypto_invalid_at?: string | null
+          crypto_invalid_reason?: string | null
+          device_fingerprint?: string | null
+          device_id?: string
+          device_name?: string | null
+          device_public_key?: string
+          id?: string
+          is_active?: boolean
+          is_primary?: boolean
+          last_seen_at?: string
+          platform?: string | null
+          prekey_repair_requested_at?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          stale_at?: string | null
+          updated_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_feed: {
         Row: {
           inserted_at: string
@@ -4215,6 +6334,90 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_feed_preferences: {
+        Row: {
+          created_at: string
+          diversity_boost: number
+          feed_algorithm: string
+          muted_keywords: string[]
+          priority_topics: string[]
+          seen_posts_hide: boolean
+          sensitive_content_filter: boolean
+          updated_at: string
+          user_id: string
+          viral_content_reduce: boolean
+          weight_discovery: number
+          weight_friends: number
+          weight_marketplace: number
+        }
+        Insert: {
+          created_at?: string
+          diversity_boost?: number
+          feed_algorithm?: string
+          muted_keywords?: string[]
+          priority_topics?: string[]
+          seen_posts_hide?: boolean
+          sensitive_content_filter?: boolean
+          updated_at?: string
+          user_id: string
+          viral_content_reduce?: boolean
+          weight_discovery?: number
+          weight_friends?: number
+          weight_marketplace?: number
+        }
+        Update: {
+          created_at?: string
+          diversity_boost?: number
+          feed_algorithm?: string
+          muted_keywords?: string[]
+          priority_topics?: string[]
+          seen_posts_hide?: boolean
+          sensitive_content_filter?: boolean
+          updated_at?: string
+          user_id?: string
+          viral_content_reduce?: boolean
+          weight_discovery?: number
+          weight_friends?: number
+          weight_marketplace?: number
+        }
+        Relationships: []
+      }
+      user_identity_change_events: {
+        Row: {
+          acknowledged: boolean
+          acknowledged_at: string | null
+          change_type: string
+          id: number
+          new_fingerprint: string
+          observed_at: string
+          observer_user_id: string
+          peer_user_id: string
+          previous_fingerprint: string | null
+        }
+        Insert: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          change_type?: string
+          id?: number
+          new_fingerprint: string
+          observed_at?: string
+          observer_user_id: string
+          peer_user_id: string
+          previous_fingerprint?: string | null
+        }
+        Update: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          change_type?: string
+          id?: number
+          new_fingerprint?: string
+          observed_at?: string
+          observer_user_id?: string
+          peer_user_id?: string
+          previous_fingerprint?: string | null
+        }
+        Relationships: []
       }
       user_interests: {
         Row: {
@@ -4258,6 +6461,7 @@ export type Database = {
           last_seen_at: string
           peer_user_id: string
           user_id: string
+          verified_manually: boolean
         }
         Insert: {
           acknowledged?: boolean
@@ -4267,6 +6471,7 @@ export type Database = {
           last_seen_at?: string
           peer_user_id: string
           user_id: string
+          verified_manually?: boolean
         }
         Update: {
           acknowledged?: boolean
@@ -4276,6 +6481,7 @@ export type Database = {
           last_seen_at?: string
           peer_user_id?: string
           user_id?: string
+          verified_manually?: boolean
         }
         Relationships: []
       }
@@ -4321,36 +6527,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_prekeys: {
-        Row: {
-          consumed_at: string | null
-          consumed_by: string | null
-          created_at: string
-          id: string
-          prekey_id: number
-          public_key: string
-          user_id: string
-        }
-        Insert: {
-          consumed_at?: string | null
-          consumed_by?: string | null
-          created_at?: string
-          id?: string
-          prekey_id: number
-          public_key: string
-          user_id: string
-        }
-        Update: {
-          consumed_at?: string | null
-          consumed_by?: string | null
-          created_at?: string
-          id?: string
-          prekey_id?: number
-          public_key?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       user_public_keys: {
         Row: {
           created_at: string
@@ -4390,6 +6566,30 @@ export type Database = {
         }
         Relationships: []
       }
+      user_recovery_events: {
+        Row: {
+          fingerprint: string
+          id: number
+          occurred_at: string
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          fingerprint: string
+          id?: number
+          occurred_at?: string
+          reason?: string
+          user_id: string
+        }
+        Update: {
+          fingerprint?: string
+          id?: number
+          occurred_at?: string
+          reason?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -4408,14 +6608,49 @@ export type Database = {
         }
         Relationships: []
       }
+      user_sender_certificates: {
+        Row: {
+          device_id: string
+          expires_at: string
+          fingerprint: string
+          identity_epoch: number
+          issued_at: string
+          payload: string
+          signature: string
+          user_id: string
+        }
+        Insert: {
+          device_id: string
+          expires_at: string
+          fingerprint: string
+          identity_epoch: number
+          issued_at?: string
+          payload: string
+          signature: string
+          user_id: string
+        }
+        Update: {
+          device_id?: string
+          expires_at?: string
+          fingerprint?: string
+          identity_epoch?: number
+          issued_at?: string
+          payload?: string
+          signature?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_signed_prekeys: {
         Row: {
           created_at: string
           expires_at: string
           id: string
           is_active: boolean
+          is_last_resort: boolean
           public_key: string
           signature: string
+          signature_version: number
           spk_id: number
           user_id: string
         }
@@ -4424,8 +6659,10 @@ export type Database = {
           expires_at?: string
           id?: string
           is_active?: boolean
+          is_last_resort?: boolean
           public_key: string
           signature: string
+          signature_version?: number
           spk_id: number
           user_id: string
         }
@@ -4434,8 +6671,10 @@ export type Database = {
           expires_at?: string
           id?: string
           is_active?: boolean
+          is_last_resort?: boolean
           public_key?: string
           signature?: string
+          signature_version?: number
           spk_id?: number
           user_id?: string
         }
@@ -4616,6 +6855,117 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      wellbeing_preferences: {
+        Row: {
+          bedtime_hour: number
+          bedtime_reminder_enabled: boolean
+          created_at: string
+          daily_limit_minutes: number
+          focus_mode_enabled: boolean
+          grayscale_after_limit: boolean
+          hide_like_counts: boolean
+          scroll_pause_enabled: boolean
+          scroll_pause_minutes: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bedtime_hour?: number
+          bedtime_reminder_enabled?: boolean
+          created_at?: string
+          daily_limit_minutes?: number
+          focus_mode_enabled?: boolean
+          grayscale_after_limit?: boolean
+          hide_like_counts?: boolean
+          scroll_pause_enabled?: boolean
+          scroll_pause_minutes?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bedtime_hour?: number
+          bedtime_reminder_enabled?: boolean
+          created_at?: string
+          daily_limit_minutes?: number
+          focus_mode_enabled?: boolean
+          grayscale_after_limit?: boolean
+          hide_like_counts?: boolean
+          scroll_pause_enabled?: boolean
+          scroll_pause_minutes?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      wellbeing_scores: {
+        Row: {
+          break_frequency_score: number
+          computed_at: string
+          content_diversity_score: number
+          created_at: string
+          factors: Json | null
+          id: string
+          positivity_score: number
+          score: number
+          screen_time_score: number
+          social_balance_score: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          break_frequency_score?: number
+          computed_at?: string
+          content_diversity_score?: number
+          created_at?: string
+          factors?: Json | null
+          id?: string
+          positivity_score?: number
+          score?: number
+          screen_time_score?: number
+          social_balance_score?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          break_frequency_score?: number
+          computed_at?: string
+          content_diversity_score?: number
+          created_at?: string
+          factors?: Json | null
+          id?: string
+          positivity_score?: number
+          score?: number
+          screen_time_score?: number
+          social_balance_score?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      x3dh_replay_ledger: {
+        Row: {
+          consumed_at: string
+          expires_at: string
+          fingerprint: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string
+          expires_at?: string
+          fingerprint: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string
+          expires_at?: string
+          fingerprint?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       zeus_conversations: {
         Row: {
@@ -4923,8 +7273,35 @@ export type Database = {
       }
     }
     Functions: {
+      add_group_members: {
+        Args: { p_conv_id: string; p_member_ids: string[] }
+        Returns: number
+      }
       advance_onboarding_step: {
         Args: { _expected_step: number; _user_id: string }
+        Returns: number
+      }
+      ai_engine_module_stats: {
+        Args: { p_window_minutes?: number }
+        Returns: {
+          avg_latency_ms: number
+          last_used: string
+          module_id: string
+          success_rate: number
+          total_calls: number
+        }[]
+      }
+      apply_security_auto_mitigations: { Args: never; Returns: Json }
+      approve_device_link_request: {
+        Args: {
+          p_approver_device_id: string
+          p_encrypted_payload: string
+          p_token_hash: string
+        }
+        Returns: boolean
+      }
+      bump_device_keys_epoch: {
+        Args: { p_device_id: string; p_user_id: string }
         Returns: number
       }
       call_signal: {
@@ -4948,17 +7325,102 @@ export type Database = {
         Args: { _order_id: string; _seller_id: string }
         Returns: boolean
       }
-      cleanup_ai_cache: { Args: never; Returns: undefined }
-      cleanup_expired_device_links: { Args: never; Returns: undefined }
-      cleanup_old_behavior_signals: { Args: never; Returns: undefined }
-      cleanup_old_fingerprints: { Args: never; Returns: undefined }
-      complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
-      consume_prekey: {
+      check_login_rate_limit: {
+        Args: { p_email_hash: string; p_ip: string }
+        Returns: Json
+      }
+      check_peer_knows_my_fingerprint: {
         Args: { p_peer_user_id: string }
         Returns: {
-          prekey_id: number
+          acknowledged: boolean
+          fingerprint: string
+        }[]
+      }
+      check_rate_limit: {
+        Args: {
+          p_key: string
+          p_max_requests: number
+          p_window_seconds: number
+        }
+        Returns: boolean
+      }
+      claim_device_one_time_prekey: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: {
+          opk_id: number
           public_key: string
         }[]
+      }
+      claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
+      cleanup_ai_cache: { Args: never; Returns: undefined }
+      cleanup_current_user_stale_devices: {
+        Args: { p_current_device_id: string; p_stale_after?: string }
+        Returns: Json
+      }
+      cleanup_edge_rate_limits: { Args: never; Returns: undefined }
+      cleanup_expired_device_link_requests: { Args: never; Returns: undefined }
+      cleanup_expired_device_links: { Args: never; Returns: undefined }
+      cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
+      cleanup_old_behavior_signals: { Args: never; Returns: undefined }
+      cleanup_old_fingerprints: { Args: never; Returns: undefined }
+      cleanup_old_login_attempts: { Args: never; Returns: undefined }
+      cleanup_stale_user_devices: {
+        Args: never
+        Returns: {
+          action: string
+          device_id: string
+        }[]
+      }
+      complete_device_copy_retry: {
+        Args: {
+          p_encrypted_body: string
+          p_request_id: string
+          p_sender_device_id: string
+        }
+        Returns: Json
+      }
+      complete_device_link_request: {
+        Args: { p_requester_device_id: string; p_token_hash: string }
+        Returns: boolean
+      }
+      complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
+      consume_device_link_token: {
+        Args: { p_token_hash: string }
+        Returns: {
+          encrypted_payload: string
+          user_id: string
+        }[]
+      }
+      consume_device_prekey_repair_requests: {
+        Args: { p_limit?: number }
+        Returns: {
+          created_at: string
+          id: string
+          owner_device_id: string
+          reason: string
+          reporter_user_id: string
+        }[]
+      }
+      count_device_one_time_prekeys: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: number
+      }
+      create_device_link_request: {
+        Args: {
+          p_requester_device_id: string
+          p_requester_label?: string
+          p_requester_public_key: Json
+          p_token_hash: string
+        }
+        Returns: string
+      }
+      create_group_conversation: {
+        Args: { p_member_ids: string[]; p_name: string }
+        Returns: string
+      }
+      create_or_get_dm_conversation: {
+        Args: { p_other_user: string }
+        Returns: string
       }
       ddos_check_ip: {
         Args: {
@@ -4970,6 +7432,10 @@ export type Database = {
         Returns: Json
       }
       ddos_cleanup: { Args: never; Returns: undefined }
+      decrement_product_stock: {
+        Args: { p_product_id: string; p_quantity: number }
+        Returns: boolean
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
@@ -4978,7 +7444,59 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      ensure_primary_device_exists: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
+      ensure_user_crypto_state: {
+        Args: never
+        Returns: {
+          client_key_published_at: string | null
+          created_at: string
+          fingerprint: string | null
+          identity_epoch: number
+          key_slot_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "user_crypto_state"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      feed_score_batch: {
+        Args: { p_algo?: string; p_post_ids: string[]; p_user_id: string }
+        Returns: {
+          classic_score: number
+          final_score: number
+          ml_score: number
+          post_id: string
+          reason: string
+        }[]
+      }
       generate_order_number: { Args: never; Returns: string }
+      get_active_device_public_key: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: {
+          device_id: string
+          device_public_key: string
+          user_id: string
+        }[]
+      }
+      get_ai_data_sharing_enabled: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
+      get_approved_device_link_payload: {
+        Args: { p_requester_device_id: string; p_token_hash: string }
+        Returns: {
+          approver_device_id: string
+          encrypted_payload: string
+        }[]
+      }
       get_conversations_with_details: {
         Args: { p_user_id: string }
         Returns: {
@@ -4995,6 +7513,44 @@ export type Database = {
           other_name: string
           other_user_id: string
           unread_count: number
+        }[]
+      }
+      get_device_copies_for_user: {
+        Args: { p_message_id: string }
+        Returns: {
+          created_at: string
+          encrypted_body: string
+          recipient_device_id: string
+          sender_device_id: string
+          sender_user_id: string
+        }[]
+      }
+      get_device_copy_for_message: {
+        Args: { p_device_id: string; p_message_id: string }
+        Returns: {
+          created_at: string
+          encrypted_body: string
+          sender_device_id: string
+          sender_user_id: string
+        }[]
+      }
+      get_device_link_request_for_approval: {
+        Args: { p_token_hash: string }
+        Returns: {
+          expires_at: string
+          id: string
+          requester_device_id: string
+          requester_label: string
+          requester_public_key: Json
+          status: string
+        }[]
+      }
+      get_device_prekey_bundle: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: {
+          public_key: string
+          signature: string
+          spk_id: number
         }[]
       }
       get_feed_posts: {
@@ -5027,7 +7583,9 @@ export type Database = {
           user_id: string
         }[]
       }
-      get_my_stream_key: { Args: { stream_id: string }; Returns: string }
+      get_my_live_stream_key: { Args: { _stream_id: string }; Returns: string }
+      get_my_seller_revenue: { Args: never; Returns: number }
+      get_my_stream_key: { Args: { p_stream_id: string }; Returns: string }
       get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
       get_parental_controls: {
         Args: { p_user_id: string }
@@ -5039,6 +7597,17 @@ export type Database = {
           is_minor: boolean
           updated_at: string
           user_id: string
+        }[]
+      }
+      get_pending_device_copy_retry_requests: {
+        Args: { p_limit?: number }
+        Returns: {
+          conversation_id: string
+          created_at: string
+          id: string
+          message_id: string
+          requester_device_id: string
+          requester_user_id: string
         }[]
       }
       get_public_profile: {
@@ -5058,6 +7627,10 @@ export type Database = {
         }[]
       }
       get_public_trust_score: { Args: { p_user_id: string }; Returns: number }
+      get_public_wellbeing_score: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
       get_safe_live_stream: {
         Args: { p_live_id: string }
         Returns: {
@@ -5079,6 +7652,18 @@ export type Database = {
           viewer_count: number
         }[]
       }
+      get_signed_device_list: {
+        Args: { p_user_id: string }
+        Returns: {
+          device_id: string
+          device_public_key: string
+          is_primary: boolean
+          primary_device_id: string
+          primary_pub_b64: string
+          signature_b64: string
+          signed_at: string
+        }[]
+      }
       get_signed_prekey: {
         Args: { p_user_id: string }
         Returns: {
@@ -5087,6 +7672,25 @@ export type Database = {
           spk_id: number
         }[]
       }
+      get_signed_prekey_with_fallback: {
+        Args: { p_user_id: string }
+        Returns: {
+          is_last_resort: boolean
+          public_key: string
+          signature: string
+          spk_id: number
+        }[]
+      }
+      get_user_archive_keys: {
+        Args: never
+        Returns: {
+          conversation_id: string
+          created_at: string
+          kdf_version: number
+          wrapped_key: string
+        }[]
+      }
+      has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
       has_role: {
         Args: {
@@ -5103,7 +7707,86 @@ export type Database = {
         Args: { p_owner_id: string; p_viewer_id: string }
         Returns: boolean
       }
+      is_user_device_revoked: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
+      list_active_devices_for_user: {
+        Args: { p_user_id: string }
+        Returns: {
+          device_id: string
+          device_public_key: string
+          last_seen_at: string
+          platform: string
+        }[]
+      }
+      list_pending_device_copy_retries: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempt_count: number
+          conversation_id: string
+          created_at: string
+          message_body: string
+          message_id: string
+          request_id: string
+          requester_device_id: string
+          requester_device_public_key: string
+          requester_user_id: string
+        }[]
+      }
+      list_predecessor_device_ids: {
+        Args: { p_fingerprints: string[] }
+        Returns: {
+          device_id: string
+        }[]
+      }
+      live_feed_bundle: {
+        Args: {
+          p_active_limit?: number
+          p_replay_limit?: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      live_score_batch: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          affinity: number
+          freshness: number
+          interest_match: number
+          live_id: string
+          momentum: number
+          score: number
+        }[]
+      }
+      mark_device_copy_retry_failed: {
+        Args: { p_error?: string; p_request_id: string }
+        Returns: Json
+      }
+      mark_device_copy_retry_request: {
+        Args: { p_error?: string; p_request_id: string; p_status: string }
+        Returns: Json
+      }
+      mark_user_crypto_ready: {
+        Args: { p_fingerprint: string }
+        Returns: {
+          client_key_published_at: string | null
+          created_at: string
+          fingerprint: string | null
+          identity_epoch: number
+          key_slot_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "user_crypto_state"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       match_contacts_by_phone:
         | {
             Args: { p_phone_numbers: string[] }
@@ -5124,6 +7807,66 @@ export type Database = {
               user_id: string
             }[]
           }
+      ml_cold_start_feed: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          post_id: string
+          score: number
+        }[]
+      }
+      ml_compute_post_scores: {
+        Args: { p_post_id: string }
+        Returns: undefined
+      }
+      ml_find_similar_posts: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          post_id: string
+          similarity: number
+        }[]
+      }
+      ml_is_cold_start: { Args: { p_user_id: string }; Returns: boolean }
+      ml_pareto_score: {
+        Args: {
+          p_post_id: string
+          p_user_id: string
+          p_w_engagement?: number
+          p_w_revenue?: number
+          p_w_wellbeing?: number
+        }
+        Returns: number
+      }
+      ml_pareto_score_batch: {
+        Args: { p_post_ids: string[]; p_user_id: string }
+        Returns: {
+          post_id: string
+          score: number
+        }[]
+      }
+      ml_record_watch_time: {
+        Args: { p_post_id: string; p_sample_count: number; p_total_ms: number }
+        Returns: undefined
+      }
+      ml_score_post: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
+      ml_score_post_v2: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
+      ml_score_post_v3: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
+      ml_score_post_v4: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
+      ml_score_post_v5: {
+        Args: { p_post_id: string; p_user_id: string }
+        Returns: number
+      }
       move_to_dlq: {
         Args: {
           dlq_name: string
@@ -5133,13 +7876,199 @@ export type Database = {
         }
         Returns: number
       }
+      purge_old_ai_engine_events: { Args: never; Returns: undefined }
       purge_old_audit_logs: { Args: never; Returns: undefined }
+      purge_old_crypto_error_logs: { Args: never; Returns: number }
+      purge_old_feed_score_tamper_events: { Args: never; Returns: undefined }
+      purge_old_threat_decisions: { Args: never; Returns: undefined }
+      push_my_fingerprint_to_peers: { Args: never; Returns: number }
+      quality_metrics_summary: {
+        Args: { p_author_id?: string; p_since?: string; p_surface?: string }
+        Returns: Json
+      }
+      quality_metrics_timeline: {
+        Args: {
+          p_author_id?: string
+          p_bucket?: string
+          p_since?: string
+          p_surface?: string
+        }
+        Returns: {
+          avg_completion: number
+          avg_watch_ms: number
+          bucket: string
+          ios_perf_ms: number
+          skip_fast: number
+          views: number
+        }[]
+      }
+      quarantine_ghost_e2ee_devices: { Args: never; Returns: number }
+      quarantine_own_invalid_device: {
+        Args: { p_device_id: string; p_reason?: string }
+        Returns: Json
+      }
+      quarantine_own_invalid_device_spk: {
+        Args: { p_device_id: string; p_reason?: string; p_spk_id: number }
+        Returns: Json
+      }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
         Returns: {
           message: Json
           msg_id: number
           read_ct: number
+        }[]
+      }
+      record_login_attempt: {
+        Args: {
+          p_email_hash: string
+          p_ip: string
+          p_success: boolean
+          p_user_agent?: string
+        }
+        Returns: undefined
+      }
+      register_user_device_safe: {
+        Args: {
+          p_device_fingerprint?: string
+          p_device_id: string
+          p_device_name?: string
+          p_device_public_key?: string
+          p_platform?: string
+          p_user_agent?: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      release_backup_pin_blob: {
+        Args: { _user_id: string }
+        Returns: {
+          allowed: boolean
+          attempts_remaining: number
+          kdf_version: number
+          locked_until: string
+          pin_wrap_master: string
+          salt: string
+        }[]
+      }
+      request_device_copy_retry: {
+        Args: {
+          p_message_id: string
+          p_requester_device_id: string
+          p_sender_user_id: string
+        }
+        Returns: Json
+      }
+      request_device_prekey_repair: {
+        Args: {
+          p_owner_device_id: string
+          p_owner_user_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      request_message_refanout: {
+        Args: {
+          p_message_id: string
+          p_requester_device_id: string
+          p_sender_user_id: string
+        }
+        Returns: Json
+      }
+      reset_backup_pin_attempts: {
+        Args: { _user_id: string }
+        Returns: undefined
+      }
+      resolve_device_id_by_fingerprint: {
+        Args: { p_fingerprint: string }
+        Returns: string
+      }
+      resolve_device_id_by_fingerprints: {
+        Args: { p_fingerprints: string[]; p_platform?: string }
+        Returns: string
+      }
+      resolve_device_primary_repair_request: {
+        Args: { p_id: string }
+        Returns: boolean
+      }
+      security_monitor_cron_tick: { Args: never; Returns: undefined }
+      set_message_archive_body: {
+        Args: { p_archive_body: string; p_message_id: string }
+        Returns: boolean
+      }
+      stripe_mark_event_processed: {
+        Args: { p_event_id: string; p_event_type: string }
+        Returns: boolean
+      }
+      threat_shield_active_model: {
+        Args: never
+        Returns: {
+          accuracy: number
+          bias: number
+          samples_used: number
+          trained_at: string
+          version: number
+          weights: Json
+        }[]
+      }
+      threat_shield_feedback: {
+        Args: { p_decision_id: string; p_is_attack: boolean }
+        Returns: undefined
+      }
+      threat_shield_ml_stats: {
+        Args: never
+        Returns: {
+          active_accuracy: number
+          active_precision: number
+          active_recall: number
+          active_version: number
+          decided_by_gemini: number
+          decided_by_ml: number
+          decided_by_regex: number
+          positive_samples: number
+          total_samples: number
+        }[]
+      }
+      threat_shield_stats: {
+        Args: { window_minutes?: number }
+        Returns: {
+          banned: number
+          last_block: string
+          logged: number
+          penalized: number
+          top_category: string
+          total: number
+        }[]
+      }
+      try_consume_backup_pin_attempt: {
+        Args: {
+          _lockout_seconds?: number
+          _max_attempts?: number
+          _user_id: string
+          _window_seconds?: number
+        }
+        Returns: {
+          allowed: boolean
+          attempts_remaining: number
+          locked_until: string
+        }[]
+      }
+      upsert_signed_device_list: {
+        Args: {
+          p_device_ids: string[]
+          p_signature?: string
+          p_signer_device_id?: string
+        }
+        Returns: Json
+      }
+      video_score_batch: {
+        Args: { p_user_id: string; p_video_ids: string[] }
+        Returns: {
+          engagement_score: number
+          score: number
+          velocity_score: number
+          video_id: string
+          wellbeing_score: number
         }[]
       }
     }
@@ -5155,6 +8084,7 @@ export type Database = {
         | "message"
         | "story_view"
         | "sale"
+        | "new_device"
       order_status:
         | "pending"
         | "paid"
@@ -5303,6 +8233,7 @@ export const Constants = {
         "message",
         "story_view",
         "sale",
+        "new_device",
       ],
       order_status: [
         "pending",

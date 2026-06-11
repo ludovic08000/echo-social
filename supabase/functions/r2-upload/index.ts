@@ -5,17 +5,17 @@ const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB absolute max
 const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   avatars:     ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"],
   images:      ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"],
-  "post-images": ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime"],
-  videos:      ["video/mp4", "video/webm", "video/quicktime"],
+  "post-images": ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
+  videos:      ["video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
   products:    ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
-  stories:     ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime"],
+  stories:     ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
   backgrounds: ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
   documents:   ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"],
   voice:       ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac", "audio/wav", "audio/x-m4a", "audio/mp4;codecs=mp4a.40.2", "application/octet-stream", "audio/x-caf"],
   lives:       ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "video/webm", "video/mp4"],
-  feed:        ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime"],
+  feed:        ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
   thumbnails:  ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
-  uploads:     ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime"],
+  uploads:     ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
 };
 const FOLDER_MAX_SIZES: Record<string, number> = {
   avatars: 5 * 1024 * 1024,
@@ -58,7 +58,7 @@ function getCorsHeaders(req: Request): Record<string, string> {
     "Access-Control-Allow-Origin": isAllowed ? origin : ALLOWED_ORIGINS_LIST[0],
     "Access-Control-Allow-Headers":
       "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-    "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Vary": "Origin",
   };
 }
@@ -82,15 +82,25 @@ const MIME_EXT_MAP: Record<string, string[]> = {
   "audio/wav": ["wav"],
   "audio/x-m4a": ["m4a"],
   "application/pdf": ["pdf"],
+  "application/octet-stream": ["enc", "bin"],
 };
 
 function validateMimeExtension(mime: string, filename: string, folder?: string): boolean {
-  // Skip extension validation for voice recordings — browsers report inconsistent MIME types
   if (folder === 'voice') return true;
   const ext = filename.split(".").pop()?.toLowerCase() || "";
   const allowed = MIME_EXT_MAP[mime];
   if (!allowed) return false;
   return allowed.includes(ext);
+}
+
+function buildSignedHeaders(host: string, dateStamp: string, payloadHash: string, contentType?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    host,
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": dateStamp,
+  };
+  if (contentType) headers["content-type"] = contentType;
+  return headers;
 }
 
 // ─── Path traversal protection ───
@@ -109,15 +119,13 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Only allow POST and DELETE
-  if (req.method !== "POST" && req.method !== "DELETE") {
+  if (req.method !== "GET" && req.method !== "POST" && req.method !== "DELETE") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
   try {
-    // ─── Auth check ───
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       throw new Error("Missing or invalid authorization header");
@@ -133,11 +141,9 @@ Deno.serve(async (req) => {
     const userId = claimsData?.claims?.sub as string | undefined;
     if (claimsError || !userId) throw new Error("Not authenticated");
 
-    // ─── Rate limit (DB-backed, persistent) ───
     const rateLimited = await checkRateLimitDB(`upload:${userId}`, RATE_LIMIT, RATE_WINDOW_S, corsHeaders);
     if (rateLimited) return rateLimited;
 
-    // ─── Fetch user profile for folder structure ───
     const serviceClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -159,7 +165,6 @@ Deno.serve(async (req) => {
       || "user";
     const userFolder = `${sanitizedName}-${userId.substring(0, 8)}`;
 
-    // ─── R2 config ───
     const accountId = Deno.env.get("R2_ACCOUNT_ID")?.trim() ?? "";
     let accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID")?.trim() ?? "";
     let secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY")?.trim() ?? "";
@@ -179,36 +184,67 @@ Deno.serve(async (req) => {
     const endpoint = `https://${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
     const host = `${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
 
-    // ═══════ DELETE ═══════
+    const now = new Date();
+    const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    const shortDate = dateStamp.substring(0, 8);
+    const credentialScope = `${shortDate}/auto/s3/aws4_request`;
+
+    if (req.method === "GET") {
+      const fileUrl = new URL(req.url).searchParams.get('url');
+      if (!fileUrl) throw new Error('Missing file url');
+      if (!fileUrl.startsWith(publicUrl.replace(/\/$/, '') + '/')) {
+        return new Response(JSON.stringify({ error: 'Unauthorized file url' }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const cleanPath = sanitizePath(fileUrl.replace(`${publicUrl.replace(/\/$/, '')}/`, ''));
+      if (!cleanPath) {
+        return new Response(JSON.stringify({ error: 'Invalid file path' }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const payloadHash = await sha256Hex(new Uint8Array(0));
+      const headers = buildSignedHeaders(host, dateStamp, payloadHash);
+      const authorization = await sign("GET", `/${bucketName}/${cleanPath}`, headers, payloadHash, dateStamp, shortDate, credentialScope, accessKeyId, secretAccessKey);
+      const r2Response = await fetch(`${endpoint}/${bucketName}/${cleanPath}`, {
+        method: 'GET',
+        headers: { ...headers, Authorization: authorization },
+      });
+
+      if (!r2Response.ok) {
+        return new Response(JSON.stringify({ error: `R2 read failed: ${r2Response.status}` }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(r2Response.body, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": r2Response.headers.get('content-type') || 'application/octet-stream',
+          "Cache-Control": "private, max-age=60",
+        },
+      });
+    }
+
     if (req.method === "DELETE") {
       const { path } = await req.json();
       if (!path || typeof path !== "string") throw new Error("No path provided");
 
       const cleanPath = sanitizePath(path);
-
-      // Security: strict ownership check — path MUST start with user's folder
       if (!cleanPath.startsWith(`${userFolder}/`)) {
         return new Response(JSON.stringify({ error: "Unauthorized: can only delete own files" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      const url = `${endpoint}/${bucketName}/${cleanPath}`;
-      const now = new Date();
-      const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-      const shortDate = dateStamp.substring(0, 8);
-      const credentialScope = `${shortDate}/auto/s3/aws4_request`;
-
       const emptyHash = await sha256Hex(new Uint8Array(0));
-      const headers: Record<string, string> = {
-        host,
-        "x-amz-content-sha256": emptyHash,
-        "x-amz-date": dateStamp,
-      };
-
+      const headers = buildSignedHeaders(host, dateStamp, emptyHash);
       const sig = await sign("DELETE", `/${bucketName}/${cleanPath}`, headers, emptyHash, dateStamp, shortDate, credentialScope, accessKeyId, secretAccessKey);
 
-      await fetch(url, { method: "DELETE", headers: { ...headers, Authorization: sig } });
+      await fetch(`${endpoint}/${bucketName}/${cleanPath}`, { method: "DELETE", headers: { ...headers, Authorization: sig } });
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -286,11 +322,6 @@ Deno.serve(async (req) => {
         }
       }
     }
-
-    const now = new Date();
-    const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-    const shortDate = dateStamp.substring(0, 8);
-    const credentialScope = `${shortDate}/auto/s3/aws4_request`;
 
     const payloadHash = await sha256Hex(new Uint8Array(fileBuffer));
 
@@ -389,13 +420,20 @@ async function sign(
 }
 
 async function sha256Hex(data: Uint8Array): Promise<string> {
-  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", data)));
+  const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", buffer)));
 }
 
 async function hmacSha256(key: Uint8Array | ArrayBuffer, message: string): Promise<Uint8Array> {
+  const rawKey = key instanceof Uint8Array
+    ? (key.buffer.slice(key.byteOffset, key.byteOffset + key.byteLength) as ArrayBuffer)
+    : key;
   const cryptoKey = await crypto.subtle.importKey(
-    "raw", key instanceof Uint8Array ? key : new Uint8Array(key),
-    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    "raw",
+    rawKey,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
   );
   return new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(message)));
 }

@@ -1,10 +1,17 @@
 import { ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { SEOHead } from '@/components/SEOHead';
 
 export default function LegalTerms() {
   return (
     <div className="min-h-screen bg-background">
+      <SEOHead
+        title="Conditions Générales d'Utilisation"
+        description="Conditions générales d'utilisation de Forsure, réseau social éthique français. Mentions légales, droits et obligations des utilisateurs."
+        url="https://forsure.fans/legal"
+        noindex
+      />
       <div className="max-w-3xl mx-auto px-4 py-8">
         <Link to="/signup">
           <Button variant="ghost" size="sm" className="mb-6">

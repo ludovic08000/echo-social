@@ -606,18 +606,19 @@ function PinEntryScreen({ onVerify, processing, error, onRequestReset, onConfirm
           )}
         </AnimatePresence>
 
-        {/* Forgot PIN button — always visible */}
-        {!isLocked && attempts >= 2 && (
+        {/* Forgot PIN button — always visible so the user can ALWAYS trigger
+            an email reset, even on the very first wrong attempt. */}
+        {!isLocked && (
           <button
             onClick={handleRequestReset}
             disabled={processing || resetStep === 'sending'}
             className={cn(
-              'flex items-center gap-1 text-primary hover:text-primary/80 transition-colors',
+              'flex items-center gap-1 text-primary hover:text-primary/80 transition-colors mx-auto',
               compact ? 'text-[10px] mt-2' : 'text-xs mt-4',
             )}
           >
             <RotateCcw className="w-3 h-3" />
-            PIN oublié ?
+            {resetStep === 'sending' ? 'Envoi de l\'email…' : 'PIN oublié ? Recevoir un code par email'}
           </button>
         )}
 

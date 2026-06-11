@@ -5,9 +5,12 @@
  * The media key comes from the E2EE-encrypted message body (via MKEY: tag).
  */
 
-import { useState, useEffect, useRef, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Lock } from 'lucide-react';
 import { importMediaKey, decryptMedia } from '@/lib/crypto/mediaEncrypt';
+import { fetchR2Object } from '@/lib/r2';
+import { getDecryptedMedia, rememberDecryptedMedia } from './decryptedMediaCache';
+import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 
 interface EncryptedMediaProps {
   /** URL of the encrypted blob on R2 */
@@ -23,19 +26,27 @@ export const EncryptedMedia = memo(function EncryptedMedia({
   mediaKeyB64,
   isVideo = false,
 }: EncryptedMediaProps) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const cached = getDecryptedMedia(encryptedUrl);
+  const [objectUrl, setObjectUrl] = useState<string | null>(cached?.objectUrl ?? null);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const revokeRef = useRef<string | null>(null);
+  const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
+    // Fast path — already decrypted earlier in this session.
+    const hit = getDecryptedMedia(encryptedUrl);
+    if (hit) {
+      setObjectUrl(hit.objectUrl);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     (async () => {
+      const t0 = performance.now();
       try {
-        // 1. Download the encrypted blob
-        const response = await fetch(encryptedUrl);
-        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+        // 1. Download the encrypted blob via authenticated proxy.
+        const response = await fetchR2Object(encryptedUrl);
         const encryptedData = await response.arrayBuffer();
 
         if (cancelled) return;
@@ -46,15 +57,33 @@ export const EncryptedMedia = memo(function EncryptedMedia({
 
         if (cancelled) return;
 
-        // 3. Create object URL for display
+        // 3. Create object URL for display + share via cache
         const mimeType = isVideo ? 'video/mp4' : 'image/jpeg';
         const blob = new Blob([decrypted], { type: mimeType });
         const url = URL.createObjectURL(blob);
 
-        revokeRef.current = url;
+        rememberDecryptedMedia(encryptedUrl, url, isVideo);
         setObjectUrl(url);
+        logCryptoError({
+          severity: 'info', context: 'media', errorCode: 'MEDIA_DECRYPT_OK',
+          errorMessage: 'Encrypted media decrypted successfully',
+          metadata: {
+            isVideo,
+            sizeBytes: encryptedData.byteLength,
+            durationMs: Math.round(performance.now() - t0),
+          },
+        });
       } catch (err) {
         console.error('Media decryption failed:', err);
+        logCryptoException('media', err, {
+          severity: 'error',
+          metadata: {
+            stage: 'decrypt',
+            isVideo,
+            urlHost: (() => { try { return new URL(encryptedUrl).host; } catch { return 'unknown'; } })(),
+            durationMs: Math.round(performance.now() - t0),
+          },
+        });
         if (!cancelled) setError(true);
       } finally {
         if (!cancelled) setLoading(false);
@@ -63,19 +92,17 @@ export const EncryptedMedia = memo(function EncryptedMedia({
 
     return () => {
       cancelled = true;
-      if (revokeRef.current) {
-        URL.revokeObjectURL(revokeRef.current);
-        revokeRef.current = null;
-      }
+      // Object URL is owned by the cache — do not revoke here.
     };
   }, [encryptedUrl, mediaKeyB64, isVideo]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 min-h-[100px]">
-        <Lock className="w-4 h-4 animate-pulse text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">Déchiffrement du média…</span>
-      </div>
+      <div
+        className="rounded-lg bg-muted/40 animate-pulse max-w-full"
+        style={{ width: 240, height: isVideo ? 180 : 200 }}
+        aria-label="Chargement du média"
+      />
     );
   }
 

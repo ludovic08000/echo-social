@@ -8,6 +8,7 @@ import { ReactNode } from 'react';
 interface SEOPageLayoutProps {
   title: string;
   description: string;
+  url?: string;
   children: ReactNode;
   jsonLd?: Record<string, unknown>;
 }
@@ -20,16 +21,10 @@ const footerLinks = [
   { label: 'Feed intelligent', href: '/feed-intelligent' },
 ];
 
-export function SEOPageLayout({ title, description, children, jsonLd }: SEOPageLayoutProps) {
+export function SEOPageLayout({ title, description, url, children, jsonLd }: SEOPageLayoutProps) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <SEOHead title={title} description={description} />
-      {jsonLd && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-      )}
+      <SEOHead title={title} description={description} url={url} jsonLd={jsonLd} />
 
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/40">

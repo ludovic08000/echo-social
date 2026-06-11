@@ -1,10 +1,12 @@
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X, RotateCcw, ShieldCheck, Wifi, WifiOff, MonitorUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
 import { CallState, CallType, formatCallDuration } from '@/hooks/useCall';
 import { RefObject } from 'react';
 import { getPlatform } from '@/lib/platformPermissions';
+import { GroupCallGrid } from '@/components/calls/GroupCallGrid';
+import type { Room } from 'livekit-client';
 
 interface CallOverlayProps {
   callState: CallState;
@@ -15,6 +17,7 @@ interface CallOverlayProps {
   participantName: string;
   participantAvatar?: string | null;
   isE2eeActive?: boolean;
+  connectionQuality?: 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
   localVideoRef: RefObject<HTMLDivElement>;
   remoteVideoRef: RefObject<HTMLDivElement>;
   onEndCall: () => void;
@@ -22,6 +25,12 @@ interface CallOverlayProps {
   onToggleCamera: () => void;
   onSwitchToVideo?: () => void;
   onSwitchCamera?: () => void;
+  onToggleScreenShare?: () => void;
+  isScreenSharing?: boolean;
+  // Group call extension
+  isGroup?: boolean;
+  room?: Room | null;
+  participantsInfo?: Record<string, { identity: string; name?: string; avatar?: string }>;
 }
 
 export function CallOverlay({
@@ -33,6 +42,7 @@ export function CallOverlay({
   participantName,
   participantAvatar,
   isE2eeActive,
+  connectionQuality = 'unknown',
   localVideoRef,
   remoteVideoRef,
   onEndCall,
@@ -40,12 +50,68 @@ export function CallOverlay({
   onToggleCamera,
   onSwitchToVideo,
   onSwitchCamera,
+  onToggleScreenShare,
+  isScreenSharing,
+  isGroup,
+  room,
+  participantsInfo,
 }: CallOverlayProps) {
   if (callState === 'idle') return null;
 
   const isVideo = callType === 'video';
   const isConnecting = callState === 'connecting';
   const platform = getPlatform();
+
+  // GROUP CALL — replace 1-to-1 layout with adaptive grid
+  if (isGroup) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+        <div className="flex-1 overflow-hidden">
+          <GroupCallGrid
+            room={room ?? null}
+            localParticipantName={participantName}
+            localParticipantAvatar={participantAvatar ?? undefined}
+            participantsInfo={participantsInfo}
+          />
+        </div>
+        {/* Bottom controls (reuse 1-to-1 controls) */}
+        <div className="relative z-10 bg-gradient-to-t from-black via-black/80 to-transparent pb-8 pt-6 px-6 flex items-center justify-center gap-4">
+          <Button
+            size="icon"
+            onClick={onToggleMute}
+            className={cn('w-14 h-14 rounded-full', isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-white/20 hover:bg-white/30')}
+          >
+            {isMuted ? <MicOff className="w-6 h-6 text-white" /> : <Mic className="w-6 h-6 text-white" />}
+          </Button>
+          {isVideo && (
+            <Button
+              size="icon"
+              onClick={onToggleCamera}
+              className={cn('w-14 h-14 rounded-full', isCameraOff ? 'bg-red-500 hover:bg-red-600' : 'bg-white/20 hover:bg-white/30')}
+            >
+              {isCameraOff ? <VideoOff className="w-6 h-6 text-white" /> : <Video className="w-6 h-6 text-white" />}
+            </Button>
+          )}
+          {onToggleScreenShare && platform === 'web' && (
+            <Button
+              size="icon"
+              onClick={onToggleScreenShare}
+              className={cn('w-14 h-14 rounded-full', isScreenSharing ? 'bg-primary hover:bg-primary/90' : 'bg-white/20 hover:bg-white/30')}
+            >
+              <MonitorUp className="w-6 h-6 text-white" />
+            </Button>
+          )}
+          <Button
+            size="icon"
+            onClick={onEndCall}
+            className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600"
+          >
+            <PhoneOff className="w-7 h-7 text-white" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[100] bg-black flex flex-col">
@@ -91,6 +157,30 @@ export function CallOverlay({
               <div className="flex items-center gap-1.5 mt-2 bg-green-500/20 rounded-full px-3 py-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
                 <span className="text-green-400 text-xs font-medium">Chiffré de bout en bout</span>
+              </div>
+            )}
+            {!isConnecting && connectionQuality !== 'unknown' && (
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 mt-2 rounded-full px-3 py-1",
+                  connectionQuality === 'excellent' && "bg-green-500/20 text-green-400",
+                  connectionQuality === 'good' && "bg-emerald-500/15 text-emerald-300",
+                  connectionQuality === 'poor' && "bg-amber-500/20 text-amber-400",
+                  connectionQuality === 'lost' && "bg-red-500/20 text-red-400",
+                )}
+                title="Qualité réseau"
+              >
+                {connectionQuality === 'lost' ? (
+                  <WifiOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Wifi className="w-3.5 h-3.5" />
+                )}
+                <span className="text-xs font-medium">
+                  {connectionQuality === 'excellent' && 'Réseau excellent'}
+                  {connectionQuality === 'good' && 'Bon réseau'}
+                  {connectionQuality === 'poor' && 'Réseau faible'}
+                  {connectionQuality === 'lost' && 'Connexion perdue'}
+                </span>
               </div>
             )}
           </>
@@ -180,6 +270,24 @@ export function CallOverlay({
               className="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white"
             >
               <RotateCcw className="w-6 h-6" />
+            </Button>
+          )}
+
+          {/* Screen share (desktop, video calls) */}
+          {isVideo && onToggleScreenShare && platform === 'web' && (
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={onToggleScreenShare}
+              className={cn(
+                'w-14 h-14 rounded-full',
+                isScreenSharing
+                  ? 'bg-primary/80 hover:bg-primary text-primary-foreground'
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              )}
+              title="Partager l'écran"
+            >
+              <MonitorUp className="w-6 h-6" />
             </Button>
           )}
 

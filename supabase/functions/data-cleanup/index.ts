@@ -79,6 +79,23 @@ Deno.serve(async (req) => {
     await supabase.rpc("purge_old_audit_logs");
     results.audit_logs_purged = 1;
 
+    // 9. Disappearing messages — purge expired chat messages (Lot A1)
+    const { data: expiredMsgs } = await supabase
+      .from("messages")
+      .delete()
+      .lt("expires_at", now)
+      .not("expires_at", "is", null)
+      .select("id");
+    results.expired_messages = expiredMsgs?.length || 0;
+
+    // 10. Stories — defensive purge of expired stories (cron safety net)
+    const { data: expiredStories } = await supabase
+      .from("stories")
+      .delete()
+      .lt("expires_at", now)
+      .select("id");
+    results.expired_stories = expiredStories?.length || 0;
+
     console.log("Cleanup results:", results);
 
     return new Response(

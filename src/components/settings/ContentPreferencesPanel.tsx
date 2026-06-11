@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Brain, Shuffle, Users, Clock, EyeOff, Sparkles, Hash, Sliders } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
+import { saveFeedPrefs, syncFeedPrefsFromServer } from '@/lib/feedPreferences';
+import { useAuth } from '@/lib/auth';
 
 type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
 
@@ -61,13 +63,53 @@ export function ContentPreferencesPanel() {
   const [feedWeights, setFeedWeights] = useState<FeedWeights>(loadFeedWeights);
   const [newKeyword, setNewKeyword] = useState('');
 
+  const { user } = useAuth();
+  const hydratedRef = useRef(false);
+
+  // Pull DB-backed prefs on mount, then re-hydrate UI from refreshed cache
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      await syncFeedPrefsFromServer(user.id);
+      if (cancelled) return;
+      try {
+        const saved = localStorage.getItem('content-prefs');
+        if (saved) setPrefs(prev => ({ ...prev, ...JSON.parse(saved) }));
+        const sw = localStorage.getItem('feed-weights');
+        if (sw) setFeedWeights(prev => ({ ...prev, ...JSON.parse(sw) }));
+      } catch {}
+      hydratedRef.current = true;
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  // Persist server-side (debounced via effect) — local cache is updated inside saveFeedPrefs
   useEffect(() => {
     localStorage.setItem('content-prefs', JSON.stringify(prefs));
-  }, [prefs]);
+    if (!user || !hydratedRef.current) return;
+    const t = setTimeout(() => {
+      void saveFeedPrefs(user.id, {
+        feedAlgorithm: prefs.feedAlgorithm,
+        diversityBoost: prefs.diversityBoost,
+        mutedKeywords: prefs.mutedKeywords,
+        priorityTopics: prefs.priorityTopics,
+        viralContentReduce: prefs.viralContentReduce,
+        sensitiveContentFilter: prefs.sensitiveContentFilter,
+        seenPostsHide: prefs.seenPostsHide,
+      }).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [prefs, user]);
 
   useEffect(() => {
     localStorage.setItem('feed-weights', JSON.stringify(feedWeights));
-  }, [feedWeights]);
+    if (!user || !hydratedRef.current) return;
+    const t = setTimeout(() => {
+      void saveFeedPrefs(user.id, { weights: feedWeights }).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [feedWeights, user]);
 
   const update = (patch: Partial<ContentPrefs>) => {
     setPrefs(prev => ({ ...prev, ...patch }));

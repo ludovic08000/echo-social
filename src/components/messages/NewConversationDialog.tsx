@@ -1,11 +1,13 @@
-import { useState, useMemo } from 'react';
-import { Search, Check, Users } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Search, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useCreateConversation, useCreateGroupConversation } from '@/hooks/useMessages';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -14,38 +16,101 @@ interface NewConversationDialogProps {
   onOpenChange: (v: boolean) => void;
 }
 
+interface UserResult {
+  id: string;
+  user_id: string;
+  name: string;
+  avatar_url: string | null;
+  isFriend?: boolean;
+}
+
 export function NewConversationDialog({ open, onOpenChange }: NewConversationDialogProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [mode, setMode] = useState<'single' | 'group'>('single');
   const [groupName, setGroupName] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [searchResults, setSearchResults] = useState<UserResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const { data: friendsData, isLoading } = useFriendships();
   const createConversation = useCreateConversation();
   const createGroup = useCreateGroupConversation();
 
   const friends = friendsData?.friends || [];
-  const filtered = useMemo(() => {
-    if (!search.trim()) return friends;
-    const q = search.toLowerCase();
-    return friends.filter(f => f.profile.name.toLowerCase().includes(q));
-  }, [friends, search]);
+  const friendsAsResults: UserResult[] = useMemo(
+    () => friends.map(f => ({
+      id: f.id,
+      user_id: f.profile.user_id,
+      name: f.profile.name,
+      avatar_url: f.profile.avatar_url,
+      isFriend: true,
+    })),
+    [friends]
+  );
 
-  const handleSelect = async (friendUserId: string) => {
+  // Global search across all users (not just friends)
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setSearchResults([]);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_id, name, avatar_url')
+        .ilike('name', `%${q}%`)
+        .neq('user_id', user?.id || '')
+        .limit(30);
+      if (cancelled) return;
+      setSearching(false);
+      if (error) {
+        console.error('User search failed:', error);
+        return;
+      }
+      const friendIds = new Set(friends.map(f => f.profile.user_id));
+      setSearchResults(
+        (data || []).map(p => ({
+          id: p.user_id,
+          user_id: p.user_id,
+          name: p.name || 'Utilisateur',
+          avatar_url: p.avatar_url,
+          isFriend: friendIds.has(p.user_id),
+        }))
+      );
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [search, user?.id, friends]);
+
+  const displayed: UserResult[] = useMemo(() => {
+    if (search.trim()) {
+      // Merge friends matching the query first, then non-friend results
+      const q = search.toLowerCase();
+      const matchingFriends = friendsAsResults.filter(f => f.name.toLowerCase().includes(q));
+      const friendIds = new Set(matchingFriends.map(f => f.user_id));
+      const others = searchResults.filter(r => !friendIds.has(r.user_id));
+      return [...matchingFriends, ...others];
+    }
+    return friendsAsResults;
+  }, [search, friendsAsResults, searchResults]);
+
+  const handleSelect = async (userId: string) => {
     if (mode === 'group') {
       setSelectedMembers(prev =>
-        prev.includes(friendUserId)
-          ? prev.filter(id => id !== friendUserId)
-          : [...prev, friendUserId]
+        prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
       );
       return;
     }
     try {
-      const conv = await createConversation.mutateAsync(friendUserId);
+      const conv = await createConversation.mutateAsync(userId);
       onOpenChange(false);
       navigate(`/messages/${conv.id}`);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to create conversation:', e);
+      toast.error(e?.message || 'Impossible de créer la conversation');
     }
   };
 
@@ -69,6 +134,7 @@ export function NewConversationDialog({ open, onOpenChange }: NewConversationDia
       setGroupName('');
       setSelectedMembers([]);
       setSearch('');
+      setSearchResults([]);
     }
     onOpenChange(v);
   };
@@ -127,36 +193,46 @@ export function NewConversationDialog({ open, onOpenChange }: NewConversationDia
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Rechercher un ami…"
+              placeholder="Rechercher n'importe qui…"
               className="w-full bg-secondary/60 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors"
               autoFocus
             />
           </div>
+          {!search && (
+            <p className="text-[10px] text-muted-foreground mt-2 px-1">
+              Vos amis sont affichés ci-dessous. Tapez un nom pour trouver n'importe quel utilisateur.
+            </p>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-4">
-          {isLoading ? (
+          {(isLoading && !search) || (searching && search) ? (
             <div className="py-8 text-center text-sm text-muted-foreground">Chargement…</div>
-          ) : filtered.length === 0 ? (
+          ) : displayed.length === 0 ? (
             <div className="py-8 text-center">
               <p className="text-sm text-muted-foreground">
-                {search ? 'Aucun ami trouvé' : 'Ajoutez des amis pour discuter'}
+                {search ? 'Aucun utilisateur trouvé' : 'Tapez un nom pour rechercher'}
               </p>
             </div>
           ) : (
-            filtered.map(friend => {
-              const isSelected = selectedMembers.includes(friend.profile.user_id);
+            displayed.map(u => {
+              const isSelected = selectedMembers.includes(u.user_id);
               return (
                 <button
-                  key={friend.id}
-                  onClick={() => handleSelect(friend.profile.user_id)}
+                  key={u.user_id}
+                  onClick={() => handleSelect(u.user_id)}
                   disabled={createConversation.isPending || createGroup.isPending}
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/60 active:scale-[0.98] transition-all duration-200",
                     mode === 'group' && isSelected && "bg-primary/10 ring-1 ring-primary/30"
                   )}
                 >
-                  <UserAvatar src={friend.profile.avatar_url} alt={friend.profile.name} size="md" />
-                  <span className="text-sm font-medium truncate flex-1 text-left">{friend.profile.name}</span>
+                  <UserAvatar src={u.avatar_url} alt={u.name} size="md" />
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="text-sm font-medium truncate">{u.name}</div>
+                    {!u.isFriend && (
+                      <div className="text-[10px] text-muted-foreground">Pas encore ami</div>
+                    )}
+                  </div>
                   {mode === 'group' && (
                     <div className={cn(
                       "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",

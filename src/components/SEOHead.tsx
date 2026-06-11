@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 
 interface SEOHeadProps {
   title?: string;
@@ -8,109 +8,74 @@ interface SEOHeadProps {
   type?: string;
   username?: string;
   noindex?: boolean;
+  jsonLd?: Record<string, unknown>;
+}
+
+const SITE_NAME = 'Forsure';
+const SITE_BASE = 'https://forsure.fans';
+const DEFAULT_IMAGE = `${SITE_BASE}/og-image.jpg`;
+const DEFAULT_DESC = "Forsure : réseau social éthique français, sans pub ni tracking. Messagerie chiffrée, lives, marketplace et appels vidéo.";
+const DEFAULT_TITLE = 'Forsure — Réseau social éthique sans pub';
+
+function buildTitle(title?: string): string {
+  if (!title) return DEFAULT_TITLE;
+  const suffix = ` — ${SITE_NAME}`;
+  const full = `${title}${suffix}`;
+  if (full.length <= 60) return full;
+  // Title alone if it fits, else truncate
+  if (title.length <= 60) return title;
+  return `${title.slice(0, 57).trimEnd()}…`;
 }
 
 /**
- * Dynamic SEO component — updates document head meta tags.
- * Use on profile pages, channel pages, etc. for rich link previews.
- * 
- * Twitter tags use `name` attribute (not `property`) per spec.
+ * SEO component using react-helmet-async.
+ * Inject directly in any page; Helmet merges & deduplicates head tags.
  */
-export function SEOHead({ title, description, image, url, type = 'website', username, noindex }: SEOHeadProps) {
-  useEffect(() => {
-    const siteName = 'Forsure';
-    const siteBase = 'https://forsure.fans';
-    const fullTitle = title
-      ? `${title} — ${siteName}`
-      : 'Forsure — Réseau social gratuit sans pub | Alternative Facebook Instagram TikTok';
-    const desc = description || 'Forsure est le réseau social éthique français 100% gratuit, sans publicité ni tracking. Messagerie privée chiffrée, live streaming, marketplace, appels vidéo et canaux TV. L\'alternative à Facebook, Instagram et TikTok.';
-    const pageUrl = url || `${siteBase}${window.location.pathname}`;
-    const ogImage = image || `${siteBase}/og-image.jpg`;
+export function SEOHead({ title, description, image, url, type = 'website', username, noindex, jsonLd }: SEOHeadProps) {
+  const fullTitle = buildTitle(title);
+  const desc = description || DEFAULT_DESC;
+  const pageUrl = url || (typeof window !== 'undefined' ? `${SITE_BASE}${window.location.pathname}` : SITE_BASE);
+  const ogImage = image || DEFAULT_IMAGE;
+  const ogType = type === 'profile' ? 'profile' : type === 'video' ? 'video.other' : 'website';
 
-    document.title = fullTitle;
+  const structuredData: Record<string, unknown> | null = jsonLd ?? (username ? {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: title || SITE_NAME,
+    description: desc,
+    url: pageUrl,
+    alternateName: `@${username}`,
+    ...(image ? { image } : {}),
+  } : null);
 
-    const setMeta = (attr: 'property' | 'name', key: string, content: string) => {
-      let el = document.querySelector(`meta[${attr}="${key}"]`);
-      if (!el) {
-        el = document.createElement('meta');
-        el.setAttribute(attr, key);
-        document.head.appendChild(el);
-      }
-      el.setAttribute('content', content);
-    };
+  return (
+    <Helmet>
+      <title>{fullTitle}</title>
+      <meta name="description" content={desc} />
+      <link rel="canonical" href={pageUrl} />
+      {noindex && <meta name="robots" content="noindex, follow" />}
 
-    // Canonical link
-    let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
-    if (!canonical) {
-      canonical = document.createElement('link');
-      canonical.setAttribute('rel', 'canonical');
-      document.head.appendChild(canonical);
-    }
-    canonical.setAttribute('href', pageUrl);
+      {/* Open Graph */}
+      <meta property="og:title" content={fullTitle} />
+      <meta property="og:description" content={desc} />
+      <meta property="og:type" content={ogType} />
+      <meta property="og:site_name" content={SITE_NAME} />
+      <meta property="og:url" content={pageUrl} />
+      <meta property="og:image" content={ogImage} />
+      <meta property="og:image:alt" content={title || SITE_NAME} />
+      <meta property="og:locale" content="fr_FR" />
 
-    // Robots
-    if (noindex) {
-      setMeta('name', 'robots', 'noindex, nofollow');
-    } else {
-      const robotsEl = document.querySelector('meta[name="robots"]');
-      if (robotsEl) robotsEl.remove();
-    }
+      {/* Twitter */}
+      <meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
+      <meta name="twitter:site" content="@forsure" />
+      <meta name="twitter:title" content={fullTitle} />
+      <meta name="twitter:description" content={desc} />
+      <meta name="twitter:image" content={ogImage} />
+      <meta name="twitter:image:alt" content={title || SITE_NAME} />
 
-    // Standard meta
-    setMeta('name', 'description', desc);
-
-    // Open Graph (use property)
-    setMeta('property', 'og:title', fullTitle);
-    setMeta('property', 'og:description', desc);
-    setMeta('property', 'og:type', type === 'profile' ? 'profile' : type === 'video' ? 'video.other' : 'website');
-    setMeta('property', 'og:site_name', siteName);
-    setMeta('property', 'og:image', ogImage);
-    setMeta('property', 'og:image:alt', title || siteName);
-    setMeta('property', 'og:url', pageUrl);
-    setMeta('property', 'og:locale', 'fr_FR');
-
-    // Twitter Card (use name, NOT property — per Twitter spec)
-    setMeta('name', 'twitter:card', image ? 'summary_large_image' : 'summary');
-    setMeta('name', 'twitter:site', '@forsure');
-    setMeta('name', 'twitter:title', fullTitle);
-    setMeta('name', 'twitter:description', desc);
-    setMeta('name', 'twitter:image', ogImage);
-    setMeta('name', 'twitter:image:alt', title || siteName);
-
-    // JSON-LD structured data
-    let jsonLd = document.querySelector('#seo-jsonld');
-    if (!jsonLd) {
-      jsonLd = document.createElement('script');
-      jsonLd.setAttribute('type', 'application/ld+json');
-      jsonLd.setAttribute('id', 'seo-jsonld');
-      document.head.appendChild(jsonLd);
-    }
-
-    const schemaType = type === 'profile' ? 'Person' : type === 'video' ? 'VideoObject' : 'SocialMediaPosting';
-    const structuredData: Record<string, unknown> = {
-      '@context': 'https://schema.org',
-      '@type': schemaType,
-      name: title || siteName,
-      description: desc,
-      url: pageUrl,
-    };
-    if (username) structuredData.alternateName = `@${username}`;
-    if (image) structuredData.image = image;
-    if (schemaType === 'SocialMediaPosting') {
-      structuredData.author = { '@type': 'Person', name: title?.split(' —')[0] || siteName };
-      structuredData.datePublished = new Date().toISOString();
-      structuredData.publisher = { '@type': 'Organization', name: siteName, url: 'https://forsure.fans' };
-    }
-    if (schemaType === 'Person') {
-      structuredData.sameAs = pageUrl;
-    }
-
-    jsonLd.textContent = JSON.stringify(structuredData);
-
-    return () => {
-      document.title = 'Forsure — Réseau social gratuit sans pub | Alternative Facebook Instagram TikTok';
-    };
-  }, [title, description, image, url, type, username, noindex]);
-
-  return null;
+      {structuredData && (
+        <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
+      )}
+    </Helmet>
+  );
 }

@@ -483,120 +483,12 @@ serve(async (req) => {
       });
     }
 
-    // ── SKIP PAYMENT (TEST MODE) ──
+    // skip_payment action removed for security (allowed any authenticated user
+    // to obtain orders for free). Use the Stripe-backed checkout path instead.
     if (action === "skip_payment") {
-      const { items, relay } = body;
-      if (!items?.length) throw new Error("Panier vide");
-
-      const productIds = items.map((i: any) => i.product_id);
-      const { data: dbProducts, error: prodError } = await supabase
-        .from("products")
-        .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, is_active")
-        .in("id", productIds);
-
-      if (prodError) throw new Error(`Erreur DB: ${prodError.message}`);
-      if (!dbProducts?.length) throw new Error("Produits introuvables");
-
-      const verifiedItems = [];
-      for (const item of items) {
-        const dbProduct = dbProducts.find((p: any) => p.id === item.product_id);
-        if (!dbProduct) throw new Error(`Produit ${item.product_id} introuvable`);
-        if (!dbProduct.is_active) throw new Error(`Produit "${dbProduct.title}" n'est plus disponible`);
-        verifiedItems.push({
-          product_id: dbProduct.id,
-          title: dbProduct.title,
-          price: dbProduct.price,
-          quantity: item.quantity,
-          seller_id: dbProduct.seller_id,
-          weight_grams: dbProduct.weight_grams,
-        });
-      }
-
-      const subtotal = verifiedItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
-      const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
-
-      let totalShipping = 0;
-      let totalWeightGrams = 0;
-      if (relay?.id) {
-        for (const item of verifiedItems) {
-          const weight = item.weight_grams || 500;
-          totalWeightGrams += weight * item.quantity;
-          totalShipping += estimateRelayShipping(weight) * item.quantity;
-        }
-        totalShipping = Math.round(totalShipping * 100) / 100;
-      }
-
-      const total = subtotal + commission + totalShipping;
-      const orderNumber = `TEST-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
-
-      const orderData: any = {
-        buyer_id: userId,
-        order_number: orderNumber,
-        subtotal,
-        total,
-        commission_rate: COMMISSION_RATE,
-        commission_amount: commission,
-        status: "paid",
-        paid_at: new Date().toISOString(),
-        notes: "⚠️ Mode test - paiement simulé",
-      };
-
-      if (relay?.id) {
-        orderData.shipping_method = 'mondial_relay';
-        orderData.shipping_relay_id = relay.id;
-        orderData.shipping_relay_name = relay.name;
-        orderData.shipping_relay_address = relay.address;
-        orderData.shipping_relay_postcode = relay.postcode;
-        orderData.shipping_relay_city = relay.city;
-        orderData.shipping_relay_country = relay.country || 'FR';
-        orderData.shipping_weight_grams = totalWeightGrams;
-      }
-
-      const { data: order, error: orderError } = await supabase
-        .from("orders")
-        .insert(orderData)
-        .select()
-        .single();
-
-      if (orderError) throw new Error(`Erreur création commande: ${orderError.message}`);
-
-      for (const item of verifiedItems) {
-        const itemSubtotal = item.price * item.quantity;
-        const itemCommission = Math.round(itemSubtotal * COMMISSION_RATE * 100) / 100;
-        await supabase.from("order_items").insert({
-          order_id: order.id,
-          product_id: item.product_id,
-          seller_id: item.seller_id,
-          title: item.title,
-          price: item.price,
-          quantity: item.quantity,
-          subtotal: itemSubtotal,
-          commission_amount: itemCommission,
-          seller_payout: itemSubtotal - itemCommission,
-          status: "paid",
-        });
-      }
-
-      // Decrement stock
-      for (const item of verifiedItems) {
-        const { data: prod } = await supabase
-          .from("products")
-          .select("stock_quantity")
-          .eq("id", item.product_id)
-          .single();
-        if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
-          await supabase.from("products")
-            .update({ stock_quantity: Math.max(0, prod.stock_quantity - item.quantity) })
-            .eq("id", item.product_id);
-        }
-      }
-
-      // Clear cart
-      await supabase.from("cart_items").delete().eq("user_id", userId);
-
-      return new Response(JSON.stringify({ orderId: order.id, skipped: true }), {
+      return new Response(JSON.stringify({ error: "skip_payment_disabled" }), {
+        status: 410,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
       });
     }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react';
-import BrandLogo from '@/components/BrandLogo';
+import { Eye, EyeOff, Mail, Lock, ShieldCheck, MessageCircle, Network } from 'lucide-react';
+import forsureBanner from '@/assets/forsure-loader.png';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { checkLoginAllowed, recordFailedLogin, resetLoginAttempts } from '@/lib/loginRateLimit';
-import loginBg from '@/assets/login-bg.png';
+import { initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
 
 export default function Login() {
   const location = useLocation();
@@ -74,57 +74,84 @@ export default function Login() {
 
     resetLoginAttempts();
     queryClient.removeQueries({ queryKey: ['posts', 'friends-feed'] });
+
+    // Auto-sync E2EE keys from server backup (Google-style)
+    try {
+      const { data: { user: authUser } } = await (await import('@/integrations/supabase/client')).supabase.auth.getUser();
+      if (authUser) {
+        const result = await initAccountKeySync(password, authUser.id);
+        if (result === 'restored') {
+          toast({ title: '🔑 Clés E2EE restaurées automatiquement' });
+        }
+      }
+    } catch (e) {
+      console.warn('[Login] Key sync failed:', e);
+    }
+
     setIsLoading(false);
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center px-4 overflow-hidden">
-      <div 
-        className="absolute inset-0 bg-no-repeat bg-cover animate-fade-in"
-        style={{ backgroundImage: `url(${loginBg})`, backgroundPosition: 'center 25%' }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/40" />
-      
-      <div className="relative z-10 w-full max-w-sm animate-fade-in">
-        <Link to="/" className="flex items-center justify-center mb-8">
-          <BrandLogo className="h-12 sm:h-14 w-auto drop-shadow-[0_0_20px_hsl(220,70%,50%,0.3)]" />
-        </Link>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/40 flex flex-col items-center justify-center px-4 py-8">
+      <div className="w-full max-w-md animate-fade-in">
+        {/* Unified card: brand banner + login form */}
+        <div className="w-full bg-white rounded-3xl shadow-[0_20px_60px_-20px_rgba(0,35,149,0.25)] border border-slate-100 overflow-hidden">
+          <Link to="/" className="flex w-full items-center justify-center bg-gradient-to-b from-white to-slate-50/60 pt-10 pb-6">
+            <img
+              src={forsureBanner}
+              alt="Forsure — Connecter · Partager · Avancer"
+              className="h-56 w-auto select-none object-contain"
+              draggable={false}
+            />
+          </Link>
 
-        <div className="backdrop-blur-xl bg-card/60 border border-border/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
-          <h1 className="text-2xl font-bold text-center mb-6">{t('login.title')}</h1>
+          <div className="px-6 sm:px-8 pt-2 pb-7 sm:pb-8">
+            <h1 className="text-2xl font-bold text-center text-slate-900 mb-6">
+              {t('login.title')}
+            </h1>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email">{t('login.email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={t('login.emailPlaceholder')}
-                className="bg-background/50 border-border/50"
-                required
-              />
+              <Label htmlFor="email" className="text-slate-900 font-medium">
+                {t('login.email')}
+              </Label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="vous@exemple.com"
+                  className="h-14 pl-12 rounded-2xl bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-primary"
+                  required
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">{t('login.password')}</Label>
+              <Label htmlFor="password" className="text-slate-900 font-medium">
+                {t('login.password')}
+              </Label>
               <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t('login.passwordPlaceholder')}
-                  className="bg-background/50 border-border/50 pr-10"
+                  placeholder="••••••••"
+                  className="h-14 pl-12 pr-12 rounded-2xl bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-primary"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
             </div>
@@ -132,7 +159,7 @@ export default function Login() {
             <Button
               type="submit"
               disabled={isLoading || lockoutSeconds > 0}
-              className="w-full"
+              className="w-full h-14 rounded-2xl text-base font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_8px_24px_rgba(37,99,235,0.35)]"
             >
               {lockoutSeconds > 0
                 ? `Verrouillé (${lockoutSeconds}s)`
@@ -141,19 +168,41 @@ export default function Login() {
           </form>
 
           <div className="mt-4 text-center">
-            <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+            <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
               Mot de passe oublié ?
             </Link>
           </div>
 
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            {t('login.noAccount')}{' '}
-            <Link to="/signup" className="text-primary hover:underline font-medium">
-              {t('login.signupLink')}
+          <div className="my-5 flex items-center gap-3">
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-sm text-slate-400">ou</span>
+            <div className="flex-1 h-px bg-slate-200" />
+          </div>
+
+          <p className="text-center text-sm text-slate-500">
+            Pas encore de compte ?{' '}
+            <Link to="/signup" className="text-primary hover:underline font-semibold">
+              S'inscrire
             </Link>
           </p>
+
+          {/* Trust badges fused into the bottom of the card */}
+          <div className="mt-7 pt-5 border-t border-slate-100 grid grid-cols-3 gap-2 text-center">
+            {[
+              { Icon: ShieldCheck, label: 'Messagerie\nsécurisée' },
+              { Icon: MessageCircle, label: 'Bien-être' },
+              { Icon: Network, label: 'Réseau\nintelligent' },
+            ].map(({ Icon, label }, i) => (
+              <div key={i} className={`flex flex-col items-center gap-2 ${i < 2 ? 'border-r border-slate-100' : ''}`}>
+                <Icon className="w-6 h-6 text-[#0a1f4a]" strokeWidth={1.5} />
+                <span className="text-[10px] font-semibold tracking-wider uppercase text-slate-700 leading-tight whitespace-pre-line">{label}</span>
+              </div>
+            ))}
+          </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { clearRecoveryFlag, detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
+import { initAccountKeySync, syncBackupToServer } from '@/lib/crypto/accountKeyBackup';
 import loginBg from '@/assets/login-bg.png';
 
 export default function ResetPassword() {
@@ -19,7 +20,6 @@ export default function ResetPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Check recovery synchronously on first render to avoid flash of "invalid link"
   const [isRecovery, setIsRecovery] = useState(() => {
     const detected = detectAndStoreRecoveryFromHash();
     return isRecoveryPending() || detected;
@@ -48,7 +48,6 @@ export default function ResetPassword() {
       return;
     }
 
-    // Common weak passwords blacklist
     const COMMON_PASSWORDS = [
       'password', '123456', '12345678', 'qwerty', 'abc123', 'monkey', 'master',
       'dragon', 'login', 'princess', 'football', 'shadow', 'sunshine', 'trustno1',
@@ -95,9 +94,8 @@ export default function ResetPassword() {
 
     const { error } = await supabase.auth.updateUser({ password });
 
-    setIsLoading(false);
-
     if (error) {
+      setIsLoading(false);
       const msg = (error.message || '').toLowerCase();
       const isSamePassword = msg.includes('same') || msg.includes('different') || msg.includes('previously used') || msg.includes('cannot be updated') || msg.includes('identity');
       toast({
@@ -110,6 +108,24 @@ export default function ResetPassword() {
       return;
     }
 
+    // Re-bind the account E2EE backup to the NEW password before signing out.
+    // Without this, the Supabase password changes but the encrypted key backup
+    // can remain wrapped with the old password, breaking future restores.
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        const status = await initAccountKeySync(password, user.id);
+        if (status === 'local_ok' || status === 'restored') {
+          await syncBackupToServer();
+        } else {
+          console.warn('[ResetPassword][E2EE] backup rewrap skipped:', status);
+        }
+      }
+    } catch (e) {
+      console.warn('[ResetPassword][E2EE] backup rewrap failed:', e);
+    }
+
+    setIsLoading(false);
     setSuccess(true);
     toast({
       title: 'Mot de passe modifié ✅',
@@ -118,7 +134,6 @@ export default function ResetPassword() {
 
     await supabase.auth.signOut();
     clearRecoveryFlag();
-    // Clean URL completely: remove hash (tokens) and search params
     window.history.replaceState(null, document.title, '/reset-password');
 
     setTimeout(() => {

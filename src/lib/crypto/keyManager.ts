@@ -1,20 +1,17 @@
 /**
  * ForSure Key Manager (v5 — Hardened)
  * X25519 key exchange + Ed25519 signing
- * 
- * SECURITY:
- * - Private keys are stored as JWK in IndexedDB (needed for re-import)
- * - At runtime, private keys are ALWAYS imported as non-extractable
- * - When PIN wrap is active, raw JWKs are deleted from identity-keys store
- * - Session keys imported as non-extractable at runtime
  */
 
 import {
-  DB_NAME, DB_VERSION, STORE_KEYS, STORE_SESSION, STORE_PREKEYS,
+  STORE_KEYS, STORE_SESSION, STORE_PREKEYS,
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
-import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, randomBytes } from './utils';
-import { hardCrypto, hardGlobals, scrubBuffer } from './cryptoIntegrity';
+import { isIndexedDBClosingError, openE2EEDB, reopenE2EEDB } from './indexedDb';
+import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer } from './utils';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import * as memCache from './memoryIdentityCache';
+import { runTxOn, reqToPromise } from './indexedDbTx';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
@@ -27,7 +24,7 @@ export interface IdentityKeyPair {
 
 export interface SessionKey {
   conversationId: string;
-  sharedSecret: CryptoKey; // AES-GCM key derived from X25519
+  sharedSecret: CryptoKey;
   messageCount: number;
   createdAt: number;
   peerFingerprint: string;
@@ -50,61 +47,95 @@ interface StoredSessionKey {
   peerFingerprint: string;
 }
 
-// ─── IndexedDB helpers ───
+function openDB(forceFresh = false): Promise<IDBDatabase> {
+  return forceFresh ? reopenE2EEDB() : openE2EEDB();
+}
 
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      for (const name of [STORE_KEYS, STORE_SESSION, STORE_PREKEYS]) {
-        if (db.objectStoreNames.contains(name)) {
-          db.deleteObjectStore(name);
-        }
+async function dbGet<T>(storeName: string, key: string, forceFresh = false): Promise<T | undefined> {
+  try {
+    return await openDB(forceFresh).then(db => new Promise<T | undefined>((resolve, reject) => {
+      try {
+        const tx = db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result as T | undefined);
+        req.onerror = () => reject(req.error);
+      } catch (error) {
+        reject(error);
       }
-      db.createObjectStore(STORE_KEYS, { keyPath: 'id' });
-      db.createObjectStore(STORE_SESSION, { keyPath: 'conversationId' });
-      db.createObjectStore(STORE_PREKEYS, { keyPath: 'id' });
-    };
-  });
+    }));
+  } catch (error) {
+    if (!forceFresh && isIndexedDBClosingError(error)) {
+      console.warn('[KEY_MGR] IndexedDB connection was closing on read; retrying with a fresh connection.');
+      return dbGet(storeName, key, true);
+    }
+    return undefined;
+  }
 }
 
-function dbGet<T>(storeName: string, key: string): Promise<T | undefined> {
-  return openDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readonly');
-    const store = tx.objectStore(storeName);
-    const req = store.get(key);
-    req.onsuccess = () => resolve(req.result as T | undefined);
-    req.onerror = () => reject(req.error);
-  }));
+async function dbPut<T>(storeName: string, value: T, forceFresh = false): Promise<void> {
+  try {
+    return await openDB(forceFresh).then(db => new Promise<void>((resolve, reject) => {
+    try {
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      const req = store.put(value);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    } catch (error) {
+      reject(error);
+    }
+    }));
+  } catch (error) {
+    if (!forceFresh && isIndexedDBClosingError(error)) {
+      console.warn('[KEY_MGR] IndexedDB connection was closing; retrying with a fresh connection.');
+      return dbPut(storeName, value, true);
+    }
+    throw error;
+  }
 }
 
-function dbPut<T>(storeName: string, value: T): Promise<void> {
-  return openDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readwrite');
-    const store = tx.objectStore(storeName);
-    const req = store.put(value);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  }));
+async function dbDelete(storeName: string, key: string, forceFresh = false): Promise<void> {
+  try {
+    return await openDB(forceFresh).then(db => new Promise<void>((resolve, reject) => {
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        const req = store.delete(key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      } catch (error) {
+        reject(error);
+      }
+    }));
+  } catch (error) {
+    if (!forceFresh && isIndexedDBClosingError(error)) {
+      console.warn('[KEY_MGR] IndexedDB connection was closing on delete; retrying with a fresh connection.');
+      return dbDelete(storeName, key, true);
+    }
+    // Best-effort delete: never propagate
+  }
 }
 
-function dbDelete(storeName: string, key: string): Promise<void> {
-  return openDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readwrite');
-    const store = tx.objectStore(storeName);
-    const req = store.delete(key);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  }));
+export async function exportPublicKeyRaw(publicKey: CryptoKey): Promise<ArrayBuffer> {
+  try {
+    return await hardCrypto.exportKey('raw', publicKey) as ArrayBuffer;
+  } catch {
+    const jwk = (await hardCrypto.exportKey('jwk', publicKey)) as JsonWebKey;
+    const xB64Url = jwk?.x;
+    if (typeof xB64Url !== 'string' || xB64Url.length === 0) {
+      throw new Error('exportPublicKeyRaw: jwk export missing x component');
+    }
+    const b64 = xB64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+    const bin = atob(b64 + pad);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
 }
 
-// ─── Fingerprint (safety numbers) ───
-
-async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
-  const raw = await hardCrypto.exportKey('raw', publicKey);
+async function computeFingerprintFromRaw(raw: ArrayBuffer): Promise<string> {
   const hash = await hardCrypto.digest('SHA-256', raw);
   const bytes = new Uint8Array(hash);
   let fp = '';
@@ -115,11 +146,22 @@ async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
   return fp.toUpperCase();
 }
 
-// ─── Public API ───
+async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
+  const raw = await exportPublicKeyRaw(publicKey);
+  return computeFingerprintFromRaw(raw);
+}
 
-/** Generate identity keys: X25519 (exchange) + Ed25519 (signing) */
+function jwkXToBase64(jwk: JsonWebKey, label: string): string {
+  const x = jwk?.x;
+  if (typeof x !== 'string' || x.length === 0) {
+    throw new Error(`${label} JWK missing x component`);
+  }
+  const b64 = x.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+  return b64 + pad;
+}
+
 export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
-  // Generate with extractable=true (needed for initial JWK export to persist)
   const [kxPair, sigPair] = await Promise.all([
     hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']),
     hardCrypto.generateKey(SIG_KEY_PARAMS as any, true, ['sign', 'verify']),
@@ -127,7 +169,6 @@ export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
 
   const fingerprint = await computeFingerprint((kxPair as CryptoKeyPair).publicKey);
 
-  // Export JWKs for storage, then re-import private keys as NON-EXTRACTABLE
   const [privJWK, sigPrivJWK] = await Promise.all([
     exportKeyToJWK((kxPair as CryptoKeyPair).privateKey),
     exportKeyToJWK((sigPair as CryptoKeyPair).privateKey),
@@ -145,36 +186,34 @@ export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
     signingPrivateKey: sigPrivNonExtractable,
     createdAt: Date.now(),
     fingerprint,
-    // Attach JWKs for one-time storage (NOT on the interface, stored separately)
     ...(({ _privJWK: privJWK, _sigPrivJWK: sigPrivJWK }) as any),
   };
 }
 
-/** Save identity keys to IndexedDB */
 export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): Promise<void> {
-  // Public keys: always exportable (needed for server publication)
   const [publicKeyJWK, signingPublicKeyJWK] = await Promise.all([
     exportKeyToJWK(keys.publicKey),
     exportKeyToJWK(keys.signingPublicKey),
   ]);
 
-  // Private key JWKs: use attached JWKs from generation, or re-export if extractable
   let privateKeyJWK: JsonWebKey;
   let signingPrivateKeyJWK: JsonWebKey;
 
   const attached = keys as any;
   if (attached._privJWK && attached._sigPrivJWK) {
-    // Fresh from generateIdentityKeys — JWKs are attached
     privateKeyJWK = attached._privJWK;
     signingPrivateKeyJWK = attached._sigPrivJWK;
   } else {
-    // Fallback: try export (will fail if non-extractable, which is correct after PIN wrap)
     try {
       privateKeyJWK = await exportKeyToJWK(keys.privateKey);
       signingPrivateKeyJWK = await exportKeyToJWK(keys.signingPrivateKey);
-    } catch {
-      console.warn('[KEY_MGR] Cannot export private keys (already non-extractable). Skipping save.');
-      return;
+    } catch (err) {
+      // CRITICAL: never silently "succeed" when the private material can't be
+      // exported. Returning here would leave the caller convinced the identity
+      // is persisted — and the next page load would trigger a fresh identity,
+      // breaking E2EE continuity for every peer. Surface the error instead.
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`saveIdentityKeys: failed to export private keys for persistence (${msg})`);
     }
   }
 
@@ -187,71 +226,206 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
     createdAt: keys.createdAt,
     fingerprint: keys.fingerprint,
   });
+
+  // Hot RAM cache — survives brief IndexedDB outages on Safari/iOS.
+  // Store the full identity (kx + signing + fingerprint + createdAt) so a
+  // RAM hit can answer without ever touching IndexedDB.
+  try {
+    memCache.set(userId, {
+      identityPrivate: keys.privateKey,
+      identityPublic: keys.publicKey,
+      signingPrivate: keys.signingPrivateKey,
+      signingPublic: keys.signingPublicKey,
+      fingerprint: keys.fingerprint,
+      createdAt: keys.createdAt,
+    });
+  } catch {}
 }
 
-/** Load identity keys from IndexedDB — private keys are ALWAYS non-extractable */
 export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair | null> {
+  // RAM-first: avoid an IndexedDB round-trip when the hot cache already holds
+  // a complete identity. This is what makes Safari/iOS survive transient
+  // IndexedDB-closing windows without forcing a recovery flow.
+  try {
+    const cached = memCache.get(userId);
+    if (
+      cached?.identityPrivate &&
+      cached?.identityPublic &&
+      cached?.signingPrivate &&
+      cached?.signingPublic &&
+      cached?.fingerprint
+    ) {
+      return {
+        publicKey: cached.identityPublic,
+        privateKey: cached.identityPrivate,
+        signingPublicKey: cached.signingPublic,
+        signingPrivateKey: cached.signingPrivate,
+        createdAt: cached.createdAt ?? Date.now(),
+        fingerprint: cached.fingerprint,
+      };
+    }
+  } catch {}
+
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   if (!stored) return null;
 
   const [publicKey, privateKey, signingPublicKey, signingPrivateKey] = await Promise.all([
-    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS as any, [], true),     // public: exportable for server
-    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false), // PRIVATE: non-extractable
+    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS as any, [], true),
+    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false),
     importKeyFromJWK(stored.signingPublicKeyJWK, SIG_KEY_PARAMS as any, ['verify'], true),
-    importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign'], false), // PRIVATE: non-extractable
+    importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign'], false),
   ]);
 
-  return {
+  const result: IdentityKeyPair = {
     publicKey,
     privateKey,
     signingPublicKey,
     signingPrivateKey,
     createdAt: stored.createdAt,
     fingerprint: stored.fingerprint,
+    ...(({ _privJWK: stored.privateKeyJWK, _sigPrivJWK: stored.signingPrivateKeyJWK }) as any),
   };
+
+  try {
+    memCache.set(userId, {
+      identityPrivate: result.privateKey,
+      identityPublic: result.publicKey,
+      signingPrivate: result.signingPrivateKey,
+      signingPublic: result.signingPublicKey,
+      fingerprint: result.fingerprint,
+      createdAt: result.createdAt,
+    });
+  } catch {}
+
+  return result;
 }
 
-/** Get or create identity keys */
-export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityKeyPair> {
+// NOTE: the legacy `createFreshIdentity()` helper was removed on purpose.
+// Any "local keys missing" path that previously generated a brand new
+// identity now throws PinUnlockRequiredError so the UI drives a real
+// restore (PIN / recovery key / passkey) instead of silently breaking
+// E2EE continuity for every peer.
+
+export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean }> {
   const existing = await loadIdentityKeys(userId);
   if (existing) return existing;
 
+  // CONTINUITY GUARD #1 — PIN-wrapped keys exist locally.
+  // The user already has an identity, it's just locked. Generating a fresh
+  // one here would break E2EE for every existing peer. Force unlock instead.
+  try {
+    const { hasWrappedKeys } = await import('./pinWrap');
+    const hasWrap = await hasWrappedKeys(userId);
+    if (hasWrap) {
+      throw new PinUnlockRequiredError(
+        'PIN_UNLOCK_REQUIRED: encrypted local identity present — unlock with PIN before any send/receive.',
+      );
+    }
+  } catch (err) {
+    if (err instanceof PinUnlockRequiredError) throw err;
+    // dynamic import / IDB failure — fall through, continuity is still
+    // checked against the server below.
+  }
+
+  // CONTINUITY GUARD #2 — server still pins an active identity or backup
+  // for this account. We must NEVER silently rotate to a brand new key —
+  // peers would lose verification, sealed-sender would break, and devices
+  // would be impersonated. Surface the requirement so the UI can drive the
+  // restore / recovery-key / passkey flow.
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    const [{ data: activeKey }, { data: backup }] = await Promise.all([
+      supabase.from('user_public_keys').select('fingerprint').eq('user_id', userId).eq('is_active', true).maybeSingle(),
+      supabase.from('user_backups' as any).select('id').eq('user_id', userId).limit(1).maybeSingle(),
+    ]);
+
+    if (activeKey || backup) {
+      throw new PinUnlockRequiredError(
+        'PIN_UNLOCK_REQUIRED: server identity continuity detected — restore via PIN / recovery key / passkey before generating a new identity.',
+      );
+    }
+  } catch (err) {
+    if (err instanceof PinUnlockRequiredError) throw err;
+    // Continuity check unavailable (offline, RLS hiccup): be CONSERVATIVE.
+    // We cannot prove there's no server identity, so refuse to rotate
+    // silently — surface as PinUnlockRequired so the UI can retry once
+    // the network is back instead of permanently breaking E2EE.
+    throw new PinUnlockRequiredError(
+      'PIN_UNLOCK_REQUIRED: continuity check unavailable — refusing to create a new identity without confirmation.',
+    );
+  }
+
+  // Truly first-time signup on this account: no local material, no PIN
+  // wrap, no server pin, no backup. Safe to create a fresh identity.
   const newKeys = await generateIdentityKeys();
   await saveIdentityKeys(userId, newKeys);
-  return newKeys;
+  return { ...newKeys, isNewIdentity: true };
 }
 
-/** Export public key bundle for server publication */
+export class PinUnlockRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PinUnlockRequiredError';
+  }
+}
+
 export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
   identityKey: string;
   signingKey: string;
   fingerprint: string;
 }> {
-  const [identityRaw, signingRaw] = await Promise.all([
-    hardCrypto.exportKey('raw', keys.publicKey),
-    hardCrypto.exportKey('raw', keys.signingPublicKey),
+  const exportPublic = async (key: CryptoKey): Promise<string> => {
+    try {
+      const raw = await hardCrypto.exportKey('raw', key);
+      return bufferToBase64(raw as ArrayBuffer);
+    } catch (rawErr) {
+      try {
+        const jwk = (await hardCrypto.exportKey('jwk', key)) as JsonWebKey;
+        const xB64Url = jwk?.x;
+        if (typeof xB64Url !== 'string' || xB64Url.length === 0) {
+          throw new Error(`jwk export produced no x component: ${JSON.stringify({ kty: jwk?.kty, crv: jwk?.crv })}`);
+        }
+        const b64 = xB64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+        return b64 + pad;
+      } catch (jwkErr) {
+        const rawMsg = rawErr instanceof Error ? rawErr.message : String(rawErr);
+        const jwkMsg = jwkErr instanceof Error ? jwkErr.message : String(jwkErr);
+        throw new Error(`exportPublicKey failed (raw: ${rawMsg}; jwk: ${jwkMsg})`);
+      }
+    }
+  };
+
+  const [identityKey, signingKey] = await Promise.all([
+    exportPublic(keys.publicKey),
+    exportPublic(keys.signingPublicKey),
   ]);
 
-  return {
-    identityKey: bufferToBase64(identityRaw),
-    signingKey: bufferToBase64(signingRaw),
-    fingerprint: keys.fingerprint,
-  };
+  return { identityKey, signingKey, fingerprint: keys.fingerprint };
 }
 
-/** Save a session key (JWK stored for persistence, re-imported as non-extractable) */
+export async function exportPublicKeyBundleFromStoredKeys(userId: string): Promise<{
+  identityKey: string;
+  signingKey: string;
+  fingerprint: string;
+} | null> {
+  const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
+  if (!stored) return null;
+
+  const identityKey = jwkXToBase64(stored.publicKeyJWK, 'identity public key');
+  const signingKey = jwkXToBase64(stored.signingPublicKeyJWK, 'signing public key');
+  const fingerprint = stored.fingerprint || await computeFingerprintFromRaw(base64ToBuffer(identityKey));
+
+  return { identityKey, signingKey, fingerprint };
+}
+
 export async function saveSessionKey(session: SessionKey): Promise<void> {
-  // Session secret must be extractable for storage — we re-import from JWK at load time as non-extractable
   let keyJWK: JsonWebKey;
   try {
     keyJWK = await exportKeyToJWK(session.sharedSecret);
   } catch {
-    // Key is non-extractable (already loaded from DB) — reload JWK from stored version
     const existing = await dbGet<StoredSessionKey>(STORE_SESSION, session.conversationId);
-    if (!existing) {
-      console.warn('[KEY_MGR] Cannot save session key: non-extractable and no stored JWK');
-      return;
-    }
+    if (!existing) return;
     keyJWK = existing.keyJWK;
   }
 
@@ -264,16 +438,15 @@ export async function saveSessionKey(session: SessionKey): Promise<void> {
   });
 }
 
-/** Load a session key — ALWAYS non-extractable at runtime */
 export async function loadSessionKey(conversationId: string): Promise<SessionKey | null> {
   const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
   if (!stored) return null;
 
-  const sharedSecret = await hardCrypto.importKey(
-    'jwk', stored.keyJWK,
-    { name: 'AES-GCM', length: 256 },
-    false,  // NON-EXTRACTABLE at runtime
-    ['encrypt', 'decrypt']
+  const sharedSecret = await importKeyFromJWK(
+    stored.keyJWK,
+    { name: 'AES-GCM', length: 256 } as AesKeyAlgorithm,
+    ['encrypt', 'decrypt'],
+    false,
   );
 
   return {
@@ -285,12 +458,10 @@ export async function loadSessionKey(conversationId: string): Promise<SessionKey
   };
 }
 
-/** Delete a session key */
 export async function deleteSessionKey(conversationId: string): Promise<void> {
   await dbDelete(STORE_SESSION, conversationId);
 }
 
-/** Increment message count for key rotation tracking */
 export async function incrementSessionMessageCount(conversationId: string): Promise<number> {
   const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
   if (!stored) return 0;
@@ -299,38 +470,33 @@ export async function incrementSessionMessageCount(conversationId: string): Prom
   return stored.messageCount;
 }
 
-/** Delete raw identity keys from IndexedDB (after PIN wrap) */
 export async function deleteRawIdentityKeys(userId: string): Promise<void> {
+  try { memCache.clear(userId, 'delete_raw'); } catch {}
   await dbDelete(STORE_KEYS, userId);
-  console.log('[KEY_MGR] Raw identity keys deleted from IndexedDB (PIN-wrapped)');
 }
 
-/** Check if raw identity keys exist in IndexedDB */
 export async function hasRawIdentityKeys(userId: string): Promise<boolean> {
+  if (memCache.has(userId)) return true;
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   return !!stored;
 }
 
-/** Wipe all keys (logout / account deletion) */
 export async function wipeAllKeys(): Promise<void> {
-  const db = await openDB();
-  const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');
-  tx.objectStore(STORE_KEYS).clear();
-  tx.objectStore(STORE_SESSION).clear();
-  tx.objectStore(STORE_PREKEYS).clear();
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  try { memCache.clearAll('wipe_all'); } catch {}
+  try {
+    const db = await openDB();
+    const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');
+    tx.objectStore(STORE_KEYS).clear();
+    tx.objectStore(STORE_SESSION).clear();
+    tx.objectStore(STORE_PREKEYS).clear();
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
 }
 
-/**
- * Wipe session keys and ratchet states from IndexedDB.
- * Called on PIN lock to ensure raw JWKs don't persist at rest.
- * Identity keys are handled separately (PIN-wrapped).
- */
-export async function wipeSessionKeys(): Promise<void> {
-  // 1. Clear session keys from main E2EE DB
+export async function wipeSessionKeys(userId?: string): Promise<void> {
   try {
     const db = await openDB();
     const tx = db.transaction([STORE_SESSION], 'readwrite');
@@ -339,34 +505,58 @@ export async function wipeSessionKeys(): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-  } catch (e) {
-    console.warn('[KEY_MGR] Failed to clear session keys:', e);
-  }
+  } catch {}
 
-  // 2. Clear ratchet states (separate DB)
   try {
-    const ratchetReq = hardGlobals.idbOpen('forsure-ratchet', 1);
-    const ratchetDB = await new Promise<IDBDatabase>((resolve, reject) => {
-      ratchetReq.onerror = () => reject(ratchetReq.error);
-      ratchetReq.onsuccess = () => resolve(ratchetReq.result);
-      ratchetReq.onupgradeneeded = () => {
-        const db = ratchetReq.result;
-        if (!db.objectStoreNames.contains('ratchet-states')) {
-          db.createObjectStore('ratchet-states', { keyPath: 'convId' });
-        }
-      };
-    });
-    if (ratchetDB.objectStoreNames.contains('ratchet-states')) {
-      const tx = ratchetDB.transaction('ratchet-states', 'readwrite');
+    await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
       tx.objectStore('ratchet-states').clear();
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    }
-  } catch (e) {
-    console.warn('[KEY_MGR] Failed to clear ratchet states:', e);
-  }
-
-  console.log('[KEY_MGR] Session keys and ratchet states wiped');
+    });
+  } catch {}
 }
+
+export async function exportAllSessionKeys(): Promise<StoredSessionKey[]> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_SESSION, 'readonly');
+    const req = tx.objectStore(STORE_SESSION).getAll();
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function importAllSessionKeys(records: StoredSessionKey[]): Promise<void> {
+  if (!records.length) return;
+  const db = await openDB();
+  const tx = db.transaction(STORE_SESSION, 'readwrite');
+  const store = tx.objectStore(STORE_SESSION);
+  for (const r of records) store.put(r);
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function exportAllRatchetStates(): Promise<any[]> {
+  try {
+    return await runTxOn('ratchet', ['ratchet-states'], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore('ratchet-states').getAll() as IDBRequest<any[]>),
+    ) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function importAllRatchetStates(records: any[]): Promise<void> {
+  if (!records.length) return;
+  try {
+    await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
+      const store = tx.objectStore('ratchet-states');
+      for (const r of records) store.put(r);
+    });
+  } catch {}
+}
+

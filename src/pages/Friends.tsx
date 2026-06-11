@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Users, Clock, UserCheck, UserPlus, Search, UserX, MessageCircle, Sparkles, MapPin } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { useFriendships, useRespondToFriendRequest, useRemoveFriend, useSendFriendRequest } from '@/hooks/useFriendships';
 import { useCreateConversation } from '@/hooks/useMessages';
+import { useAuth } from '@/lib/auth';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +24,15 @@ export default function Friends() {
   const sendRequest = useSendFriendRequest();
   const createConversation = useCreateConversation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const { data: newUsers, isLoading: loadingNewUsers } = useNewUsers();
+  const tabParam = searchParams.get('tab');
+  const defaultTab = tabParam === 'followers' || tabParam === 'following' ? 'friends' : (tabParam || 'new');
+  const [friendSubTab, setFriendSubTab] = useState<'all' | 'followers' | 'following'>(
+    tabParam === 'followers' ? 'followers' : tabParam === 'following' ? 'following' : 'all'
+  );
 
   const handleAccept = (friendshipId: string) => {
     respondToRequest.mutate(
@@ -48,9 +56,14 @@ export default function Friends() {
     navigate(`/messages/${conv.id}`);
   };
 
-  const filteredFriends = data?.friends.filter(f =>
+  // Amitiés mutuelles : tous les amis acceptés sont à la fois followers et abonnements
+  const allFriends = data?.friends || [];
+  const followersList = allFriends;
+  const followingList = allFriends;
+  const sourceList = allFriends;
+  const filteredFriends = sourceList.filter(f =>
     f.profile.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || [];
+  );
 
   const requestCount = data?.requests.length || 0;
 
@@ -71,7 +84,7 @@ export default function Friends() {
         </div>
       </header>
 
-      <Tabs defaultValue="new" className="w-full">
+      <Tabs defaultValue={defaultTab} className="w-full">
         <TabsList className="grid w-full grid-cols-5 rounded-xl h-10">
           <TabsTrigger value="new" className="gap-1.5 text-xs rounded-lg data-[state=active]:shadow-sm">
             <Sparkles className="w-3.5 h-3.5" />
@@ -150,6 +163,28 @@ export default function Friends() {
 
         {/* Friends Tab */}
         <TabsContent value="friends" className="mt-4 space-y-4">
+          {/* Sub-segmented control: Tous / Followers / Abonnements (Insta-style) */}
+          <div className="flex items-stretch bg-secondary/30 border border-border/30 rounded-2xl p-1">
+            {([
+              { key: 'all', label: 'Tous', count: allFriends.length },
+              { key: 'followers', label: 'Followers', count: followersList.length },
+              { key: 'following', label: 'Abonnements', count: followingList.length },
+            ] as const).map(seg => (
+              <button
+                key={seg.key}
+                onClick={() => setFriendSubTab(seg.key)}
+                className={`flex-1 flex flex-col items-center justify-center py-2 rounded-xl transition-all text-xs font-medium ${
+                  friendSubTab === seg.key
+                    ? 'bg-card shadow-sm text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <span>{seg.label}</span>
+                <span className="text-[10px] opacity-70 mt-0.5">{seg.count}</span>
+              </button>
+            ))}
+          </div>
+
           {(data?.friends.length ?? 0) > 5 && (
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

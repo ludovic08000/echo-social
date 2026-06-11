@@ -77,9 +77,24 @@ export default function Landing() {
   return (
     <div className="min-h-screen relative flex flex-col overflow-x-hidden bg-background">
       <SEOHead
-        title="Réseau social gratuit sans pub — Alternative Facebook Instagram TikTok"
-        description="Forsure est le réseau social éthique français 100% gratuit. Messagerie privée chiffrée, live streaming, marketplace, appels vidéo. Zéro pub, zéro tracking. Rejoignez forsure.fans."
+        title="Réseau social intelligent et sécurisé — Algorithme contrôlé, sans pub"
+        description="Forsure : le réseau social intelligent et sécurisé où vous contrôlez l'algorithme. 100% gratuit, sans publicité ni tracking. Alternative éthique à Facebook, Instagram, TikTok."
         url="https://forsure.fans/"
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'WebSite',
+          name: 'Forsure',
+          alternateName: 'Forsure — Réseau social éthique',
+          url: 'https://forsure.fans/',
+          description: "Forsure est le réseau social intelligent et sécurisé où vous contrôlez l'algorithme. 100% gratuit, sans publicité ni tracking.",
+          inLanguage: 'fr-FR',
+          publisher: { '@type': 'Organization', name: 'Forsure', url: 'https://forsure.fans' },
+          potentialAction: {
+            '@type': 'SearchAction',
+            target: 'https://forsure.fans/search?q={search_term_string}',
+            'query-input': 'required name=search_term_string',
+          },
+        }}
       />
       {/* ═══════════════════ HERO SECTION ═══════════════════ */}
       <section className="relative flex flex-col items-center justify-center px-4 sm:px-6 py-16 sm:py-28 overflow-hidden">

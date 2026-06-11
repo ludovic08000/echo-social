@@ -4,8 +4,67 @@ import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { messageQueue } from '@/lib/messaging/messageQueue';
+import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
+import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
+
+async function hideMessagesForUser(userId: string, messageIds: string[]) {
+  if (!userId || messageIds.length === 0) return;
+  const rows = messageIds.map((message_id) => ({ message_id, user_id: userId }));
+  const { error } = await supabase.from('message_deletions').insert(rows as any);
+  if (error && error.code !== '23505') throw error;
+}
+
+async function repairConversationHiddenMessages(
+  userId: string,
+  conversationId: string,
+  messages: Array<{ id: string; conversation_id: string; body: string | null }>,
+  hiddenIds: Set<string>,
+): Promise<boolean> {
+  if (!userId || !conversationId || messages.length === 0) return false;
+
+  const hiddenConversationMessages = messages.filter((m) => hiddenIds.has(m.id));
+  const visibleConversationMessages = messages.filter((m) => !hiddenIds.has(m.id));
+  const hasCryptoRows = messages.some((m) => isCryptoJsonBody(m.body));
+
+  // Auto-cleanup used to persist crypto failures as "delete for me". When a
+  // returning session finds every fetched row hidden, prefer restoring the
+  // conversation over showing an empty chat. Manual single-message deletions
+  // remain untouched because this only repairs the all-hidden failure mode.
+  if (
+    visibleConversationMessages.length > 0 ||
+    hiddenConversationMessages.length !== messages.length ||
+    !hasCryptoRows
+  ) {
+    return false;
+  }
+
+  const ids = hiddenConversationMessages.map((m) => m.id);
+  const { error } = await supabase
+    .from('message_deletions')
+    .delete()
+    .eq('user_id', userId)
+    .in('message_id', ids);
+
+  if (error) {
+    console.warn('[messaging] failed to repair hidden conversation messages:', error.message);
+    return false;
+  }
+
+  ids.forEach((id) => hiddenIds.delete(id));
+  console.warn('[messaging] restored hidden messages after session return', {
+    conversationId,
+    count: ids.length,
+  });
+  return true;
+}
 
 export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
+
+/** Build the scoped messages query key. Must mirror the key used in useMessages(). */
+const messagesKey = (conversationId: string, userId: string | undefined) =>
+  ['messages', conversationId, userId ?? 'anon'] as const;
 
 // Helper to get the user's custom AI companion name
 async function getCompanionName(userId?: string): Promise<string> {
@@ -119,11 +178,29 @@ export interface Conversation {
 
 export function useConversations() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Force a refetch whenever the auth user changes (login, refresh, multi-tab).
+  // Without this, a first run while user=null caches an empty list under the
+  // shared key ['conversations'] and the UI stays empty forever.
+  useEffect(() => {
+    if (!user) return;
+    const onRestored = () => {
+      console.log('[messaging] keys restored → refetch conversations');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+    window.addEventListener('forsure-keys-restored', onRestored);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    return () => window.removeEventListener('forsure-keys-restored', onRestored);
+  }, [user?.id, queryClient]);
 
   return useQuery({
-    queryKey: ['conversations'],
+    // Scope the cache to the user id so a stale empty list from a logged-out
+    // run never leaks into a logged-in session.
+    queryKey: ['conversations', user?.id ?? 'anon'],
     queryFn: async () => {
       if (!user) return [];
+      console.log('[messaging] fetching conversations for', user.id);
 
       // ── Single RPC: conversations + participants + last message + unread ──
       try {
@@ -131,7 +208,16 @@ export function useConversations() {
           p_user_id: user.id,
         });
 
-        if (!rpcError && rpcData && rpcData.length > 0) {
+        if (rpcError) {
+          console.warn('[messaging] RPC get_conversations_with_details failed, will fallback:', rpcError.message);
+        }
+
+        // Use RPC result whenever it returned without error, even if empty —
+        // an empty result from a healthy RPC means the user genuinely has 0
+        // conversations. Only fall back when the RPC itself errored.
+        if (!rpcError && rpcData) {
+          console.log('[messaging] conversations from RPC:', rpcData.length);
+          if (rpcData.length === 0) return [];
           return rpcData.map((row: any) => ({
             id: row.conv_id,
             created_at: row.conv_created_at,
@@ -146,7 +232,7 @@ export function useConversations() {
             },
             participants: undefined,
             last_message: row.last_message_body ? {
-              body: row.last_message_body,
+              body: isUnsupportedEncryptedBody(row.last_message_body) ? '🧹 Message incompatible supprimé' : row.last_message_body,
               created_at: row.last_message_at,
               sender_id: row.last_message_sender,
             } : undefined,
@@ -205,14 +291,15 @@ export function useConversations() {
       // Get last message per conversation
       const { data: recentMessages } = await supabase
         .from('messages')
-        .select('conversation_id, body, created_at, sender_id')
+        .select('id, conversation_id, body, created_at, sender_id')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false })
         .limit(conversationIds.length);
 
+      // Note: incompatible messages are filtered locally — no DB write during fetch.
       const lastMessageMap = new Map<string, { body: string; created_at: string; sender_id: string }>();
       recentMessages?.forEach(m => {
-        if (!lastMessageMap.has(m.conversation_id)) lastMessageMap.set(m.conversation_id, m);
+        if (!lastMessageMap.has(m.conversation_id) && !isUnsupportedEncryptedBody(m.body)) lastMessageMap.set(m.conversation_id, m);
       });
 
       return conversations.map(conv => {
@@ -237,6 +324,10 @@ export function useConversations() {
     enabled: !!user,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
+    // Force a refetch on mount + when the network reconnects so a returning
+    // user always sees the server-side truth, never an old cached empty list.
+    refetchOnMount: 'always',
+    refetchOnReconnect: 'always',
     refetchOnWindowFocus: false,
   });
 }
@@ -260,6 +351,10 @@ export function useMessages(conversationId: string) {
         },
         async (payload) => {
           const newMsg = payload.new as any;
+          if (isUnsupportedEncryptedBody(newMsg.body)) {
+            console.warn('[messaging] ignoring unsupported encrypted message without hiding it', newMsg.id);
+            return;
+          }
 
           // Fetch profile for sender (use cache first)
           let profile = queryClient.getQueryData<any>(['profile', newMsg.sender_id]);
@@ -282,11 +377,11 @@ export function useMessages(conversationId: string) {
 
           // Inject directly into cache — replaces optimistic messages and prevents duplicates
           queryClient.setQueryData<Message[]>(
-            ['messages', conversationId],
+            messagesKey(conversationId, user?.id),
             (old) => {
               if (!old) return [enriched];
               // Remove any optimistic message for this real one, and prevent duplicates
-              const filtered = old.filter(m => 
+              const filtered = old.filter(m =>
                 m.id !== enriched.id && !m.id.startsWith('optimistic-')
               );
               // Only skip if already present with same id
@@ -305,6 +400,51 @@ export function useMessages(conversationId: string) {
             body: newMsg.body,
             createdAt: newMsg.created_at,
           }]).catch(() => {});
+
+          // Proactively prime the e2ee-session router for incoming encrypted
+          // bodies. This catches out-of-order Double Ratchet deliveries before
+          // the user even mounts a `DecryptedMessageBody` for the row, so the
+          // retry budget starts ticking immediately on arrival.
+          if (user && newMsg.sender_id !== user.id) {
+            if (isMultiDeviceEnvelopeBody(newMsg.body)) {
+              void resolvePlaintext({
+                body: newMsg.body,
+                messageId: newMsg.id,
+                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
+              }).then((outcome) => {
+                if (outcome && !outcome.hidden) {
+                  persistOutcome(newMsg.body, outcome);
+                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                }
+              }).catch(() => {});
+            } else if (isStrictRatchetEnvelopeBody(newMsg.body)) {
+              void routeIncoming({
+                encryptedBody: newMsg.body,
+                recipientUserId: user.id,
+                senderUserId: newMsg.sender_id,
+                messageId: newMsg.id,
+              }).then((r) => {
+                if (r.ok && r.plaintext !== null) {
+                  void savePlaintextForCiphertext(newMsg.body, r.plaintext);
+                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                }
+              }).catch(() => {});
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'message_device_copies',
+          filter: `recipient_user_id=eq.${user.id}`,
+        },
+        () => {
+          clearNegativeCache();
+          queryClient.invalidateQueries({ queryKey: messagesKey(conversationId, user.id) });
+          try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
       )
       .on(
@@ -319,7 +459,7 @@ export function useMessages(conversationId: string) {
           const deletedId = (payload.old as any)?.id;
           if (deletedId) {
             queryClient.setQueryData<Message[]>(
-              ['messages', conversationId],
+              messagesKey(conversationId, user?.id),
               (old) => old?.filter(m => m.id !== deletedId) || []
             );
           }
@@ -332,10 +472,52 @@ export function useMessages(conversationId: string) {
     };
   }, [conversationId, user, queryClient]);
 
-  return useQuery({
-    queryKey: ['messages', conversationId],
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const handleCleaned = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId?: string }>).detail;
+      if (detail?.conversationId !== conversationId) return;
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+
+    window.addEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
+    return () => window.removeEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
+  }, [conversationId, queryClient]);
+
+  // Background cleanup: keep this non-destructive. Older builds inserted
+  // message_deletions here, which could make a whole chat look empty after
+  // returning to a session if a crypto envelope was misclassified.
+  useEffect(() => {
+    if (!conversationId || !user) return;
+    let cancelled = false;
+    (async () => {
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('id, body')
+        .eq('conversation_id', conversationId)
+        .in('status', ['delivered', 'pending'])
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (cancelled || !msgs) return;
+      const ids = msgs.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
+      if (ids.length > 0) {
+        console.warn('[messaging] unsupported encrypted messages left visible for recovery', {
+          conversationId,
+          count: ids.length,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [conversationId, user]);
+
+  const messagesQuery = useQuery({
+    // Scope by user so the cache is never shared across accounts/sessions.
+    queryKey: ['messages', conversationId, user?.id ?? 'anon'],
     queryFn: async () => {
       if (!conversationId || !user) return [];
+      console.log('[messaging] fetching messages for conversation', conversationId);
 
       // Get hidden message IDs for this user
       const { data: deletions } = await supabase
@@ -345,29 +527,42 @@ export function useMessages(conversationId: string) {
 
       const hiddenIds = new Set((deletions || []).map(d => d.message_id));
 
-      // Load only last 50 messages (cursor-based, most recent first then reversed)
+      // Load up to last 500 messages (most recent first then reversed)
       const { data: messages, error } = await supabase
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
         .in('status', ['delivered', 'pending'])
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(500);
 
-      if (error) throw error;
+      if (error) {
+        console.error('[messaging] message fetch failed:', error.message);
+        throw error;
+      }
+      console.log('[messaging] loaded', messages.length, 'messages from server');
 
       // Reverse to chronological order for display
       messages.reverse();
 
-      if (error) throw error;
+      const repairedHiddenRows = await repairConversationHiddenMessages(
+        user.id,
+        conversationId,
+        messages,
+        hiddenIds,
+      );
+      if (repairedHiddenRows) {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }
 
-      // Filter out hidden messages
+      // Filter out hidden + incompatible messages locally — no DB writes here.
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+      const compatibleMessages = visibleMessages.filter(m => !isUnsupportedEncryptedBody(m.body));
 
       // Reconcile local queue with already delivered backend messages
       messageQueue.reconcileDelivered(
         conversationId,
-        visibleMessages.map(m => ({
+        compatibleMessages.map(m => ({
           id: m.id,
           senderId: m.sender_id,
           body: m.body,
@@ -375,7 +570,66 @@ export function useMessages(conversationId: string) {
         })),
       ).catch(() => {});
 
-      const senderIds = [...new Set(visibleMessages.map(m => m.sender_id))];
+      // After a refetch (cold reload, reconnect, focus), proactively run
+      // `routeIncoming` for each still-encrypted incoming row. This does
+      // ACTUAL decryption (not just enqueueing) — the router tries the
+      // ratchet, multi-session fallback, and per-message device-copy
+      // fan-out. Successful results are cached by `savePlaintextForCiphertext`
+      // inside the route, and we dispatch `forsure-decrypt-retry` so any
+      // mounted `DecryptedMessageBody` immediately re-renders with the
+      // plaintext. Messages that genuinely cannot decrypt yet (out-of-order)
+      // get a fresh 30 × 1.5s retry budget on the pending queue.
+      if (user) {
+        let anyDecrypted = false;
+        for (const m of compatibleMessages) {
+          if (m.sender_id === user.id) continue;
+
+          // Multi-device envelopes: parent body is just a marker, real
+          // ciphertext lives in `message_device_copies`. Prewarm via
+          // resolvePlaintext so the per-device copy is fetched + cached
+          // before <DecryptedMessageBody> mounts.
+          if (isMultiDeviceEnvelopeBody(m.body)) {
+            try {
+              const outcome = await resolvePlaintext({
+                body: m.body,
+                messageId: m.id,
+                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
+              });
+              if (outcome && !outcome.hidden) {
+                persistOutcome(m.body, outcome);
+                anyDecrypted = true;
+              }
+            } catch { /* silent — UI will retry on its own */ }
+            continue;
+          }
+
+          if (!isStrictRatchetEnvelopeBody(m.body)) continue;
+          try {
+            const r = await routeIncoming({
+              encryptedBody: m.body,
+              recipientUserId: user.id,
+              senderUserId: m.sender_id,
+              messageId: m.id,
+            });
+            if (r.ok && r.plaintext !== null) {
+              void savePlaintextForCiphertext(m.body, r.plaintext);
+              anyDecrypted = true;
+              continue;
+            }
+          } catch { /* fall through to refresh */ }
+          pendingMessageQueue.refresh(m.id, {
+            encryptedBody: m.body,
+            recipientUserId: user.id,
+            senderUserId: m.sender_id,
+            messageId: m.id,
+          });
+        }
+        if (anyDecrypted && typeof window !== 'undefined') {
+          try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+        }
+      }
+
+      const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];
       const { data: profiles } = await supabase
         .from('profiles')
         .select('user_id, name, avatar_url')
@@ -383,10 +637,10 @@ export function useMessages(conversationId: string) {
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
 
-      const hasZeusMessages = visibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
+      const hasZeusMessages = compatibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
       const companionDisplayName = hasZeusMessages ? await getCompanionName(user?.id) : 'Zeus ⚡';
 
-      return visibleMessages.map(msg => ({
+      return compatibleMessages.map(msg => ({
         ...msg,
         profile: {
           name: msg.sender_id === ZEUS_BOT_ID ? companionDisplayName : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
@@ -394,10 +648,26 @@ export function useMessages(conversationId: string) {
         },
       })) as Message[];
     },
-    enabled: !!conversationId,
+    enabled: !!conversationId && !!user,
+    refetchOnMount: 'always',
+    refetchOnReconnect: 'always',
   });
+
+  return messagesQuery;
 }
 
+/**
+ * Legacy direct-send hook.
+ *
+ * SECURITY: only Zeus / bot conversations are allowed to receive plaintext
+ * here. Any peer (user-to-user) conversation is rerouted through the E2EE
+ * `messageQueue.enqueue()` path, which encrypts before insertion.
+ *
+ * If a caller passes a peer conversation, the hook DOES NOT block hard —
+ * it transparently encrypts via the queue so existing UI buttons (share
+ * link, marketplace negotiation, call notice...) keep working without
+ * leaking plaintext to the server.
+ */
 export function useSendMessage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -406,7 +676,7 @@ export function useSendMessage() {
     mutationFn: async ({ conversationId, body, imageUrl }: { conversationId: string; body: string; imageUrl?: string }) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Check if this is a Zeus conversation
+      // Check if this is a Zeus / bot conversation (whitelisted plaintext path).
       const { data: zeusParticipant } = await supabase
         .from('conversation_participants')
         .select('user_id')
@@ -414,7 +684,9 @@ export function useSendMessage() {
         .eq('user_id', ZEUS_BOT_ID)
         .maybeSingle();
 
-      if (zeusParticipant) {
+      const isBotConversation = !!zeusParticipant;
+
+      if (isBotConversation) {
         return await sendToZeus(user.id, conversationId, body);
       }
 
@@ -429,63 +701,41 @@ export function useSendMessage() {
 
       const sanitizedBody = isSpecialMessage ? body : sanitizeMessageBody(body);
 
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          body: sanitizedBody,
-          image_url: imageUrl || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Record for rate limiting
-      if (!isSpecialMessage) {
-        recordSentMessage(sanitizedBody);
+      // SECURITY (E2EE_BLOCKED): no plaintext peer message ever leaves the
+      // device. Reroute through the encrypted queue, which produces a v4
+      // ciphertext (or per-device wrap) before any Supabase insert.
+      try {
+        await messageQueue.enqueue({
+          conversationId,
+          senderId: user.id,
+          plaintext: sanitizedBody,
+          imageUrl: imageUrl ?? null,
+        });
+      } catch (e) {
+        // If the queue refuses (e.g. E2EE not yet bootstrapped on this
+        // device), surface a friendly error. NEVER fall back to plaintext.
+        throw new Error('Message non envoyé — chiffrement non disponible.');
       }
 
-      // AI moderation (async, non-blocking)
-      if (!isSpecialMessage && data?.id) {
-        supabase.functions.invoke('zeus', {
-          body: { domain: 'moderation', action: 'moderate_message', messageBody: sanitizedBody, messageId: data.id },
-        }).catch(() => {});
-      }
+      if (!isSpecialMessage) recordSentMessage(sanitizedBody);
 
       await supabase
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      // Notification is now handled by the friendship trigger for non-friends
-      // For friends, send notification as before
-      if (data?.status === 'delivered') {
-        const { data: participants } = await supabase
-          .from('conversation_participants')
-          .select('user_id')
-          .eq('conversation_id', conversationId)
-          .neq('user_id', user.id);
-
-        if (participants?.length) {
-          await supabase.from('notifications').insert({
-            user_id: participants[0].user_id,
-            type: 'message',
-            actor_id: user.id,
-          });
-        }
-      }
-
-      return data;
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      return { id: `queued-${Date.now()}`, conversation_id: conversationId, sender_id: user.id, body: sanitizedBody };
     },
     // Optimistic update: immediately show sent message in UI
     onMutate: async (variables) => {
       if (!user) return;
 
-      await queryClient.cancelQueries({ queryKey: ['messages', variables.conversationId] });
+      const key = messagesKey(variables.conversationId, user.id);
+      await queryClient.cancelQueries({ queryKey: key });
 
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', variables.conversationId]);
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       const profile = queryClient.getQueryData<any>(['profile', user.id]);
       const optimisticMessage: Message = {
@@ -503,7 +753,7 @@ export function useSendMessage() {
       };
 
       queryClient.setQueryData<Message[]>(
-        ['messages', variables.conversationId],
+        key,
         (old) => [...(old || []), optimisticMessage]
       );
 
@@ -511,7 +761,7 @@ export function useSendMessage() {
     },
     onError: (_err, variables, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', variables.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(variables.conversationId, user?.id), context.previousMessages);
       }
     },
     onSettled: (_, __, variables) => {
@@ -528,11 +778,12 @@ export function useDeleteMessageForMe() {
 
   return useMutation({
     onMutate: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+      const key = messagesKey(conversationId, user?.id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       queryClient.setQueryData<Message[]>(
-        ['messages', conversationId],
+        key,
         (old) => old?.filter(m => m.id !== messageId) || []
       );
 
@@ -551,7 +802,7 @@ export function useDeleteMessageForMe() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(context.conversationId, user?.id), context.previousMessages);
       }
     },
     onSuccess: (conversationId) => {
@@ -568,11 +819,12 @@ export function useDeleteMessageForEveryone() {
 
   return useMutation({
     onMutate: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
-      const previousMessages = queryClient.getQueryData<Message[]>(['messages', conversationId]);
+      const key = messagesKey(conversationId, user?.id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<Message[]>(key);
 
       queryClient.setQueryData<Message[]>(
-        ['messages', conversationId],
+        key,
         (old) => old?.filter(m => m.id !== messageId) || []
       );
 
@@ -592,7 +844,7 @@ export function useDeleteMessageForEveryone() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousMessages) {
-        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+        queryClient.setQueryData(messagesKey(context.conversationId, user?.id), context.previousMessages);
       }
     },
     onSuccess: (conversationId) => {
@@ -609,52 +861,18 @@ export function useCreateConversation() {
   return useMutation({
     mutationFn: async (otherUserId: string) => {
       if (!user) throw new Error('Not authenticated');
+      if (!otherUserId) throw new Error('Invalid peer');
 
-      const { data: existingParticipations } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id')
-        .eq('user_id', user.id);
-
-      if (existingParticipations?.length) {
-        const { data: otherParticipations } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', otherUserId)
-          .in('conversation_id', existingParticipations.map(p => p.conversation_id));
-
-        if (otherParticipations?.length) {
-          return { id: otherParticipations[0].conversation_id };
-        }
-      }
-
-      const conversationId = crypto.randomUUID();
-
-      const { error: convError } = await supabase
-        .from('conversations')
-        .insert({ id: conversationId });
-
-      if (convError) throw convError;
-
-      // Insert self first so RLS allows adding the other user
-      const { error: selfError } = await supabase
-        .from('conversation_participants')
-        .insert({ conversation_id: conversationId, user_id: user.id });
-
-      if (selfError) {
-        await supabase.from('conversations').delete().eq('id', conversationId);
-        throw selfError;
-      }
-
-      const { error: otherError } = await supabase
-        .from('conversation_participants')
-        .insert({ conversation_id: conversationId, user_id: otherUserId });
-
-      if (otherError) {
-        await supabase.from('conversations').delete().eq('id', conversationId);
-        throw otherError;
-      }
-
-      return { id: conversationId };
+      // Atomic server-side creation: either returns the existing 1-to-1
+      // conversation between the two users, or creates a fresh one with
+      // both participants in a single transaction. No client-side inserts
+      // into conversation_participants — RLS forbids it.
+      const { data, error } = await supabase.rpc('create_or_get_dm_conversation', {
+        p_other_user: otherUserId,
+      });
+      if (error) throw error;
+      if (!data) throw new Error('Failed to create conversation');
+      return { id: data as string };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -672,34 +890,13 @@ export function useCreateGroupConversation() {
       if (!name.trim()) throw new Error('Nom du groupe requis');
       if (memberIds.length < 2) throw new Error('Ajoutez au moins 2 amis');
 
-      const conversationId = crypto.randomUUID();
-
-      const { error: convError } = await supabase
-        .from('conversations')
-        .insert({
-          id: conversationId,
-          name: name.trim(),
-          is_group: true,
-          created_by: user.id,
-        });
-
-      if (convError) throw convError;
-
-      const participants = [user.id, ...memberIds].map(uid => ({
-        conversation_id: conversationId,
-        user_id: uid,
-      }));
-
-      const { error: partError } = await supabase
-        .from('conversation_participants')
-        .insert(participants);
-
-      if (partError) {
-        await supabase.from('conversations').delete().eq('id', conversationId);
-        throw partError;
-      }
-
-      return { id: conversationId };
+      const { data, error } = await supabase.rpc('create_group_conversation', {
+        p_name: name.trim(),
+        p_member_ids: memberIds,
+      });
+      if (error) throw error;
+      if (!data) throw new Error('Failed to create group');
+      return { id: data as string };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -840,13 +1037,11 @@ export function useAddGroupMembers() {
 
   return useMutation({
     mutationFn: async ({ conversationId, memberIds }: { conversationId: string; memberIds: string[] }) => {
-      const participants = memberIds.map(uid => ({
-        conversation_id: conversationId,
-        user_id: uid,
-      }));
-      const { error } = await supabase
-        .from('conversation_participants')
-        .insert(participants);
+      // Server-side: only the group admin (created_by) can add members.
+      const { error } = await supabase.rpc('add_group_members', {
+        p_conv_id: conversationId,
+        p_member_ids: memberIds,
+      });
       if (error) throw error;
     },
     onSuccess: () => {

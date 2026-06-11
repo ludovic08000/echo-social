@@ -52,11 +52,12 @@ export interface IncomingCall {
   status: string;
   caller_name?: string;
   caller_avatar?: string;
+  is_group?: boolean;
 }
 
 /** Returned only by acceptCall — includes the decrypted key for immediate use */
 export interface AcceptedCall extends IncomingCall {
-  decryptedCallKey?: string;
+  decryptedCallKey: string;
 }
 
 /** Ring tone — plays a looping tone until stopped */
@@ -66,20 +67,25 @@ function createRingtone(): { play: () => void; stop: () => void } {
   let oscillatorB: OscillatorNode | null = null;
   let gainNode: GainNode | null = null;
   let intervalId: ReturnType<typeof setInterval> | null = null;
+  let stopped = true; // Guards against play/stop race condition
 
   const play = async () => {
+    stopped = false;
     try {
       audioCtx = sharedAudioContext ?? new (window.AudioContext || (window as any).webkitAudioContext)();
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
       }
 
+      // If stop() was called while we were awaiting resume, bail out
+      if (stopped) return;
+
       gainNode = audioCtx.createGain();
       gainNode.connect(audioCtx.destination);
       gainNode.gain.value = 0;
 
       const ring = () => {
-        if (!audioCtx || !gainNode) return;
+        if (stopped || !audioCtx || !gainNode) return;
 
         oscillatorA = audioCtx.createOscillator();
         oscillatorB = audioCtx.createOscillator();
@@ -115,22 +121,34 @@ function createRingtone(): { play: () => void; stop: () => void } {
   };
 
   const stop = () => {
+    stopped = true;
     if (intervalId) clearInterval(intervalId);
+    intervalId = null;
     try { oscillatorA?.stop(); oscillatorA?.disconnect(); } catch {}
     try { oscillatorB?.stop(); oscillatorB?.disconnect(); } catch {}
     try { gainNode?.disconnect(); } catch {}
     oscillatorA = null;
     oscillatorB = null;
     gainNode = null;
-    intervalId = null;
+    // Do NOT close or null audioCtx — it may be the shared context used by LiveKit
   };
 
   return { play, stop };
 }
 
+/**
+ * Call detection state machine:
+ *   idle → ringing → (accepted | declined | timed_out)
+ * 
+ * A call ID is processed ONCE — any duplicate detection (Realtime, backup, poll)
+ * for the same ID is silently ignored.
+ */
+type IncomingCallPhase = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended';
+
 export function useIncomingCall() {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const incomingCallRef = useRef<IncomingCall | null>(null);
   const ringtoneRef = useRef(createRingtone());
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -141,28 +159,152 @@ export function useIncomingCall() {
   const encryptedCallKeyRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
 
+  const handledCallIdsRef = useRef<Set<string>>(new Set());
+  const activeCallIdRef = useRef<string | null>(null);
+  const callPhaseRef = useRef<IncomingCallPhase>('idle');
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const handlingRef = useRef(false);
+
+  // Keep ref in sync with state
+  useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
+
   useEffect(() => {
     if (!user?.id) return;
 
     primeAudioForIOS();
+    console.log('[IncomingCall] 🔔 Hook initialized for user', user.id);
 
-    const checkExisting = async () => {
-      const { data, error } = await supabase.rpc('call_signal', {
-        p_action: 'latest_for_callee',
-      });
+    /**
+     * Core handler — idempotent per callId.
+     * Returns immediately if this callId was already processed.
+     */
+    const handleIncomingCall = async (call: any) => {
+      const callId = call.id;
 
-      if (!error && data) {
-        handleIncomingCall(data);
+      if (handledCallIdsRef.current.has(callId)) return;
+      if (activeCallIdRef.current === callId) return;
+      if (handlingRef.current) return;
+      if (callPhaseRef.current !== 'idle') return;
+
+      handlingRef.current = true;
+      handledCallIdsRef.current.add(callId);
+      activeCallIdRef.current = callId;
+      callPhaseRef.current = 'ringing';
+
+      console.info('[IncomingCall] New incoming call:', callId, 'type:', call.call_type);
+
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name, avatar_url')
+          .eq('user_id', call.caller_id)
+          .single();
+
+        // Store encrypted key in volatile ref — NEVER in React state
+        encryptedCallKeyRef.current = call.encrypted_call_key || null;
+        callConversationIdRef.current = call.conversation_id;
+
+        const incoming: IncomingCall = {
+          id: callId,
+          conversation_id: call.conversation_id,
+          caller_id: call.caller_id,
+          callee_id: call.callee_id,
+          call_type: call.call_type || 'audio',
+          status: call.status,
+          caller_name: profile?.name || 'Utilisateur',
+          caller_avatar: profile?.avatar_url,
+          is_group: call.is_group === true,
+        };
+
+        setIncomingCall(incoming);
+        ringtoneRef.current.play();
+
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => {
+          declineCallDirect(callId);
+        }, 30000);
+      } finally {
+        handlingRef.current = false;
       }
+    };
 
+    const declineCallDirect = async (callId: string) => {
+      ringtoneRef.current.stop();
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       await supabase.rpc('call_signal', {
-        p_action: 'expire_old_for_callee',
+        p_action: 'update_status',
+        p_call_id: callId,
+        p_status: 'declined',
+      });
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
+      callPhaseRef.current = 'ended';
+      setIncomingCall(null);
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
       });
     };
-    checkExisting();
 
+    const clearCallState = () => {
+      ringtoneRef.current.stop();
+      setIncomingCall(null);
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
+      callPhaseRef.current = 'ended';
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
+    };
+
+    const pollForCalls = async () => {
+      // Don't poll if already showing an incoming call
+      if (incomingCallRef.current) return;
+
+      try {
+        const { data, error } = await supabase.rpc('call_signal', {
+          p_action: 'latest_for_callee',
+        });
+
+        if (error) {
+          // Only log non-routine errors
+          if (error.message?.includes('Not authenticated') || error.code === 'PGRST301') {
+            await supabase.auth.refreshSession();
+          }
+          return;
+        }
+
+        if (data && (data as any).id) {
+          const callData = data as any;
+          if (callData.status === 'ringing') {
+            // handleIncomingCall is idempotent — safe to call even if already handled
+            handleIncomingCall(callData);
+          }
+        }
+      } catch (err) {
+        console.error('[IncomingCall] ❌ Poll exception:', err);
+      }
+    };
+
+    // Ensure fresh auth before starting
+    supabase.auth.refreshSession().then(() => {
+      console.log('[IncomingCall] ✅ Session refreshed, starting detection');
+    }).catch(() => {});
+
+    // Initial check
+    pollForCalls();
+
+    // Expire old calls once
+    Promise.resolve(supabase.rpc('call_signal', { p_action: 'expire_old_for_callee' })).catch(() => {});
+
+    // Fallback polling every 3 seconds (increased from 2s to reduce noise)
+    pollIntervalRef.current = setInterval(pollForCalls, 3000);
+
+    // Realtime channel for instant notification (primary path)
     const channel = supabase
-      .channel('incoming-calls')
+      .channel(`incoming-calls-${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -172,8 +314,9 @@ export function useIncomingCall() {
           filter: `callee_id=eq.${user.id}`,
         },
         (payload) => {
-          if (payload.new && (payload.new as any).status === 'ringing') {
-            handleIncomingCall(payload.new as any);
+          const callData = payload.new as any;
+          if (callData?.status === 'ringing') {
+            handleIncomingCall(callData);
           }
         }
       )
@@ -187,57 +330,45 @@ export function useIncomingCall() {
         },
         (payload) => {
           const updated = payload.new as any;
-          if (updated.status === 'cancelled' || updated.status === 'ended') {
-            ringtoneRef.current.stop();
-            setIncomingCall(null);
-            encryptedCallKeyRef.current = null;
-            callConversationIdRef.current = null;
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          if (updated.status === 'cancelled' || updated.status === 'ended' || updated.status === 'declined') {
+            clearCallState();
           }
         }
       )
-      .subscribe();
+      // Group calls — sonne aussi quand uid ∈ caller_ids
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'active_calls' },
+        (payload) => {
+          const callData = payload.new as any;
+          if (
+            callData?.is_group &&
+            callData?.status === 'ringing' &&
+            Array.isArray(callData?.caller_ids) &&
+            callData.caller_ids.includes(user.id)
+          ) {
+            handleIncomingCall(callData);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('[IncomingCall] Realtime status:', status);
+      });
+
+    // REMOVED: backup channel was causing duplicate detections.
+    // The primary Realtime channel + polling is sufficient.
 
     return () => {
       supabase.removeChannel(channel);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       ringtoneRef.current.stop();
       encryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
+      callPhaseRef.current = 'idle';
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [user?.id]);
-
-  const handleIncomingCall = async (call: any) => {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('name, avatar_url')
-      .eq('user_id', call.caller_id)
-      .single();
-
-    // Store encrypted key in volatile ref — NEVER in React state
-    encryptedCallKeyRef.current = call.encrypted_call_key || null;
-    callConversationIdRef.current = call.conversation_id;
-
-    const incoming: IncomingCall = {
-      id: call.id,
-      conversation_id: call.conversation_id,
-      caller_id: call.caller_id,
-      callee_id: call.callee_id,
-      call_type: call.call_type || 'audio',
-      status: call.status,
-      caller_name: profile?.name || 'Utilisateur',
-      caller_avatar: profile?.avatar_url,
-      // NO key here — zero-access design
-    };
-
-    setIncomingCall(incoming);
-    ringtoneRef.current.play();
-
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      declineCall();
-    }, 30000);
-  };
 
   /**
    * Accept the call and decrypt the key at this exact moment.
@@ -247,6 +378,79 @@ export function useIncomingCall() {
     if (!incomingCall) return;
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    callPhaseRef.current = 'connecting';
+
+    let decryptedCallKey: string | undefined;
+    const encKey = encryptedCallKeyRef.current;
+    const convId = callConversationIdRef.current;
+    if (!encKey || !convId) {
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
+      setIncomingCall(null);
+      callPhaseRef.current = 'ended';
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
+      throw new Error('[CALL_E2EE] Missing encrypted call key payload');
+    }
+
+    try {
+      // Group calls (D3): the call key is shared in clear via encrypted_call_key
+      // (per-recipient wrapping is planned for D4). Skip 1-to-1 decryption.
+      if (incomingCall.is_group) {
+        decryptedCallKey = encKey;
+      } else {
+        // Always pass user IDs for fresh session derivation
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (!currentUser) throw new Error('Not authenticated');
+        const peerId = incomingCall.caller_id;
+        decryptedCallKey = await decryptCallKey(encKey, convId, currentUser.id, peerId);
+      }
+    } catch (firstErr) {
+      console.warn('[CALL] First decrypt attempt failed, re-deriving session:', firstErr);
+      try {
+        const { getOrCreateIdentityKeys, establishSession, deleteSessionKey } = await import('@/lib/crypto');
+        const { data: { user: retryUser } } = await supabase.auth.getUser();
+        if (retryUser && incomingCall && !incomingCall.is_group) {
+          const retryPeerId = incomingCall.caller_id;
+          const { data: peerKey } = await supabase
+            .from('user_public_keys')
+            .select('identity_key, fingerprint')
+            .eq('user_id', retryPeerId)
+            .eq('is_active', true)
+            .maybeSingle();
+          if (!peerKey?.identity_key || !peerKey.fingerprint) {
+            throw new Error('[CALL_E2EE] Active peer key unavailable');
+          }
+
+          await deleteSessionKey(convId);
+          const keys = await getOrCreateIdentityKeys(retryUser.id);
+          await establishSession(keys, peerKey.identity_key, convId, peerKey.fingerprint);
+          decryptedCallKey = await decryptCallKey(encKey, convId, retryUser.id, retryPeerId);
+          console.log('[CALL] ✅ Decrypt succeeded after session re-derivation');
+        }
+      } catch (retryErr) {
+        console.error('[CALL] Retry decrypt failed:', retryErr);
+      }
+    }
+
+    if (!decryptedCallKey) {
+      await supabase.rpc('call_signal', {
+        p_action: 'update_status',
+        p_call_id: incomingCall.id,
+        p_status: 'declined',
+      });
+      encryptedCallKeyRef.current = null;
+      callConversationIdRef.current = null;
+      activeCallIdRef.current = null;
+      setIncomingCall(null);
+      callPhaseRef.current = 'ended';
+      queueMicrotask(() => {
+        callPhaseRef.current = 'idle';
+      });
+      throw new Error('[CALL_E2EE] Unable to decrypt incoming call key');
+    }
 
     await supabase.rpc('call_signal', {
       p_action: 'update_status',
@@ -254,25 +458,12 @@ export function useIncomingCall() {
       p_status: 'answered',
     });
 
-    // Decrypt call key now — one-shot, then wipe
-    let decryptedCallKey: string | undefined;
-    const encKey = encryptedCallKeyRef.current;
-    const convId = callConversationIdRef.current;
-    if (encKey && convId) {
-      try {
-        decryptedCallKey = await decryptCallKey(encKey, convId);
-      } catch (err) {
-        console.warn('[IncomingCall] Failed to decrypt call key:', err);
-        // Call will proceed without E2EE media encryption
-      }
-    }
-
-    // Wipe refs immediately
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
 
     const accepted: AcceptedCall = { ...incomingCall, decryptedCallKey };
     setIncomingCall(null);
+    callPhaseRef.current = 'active';
     return accepted;
   }, [incomingCall]);
 
@@ -280,6 +471,7 @@ export function useIncomingCall() {
     if (!incomingCall) return;
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    callPhaseRef.current = 'ended';
 
     await supabase.rpc('call_signal', {
       p_action: 'update_status',
@@ -287,10 +479,13 @@ export function useIncomingCall() {
       p_status: 'declined',
     });
 
-    // Wipe refs
     encryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
+    activeCallIdRef.current = null;
     setIncomingCall(null);
+    queueMicrotask(() => {
+      callPhaseRef.current = 'idle';
+    });
   }, [incomingCall]);
 
   return {
@@ -315,12 +510,7 @@ export async function signalOutgoingCall(
   let encryptedKey: string | undefined;
 
   if (callKeyB64) {
-    try {
-      encryptedKey = await encryptCallKey(callKeyB64, conversationId);
-    } catch {
-      // No E2EE session — call proceeds without encrypted key transport
-      console.warn('[SignalCall] Could not encrypt call key — no E2EE session');
-    }
+    encryptedKey = await encryptCallKey(callKeyB64, conversationId, callerId, calleeId);
   }
 
   const { data, error } = await supabase.rpc('call_signal', {
@@ -336,7 +526,10 @@ export async function signalOutgoingCall(
     console.error('Signal call error:', error);
     return null;
   }
-  return (data as { id?: string } | null)?.id || null;
+
+  const callId = (data as { id?: string } | null)?.id || null;
+
+  return callId;
 }
 
 /** Called when call ends to update the record */

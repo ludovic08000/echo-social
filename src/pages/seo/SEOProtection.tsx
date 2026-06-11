@@ -49,8 +49,9 @@ const jsonLd = {
 export default function SEOProtection() {
   return (
     <SEOPageLayout
-      title="Protection des données personnelles — Réseau social respectueux de la vie privée"
-      description="La protection des données personnelles sur Forsure est totale. Zéro tracking publicitaire, contrôle parental intégré, conformité RGPD. Vos données restent les vôtres, toujours."
+      title="Protection des données personnelles — Conformité RGPD et vie privée"
+      description="Protection des données personnelles totale sur Forsure : conformité RGPD stricte, respect de la vie privée, zéro tracking publicitaire. Vos données restent les vôtres, toujours."
+      url="https://forsure.fans/protection-donnees"
       jsonLd={jsonLd}
     >
       <section className="py-16 md:py-24">

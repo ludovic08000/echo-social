@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Square, Trash2, Send, Loader2, X } from 'lucide-react';
+import { Mic, Square, Trash2, Send, Loader2, X, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -75,7 +75,8 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
 
       const { mimeType, ext } = getSupportedMimeType();
 
-      const recorderOptions: MediaRecorderOptions = {};
+      // WhatsApp-style voice: mono Opus/AAC @ 24 kbps → ~180 KB/min, much faster upload.
+      const recorderOptions: MediaRecorderOptions = { audioBitsPerSecond: 24000 };
       if (mimeType) {
         recorderOptions.mimeType = mimeType;
       }
@@ -317,8 +318,34 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
   const [audioDuration, setAudioDuration] = useState(duration || 0);
   const [blobSrc, setBlobSrc] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState(false);
+  const [rate, setRate] = useState<1 | 1.5 | 2>(1);
+  const [transcript, setTranscript] = useState<string | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const triedBlobRef = useRef(false);
+
+  const handleTranscribe = useCallback(async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (transcribing || transcript) return;
+    setTranscribing(true);
+    try {
+      const { transcribeVoice } = await import('@/lib/messaging/transcribeVoice');
+      // Prefer the in-memory blob (decrypted), fallback to fetching the URL.
+      let blob: Blob | null = null;
+      if (blobSrc) {
+        try { blob = await (await fetch(blobSrc)).blob(); } catch { blob = null; }
+      }
+      if (!blob && !mediaKeyB64) {
+        try { blob = await (await fetch(audioUrl)).blob(); } catch { blob = null; }
+      }
+      if (!blob) { toast.error('Vocal indisponible'); return; }
+      const t = await transcribeVoice(blob);
+      if (!t) { toast.error('Transcription échouée'); return; }
+      setTranscript(t);
+    } finally {
+      setTranscribing(false);
+    }
+  }, [transcribing, transcript, blobSrc, audioUrl, mediaKeyB64]);
 
   // ─── E2EE: Decrypt encrypted voice on mount ───
   useEffect(() => {
@@ -475,7 +502,7 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
 
   return (
     <div className={cn(
-      "flex items-center gap-2 px-3 py-2 rounded-2xl min-w-[160px]",
+      "relative flex items-center gap-2 px-3 py-2 rounded-2xl min-w-[160px]",
       isMe ? "bg-primary text-primary-foreground" : "bg-secondary",
       error && "opacity-60"
     )}>
@@ -521,7 +548,47 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
         )}
       </div>
 
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
+          setRate(next as 1 | 1.5 | 2);
+          if (audioRef.current) audioRef.current.playbackRate = next;
+        }}
+        title="Vitesse de lecture"
+        className={cn(
+          "text-[10px] font-semibold tabular-nums px-1.5 py-0.5 rounded-full flex-shrink-0 transition-colors",
+          isMe
+            ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30"
+            : "bg-primary/10 text-primary hover:bg-primary/20"
+        )}
+      >
+        {rate}×
+      </button>
+      <button
+        type="button"
+        onClick={handleTranscribe}
+        disabled={transcribing}
+        title="Transcrire le vocal"
+        className={cn(
+          "w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors",
+          isMe ? "bg-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/30"
+               : "bg-primary/10 text-primary hover:bg-primary/20"
+        )}
+      >
+        {transcribing ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+      </button>
       <Mic className={cn("w-3 h-3 flex-shrink-0", isMe ? "text-primary-foreground/50" : "text-muted-foreground/50")} />
+      {transcript && (
+        <div className={cn(
+          "absolute left-0 right-0 top-full mt-1 p-2 rounded-xl text-[12px] leading-snug shadow",
+          isMe ? "bg-primary/10 text-foreground" : "bg-background border border-border/40 text-foreground"
+        )}>
+          <span className="block opacity-60 text-[10px] mb-0.5">Transcription</span>
+          {transcript}
+        </div>
+      )}
     </div>
   );
 }

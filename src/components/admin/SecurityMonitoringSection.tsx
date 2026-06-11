@@ -16,6 +16,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { SecurityAIModulePanel } from './SecurityAIModulePanel';
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'bg-red-600 text-white',
@@ -367,6 +368,9 @@ export function SecurityMonitoringSection() {
           </motion.div>
         ))}
       </div>
+
+      {/* Zeus Security AI — modules défensifs */}
+      <SecurityAIModulePanel />
 
       {/* ═══ TABLEAU DES IPs EN CLAIR ═══ */}
       <Card>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { KeyBackupPanel } from '@/components/KeyBackupPanel';
+import { ArchiveBackupToggle } from '@/components/settings/ArchiveBackupToggle';
 import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
@@ -513,6 +514,42 @@ export function PrivacySettingsPanel() {
               onCheckedChange={(v) => handleUpdate('analytics_enabled', v)}
             />
           </div>
+
+          <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/50">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                <Label>Personnalisation IA du fil</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Autoriser l'envoi d'extraits courts et anonymisés de mes publications à l'IA pour
+                personnaliser mon fil. Désactivable à tout moment — les signaux agrégés (likes,
+                temps de lecture) restent utilisés.
+              </p>
+            </div>
+            <Switch
+              checked={settings.ai_personalization_enabled !== false}
+              onCheckedChange={(v) => handleUpdate('ai_personalization_enabled', v)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/50">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4" />
+                <Label>Partage de signaux avec l'IA</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Lorsque cette option est désactivée, aucun extrait identifiant ni signal personnel
+                n'est transmis aux services IA externes (modération, recommandations). Les
+                fonctionnalités IA continuent de fonctionner avec des données strictement minimales.
+              </p>
+            </div>
+            <Switch
+              checked={settings.ai_data_sharing_enabled !== false}
+              onCheckedChange={(v) => handleUpdate('ai_data_sharing_enabled', v)}
+            />
+          </div>
         </div>
       </section>
 
@@ -529,6 +566,9 @@ export function PrivacySettingsPanel() {
 
       {/* E2EE Key Backup & Transfer */}
       <KeyBackupPanel />
+
+      {/* Conversation-level encrypted history backup */}
+      <ArchiveBackupToggle />
 
       {/* Data Export */}
       <DataExportSection />

@@ -99,15 +99,21 @@ with check (
 drop policy if exists "trusted devices update own safe fields"
 on public.user_trusted_devices;
 
--- Let the client refresh metadata/risk on its own non-trusted rows, but never
--- promote a device to trusted through a generic table update.
+drop policy if exists "trusted devices update own pending metadata"
+on public.user_trusted_devices;
+
+-- Let the client refresh metadata/risk on its own pending rows, but never
+-- promote, un-revoke, or unblock a device through a generic table update.
 create policy "trusted devices update own pending metadata"
 on public.user_trusted_devices
 for update
-using (auth.uid() = user_id)
+using (
+  auth.uid() = user_id
+  and trust_status = 'pending'
+)
 with check (
   auth.uid() = user_id
-  and trust_status in ('pending', 'revoked', 'blocked')
+  and trust_status = 'pending'
 );
 
 drop policy if exists "trusted devices delete own"
@@ -150,6 +156,9 @@ begin
 end;
 $$;
 
+grant execute on function public.trust_my_browser_device(text, text, text, text)
+  to authenticated;
+
 -- Refresh last-seen/risk metadata for the current user without allowing trust
 -- escalation through table update policies.
 create or replace function public.touch_my_browser_device(
@@ -176,6 +185,9 @@ begin
 end;
 $$;
 
+grant execute on function public.touch_my_browser_device(text, text, text[])
+  to authenticated;
+
 create or replace function public.revoke_my_trusted_device(_device_id text)
 returns void
 language plpgsql
@@ -191,3 +203,6 @@ begin
     and device_id = _device_id;
 end;
 $$;
+
+grant execute on function public.revoke_my_trusted_device(text)
+  to authenticated;

@@ -1,12 +1,18 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { getCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+function getClientIP(req: Request): string {
+  return (
+    req.headers.get("cf-connecting-ip") ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -36,6 +42,13 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Rate limit per IP + per user — protects against token-spamming abuse
+    const ip = getClientIP(req);
+    const ipLimit = await checkRateLimitDB(`device-link:ip:${ip}`, 30, 300, corsHeaders);
+    if (ipLimit) return ipLimit;
+    const userLimit = await checkRateLimitDB(`device-link:user:${user.id}`, 20, 300, corsHeaders);
+    if (userLimit) return userLimit;
 
     const { action, ...params } = await req.json();
 
@@ -113,110 +126,82 @@ Deno.serve(async (req) => {
       });
     }
 
-    // === CLAIM: New device claims the keys using the token ===
+    // === CLAIM: New device claims the keys using the token (atomic single-use) ===
     if (action === "claim") {
       const { token } = params;
-      if (!token || typeof token !== "string") {
+      if (!token || typeof token !== "string" || token.length > 1024) {
         return new Response(
           JSON.stringify({ error: "Missing token" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Hash the provided token
       const hashBuf = await crypto.subtle.digest(
         "SHA-256",
         new TextEncoder().encode(token)
       );
-      const tokenHash = btoa(
-        String.fromCharCode(...new Uint8Array(hashBuf))
-      );
+      const tokenHash = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
 
-      // Use service role to read any user's token by hash
       const serviceClient = createClient(
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
       );
 
-      const { data: linkData, error: fetchError } = await serviceClient
-        .from("device_link_tokens")
-        .select("id, user_id, encrypted_payload, expires_at, claimed_at")
-        .eq("token_hash", tokenHash)
-        .single();
+      // Atomic single-use consumption: marks claimed_at = now() iff still unclaimed
+      // and unexpired, in a single SQL statement (no TOCTOU window).
+      const { data: claimed, error: claimErr } = await serviceClient.rpc(
+        "consume_device_link_token",
+        { p_token_hash: tokenHash }
+      );
 
-      if (fetchError || !linkData) {
+      if (claimErr) {
+        console.error("[device-link] claim rpc failed", claimErr.message);
         return new Response(
-          JSON.stringify({ error: "Invalid or expired token" }),
-          {
-            status: 404,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ error: "Internal error" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Verify ownership
-      if (linkData.user_id !== user.id) {
+      const row = Array.isArray(claimed) ? claimed[0] : claimed;
+      if (!row) {
+        // Either invalid, expired, or already claimed
+        return new Response(
+          JSON.stringify({ error: "Invalid, expired or already-claimed token" }),
+          { status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (row.user_id !== user.id) {
+        // Token consumed but belongs to another user — refuse and audit
+        await serviceClient.from("audit_logs").insert({
+          user_id: user.id,
+          target_user_id: row.user_id,
+          event_type: "device_link_owner_mismatch",
+          metadata: { ip },
+        });
         return new Response(
           JSON.stringify({ error: "Token belongs to a different account" }),
-          {
-            status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Check expiry
-      if (new Date(linkData.expires_at) < new Date()) {
-        await serviceClient
-          .from("device_link_tokens")
-          .delete()
-          .eq("id", linkData.id);
-        return new Response(
-          JSON.stringify({ error: "Token expired" }),
-          {
-            status: 410,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      // Check if already claimed
-      if (linkData.claimed_at) {
-        return new Response(
-          JSON.stringify({ error: "Token already claimed" }),
-          {
-            status: 409,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      if (!linkData.encrypted_payload) {
+      if (!row.encrypted_payload) {
         return new Response(
           JSON.stringify({ error: "Keys not yet uploaded by source device" }),
-          {
-            status: 425,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 425, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Mark as claimed
-      await serviceClient
-        .from("device_link_tokens")
-        .update({ claimed_at: new Date().toISOString() })
-        .eq("id", linkData.id);
+      // Audit successful claim
+      await serviceClient.from("audit_logs").insert({
+        user_id: user.id,
+        event_type: "device_link_claimed",
+        metadata: { ip },
+      }).then(() => {}, () => {});
 
       return new Response(
-        JSON.stringify({
-          encrypted_payload: linkData.encrypted_payload,
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        JSON.stringify({ encrypted_payload: row.encrypted_payload }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 

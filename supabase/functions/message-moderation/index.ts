@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { sanitizeForAI } from "../_shared/ai-privacy.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -176,7 +177,7 @@ Réponds UNIQUEMENT avec la fonction tool_call fournie.`;
           model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: `Analyse ce message : "${messageBody.slice(0, 500)}"` },
+            { role: "user", content: `Analyse ce message : "${sanitizeForAI(messageBody, 500)}"` },
           ],
           tools: [
             {

@@ -1,0 +1,56 @@
+name: Crypto Test Suite
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/crypto/**'
+      - 'src/lib/messaging/**'
+      - 'src/test/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'vitest.config.ts'
+      - '.github/workflows/crypto-tests.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run crypto test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run crypto + messaging test suite
+        id: tests
+        run: |
+          mkdir -p test-results
+          bun run vitest run \
+            src/lib/crypto/__tests__ \
+            src/lib/messaging/__tests__ \
+            --reporter=default \
+            --reporter=junit \
+            --outputFile=test-results/junit.xml 2>&1 | tee test-results/output.log
+
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-test-results-${{ github.run_id }}
+          path: |
+            test-results/
+            coverage/
+          retention-days: 14
+          if-no-files-found: warn

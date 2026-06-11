@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Reset cache Forsure</title>
+    <style>
+      body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; padding: 32px; background: #0a0a0a; color: #fff; }
+      .box { max-width: 720px; margin: auto; border: 1px solid #333; border-radius: 16px; padding: 24px; background: #111; }
+      button { padding: 12px 18px; border-radius: 10px; border: 0; cursor: pointer; font-weight: 700; }
+      pre { white-space: pre-wrap; background: #000; padding: 16px; border-radius: 10px; color: #9f9; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>Nettoyage cache Forsure</h1>
+      <p>Cette page désactive les anciens service workers, vide Cache Storage, supprime les anciens device_id E2EE invalides, supprime les sessions Supabase expirées et recharge la dernière version.</p>
+      <button id="run">Nettoyer maintenant</button>
+      <pre id="log">Prêt.</pre>
+    </div>
+    <script>
+      const INVALID_DEVICE_IDS = new Set([
+        '84aaa52143235807214bf3aa161dd03a',
+        '6508eb47a200893f49720fe84b9290b3',
+        '9da8c742a4fe81d1d9ce6c0ffb4e055b',
+        '75e575fcbfaa8066bcbc9105fc5f4ac8',
+        'c6601674b0f700f28c9f2956774eca97',
+        '52adb13ff236ae5c833c9d9049c0df71',
+        'b166de502d729356dcbd6c0b5b1a39b0',
+        '49cfdeab59355de3051925b4f09fba75',
+        '92585130870cedf210af1019379dbc61',
+        '450c0cd9af35813c8a99ec5bc0f39ab8'
+      ]);
+      const out = document.getElementById('log');
+      function log(msg) { out.textContent += '\n' + msg; }
+      function freshId() {
+        const b = new Uint8Array(16); crypto.getRandomValues(b);
+        return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+      }
+      function purgeStorage(storage) {
+        const keys = [];
+        for (let i = 0; i < storage.length; i++) {
+          const k = storage.key(i);
+          if (!k) continue;
+          if (
+            k.startsWith('sb-') ||
+            k.startsWith('supabase.auth.') ||
+            k.includes('auth-token') ||
+            k.includes('supabase') ||
+            k === 'forsure:last-seen-build-version' ||
+            k === 'forsure:legacy-cache-cleanup:v2' ||
+            k === 'forsure:e2ee-clean-startup:v1'
+          ) keys.push(k);
+        }
+        keys.forEach(k => storage.removeItem(k));
+        return keys.length;
+      }
+      async function run() {
+        out.textContent = 'Nettoyage en cours...';
+        try {
+          const invalidCache = JSON.stringify(Array.from(INVALID_DEVICE_IDS));
+          localStorage.setItem('forsure:invalid-device-spk-cache:v1', invalidCache);
+          log('Cache invalid devices mis à jour.');
+
+          const key = 'forsure-device-id-v1';
+          const local = localStorage.getItem(key);
+          const session = sessionStorage.getItem(key);
+          if (INVALID_DEVICE_IDS.has(local) || INVALID_DEVICE_IDS.has(session)) {
+            const id = freshId();
+            localStorage.setItem(key, id);
+            sessionStorage.setItem(key, id);
+            log('Ancien device_id remplacé: ' + id.slice(0, 8) + '...');
+          }
+
+          log('Sessions Supabase supprimées: local=' + purgeStorage(localStorage) + ', session=' + purgeStorage(sessionStorage));
+
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+            log('Cache Storage vidé: ' + keys.length + ' cache(s).');
+          }
+
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r => r.unregister()));
+            log('Service workers désenregistrés: ' + regs.length + '.');
+          }
+
+          log('Redirection vers connexion/version neuve...');
+          setTimeout(() => location.replace('/auth?reset=' + Date.now()), 800);
+        } catch (e) {
+          log('ERREUR: ' + (e && e.message ? e.message : String(e)));
+        }
+      }
+      document.getElementById('run').addEventListener('click', run);
+      setTimeout(run, 300);
+    </script>
+  </body>
+</html>

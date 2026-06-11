@@ -1,0 +1,1 @@
+DELETE FROM public.messages WHERE id IN ('9890056d-1123-4e0d-9cf3-b3ba5cf5f264','b0a2e3e8-c21d-4a6a-ad37-c1902b254bf0','673e90c2-9724-44bf-a1b1-8dd0598a628c');

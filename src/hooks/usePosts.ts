@@ -2,7 +2,17 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
-import { loadContentPrefs, loadFeedWeights, containsMutedKeyword, monteCarloRank, loadAlgorithmConfig, type ScoringContext } from '@/lib/feedAlgorithm';
+import { loadContentPrefs, containsMutedKeyword } from '@/lib/feedAlgorithm';
+import { enforceDiversity, getSessionAdjustment } from '@/lib/feedDiversity';
+import { syncFeedPrefsFromServer } from '@/lib/feedPreferences';
+
+// One-shot sync per user (refreshes localStorage cache from DB-backed prefs)
+const _syncedPrefsUsers = new Set<string>();
+function ensureFeedPrefsSynced(userId: string) {
+  if (_syncedPrefsUsers.has(userId)) return;
+  _syncedPrefsUsers.add(userId);
+  void syncFeedPrefsFromServer(userId);
+}
 
 export interface Post {
   id: string;
@@ -25,35 +35,25 @@ export interface Post {
 const PAGE_SIZE = 25;
 
 export function usePosts() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
   return useInfiniteQuery({
-    queryKey: ['posts', 'friends-feed', user?.id ?? 'guest'],
+    queryKey: ['posts', 'friends-feed', loading ? 'loading' : user?.id ?? 'guest'],
     queryFn: async ({ pageParam }: { pageParam: number | null }) => {
       const offset = pageParam || 0;
 
       // ── Guest mode: simple chronological feed (no personalization) ──
       if (!user) {
-        const now = new Date().toISOString();
-        const { data: posts, error } = await supabase
-          .from('posts')
-          .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
-          .or(`expires_at.is.null,expires_at.gt.${now}`)
-          .order('created_at', { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1);
+        const { data: guestPosts, error } = await supabase.rpc('get_feed_posts', {
+          p_user_id: null,
+          p_limit: PAGE_SIZE,
+          p_offset: offset,
+        });
+
         if (error) throw error;
-        if (!posts || posts.length === 0) return [];
+        if (!guestPosts || guestPosts.length === 0) return [];
 
-        // Enrich with profiles (anon can read profiles)
-        const userIds = [...new Set(posts.map(p => p.user_id))];
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('user_id, name, avatar_url, mood_emoji')
-          .in('user_id', userIds);
-        const profileMap = new Map((profiles || []).map(p => [p.user_id, p]));
-
-        return posts.map((post: any) => {
-          const prof = profileMap.get(post.user_id);
+        return guestPosts.map((post: any) => {
           return {
             id: post.id,
             user_id: post.user_id,
@@ -62,9 +62,9 @@ export function usePosts() {
             created_at: post.created_at,
             expires_at: post.expires_at || null,
             profile: {
-              name: prof?.name || 'Utilisateur',
-              avatar_url: prof?.avatar_url || null,
-              mood_emoji: prof?.mood_emoji || null,
+              name: post.author_name || 'Utilisateur',
+              avatar_url: post.author_avatar || null,
+              mood_emoji: post.author_mood || null,
             },
             likes_count: post.likes_count || 0,
             comments_count: post.comments_count || 0,
@@ -74,103 +74,9 @@ export function usePosts() {
         });
       }
 
-      // ── Authenticated feed with personalization ──
+      // ── Authenticated feed: server-side scoring (anti-cheat) ──
+      ensureFeedPrefsSynced(user.id);
       const prefs = loadContentPrefs();
-      const weights = loadFeedWeights();
-      const algoConfig = await loadAlgorithmConfig();
-
-      // Build Monte Carlo scoring context
-      const mcCtx: ScoringContext = {
-        friendInteractionCounts: new Map(),
-        userId: user.id,
-        prefs,
-        weights,
-        seenAuthors: new Set(),
-        postIndex: 0,
-        userInterests: [],
-        algoConfig,
-      };
-
-      // Load social signals in parallel: friendships, user interactions, interests
-      try {
-        const [friendshipsRes, likesGivenRes, commentsGivenRes, interestsRes] = await Promise.all([
-          supabase
-            .from('friendships')
-            .select('requester_id, addressee_id')
-            .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-            .eq('status', 'accepted'),
-          // Likes the user gave to other users' posts (last 30 days)
-          supabase
-            .from('likes')
-            .select('post_id')
-            .eq('user_id', user.id)
-            .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
-            .limit(200),
-          // Comments the user wrote (last 30 days)
-          supabase
-            .from('comments')
-            .select('post_id')
-            .eq('user_id', user.id)
-            .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
-            .limit(200),
-          // User interests
-          supabase
-            .from('user_interests')
-            .select('interest_value')
-            .eq('user_id', user.id),
-        ]);
-
-        // Build friend set
-        const friendIds = new Set<string>();
-        if (friendshipsRes.data) {
-          friendshipsRes.data.forEach((f: any) => {
-            const friendId = f.requester_id === user.id ? f.addressee_id : f.requester_id;
-            friendIds.add(friendId);
-            mcCtx.friendInteractionCounts.set(friendId, 1); // base score
-          });
-        }
-
-        // Enrich with interaction counts: resolve post authors for likes/comments
-        const interactedPostIds = new Set<string>();
-        likesGivenRes.data?.forEach((l: any) => interactedPostIds.add(l.post_id));
-        commentsGivenRes.data?.forEach((c: any) => interactedPostIds.add(c.post_id));
-
-        if (interactedPostIds.size > 0) {
-          const { data: postAuthors } = await supabase
-            .from('posts')
-            .select('id, user_id')
-            .in('id', Array.from(interactedPostIds).slice(0, 200));
-
-          if (postAuthors) {
-            const authorInteractions = new Map<string, number>();
-            // Count likes given to each author
-            const postAuthorMap = new Map(postAuthors.map(p => [p.id, p.user_id]));
-            likesGivenRes.data?.forEach((l: any) => {
-              const authorId = postAuthorMap.get(l.post_id);
-              if (authorId && authorId !== user.id) {
-                authorInteractions.set(authorId, (authorInteractions.get(authorId) || 0) + 2);
-              }
-            });
-            commentsGivenRes.data?.forEach((c: any) => {
-              const authorId = postAuthorMap.get(c.post_id);
-              if (authorId && authorId !== user.id) {
-                authorInteractions.set(authorId, (authorInteractions.get(authorId) || 0) + 3);
-              }
-            });
-
-            // Merge into friend interaction counts
-            authorInteractions.forEach((count, authorId) => {
-              const existing = mcCtx.friendInteractionCounts.get(authorId) || 0;
-              mcCtx.friendInteractionCounts.set(authorId, existing + count);
-            });
-          }
-        }
-
-        // Set user interests
-        if (interestsRes.data) {
-          mcCtx.userInterests = interestsRes.data.map((i: any) => i.interest_value);
-        }
-      } catch {}
 
       // ── Strategy 1: Single RPC call ──
       try {
@@ -201,8 +107,7 @@ export function usePosts() {
             user_reaction: post.user_reaction || null,
           })) as Post[];
 
-          // Apply Monte Carlo ranking
-          return monteCarloRank(mapped, mcCtx, 50);
+          return await serverRankPosts(mapped, user.id, prefs.feedAlgorithm);
         }
       } catch {
         // Fall through to legacy fallback
@@ -223,9 +128,8 @@ export function usePosts() {
 
       const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
       const enriched = await enrichPosts(filteredPosts.slice(0, PAGE_SIZE), user.id);
-      
-      // Apply Monte Carlo ranking
-      return monteCarloRank(enriched, mcCtx, 50);
+
+      return await serverRankPosts(enriched, user.id, prefs.feedAlgorithm);
     },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
@@ -233,13 +137,65 @@ export function usePosts() {
       return allPages.reduce((total, page) => total + page.length, 0);
     },
     initialPageParam: null as number | null,
-    enabled: true,
-    staleTime: 60_000,
-    gcTime: 10 * 60_000,
-    refetchInterval: 2 * 60_000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    enabled: !loading,
+    // Stabilize cache: avoid feed reshuffling on every focus / interval.
+    // Realtime + manual pull-to-refresh handle freshness.
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
+}
+
+/**
+ * Server-side ranking via `feed_score_batch` RPC (Phase A anti-cheat).
+ * All scoring weights, ML blend, recency, friend boost, late-night dampener
+ * live in Postgres — the client only renders the order received.
+ * Light client polish kept: session adjustment (current-session signals)
+ * and author diversity (max 2 consecutive posts from same author).
+ */
+async function serverRankPosts(
+  posts: Post[],
+  userId: string,
+  algo: 'smart' | 'chronological' | 'friends_first',
+): Promise<Post[]> {
+  if (!posts.length) return posts;
+
+  // Chronological: skip RPC, server already ordered by created_at desc
+  if (algo === 'chronological') {
+    return enforceDiversity(posts, 2);
+  }
+
+  try {
+    const postIds = posts.map((p) => p.id);
+    const { data, error } = await supabase.rpc('feed_score_batch' as any, {
+      p_user_id: userId,
+      p_post_ids: postIds,
+      p_algo: algo,
+    });
+
+    if (error || !Array.isArray(data) || data.length === 0) {
+      return enforceDiversity(posts, 2);
+    }
+
+    const scoreMap = new Map<string, number>();
+    for (const row of data as Array<{ post_id: string; final_score: number }>) {
+      scoreMap.set(row.post_id, Number(row.final_score) || 0);
+    }
+
+    const scored = posts.map((p) => {
+      const base = scoreMap.get(p.id) ?? 0;
+      // Live session adjustment (±0.15) — small client tie-break, not gameable for global ranking
+      return { post: p, finalScore: base + getSessionAdjustment(p.user_id) * 5 };
+    });
+
+    const sorted = scored.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
+    return enforceDiversity(sorted, 2);
+  } catch {
+    return enforceDiversity(posts, 2);
+  }
 }
 
 /** Enrich posts with profiles and user reactions — shared between strategies */
@@ -495,6 +451,12 @@ export function useToggleLike() {
   return useMutation({
     mutationFn: async ({ postId, isLiked }: { postId: string; isLiked: boolean }) => {
       if (!user) throw new Error('Not authenticated');
+
+      // ML signal: track explicit like/unlike
+      try {
+        const { trackMLSignal } = await import('@/hooks/useMLTracker');
+        trackMLSignal(user.id, postId, isLiked ? 'skip_fast' : 'like');
+      } catch {}
 
       if (isLiked) {
         const { error } = await supabase.from('likes').delete().eq('user_id', user.id).eq('post_id', postId);

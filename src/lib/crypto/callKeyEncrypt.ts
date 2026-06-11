@@ -8,12 +8,77 @@
  * can decrypt it locally at call-accept time.
  */
 
-import { hardCrypto } from './cryptoIntegrity';
-import { randomBytes, bufferToBase64, base64ToBuffer } from './utils';
-import { loadSessionKey } from './keyManager';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import {
+  randomBytes,
+  bufferToBase64,
+  base64ToBuffer,
+  encodeString,
+  decodeString,
+  importOkpPublicKeyFromBase64,
+} from './utils';
+import { loadSessionKey, getOrCreateIdentityKeys } from './keyManager';
+import { supabase } from '@/integrations/supabase/client';
 
 const IV_LEN = 12;
 const ENCRYPTED_SEPARATOR = '.';
+
+/**
+ * ALWAYS re-derive a fresh ECDH session for call key operations.
+ * Unlike messaging (where sessions are cached), call key crypto
+ * must be 100% in sync between caller and callee at the exact
+ * moment of the call — so we never trust cached sessions.
+ */
+async function ensureFreshCallSession(
+  conversationId: string,
+  localUserId: string,
+  peerUserId: string,
+) {
+  const { data: peerKey } = await supabase
+    .from('user_public_keys')
+    .select('identity_key, fingerprint')
+    .eq('user_id', peerUserId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!peerKey?.identity_key || !peerKey.fingerprint) {
+    throw new Error('No active peer identity key for this conversation');
+  }
+
+  // Always derive fresh — never trust cached session for calls
+  const identityKeys = await getOrCreateIdentityKeys(localUserId);
+
+  // Derive shared secret from current key material (both sides)
+  const peerPub = await importOkpPublicKeyFromBase64(peerKey.identity_key, 'X25519', [], true);
+
+  const sharedBits = await hardCrypto.deriveBits(
+    { name: 'X25519', public: peerPub } as any,
+    identityKeys.privateKey,
+    256,
+  );
+
+  const saltSource = new hardGlobals.TextEncoder().encode(`forsure-call-salt-${conversationId}`);
+  const salt = new Uint8Array(await hardCrypto.digest('SHA-256', saltSource)) as Uint8Array<ArrayBuffer>;
+  const info = new hardGlobals.TextEncoder().encode(`forsure-call-key-${conversationId}`);
+
+  const hkdfKey = await hardCrypto.importKey('raw', sharedBits, 'HKDF', false, ['deriveKey']);
+
+  const aesKey = await hardCrypto.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
+    hkdfKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+
+  return {
+    conversationId,
+    sharedSecret: aesKey,
+    messageCount: 0,
+    createdAt: Date.now(),
+    peerFingerprint: peerKey.fingerprint,
+  };
+}
 
 /**
  * Encrypt a call E2EE key using the conversation's shared session key.
@@ -23,14 +88,18 @@ const ENCRYPTED_SEPARATOR = '.';
 export async function encryptCallKey(
   callKeyB64: string,
   conversationId: string,
+  localUserId?: string,
+  peerUserId?: string,
 ): Promise<string> {
-  const session = await loadSessionKey(conversationId);
+  const session = localUserId && peerUserId
+    ? await ensureFreshCallSession(conversationId, localUserId, peerUserId)
+    : await loadSessionKey(conversationId);
   if (!session?.sharedSecret) {
     throw new Error('No E2EE session for this conversation');
   }
 
   const iv = randomBytes(IV_LEN);
-  const plaintext = new TextEncoder().encode(callKeyB64);
+  const plaintext = new hardGlobals.TextEncoder().encode(callKeyB64);
 
   const ciphertext = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
@@ -48,12 +117,21 @@ export async function encryptCallKey(
 export async function decryptCallKey(
   encryptedPayload: string,
   conversationId: string,
+  localUserId?: string,
+  peerUserId?: string,
 ): Promise<string> {
-  if (!encryptedPayload.includes(ENCRYPTED_SEPARATOR)) {
-    throw new Error('Payload is not encrypted (legacy format)');
+  if (encryptedPayload.startsWith('raw:')) {
+    throw new Error('[CALL_E2EE] Insecure raw call key payload rejected');
   }
 
-  const session = await loadSessionKey(conversationId);
+  if (!encryptedPayload.includes(ENCRYPTED_SEPARATOR)) {
+    throw new Error('[CALL_E2EE] Payload is not encrypted');
+  }
+
+  // Always force fresh session derivation to ensure key sync
+  const session = localUserId && peerUserId
+    ? await ensureFreshCallSession(conversationId, localUserId, peerUserId)
+    : await loadSessionKey(conversationId);
   if (!session?.sharedSecret) {
     throw new Error('No E2EE session key to decrypt call key');
   }
@@ -68,5 +146,5 @@ export async function decryptCallKey(
     ciphertext,
   );
 
-  return new TextDecoder().decode(plainBuf);
+  return new hardGlobals.TextDecoder().decode(plainBuf);
 }

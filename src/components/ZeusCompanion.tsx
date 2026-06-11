@@ -14,12 +14,15 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZeusCompanion';
 import { useZeusConversations, useZeusMessages } from '@/hooks/useZeusConversations';
+import { useSendMessage } from '@/hooks/useMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { SafeMarkdown } from '@/components/SafeMarkdown';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
+import { saveFeedPrefs } from '@/lib/feedPreferences';
+
 
 type Msg = { role: string; content: string };
 type ActiveTab = 'chat' | 'algo' | 'history';
@@ -225,6 +228,7 @@ function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, di
 // ── Algorithm Control Panel ──
 function AlgorithmPanel() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [feedAlgo, setFeedAlgo] = useState<FeedAlgorithm>(() => {
     try { return JSON.parse(localStorage.getItem('content-prefs') || '{}').feedAlgorithm || 'smart'; } catch { return 'smart'; }
   });
@@ -242,8 +246,9 @@ function AlgorithmPanel() {
       const prev = JSON.parse(localStorage.getItem('content-prefs') || '{}');
       localStorage.setItem('content-prefs', JSON.stringify({ ...prev, ...patch }));
     } catch {}
+    if (user) void saveFeedPrefs(user.id, patch as any).catch(() => {});
     queryClient.invalidateQueries({ queryKey: ['posts'] });
-  }, [queryClient]);
+  }, [queryClient, user]);
 
   const showFeedback = (label: string) => {
     setLastChanged(label);
@@ -257,8 +262,11 @@ function AlgorithmPanel() {
     toast.success(`Mode "${names[algo]}" activé`, { duration: 2000 });
   };
   const updateWeights = (w: FeedWeights, label: string) => {
-    setFeedWeights(w); localStorage.setItem('feed-weights', JSON.stringify(w));
-    savePrefs({}); showFeedback(label);
+    setFeedWeights(w);
+    localStorage.setItem('feed-weights', JSON.stringify(w));
+    if (user) void saveFeedPrefs(user.id, { weights: w }).catch(() => {});
+    queryClient.invalidateQueries({ queryKey: ['posts'] });
+    showFeedback(label);
   };
   const updateDiversity = (v: number) => { setDiversityBoost(v); savePrefs({ diversityBoost: v }); showFeedback('Diversité'); };
   const updateViral = (v: boolean) => {
@@ -393,6 +401,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const secureSendMessage = useSendMessage();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
   const { unacknowledged } = useContentStrikes();
@@ -458,13 +467,35 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   }, []);
 
   useEffect(() => {
-    if (unacknowledged.length > 0 && !open) {
-      const latest = unacknowledged[0] as any;
-      toast.warning(latest.zeus_message || `${zeusName} a un message pour toi`, {
-        duration: 8000,
-        action: { label: 'Voir', onClick: () => setOpen(true) },
-      });
-    }
+    if (unacknowledged.length === 0 || open) return;
+    const latest = unacknowledged[0] as any;
+    const strikeId: string = latest?.id || 'zeus-strike';
+
+    // Persist dismissal locally so closing the toast (X) silences this strike permanently
+    let dismissed: string[] = [];
+    try { dismissed = JSON.parse(localStorage.getItem('zeus-dismissed-strikes') || '[]'); } catch {}
+    if (dismissed.includes(strikeId)) return;
+
+    const markDismissed = () => {
+      try {
+        const cur = JSON.parse(localStorage.getItem('zeus-dismissed-strikes') || '[]');
+        if (!cur.includes(strikeId)) {
+          cur.push(strikeId);
+          localStorage.setItem('zeus-dismissed-strikes', JSON.stringify(cur.slice(-100)));
+        }
+      } catch {}
+    };
+
+    toast.warning(latest.zeus_message || `${zeusName} a un message pour toi`, {
+      id: `zeus-strike-${strikeId}`,
+      duration: 8000,
+      action: {
+        label: 'Voir',
+        onClick: () => { markDismissed(); setOpen(true); },
+      },
+      onDismiss: markDismissed,
+      onAutoClose: markDismissed,
+    });
   }, [unacknowledged.length]);
 
   const startNewConversation = useCallback(() => {
@@ -510,15 +541,10 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           toast.error('Données de message incomplètes');
           return;
         }
-        // Send message via Supabase insert
-        const { error: msgError } = await supabase.from('messages').insert({
-          conversation_id: action.conversation_id,
-          sender_id: user.id,
+        await secureSendMessage.mutateAsync({
+          conversationId: action.conversation_id,
           body: action.message_text,
         });
-        if (msgError) throw msgError;
-        // Update conversation timestamp
-        await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', action.conversation_id);
         queryClient.invalidateQueries({ queryKey: ['messages', action.conversation_id] });
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
         setExecutedActions(prev => new Set([...prev, msgIndex]));
@@ -557,7 +583,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     } finally {
       setExecutingAction(null);
     }
-  }, [user, queryClient]);
+  }, [user, queryClient, secureSendMessage]);
 
   const sendMessage = useCallback(async (overrideText?: string) => {
     const text = overrideText || input.trim();

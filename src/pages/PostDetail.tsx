@@ -10,6 +10,8 @@ import { PostCard } from '@/components/PostCard';
 import { CommentsList } from '@/components/CommentsList';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
+import { SEOHead } from '@/components/SEOHead';
+import { buildPostMeta } from '@/lib/seo/buildMeta';
 
 export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
@@ -98,8 +100,24 @@ export default function PostDetail() {
     );
   }
 
+  const meta = buildPostMeta({
+    postId: post.id,
+    body: post.body,
+    imageUrl: post.image_url,
+    authorName: post.profile.name,
+    createdAt: post.created_at,
+  });
+
   return (
     <AppLayout>
+      <SEOHead
+        title={meta.title}
+        description={meta.description}
+        url={meta.url}
+        image={meta.image}
+        type="article"
+        jsonLd={meta.jsonLd}
+      />
       {/* Header — Facebook style */}
       <header className="flex items-center gap-3 px-3 py-2 border-b border-border/20 bg-card sticky top-12 z-30">
         <Link to="/feed">

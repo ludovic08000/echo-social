@@ -8,16 +8,16 @@ type MediaFolder = 'avatars' | 'images' | 'videos' | 'products' | 'stories' | 'b
 const FOLDER_ALLOWED_TYPES: Record<string, string[]> = {
   avatars: ['image/'],
   images: ['image/'],
-  'post-images': ['image/', 'video/'],
-  videos: ['video/', 'image/'],
+  'post-images': ['image/', 'video/', 'application/octet-stream'],
+  videos: ['video/', 'image/', 'application/octet-stream'],
   products: ['image/'],
-  stories: ['image/', 'video/'],
+  stories: ['image/', 'video/', 'application/octet-stream'],
   backgrounds: ['image/'],
   documents: ['image/', 'application/pdf'],
   voice: ['audio/'],
   lives: ['image/'],
-  feed: ['image/', 'video/'],
-  uploads: ['image/', 'video/'],
+  feed: ['image/', 'video/', 'application/octet-stream'],
+  uploads: ['image/', 'video/', 'application/octet-stream'],
 };
 
 const FOLDER_MAX_SIZE_MB: Record<string, number> = {
@@ -54,7 +54,9 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB }: UseImageUploadO
 
     // Validate file type against folder
     const allowedPrefixes = FOLDER_ALLOWED_TYPES[bucket] || ['image/', 'video/'];
-    const isAllowed = allowedPrefixes.some(prefix => file.type.startsWith(prefix) || file.type === prefix);
+    // Allow encrypted media (E2EE) by file extension when MIME is octet-stream
+    const isEncryptedMedia = file.type === 'application/octet-stream' && /\.enc$/i.test(file.name);
+    const isAllowed = isEncryptedMedia || allowedPrefixes.some(prefix => file.type.startsWith(prefix) || file.type === prefix);
     if (!isAllowed) {
       const label = allowedPrefixes.map(p => p.replace('/', '')).join(', ');
       toast.error(`Type de fichier non autorisé. Accepté : ${label}`);

@@ -1,6 +1,8 @@
 project_id = "vkpmoqfzrihcijjochks"
 
 [functions]
+  [functions.vapid-public-key]
+    verify_jwt = false
   [functions.ad-assistant]
     verify_jwt = false
   [functions.ad-checkout]
@@ -96,4 +98,14 @@ project_id = "vkpmoqfzrihcijjochks"
   [functions.handle-email-suppression]
     verify_jwt = false
   [functions.verify-chat-pin]
+    verify_jwt = false
+  [functions.login-rate-limit]
+    verify_jwt = false
+  [functions.device-security]
+    verify_jwt = false
+  [functions.sealed-mint-token]
+    verify_jwt = false
+  [functions.sealed-relay]
+    verify_jwt = false
+  [functions.kt-publish-epoch]
     verify_jwt = false

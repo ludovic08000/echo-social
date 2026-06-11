@@ -240,7 +240,6 @@ export function assessDeviceRisk(
     reasons.push('device_not_trusted');
   }
 
-  if (score >= 90) return { riskLevel: 'blocked', requiresPin: true, reasons };
   if (score >= 50) return { riskLevel: 'high', requiresPin: true, reasons };
   if (score >= 25) return { riskLevel: 'medium', requiresPin: true, reasons };
   return { riskLevel: 'low', requiresPin: false, reasons };
@@ -315,17 +314,20 @@ export async function assessCurrentBrowserDevice(
     });
 
     if (error) {
-      await db
-        .from('user_trusted_devices')
-        .update({
-          risk_level: risk.riskLevel,
-          risk_reasons: risk.reasons,
-          last_seen_at: new Date().toISOString(),
-        })
-        .eq('user_id', userId)
-        .eq('device_id', current.deviceId)
-        .neq('trust_status', 'trusted')
-        .catch?.(() => undefined);
+      try {
+        await db
+          .from('user_trusted_devices')
+          .update({
+            risk_level: risk.riskLevel,
+            risk_reasons: risk.reasons,
+            last_seen_at: new Date().toISOString(),
+          })
+          .eq('user_id', userId)
+          .eq('device_id', current.deviceId)
+          .eq('trust_status', 'pending');
+      } catch {
+        // The hard gate still uses the local assessment result below.
+      }
     }
   }
 
@@ -369,23 +371,7 @@ export async function trustCurrentDeviceAfterPin(input: {
   });
 
   if (error) {
-    const { error: updateError } = await db
-      .from('user_trusted_devices')
-      .update({
-        trust_status: 'trusted',
-        trusted_at: new Date().toISOString(),
-        risk_level: 'low',
-        risk_reasons: [],
-        e2ee_public_key: input.e2eePublicKey ?? existing?.e2ee_public_key ?? null,
-        e2ee_identity_fingerprint: input.e2eeIdentityFingerprint ?? existing?.e2ee_identity_fingerprint ?? null,
-        signature: input.signature ?? null,
-        signed_at: input.signature ? new Date().toISOString() : null,
-        last_seen_at: new Date().toISOString(),
-      })
-      .eq('user_id', input.userId)
-      .eq('device_id', deviceInfo.deviceId);
-
-    if (updateError) throw updateError;
+    throw new Error(`DEVICE_TRUST_RPC_FAILED:${error.message || error.code || 'unknown'}`);
   }
 
   return deviceInfo;

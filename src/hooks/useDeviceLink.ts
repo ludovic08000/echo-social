@@ -1,17 +1,55 @@
 /**
- * useDeviceLink — QR-based device-to-device E2EE key transfer
+ * useDeviceLink - approved linked-device E2EE transfer.
  *
- * Security: The QR code contains ONLY the claim token.
- * The encryption PIN is communicated via a separate channel (shown on screen separately).
- * This prevents a single-channel compromise from exposing both claim + decrypt capability.
+ * New flow (Signal-style shape):
+ *   1. The new device creates a short-lived QR request containing only a token.
+ *   2. The already-connected device approves that token.
+ *   3. Local keys + decryptable history cache are encrypted to the new device's
+ *      ephemeral public key and uploaded as ciphertext.
+ *   4. The new device decrypts locally, restores IndexedDB, then triggers resync.
+ *
+ * The legacy PIN flow is kept for backwards compatibility with old links, but
+ * the UI now uses the approval flow by default.
  */
 
 import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import { openE2EEDB } from '@/lib/crypto/indexedDb';
+import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
+import {
+  buildDeviceLinkQrData,
+  decryptDeviceLinkPayload,
+  deviceLinkPublicKeysEqual,
+  encryptDeviceLinkPayload,
+  generateDeviceLinkKeyPair,
+  generateDeviceLinkToken,
+  hashDeviceLinkToken,
+  parseDeviceLinkQrPayload,
+  parseDeviceLinkToken,
+  type DeviceLinkTransferEnvelope,
+} from '@/lib/crypto/deviceLinkEnvelope';
+import {
+  getCurrentDeviceId,
+  getCurrentDeviceLabel,
+  getCurrentPlatform,
+  hydrateDeviceId,
+} from '@/lib/messaging/currentDevice';
+import {
+  exportPlaintextCache,
+  importPlaintextCache,
+  type PlaintextCacheExportEntry,
+} from '@/lib/crypto/plaintextStore';
 
 const PBKDF2_ITERATIONS = 600_000;
+const LINK_PRIVATE_KEY_PREFIX = 'forsure:device-link:private:';
+
+interface StoredLinkRequest {
+  privateJwk: JsonWebKey;
+  requesterDeviceId: string;
+  createdAt: number;
+}
 
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
@@ -30,52 +68,77 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
-/** Generate a random 8-character alphanumeric PIN */
+/** Generate a random 8-character alphanumeric PIN for legacy links. */
 function generatePin(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No ambiguous chars (0/O, 1/I/L)
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const bytes = crypto.getRandomValues(new Uint8Array(8));
   return Array.from(bytes).map(b => chars[b % chars.length]).join('');
 }
 
-/** Collect all E2EE keys from local storage */
-async function collectLocalKeys(): Promise<string> {
+function persistPendingLink(token: string, request: StoredLinkRequest): void {
+  try {
+    sessionStorage.setItem(`${LINK_PRIVATE_KEY_PREFIX}${token}`, JSON.stringify(request));
+  } catch {
+    // Safari private mode can reject sessionStorage; the user can recreate a QR.
+  }
+}
+
+function loadPendingLink(token: string): StoredLinkRequest | null {
+  try {
+    const raw = sessionStorage.getItem(`${LINK_PRIVATE_KEY_PREFIX}${token}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredLinkRequest;
+    if (!parsed?.privateJwk || !parsed.requesterDeviceId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingLink(token: string): void {
+  try { sessionStorage.removeItem(`${LINK_PRIVATE_KEY_PREFIX}${token}`); } catch {}
+}
+
+function notifyKeysRestored(status: string): void {
+  try {
+    window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+      detail: { status, source: 'device_link' },
+    }));
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+  } catch {
+    // SSR/tests
+  }
+}
+
+/** Collect all local E2EE state plus, when possible, the local plaintext cache. */
+async function collectLocalKeys(options: { includePlaintextCache?: boolean } = {}): Promise<string> {
+  const includePlaintextCache = options.includePlaintextCache ?? true;
   const data: Record<string, any> = {};
 
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-e2ee', 2);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    for (const storeName of Array.from(db.objectStoreNames)) {
-      const tx = db.transaction(storeName, 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
+    const db = await openE2EEDB();
+    const storeNames = Array.from(db.objectStoreNames);
+    for (const storeName of storeNames) {
+      const all = await runTx([storeName], 'readonly', (tx) =>
+        reqToPromise(tx.objectStore(storeName).getAll() as IDBRequest<any[]>),
+      ).catch(() => []);
       data[`e2ee:${storeName}`] = all;
     }
-    db.close();
   } catch {}
 
   try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('forsure-ratchet', 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result);
-    });
-    if (db.objectStoreNames.contains('ratchet-states')) {
-      const tx = db.transaction('ratchet-states', 'readonly');
-      const all = await new Promise<any[]>((resolve, reject) => {
-        const req = tx.objectStore('ratchet-states').getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      data['ratchet:states'] = all;
-    }
-    db.close();
+    const all = await runTxOn('ratchet', ['ratchet-states'], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore('ratchet-states').getAll()),
+    );
+    if (all && all.length) data['ratchet:states'] = all;
   } catch {}
+
+  if (includePlaintextCache) {
+    try {
+      const plaintextCache = await exportPlaintextCache();
+      if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
+    } catch {}
+  }
 
   try {
     const fps = localStorage.getItem('forsure-known-fps');
@@ -85,7 +148,7 @@ async function collectLocalKeys(): Promise<string> {
   return JSON.stringify(data);
 }
 
-/** Restore keys from JSON into local stores */
+/** Restore keys from JSON into local stores. */
 async function restoreLocalKeys(json: string): Promise<void> {
   const data = JSON.parse(json);
 
@@ -93,48 +156,26 @@ async function restoreLocalKeys(json: string): Promise<void> {
     if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
     const storeName = key.replace('e2ee:', '');
     try {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-e2ee', 2);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains(storeName)) {
-            req.result.createObjectStore(storeName, { keyPath: 'id' });
-          }
-        };
+      const db = await openE2EEDB();
+      if (!db.objectStoreNames.contains(storeName)) continue;
+      await runTx([storeName], 'readwrite', (tx) => {
+        const store = tx.objectStore(storeName);
+        for (const record of records) store.put(record);
       });
-      if (db.objectStoreNames.contains(storeName)) {
-        const tx = db.transaction(storeName, 'readwrite');
-        for (const record of records) tx.objectStore(storeName).put(record);
-        await new Promise<void>((resolve, reject) => {
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-      }
-      db.close();
     } catch {}
   }
 
   if (data['ratchet:states'] && Array.isArray(data['ratchet:states'])) {
     try {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('forsure-ratchet', 1);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains('ratchet-states')) {
-            req.result.createObjectStore('ratchet-states', { keyPath: 'convId' });
-          }
-        };
+      await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
+        const store = tx.objectStore('ratchet-states');
+        for (const r of data['ratchet:states']) store.put(r);
       });
-      const tx = db.transaction('ratchet-states', 'readwrite');
-      for (const r of data['ratchet:states']) tx.objectStore('ratchet-states').put(r);
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-      db.close();
     } catch {}
+  }
+
+  if (Array.isArray(data['plaintext:cache'])) {
+    await importPlaintextCache(data['plaintext:cache'] as PlaintextCacheExportEntry[]);
   }
 
   if (data['fingerprints']) {
@@ -148,30 +189,168 @@ export function useDeviceLink() {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Creates a device link from the source device.
-   * Returns:
-   *  - qrData: contains ONLY the claim token (safe to display in QR)
-   *  - pin: the encryption PIN (must be communicated separately)
+   * New device: create an approval request QR. The private key never leaves
+   * this browser and is held only in sessionStorage until claim/expiry.
    */
-  const createLink = useCallback(async (): Promise<{ qrData: string; pin: string } | null> => {
-    if (!user) { setError('Non authentifié'); return null; }
+  const createLinkRequest = useCallback(async (): Promise<{ qrData: string; token: string } | null> => {
+    if (!user) { setError('Non authentifie'); return null; }
     setIsLoading(true);
     setError(null);
 
     try {
-      // 1. Ask server to create a link token
+      const requesterDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+      const token = generateDeviceLinkToken();
+      const tokenHash = await hashDeviceLinkToken(token);
+      const pair = await generateDeviceLinkKeyPair();
+      persistPendingLink(token, {
+        privateJwk: pair.privateJwk,
+        requesterDeviceId,
+        createdAt: Date.now(),
+      });
+
+      const { error: rpcError } = await (supabase as any).rpc("create_device_link_request", {
+        p_token_hash: tokenHash,
+        p_requester_device_id: requesterDeviceId,
+        p_requester_public_key: pair.publicJwk as any,
+        p_requester_label: `${getCurrentDeviceLabel()} - ${getCurrentPlatform()}`,
+      });
+      if (rpcError) throw rpcError;
+
+      return { qrData: buildDeviceLinkQrData(token, pair.publicJwk), token };
+    } catch (err: any) {
+      setError(err.message || 'Erreur de creation de demande');
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  /**
+   * Existing device: approve a QR request and upload the encrypted initial
+   * transfer for that exact requester key.
+   */
+  const approveLinkRequest = useCallback(async (qrData: string): Promise<boolean> => {
+    if (!user) { setError('Non authentifie'); return false; }
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const qr = parseDeviceLinkQrPayload(qrData);
+      const token = qr.t;
+      const tokenHash = await hashDeviceLinkToken(token);
+      const currentDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+
+      const { data, error: lookupError } = await (supabase as any).rpc("get_device_link_request_for_approval", {
+        p_token_hash: tokenHash,
+      });
+      if (lookupError) throw lookupError;
+
+      const request = Array.isArray(data) ? data[0] : data;
+      if (!request) throw new Error('Demande expiree ou deja approuvee');
+      if (request.requester_device_id === currentDeviceId) {
+        throw new Error('Ouvre ce QR depuis un autre appareil deja connecte');
+      }
+      if (!deviceLinkPublicKeysEqual(request.requester_public_key as JsonWebKey, qr.pk as JsonWebKey)) {
+        throw new Error('QR de liaison non authentifie: cle publique differente');
+      }
+
+      let keysJson = await collectLocalKeys();
+      let envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
+      let encryptedPayload = JSON.stringify(envelope);
+
+      if (encryptedPayload.length > 1_900_000) {
+        keysJson = await collectLocalKeys({ includePlaintextCache: false });
+        envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
+        encryptedPayload = JSON.stringify(envelope);
+      }
+
+      const { data: approved, error: approveError } = await (supabase as any).rpc("approve_device_link_request", {
+        p_token_hash: tokenHash,
+        p_approver_device_id: currentDeviceId,
+        p_encrypted_payload: encryptedPayload,
+      });
+      if (approveError) throw approveError;
+      if (!approved) throw new Error('Demande impossible a approuver');
+
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Erreur d approbation');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  /**
+   * New device: fetch the approved ciphertext, decrypt with the local private
+   * key from the original request, restore, then mark the request complete.
+   */
+  const claimApprovedLink = useCallback(async (qrData: string): Promise<boolean> => {
+    if (!user) { setError('Non authentifie'); return false; }
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const token = parseDeviceLinkToken(qrData);
+      const pending = loadPendingLink(token);
+      if (!pending) {
+        throw new Error('Demande introuvable sur cet appareil. Regenere un QR ici.');
+      }
+
+      const tokenHash = await hashDeviceLinkToken(token);
+      const { data, error: payloadError } = await (supabase as any).rpc("get_approved_device_link_payload", {
+        p_token_hash: tokenHash,
+        p_requester_device_id: pending.requesterDeviceId,
+      });
+      if (payloadError) throw payloadError;
+
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row?.encrypted_payload) {
+        throw new Error('En attente d approbation depuis un autre appareil');
+      }
+
+      const envelope = JSON.parse(row.encrypted_payload) as DeviceLinkTransferEnvelope;
+      const keysJson = await decryptDeviceLinkPayload(envelope, pending.privateJwk);
+      await restoreLocalKeys(keysJson);
+
+      await (supabase as any).rpc("complete_device_link_request", {
+        p_token_hash: tokenHash,
+        p_requester_device_id: pending.requesterDeviceId,
+      });
+
+      clearPendingLink(token);
+      notifyKeysRestored('restored_from_linked_device');
+      console.log('[DeviceLink] linked-device keys restored successfully');
+      return true;
+    } catch (err: any) {
+      if (err.name === 'OperationError') {
+        setError('Transfert chiffre illisible pour cet appareil');
+      } else {
+        setError(err.message || 'Erreur de recuperation');
+      }
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  /**
+   * Legacy source-device flow kept for old QR/PIN links.
+   */
+  const createLink = useCallback(async (): Promise<{ qrData: string; pin: string } | null> => {
+    if (!user) { setError('Non authentifie'); return null; }
+    setIsLoading(true);
+    setError(null);
+
+    try {
       const { data: tokenData, error: fnError } = await supabase.functions.invoke(
         'device-link',
-        { body: { action: 'create' } }
+        { body: { action: 'create' } },
       );
       if (fnError) throw fnError;
 
       const token = tokenData.token as string;
-
-      // 2. Generate a separate PIN for encryption (NOT included in QR)
       const pin = generatePin();
-
-      // 3. Collect + encrypt keys using PIN as password
       const keysJson = await collectLocalKeys();
       const salt = crypto.getRandomValues(new Uint8Array(32));
       const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -188,16 +367,13 @@ export function useDeviceLink() {
         iv: bufferToBase64(iv.buffer),
       });
 
-      // 4. Upload encrypted payload
       const { error: uploadError } = await supabase.functions.invoke(
         'device-link',
-        { body: { action: 'upload', encrypted_payload: payload } }
+        { body: { action: 'upload', encrypted_payload: payload } },
       );
       if (uploadError) throw uploadError;
 
-      // 5. QR contains ONLY the token — PIN is separate
-      const qrData = JSON.stringify({ t: token });
-      return { qrData, pin };
+      return { qrData: JSON.stringify({ t: token }), pin };
     } catch (err: any) {
       setError(err.message || 'Erreur de liaison');
       return null;
@@ -207,26 +383,21 @@ export function useDeviceLink() {
   }, [user]);
 
   /**
-   * Claims keys on the new device.
-   * @param qrData - scanned from QR (contains token)
-   * @param pin - communicated separately (verbal, SMS, etc.)
+   * Legacy new-device claim for old QR/PIN links.
    */
   const claimLink = useCallback(async (qrData: string, pin: string): Promise<boolean> => {
-    if (!user) { setError('Non authentifié'); return false; }
+    if (!user) { setError('Non authentifie'); return false; }
     setIsLoading(true);
     setError(null);
 
     try {
       const { t: token } = JSON.parse(qrData);
-
-      // 1. Claim from server
       const { data: claimData, error: claimError } = await supabase.functions.invoke(
         'device-link',
-        { body: { action: 'claim', token } }
+        { body: { action: 'claim', token } },
       );
       if (claimError) throw claimError;
 
-      // 2. Decrypt payload using the separately-provided PIN
       const envelope = JSON.parse(claimData.encrypted_payload);
       const salt = new Uint8Array(base64ToBuffer(envelope.salt));
       const iv = new Uint8Array(base64ToBuffer(envelope.iv));
@@ -234,17 +405,16 @@ export function useDeviceLink() {
       const key = await deriveKey(pin, salt);
       const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
       const keysJson = new TextDecoder().decode(plainBuf);
-
-      // 3. Restore keys locally
       await restoreLocalKeys(keysJson);
 
-      console.log('[DeviceLink] Keys restored successfully');
+      notifyKeysRestored('restored_from_legacy_device_link');
+      console.log('[DeviceLink] legacy keys restored successfully');
       return true;
     } catch (err: any) {
       if (err.name === 'OperationError') {
-        setError('Code PIN incorrect ou token expiré');
+        setError('Code PIN incorrect ou token expire');
       } else {
-        setError(err.message || 'Erreur de récupération');
+        setError(err.message || 'Erreur de recuperation');
       }
       return false;
     } finally {
@@ -252,5 +422,13 @@ export function useDeviceLink() {
     }
   }, [user]);
 
-  return { createLink, claimLink, isLoading, error };
+  return {
+    createLinkRequest,
+    approveLinkRequest,
+    claimApprovedLink,
+    createLink,
+    claimLink,
+    isLoading,
+    error,
+  };
 }

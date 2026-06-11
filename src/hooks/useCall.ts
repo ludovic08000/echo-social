@@ -1,11 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Room, RoomEvent, Track, ExternalE2EEKeyProvider, isE2EESupported } from 'livekit-client';
+import { Room, RoomEvent, Track, ExternalE2EEKeyProvider, isE2EESupported, ConnectionQuality } from 'livekit-client';
 import { getLiveKitToken } from '@/lib/livekit';
 import { requestMediaPermissions, acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
 import { toast } from 'sonner';
 
 export type CallType = 'audio' | 'video';
-export type CallState = 'idle' | 'connecting' | 'connected' | 'ended';
+export type CallPhase = 'idle' | 'connecting' | 'connected' | 'ending';
+export type CallState = CallPhase;
 
 export interface CallEndInfo {
   type: CallType;
@@ -15,15 +16,14 @@ export interface CallEndInfo {
 
 interface UseCallOptions {
   onCallEnded?: (info: CallEndInfo) => void;
+  onCallConnected?: () => void;
 }
 
-/** Generate a random 32-byte key and return as base64 */
 export function generateCallE2EEKey(): string {
   const key = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...key));
 }
 
-/** Decode a base64 key back to Uint8Array */
 function decodeE2EEKey(b64: string): Uint8Array {
   const bin = atob(b64);
   const arr = new Uint8Array(bin.length);
@@ -32,115 +32,287 @@ function decodeE2EEKey(b64: string): Uint8Array {
 }
 
 export function useCall(options?: UseCallOptions) {
-  const [callState, setCallState] = useState<CallState>('idle');
+  const [callState, setCallState] = useState<CallPhase>('idle');
   const [callType, setCallType] = useState<CallType>('audio');
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [duration, setDuration] = useState(0);
   const [isE2eeActive, setIsE2eeActive] = useState(false);
+  const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'poor' | 'lost' | 'unknown'>('unknown');
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLDivElement | null>(null);
   const remoteVideoRef = useRef<HTMLDivElement | null>(null);
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const callStateRef = useRef<CallState>('idle');
+  const noAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteLeftGraceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const phaseRef = useRef<CallPhase>('idle');
   const durationRef = useRef(0);
   const callTypeRef = useRef<CallType>('audio');
-  const noAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const manualEndRef = useRef(false);
-  const hadRemoteParticipantRef = useRef(false);
+  const hadRemoteRef = useRef(false);
 
-  // Keep refs in sync
-  useEffect(() => { callStateRef.current = callState; }, [callState]);
-  useEffect(() => { durationRef.current = duration; }, [duration]);
-  useEffect(() => { callTypeRef.current = callType; }, [callType]);
+  const connectingRef = useRef(false);
+  const endingRef = useRef(false);
 
-  // Duration timer
+  const onCallEndedRef = useRef(options?.onCallEnded);
+  const onCallConnectedRef = useRef(options?.onCallConnected);
+  useEffect(() => {
+    onCallEndedRef.current = options?.onCallEnded;
+  }, [options?.onCallEnded]);
+
+  useEffect(() => {
+    onCallConnectedRef.current = options?.onCallConnected;
+  }, [options?.onCallConnected]);
+
+  useEffect(() => {
+    phaseRef.current = callState;
+  }, [callState]);
+
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+
+  useEffect(() => {
+    callTypeRef.current = callType;
+  }, [callType]);
+
   useEffect(() => {
     if (callState === 'connected') {
-      timerRef.current = setInterval(() => {
-        setDuration(d => d + 1);
-      }, 1000);
-    } else {
+      timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [callState]);
 
-  const startCall = useCallback(async (conversationId: string, type: CallType, e2eeKeyB64?: string) => {
-    // Request permissions before connecting
-    const perms = await requestMediaPermissions({
-      audio: true,
-      video: type === 'video',
-    });
+  const clearCallTimers = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (noAnswerTimeoutRef.current) {
+      clearTimeout(noAnswerTimeoutRef.current);
+      noAnswerTimeoutRef.current = null;
+    }
+    if (remoteLeftGraceTimeoutRef.current) {
+      clearTimeout(remoteLeftGraceTimeoutRef.current);
+      remoteLeftGraceTimeoutRef.current = null;
+    }
+  }, []);
 
-    if (!perms.granted) {
-      toast.error(perms.error || "Impossible d'accéder au micro/caméra");
+  const cleanupDom = useCallback(() => {
+    if (localVideoRef.current) localVideoRef.current.innerHTML = '';
+    if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
+  }, []);
+
+  const safeDisconnect = useCallback((reason: string) => {
+    if (endingRef.current) {
+      console.debug(`[CALL] safeDisconnect ignored (already ending) — ${reason}`);
       return;
     }
 
+    if (phaseRef.current === 'idle' && !roomRef.current) {
+      console.debug(`[CALL] safeDisconnect ignored (already idle) — ${reason}`);
+      return;
+    }
+
+    endingRef.current = true;
+
+    const wasMissed = phaseRef.current !== 'connected';
+    const endDuration = durationRef.current;
+    const endType = callTypeRef.current;
+
+    console.info(`[CALL] ending call — reason=${reason}, phase=${phaseRef.current}, duration=${endDuration}s`);
+
+    clearCallTimers();
+
+    const room = roomRef.current;
+    roomRef.current = null;
+
+    if (room) {
+      try {
+        room.disconnect();
+      } catch (err) {
+        console.warn('[CALL] room.disconnect() failed:', err);
+      }
+    }
+
+    cleanupDom();
+
+    setCallState('idle');
+    setDuration(0);
+    setIsE2eeActive(false);
+    setIsMuted(false);
+    setIsCameraOff(false);
+
+    phaseRef.current = 'idle';
+    connectingRef.current = false;
+    hadRemoteRef.current = false;
+
+    releaseWakeLock();
+
+    onCallEndedRef.current?.({
+      type: endType,
+      duration: endDuration,
+      wasMissed,
+    });
+
+    queueMicrotask(() => {
+      endingRef.current = false;
+    });
+  }, [cleanupDom, clearCallTimers]);
+
+  const markConnected = useCallback(() => {
+    if (phaseRef.current === 'connected') return;
+    phaseRef.current = 'connected';
+    setCallState('connected');
+    onCallConnectedRef.current?.();
+  }, []);
+
+  const startCall = useCallback(async (conversationId: string, type: CallType, e2eeKeyB64: string) => {
+    if (connectingRef.current) {
+      console.warn('[CALL] startCall ignored — already connecting');
+      return;
+    }
+
+    if (roomRef.current) {
+      console.warn('[CALL] startCall ignored — room already exists');
+      return;
+    }
+
+    if (phaseRef.current !== 'idle') {
+      console.warn(`[CALL] startCall ignored — invalid phase ${phaseRef.current}`);
+      return;
+    }
+
+    connectingRef.current = true;
+    endingRef.current = false;
+    hadRemoteRef.current = false;
+
     setCallType(type);
     setCallState('connecting');
+    phaseRef.current = 'connecting';
     setDuration(0);
     setIsMuted(false);
     setIsCameraOff(false);
     setIsE2eeActive(false);
-    manualEndRef.current = false;
-    hadRemoteParticipantRef.current = false;
+
+    console.info(`[CALL] starting ${type} call for conversation ${conversationId}`);
 
     try {
-      // Keep screen awake during call
+      if (!e2eeKeyB64) {
+        throw new Error('Missing E2EE call key');
+      }
+
+      if (!isE2EESupported()) {
+        throw new Error('LiveKit E2EE is not supported on this device');
+      }
+
+      const perms = await requestMediaPermissions({
+        audio: true,
+        video: type === 'video',
+      });
+
+      if (!perms.granted) {
+        connectingRef.current = false;
+        setCallState('idle');
+        toast.error(perms.error || "Impossible d'accéder au micro/caméra");
+        return;
+      }
+
       await acquireWakeLock();
 
       const roomName = `call-${conversationId}`;
       const { token, url } = await getLiveKitToken(roomName, true);
 
-      // Setup E2EE if key provided and browser supports it
       let e2eeKeyProvider: ExternalE2EEKeyProvider | undefined;
       let e2eeWorker: Worker | undefined;
-      const canE2EE = e2eeKeyB64 && isE2EESupported();
 
-      if (canE2EE) {
-        try {
-          e2eeKeyProvider = new ExternalE2EEKeyProvider();
-          e2eeWorker = new Worker(new URL('livekit-client/e2ee-worker', import.meta.url));
-          const keyBytes = decodeE2EEKey(e2eeKeyB64);
-          await e2eeKeyProvider.setKey(keyBytes.buffer as ArrayBuffer);
-        } catch (e) {
-          console.warn('E2EE setup failed, continuing without encryption:', e);
-          e2eeKeyProvider = undefined;
-          e2eeWorker = undefined;
-        }
+      try {
+        e2eeKeyProvider = new ExternalE2EEKeyProvider();
+        e2eeWorker = new Worker(new URL('livekit-client/e2ee-worker', import.meta.url));
+        const keyBytes = decodeE2EEKey(e2eeKeyB64);
+        await e2eeKeyProvider.setKey(keyBytes.buffer as ArrayBuffer);
+      } catch (err) {
+        console.error('[CALL] E2EE init failed:', err);
+        throw new Error('Unable to initialize call E2EE');
+      }
+
+      if (endingRef.current || phaseRef.current !== 'connecting') {
+        console.info('[CALL] start aborted before room creation');
+        connectingRef.current = false;
+        releaseWakeLock();
+        return;
       }
 
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
-        ...(e2eeKeyProvider && e2eeWorker ? {
-          e2ee: {
-            keyProvider: e2eeKeyProvider,
-            worker: e2eeWorker,
-          },
-        } : {}),
+        audioCaptureDefaults: {
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
+        audioOutput: {
+          deviceId: 'default',
+        },
+        ...(e2eeKeyProvider && e2eeWorker
+          ? { e2ee: { keyProvider: e2eeKeyProvider, worker: e2eeWorker } }
+          : {}),
       });
 
       roomRef.current = room;
 
-      room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        console.debug(`[CALL] track subscribed: ${track.kind}`);
         const el = track.attach();
+
         if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
           el.style.width = '100%';
           el.style.height = '100%';
           el.style.objectFit = 'cover';
           remoteVideoRef.current.innerHTML = '';
           remoteVideoRef.current.appendChild(el);
-        } else if (track.kind === Track.Kind.Audio) {
+          return;
+        }
+
+        if (track.kind === Track.Kind.Audio) {
+          // Use invisible positioning instead of display:none
+          // Some browsers (Safari/iOS) block playback for display:none elements
+          el.style.position = 'absolute';
+          el.style.opacity = '0';
+          el.style.width = '0';
+          el.style.height = '0';
+          el.style.pointerEvents = 'none';
+          el.setAttribute('playsinline', '');
+          (el as HTMLMediaElement).autoplay = true;
+          (el as HTMLMediaElement).muted = false;
+          (el as HTMLMediaElement).volume = 1.0;
           document.body.appendChild(el);
-          el.style.display = 'none';
+
+          // Force play with autoplay-policy fallback
+          const mediaEl = el as HTMLMediaElement;
+          mediaEl.play().catch(() => {
+            const resumeAudio = () => {
+              mediaEl.play().catch(() => {});
+              document.removeEventListener('click', resumeAudio);
+              document.removeEventListener('touchstart', resumeAudio);
+            };
+            document.addEventListener('click', resumeAudio, { once: true });
+            document.addEventListener('touchstart', resumeAudio, { once: true });
+          });
         }
       });
 
@@ -148,50 +320,112 @@ export function useCall(options?: UseCallOptions) {
         track.detach().forEach(el => el.remove());
       });
 
-      room.on(RoomEvent.Disconnected, () => {
-        if (manualEndRef.current) return;
-        const wasMissed = callStateRef.current !== 'connected';
-        const endDuration = durationRef.current;
-        const endType = callTypeRef.current;
-        setCallState('idle');
-        setDuration(0);
-        setIsE2eeActive(false);
-        releaseWakeLock();
-        options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
+      // Network quality indicator (WhatsApp-style)
+      room.on(RoomEvent.ConnectionQualityChanged, (quality) => {
+        const q = quality === ConnectionQuality.Excellent ? 'excellent'
+          : quality === ConnectionQuality.Good ? 'good'
+          : quality === ConnectionQuality.Poor ? 'poor'
+          : quality === ConnectionQuality.Lost ? 'lost'
+          : 'unknown';
+        setConnectionQuality(q);
+      });
+
+      room.on(RoomEvent.Disconnected, (reason) => {
+        if (endingRef.current) {
+          console.debug('[CALL] RoomEvent.Disconnected ignored — safeDisconnect already running');
+          return;
+        }
+        console.warn(`[CALL] RoomEvent.Disconnected unexpected — ${String(reason)}`);
+        safeDisconnect(`room_disconnected:${String(reason)}`);
       });
 
       room.on(RoomEvent.ParticipantConnected, () => {
-        hadRemoteParticipantRef.current = true;
-        setCallState('connected');
+        console.info('[CALL] remote participant joined');
+        hadRemoteRef.current = true;
+
+        if (remoteLeftGraceTimeoutRef.current) {
+          clearTimeout(remoteLeftGraceTimeoutRef.current);
+          remoteLeftGraceTimeoutRef.current = null;
+        }
+
         if (noAnswerTimeoutRef.current) {
           clearTimeout(noAnswerTimeoutRef.current);
           noAnswerTimeoutRef.current = null;
+          console.debug('[CALL] no-answer timeout cancelled');
+        }
+
+        if (phaseRef.current === 'connecting') {
+          markConnected();
         }
       });
 
       room.on(RoomEvent.ParticipantDisconnected, () => {
-        if (!manualEndRef.current && hadRemoteParticipantRef.current && room.remoteParticipants.size === 0) {
-          room.disconnect();
+        const currentRoom = roomRef.current;
+        if (!currentRoom) return;
+        if (!hadRemoteRef.current) return;
+        if (endingRef.current) return;
+
+        if (currentRoom.remoteParticipants.size > 0) {
+          return;
         }
+
+        console.info('[CALL] all remote participants left — starting 5s grace timer');
+
+        if (remoteLeftGraceTimeoutRef.current) {
+          clearTimeout(remoteLeftGraceTimeoutRef.current);
+        }
+
+        remoteLeftGraceTimeoutRef.current = setTimeout(() => {
+          const activeRoom = roomRef.current;
+          if (!activeRoom || endingRef.current) return;
+
+          if (activeRoom.remoteParticipants.size === 0) {
+            safeDisconnect('all_remote_left');
+          }
+        }, 5000);
       });
 
+      console.info('[CALL] connecting room...');
       await room.connect(url, token);
 
-      // Enable E2EE after connection
-      if (e2eeKeyProvider) {
-        try {
-          await room.setE2EEEnabled(true);
-          setIsE2eeActive(true);
-          console.log('🔒 E2EE enabled for call');
-        } catch (e) {
-          console.warn('Failed to enable E2EE after connect:', e);
-        }
+      if (endingRef.current || roomRef.current !== room) {
+        console.info('[CALL] call ended during connect — cleaning up');
+        try { room.disconnect(); } catch {}
+        roomRef.current = null;
+        connectingRef.current = false;
+        releaseWakeLock();
+        return;
       }
 
-      // Enable mic always
-      await room.localParticipant.setMicrophoneEnabled(true);
+      console.info('[CALL] room connected');
 
-      // Enable camera for video calls
+      try {
+        await room.setE2EEEnabled(true);
+        setIsE2eeActive(true);
+        console.info('[CALL] LiveKit E2EE enabled');
+      } catch (err) {
+        console.error('[CALL] LiveKit E2EE enable failed:', err);
+        throw new Error('Unable to enable call E2EE');
+      }
+
+      if (endingRef.current || roomRef.current !== room) {
+        console.info('[CALL] call ended before local track publication — cleaning up');
+        try { room.disconnect(); } catch {}
+        roomRef.current = null;
+        connectingRef.current = false;
+        releaseWakeLock();
+        return;
+      }
+
+      console.info('[CALL] publishing local tracks...');
+      await room.localParticipant.setMicrophoneEnabled(true, {
+        echoCancellation: true,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+        sampleRate: 48000,
+      });
+
       if (type === 'video') {
         await room.localParticipant.setCameraEnabled(true);
 
@@ -207,63 +441,38 @@ export function useCall(options?: UseCallOptions) {
         }
       }
 
-      // If someone is already in the room, we're connected
+      console.info('[CALL] local tracks published');
+
       if (room.remoteParticipants.size > 0) {
-        hadRemoteParticipantRef.current = true;
-        setCallState('connected');
+        hadRemoteRef.current = true;
+        markConnected();
+        console.info('[CALL] remote participant already present → connected');
       } else {
-        setCallState('connecting');
         noAnswerTimeoutRef.current = setTimeout(() => {
-          toast.error("Pas de réponse");
-          if (roomRef.current) {
-            roomRef.current.disconnect();
-            roomRef.current = null;
+          if (phaseRef.current === 'connecting' && !endingRef.current) {
+            console.info('[CALL] no answer timeout (30s)');
+            toast.error('Pas de réponse');
+            safeDisconnect('no_answer_timeout');
           }
-          if (localVideoRef.current) localVideoRef.current.innerHTML = '';
-          if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
-          setCallState('idle');
-          setDuration(0);
-          setIsE2eeActive(false);
-          releaseWakeLock();
-          options?.onCallEnded?.({ type: callTypeRef.current, duration: 0, wasMissed: true });
         }, 30000);
       }
+
+      connectingRef.current = false;
     } catch (err) {
-      console.error('Call error:', err);
-      toast.error("Impossible de lancer l'appel. Vérifiez votre connexion.");
-      setCallState('ended');
-      setIsE2eeActive(false);
-      releaseWakeLock();
+      console.error('[CALL] startCall error:', err);
+      toast.error("Impossible de lancer l'appel chiffré.");
+      safeDisconnect('start_call_error');
     }
-  }, [options]);
+  }, [markConnected, safeDisconnect]);
 
   const endCall = useCallback(() => {
-    manualEndRef.current = true;
-    hadRemoteParticipantRef.current = false;
-    const wasMissed = callStateRef.current !== 'connected';
-    const endDuration = durationRef.current;
-    const endType = callTypeRef.current;
-
-    if (noAnswerTimeoutRef.current) {
-      clearTimeout(noAnswerTimeoutRef.current);
-      noAnswerTimeoutRef.current = null;
-    }
-    if (roomRef.current) {
-      roomRef.current.disconnect();
-      roomRef.current = null;
-    }
-    if (localVideoRef.current) localVideoRef.current.innerHTML = '';
-    if (remoteVideoRef.current) remoteVideoRef.current.innerHTML = '';
-    setCallState('idle');
-    setDuration(0);
-    setIsE2eeActive(false);
-    releaseWakeLock();
-    options?.onCallEnded?.({ type: endType, duration: endDuration, wasMissed });
-  }, [options]);
+    safeDisconnect('manual_end');
+  }, [safeDisconnect]);
 
   const toggleMute = useCallback(() => {
     const room = roomRef.current;
-    if (!room) return;
+    if (!room || phaseRef.current === 'idle' || phaseRef.current === 'ending') return;
+
     const newMuted = !isMuted;
     room.localParticipant.setMicrophoneEnabled(!newMuted);
     setIsMuted(newMuted);
@@ -271,7 +480,8 @@ export function useCall(options?: UseCallOptions) {
 
   const toggleCamera = useCallback(() => {
     const room = roomRef.current;
-    if (!room) return;
+    if (!room || phaseRef.current === 'idle' || phaseRef.current === 'ending') return;
+
     const newOff = !isCameraOff;
     room.localParticipant.setCameraEnabled(!newOff);
     setIsCameraOff(newOff);
@@ -279,8 +489,8 @@ export function useCall(options?: UseCallOptions) {
 
   const switchToVideo = useCallback(async () => {
     const room = roomRef.current;
-    if (!room || callType === 'video') return;
-    
+    if (!room || callType === 'video' || phaseRef.current === 'ending') return;
+
     setCallType('video');
     await room.localParticipant.setCameraEnabled(true);
 
@@ -296,18 +506,32 @@ export function useCall(options?: UseCallOptions) {
     }
   }, [callType]);
 
+  const toggleScreenShare = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room || phaseRef.current === 'ending') return;
+    try {
+      const enabled = room.localParticipant.isScreenShareEnabled;
+      await room.localParticipant.setScreenShareEnabled(!enabled, { audio: true });
+      setIsScreenSharing(!enabled);
+      if (!enabled) toast.success('Partage d\u2019\u00e9cran activ\u00e9');
+      else toast.message('Partage d\u2019\u00e9cran arr\u00eat\u00e9');
+    } catch (err) {
+      console.error('[CALL] screen share toggle failed', err);
+      toast.error('Partage d\u2019\u00e9cran indisponible');
+    }
+  }, []);
+
   const switchCamera = useCallback(async () => {
     const room = roomRef.current;
-    if (!room) return;
+    if (!room || phaseRef.current === 'ending') return;
+
     const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
     if (camPub?.track) {
       const currentSettings = (camPub.track as any).mediaStreamTrack?.getSettings?.();
       const newFacingMode = currentSettings?.facingMode === 'user' ? 'environment' : 'user';
 
       await room.localParticipant.setCameraEnabled(false);
-      await room.localParticipant.setCameraEnabled(true, {
-        facingMode: newFacingMode,
-      });
+      await room.localParticipant.setCameraEnabled(true, { facingMode: newFacingMode });
 
       const newCamPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
       if (newCamPub?.track && localVideoRef.current) {
@@ -322,15 +546,14 @@ export function useCall(options?: UseCallOptions) {
     }
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (roomRef.current) {
-        roomRef.current.disconnect();
+      if (roomRef.current || phaseRef.current !== 'idle') {
+        console.info('[CALL] unmount cleanup');
+        safeDisconnect('component_unmount');
       }
-      releaseWakeLock();
     };
-  }, []);
+  }, [safeDisconnect]);
 
   return {
     callState,
@@ -339,14 +562,18 @@ export function useCall(options?: UseCallOptions) {
     isCameraOff,
     duration,
     isE2eeActive,
+    connectionQuality,
     localVideoRef,
     remoteVideoRef,
+    room: roomRef.current,
     startCall,
     endCall,
     toggleMute,
     toggleCamera,
+    isScreenSharing,
     switchToVideo,
     switchCamera,
+    toggleScreenShare,
   };
 }
 

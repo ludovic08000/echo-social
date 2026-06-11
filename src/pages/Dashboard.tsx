@@ -10,6 +10,7 @@ import { Eye, Users, TrendingUp, TrendingDown, BarChart3, Heart, Share2 } from '
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { WellbeingScoreCard } from '@/components/WellbeingScoreCard';
 
 function StatCard({ icon: Icon, label, value, change, changeLabel }: {
   icon: React.ElementType;
@@ -199,6 +200,10 @@ export default function Dashboard() {
               </div>
             </Card>
 
+            <WellbeingScoreCard />
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="grid md:grid-cols-1 gap-4">
             <Card className="p-5 bg-card border-border/30 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-foreground">Contenu</h3>

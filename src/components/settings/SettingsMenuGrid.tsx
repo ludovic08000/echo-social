@@ -1,4 +1,4 @@
-import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight, LogOut, Gamepad2, Trophy, BookOpen, Search, MessageCircle, Tv, Baby } from 'lucide-react';
+import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight, LogOut, Gamepad2, Trophy, BookOpen, Search, MessageCircle, Tv, Baby, Smartphone } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
 import { Link, useNavigate } from 'react-router-dom';
@@ -24,6 +24,7 @@ const iconColors: Record<string, string> = {
   privacy: 'bg-teal-500/10 text-teal-500',
   notifications: 'bg-orange-500/10 text-orange-500',
   parental: 'bg-pink-500/10 text-pink-500',
+  devices: 'bg-cyan-500/10 text-cyan-500',
 };
 
 const quickLinks = [
@@ -56,8 +57,12 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
   };
 
   const handleSignOut = async () => {
-    await signOut();
-    navigate('/login');
+    try {
+      await signOut();
+    } finally {
+      // Hard reload to guarantee all in-memory state (E2EE keys, caches, guards) is wiped
+      window.location.replace('/login');
+    }
   };
 
   const allTabs = [
@@ -71,6 +76,7 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
     { id: 'privacy', label: t('settings.privacy'), desc: t('settings.privacyDesc'), icon: Shield, guestAllowed: false },
     { id: 'notifications', label: t('settings.notifications'), desc: t('settings.notificationsDesc'), icon: Bell, guestAllowed: false },
     { id: 'parental', label: 'Contrôle parental', desc: 'Code PIN et filtrage de contenu', icon: Baby, guestAllowed: true },
+    { id: 'devices', label: 'Appareils connectés', desc: 'Gérer et révoquer vos appareils', icon: Smartphone, guestAllowed: false },
   ];
 
   const tabs = user ? allTabs : allTabs.filter(tab => tab.guestAllowed);

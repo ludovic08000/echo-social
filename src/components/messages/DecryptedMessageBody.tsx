@@ -1,105 +1,175 @@
-import { useState, useEffect, memo } from 'react';
-import { Lock } from 'lucide-react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
-import { hasMediaKey, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
+import { setMediaKey } from './mediaKeyCache';
+import {
+  resolvePlaintext,
+  readCache,
+  dropCache,
+  clearNegativeCache,
+  persistOutcome,
+  looksEncrypted,
+  buildOutcomeFromText,
+  type DecryptionOutcome,
+} from './decryptionService';
+import { isImageMediaLabel, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
+import type { DecryptResult } from '@/hooks/useE2EE';
 
-/** Detect voice message pattern — supports multiple formats:
- *  🎙️ vocal:URL|duration
- *  🎙️ voice:URL|dur:duration
- *  🎙️ voice:URL|duration
+/**
+ * DecryptedMessageBody — passive presentational component.
+ *
+ * It owns NO crypto logic. It delegates every resolution step to
+ * `decryptionService.resolvePlaintext` and only decides:
+ *   - Which media renderer to pick (voice / GIF / text).
+ *   - Whether to show the neutral placeholder while waiting.
+ *
+ * On failure the component renders an invisible spacer — no string,
+ * no lock icon — and waits for `forsure-decrypt-retry` to re-attempt.
  */
+
 function parseVoiceMessage(text: string): { url: string; duration: number } | null {
-  // Format: 🎙️ vocal:URL|123  or  🎙️ voice:URL|123
   const m1 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|(\d+)$/);
   if (m1) return { url: m1[1], duration: parseInt(m1[2], 10) };
-  // Format: 🎙️ voice:URL|dur:123
   const m2 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|dur:(\d+)$/);
   if (m2) return { url: m2[1], duration: parseInt(m2[2], 10) };
   return null;
 }
 
-/** Detect GIF message pattern: GIF:URL */
 function parseGifMessage(text: string): string | null {
   const match = text.match(/^GIF:(https?:\/\/.+)$/i);
-  if (match) return match[1];
-  return null;
+  return match ? match[1] : null;
 }
 
 interface DecryptedMessageBodyProps {
   body: string;
-  decrypt: (body: string) => Promise<{ text: string; encrypted: boolean; verified: boolean }>;
+  decrypt: (body: string) => Promise<DecryptResult>;
   isEncryptionActive: boolean;
   onDecrypted?: (text: string) => void;
   isMe?: boolean;
+  cachedPlaintext?: string;
+  refreshKey?: string | number;
+  messageId?: string;
+  hasMedia?: boolean;
 }
 
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
   decrypt,
-  isEncryptionActive,
+  isEncryptionActive: _isEncryptionActive,
   onDecrypted,
   isMe,
+  cachedPlaintext,
+  refreshKey,
+  messageId,
+  hasMedia,
 }: DecryptedMessageBodyProps) {
-  const [displayText, setDisplayText] = useState<string | null>(null);
-  const [mediaKeyB64, setMediaKeyB64] = useState<string | null>(null);
-  const [isDecrypting, setIsDecrypting] = useState(false);
+  // Synchronous initial state — uses RAM cache + cleartext shortcut so the
+  // first paint never flashes a placeholder when plaintext is already known.
+  const initial: { outcome: DecryptionOutcome | null; pending: boolean } = (() => {
+    if (cachedPlaintext) {
+      const outcome = buildOutcomeFromText(cachedPlaintext);
+      return { outcome, pending: false };
+    }
+    if (!looksEncrypted(body)) {
+      return { outcome: { text: body, mediaKeyB64: null, hidden: false }, pending: false };
+    }
+    const cached = readCache(messageId, body);
+    if (cached) return { outcome: cached, pending: false };
+    return { outcome: null, pending: true };
+  })();
+
+  const [outcome, setOutcome] = useState<DecryptionOutcome | null>(initial.outcome);
+  const [pending, setPending] = useState(initial.pending);
+  const [retryTick, setRetryTick] = useState(0);
+
+  const onDecryptedRef = useRef(onDecrypted);
+  onDecryptedRef.current = onDecrypted;
+
+  // Listen for the global retry event fired after key restoration / queue
+  // success. Drop any stale RAM entry so the effect below re-resolves.
+  useEffect(() => {
+    const handler = () => {
+      // A successful queue retry/key restore wipes the negative cache so
+      // every silent bubble re-attempts on the next render pass.
+      clearNegativeCache();
+      dropCache(messageId, body);
+      setRetryTick((t) => t + 1);
+    };
+    window.addEventListener('forsure-decrypt-retry', handler);
+    return () => window.removeEventListener('forsure-decrypt-retry', handler);
+  }, [messageId, body]);
 
   useEffect(() => {
-    if (!isEncryptionActive) {
-      setDisplayText(body);
-      setMediaKeyB64(null);
-      return;
-    }
-
-    const looksEncrypted = body.startsWith('{') && (body.includes('"ct"') || body.includes('"hdr"'));
-    if (!looksEncrypted) {
-      setDisplayText(body);
-      setMediaKeyB64(null);
-      return;
-    }
-
     let cancelled = false;
-    setIsDecrypting(true);
 
-    decrypt(body).then(result => {
-      if (!cancelled) {
-        // Extract media key before stripping it from display
-        if (hasMediaKey(result.text)) {
-          const parsed = parseMediaMessage(result.text);
-          if (parsed) {
-            setMediaKeyB64(parsed.keyB64);
-            setDisplayText(parsed.label);
-          } else {
-            setDisplayText(result.text);
-          }
-        } else {
-          setDisplayText(result.text);
-          setMediaKeyB64(null);
+    // cachedPlaintext provided by parent always wins (post-send echo).
+    if (cachedPlaintext) {
+      const next = buildOutcomeFromText(cachedPlaintext);
+      setOutcome(next);
+      setPending(false);
+      if (next.mediaKeyB64 && messageId) {
+        setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
+      }
+      // NOTE: do NOT re-notify parent — it already owns this plaintext.
+      // Calling onDecrypted here would trigger a parent state bump, change
+      // `refreshKey`, re-run this effect, and create an infinite loop.
+      return;
+    }
+
+    if (!looksEncrypted(body)) {
+      setOutcome({ text: body, mediaKeyB64: null, hidden: false });
+      setPending(false);
+      return;
+    }
+
+    setPending(true);
+    void resolvePlaintext({ body, messageId, isMe, decrypt })
+      .then((next) => {
+        if (cancelled) return;
+        if (!next) {
+          // Silent pending — UI shows neutral placeholder, queue will retry.
+          setOutcome(null);
+          setPending(true);
+          return;
         }
-        setIsDecrypting(false);
-        onDecrypted?.(result.text);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setDisplayText('🔒 Message chiffré');
-        setIsDecrypting(false);
-      }
-    });
+        setOutcome(next);
+        setPending(false);
+        if (next.mediaKeyB64 && messageId) {
+          setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
+        }
+        if (!next.hidden) {
+          const persisted = persistOutcome(body, next);
+          // Once a message is readable, push the refreshed ratchet + small
+          // plaintext/media-key cache into the encrypted account backup quickly.
+          void import('@/lib/crypto/accountKeyBackup')
+            .then(({ requestImmediateBackup }) => requestImmediateBackup('message-decrypted'))
+            .catch(() => {});
+          onDecryptedRef.current?.(persisted);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOutcome(null);
+          setPending(true);
+        }
+      });
 
     return () => { cancelled = true; };
-  }, [body, decrypt, isEncryptionActive, onDecrypted]);
+    // retryTick + refreshKey force a re-attempt after key restoration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [body, messageId, cachedPlaintext, retryTick, refreshKey]);
 
-  if (isDecrypting || displayText === null) {
-    return (
-      <span className="inline-flex items-center gap-1 text-muted-foreground">
-        <Lock className="w-3 h-3 animate-pulse" />
-        <span className="text-xs">Déchiffrement...</span>
-      </span>
-    );
+  if (outcome?.hidden) return null;
+
+  if (pending || outcome === null) {
+    // Neutral, invisible placeholder — never reveals state to the user.
+    return <span className="opacity-0 select-none" aria-hidden="true">·</span>;
   }
 
-  // Check if it's a voice message
-  const voice = parseVoiceMessage(displayText);
+  const { text, mediaKeyB64 } = outcome;
+
+  if (hasMedia && (isImageMediaLabel(text) || isVideoMediaLabel(text))) return null;
+
+  const voice = parseVoiceMessage(text);
   if (voice) {
     return (
       <VoiceMessagePlayer
@@ -111,8 +181,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  // Check if it's a GIF message
-  const gifUrl = parseGifMessage(displayText);
+  const gifUrl = parseGifMessage(text);
   if (gifUrl) {
     return (
       <img
@@ -124,5 +193,5 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  return <>{displayText}</>;
+  return <>{text}</>;
 });

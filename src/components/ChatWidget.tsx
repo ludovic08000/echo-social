@@ -4,8 +4,9 @@ import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
   ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed,
-  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2
+  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2, Users
 } from 'lucide-react';
+import { AddParticipantSheet } from '@/components/calls/AddParticipantSheet';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -21,13 +22,19 @@ import { trackAICall } from '@/lib/aiEngine';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
-import { generateMediaKey, encryptMedia, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
+import { generateMediaKey, encryptMedia, buildMediaMessageBody, parseMediaMessage, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
+import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { MessageMedia } from '@/components/messages/MessageMedia';
+import { EncryptedMedia } from '@/components/messages/EncryptedMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
+import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
+import { DocumentBubble } from '@/components/messages/DocumentBubble';
+import { CallHistoryPanel } from '@/components/calls/CallHistoryPanel';
+import { Eye } from 'lucide-react';
 import { RelayPointPicker } from '@/components/marketplace/RelayPointPicker';
 import { useRealtimeNotificationSound } from '@/hooks/useNotificationSounds';
 import { toast } from 'sonner';
@@ -37,7 +44,11 @@ import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
+import { ConversationPreviewText } from '@/components/messages/ConversationPreviewText';
+import { setMediaKey } from '@/components/messages/mediaKeyCache';
+import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
+import { useMessageReactions } from '@/hooks/useMessageReactions';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 // ─── Utils ───────────────────────────────────────────────
@@ -311,13 +322,7 @@ function WidgetConversationList() {
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <p className={cn("text-[11px] truncate flex-1", conv.unread_count > 0 ? "text-foreground font-medium" : "text-muted-foreground")}>
-                    {conv.last_message?.body 
-                      ? isCallMessage(conv.last_message.body) 
-                        ? (getCallData(conv.last_message.body)?.status === 'missed' ? '📞 Appel manqué' : '📞 Appel terminé')
-                        : isVoiceMessage(conv.last_message.body) ? '🎙️ Message vocal'
-                        : isGifMessage(conv.last_message.body) ? '🎬 GIF'
-                        : conv.last_message.body
-                      : 'Démarrez la conversation…'}
+                    <ConversationPreviewText body={conv.last_message?.body} maxLength={50} />
                   </p>
                   {conv.unread_count > 0 && (
                     <span className="w-4 h-4 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center flex-shrink-0">
@@ -353,26 +358,28 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showEmojis, setShowEmojis] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [viewOnceArmed, setViewOnceArmed] = useState(false);
+  const [showCallHistory, setShowCallHistory] = useState(false);
+  const [showGroupCallSheet, setShowGroupCallSheet] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
-  const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
+  const [lightboxMedia, setLightboxMedia] = useState<{ url: string; body: string; messageId: string } | null>(null);
+  // Persisted + realtime reactions (replaces local-only state)
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [isSending] = useState(false);
   const { translations, translating, translate: translateMsg, autoTranslateMessages } = useMessageTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const [isStartingCall, setIsStartingCall] = useState(false);
+  const shouldAutoScrollRef = useRef(true);
+  const lastScrollSigRef = useRef('');
 
   // Auto-translate non-French messages
-  useEffect(() => {
-    if (messages?.length) {
-      autoTranslateMessages(
-        messages.map((m: any) => ({ id: m.id, body: m.body, sender_id: m.sender_id })),
-        user?.id
-      );
-    }
-  }, [messages, user?.id, autoTranslateMessages]);
+  // Auto-translate disabled
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -382,20 +389,71 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const negotiationProduct = chatState.negotiationProduct;
 
-  // E2EE integration
+  // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
   const e2ee = useE2EE(conversationId, peerUserId);
+  const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
+  const [cacheVersion, setCacheVersion] = useState(0);
+  const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
+  const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
+  const stableBadgeRef = useRef({ encrypted: false, verified: false, ratchetActive: false });
+
+  useEffect(() => {
+    stableBadgeRef.current = { encrypted: false, verified: false, ratchetActive: false };
+  }, [conversationId]);
+
+  const stableBadgeState = useMemo(() => {
+    if (e2ee.encrypted) {
+      stableBadgeRef.current = {
+        encrypted: true,
+        verified: !e2ee.fingerprintChanged,
+        ratchetActive: stableBadgeRef.current.ratchetActive || e2ee.ratchetActive,
+      };
+    } else if (e2ee.fingerprintChanged) {
+      stableBadgeRef.current = {
+        ...stableBadgeRef.current,
+        verified: false,
+      };
+    }
+
+    return stableBadgeRef.current;
+  }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
+
+  const decryptedCacheRef = useRef<Map<string, string>>(new Map());
+  const cachePlaintext = useCallback((msgId: string, text: string) => {
+    const media = parseMediaMessage(text);
+    if (media) setMediaKey(msgId, media.keyB64, isVideoMediaLabel(media.label));
+    decryptedCacheRef.current.set(msgId, text);
+    bumpCache();
+    void savePlaintext(msgId, text);
+  }, [bumpCache]);
+
+  // When E2EE keys are restored after login, drop empty/placeholder entries
+  // and re-trigger decryption so previously-hidden messages re-appear in clear.
+  useEffect(() => {
+    const handler = () => {
+      for (const [k, v] of decryptedCacheRef.current) {
+        if (!v) decryptedCacheRef.current.delete(k);
+      }
+      bumpCache();
+    };
+    window.addEventListener('forsure-keys-restored', handler);
+    return () => window.removeEventListener('forsure-keys-restored', handler);
+  }, [bumpCache]);
+
   const queue = useMessageQueue(
     conversationId,
     e2ee.encrypt,
     e2ee.isReady(),
-    !isZeusConversation && e2ee.encrypted,
+    isEncryptionActive,
+    e2ee.acknowledgeSentPayload,
+    isZeusConversation,
+    cachePlaintext,
   );
 
-  // Decrypted text cache for widget
-  const decryptedCacheRef = useRef<Map<string, string>>(new Map());
   const onDecrypted = useCallback((msgId: string, text: string) => {
-    decryptedCacheRef.current.set(msgId, text);
-  }, []);
+    const parsed = parseMediaMessage(text);
+    cachePlaintext(msgId, parsed ? text : text);
+  }, [cachePlaintext]);
 
   // Auto-load negotiation context from conversation if not set
   const { data: convNegotiations = [] } = useNegotiationsByConversation(!negotiationProduct ? conversationId : undefined);
@@ -578,39 +636,172 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   // Wrap upload: encrypt media before upload when E2EE is active
   const handleMediaFile = useCallback(async (file: File) => {
-    const label = '📷 Photo';
+    if (!file || file.size === 0) {
+      toast.error('Fichier invalide ou vide');
+      return;
+    }
 
-    if (isZeusConversation || !e2ee.encrypted) {
-      const url = await rawUpload(file);
-      if (url) {
-        if (isZeusConversation) {
-          sendMessage.mutate({ conversationId, body: label, imageUrl: url });
-        } else {
-          queue.sendMessage(label, url).catch(() => toast.error('Erreur envoi photo'));
-        }
+    const isVideo = /\.(mp4|mov|webm|avi|mkv)$/i.test(file.name) || file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    const isDoc = !isImage && !isVideo && (isDocumentMime(file.type) || /\.(pdf|docx?|xlsx?|pptx?|zip|txt|csv)$/i.test(file.name));
+    const armedVO = viewOnceArmed;
+    setViewOnceArmed(false);
+
+    // Documents path (PDF/Office/zip ≤100 Mo)
+    if (isDoc) {
+      if (file.size > 100 * 1024 * 1024) {
+        toast.error('Document trop volumineux (max 100 Mo)');
+        return;
+      }
+      if (!isZeusConversation && e2ee.peerKeyMissing) {
+        toast.error('Clés du contact indisponibles.');
+        return;
+      }
+      try {
+        const { key, keyB64 } = await generateMediaKey();
+        const encryptedBlob = await encryptMedia(file, key);
+        const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+        const url = await rawUpload(encFile);
+        if (!url) { toast.error('Upload échoué'); return; }
+        const body = buildDocumentBody(file.name, file.type || 'application/octet-stream', file.size, keyB64);
+        queue.sendMessage(body, url, {
+          view_once: armedVO,
+          document_url: url,
+          document_name: file.name,
+          document_mime: file.type || 'application/octet-stream',
+          document_size_bytes: file.size,
+        }).catch((e) => {
+          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send_doc' } });
+          toast.error('Erreur envoi document');
+        });
+      } catch (err) {
+        logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'doc_encrypt_upload' } });
+        toast.error('Erreur de chiffrement du document');
       }
       return;
     }
 
-    // E2EE active → encrypt file before upload
+    const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
+    const MAX_VIDEO_BYTES = 60 * 1024 * 1024;
+    if (!isVideo && file.size > MAX_PHOTO_BYTES) {
+      toast.error(`Photo trop lourde (max ${Math.round(MAX_PHOTO_BYTES / 1024 / 1024)} Mo)`);
+      return;
+    }
+    if (isVideo && file.size > MAX_VIDEO_BYTES) {
+      toast.error(`Vidéo trop lourde (max ${Math.round(MAX_VIDEO_BYTES / 1024 / 1024)} Mo)`);
+      return;
+    }
+
+    const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
+
+    let prepared: File = file;
+    if (isVideo) {
+      try {
+        const { compressVideoForChat } = await import('@/lib/messaging/compressVideo');
+        const result = await compressVideoForChat(file);
+        prepared = result.compressed
+          ? new File([result.blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
+          : file;
+      } catch {
+        prepared = file;
+      }
+    }
+
+    if (isZeusConversation) {
+      try {
+        const url = await rawUpload(prepared);
+        if (!url) { toast.error("Échec de l'envoi : upload refusé"); return; }
+        sendMessage.mutate({ conversationId, body: label, imageUrl: url });
+      } catch (err) {
+        toast.error(err instanceof Error ? `Erreur envoi : ${err.message}` : 'Erreur envoi');
+      }
+      return;
+    }
+
+    const t0 = performance.now();
     try {
       const { key, keyB64 } = await generateMediaKey();
-      const encryptedBlob = await encryptMedia(file, key);
-      const encFile = new File([encryptedBlob], `${file.name}.enc`, { type: 'application/octet-stream' });
+      const encryptedBlob = await encryptMedia(prepared, key);
+      const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
       if (url) {
         const body = buildMediaMessageBody(label, keyB64);
-        queue.sendMessage(body, url).catch(() => toast.error('Erreur envoi photo'));
+        queue.sendMessage(body, url, { view_once: armedVO }).catch((e) => {
+          logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send', isVideo } });
+          toast.error(e instanceof Error ? `Erreur envoi : ${e.message}` : 'Erreur envoi');
+        });
+        logCryptoError({
+          severity: 'info', context: 'media', errorCode: 'MEDIA_ENCRYPT_OK',
+          errorMessage: 'Media encrypted and uploaded',
+          conversationId,
+          metadata: { sizeBytes: prepared.size, mime: prepared.type, isVideo, viewOnce: armedVO, durationMs: Math.round(performance.now() - t0) },
+        });
+      } else {
+        toast.error("Échec de l'envoi : upload refusé par le serveur");
       }
     } catch (err) {
       console.error('Media encryption failed:', err);
-      toast.error('Erreur de chiffrement du média');
+      logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type } });
+      toast.error(err instanceof Error ? `Erreur : ${err.message}` : 'Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, e2ee.encrypted, rawUpload, conversationId, sendMessage, queue]);
+  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.peerKeyMissing, viewOnceArmed]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, queue.pendingMessages]);
+    lastScrollSigRef.current = '';
+    shouldAutoScrollRef.current = true;
+    setShowScrollDown(false);
+  }, [conversationId]);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    shouldAutoScrollRef.current = true;
+    setShowScrollDown(false);
+  }, []);
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 80;
+    setShowScrollDown(distanceFromBottom > 120);
+  }, []);
+
+  useEffect(() => {
+    const lastMsg = messages?.length ? messages[messages.length - 1] : undefined;
+    const lastPending = queue.pendingMessages.length
+      ? queue.pendingMessages[queue.pendingMessages.length - 1]
+      : undefined;
+    const sig = `${messages?.length ?? 0}:${lastMsg?.id ?? ''}|${queue.pendingMessages.length}:${lastPending?.localId ?? ''}`;
+    if (sig === lastScrollSigRef.current) return;
+
+    const isInitialLoad = lastScrollSigRef.current === '';
+    lastScrollSigRef.current = sig;
+
+    if (isInitialLoad || shouldAutoScrollRef.current || lastMsg?.sender_id === user?.id || lastPending) {
+      requestAnimationFrame(() => scrollToBottom(isInitialLoad ? 'auto' : 'smooth'));
+    }
+  }, [messages, queue.pendingMessages, scrollToBottom, user?.id]);
+
+  useEffect(() => {
+    if (!messages?.length) return;
+    let cancelled = false;
+    (async () => {
+      let added = false;
+      for (const msg of messages) {
+        if (decryptedCacheRef.current.has(msg.id)) continue;
+        const pt = await loadPlaintext(msg.id);
+        if (cancelled) return;
+        if (pt) {
+          const media = parseMediaMessage(pt);
+          if (media) setMediaKey(msg.id, media.keyB64, isVideoMediaLabel(media.label));
+          decryptedCacheRef.current.set(msg.id, pt);
+          added = true;
+        }
+      }
+      if (added && !cancelled) bumpCache();
+    })();
+    return () => { cancelled = true; };
+  }, [messages, bumpCache]);
 
   useEffect(() => {
     if (conversationId) markRead.mutate(conversationId);
@@ -620,15 +811,22 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    // Block send if fingerprint changed
-    if (!isZeusConversation && e2ee.fingerprintChanged) {
-      toast.error('Clé de sécurité modifiée — valide d\'abord le contact (bouton OK en haut).');
-      return;
-    }
-
-    // BLOCK plaintext: if peer has no keys AND no prekey session, refuse to send
-    if (!isZeusConversation && e2ee.peerKeyMissing) {
-      toast.error('🔒 Envoi impossible : le contact n\'a pas encore de clés de chiffrement.');
+    // Show explicit reason if E2EE is not ready (especially on iOS Safari where
+    // IndexedDB takes a moment to hydrate after login).
+    if (sendBlocked) {
+      if (e2ee.peerKeyMissing) {
+        toast.error("Clés du contact indisponibles. Réessaie dans quelques secondes.");
+      } else if (e2ee.initError === 'pin_unlock_required') {
+        toast.error("Déverrouille d'abord la messagerie sécurisée (PIN).");
+      } else if (e2ee.initError === 'identity_lost_backup_available') {
+        toast.error("Restaure ton identité sécurisée avant d'envoyer.");
+      } else {
+        toast.error("Messagerie sécurisée pas encore prête, réessaie.");
+      }
+      console.warn('[ChatWidget] send blocked', {
+        peerKeyMissing: e2ee.peerKeyMissing,
+        initError: e2ee.initError,
+      });
       return;
     }
 
@@ -641,6 +839,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     setNewMessage('');
     setReplyTo(null);
     setShowEmojis(false);
+    shouldAutoScrollRef.current = true;
     inputRef.current?.focus();
 
     if (isZeusConversation) {
@@ -652,6 +851,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       });
     }
   };
+
+  // Fingerprint change is no longer a blocker — only true unrecoverable states are.
+  const sendBlocked = !isZeusConversation && (e2ee.peerKeyMissing || e2ee.initError === 'pin_unlock_required' || e2ee.initError === 'identity_lost_backup_available');
 
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
     if (!newMessage.trim() || aiLoading) return;
@@ -669,12 +871,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     } catch { toast.error('Erreur IA'); } finally { setAiLoading(false); }
   };
 
+  const messageIds = useMemo(() => (messages || []).map(m => m.id), [messages]);
+  const { reactions: reactionsByMessage, toggleReaction } = useMessageReactions(conversationId, messageIds);
+
   const handleReact = (msgId: string, emoji: string) => {
-    setMessageReactions(prev => {
-      const existing = prev[msgId] || [];
-      if (existing.includes(emoji)) return { ...prev, [msgId]: existing.filter(e => e !== emoji) };
-      return { ...prev, [msgId]: [...existing, emoji] };
-    });
+    void toggleReaction(msgId, emoji);
     setActiveMessageId(null);
   };
 
@@ -693,7 +894,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   }, [messages]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="relative flex flex-col h-full">
       {/* Call overlay */}
       <CallOverlay
         callState={call.callState}
@@ -704,6 +905,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         participantName={conversation?.participant.name || ''}
         participantAvatar={conversation?.participant.avatar_url}
         isE2eeActive={call.isE2eeActive}
+        connectionQuality={call.connectionQuality}
         localVideoRef={call.localVideoRef}
         remoteVideoRef={call.remoteVideoRef}
         onEndCall={call.endCall}
@@ -711,109 +913,177 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         onToggleCamera={call.toggleCamera}
         onSwitchToVideo={call.switchToVideo}
         onSwitchCamera={call.switchCamera}
+        onToggleScreenShare={call.toggleScreenShare}
+        isScreenSharing={call.isScreenSharing}
       />
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+
+      {/* Call history overlay */}
+      {showCallHistory && (
+        <div className="absolute inset-0 z-[90] bg-background/95 backdrop-blur-sm rounded-lg overflow-hidden">
+          <CallHistoryPanel
+            conversationId={conversationId}
+            onClose={() => setShowCallHistory(false)}
+            onCallBack={async (peerId, type) => {
+              if (!user?.id) return;
+              setShowCallHistory(false);
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, peerId, type, callKey);
+                if (!callId) { toast.error("Impossible de signaler l'appel."); return; }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, type, callKey);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Appel impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {showGroupCallSheet && (
+        <AddParticipantSheet
+          open={showGroupCallSheet}
+          onClose={() => setShowGroupCallSheet(false)}
+          conversationId={conversationId}
+          prefilled={conversation?.participant?.user_id ? [conversation.participant.user_id] : []}
+          onCallStarted={async (_callId, _roomId, callKey, callType) => {
+            try {
+              await call.startCall(conversationId, callType, callKey);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Impossible de rejoindre l'appel");
+            }
+          }}
+        />
+      )}
+
+      <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,text/plain,text/csv" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) handleMediaFile(file);
         e.target.value = '';
       }} />
 
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 bg-primary text-primary-foreground rounded-t-lg">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
+      <div data-drag-handle className="flex items-center gap-2 px-4 py-3 border-b border-border/30 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-t-2xl select-none md:cursor-grab md:active:cursor-grabbing touch-pan-y">
+        <button
+          onClick={goBack}
+          className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all flex-shrink-0 backdrop-blur-sm"
+          title="Retour aux conversations"
+          aria-label="Retour aux conversations"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div className="flex items-center flex-1 min-w-0">
           {conversation && (
-            <>
-              <Link to={`/profile/${conversation.participant.user_id}`} className="relative flex-shrink-0">
+            <Link
+              to={`/profile/${conversation.participant.user_id}`}
+              className="relative flex-shrink-0 group"
+              title={`${conversation.participant.name} • En ligne`}
+              aria-label={conversation.participant.name}
+            >
+              <div className="rounded-full ring-2 ring-primary-foreground/40 group-hover:ring-primary-foreground/80 transition-all">
                 <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="sm" />
-                <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-primary" />
-              </Link>
-              <Link to={`/profile/${conversation.participant.user_id}`} className="min-w-0">
-                <div className="flex items-center gap-1 min-w-0">
-                  <p className="text-xs font-semibold truncate hover:underline">{conversation.participant.name}</p>
-                  {!isZeusConversation && e2ee.encrypted && (
-                    <EncryptionBadge
-                      encrypted
-                      verified={!e2ee.fingerprintChanged}
-                      ratchetActive={e2ee.ratchetActive}
-                      size="xs"
-                      showLabel
-                      className="shrink-0 text-primary-foreground"
-                    />
-                  )}
-                </div>
-                <p className="text-[9px] opacity-80 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  En ligne
-                </p>
-              </Link>
-            </>
+              </div>
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-primary shadow-sm" />
+            </Link>
           )}
         </div>
-        <div className="flex items-center gap-0">
-          <button onClick={async () => {
-            const participantId = conversation?.participant?.user_id;
-            if (participantId && user?.id) {
-              const callKey = generateCallE2EEKey();
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
-              if (callId) activeCallIdRef.current = callId;
-              call.startCall(conversationId, 'audio', callKey);
-            }
-          }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Phone className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-1">
+          <button
+            disabled={isStartingCall}
+            onClick={async () => {
+              const participantId = conversation?.participant?.user_id;
+              if (!participantId || !user?.id) {
+                toast.error("Aucun contact à appeler dans cette conversation.");
+                return;
+              }
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
+                if (!callId) {
+                  toast.error("Impossible de signaler l'appel. Réessayez.");
+                  return;
+                }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, 'audio', callKey);
+              } catch (err) {
+                console.error('[ChatWidget] audio call failed', err);
+                toast.error(err instanceof Error ? `Appel impossible : ${err.message}` : "Appel impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
+            title="Appel audio"
+          >
+            <Phone className={`w-4 h-4 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
-          <button onClick={async () => {
-            const participantId = conversation?.participant?.user_id;
-            if (participantId && user?.id) {
-              const callKey = generateCallE2EEKey();
-              const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
-              if (callId) activeCallIdRef.current = callId;
-              call.startCall(conversationId, 'video', callKey);
-            }
-          }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Video className="w-3.5 h-3.5" />
+          <button
+            disabled={isStartingCall}
+            onClick={async () => {
+              const participantId = conversation?.participant?.user_id;
+              if (!participantId || !user?.id) {
+                toast.error("Aucun contact à appeler dans cette conversation.");
+                return;
+              }
+              setIsStartingCall(true);
+              try {
+                const callKey = generateCallE2EEKey();
+                const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
+                if (!callId) {
+                  toast.error("Impossible de signaler l'appel. Réessayez.");
+                  return;
+                }
+                activeCallIdRef.current = callId;
+                await call.startCall(conversationId, 'video', callKey);
+              } catch (err) {
+                console.error('[ChatWidget] video call failed', err);
+                toast.error(err instanceof Error ? `Visio impossible : ${err.message}` : "Visio impossible");
+              } finally {
+                setIsStartingCall(false);
+              }
+            }}
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
+            title="Visio"
+          >
+            <Video className={`w-4 h-4 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
-          <button onClick={() => { closeChat(); navigate(`/messages/${conversationId}`); }} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors" title="Agrandir">
-            <Maximize2 className="w-3.5 h-3.5" />
+          <button
+            onClick={() => setShowGroupCallSheet(true)}
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
+            title="Appel de groupe"
+          >
+            <Users className="w-4 h-4" />
           </button>
-          <button onClick={minimizeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <Minus className="w-3.5 h-3.5" />
+          <button
+            onClick={() => setShowCallHistory(true)}
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
+            title="Historique d'appels"
+          >
+            <PhoneMissed className="w-4 h-4" />
           </button>
-          <button onClick={closeChat} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-            <X className="w-3.5 h-3.5" />
+          <button onClick={minimizeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm" title="Réduire">
+            <Minus className="w-4 h-4" />
+          </button>
+          <button onClick={closeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-destructive/80 active:scale-95 transition-all backdrop-blur-sm" title="Fermer">
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* E2EE Status */}
-      {!isZeusConversation && (
-        <EncryptionStatusBar
-          encrypted={e2ee.encrypted}
-          fingerprint={e2ee.fingerprint}
-          peerFingerprint={e2ee.peerFingerprint}
-          ratchetActive={e2ee.ratchetActive}
-          fingerprintChanged={e2ee.fingerprintChanged}
-          peerName={conversation?.participant?.name || 'Contact'}
-          conversationId={conversationId || ''}
-        />
-      )}
+      {/* E2EE Status bar removed per user request — encryption is silent */}
 
-      {/* Fingerprint changed alert with acknowledge button */}
-      {!isZeusConversation && e2ee.fingerprintChanged && (
-        <div className="mx-2 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-            ⚠️ La clé de sécurité du contact a changé.
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            Vérifie le contact puis valide pour réactiver l'envoi.
-          </p>
-          <button
-            onClick={e2ee.acknowledgeFingerprint}
-            className="mt-2 px-3 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:opacity-90 transition-opacity"
-          >
-            OK — J'ai vérifié
-          </button>
-        </div>
-      )}
+      {/* Fingerprint change banner removed per user request — silent re-keying */}
+
+      {/* Key recovery banners removed — restore happens silently in background
+          via useAccountKeySync (auto-restore from password-derived backup),
+          realtimeKeySync (peer key publish triggers messageQueue.resumeAll),
+          and messageQueue (idempotent retry). The user only sees plaintext
+          when keys arrive, never an instruction to "restore". The dedicated
+          backup/restore UI lives in Settings → Privacy → Key Backup. */}
 
       {/* Pending message request banner */}
       {hasPending && (
@@ -839,7 +1109,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleMessagesScroll}
+        className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative overscroll-contain touch-pan-y"
+      >
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
@@ -884,7 +1158,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   const nextMsg = mi < group.messages.length - 1 ? group.messages[mi + 1] : null;
                   const isFirstInGroup = !prevMsg || prevMsg.sender_id !== msg.sender_id;
                   const isLastInGroup = !nextMsg || nextMsg.sender_id !== msg.sender_id;
-                  const reactions = messageReactions[msg.id] || [];
+                  const reactions = reactionsByMessage[msg.id] || [];
                    const isBigEmoji = isSingleEmoji(msg.body);
                    const isNegotiationMsg = msg.body.startsWith('💰 OFFRE:') || msg.body.startsWith('✅ OFFRE') || msg.body.startsWith('❌ OFFRE') || msg.body.startsWith('🔄 CONTRE') || msg.body.startsWith('✅ CONTRE');
 
@@ -1006,19 +1280,42 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           </>
                         )}
 
-                        {msg.image_url && (
-                          <div className="rounded-xl overflow-hidden mb-0.5 shadow-sm">
+                        {(() => {
+                          const docParsed = parseDocumentBody(msg.body);
+                          if (docParsed && msg.image_url) {
+                            return (
+                              <DocumentBubble
+                                encryptedUrl={msg.image_url}
+                                doc={docParsed}
+                                isMe={isMe}
+                              />
+                            );
+                          }
+                          return null;
+                        })()}
+
+                        {msg.image_url && !parseDocumentBody(msg.body) && (
+                          <button
+                            type="button"
+                            onClick={() => setLightboxMedia({ url: msg.image_url!, body: msg.body, messageId: msg.id })}
+                            className="block rounded-xl overflow-hidden mb-0.5 shadow-sm cursor-zoom-in hover:opacity-95 transition-opacity"
+                            title="Agrandir"
+                          >
                             <MessageMedia
                               imageUrl={msg.image_url}
                               body={msg.body}
                               decrypt={e2ee.decrypt}
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                              messageId={msg.id}
+                              cachedPlaintext={decryptedCacheRef.current.get(msg.id)}
                             />
-                          </div>
+                          </button>
                         )}
 
-                        {/* Call event message */}
-                        {isCallMessage(msg.body) ? (() => {
+                        {/* Skip text bubble when message is purely a media attachment */}
+                        {msg.image_url && !isCallMessage(msg.body) ? null :
+                        /* Call event message */
+                        isCallMessage(msg.body) ? (() => {
                           const cd = getCallData(msg.body);
                           if (!cd) return null;
                           const isMissed = cd.status === 'missed';
@@ -1097,42 +1394,36 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                             <DecryptedMessageBody
                               body={msg.body}
                               decrypt={e2ee.decrypt}
-                              isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                              isEncryptionActive={isEncryptionActive}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
+                              isMe={isMe}
+                              cachedPlaintext={decryptedCacheRef.current.get(msg.id)}
+                              refreshKey={decryptRefreshKey}
+                              messageId={msg.id}
+                              hasMedia={!!msg.image_url}
                             />
                           </div>
                         )}
 
-                        {/* Translate button + translation */}
-                        {!isMe && !isCallMessage(msg.body) && !isGifMessage(msg.body) && !isVoiceMessage(msg.body) && (
-                          <div className="mt-0.5">
-                            <button
-                              onClick={() => {
-                                const text = decryptedCacheRef.current.get(msg.id) || msg.body;
-                                translateMsg(msg.id, text);
-                              }}
-                              disabled={translating === msg.id}
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-                            >
-                              {translating === msg.id ? (
-                                <div className="w-2.5 h-2.5 rounded-full border border-primary border-t-transparent animate-spin" />
-                              ) : (
-                                <Languages className="w-2.5 h-2.5" />
-                              )}
-                              {translations[msg.id] ? 'Original' : 'Traduire'}
-                            </button>
-                            {translations[msg.id] && (
-                              <div className="mt-0.5 px-3 py-1.5 text-xs rounded-2xl bg-primary/10 border border-primary/20 text-foreground break-words leading-relaxed">
-                                {translations[msg.id]}
-                              </div>
-                            )}
-                          </div>
-                        )}
 
                         {reactions.length > 0 && (
                           <div className="flex items-center -mt-1 px-0.5">
-                            <div className="flex items-center bg-background border border-border/40 rounded-full px-1 py-0 shadow-sm">
-                              {reactions.map((r, i) => <span key={i} className="text-[10px]">{r}</span>)}
+                            <div className="flex items-center gap-0.5 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
+                              {Object.entries(
+                                reactions.reduce<Record<string, number>>((acc, r) => {
+                                  acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                  return acc;
+                                }, {})
+                              ).map(([emoji, count]) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => toggleReaction(msg.id, emoji)}
+                                  className="flex items-center gap-0.5 text-[10px] hover:scale-110 transition-transform"
+                                >
+                                  <span>{emoji}</span>
+                                  {count > 1 && <span className="text-muted-foreground">{count}</span>}
+                                </button>
+                              ))}
                             </div>
                           </div>
                         )}
@@ -1140,11 +1431,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         {isLastInGroup && (
                           <div className="flex items-center gap-0.5 mt-0.5 px-0.5 flex-wrap">
                             <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
-                            {!isZeusConversation && e2ee.encrypted && msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"')) && (
+                            {stableBadgeState.encrypted && msg.body.startsWith('{') && (msg.body.includes('"ct"') || msg.body.includes('"hdr"')) && (
                               <EncryptionBadge
                                 encrypted
-                                verified={decryptedCacheRef.current.has(msg.id) && !e2ee.fingerprintChanged}
-                                ratchetActive={e2ee.ratchetActive}
+                                verified={decryptedCacheRef.current.has(msg.id) && stableBadgeState.verified}
+                                ratchetActive={stableBadgeState.ratchetActive}
                                 size="xs"
                                 showLabel
                               />
@@ -1171,12 +1462,42 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           {queue.pendingMessages.map(pm => (
             <div key={pm.localId} className="flex justify-start mt-1 px-2">
               <div className="max-w-[78%]">
-                <div className={cn(
-                  'px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground',
-                  pm.status === 'failed_visible' && 'bg-destructive/20 text-destructive border border-destructive/30',
-                )}>
-                  {pm.plaintext || '…'}
-                </div>
+              {(() => {
+                const text = pm.plaintext || '';
+                const media = parseMediaMessage(text);
+                // Pure media: render media only, no bleu bubble
+                if (pm.imageUrl && media) {
+                  return (
+                    <div className="rounded-xl overflow-hidden shadow-sm opacity-70">
+                      <EncryptedMedia
+                        encryptedUrl={pm.imageUrl}
+                        mediaKeyB64={media.keyB64}
+                        isVideo={isVideoMediaLabel(media.label)}
+                      />
+                    </div>
+                  );
+                }
+                if (isGifMessage(text)) {
+                  const gifUrl = sanitizeUrl(getGifUrl(text));
+                  return gifUrl === '#'
+                    ? null
+                    : <img src={gifUrl} alt="GIF" className="max-w-full max-h-[150px] object-cover rounded-xl opacity-70" />;
+                }
+                if (isVoiceMessage(text)) {
+                  const vd = getVoiceData(text);
+                  return vd
+                    ? <VoiceMessagePlayer audioUrl={vd.url} duration={vd.duration} isMe />
+                    : <div className="px-3 py-1.5 text-xs rounded-2xl bg-primary/70 text-primary-foreground">Message vocal</div>;
+                }
+                return (
+                  <div className={cn(
+                    'px-3 py-1.5 text-xs break-words leading-relaxed rounded-2xl bg-primary/70 text-primary-foreground',
+                    pm.status === 'failed_visible' && 'bg-destructive/20 text-destructive border border-destructive/30',
+                  )}>
+                    {media?.label || text || '...'}
+                  </div>
+                );
+              })()}
                 <OutboundStatusIndicator
                   status={pm.status}
                   lastError={pm.lastError}
@@ -1191,6 +1512,47 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {showScrollDown && (
+        <button
+          onClick={() => scrollToBottom()}
+          className="absolute bottom-[74px] right-3 z-30 w-8 h-8 rounded-full bg-background shadow-lg border border-border/40 flex items-center justify-center hover:bg-secondary transition-colors"
+          title="Revenir aux derniers messages"
+          aria-label="Revenir aux derniers messages"
+        >
+          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+        </button>
+      )}
+
+      {/* Fullscreen media lightbox */}
+      {lightboxMedia && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center"
+          onClick={() => setLightboxMedia(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setLightboxMedia(null); }}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors z-10"
+            aria-label="Fermer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div
+            className="max-w-[95vw] max-h-[95vh] flex items-center justify-center [&_img]:!max-h-[95vh] [&_img]:!max-w-[95vw] [&_video]:!max-h-[95vh] [&_video]:!max-w-[95vw]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MessageMedia
+              imageUrl={lightboxMedia.url}
+              body={lightboxMedia.body}
+              decrypt={e2ee.decrypt}
+              isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+              messageId={lightboxMedia.messageId}
+              cachedPlaintext={lightboxMedia.messageId ? decryptedCacheRef.current.get(lightboxMedia.messageId) : undefined}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Negotiation product banner - bottom */}
       {negotiationProduct && (
@@ -1556,19 +1918,51 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       {/* Input bar */}
       {!showVoiceRecorder && (
         <div className="border-t border-border/30 bg-background">
-          <form onSubmit={handleSend} className="flex items-center gap-1 px-2 py-1.5">
+          <form onSubmit={handleSend} className="flex items-center gap-1.5 px-3 py-2.5">
             <div className="flex items-center gap-0">
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
-                {isUploading ? <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-4 h-4" />}
+              <button
+                type="button"
+                onClick={() => {
+                  if (sendBlocked) {
+                    if (e2ee.peerKeyMissing) {
+                      toast.error('Clés du contact indisponibles — impossible d’envoyer une photo pour le moment.');
+                    } else if (e2ee.initError === 'pin_unlock_required') {
+                      toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer une photo.');
+                    } else if (e2ee.initError === 'identity_lost_backup_available') {
+                      toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer une photo.');
+                    }
+                    return;
+                  }
+
+                  fileInputRef.current?.click();
+                }}
+                disabled={isUploading || sendBlocked}
+                className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {isUploading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-5 h-5" />}
               </button>
-              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors text-[11px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewOnceArmed(v => !v);
+                  if (!viewOnceArmed) toast.success('Vue Unique armée pour le prochain média 🔥');
+                }}
+                title="Vue unique"
+                className={cn(
+                  "w-9 h-9 rounded-full flex items-center justify-center transition-colors",
+                  viewOnceArmed ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-primary"
+                )}
+              >
+                <Eye className="w-5 h-5" />
+              </button>
+              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors text-[12px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 GIF
               </button>
-              <button type="button" onClick={() => { setShowEmojis(v => !v); setShowGifs(false); setShowAIMenu(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
-                <Smile className="w-4 h-4" />
+              <button type="button" onClick={() => { setShowEmojis(v => !v); setShowGifs(false); setShowAIMenu(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+                <Smile className="w-5 h-5" />
               </button>
-              <button type="button" onClick={() => { setShowAIMenu(v => !v); setShowEmojis(false); setShowGifs(false); }} className={cn("w-7 h-7 rounded-full flex items-center justify-center transition-colors", showAIMenu ? "text-primary" : "text-muted-foreground hover:text-primary")}>
-                {aiLoading ? <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Wand2 className="w-4 h-4" />}
+              <button type="button" onClick={() => { setShowAIMenu(v => !v); setShowEmojis(false); setShowGifs(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showAIMenu ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+                {aiLoading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Wand2 className="w-5 h-5" />}
               </button>
             </div>
 
@@ -1578,24 +1972,23 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               onChange={e => setNewMessage(e.target.value)}
               onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
               placeholder="Aa"
-              className="flex-1 bg-secondary/60 rounded-full px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
+              className="flex-1 bg-secondary/60 rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
-
             {newMessage.trim() ? (
-              <button type="submit" disabled={sendMessage.isPending} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
-                <Send className="w-3.5 h-3.5" />
+              <button type="submit" disabled={sendMessage.isPending} className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
+                <Send className="w-4 h-4" />
               </button>
             ) : (
               <div className="flex items-center gap-0">
                 <button
                   type="button"
                   onClick={() => setShowVoiceRecorder(true)}
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
                 >
-                  <Mic className="w-4 h-4" />
+                  <Mic className="w-5 h-5" />
                 </button>
-                <button type="button" className="w-7 h-7 rounded-full flex items-center justify-center text-primary flex-shrink-0 hover:bg-primary/10 transition-colors">
-                  <ThumbsUp className="w-4 h-4" fill="currentColor" />
+                <button type="button" className="w-9 h-9 rounded-full flex items-center justify-center text-primary flex-shrink-0 hover:bg-primary/10 transition-colors">
+                  <ThumbsUp className="w-5 h-5" fill="currentColor" />
                 </button>
               </div>
             )}
@@ -1607,6 +2000,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 }
 
 // ─── Main Widget ─────────────────────────────────────────
+const WIDGET_W = 400;
+const WIDGET_H = 600;
+const POS_KEY = 'chatwidget:pos:v1';
+const MOBILE_POS_KEY = 'chatwidget:mobilepos:v1';
+
 export function ChatWidget() {
   const { user } = useAuth();
   const { state, restoreChat, closeChat } = useChatWidget();
@@ -1618,22 +2016,122 @@ export function ChatWidget() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  if (!user || !state.isOpen || isMobile) return null;
+  // Desktop position state
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem(POS_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
 
-  // Minimized state - show a small bubble
+  // Mobile bubble position (when minimized on mobile)
+  const [mobilePos, setMobilePos] = useState<{ x: number; y: number }>(() => {
+    if (typeof window === 'undefined') return { x: 16, y: 200 };
+    try {
+      const saved = localStorage.getItem(MOBILE_POS_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { x: 16, y: window.innerHeight - 160 };
+  });
+
+  // Default desktop position: bottom-right
+  const effectivePos = useMemo(() => {
+    if (pos) return pos;
+    if (typeof window === 'undefined') return { x: 0, y: 0 };
+    return { x: window.innerWidth - WIDGET_W - 80, y: window.innerHeight - WIDGET_H };
+  }, [pos]);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Drag handler factory
+  const startDrag = useCallback((e: React.PointerEvent, current: { x: number; y: number }, w: number, h: number, onUpdate: (p: { x: number; y: number }) => void, onEnd: (p: { x: number; y: number }) => void) => {
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origX = current.x;
+    const origY = current.y;
+    let last = current;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const nx = Math.min(Math.max(0, origX + (ev.clientX - startX)), window.innerWidth - w);
+      const ny = Math.min(Math.max(0, origY + (ev.clientY - startY)), window.innerHeight - h);
+      last = { x: nx, y: ny };
+      onUpdate(last);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      onEnd(last);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, []);
+
+  if (!user || !state.isOpen) return null;
+
+  // Minimized state - draggable bubble (both desktop and mobile)
   if (state.isMinimized) {
+    const size = 56;
+    const bubblePos = isMobile ? mobilePos : { x: effectivePos.x + WIDGET_W - size - 4, y: window.innerHeight - size };
     return (
       <button
-        onClick={restoreChat}
-        className="fixed bottom-0 right-[90px] z-[60] w-12 h-12 rounded-t-lg bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-all animate-in zoom-in-75"
+        onPointerDown={(e) => {
+          let moved = false;
+          const sx = e.clientX, sy = e.clientY;
+          startDrag(e, bubblePos, size, size,
+            (p) => {
+              if (Math.abs(p.x - bubblePos.x) > 3 || Math.abs(p.y - bubblePos.y) > 3) moved = true;
+              if (isMobile) setMobilePos(p);
+              else setPos({ x: p.x - WIDGET_W + size + 4, y: p.y });
+            },
+            (p) => {
+              if (!moved) { restoreChat(); return; }
+              if (isMobile) {
+                try { localStorage.setItem(MOBILE_POS_KEY, JSON.stringify(p)); } catch {}
+              }
+            }
+          );
+        }}
+        style={{ left: bubblePos.x, top: bubblePos.y, width: size, height: size, touchAction: 'none' }}
+        className="fixed z-[60] rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-transform animate-in zoom-in-75"
       >
-        <Send className="w-5 h-5" />
+        <Send className="w-6 h-6" />
       </button>
     );
   }
 
+  // Mobile open: full-screen overlay
+  if (isMobile) {
+    return (
+      <div className="fixed inset-0 z-[80] bg-background flex flex-col animate-in slide-in-from-right-4 duration-200 overflow-hidden">
+        <MessagingPinGate compact>
+          {state.conversationId ? (
+            <WidgetChatView conversationId={state.conversationId} />
+          ) : (
+            <WidgetConversationList />
+          )}
+        </MessagingPinGate>
+      </div>
+    );
+  }
+
+  // Desktop: draggable floating widget
   return (
-    <div className="fixed bottom-0 right-[80px] z-[60] w-[328px] h-[455px] bg-background border border-border/40 rounded-t-lg shadow-2xl shadow-black/20 flex flex-col animate-in slide-in-from-bottom-4 duration-200 overflow-hidden">
+    <div
+      ref={containerRef}
+      style={{ left: effectivePos.x, top: effectivePos.y, width: WIDGET_W, height: WIDGET_H, touchAction: 'none' }}
+      onPointerDown={(e) => {
+        const target = e.target as HTMLElement;
+        if (!target.closest('[data-drag-handle]')) return;
+        if (target.closest('button, a, input, textarea')) return;
+        startDrag(e, effectivePos, WIDGET_W, WIDGET_H,
+          (p) => setPos(p),
+          (p) => { try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {} }
+        );
+      }}
+      className="fixed z-[60] bg-background border border-border/40 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-in slide-in-from-bottom-4 duration-200 overflow-hidden"
+    >
       <MessagingPinGate compact>
         {state.conversationId ? (
           <WidgetChatView conversationId={state.conversationId} />
@@ -1644,3 +2142,4 @@ export function ChatWidget() {
     </div>
   );
 }
+

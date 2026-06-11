@@ -12,13 +12,15 @@ import { FeedLeftSidebar } from '@/components/feed/FeedLeftSidebar';
 import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
-import { Coffee, X, Sparkles, Lock, Shield } from 'lucide-react';
+import { Coffee, X, Sparkles, Lock, Shield, Radio } from 'lucide-react';
 import { FeedZeusCard } from '@/components/feed/FeedZeusCard';
+import { LazyMount } from '@/components/feed/LazyMount';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
 import { useFeedCustomization } from '@/hooks/useFeedCustomization';
+import { useWellbeingPreferences, readLocalWellbeingPrefs } from '@/hooks/useWellbeingPreferences';
 import { useParentalGate } from '@/components/ParentalGate';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFeedScrollMemory } from '@/hooks/useFeedScrollMemory';
@@ -26,6 +28,8 @@ import { useFeedPerformance } from '@/hooks/useFeedPerformance';
 import { useUXMode } from '@/hooks/useUXMode';
 import { FlowUniversalSearch } from '@/components/flow/FlowUniversalSearch';
 import { FlowDashboard } from '@/components/flow/FlowDashboard';
+import { SEOHead } from '@/components/SEOHead';
+import { buildFeedMeta } from '@/lib/seo/buildMeta';
 
 // Lazy-load heavy injection components — only loaded when scrolled into view
 const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions').then(m => ({ default: m.FriendSuggestions })));
@@ -78,16 +82,23 @@ export default function Feed() {
   const { data: mlData } = useMLScoring(postIds);
   const { data: mlRecos } = useMLRecommendations();
 
-  // Blend ML scores with chronological order for smart ranking
+  // Blend ML scores once per post, then KEEP that order stable across renders
+  // to avoid the visible flicker when new pages arrive or scores update late.
+  const orderRef = useRef<Map<string, number>>(new Map());
   const posts = useMemo(() => {
     const mlScores = mlData?.scores || {};
-    if (Object.keys(mlScores).length === 0) return rawPosts;
-    
-    return [...rawPosts].sort((a, b) => {
-      const scoreA = blendScores(rawPosts.indexOf(a) * -1, mlScores[a.id], 0.3);
-      const scoreB = blendScores(rawPosts.indexOf(b) * -1, mlScores[b.id], 0.3);
-      return scoreB - scoreA;
+    const order = orderRef.current;
+
+    // Assign a stable rank to any post we haven't seen yet.
+    rawPosts.forEach((p, i) => {
+      if (order.has(p.id)) return;
+      const chrono = -i; // earlier = higher
+      const ml = mlScores[p.id];
+      order.set(p.id, ml != null ? blendScores(chrono, ml, 0.3) : chrono);
     });
+
+    // Sort by frozen rank — never reshuffle posts already on screen.
+    return [...rawPosts].sort((a, b) => (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0));
   }, [rawPosts, mlData?.scores]);
 
   // Track feed load performance
@@ -109,12 +120,16 @@ export default function Feed() {
     return () => { clearInterval(iv); clearTimeout(t); };
   }, []);
 
+  // P5: hydrate cloud-synced wellbeing prefs into the localStorage cache that
+  // the minute-tick loop below reads synchronously.
+  useWellbeingPreferences();
+
   useEffect(() => {
     const interval = setInterval(() => {
       trackMinute();
       if (pauseDismissed) return;
       try {
-        const wellbeingPrefs = JSON.parse(localStorage.getItem('wellbeing-prefs') || '{}');
+        const wellbeingPrefs = readLocalWellbeingPrefs();
         if (wellbeingPrefs.scrollPauseEnabled) {
           const sessionMin = getSessionMinutes();
           if (sessionMin >= (wellbeingPrefs.scrollPauseMinutes || 15)) {
@@ -145,7 +160,7 @@ export default function Feed() {
           fetchNextPage();
         }
       },
-      { rootMargin: '400px' }
+      { rootMargin: '1200px' }
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -153,25 +168,31 @@ export default function Feed() {
 
   const renderInjection = useCallback((index: number) => {
     const type = INJECTION_MAP[index];
-    
+
     if (!isMobile && activeAds?.length && index > 0 && index % 6 === 0) {
       const adIndex = Math.floor(index / 6) % activeAds.length;
       const ad = activeAds[adIndex];
       if (ad) {
-        return <SponsoredPostCard ad={ad} />;
+        return (
+          <LazyMount minHeight={220}>
+            <SponsoredPostCard ad={ad} />
+          </LazyMount>
+        );
       }
     }
-    
+
     if (!type) return null;
 
     return (
-      <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
-        {type === 'reels' && <FeedReelsSection />}
-        {type === 'suggestions' && <FriendSuggestions />}
-        {type === 'suggestions_city' && <FriendSuggestionsByCity />}
-        {type === 'media' && <FeedMediaSection />}
-        {type === 'marketplace' && <FeedMarketplaceSection />}
-      </Suspense>
+      <LazyMount minHeight={200}>
+        <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
+          {type === 'reels' && <FeedReelsSection />}
+          {type === 'suggestions' && <FriendSuggestions />}
+          {type === 'suggestions_city' && <FriendSuggestionsByCity />}
+          {type === 'media' && <FeedMediaSection />}
+          {type === 'marketplace' && <FeedMarketplaceSection />}
+        </Suspense>
+      </LazyMount>
     );
   }, [isMobile, activeAds]);
 
@@ -181,8 +202,18 @@ export default function Feed() {
     sessionStorage.setItem('forsure-session-start', Date.now().toString());
   };
 
+  const feedMeta = buildFeedMeta();
+
   return (
     <AppLayout fullWidth>
+      <SEOHead
+        title={feedMeta.title}
+        description={feedMeta.description}
+        url={feedMeta.url}
+        image={feedMeta.image}
+        jsonLd={feedMeta.jsonLd}
+      />
+      <h1 className="sr-only">Fil d'actualité Forsure</h1>
       {feedBgStyle && (
         <div className="fixed inset-0 -z-10 opacity-30" style={feedBgStyle} />
       )}
@@ -340,7 +371,13 @@ export default function Feed() {
                 {/* Posts list — clean spacing */}
                 <div className="sm:px-4 sm:space-y-4 mt-4">
                   {posts.map((post, index) => (
-                    <div key={post.id}>
+                    <div
+                      key={post.id}
+                      style={{
+                        contentVisibility: 'auto',
+                        containIntrinsicSize: '720px',
+                      } as React.CSSProperties}
+                    >
                       <PostCard post={post} />
                       {renderInjection(index)}
                     </div>
@@ -361,6 +398,22 @@ export default function Feed() {
           <FeedRightSidebar />
         </div>
       </div>
+
+      {/* Mobile-only floating Live button — switches to TikTok-style live feed */}
+      {isMobile && (
+        <button
+          type="button"
+          onClick={() => navigate('/lives')}
+          aria-label="Passer en mode Live"
+          className="fixed right-4 bottom-44 z-40 flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-gradient-to-br from-red-500 to-pink-600 text-white shadow-[0_8px_28px_-8px_hsl(0_84%_55%/0.6)] active:scale-95 transition-transform"
+        >
+          <span className="relative flex items-center justify-center w-6 h-6">
+            <span className="absolute inset-0 rounded-full bg-white/30 animate-ping" />
+            <Radio className="w-4 h-4 relative z-10" />
+          </span>
+          <span className="text-xs font-bold tracking-wide">LIVE</span>
+        </button>
+      )}
     </AppLayout>
   );
 }
