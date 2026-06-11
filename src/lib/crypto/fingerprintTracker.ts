@@ -53,7 +53,7 @@ export async function saveKnownFingerprintServer(
   try {
     const userId = await getCachedAuthUserId();
     if (!userId) return;
-    await supabase
+    await (supabase as any)
       .from('user_known_fingerprints')
       .upsert(
         {
@@ -86,7 +86,7 @@ export async function checkFingerprintChangeWithServer(
   if (cached && Date.now() - cached.ts < 60_000) return cached.result;
 
   try {
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('user_known_fingerprints')
       .select('fingerprint, acknowledged, verified_manually')
       .eq('user_id', currentUserId)
@@ -100,7 +100,7 @@ export async function checkFingerprintChangeWithServer(
         try {
           const userId = await getCachedAuthUserId();
           if (userId) {
-            await supabase
+            await (supabase as any)
               .from('user_known_fingerprints')
               .upsert(
                 {
@@ -125,7 +125,7 @@ export async function checkFingerprintChangeWithServer(
       if (!(data as any).verified_manually) {
         console.warn('[PEER_KEY] 🔄 Server fingerprint rotated for', peerUserId, '— auto-trusting (not manually verified)');
         try {
-          await supabase
+          await (supabase as any)
             .from('user_known_fingerprints')
             .upsert(
               {
@@ -168,7 +168,7 @@ export async function checkFingerprintChangeWithServer(
       if (isRecovery) {
         console.warn('[PEER_KEY] 🔄 Recovery fingerprint rotation for', peerUserId, '— continuing with revalidation banner');
         try {
-          await supabase
+          await (supabase as any)
             .from('user_known_fingerprints')
             .upsert(
               {
