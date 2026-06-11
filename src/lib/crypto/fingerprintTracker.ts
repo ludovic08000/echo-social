@@ -62,6 +62,7 @@ export async function saveKnownFingerprintServer(
           fingerprint: fp,
           last_seen_at: new Date().toISOString(),
           acknowledged: verifiedByUser,
+          verified_manually: verifiedByUser,
         },
         { onConflict: 'user_id,peer_user_id' },
       );
@@ -87,7 +88,7 @@ export async function checkFingerprintChangeWithServer(
   try {
     const { data } = await supabase
       .from('user_known_fingerprints')
-      .select('fingerprint, acknowledged')
+      .select('fingerprint, acknowledged, verified_manually')
       .eq('user_id', currentUserId)
       .eq('peer_user_id', peerUserId)
       .maybeSingle();
@@ -108,6 +109,7 @@ export async function checkFingerprintChangeWithServer(
                   fingerprint: currentFp,
                   last_seen_at: new Date().toISOString(),
                   acknowledged: false,
+                  verified_manually: false,
                 },
                 { onConflict: 'user_id,peer_user_id' },
               );
@@ -132,6 +134,7 @@ export async function checkFingerprintChangeWithServer(
                 fingerprint: currentFp,
                 last_seen_at: new Date().toISOString(),
                 acknowledged: false,
+                verified_manually: false,
               },
               { onConflict: 'user_id,peer_user_id' },
             );
@@ -174,6 +177,7 @@ export async function checkFingerprintChangeWithServer(
                 fingerprint: currentFp,
                 last_seen_at: new Date().toISOString(),
                 acknowledged: false,
+                verified_manually: false,
               },
               { onConflict: 'user_id,peer_user_id' },
             );
