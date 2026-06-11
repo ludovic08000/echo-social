@@ -1,17 +1,18 @@
 /**
  * Persistent Local Message Queue (v4 — Hardened)
- * 
+ *
  * Guarantees:
  * - No message is ever lost
  * - No message is ever sent in plaintext
  * - Plaintext is NEVER persisted to IndexedDB (volatile memory only)
  * - Automatic retry with exponential backoff
  * - Idempotent: no duplicates
- * 
- * States: draft → pending_local → encrypting → waiting_secure_channel → sending → sent
- *                                                                      → retry_pending → encrypting
- *                                                                      → failed_visible
  */
+
+import {
+  assertE2EETrustedBrowserDevice,
+  E2EEDeviceGateError,
+} from '@/lib/crypto/e2eeDeviceGate';
 
 export type OutboundMessageStatus =
   | 'draft'
@@ -44,6 +45,7 @@ export interface OutboundMessage {
 }
 
 type QueueListener = (messages: OutboundMessage[]) => void;
+type RetryMode = 'retry' | 'secure_wait' | 'device_gate';
 
 interface QueueHandlers {
   encrypt: (plaintext: string, conversationId: string) => Promise<string>;
@@ -63,6 +65,51 @@ const STORE_NAME = 'outbound';
 const MAX_RETRIES = 10;
 const BASE_RETRY_MS = 2000;
 const MAX_RETRY_MS = 60000;
+
+function isDeviceGateError(error: unknown): error is E2EEDeviceGateError {
+  return error instanceof E2EEDeviceGateError || (
+    !!error &&
+    typeof error === 'object' &&
+    'status' in error &&
+    'assessment' in error &&
+    (error as { name?: string }).name === 'E2EEDeviceGateError'
+  );
+}
+
+function isPinRecoverableDeviceStatus(status: string): boolean {
+  return status === 'PIN_REQUIRED_FOR_NEW_DEVICE' || status === 'PIN_REQUIRED_FOR_RISK_CHANGE';
+}
+
+function emitDeviceTrustRequired(msg: OutboundMessage, error: E2EEDeviceGateError) {
+  const detail = {
+    userId: msg.senderId,
+    conversationId: msg.conversationId,
+    localId: msg.localId,
+    status: error.status,
+    riskLevel: error.assessment.riskLevel,
+    reasons: error.assessment.reasons,
+    device: error.assessment.current,
+    previous: error.assessment.previous ?? null,
+    message: isPinRecoverableDeviceStatus(error.status)
+      ? 'Nouveau navigateur ou changement de contexte détecté. Entrez votre PIN pour autoriser ce device.'
+      : 'Cet appareil n’est pas autorisé pour l’E2EE.',
+  };
+
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-device-trust-required', { detail }));
+    if (isPinRecoverableDeviceStatus(error.status)) {
+      window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
+        detail: {
+          userId: msg.senderId,
+          reason: error.status,
+          message: detail.message,
+        },
+      }));
+    }
+  } catch {
+    // non-browser/test
+  }
+}
 
 // ─── Singleton Queue Manager ───
 
@@ -133,18 +180,12 @@ class MessageQueueManager {
   }
 
   private toPersistedMessage(msg: OutboundMessage): OutboundMessage {
-    return {
-      ...msg,
-      plaintext: '',
-    };
+    return { ...msg, plaintext: '' };
   }
 
   private hydrateRuntimeMessage(msg: OutboundMessage): OutboundMessage {
     const runtimePlaintext = this.volatilePlaintext.get(msg.localId) || '';
-    return {
-      ...msg,
-      plaintext: runtimePlaintext,
-    };
+    return { ...msg, plaintext: runtimePlaintext };
   }
 
   private async dbPut(msg: OutboundMessage): Promise<void> {
@@ -207,11 +248,7 @@ class MessageQueueManager {
   /** Register handlers for encryption and sending */
   registerHandlers(conversationId: string, handlerId: string, handlers: QueueHandlers) {
     const existing = this.handlersByConversation.get(conversationId) || new Map<string, HandlerEntry>();
-    existing.set(handlerId, {
-      id: handlerId,
-      handlers,
-      registeredAt: Date.now(),
-    });
+    existing.set(handlerId, { id: handlerId, handlers, registeredAt: Date.now() });
     this.handlersByConversation.set(conversationId, existing);
   }
 
@@ -219,48 +256,58 @@ class MessageQueueManager {
   unregisterHandlers(conversationId: string, handlerId: string) {
     const entries = this.handlersByConversation.get(conversationId);
     if (!entries) return;
-
     entries.delete(handlerId);
-
     if (entries.size === 0) {
       this.handlersByConversation.delete(conversationId);
       return;
     }
-
     this.handlersByConversation.set(conversationId, entries);
   }
 
-  /** Return the most recently registered active handlers for a conversation */
   private getHandlers(conversationId: string): QueueHandlers | null {
     const entries = this.handlersByConversation.get(conversationId);
     if (!entries || entries.size === 0) return null;
 
     let latest: HandlerEntry | null = null;
     for (const entry of entries.values()) {
-      if (!latest || entry.registeredAt > latest.registeredAt) {
-        latest = entry;
-      }
+      if (!latest || entry.registeredAt > latest.registeredAt) latest = entry;
     }
-
     return latest?.handlers || null;
   }
 
-  /** Return a handler whose secure channel is ready, fallback to latest registered */
   private getReadyAwareHandlers(conversationId: string): QueueHandlers | null {
     const entries = this.handlersByConversation.get(conversationId);
     if (!entries || entries.size === 0) return null;
 
     for (const entry of entries.values()) {
       try {
-        if (entry.handlers.isReady(conversationId)) {
-          return entry.handlers;
-        }
+        if (entry.handlers.isReady(conversationId)) return entry.handlers;
       } catch {
         // continue to fallback
       }
     }
 
     return this.getHandlers(conversationId);
+  }
+
+  private async assertDeviceTrustOrPause(msg: OutboundMessage): Promise<boolean> {
+    try {
+      await assertE2EETrustedBrowserDevice(msg.senderId);
+      return true;
+    } catch (error) {
+      if (!isDeviceGateError(error)) throw error;
+
+      emitDeviceTrustRequired(msg, error);
+
+      if (isPinRecoverableDeviceStatus(error.status)) {
+        await this.updateStatus(msg, 'waiting_secure_channel', error.status);
+        this.scheduleRetry(msg, 'device_gate');
+        return false;
+      }
+
+      await this.updateStatus(msg, 'failed_visible', error.status);
+      return false;
+    }
   }
 
   /** Enqueue a new outbound message */
@@ -270,7 +317,6 @@ class MessageQueueManager {
     plaintext: string;
     imageUrl?: string | null;
   }): Promise<OutboundMessage> {
-    // Idempotency: check for duplicate within 2 seconds
     const recent = await this.dbGetByConversation(params.conversationId);
     const duplicate = recent.find(m =>
       m.senderId === params.senderId &&
@@ -286,7 +332,7 @@ class MessageQueueManager {
       localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       conversationId: params.conversationId,
       senderId: params.senderId,
-      plaintext: '', // NEVER stored in IndexedDB
+      plaintext: '',
       encryptedBody: null,
       imageUrl: params.imageUrl || null,
       status: 'pending_local',
@@ -298,7 +344,6 @@ class MessageQueueManager {
       serverId: null,
     };
 
-    // Store plaintext ONLY in volatile memory
     this.volatilePlaintext.set(msg.localId, params.plaintext);
 
     await this.dbPut(msg);
@@ -308,14 +353,14 @@ class MessageQueueManager {
     return msg;
   }
 
-  /** Process a single message through the state machine */
   private async processMessage(msg: OutboundMessage): Promise<void> {
     if (this.processing.has(msg.localId)) return;
     this.processing.add(msg.localId);
     this.clearRetryTimer(msg.localId);
 
     try {
-      // Step 1: Encrypt
+      if (!(await this.assertDeviceTrustOrPause(msg))) return;
+
       if (!msg.encryptedBody) {
         await this.updateStatus(msg, 'encrypting');
 
@@ -326,10 +371,8 @@ class MessageQueueManager {
           return;
         }
 
-        // Read plaintext from volatile memory
         const plaintext = this.volatilePlaintext.get(msg.localId);
         if (!plaintext) {
-          // Plaintext lost (page reload) — message cannot be recovered
           await this.updateStatus(msg, 'failed_visible', 'Message perdu (rechargement de page)');
           return;
         }
@@ -339,7 +382,6 @@ class MessageQueueManager {
           const encrypted = await handlers.encrypt(plaintext, msg.conversationId);
           const withLocalId = this.attachLocalId(encrypted, msg.localId);
 
-          // CRITICAL: Verify encryption actually produced ciphertext
           if (!withLocalId || withLocalId === plaintext || !withLocalId.startsWith('{')) {
             console.error('[E2EE] encrypt failed — output is plaintext or empty', msg.localId);
             await this.updateStatus(msg, 'retry_pending', 'Canal sécurisé indisponible');
@@ -358,7 +400,7 @@ class MessageQueueManager {
             normalized.includes('initializ') ||
             normalized.includes('keys not ready') ||
             normalized.includes('encryption not available') ||
-            normalized.includes('key') && normalized.includes('ready');
+            (normalized.includes('key') && normalized.includes('ready'));
 
           console.error('[E2EE] encrypt failed', msg.localId, errMsg);
 
@@ -373,7 +415,10 @@ class MessageQueueManager {
         }
       }
 
-      // Step 2: Send encrypted payload
+      // Re-check just before network/database send. A browser/device can become
+      // untrusted after encryption but before sending.
+      if (!(await this.assertDeviceTrustOrPause(msg))) return;
+
       await this.updateStatus(msg, 'sending');
 
       const handlers = this.getHandlers(msg.conversationId);
@@ -392,22 +437,17 @@ class MessageQueueManager {
         this.clearRetryTimer(msg.localId);
         console.log('[SEND] backend success', msg.localId, serverId);
 
-        // Clean up: remove volatile plaintext
         this.volatilePlaintext.delete(msg.localId);
         msg.plaintext = '';
         try {
           await this.dbPut(msg);
         } catch (persistErr) {
-          // Do not keep a false pending state when backend already accepted the message
           console.warn('[SEND] local persistence failed after backend success', msg.localId, persistErr);
-          try {
-            await this.dbDelete(msg.localId);
-          } catch {}
+          try { await this.dbDelete(msg.localId); } catch {}
           this.notifyListeners(msg.conversationId);
           return;
         }
 
-        // Remove from queue after short delay (keep for UI display)
         setTimeout(() => {
           this.dbDelete(msg.localId).catch(() => {});
         }, 5000);
@@ -417,7 +457,6 @@ class MessageQueueManager {
         const errMsg = err instanceof Error ? err.message : String(err);
         console.error('[SEND] failed', msg.localId, errMsg);
 
-        // Network error: retry. Other errors: check retry count.
         if (msg.retryCount >= msg.maxRetries) {
           await this.updateStatus(msg, 'failed_visible', `Échec après ${msg.maxRetries} tentatives: ${errMsg}`);
         } else {
@@ -430,20 +469,18 @@ class MessageQueueManager {
     }
   }
 
-  /**
-   * Schedule retry:
-   * - secure_wait: fast polling for E2EE readiness (instant UX)
-   * - retry: exponential backoff for real errors/network issues
-   */
-  private scheduleRetry(msg: OutboundMessage, mode: 'retry' | 'secure_wait' = 'retry') {
+  private scheduleRetry(msg: OutboundMessage, mode: RetryMode = 'retry') {
     this.clearRetryTimer(msg.localId);
 
     const SECURE_WAIT_RETRY_MS = 300;
     const SECURE_WAIT_MAX_MS = 20_000;
+    const DEVICE_GATE_RETRY_MS = 1500;
 
     const delay = mode === 'secure_wait'
       ? SECURE_WAIT_RETRY_MS
-      : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
+      : mode === 'device_gate'
+        ? DEVICE_GATE_RETRY_MS
+        : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
 
     console.log(`[SEND] retry scheduled for ${msg.localId} in ${delay}ms (${mode})`);
 
@@ -452,7 +489,6 @@ class MessageQueueManager {
       const latest = await this.dbGet(msg.localId);
       if (!latest || latest.status === 'sent') return;
 
-      // Avoid infinite waiting if peer never exposes keys
       if (mode === 'secure_wait' && Date.now() - latest.createdAt > SECURE_WAIT_MAX_MS) {
         await this.updateStatus(
           latest,
@@ -462,13 +498,11 @@ class MessageQueueManager {
         return;
       }
 
-      if (mode === 'retry') {
-        latest.retryCount++;
-      }
+      if (mode === 'retry') latest.retryCount++;
 
       latest.updatedAt = Date.now();
-      // Reset encrypted body to force re-encryption (key may have changed)
-      latest.encryptedBody = null;
+      if (mode !== 'device_gate') latest.encryptedBody = null;
+      latest.status = 'pending_local';
       await this.dbPut(latest);
       this.processMessage(latest);
     }, delay);
@@ -476,7 +510,6 @@ class MessageQueueManager {
     this.retryTimers.set(msg.localId, timer);
   }
 
-  /** Update message status and persist */
   private async updateStatus(msg: OutboundMessage, status: OutboundMessageStatus, error?: string) {
     msg.status = status;
     msg.lastError = error || null;
@@ -485,7 +518,6 @@ class MessageQueueManager {
     this.notifyListeners(msg.conversationId);
   }
 
-  /** Retry a failed message manually */
   async retryMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
     const all = await this.dbGetAll();
@@ -502,7 +534,6 @@ class MessageQueueManager {
     this.processMessage(msg);
   }
 
-  /** Resume all pending messages (call on app load / network restore) */
   async resumeAll(): Promise<void> {
     try {
       const all = await this.dbGetAll();
@@ -511,19 +542,16 @@ class MessageQueueManager {
       );
 
       for (const msg of pending) {
-        // Only resume if plaintext is still in volatile memory
         if (this.volatilePlaintext.has(msg.localId)) {
           msg.status = 'pending_local';
           msg.encryptedBody = null;
           await this.dbPut(msg);
           this.processMessage(msg);
         } else if (msg.encryptedBody) {
-          // Already encrypted, just needs sending
           msg.status = 'pending_local';
           await this.dbPut(msg);
           this.processMessage(msg);
         } else {
-          // Plaintext lost (page reload) — mark as failed
           await this.updateStatus(msg, 'failed_visible', 'Message perdu (rechargement de page)');
         }
       }
@@ -532,7 +560,6 @@ class MessageQueueManager {
     }
   }
 
-  /** Resume messages for a specific conversation (when encryption becomes ready) */
   async resumeForConversation(conversationId: string): Promise<void> {
     try {
       const msgs = await this.dbGetByConversation(conversationId);
@@ -553,7 +580,6 @@ class MessageQueueManager {
     }
   }
 
-  /** Get pending messages for a conversation (for UI display) */
   async getPendingMessages(conversationId: string): Promise<OutboundMessage[]> {
     try {
       const msgs = await this.dbGetByConversation(conversationId);
@@ -563,16 +589,11 @@ class MessageQueueManager {
     }
   }
 
-  /** Subscribe to queue changes */
   subscribe(listener: QueueListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  /**
-   * Reconcile local pending queue with messages already persisted on backend.
-   * Useful when HTTP acknowledgement was lost but insert actually succeeded.
-   */
   async reconcileDelivered(
     conversationId: string,
     serverMessages: Array<{ id?: string | null; senderId?: string | null; body?: string | null; createdAt?: string | null }>,
@@ -593,18 +614,11 @@ class MessageQueueManager {
           createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
         };
 
-        if (matchMeta.id) {
-          byServerId.set(matchMeta.id, matchMeta);
-        }
-
-        if (serverMsg.body) {
-          byEncryptedBody.set(serverMsg.body, matchMeta);
-        }
+        if (matchMeta.id) byServerId.set(matchMeta.id, matchMeta);
+        if (serverMsg.body) byEncryptedBody.set(serverMsg.body, matchMeta);
 
         const localId = this.extractLocalId(serverMsg.body || '');
-        if (localId) {
-          byLocalId.set(localId, matchMeta);
-        }
+        if (localId) byLocalId.set(localId, matchMeta);
 
         if (matchMeta.senderId && matchMeta.createdAtMs) {
           const senderMatches = bySenderTime.get(matchMeta.senderId) || [];
@@ -614,9 +628,6 @@ class MessageQueueManager {
       }
 
       bySenderTime.forEach((list) => list.sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0)));
-
-      // Continue reconciliation even when __lid metadata is absent:
-      // fallback matching by encrypted payload is still valid.
       if (byLocalId.size === 0 && byEncryptedBody.size === 0 && byServerId.size === 0 && bySenderTime.size === 0) return;
 
       const queued = await this.dbGetByConversation(conversationId);
@@ -629,14 +640,11 @@ class MessageQueueManager {
           ?? (msg.serverId ? byServerId.get(msg.serverId) : undefined)
           ?? (msg.encryptedBody ? byEncryptedBody.get(msg.encryptedBody) : undefined);
 
-        // Last-resort fallback for legacy stuck messages (no __lid/serverId match):
-        // match by same sender and very close timestamp.
         if (!serverMatch && msg.senderId) {
           const senderMatches = bySenderTime.get(msg.senderId);
           if (senderMatches?.length) {
             let bestIdx = -1;
             let bestDelta = Number.POSITIVE_INFINITY;
-
             for (let i = 0; i < senderMatches.length; i++) {
               const candidateTs = senderMatches[i].createdAtMs;
               if (!candidateTs) continue;
@@ -646,10 +654,7 @@ class MessageQueueManager {
                 bestIdx = i;
               }
             }
-
-            if (bestIdx >= 0) {
-              serverMatch = senderMatches.splice(bestIdx, 1)[0];
-            }
+            if (bestIdx >= 0) serverMatch = senderMatches.splice(bestIdx, 1)[0];
           }
         }
 
@@ -677,9 +682,7 @@ class MessageQueueManager {
         changed = true;
       }
 
-      if (changed) {
-        this.notifyListeners(conversationId);
-      }
+      if (changed) this.notifyListeners(conversationId);
     } catch (err) {
       console.warn('[MSG_QUEUE] reconcileDelivered failed:', err);
     }
@@ -692,7 +695,6 @@ class MessageQueueManager {
         .filter(m => m.status !== 'sent')
         .map(m => ({
           ...m,
-          // Re-inject volatile plaintext so UI can display the message text
           plaintext: this.volatilePlaintext.get(m.localId) || m.plaintext || '',
         }));
       this.listeners.forEach(fn => fn(pending));
@@ -722,7 +724,6 @@ class MessageQueueManager {
     }
   }
 
-  /** Remove a message from the queue (user cancels failed message) */
   async removeMessage(localId: string): Promise<void> {
     this.clearRetryTimer(localId);
     this.volatilePlaintext.delete(localId);
@@ -736,28 +737,29 @@ class MessageQueueManager {
     this.retryTimers.delete(localId);
   }
 
-  /** Cleanup: remove all sent messages from DB */
   async cleanup(): Promise<void> {
     const all = await this.dbGetAll();
     for (const msg of all) {
-      if (msg.status === 'sent') {
-        await this.dbDelete(msg.localId);
-      }
+      if (msg.status === 'sent') await this.dbDelete(msg.localId);
     }
   }
 }
 
-// Singleton
 export const messageQueue = new MessageQueueManager();
 
-// ─── Status labels for UI ───
+if (typeof window !== 'undefined') {
+  const resumeAfterTrust = () => { void messageQueue.resumeAll(); };
+  window.addEventListener('forsure:e2ee-device-trusted', resumeAfterTrust);
+  window.addEventListener('forsure-keys-unlocked', resumeAfterTrust);
+  window.addEventListener('forsure-keys-restored', resumeAfterTrust);
+}
 
 export function getStatusLabel(status: OutboundMessageStatus): string {
   switch (status) {
     case 'draft': return 'Brouillon';
     case 'pending_local': return 'En attente…';
     case 'encrypting': return 'Sécurisation…';
-    case 'waiting_secure_channel': return 'Reconnexion sécurisée…';
+    case 'waiting_secure_channel': return 'Validation sécurité…';
     case 'sending': return 'Envoi…';
     case 'sent': return 'Envoyé';
     case 'retry_pending': return 'Reconnexion sécurisée…';
