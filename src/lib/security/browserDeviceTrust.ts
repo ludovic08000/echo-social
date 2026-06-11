@@ -260,6 +260,7 @@ export async function fetchTrustedDevice(userId: string, deviceId: string): Prom
 
 export async function registerOrUpdateTrustedDevice(input: RegisterTrustedDeviceInput): Promise<void> {
   const { userId, deviceInfo } = input;
+  const safeTrustStatus: TrustStatus = input.trustStatus === 'trusted' ? 'pending' : input.trustStatus ?? 'pending';
 
   const payload = {
     user_id: userId,
@@ -281,7 +282,7 @@ export async function registerOrUpdateTrustedDevice(input: RegisterTrustedDevice
     e2ee_identity_fingerprint: input.e2eeIdentityFingerprint ?? null,
     signature: input.signature ?? null,
     signed_at: input.signature ? new Date().toISOString() : null,
-    trust_status: input.trustStatus ?? 'pending',
+    trust_status: safeTrustStatus,
     last_seen_at: new Date().toISOString(),
   };
 
@@ -307,15 +308,25 @@ export async function assessCurrentBrowserDevice(
       trustStatus: 'pending',
     });
   } else {
-    await db
-      .from('user_trusted_devices')
-      .update({
-        risk_level: risk.riskLevel,
-        risk_reasons: risk.reasons,
-        last_seen_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .eq('device_id', current.deviceId);
+    const { error } = await db.rpc('touch_my_browser_device', {
+      _device_id: current.deviceId,
+      _risk_level: risk.riskLevel,
+      _risk_reasons: risk.reasons,
+    });
+
+    if (error) {
+      await db
+        .from('user_trusted_devices')
+        .update({
+          risk_level: risk.riskLevel,
+          risk_reasons: risk.reasons,
+          last_seen_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+        .eq('device_id', current.deviceId)
+        .neq('trust_status', 'trusted')
+        .catch?.(() => undefined);
+    }
   }
 
   return {
@@ -337,29 +348,46 @@ export async function trustCurrentDeviceAfterPin(input: {
   location?: Pick<BrowserDeviceInfo, 'country' | 'region' | 'city' | 'ipHash'>;
 }): Promise<BrowserDeviceInfo> {
   const deviceInfo = await getCurrentBrowserDeviceInfo(input.location);
+  const existing = await fetchTrustedDevice(input.userId, deviceInfo.deviceId);
 
-  await registerOrUpdateTrustedDevice({
-    userId: input.userId,
-    deviceInfo,
-    e2eePublicKey: input.e2eePublicKey,
-    e2eeIdentityFingerprint: input.e2eeIdentityFingerprint,
-    signature: input.signature,
-    trustStatus: 'trusted',
+  if (!existing) {
+    await registerOrUpdateTrustedDevice({
+      userId: input.userId,
+      deviceInfo,
+      e2eePublicKey: input.e2eePublicKey,
+      e2eeIdentityFingerprint: input.e2eeIdentityFingerprint,
+      signature: input.signature,
+      trustStatus: 'pending',
+    });
+  }
+
+  const { error } = await db.rpc('trust_my_browser_device', {
+    _device_id: deviceInfo.deviceId,
+    _e2ee_public_key: input.e2eePublicKey ?? null,
+    _e2ee_identity_fingerprint: input.e2eeIdentityFingerprint ?? null,
+    _signature: input.signature ?? null,
   });
 
-  const { error } = await db
-    .from('user_trusted_devices')
-    .update({
-      trust_status: 'trusted',
-      trusted_at: new Date().toISOString(),
-      risk_level: 'low',
-      risk_reasons: [],
-      last_seen_at: new Date().toISOString(),
-    })
-    .eq('user_id', input.userId)
-    .eq('device_id', deviceInfo.deviceId);
+  if (error) {
+    const { error: updateError } = await db
+      .from('user_trusted_devices')
+      .update({
+        trust_status: 'trusted',
+        trusted_at: new Date().toISOString(),
+        risk_level: 'low',
+        risk_reasons: [],
+        e2ee_public_key: input.e2eePublicKey ?? existing?.e2ee_public_key ?? null,
+        e2ee_identity_fingerprint: input.e2eeIdentityFingerprint ?? existing?.e2ee_identity_fingerprint ?? null,
+        signature: input.signature ?? null,
+        signed_at: input.signature ? new Date().toISOString() : null,
+        last_seen_at: new Date().toISOString(),
+      })
+      .eq('user_id', input.userId)
+      .eq('device_id', deviceInfo.deviceId);
 
-  if (error) throw error;
+    if (updateError) throw updateError;
+  }
+
   return deviceInfo;
 }
 
