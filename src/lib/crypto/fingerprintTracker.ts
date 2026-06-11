@@ -94,7 +94,7 @@ export async function checkFingerprintChangeWithServer(
 
     if (data && data.fingerprint !== currentFp) {
       // Silent trust-on-first-rotation when not user-verified.
-      if (!data.acknowledged) {
+      if (!(data as any).verified_manually && !data.acknowledged) {
         console.warn('[PEER_KEY] 🔄 Server fingerprint rotated for', peerUserId, '— auto-trusting (was never user-verified)');
         try {
           const userId = await getCachedAuthUserId();
@@ -120,6 +120,30 @@ export async function checkFingerprintChangeWithServer(
         _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
         return result;
       }
+      if (!(data as any).verified_manually) {
+        console.warn('[PEER_KEY] 🔄 Server fingerprint rotated for', peerUserId, '— auto-trusting (not manually verified)');
+        try {
+          await supabase
+            .from('user_known_fingerprints')
+            .upsert(
+              {
+                user_id: currentUserId,
+                peer_user_id: peerUserId,
+                fingerprint: currentFp,
+                last_seen_at: new Date().toISOString(),
+                acknowledged: false,
+              },
+              { onConflict: 'user_id,peer_user_id' },
+            );
+        } catch (e) {
+          console.warn('[PEER_KEY] auto-rotate save failed', e);
+        }
+        saveKnownFingerprint(peerUserId, currentFp);
+        const result = { changed: false, previousFp: data.fingerprint };
+        _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+        return result;
+      }
+
       let isRecovery = false;
       try {
         const [{ recordIdentityChange }, { peerHasRecentRecoveryMarker }] = await Promise.all([
@@ -177,7 +201,11 @@ export async function checkFingerprintChangeWithServer(
   } catch {}
 
   if (localPrevious && localPrevious !== currentFp) {
-    return { changed: true, previousFp: localPrevious };
+    console.warn('[PEER_KEY] 🔄 Local fingerprint rotated for', peerUserId, '— auto-updating local TOFU cache');
+    saveKnownFingerprint(peerUserId, currentFp);
+    const result = { changed: false, previousFp: localPrevious };
+    _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+    return result;
   }
 
   const result = { changed: false, previousFp: null };
