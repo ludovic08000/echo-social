@@ -7750,14 +7750,13 @@ export type Database = {
         Returns: Json
       }
       live_score_batch: {
-        Args: { p_limit?: number; p_user_id: string }
+        Args: { p_limit: number; p_user_id: string }
         Returns: {
-          affinity: number
-          freshness: number
-          interest_match: number
+          engagement_score: number
+          freshness_score: number
           live_id: string
-          momentum: number
           score: number
+          wellbeing_score: number
         }[]
       }
       mark_device_copy_retry_failed: {
