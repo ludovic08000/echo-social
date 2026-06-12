@@ -6,10 +6,18 @@ import { recordSessionSignal } from "@/lib/feedDiversity";
 type SignalType =
   | "view"
   | "dwell_long"
+  | "watch_complete"
+  | "replay"
   | "like"
   | "comment"
   | "share"
+  | "save"
+  | "follow"
+  | "profile_open"
   | "hide"
+  | "not_interested"
+  | "creator_hide"
+  | "sound_hide"
   | "report"
   | "skip_fast"
   | "click";
@@ -17,17 +25,43 @@ type SignalType =
 const SIGNAL_WEIGHT: Record<SignalType, number> = {
   view: 0.5,
   dwell_long: 1.5,
+  watch_complete: 2.8,
+  replay: 2.2,
   like: 2.0,
   comment: 3.0,
   share: 4.0,
+  save: 3.2,
+  follow: 3.5,
+  profile_open: 1.4,
   hide: -3.0,
+  not_interested: -4.0,
+  creator_hide: -4.5,
+  sound_hide: -3.5,
   report: -5.0,
   skip_fast: -1.0,
   click: 1.0,
 };
 
-const POSITIVE_SIGNALS: SignalType[] = ["like", "comment", "share", "dwell_long", "click"];
-const NEGATIVE_SIGNALS: SignalType[] = ["hide", "report", "skip_fast"];
+const POSITIVE_SIGNALS: SignalType[] = [
+  "like",
+  "comment",
+  "share",
+  "save",
+  "follow",
+  "profile_open",
+  "watch_complete",
+  "replay",
+  "dwell_long",
+  "click",
+];
+const NEGATIVE_SIGNALS: SignalType[] = [
+  "hide",
+  "not_interested",
+  "creator_hide",
+  "sound_hide",
+  "report",
+  "skip_fast",
+];
 
 type QueuedInteraction = {
   user_id: string;
@@ -110,6 +144,9 @@ function sanitizeInteraction(row: QueuedInteraction): QueuedInteraction {
   if (typeof row.dwell_ms === "number" && Number.isFinite(row.dwell_ms)) {
     next.dwell_ms = Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(row.dwell_ms)));
   }
+  if (typeof row.scroll_depth === "number" && Number.isFinite(row.scroll_depth)) {
+    next.scroll_depth = Math.max(0, Math.min(1, row.scroll_depth));
+  }
 
   return next;
 }
@@ -142,7 +179,7 @@ export function trackMLSignal(
   }
 
   // Watch-time learning: push dwell to post-level aggregate
-  if ((signal === "dwell_long" || signal === "skip_fast") && extra?.dwell_ms) {
+  if ((signal === "dwell_long" || signal === "watch_complete" || signal === "replay" || signal === "skip_fast") && extra?.dwell_ms) {
     watchTimeQueue.push({ post_id: postId, dwell_ms: extra.dwell_ms });
   }
 
