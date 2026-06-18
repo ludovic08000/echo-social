@@ -454,6 +454,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     e2ee.acknowledgeSentPayload,
     isZeusConversation,
     cachePlaintext,
+    e2ee.ratchetActive,
   );
 
   const onDecrypted = useCallback((msgId: string, text: string) => {

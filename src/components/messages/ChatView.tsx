@@ -269,6 +269,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     e2ee.acknowledgeSentPayload,
     isZeusConversation, // allowPlaintext — Zeus only
     handlePlaintextCached,
+    e2ee.ratchetActive,
   );
 
   const { upload: rawUpload, isUploading } = useImageUpload({

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { buildMultiDeviceParentEnvelope, shouldArchiveMessageBody } from '../useMessageQueue';
+import { buildMultiDeviceParentEnvelope, shouldArchiveMessageBody, shouldUseInstantMultiDeviceParent } from '../useMessageQueue';
 
 const MEDIA_KEY =
   'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
@@ -76,5 +76,35 @@ describe('useMessageQueue archive gating', () => {
       __tid: 'trace-1',
     });
     expect(envelope).not.toContain('hello');
+  });
+
+  it('uses the instant multi-device parent only when E2EE is ready but ratchet is not primed', () => {
+    expect(shouldUseInstantMultiDeviceParent({
+      isEncryptionActive: true,
+      allowPlaintext: false,
+      isEncryptionReady: true,
+      isRatchetActive: false,
+    })).toBe(true);
+
+    expect(shouldUseInstantMultiDeviceParent({
+      isEncryptionActive: true,
+      allowPlaintext: false,
+      isEncryptionReady: false,
+      isRatchetActive: false,
+    })).toBe(false);
+
+    expect(shouldUseInstantMultiDeviceParent({
+      isEncryptionActive: true,
+      allowPlaintext: false,
+      isEncryptionReady: true,
+      isRatchetActive: true,
+    })).toBe(false);
+
+    expect(shouldUseInstantMultiDeviceParent({
+      isEncryptionActive: true,
+      allowPlaintext: true,
+      isEncryptionReady: true,
+      isRatchetActive: false,
+    })).toBe(false);
   });
 });

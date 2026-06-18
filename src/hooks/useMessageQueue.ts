@@ -89,6 +89,20 @@ const publicFingerprintCache = new Map<string, {
   promise?: Promise<string>;
 }>();
 
+export function shouldUseInstantMultiDeviceParent({
+  isEncryptionActive,
+  allowPlaintext,
+  isEncryptionReady,
+  isRatchetActive,
+}: {
+  isEncryptionActive: boolean;
+  allowPlaintext: boolean;
+  isEncryptionReady: boolean;
+  isRatchetActive: boolean;
+}): boolean {
+  return isEncryptionActive && !allowPlaintext && isEncryptionReady && !isRatchetActive;
+}
+
 async function getCachedPublicFingerprint(userId: string): Promise<string> {
   const now = Date.now();
   const cached = publicFingerprintCache.get(userId);
@@ -137,6 +151,7 @@ export function useMessageQueue(
   onMessageSent?: (localId: string) => void | Promise<void>,
   allowPlaintext = false,
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
+  isRatchetActive = false,
 ) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -234,7 +249,24 @@ export function useMessageQueue(
         });
       }
 
-      if (encrypt) {
+      if (shouldUseInstantMultiDeviceParent({
+        isEncryptionActive,
+        allowPlaintext,
+        isEncryptionReady,
+        isRatchetActive,
+      })) {
+        bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
+        storedMultiDeviceEnvelope = true;
+        updatePending({
+          encryptedBody: bodyToStore,
+          status: 'waiting_secure_channel',
+          lastError: null,
+        });
+        console.info('[MSG_SEND] ratchet not primed; using encrypted multi-device parent for instant send', {
+          localId,
+          conversationId,
+        });
+      } else if (encrypt) {
         try {
           if (!isEncryptionReady) {
             console.info('[MSG_SEND] encryption readiness flag false; attempting encrypt anyway', {
@@ -435,7 +467,7 @@ export function useMessageQueue(
     } else {
       invalidateAfterSend();
     }
-  }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
+  }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, isRatchetActive, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {
     setPendingMessages(prev => prev.map(m =>
