@@ -14,9 +14,112 @@
 
 import { hardCrypto } from './cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from './utils';
+import { isAppleMobileWebKit } from '@/lib/platform';
 
 const IV_LEN = 12;
 const KEY_BITS = 256;
+const IOS_WORKER_THRESHOLD_BYTES = 256 * 1024;
+const DESKTOP_WORKER_THRESHOLD_BYTES = 2 * 1024 * 1024;
+const WORKER_TIMEOUT_MS = 60_000;
+const MAX_WORKER_FAILURES = 2;
+
+type WorkerResponse =
+  | { id: string; ok: true; encrypted: ArrayBuffer }
+  | { id: string; ok: false; error?: string };
+
+let mediaWorker: Worker | null = null;
+let mediaWorkerFailures = 0;
+const workerRequests = new Map<string, {
+  resolve: (value: Blob) => void;
+  reject: (reason?: unknown) => void;
+  timer: ReturnType<typeof setTimeout>;
+}>();
+
+function supportsMediaWorker(): boolean {
+  return typeof Worker !== 'undefined' && typeof URL !== 'undefined' && mediaWorkerFailures < MAX_WORKER_FAILURES;
+}
+
+function shouldUseWorker(file: File | Blob): boolean {
+  if (!supportsMediaWorker()) return false;
+  const threshold = isAppleMobileWebKit() ? IOS_WORKER_THRESHOLD_BYTES : DESKTOP_WORKER_THRESHOLD_BYTES;
+  return file.size >= threshold;
+}
+
+function disposeMediaWorker(): void {
+  try { mediaWorker?.terminate(); } catch {}
+  mediaWorker = null;
+  for (const [id, pending] of workerRequests) {
+    clearTimeout(pending.timer);
+    pending.reject(new Error('MEDIA_WORKER_TERMINATED'));
+    workerRequests.delete(id);
+  }
+}
+
+function getMediaWorker(): Worker | null {
+  if (!supportsMediaWorker()) return null;
+  if (mediaWorker) return mediaWorker;
+  try {
+    mediaWorker = new Worker(new URL('./mediaEncryptWorker.ts', import.meta.url), {
+      type: 'module',
+      name: 'forsure-media-crypto',
+    });
+    mediaWorker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+      const msg = event.data;
+      const pending = msg?.id ? workerRequests.get(msg.id) : null;
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      workerRequests.delete(msg.id);
+      if (msg.ok) {
+        pending.resolve(new Blob([msg.encrypted], { type: 'application/octet-stream' }));
+      } else {
+        pending.reject(new Error(msg.error || 'MEDIA_WORKER_ENCRYPT_FAILED'));
+      }
+    };
+    mediaWorker.onerror = () => {
+      mediaWorkerFailures += 1;
+      disposeMediaWorker();
+    };
+    return mediaWorker;
+  } catch {
+    mediaWorkerFailures += 1;
+    disposeMediaWorker();
+    return null;
+  }
+}
+
+async function encryptMediaInWorker(file: File | Blob, key: CryptoKey): Promise<Blob | null> {
+  const worker = getMediaWorker();
+  if (!worker) return null;
+
+  let rawKey: ArrayBuffer;
+  try {
+    rawKey = await hardCrypto.exportKey('raw', key) as ArrayBuffer;
+  } catch {
+    return null;
+  }
+
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return new Promise<Blob>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      workerRequests.delete(id);
+      reject(new Error('MEDIA_WORKER_TIMEOUT'));
+    }, WORKER_TIMEOUT_MS);
+
+    workerRequests.set(id, { resolve, reject, timer });
+    try {
+      worker.postMessage({ id, file, rawKey }, [rawKey]);
+    } catch (error) {
+      clearTimeout(timer);
+      workerRequests.delete(id);
+      reject(error);
+    }
+  }).catch((error) => {
+    mediaWorkerFailures += 1;
+    if (mediaWorkerFailures >= MAX_WORKER_FAILURES) disposeMediaWorker();
+    console.warn('[media] worker encryption unavailable, falling back to main thread', error);
+    return null;
+  });
+}
 
 // ─── Delimiters used inside the E2EE message body ───
 
@@ -101,6 +204,11 @@ export async function encryptMedia(
   file: File | Blob,
   key: CryptoKey,
 ): Promise<Blob> {
+  if (shouldUseWorker(file)) {
+    const workerBlob = await encryptMediaInWorker(file, key);
+    if (workerBlob) return workerBlob;
+  }
+
   const iv = randomBytes(IV_LEN);
   const plaintext = await file.arrayBuffer();
 
