@@ -14,8 +14,10 @@ import { getMediaKey, setMediaKey as publishMediaKey, subscribeMediaKey } from '
 import { loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { looksEncrypted as looksEncryptedMessage, resolvePlaintext } from './decryptionService';
 import type { DecryptResult } from '@/hooks/useE2EE';
+import { isAppleMobileWebKit } from '@/lib/platform';
 
-const MEDIA_KEY_FALLBACK_DELAY_MS = 180;
+const DESKTOP_MEDIA_KEY_FALLBACK_DELAY_MS = 180;
+const IOS_MEDIA_KEY_FALLBACK_DELAY_MS = 650;
 
 interface MessageMediaProps {
   imageUrl: string;
@@ -166,7 +168,7 @@ export const MessageMedia = memo(function MessageMedia({
       }).catch(() => {
         if (!cancelled) setResolved(true);
       });
-    }, MEDIA_KEY_FALLBACK_DELAY_MS);
+    }, isAppleMobileWebKit() ? IOS_MEDIA_KEY_FALLBACK_DELAY_MS : DESKTOP_MEDIA_KEY_FALLBACK_DELAY_MS);
 
     return () => { cancelled = true; earlyUnsubscribe(); unsubscribe(); clearTimeout(fallbackTimer); };
   }, [body, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, retryTick]);

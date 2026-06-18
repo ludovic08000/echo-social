@@ -8,6 +8,7 @@ import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBo
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
+import { isAppleMobileWebKit } from '@/lib/platform';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
@@ -65,6 +66,85 @@ export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 /** Build the scoped messages query key. Must mirror the key used in useMessages(). */
 const messagesKey = (conversationId: string, userId: string | undefined) =>
   ['messages', conversationId, userId ?? 'anon'] as const;
+
+const IOS_PREWARM_LIMIT = 24;
+const DESKTOP_PREWARM_LIMIT = 120;
+const IOS_CRYPTO_YIELD_MS = 60;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function scheduleMessageCryptoWarmup(task: () => Promise<void> | void): void {
+  if (typeof window === 'undefined') {
+    void task();
+    return;
+  }
+  const delay = isAppleMobileWebKit() ? 180 : 0;
+  window.setTimeout(() => {
+    void task();
+  }, delay);
+}
+
+async function prewarmEncryptedMessages(params: {
+  messages: Array<{ id: string; sender_id: string; body: string }>;
+  userId: string;
+}): Promise<void> {
+  const mobileWebKit = isAppleMobileWebKit();
+  const maxRows = mobileWebKit ? IOS_PREWARM_LIMIT : DESKTOP_PREWARM_LIMIT;
+  const rows = params.messages
+    .filter((m) => m.sender_id !== params.userId)
+    .filter((m) => isMultiDeviceEnvelopeBody(m.body) || isStrictRatchetEnvelopeBody(m.body))
+    .slice(-maxRows);
+
+  let anyDecrypted = false;
+  for (const m of rows) {
+    if (isMultiDeviceEnvelopeBody(m.body)) {
+      try {
+        const outcome = await resolvePlaintext({
+          body: m.body,
+          messageId: m.id,
+          decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
+        });
+        if (outcome && !outcome.hidden) {
+          persistOutcome(m.body, outcome);
+          anyDecrypted = true;
+        }
+      } catch { /* UI will retry on mount */ }
+    } else {
+      try {
+        const r = await routeIncoming({
+          encryptedBody: m.body,
+          recipientUserId: params.userId,
+          senderUserId: m.sender_id,
+          messageId: m.id,
+        });
+        if (r.ok && r.plaintext !== null) {
+          void savePlaintextForCiphertext(m.body, r.plaintext);
+          anyDecrypted = true;
+        } else {
+          pendingMessageQueue.refresh(m.id, {
+            encryptedBody: m.body,
+            recipientUserId: params.userId,
+            senderUserId: m.sender_id,
+            messageId: m.id,
+          });
+        }
+      } catch {
+        pendingMessageQueue.refresh(m.id, {
+          encryptedBody: m.body,
+          recipientUserId: params.userId,
+          senderUserId: m.sender_id,
+          messageId: m.id,
+        });
+      }
+    }
+
+    if (mobileWebKit) await sleep(IOS_CRYPTO_YIELD_MS);
+  }
+
+  if (anyDecrypted && typeof window !== 'undefined') {
+    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+  }
+}
 
 // Helper to get the user's custom AI companion name
 async function getCompanionName(userId?: string): Promise<string> {
@@ -406,29 +486,11 @@ export function useMessages(conversationId: string) {
           // the user even mounts a `DecryptedMessageBody` for the row, so the
           // retry budget starts ticking immediately on arrival.
           if (user && newMsg.sender_id !== user.id) {
-            if (isMultiDeviceEnvelopeBody(newMsg.body)) {
-              void resolvePlaintext({
-                body: newMsg.body,
-                messageId: newMsg.id,
-                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
-              }).then((outcome) => {
-                if (outcome && !outcome.hidden) {
-                  persistOutcome(newMsg.body, outcome);
-                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
-                }
-              }).catch(() => {});
-            } else if (isStrictRatchetEnvelopeBody(newMsg.body)) {
-              void routeIncoming({
-                encryptedBody: newMsg.body,
-                recipientUserId: user.id,
-                senderUserId: newMsg.sender_id,
-                messageId: newMsg.id,
-              }).then((r) => {
-                if (r.ok && r.plaintext !== null) {
-                  void savePlaintextForCiphertext(newMsg.body, r.plaintext);
-                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
-                }
-              }).catch(() => {});
+            if (isMultiDeviceEnvelopeBody(newMsg.body) || isStrictRatchetEnvelopeBody(newMsg.body)) {
+              scheduleMessageCryptoWarmup(() => prewarmEncryptedMessages({
+                messages: [{ id: newMsg.id, sender_id: newMsg.sender_id, body: newMsg.body }],
+                userId: user.id,
+              }));
             }
           }
         }
@@ -443,7 +505,6 @@ export function useMessages(conversationId: string) {
         },
         () => {
           clearNegativeCache();
-          queryClient.invalidateQueries({ queryKey: messagesKey(conversationId, user.id) });
           try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
       )
@@ -570,63 +631,14 @@ export function useMessages(conversationId: string) {
         })),
       ).catch(() => {});
 
-      // After a refetch (cold reload, reconnect, focus), proactively run
-      // `routeIncoming` for each still-encrypted incoming row. This does
-      // ACTUAL decryption (not just enqueueing) — the router tries the
-      // ratchet, multi-session fallback, and per-message device-copy
-      // fan-out. Successful results are cached by `savePlaintextForCiphertext`
-      // inside the route, and we dispatch `forsure-decrypt-retry` so any
-      // mounted `DecryptedMessageBody` immediately re-renders with the
-      // plaintext. Messages that genuinely cannot decrypt yet (out-of-order)
-      // get a fresh 30 × 1.5s retry budget on the pending queue.
+      // After a refetch (cold reload, reconnect, focus), prewarm crypto in the
+      // background. iOS WebKit stutters if hundreds of decrypts run inside the
+      // query function before React can paint the list.
       if (user) {
-        let anyDecrypted = false;
-        for (const m of compatibleMessages) {
-          if (m.sender_id === user.id) continue;
-
-          // Multi-device envelopes: parent body is just a marker, real
-          // ciphertext lives in `message_device_copies`. Prewarm via
-          // resolvePlaintext so the per-device copy is fetched + cached
-          // before <DecryptedMessageBody> mounts.
-          if (isMultiDeviceEnvelopeBody(m.body)) {
-            try {
-              const outcome = await resolvePlaintext({
-                body: m.body,
-                messageId: m.id,
-                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
-              });
-              if (outcome && !outcome.hidden) {
-                persistOutcome(m.body, outcome);
-                anyDecrypted = true;
-              }
-            } catch { /* silent — UI will retry on its own */ }
-            continue;
-          }
-
-          if (!isStrictRatchetEnvelopeBody(m.body)) continue;
-          try {
-            const r = await routeIncoming({
-              encryptedBody: m.body,
-              recipientUserId: user.id,
-              senderUserId: m.sender_id,
-              messageId: m.id,
-            });
-            if (r.ok && r.plaintext !== null) {
-              void savePlaintextForCiphertext(m.body, r.plaintext);
-              anyDecrypted = true;
-              continue;
-            }
-          } catch { /* fall through to refresh */ }
-          pendingMessageQueue.refresh(m.id, {
-            encryptedBody: m.body,
-            recipientUserId: user.id,
-            senderUserId: m.sender_id,
-            messageId: m.id,
-          });
-        }
-        if (anyDecrypted && typeof window !== 'undefined') {
-          try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
-        }
+        scheduleMessageCryptoWarmup(() => prewarmEncryptedMessages({
+          messages: compatibleMessages,
+          userId: user.id,
+        }));
       }
 
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];

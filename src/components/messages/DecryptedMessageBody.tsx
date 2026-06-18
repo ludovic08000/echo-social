@@ -13,6 +13,7 @@ import {
 } from './decryptionService';
 import { isImageMediaLabel, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
 import type { DecryptResult } from '@/hooks/useE2EE';
+import { isAppleMobileWebKit } from '@/lib/platform';
 
 /**
  * DecryptedMessageBody — passive presentational component.
@@ -141,7 +142,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
           // Once a message is readable, push the refreshed ratchet + small
           // plaintext/media-key cache into the encrypted account backup quickly.
           void import('@/lib/crypto/accountKeyBackup')
-            .then(({ requestImmediateBackup }) => requestImmediateBackup('message-decrypted'))
+            .then(({ requestBackgroundBackup, requestImmediateBackup }) => {
+              if (isAppleMobileWebKit()) requestBackgroundBackup('message-decrypted');
+              else requestImmediateBackup('message-decrypted');
+            })
             .catch(() => {});
           onDecryptedRef.current?.(persisted);
         }

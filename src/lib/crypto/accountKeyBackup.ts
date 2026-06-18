@@ -24,6 +24,7 @@ import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
 import { getCurrentDeviceId, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { isAppleMobileWebKit } from '@/lib/platform';
 import {
   exportPlaintextCache,
   importPlaintextCache,
@@ -1016,6 +1017,7 @@ let _bgBackupTimer: ReturnType<typeof setTimeout> | null = null;
 let _bgBackupInFlight = false;
 let _bgBackupPendingReason: string | null = null;
 const BG_BACKUP_DEBOUNCE_MS = 1_500;
+const IOS_IMMEDIATE_BACKUP_DEBOUNCE_MS = 3_000;
 
 export function requestBackgroundBackup(reason: string = 'mutation'): void {
   if (!isAutoBackupActive()) return;
@@ -1040,6 +1042,24 @@ export function requestBackgroundBackup(reason: string = 'mutation'): void {
 /** Force a near-immediate backup for user-visible decrypt/send milestones. */
 export function requestImmediateBackup(reason: string = 'critical-mutation'): void {
   if (!isAutoBackupActive()) return;
+  if (isAppleMobileWebKit()) {
+    _bgBackupPendingReason = reason;
+    if (_bgBackupTimer) clearTimeout(_bgBackupTimer);
+    _bgBackupTimer = setTimeout(() => {
+      _bgBackupTimer = null;
+      if (_bgBackupInFlight) {
+        _bgBackupTimer = setTimeout(() => requestImmediateBackup(reason), BG_BACKUP_DEBOUNCE_MS);
+        return;
+      }
+      _bgBackupInFlight = true;
+      const why = _bgBackupPendingReason ?? reason;
+      _bgBackupPendingReason = null;
+      syncBackupToServer()
+        .catch((e) => console.warn(`[MasterKey] iOS coalesced backup (${why}) failed:`, e))
+        .finally(() => { _bgBackupInFlight = false; });
+    }, IOS_IMMEDIATE_BACKUP_DEBOUNCE_MS);
+    return;
+  }
   _bgBackupPendingReason = reason;
   if (_bgBackupTimer) {
     clearTimeout(_bgBackupTimer);
