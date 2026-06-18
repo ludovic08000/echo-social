@@ -376,7 +376,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [isStartingCall, setIsStartingCall] = useState(false);
   const shouldAutoScrollRef = useRef(true);
-  const lastScrollSigRef = useRef('');
+  const lastScrollStateRef = useRef({
+    conversationId: '',
+    messageCount: 0,
+    lastMessageId: '',
+    pendingCount: 0,
+    lastPendingId: '',
+  });
 
   // Auto-translate non-French messages
   // Auto-translate disabled
@@ -748,13 +754,21 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.peerKeyMissing, viewOnceArmed]);
 
   useEffect(() => {
-    lastScrollSigRef.current = '';
     shouldAutoScrollRef.current = true;
+    lastScrollStateRef.current = {
+      conversationId,
+      messageCount: 0,
+      lastMessageId: '',
+      pendingCount: 0,
+      lastPendingId: '',
+    };
     setShowScrollDown(false);
   }, [conversationId]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
     shouldAutoScrollRef.current = true;
     setShowScrollDown(false);
   }, []);
@@ -772,16 +786,41 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     const lastPending = queue.pendingMessages.length
       ? queue.pendingMessages[queue.pendingMessages.length - 1]
       : undefined;
-    const sig = `${messages?.length ?? 0}:${lastMsg?.id ?? ''}|${queue.pendingMessages.length}:${lastPending?.localId ?? ''}`;
-    if (sig === lastScrollSigRef.current) return;
+    const current = {
+      conversationId,
+      messageCount: messages?.length ?? 0,
+      lastMessageId: lastMsg?.id ?? '',
+      pendingCount: queue.pendingMessages.length,
+      lastPendingId: lastPending?.localId ?? '',
+    };
+    const previous = lastScrollStateRef.current;
+    const isInitialLoad =
+      previous.conversationId !== conversationId ||
+      (previous.messageCount === 0 && previous.pendingCount === 0 && (current.messageCount > 0 || current.pendingCount > 0));
+    const messageAppended =
+      current.messageCount > previous.messageCount ||
+      (!!current.lastMessageId && current.lastMessageId !== previous.lastMessageId && current.messageCount >= previous.messageCount);
+    const pendingAdded =
+      current.pendingCount > previous.pendingCount ||
+      (!!current.lastPendingId && current.lastPendingId !== previous.lastPendingId && current.pendingCount >= previous.pendingCount);
+    const pendingSettledWithoutNewTail =
+      current.pendingCount < previous.pendingCount &&
+      current.lastMessageId === previous.lastMessageId;
 
-    const isInitialLoad = lastScrollSigRef.current === '';
-    lastScrollSigRef.current = sig;
+    lastScrollStateRef.current = current;
 
-    if (isInitialLoad || shouldAutoScrollRef.current || lastMsg?.sender_id === user?.id || lastPending) {
-      requestAnimationFrame(() => scrollToBottom(isInitialLoad ? 'auto' : 'smooth'));
+    const shouldStickToBottom =
+      shouldAutoScrollRef.current ||
+      lastMsg?.sender_id === user?.id ||
+      pendingAdded;
+    if (isInitialLoad) {
+      requestAnimationFrame(() => scrollToBottom('auto'));
+      return;
     }
-  }, [messages, queue.pendingMessages, scrollToBottom, user?.id]);
+    if ((messageAppended || pendingAdded || pendingSettledWithoutNewTail) && shouldStickToBottom) {
+      requestAnimationFrame(() => scrollToBottom(pendingSettledWithoutNewTail ? 'auto' : 'smooth'));
+    }
+  }, [conversationId, messages, queue.pendingMessages, scrollToBottom, user?.id]);
 
   useEffect(() => {
     if (!messages?.length) return;
@@ -1114,6 +1153,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         ref={scrollContainerRef}
         onScroll={handleMessagesScroll}
         className="flex-1 overflow-y-auto overflow-x-visible px-3 py-2 space-y-0.5 relative overscroll-contain touch-pan-y"
+        style={{ overflowAnchor: 'none' }}
       >
         {isLoading ? (
           <div className="flex items-center justify-center py-8">

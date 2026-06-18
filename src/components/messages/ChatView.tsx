@@ -116,6 +116,14 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // Auto-translate disabled
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
+  const lastScrollStateRef = useRef({
+    conversationId: '',
+    messageCount: 0,
+    lastMessageId: '',
+    pendingCount: 0,
+    lastPendingId: '',
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const conversation = conversations?.find(c => c.id === conversationId);
@@ -497,17 +505,66 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // channel is implemented.
 
 
-  const lastScrollSigRef = useRef<string>('');
   useEffect(() => {
-    const lastMsgId = messages?.length ? messages[messages.length - 1].id : '';
-    const lastPendingId = queue.pendingMessages.length
-      ? queue.pendingMessages[queue.pendingMessages.length - 1].localId
-      : '';
-    const sig = `${messages?.length ?? 0}:${lastMsgId}|${queue.pendingMessages.length}:${lastPendingId}`;
-    if (sig === lastScrollSigRef.current) return;
-    lastScrollSigRef.current = sig;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, queue.pendingMessages]);
+    shouldAutoScrollRef.current = true;
+    lastScrollStateRef.current = {
+      conversationId,
+      messageCount: 0,
+      lastMessageId: '',
+      pendingCount: 0,
+      lastPendingId: '',
+    };
+    setShowScrollDown(false);
+  }, [conversationId]);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+    shouldAutoScrollRef.current = true;
+    setShowScrollDown(false);
+  }, []);
+
+  useEffect(() => {
+    const lastMsg = messages?.length ? messages[messages.length - 1] : undefined;
+    const lastPending = queue.pendingMessages.length
+      ? queue.pendingMessages[queue.pendingMessages.length - 1]
+      : undefined;
+    const current = {
+      conversationId,
+      messageCount: messages?.length ?? 0,
+      lastMessageId: lastMsg?.id ?? '',
+      pendingCount: queue.pendingMessages.length,
+      lastPendingId: lastPending?.localId ?? '',
+    };
+    const previous = lastScrollStateRef.current;
+    const isInitialLoad =
+      previous.conversationId !== conversationId ||
+      (previous.messageCount === 0 && previous.pendingCount === 0 && (current.messageCount > 0 || current.pendingCount > 0));
+    const messageAppended =
+      current.messageCount > previous.messageCount ||
+      (!!current.lastMessageId && current.lastMessageId !== previous.lastMessageId && current.messageCount >= previous.messageCount);
+    const pendingAdded =
+      current.pendingCount > previous.pendingCount ||
+      (!!current.lastPendingId && current.lastPendingId !== previous.lastPendingId && current.pendingCount >= previous.pendingCount);
+    const pendingSettledWithoutNewTail =
+      current.pendingCount < previous.pendingCount &&
+      current.lastMessageId === previous.lastMessageId;
+
+    lastScrollStateRef.current = current;
+
+    const shouldStickToBottom =
+      shouldAutoScrollRef.current ||
+      lastMsg?.sender_id === user?.id ||
+      pendingAdded;
+    if (isInitialLoad) {
+      requestAnimationFrame(() => scrollToBottom('auto'));
+      return;
+    }
+    if ((messageAppended || pendingAdded || pendingSettledWithoutNewTail) && shouldStickToBottom) {
+      requestAnimationFrame(() => scrollToBottom(pendingSettledWithoutNewTail ? 'auto' : 'smooth'));
+    }
+  }, [conversationId, messages, queue.pendingMessages, scrollToBottom, user?.id]);
 
   useEffect(() => {
     if (conversationId) markRead.mutate(conversationId);
@@ -516,12 +573,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    setShowScrollDown(scrollHeight - scrollTop - clientHeight > 200);
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 96;
+    setShowScrollDown(distanceFromBottom > 200);
   }, []);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
 
   /**
    * Get the decrypted text for a message. Falls back to the cache
@@ -936,6 +991,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         ref={scrollContainerRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-3 py-4 relative"
+        style={{ overflowAnchor: 'none' }}
       >
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
