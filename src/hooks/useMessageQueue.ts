@@ -11,6 +11,7 @@ import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { encryptArchive, setMessageArchiveBody } from '@/lib/messaging/archive/archiveKey';
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
+import { isAppleMobileWebKit } from '@/lib/platform';
 
 export interface OutboundMessage {
   localId: string;
@@ -425,8 +426,15 @@ export function useMessageQueue(
       setPendingMessages(prev => prev.filter(m => m.localId !== localId));
     }
 
-    queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    const invalidateAfterSend = () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+    if (isAppleMobileWebKit() && typeof window !== 'undefined') {
+      window.setTimeout(invalidateAfterSend, 400);
+    } else {
+      invalidateAfterSend();
+    }
   }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {

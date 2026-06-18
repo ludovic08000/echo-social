@@ -39,7 +39,7 @@ interface ActiveDevice {
   devicePublicKey: string;
 }
 
-const FLAG_TTL_MS = 30_000;
+const FLAG_TTL_MS = 5 * 60_000;
 const flagCache = new Map<string, { enabled: boolean; ts: number }>();
 
 /** Versions of (conversationId, deviceId) for which we already fanned out the

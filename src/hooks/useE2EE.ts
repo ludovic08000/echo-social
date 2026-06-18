@@ -255,6 +255,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const initRef = useRef(false);
   const legacySessionReadyRef = useRef(false);
   const peerHasRespondedRef = useRef(false);
+  const spkStaleCheckInFlightRef = useRef(false);
 
   const isZeus = peerUserId === ZEUS_ID;
 
@@ -841,6 +842,20 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     setState(s => ({ ...s, ratchetActive: false }));
   }, [conversationId]);
 
+  const schedulePeerSpkStaleCheck = useCallback((lastUsedSpkId: number | undefined) => {
+    if (!peerUserId || lastUsedSpkId === undefined || spkStaleCheckInFlightRef.current) return;
+    spkStaleCheckInFlightRef.current = true;
+    void isPeerSPKStale(peerUserId, lastUsedSpkId)
+      .then((stale) => {
+        if (stale) {
+          void resetRatchetBootstrapState('peer_spk_stale_background');
+        }
+      })
+      .finally(() => {
+        spkStaleCheckInFlightRef.current = false;
+      });
+  }, [peerUserId, resetRatchetBootstrapState]);
+
   /**
    * Initialize Double Ratchet as initiator (sender of first ratchet message).
    * Uses X3DH for key agreement (3 or 4 DH operations) then seeds Double Ratchet.
@@ -849,21 +864,10 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current || !peerUserId) return null;
 
-    // ─── Cache-bust: si le SPK du pair a changé sur le serveur depuis notre
-    // dernier handshake, purger la session locale pour forcer un nouveau X3DH.
-    // Sans ça, l'expéditeur réutilise une session basée sur un SPK obsolète
-    // que le récepteur ne peut plus déchiffrer ("clé signée introuvable").
-    const lastSpkId = ratchetRef.current
-      ? x3dhInfoRef.current?.spkId
-      : (await loadRatchetLocal(conversationId))?.x3dhHeader?.spkId;
-    if (lastSpkId !== undefined && await isPeerSPKStale(peerUserId, lastSpkId)) {
-      console.warn('[E2EE] 🔄 Cache-bust SPK déclenché — purge ratchet local et nouveau X3DH');
-      await resetRatchetBootstrapState('peer_spk_stale');
-    }
-
     // Already have a ratchet? Use it only if fully ready
     if (ratchetRef.current) {
       if (isRatchetFullyReady(ratchetRef.current)) {
+        schedulePeerSpkStaleCheck(x3dhInfoRef.current?.spkId);
         return ratchetRef.current;
       }
       await resetRatchetBootstrapState('in_memory_incomplete');
@@ -881,6 +885,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           console.info('[E2EE] Restored X3DH header from persistence (PreKey header will be re-attached)');
         }
         console.info('[E2EE] Loaded persisted ratchet — ready for encrypt');
+        schedulePeerSpkStaleCheck(persisted.x3dhHeader?.spkId);
         return persisted.state;
       }
       await resetRatchetBootstrapState('persisted_incomplete');
@@ -970,7 +975,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     await saveRatchetLocal(conversationId, ratchet, x3dhInfoRef.current);
     console.info('[RATCHET] ✅ init with X3DH (initiator) — ready for encrypt');
     return ratchet;
-  }, [conversationId, peerUserId, resetRatchetBootstrapState, ensureKeysAndPeerSync]);
+  }, [conversationId, peerUserId, resetRatchetBootstrapState, ensureKeysAndPeerSync, schedulePeerSpkStaleCheck]);
 
   /**
    * Encrypt — NEVER returns plaintext.

@@ -78,24 +78,26 @@ export async function issueSenderCertificate(userId: string, fingerprint: string
     signature: await signPayload(userId, payload),
   };
 
-  try {
-    await supabase
-      .from('user_sender_certificates' as any)
-      .upsert({
-        user_id: userId,
-        device_id: payload.deviceId,
-        identity_epoch: payload.identityEpoch,
-        fingerprint,
-        payload: JSON.stringify(payload),
-        signature: cert.signature,
-        issued_at: new Date(payload.issuedAt).toISOString(),
-        expires_at: new Date(payload.expiresAt).toISOString(),
-      }, { onConflict: 'user_id,device_id,identity_epoch' });
-  } catch (error) {
-    console.warn('[E2EE][CERT] sender certificate publish skipped', error);
-  }
-
   rememberIssuedCertificate(cacheKey, cert);
+
+  void supabase
+    .from('user_sender_certificates' as any)
+    .upsert({
+      user_id: userId,
+      device_id: payload.deviceId,
+      identity_epoch: payload.identityEpoch,
+      fingerprint,
+      payload: JSON.stringify(payload),
+      signature: cert.signature,
+      issued_at: new Date(payload.issuedAt).toISOString(),
+      expires_at: new Date(payload.expiresAt).toISOString(),
+    }, { onConflict: 'user_id,device_id,identity_epoch' })
+    .then(({ error }) => {
+      if (error) console.warn('[E2EE][CERT] sender certificate publish skipped', error);
+    })
+    .catch((error) => {
+      console.warn('[E2EE][CERT] sender certificate publish skipped', error);
+    });
   return cert;
 }
 
