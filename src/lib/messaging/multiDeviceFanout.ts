@@ -51,6 +51,10 @@ interface DeviceEncryptTargetInput {
 const X3DH_BOOTSTRAP_PREFIX_V5 = 'x3dh5.init.';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 const FANOUT_ENCRYPT_CONCURRENCY = 4;
+const SPK_FRESHNESS_TTL_MS = 2 * 60 * 1000;
+const SENDER_IDENTITY_TTL_MS = 5 * 60 * 1000;
+const MAX_SPK_FRESHNESS_ENTRIES = 500;
+const MAX_SENDER_IDENTITY_ENTRIES = 200;
 
 type DeviceCopyPrefix = 'x3dh5.init' | 'x3dh5' | 'x3dh4' | 'unsupported';
 
@@ -67,6 +71,73 @@ type CopyRow = {
   sender_device_id: string;
   recipient_device_id?: string;
 };
+
+const spkFreshnessCache = new Map<string, number>();
+const senderIdentityCache = new Map<string, { identityKey: string | null; expiresAt: number; promise?: Promise<string | null> }>();
+
+function spkFreshnessKey(userId: string, deviceId: string, spkId: number): string {
+  return `${userId}:${deviceId}:${spkId}`;
+}
+
+function hasFreshSpkCheck(userId: string, deviceId: string, spkId: number): boolean {
+  const key = spkFreshnessKey(userId, deviceId, spkId);
+  const checkedAt = spkFreshnessCache.get(key);
+  if (!checkedAt) return false;
+  if (Date.now() - checkedAt > SPK_FRESHNESS_TTL_MS) {
+    spkFreshnessCache.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function rememberFreshSpkCheck(userId: string, deviceId: string, spkId: number): void {
+  spkFreshnessCache.set(spkFreshnessKey(userId, deviceId, spkId), Date.now());
+  while (spkFreshnessCache.size > MAX_SPK_FRESHNESS_ENTRIES) {
+    const oldest = spkFreshnessCache.keys().next().value;
+    if (!oldest) break;
+    spkFreshnessCache.delete(oldest);
+  }
+}
+
+function forgetFreshSpkChecks(userId: string, deviceId: string): void {
+  const prefix = `${userId}:${deviceId}:`;
+  for (const key of spkFreshnessCache.keys()) {
+    if (key.startsWith(prefix)) spkFreshnessCache.delete(key);
+  }
+}
+
+async function getSenderIdentityKeyCached(senderUserId: string): Promise<string | null> {
+  const now = Date.now();
+  const cached = senderIdentityCache.get(senderUserId);
+  if (cached && cached.expiresAt > now) {
+    if (cached.promise) return cached.promise;
+    return cached.identityKey;
+  }
+
+  const promise = supabase
+    .from('user_public_keys')
+    .select('identity_key')
+    .eq('user_id', senderUserId)
+    .eq('is_active', true)
+    .maybeSingle()
+    .then(({ data }) => ((data as any)?.identity_key as string | null | undefined) ?? null)
+    .then((identityKey) => {
+      senderIdentityCache.set(senderUserId, { identityKey, expiresAt: Date.now() + SENDER_IDENTITY_TTL_MS });
+      while (senderIdentityCache.size > MAX_SENDER_IDENTITY_ENTRIES) {
+        const oldest = senderIdentityCache.keys().next().value;
+        if (!oldest) break;
+        senderIdentityCache.delete(oldest);
+      }
+      return identityKey;
+    })
+    .catch(() => {
+      senderIdentityCache.delete(senderUserId);
+      return null;
+    });
+
+  senderIdentityCache.set(senderUserId, { identityKey: null, expiresAt: now + SENDER_IDENTITY_TTL_MS, promise });
+  return promise;
+}
 
 function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
   if (body.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return 'x3dh5.init';
@@ -317,31 +388,37 @@ export async function encryptPlaintextForDeviceTarget(
       input.recipientDeviceId,
     );
     if (cachedSpkId !== null) {
-      const spk = await peekDeviceSignedPrekey(input.recipientUserId, input.recipientDeviceId);
-      if (!spk) {
-        logCryptoError({
-          severity: 'warning',
-          context: 'fanout',
-          errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
-          errorMessage: 'Skipping SPK freshness check because peer v5 bundle is unavailable',
-          conversationId: input.conversationId,
-          myDeviceId: senderDeviceId,
-          peerUserId: input.recipientUserId,
-          peerDeviceId: input.recipientDeviceId,
-          metadata: { cachedSpkId },
-        });
-      } else if (spk.signedPrekeyId !== cachedSpkId) {
-        await invalidateDeviceSession(
-          input.senderUserId,
-          senderDeviceId,
-          input.recipientUserId,
-          input.recipientDeviceId,
-        );
+      if (!hasFreshSpkCheck(input.recipientUserId, input.recipientDeviceId, cachedSpkId)) {
+        const spk = await peekDeviceSignedPrekey(input.recipientUserId, input.recipientDeviceId);
+        if (!spk) {
+          logCryptoError({
+            severity: 'warning',
+            context: 'fanout',
+            errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
+            errorMessage: 'Skipping SPK freshness check because peer v5 bundle is unavailable',
+            conversationId: input.conversationId,
+            myDeviceId: senderDeviceId,
+            peerUserId: input.recipientUserId,
+            peerDeviceId: input.recipientDeviceId,
+            metadata: { cachedSpkId },
+          });
+        } else if (spk.signedPrekeyId !== cachedSpkId) {
+          forgetFreshSpkChecks(input.recipientUserId, input.recipientDeviceId);
+          await invalidateDeviceSession(
+            input.senderUserId,
+            senderDeviceId,
+            input.recipientUserId,
+            input.recipientDeviceId,
+          );
+        } else {
+          rememberFreshSpkCheck(input.recipientUserId, input.recipientDeviceId, cachedSpkId);
+        }
       }
     }
   } catch (e) {
     if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID')) {
       markInvalidDeviceId(input.recipientDeviceId);
+      forgetFreshSpkChecks(input.recipientUserId, input.recipientDeviceId);
       logCryptoException('fanout', e, {
         severity: 'error',
         conversationId: input.conversationId,
@@ -597,11 +674,11 @@ async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: str
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
     if (prefix === 'x3dh5.init') {
-      const { data: senderPub } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
-      if (!senderPub?.identity_key) {
+      const senderIdentityKey = await getSenderIdentityKeyCached(row.sender_user_id);
+      if (!senderIdentityKey) {
         return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };
       }
-      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);
+      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderIdentityKey, row.sender_user_id, row.sender_device_id);
       return {
         plaintext,
         attemptedSupportedEnvelope: true,

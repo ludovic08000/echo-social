@@ -81,6 +81,53 @@ export function shouldArchiveMessageBody({
   return hasMediaKey(sanitized);
 }
 
+const PUBLIC_FINGERPRINT_TTL_MS = 5 * 60 * 1000;
+const publicFingerprintCache = new Map<string, {
+  fingerprint: string;
+  expiresAt: number;
+  promise?: Promise<string>;
+}>();
+
+async function getCachedPublicFingerprint(userId: string): Promise<string> {
+  const now = Date.now();
+  const cached = publicFingerprintCache.get(userId);
+  if (cached && cached.expiresAt > now) {
+    if (cached.promise) return cached.promise;
+    return cached.fingerprint;
+  }
+
+  const promise = getOrCreateIdentityKeys(userId)
+    .then(exportPublicKeyBundle)
+    .then((bundle) => {
+      publicFingerprintCache.set(userId, {
+        fingerprint: bundle.fingerprint,
+        expiresAt: Date.now() + PUBLIC_FINGERPRINT_TTL_MS,
+      });
+      return bundle.fingerprint;
+    })
+    .catch((error) => {
+      publicFingerprintCache.delete(userId);
+      throw error;
+    });
+
+  publicFingerprintCache.set(userId, {
+    fingerprint: '',
+    expiresAt: now + PUBLIC_FINGERPRINT_TTL_MS,
+    promise,
+  });
+  return promise;
+}
+
+function clearSendHotPathCaches(): void {
+  publicFingerprintCache.clear();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure-keys-unlocked', clearSendHotPathCaches);
+  window.addEventListener('forsure-e2ee-security-code-changed', clearSendHotPathCaches);
+  window.addEventListener('forsure-e2ee-identity-ready', clearSendHotPathCaches);
+}
+
 export function useMessageQueue(
   conversationId: string,
   encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
@@ -166,7 +213,18 @@ export function useMessageQueue(
 
     if (isEncryptionActive && !allowPlaintext) {
       try {
-        await ensureUserE2EEIdentity(user.id);
+        const identityWarmup = ensureUserE2EEIdentity(user.id);
+        if (!isEncryptionReady) {
+          await identityWarmup;
+        } else {
+          void identityWarmup.catch((error) => {
+            console.warn('[MSG_SEND] identity warmup failed after send path continued', {
+              localId,
+              conversationId,
+              error,
+            });
+          });
+        }
       } catch (error) {
         console.warn('[MSG_SEND] identity bootstrap failed; continuing with compatibility send', {
           localId,
@@ -187,11 +245,10 @@ export function useMessageQueue(
           const encryptedPayload = await encrypt(sanitized, localId);
           if (encryptedPayload && encryptedPayload !== sanitized) {
             try {
-              const identityKeys = await getOrCreateIdentityKeys(user.id);
-              const publicBundle = await exportPublicKeyBundle(identityKeys);
+              const fingerprint = await getCachedPublicFingerprint(user.id);
               bodyToStore = await wrapOutboundSecureMessage({
                 userId: user.id,
-                fingerprint: publicBundle.fingerprint,
+                fingerprint,
                 encryptedBody: encryptedPayload,
                 conversationId,
                 localId,

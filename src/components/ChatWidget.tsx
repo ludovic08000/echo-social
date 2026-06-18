@@ -693,6 +693,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     }
 
     const label = isVideo ? '🎬 Vidéo' : '📷 Photo';
+    const mediaKeyPromise = isZeusConversation ? null : generateMediaKey();
 
     let prepared: File = file;
     if (isVideo) {
@@ -720,7 +721,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
     const t0 = performance.now();
     try {
-      const { key, keyB64 } = await generateMediaKey();
+      const { key, keyB64 } = await mediaKeyPromise!;
       const encryptedBlob = await encryptMedia(prepared, key);
       const encFile = new File([encryptedBlob], `${prepared.name}.enc`, { type: 'application/octet-stream' });
       const url = await rawUpload(encFile);
