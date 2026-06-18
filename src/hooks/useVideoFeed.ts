@@ -109,6 +109,39 @@ function calculateRelevanceScore(
   return Math.max(0, Math.min(1, score));
 }
 
+async function fetchVideoServerOrder(userId: string, videoIds: string[]): Promise<string[] | null> {
+  if (!userId || videoIds.length === 0) return null;
+  try {
+    const { data, error } = await (supabase.rpc as any)('video_score_batch', {
+      p_user_id: userId,
+      p_video_ids: videoIds,
+    });
+    if (error || !Array.isArray(data) || data.length === 0) return null;
+    return data.map((row: any) => row.video_id).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+function orderVideosByIds<T extends { id: string }>(videos: T[], orderedIds: string[] | null): T[] {
+  if (!orderedIds?.length) return videos;
+  const byId = new Map(videos.map(video => [video.id, video]));
+  const seen = new Set<string>();
+  const ordered: T[] = [];
+
+  for (const id of orderedIds) {
+    const video = byId.get(id);
+    if (video) {
+      ordered.push(video);
+      seen.add(id);
+    }
+  }
+  for (const video of videos) {
+    if (!seen.has(video.id)) ordered.push(video);
+  }
+  return ordered;
+}
+
 export function useVideoFeed(limit: number = 10) {
   const { user } = useAuth();
 
@@ -131,9 +164,14 @@ export function useVideoFeed(limit: number = 10) {
       if (videosError) throw videosError;
       if (!videos || videos.length === 0) return [];
 
+      const videoIds = videos.map(v => v.id);
+      const orderedIds = await fetchVideoServerOrder(user.id, videoIds);
+      const serverOrderedVideos = orderVideosByIds(videos, orderedIds);
+
       // Mode léger (iPhone/feed): éviter les requêtes algorithmiques coûteuses
       if (lightweightMode) {
-        const authorIds = [...new Set(videos.map(v => v.user_id))];
+        const visibleVideos = serverOrderedVideos.slice(0, limit);
+        const authorIds = [...new Set(visibleVideos.map(v => v.user_id))];
         const { data: profiles } = await supabase
           .from('profiles')
           .select('user_id, name, avatar_url')
@@ -143,7 +181,7 @@ export function useVideoFeed(limit: number = 10) {
           (profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
         );
 
-        return videos.slice(0, limit).map(video => ({
+        return visibleVideos.map(video => ({
           ...video,
           author: profileMap.get(video.user_id),
           is_liked: false,
@@ -187,7 +225,6 @@ export function useVideoFeed(limit: number = 10) {
       );
 
       // 5. Récupérer les likes de l'utilisateur
-      const videoIds = videos.map(v => v.id);
       const { data: userLikes } = await supabase
         .from('video_likes')
         .select('video_id')
@@ -216,20 +253,6 @@ export function useVideoFeed(limit: number = 10) {
         (profiles || []).map(p => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
       );
 
-      // 8. Server-side ranking (anti-cheat). Fallback to client scoring on error.
-      let orderedIds: string[] | null = null;
-      try {
-        const { data: serverScores, error: rpcErr } = await (supabase.rpc as any)('video_score_batch', {
-          p_user_id: user.id,
-          p_video_ids: videos.map(v => v.id),
-        });
-        if (!rpcErr && Array.isArray(serverScores) && serverScores.length > 0) {
-          orderedIds = serverScores.map((r: any) => r.video_id);
-        }
-      } catch {
-        // silent fallback
-      }
-
       const decorated = videos.map(video => ({
         ...video,
         author: profileMap.get(video.user_id),
@@ -239,11 +262,7 @@ export function useVideoFeed(limit: number = 10) {
 
       let sorted: any[];
       if (orderedIds) {
-        const byId = new Map(decorated.map(v => [v.id, v]));
-        sorted = orderedIds.map(id => byId.get(id)).filter(Boolean) as any[];
-        // append any not scored at the tail
-        const seen = new Set(orderedIds);
-        for (const v of decorated) if (!seen.has(v.id)) sorted.push(v);
+        sorted = orderVideosByIds(decorated, orderedIds);
       } else {
         const scored = decorated.map(video => ({
           ...video,

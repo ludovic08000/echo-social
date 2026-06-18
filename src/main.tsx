@@ -154,6 +154,7 @@ async function bootstrap() {
         import('@/lib/crypto'),
         import('@/lib/crypto/identityBootstrap'),
         import('@/lib/crypto/sessionInvalidation'),
+        import('@/lib/security/e2eeDeviceTrustBootstrap'),
       ]);
 
       activateRuntimeShield();

@@ -31,22 +31,56 @@ interface UserProfile {
   friendBias: number;
 }
 
+const ML_SIGNAL_WEIGHT: Record<string, number> = {
+  view: 0.5,
+  dwell_long: 1.5,
+  watch_complete: 2.8,
+  replay: 2.2,
+  like: 2.0,
+  comment: 3.0,
+  share: 4.0,
+  save: 3.2,
+  follow: 3.5,
+  profile_open: 1.4,
+  click: 1.0,
+  skip_fast: -1.0,
+  hide: -3.0,
+  not_interested: -4.0,
+  creator_hide: -4.5,
+  sound_hide: -3.5,
+  report: -5.0,
+};
+
+const POSITIVE_SIGNALS = new Set([
+  "dwell_long",
+  "watch_complete",
+  "replay",
+  "like",
+  "comment",
+  "share",
+  "save",
+  "follow",
+  "profile_open",
+  "click",
+]);
+
 async function buildUserProfile(supabase: any, userId: string): Promise<UserProfile> {
   const since = new Date(Date.now() - 14 * 24 * 3600_000).toISOString();
 
-  const [signalsRes, interestsRes, likesRes] = await Promise.all([
+  const [signalsRes, interestsRes, likesRes, friendshipsRes] = await Promise.all([
     supabase
-      .from("user_behavior_signals")
-      .select("signal_type, value, metadata, created_at")
+      .from("ml_interactions")
+      .select("post_id, signal_type, weight, dwell_ms, scroll_depth, hour_of_day, day_of_week, is_weekend, created_at")
       .eq("user_id", userId)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
-      .limit(500),
+      .limit(800),
     supabase
       .from("user_interests")
-      .select("interest_value")
+      .select("interest_value, weight")
       .eq("user_id", userId)
-      .limit(20),
+      .order("weight", { ascending: false })
+      .limit(30),
     supabase
       .from("likes")
       .select("post_id, reaction_type, created_at")
@@ -54,33 +88,59 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(100),
+    supabase
+      .from("friendships")
+      .select("requester_id, addressee_id")
+      .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+      .eq("status", "accepted"),
   ]);
 
   const signals = signalsRes.data || [];
   const interests = (interestsRes.data || []).map((i: any) => i.interest_value);
   const likes = likesRes.data || [];
 
-  // Compute dwell time stats
-  const dwellSignals = signals.filter((s: any) => s.signal_type === "dwell");
+  const postIds = [...new Set(signals.map((s: any) => s.post_id).filter(Boolean))].slice(0, 250);
+  const { data: interactedPosts } = postIds.length
+    ? await supabase
+        .from("posts")
+        .select("id, user_id, body, image_url")
+        .in("id", postIds)
+    : { data: [] };
+
+  const postsById = new Map<string, any>();
+  for (const post of interactedPosts || []) postsById.set(post.id, post);
+
+  const friendIds = new Set<string>();
+  for (const f of friendshipsRes.data || []) {
+    friendIds.add(f.requester_id === userId ? f.addressee_id : f.requester_id);
+  }
+
+  // Compute dwell time stats from the unified interaction stream.
+  const dwellSignals = signals.filter((s: any) =>
+    ["dwell_long", "watch_complete", "replay"].includes(s.signal_type)
+      && Number(s.dwell_ms || 0) > 0
+  );
   const avgDwellMs = dwellSignals.length > 0
-    ? dwellSignals.reduce((sum: number, s: any) => sum + Number(s.value), 0) / dwellSignals.length
+    ? dwellSignals.reduce((sum: number, s: any) => sum + Number(s.dwell_ms || 0), 0) / dwellSignals.length
     : 3000;
 
   // Compute engagement rate
   const viewSignals = signals.filter((s: any) => s.signal_type === "view");
-  const interactionSignals = signals.filter((s: any) =>
-    ["like", "comment", "share", "click_profile"].includes(s.signal_type)
-  );
+  const interactionSignals = signals.filter((s: any) => POSITIVE_SIGNALS.has(s.signal_type));
   const engagementRate = viewSignals.length > 0
     ? interactionSignals.length / viewSignals.length
     : 0.1;
 
-  // Detect preferred content types from high-dwell posts
+  // Detect preferred content types from positive/high-dwell post history.
   const mediaPrefs: Record<string, number> = { text: 0, image: 0, video: 0 };
-  for (const s of dwellSignals) {
-    const type = s.metadata?.content_type || "text";
-    mediaPrefs[type] = (mediaPrefs[type] || 0) + Number(s.value);
+  for (const s of signals) {
+    if (!POSITIVE_SIGNALS.has(s.signal_type)) continue;
+    const post = postsById.get(s.post_id);
+    const type = post?.image_url ? "image" : "text";
+    const weight = Math.max(0.1, Number(s.weight || ML_SIGNAL_WEIGHT[s.signal_type] || 1));
+    mediaPrefs[type] = (mediaPrefs[type] || 0) + weight;
   }
+  if (likes.length > 0) mediaPrefs.text += likes.length * 0.2;
   const preferredContentTypes = Object.entries(mediaPrefs)
     .sort((a, b) => b[1] - a[1])
     .map(([type]) => type);
@@ -88,7 +148,9 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
   // Active hours from signal timestamps
   const hourCounts = new Array(24).fill(0);
   for (const s of signals) {
-    const hour = new Date(s.created_at).getHours();
+    const hour = Number.isFinite(Number(s.hour_of_day))
+      ? Number(s.hour_of_day)
+      : new Date(s.created_at).getHours();
     hourCounts[hour]++;
   }
   const activeHours = hourCounts
@@ -97,8 +159,11 @@ async function buildUserProfile(supabase: any, userId: string): Promise<UserProf
     .slice(0, 6)
     .map(h => h.hour);
 
-  // Friend bias: ratio of friend interactions vs discovery
-  const friendInteractions = signals.filter((s: any) => s.metadata?.is_friend === true).length;
+  // Friend bias: ratio of friend-author interactions vs discovery interactions.
+  const friendInteractions = signals.filter((s: any) => {
+    const post = postsById.get(s.post_id);
+    return post?.user_id && friendIds.has(post.user_id);
+  }).length;
   const friendBias = signals.length > 0 ? friendInteractions / signals.length : 0.5;
 
   return {
@@ -362,27 +427,67 @@ Deno.serve(async (req) => {
     // TRACK — Record behavior signal
     // ══════════════════════════════
     if (action === "track") {
-      const { post_id, signal_type, value, metadata } = body;
+      const { post_id, signal_type, value, weight, dwell_ms, scroll_depth } = body;
       if (!post_id || !signal_type) {
         return new Response(JSON.stringify({ error: "post_id and signal_type required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      const validSignals = ["view", "dwell", "scroll_past", "like", "comment", "share", "click_profile", "save"];
+      const validSignals = [
+        "view",
+        "dwell_long",
+        "watch_complete",
+        "replay",
+        "like",
+        "comment",
+        "share",
+        "save",
+        "follow",
+        "profile_open",
+        "click",
+        "skip_fast",
+        "hide",
+        "not_interested",
+        "creator_hide",
+        "sound_hide",
+        "report",
+      ];
       if (!validSignals.includes(signal_type)) {
         return new Response(JSON.stringify({ error: "Invalid signal_type" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      await supabase.from("user_behavior_signals").insert({
+      const now = new Date();
+      const safeWeight = Math.max(
+        -9.99,
+        Math.min(9.99, Number(weight ?? value ?? ML_SIGNAL_WEIGHT[signal_type] ?? 1))
+      );
+      const safeDwell = Number.isFinite(Number(dwell_ms))
+        ? Math.max(0, Math.min(24 * 3600_000, Math.round(Number(dwell_ms))))
+        : null;
+      const safeScroll = Number.isFinite(Number(scroll_depth))
+        ? Math.max(0, Math.min(1, Number(scroll_depth)))
+        : null;
+
+      const { error: insertError } = await supabase.from("ml_interactions").insert({
         user_id: user.id,
         post_id,
         signal_type,
-        value: value ?? 1,
-        metadata: metadata ?? {},
+        weight: safeWeight,
+        dwell_ms: safeDwell,
+        scroll_depth: safeScroll,
+        hour_of_day: now.getHours(),
+        day_of_week: now.getDay(),
+        is_weekend: now.getDay() === 0 || now.getDay() === 6,
       });
+      if (insertError) {
+        return new Response(JSON.stringify({ error: insertError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

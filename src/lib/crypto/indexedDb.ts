@@ -28,8 +28,8 @@ export async function reopenE2EEDB(): Promise<IDBDatabase> {
 export function isIndexedDBClosingError(error: unknown): boolean {
   return (
     error instanceof DOMException &&
-    (error.name === 'InvalidStateError' || error.name === 'TransactionInactiveError')
-  ) || String(error).includes('database connection is closing');
+    (error.name === 'InvalidStateError' || error.name === 'TransactionInactiveError' || error.name === 'AbortError')
+  ) || String(error).includes('database connection is closing') || String(error).includes('signal is aborted');
 }
 
 export async function safeIDB<T>(operation: () => Promise<T>, fallback: T): Promise<T> {

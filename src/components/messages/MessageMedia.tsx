@@ -10,10 +10,14 @@ import { useState, useEffect, memo, useMemo } from 'react';
 import { Lock } from 'lucide-react';
 import { EncryptedMedia } from './EncryptedMedia';
 import { isVideoMediaLabel, parseMediaMessage } from '@/lib/crypto/mediaEncrypt';
-import { getMediaKey, subscribeMediaKey } from './mediaKeyCache';
+import { getMediaKey, setMediaKey as publishMediaKey, subscribeMediaKey } from './mediaKeyCache';
 import { loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { looksEncrypted as looksEncryptedMessage, resolvePlaintext } from './decryptionService';
 import type { DecryptResult } from '@/hooks/useE2EE';
+import { isAppleMobileWebKit } from '@/lib/platform';
+
+const DESKTOP_MEDIA_KEY_FALLBACK_DELAY_MS = 180;
+const IOS_MEDIA_KEY_FALLBACK_DELAY_MS = 650;
 
 interface MessageMediaProps {
   imageUrl: string;
@@ -112,6 +116,7 @@ export const MessageMedia = memo(function MessageMedia({
         if (cancelled || !plain) return;
         const parsed = parseMediaMessage(plain);
         if (!parsed) return;
+        publishMediaKey(messageId, parsed.keyB64, isVideoMediaLabel(parsed.label));
         setMediaKey(parsed.keyB64);
         setIsVideo(isVideoMediaLabel(parsed.label));
         setResolved(true);
@@ -147,13 +152,15 @@ export const MessageMedia = memo(function MessageMedia({
         })
       : () => {};
 
-    // Last-resort fallback: decrypt ourselves if no key arrives in 1s.
+    // Last-resort fallback: decrypt ourselves if no key arrives almost
+    // immediately. resolvePlaintext() already dedupes inflight decrypts.
     const fallbackTimer = setTimeout(() => {
       if (cancelled) return;
       if (messageId && getMediaKey(messageId)) return;
       resolvePlaintext({ body, messageId, decrypt }).then(result => {
         if (cancelled) return;
         if (result?.mediaKeyB64) {
+          if (messageId) publishMediaKey(messageId, result.mediaKeyB64, isVideoMediaLabel(result.text));
           setMediaKey(result.mediaKeyB64);
           setIsVideo(isVideoMediaLabel(result.text));
         }
@@ -161,7 +168,7 @@ export const MessageMedia = memo(function MessageMedia({
       }).catch(() => {
         if (!cancelled) setResolved(true);
       });
-    }, 1000);
+    }, isAppleMobileWebKit() ? IOS_MEDIA_KEY_FALLBACK_DELAY_MS : DESKTOP_MEDIA_KEY_FALLBACK_DELAY_MS);
 
     return () => { cancelled = true; earlyUnsubscribe(); unsubscribe(); clearTimeout(fallbackTimer); };
   }, [body, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, retryTick]);

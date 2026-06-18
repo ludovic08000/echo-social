@@ -1,13 +1,13 @@
 /**
  * Persistent Local Message Queue (v4 — Hardened)
- * 
+ *
  * Guarantees:
  * - No message is ever lost
  * - No message is ever sent in plaintext
  * - Plaintext is NEVER persisted to IndexedDB (volatile memory only)
  * - Automatic retry with exponential backoff
  * - Idempotent: no duplicates
- * 
+ *
  * States: draft → pending_local → encrypting → waiting_secure_channel → sending → sent
  *                                                                      → retry_pending → encrypting
  *                                                                      → failed_visible
@@ -24,6 +24,10 @@ export type OutboundMessageStatus =
   | 'failed_visible';
 
 import { logCryptoError } from '@/lib/crypto/errorLogger';
+import {
+  assertE2EETrustedBrowserDevice,
+  E2EEDeviceGateError,
+} from '@/lib/crypto/e2eeDeviceGate';
 import { safeUUID } from '@/e2ee-session/safeUuid';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
@@ -115,6 +119,7 @@ export interface OutboundMessage {
 }
 
 type QueueListener = (messages: OutboundMessage[]) => void;
+type RetryMode = 'retry' | 'secure_wait' | 'device_gate';
 
 interface QueueHandlers {
   encrypt: (plaintext: string, conversationId: string, localId: string) => Promise<string>;
@@ -144,6 +149,52 @@ const MULTI_DEVICE_FALLBACK_PREFIX = '🔒 Bundle X3DH du contact indisponible o
  * volatile memory the whole time.
  */
 const SECURE_CHANNEL_HARD_TIMEOUT_MS = 15 * 60_000;
+const DEVICE_GATE_RETRY_MS = 1500;
+
+function isDeviceGateError(error: unknown): error is E2EEDeviceGateError {
+  return error instanceof E2EEDeviceGateError || (
+    !!error &&
+    typeof error === 'object' &&
+    'status' in error &&
+    'assessment' in error &&
+    (error as { name?: string }).name === 'E2EEDeviceGateError'
+  );
+}
+
+function isPinRecoverableDeviceStatus(status: string): boolean {
+  return status === 'PIN_REQUIRED_FOR_NEW_DEVICE' || status === 'PIN_REQUIRED_FOR_RISK_CHANGE';
+}
+
+function emitDeviceTrustRequired(msg: OutboundMessage, error: E2EEDeviceGateError) {
+  const detail = {
+    userId: msg.senderId,
+    conversationId: msg.conversationId,
+    localId: msg.localId,
+    status: error.status,
+    riskLevel: error.assessment.riskLevel,
+    reasons: error.assessment.reasons,
+    device: error.assessment.current,
+    previous: error.assessment.previous ?? null,
+    message: isPinRecoverableDeviceStatus(error.status)
+      ? 'Nouveau navigateur ou changement de contexte detecte. Entrez votre PIN pour autoriser ce device.'
+      : 'Cet appareil n est pas autorise pour l E2EE.',
+  };
+
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-device-trust-required', { detail }));
+    if (isPinRecoverableDeviceStatus(error.status)) {
+      window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
+        detail: {
+          userId: msg.senderId,
+          reason: error.status,
+          message: detail.message,
+        },
+      }));
+    }
+  } catch {
+    // non-browser/test
+  }
+}
 
 // ─── Singleton Queue Manager ───
 
@@ -277,6 +328,44 @@ class MessageQueueManager {
     return null;
   }
 
+  private async findOlderBlockingMessage(msg: OutboundMessage): Promise<OutboundMessage | null> {
+    const blockingStatuses: OutboundMessageStatus[] = [
+      'pending_local',
+      'encrypting',
+      'waiting_secure_channel',
+      'sending',
+      'retry_pending',
+    ];
+    const queued = await this.dbGetByConversation(msg.conversationId);
+    return queued
+      .filter((candidate) =>
+        candidate.localId !== msg.localId &&
+        blockingStatuses.includes(candidate.status) &&
+        candidate.createdAt < msg.createdAt
+      )
+      .sort((a, b) => a.createdAt - b.createdAt)[0] ?? null;
+  }
+
+  private async assertDeviceTrustOrPause(msg: OutboundMessage): Promise<boolean> {
+    try {
+      await assertE2EETrustedBrowserDevice(msg.senderId);
+      return true;
+    } catch (error) {
+      if (!isDeviceGateError(error)) throw error;
+
+      emitDeviceTrustRequired(msg, error);
+
+      if (isPinRecoverableDeviceStatus(error.status)) {
+        await this.updateStatus(msg, 'waiting_secure_channel', error.status);
+        this.scheduleRetry(msg, 'device_gate');
+        return false;
+      }
+
+      await this.updateStatus(msg, 'failed_visible', error.status);
+      return false;
+    }
+  }
+
   async enqueue(params: { conversationId: string; senderId: string; plaintext: string; imageUrl?: string | null; }): Promise<OutboundMessage> {
     const recent = await this.dbGetByConversation(params.conversationId);
     const duplicate = recent.find(m =>
@@ -324,16 +413,7 @@ class MessageQueueManager {
     };
     if (this.processing.has(msg.localId)) { trace('SKIP (already processing localId)'); return; }
     if (this.processingConversations.has(msg.conversationId)) {
-      trace('SKIP (conv busy) - defer');
-      if (!this.retryTimers.has(msg.localId)) {
-        const timer = setTimeout(async () => {
-          this.retryTimers.delete(msg.localId);
-          const latest = await this.dbGet(msg.localId);
-          if (!latest || latest.status === 'sent') return;
-          this.processMessage(latest);
-        }, 75);
-        this.retryTimers.set(msg.localId, timer);
-      }
+      trace('SKIP (conv busy) - FIFO drain will pick it up');
       return;
     }
     trace('▶ processMessage START');
@@ -344,6 +424,15 @@ class MessageQueueManager {
     let sentNow = false;
 
     try {
+      const older = await this.findOlderBlockingMessage(msg);
+      if (older) {
+        trace('SKIP (older message pending) - FIFO drain older first', { olderLocalId: older.localId });
+        queueMicrotask(() => { void this.processMessage(older); });
+        return;
+      }
+
+      if (!(await this.assertDeviceTrustOrPause(msg))) return;
+
       if (!msg.encryptedBody) {
         trace('STEP 1 ▸ encrypt required');
         await this.updateStatus(msg, 'encrypting');
@@ -456,6 +545,10 @@ class MessageQueueManager {
         trace('STEP 1 ▸ already encrypted, skipping');
       }
 
+      // Re-check just before network/database send. A browser/device can become
+      // untrusted after encryption but before the payload reaches Supabase.
+      if (!(await this.assertDeviceTrustOrPause(msg))) return;
+
       const volatilePt = this.volatilePlaintext.get(msg.localId);
       if (volatilePt) msg.plaintext = volatilePt;
 
@@ -527,10 +620,14 @@ class MessageQueueManager {
     }
   }
 
-  private scheduleRetry(msg: OutboundMessage, mode: 'retry' | 'secure_wait' = 'retry') {
+  private scheduleRetry(msg: OutboundMessage, mode: RetryMode = 'retry') {
     this.clearRetryTimer(msg.localId);
     const SECURE_WAIT_RETRY_MS = 3_000;
-    const delay = mode === 'secure_wait' ? SECURE_WAIT_RETRY_MS : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
+    const delay = mode === 'secure_wait'
+      ? SECURE_WAIT_RETRY_MS
+      : mode === 'device_gate'
+        ? DEVICE_GATE_RETRY_MS
+        : Math.min(BASE_RETRY_MS * Math.pow(2, msg.retryCount), MAX_RETRY_MS);
     console.log(`[SEND] retry scheduled for ${msg.localId} in ${delay}ms (${mode})`);
     traceQueue(msg, 'retry:scheduled', { mode, delayMs: delay });
 
@@ -786,6 +883,13 @@ class MessageQueueManager {
 }
 
 export const messageQueue = new MessageQueueManager();
+
+if (typeof window !== 'undefined') {
+  const resumeAfterTrust = () => { void messageQueue.resumeAll(); };
+  window.addEventListener('forsure:e2ee-device-trusted', resumeAfterTrust);
+  window.addEventListener('forsure-keys-unlocked', resumeAfterTrust);
+  window.addEventListener('forsure-keys-restored', resumeAfterTrust);
+}
 
 export function getStatusLabel(status: OutboundMessageStatus): string {
   switch (status) {

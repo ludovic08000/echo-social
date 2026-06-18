@@ -33,6 +33,8 @@ import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
 import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
 import { E2EERestorePromptDialog } from "@/components/messages/E2EERestorePromptDialog";
 import { ContactVerificationDialog } from "@/components/messages/ContactVerificationDialog";
+import { E2EEDeviceTrustModal } from "@/components/E2EEDeviceTrustModal";
+import { useE2EEDeviceTrust } from "@/hooks/useE2EEDeviceTrust";
 
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -195,6 +197,7 @@ function AccountKeySyncRunner() {
   useAccountKeySync();
   useCryptoMaintenance();
   useDeviceRegistration();
+  useE2EEDeviceTrust();
 
   useEffect(() => {
     if (!user?.id) return;
@@ -409,6 +412,7 @@ function AppContent() {
               </RoutedErrorBoundary>
               <ChatWidget />
               <E2EERestorePromptDialog />
+              <E2EEDeviceTrustModal />
               <ContactVerificationDialog />
               <CookieConsentBanner />
             </BrowserRouter>

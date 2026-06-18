@@ -81,6 +81,38 @@ function calculateLiveScore(
   return Math.max(0, Math.min(1, score));
 }
 
+async function fetchLiveServerOrder(userId: string): Promise<string[] | null> {
+  if (!userId) return null;
+  try {
+    const { data, error } = await (supabase.rpc as any)('live_score_batch', {
+      p_user_id: userId,
+      p_limit: 80,
+    });
+    if (error || !Array.isArray(data) || data.length === 0) return null;
+    return data.map((row: any) => row.live_id).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+function orderLivesByIds<T extends { id: string }>(lives: T[], orderedIds: string[] | null): T[] {
+  if (!orderedIds?.length) return lives;
+  const byId = new Map(lives.map(live => [live.id, live]));
+  const seen = new Set<string>();
+  const ordered: T[] = [];
+  for (const id of orderedIds) {
+    const live = byId.get(id);
+    if (live) {
+      ordered.push(live);
+      seen.add(id);
+    }
+  }
+  for (const live of lives) {
+    if (!seen.has(live.id)) ordered.push(live);
+  }
+  return ordered;
+}
+
 export function useLiveStreams() {
   const { user } = useAuth();
 
@@ -90,12 +122,15 @@ export function useLiveStreams() {
       // 1. Récupérer les lives actifs
       const { data: lives, error } = await supabase
         .from('live_streams')
-        .select('*')
+        .select('id,user_id,title,description,thumbnail_url,is_active,viewer_count,peak_viewer_count,total_views,category,hashtags,started_at,recording_url,created_at')
         .eq('is_active', true)
         .order('viewer_count', { ascending: false });
 
       if (error) throw error;
       if (!lives || lives.length === 0) return [];
+
+      const orderedIds = user ? await fetchLiveServerOrder(user.id) : null;
+      const serverOrderedLives = orderLivesByIds(lives, orderedIds);
 
       // 2. Récupérer les profils des hosts
       const hostIds = [...new Set(lives.map(l => l.user_id))];
@@ -110,6 +145,13 @@ export function useLiveStreams() {
 
       // 3. Si connecté, appliquer l'algorithme
       if (user) {
+        if (orderedIds) {
+          return serverOrderedLives.map(live => ({
+            ...live,
+            host: profileMap.get(live.user_id),
+          })) as LiveStream[];
+        }
+
         const { data: interests } = await supabase
           .from('user_interests')
           .select('interest_value')

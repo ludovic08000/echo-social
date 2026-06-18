@@ -42,6 +42,12 @@ vi.mock('@/lib/crypto/errorLogger', () => ({
   logCryptoException: vi.fn(),
 }));
 
+vi.mock('@/lib/crypto/e2eeDeviceGate', () => ({
+  assertE2EETrustedBrowserDevice: vi.fn().mockResolvedValue({ ok: true, status: 'READY', assessment: null }),
+  clearE2EEDeviceGateCache: vi.fn(),
+  E2EEDeviceGateError: class E2EEDeviceGateError extends Error {},
+}));
+
 import { messageQueue, type OutboundMessage } from '@/lib/messaging/messageQueue';
 
 const CONV = 'conv-rotation';

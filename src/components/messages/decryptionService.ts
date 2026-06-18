@@ -104,6 +104,15 @@ const senderBatchPending = new Map<string, Array<(v: string | null) => void>>();
 const senderCache = new LruMap<string, string | null>(500);
 let senderBatchTimer: ReturnType<typeof setTimeout> | null = null;
 
+type ArchiveLookup = {
+  archiveBody: string | null;
+  conversationId: string | null;
+};
+
+const archiveBatchPending = new Map<string, Array<(v: ArchiveLookup | null) => void>>();
+const archiveCache = new LruMap<string, ArchiveLookup | null>(500);
+let archiveBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
 async function flushSenderBatch(): Promise<void> {
   senderBatchTimer = null;
   const localWaiters = new Map(senderBatchPending);
@@ -140,6 +149,52 @@ function getSenderIdBatched(messageId: string): Promise<string | null> {
     senderBatchPending.set(messageId, arr);
     if (!senderBatchTimer) {
       senderBatchTimer = setTimeout(() => void flushSenderBatch(), BATCH_WINDOW_MS);
+    }
+  });
+}
+
+async function flushArchiveBatch(): Promise<void> {
+  archiveBatchTimer = null;
+  const localWaiters = new Map(archiveBatchPending);
+  archiveBatchPending.clear();
+  const ids = Array.from(localWaiters.keys());
+  if (ids.length === 0) return;
+
+  try {
+    const { data } = await supabase
+      .from('messages')
+      .select('id,archive_body,conversation_id')
+      .in('id', ids);
+
+    const map = new Map<string, ArchiveLookup | null>();
+    for (const row of (data as Array<{ id: string; archive_body: string | null; conversation_id: string | null }> | null) ?? []) {
+      map.set(row.id, {
+        archiveBody: row.archive_body ?? null,
+        conversationId: row.conversation_id ?? null,
+      });
+    }
+
+    for (const id of ids) {
+      const v = map.get(id) ?? null;
+      archiveCache.set(id, v);
+      (localWaiters.get(id) ?? []).forEach((fn) => fn(v));
+    }
+  } catch {
+    for (const id of ids) {
+      (localWaiters.get(id) ?? []).forEach((fn) => fn(null));
+    }
+  }
+}
+
+function getArchiveRowBatched(messageId: string): Promise<ArchiveLookup | null> {
+  const cached = archiveCache.get(messageId);
+  if (cached !== undefined) return Promise.resolve(cached);
+  return new Promise<ArchiveLookup | null>((resolve) => {
+    const arr = archiveBatchPending.get(messageId) ?? [];
+    arr.push(resolve);
+    archiveBatchPending.set(messageId, arr);
+    if (!archiveBatchTimer) {
+      archiveBatchTimer = setTimeout(() => void flushArchiveBatch(), BATCH_WINDOW_MS);
     }
   });
 }
@@ -281,13 +336,9 @@ export async function resolvePlaintext(opts: {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
-            const { data: row } = await supabase
-              .from('messages')
-              .select('archive_body, conversation_id')
-              .eq('id', messageId)
-              .maybeSingle();
-            const ab = (row as any)?.archive_body as string | null | undefined;
-            const convId = (row as any)?.conversation_id as string | null | undefined;
+            const row = await getArchiveRowBatched(messageId);
+            const ab = row?.archiveBody ?? null;
+            const convId = row?.conversationId ?? null;
             if (ab && convId && isArchivePayload(ab)) {
               const pt = await decryptArchive(ab, convId, user.id);
               if (pt !== null) {

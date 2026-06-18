@@ -17,6 +17,7 @@ import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
   hydrateDeviceId,
+  rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 import {
   getOrCreateIdentityKeys,
@@ -77,6 +78,8 @@ const RECENT_MESSAGE_WINDOW = 50;
 const RESYNC_BUILD = 'e2ee-ios-device-v3-diag-v3';
 const REPLAY_MESSAGE_TIMEOUT_MS = 1500;
 const REPLAY_CONVERSATION_TIMEOUT_MS = 10_000;
+const REVOKED_DEVICE_ERROR_RE =
+  /USER_DEVICES_REACTIVATION_BLOCKED|revoked_device_cannot_be_reactivated|DEVICE_REVOKED|DEVICE_REVOKED_OR_LOCKED|DEVICE_QUARANTINED/i;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -91,6 +94,10 @@ function describeError(error: unknown): string {
     return `${name}${error.message}`;
   }
   return String(error);
+}
+
+function isRevokedDeviceRegistrationError(error: unknown): boolean {
+  return REVOKED_DEVICE_ERROR_RE.test(describeError(error));
 }
 
 /** Lightweight diagnostic recorder. Pass-through when diagnostic mode is off. */
@@ -361,12 +368,35 @@ async function republishDeviceIdentity(
     devicePublicKeyLen: payload.device_public_key.length,
   });
   try {
-    const { error: devErr } = await supabase
-      .from('user_devices')
-      .upsert(payload, { onConflict: 'user_id,device_id' });
-    if (devErr) {
-      const dbDiag = formatSupabaseError('user_devices', 'user_devices_upsert', devErr, payload);
-      throw new Error(`E2EE_DB_UPSERT_FAILED table=user_devices step=user_devices_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
+    let registered = false;
+    const { data: rpcResult, error: rpcErr } = await (supabase as any).rpc('register_user_device_safe', {
+      p_user_id: payload.user_id,
+      p_device_id: payload.device_id,
+      p_device_name: payload.device_name,
+      p_device_public_key: payload.device_public_key,
+      p_device_fingerprint: payload.device_fingerprint,
+      p_platform: payload.platform,
+      p_user_agent: payload.user_agent,
+    });
+
+    if (!rpcErr && rpcResult?.ok === true) {
+      registered = true;
+    } else if (!rpcErr && REVOKED_DEVICE_ERROR_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
+      throw new Error(`USER_DEVICES_REACTIVATION_BLOCKED ${String(rpcResult?.code ?? 'DEVICE_REVOKED')}`);
+    } else if (rpcErr) {
+      diag?.push('identity', 'warn', 'register_user_device_safe unavailable, falling back to upsert', {
+        error: rpcErr.message,
+      });
+    }
+
+    if (!registered) {
+      const { error: devErr } = await supabase
+        .from('user_devices')
+        .upsert(payload, { onConflict: 'user_id,device_id' });
+      if (devErr) {
+        const dbDiag = formatSupabaseError('user_devices', 'user_devices_upsert', devErr, payload);
+        throw new Error(`E2EE_DB_UPSERT_FAILED table=user_devices step=user_devices_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
+      }
     }
   } catch (e) {
     console.error('[E2EE][IDENTITY][FAIL]', {
@@ -569,7 +599,7 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
     return report;
   }
 
-  const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+  let deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
   const platform = getCurrentPlatform();
   report.deviceId = deviceId;
   report.platform = platform;
@@ -577,39 +607,56 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
 
   // 1. Republish identity / SPK / OPKs
   const tIdent = Date.now();
-  try {
-    const pub = await republishDeviceIdentity(userId, deviceId, diag);
-    report.steps.identity = pub.identity ? 'ok' : 'error';
-    report.steps.spk = pub.spk ? 'ok' : 'error';
-    report.steps.opks = pub.opks ? 'ok' : 'error';
-    diag.push('identity', pub.identity ? 'success' : 'error', 'identity bundle published', {
-      durationMs: Date.now() - tIdent,
-      ...pub,
-    });
-  } catch (e) {
-    report.steps.identity = 'error';
-    const msg = describeError(e);
-    report.errors.push(`republish: ${msg}`);
-    diag.push('identity', 'error', 'identity republish failed', { error: msg });
-    logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'resync_republish', userId } });
-
-    if (e instanceof PinUnlockRequiredError || msg.toLowerCase().includes('pin unlock required')) {
-      report.needsPinUnlock = true;
-      report.durationMs = Date.now() - t0;
-      diag.push('done', 'warn', 'resync paused until PIN unlock', {
-        ok: false,
-        errors: report.errors.length,
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const pub = await republishDeviceIdentity(userId, deviceId, diag);
+      report.steps.identity = pub.identity ? 'ok' : 'error';
+      report.steps.spk = pub.spk ? 'ok' : 'error';
+      report.steps.opks = pub.opks ? 'ok' : 'error';
+      diag.push('identity', pub.identity ? 'success' : 'error', 'identity bundle published', {
+        durationMs: Date.now() - tIdent,
+        deviceId,
+        ...pub,
       });
-      if (diagnostic) {
-        report.trace = diag.drain();
-        report.replayDetails = replayDetails ?? [];
+      break;
+    } catch (e) {
+      const msg = describeError(e);
+
+      if (attempt === 0 && isRevokedDeviceRegistrationError(e)) {
+        const previousDeviceId = deviceId;
+        deviceId = rotateCurrentDeviceId('resync-revoked-device');
+        report.deviceId = deviceId;
+        diag.push('identity', 'warn', 'revoked device id detected during republish; rotated to fresh device id', {
+          previousDeviceId,
+          nextDeviceId: deviceId,
+          error: msg,
+        });
+        continue;
       }
-      try {
-        window.dispatchEvent(
-          new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: report }),
-        );
-      } catch {}
-      return report;
+
+      report.steps.identity = 'error';
+      report.errors.push(`republish: ${msg}`);
+      diag.push('identity', 'error', 'identity republish failed', { error: msg });
+      logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'resync_republish', userId, deviceId } });
+
+      if (e instanceof PinUnlockRequiredError || msg.toLowerCase().includes('pin unlock required')) {
+        report.needsPinUnlock = true;
+        report.durationMs = Date.now() - t0;
+        diag.push('done', 'warn', 'resync paused until PIN unlock', {
+          ok: false,
+          errors: report.errors.length,
+        });
+        if (diagnostic) {
+          report.trace = diag.drain();
+          report.replayDetails = replayDetails ?? [];
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: report }),
+          );
+        } catch {}
+        return report;
+      }
     }
   }
 
