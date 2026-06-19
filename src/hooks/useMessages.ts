@@ -580,51 +580,54 @@ export function useMessages(conversationId: string) {
       // plaintext. Messages that genuinely cannot decrypt yet (out-of-order)
       // get a fresh 30 × 1.5s retry budget on the pending queue.
       if (user) {
-        let anyDecrypted = false;
-        for (const m of compatibleMessages) {
-          if (m.sender_id === user.id) continue;
+        // WhatsApp/Signal-style parallel fan-in: every incoming encrypted
+        // message resolves concurrently. The previous sequential `for await`
+        // loop turned N messages into N × (2 RPC + 1 decrypt) latency
+        // (5–15s for a small backlog, up to ~50s for a long message arriving
+        // behind others). Parallelizing collapses it to max(per-message),
+        // which matches the receiver fan-in pattern WhatsApp documents.
+        const decryptTasks = compatibleMessages
+          .filter((m) => m.sender_id !== user.id)
+          .map(async (m) => {
+            if (isMultiDeviceEnvelopeBody(m.body)) {
+              try {
+                const outcome = await resolvePlaintext({
+                  body: m.body,
+                  messageId: m.id,
+                  decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
+                });
+                if (outcome && !outcome.hidden) {
+                  persistOutcome(m.body, outcome);
+                  return true;
+                }
+              } catch { /* silent — UI will retry on its own */ }
+              return false;
+            }
 
-          // Multi-device envelopes: parent body is just a marker, real
-          // ciphertext lives in `message_device_copies`. Prewarm via
-          // resolvePlaintext so the per-device copy is fetched + cached
-          // before <DecryptedMessageBody> mounts.
-          if (isMultiDeviceEnvelopeBody(m.body)) {
+            if (!isStrictRatchetEnvelopeBody(m.body)) return false;
             try {
-              const outcome = await resolvePlaintext({
-                body: m.body,
+              const r = await routeIncoming({
+                encryptedBody: m.body,
+                recipientUserId: user.id,
+                senderUserId: m.sender_id,
                 messageId: m.id,
-                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
               });
-              if (outcome && !outcome.hidden) {
-                persistOutcome(m.body, outcome);
-                anyDecrypted = true;
+              if (r.ok && r.plaintext !== null) {
+                void savePlaintextForCiphertext(m.body, r.plaintext);
+                return true;
               }
-            } catch { /* silent — UI will retry on its own */ }
-            continue;
-          }
-
-          if (!isStrictRatchetEnvelopeBody(m.body)) continue;
-          try {
-            const r = await routeIncoming({
+            } catch { /* fall through to refresh */ }
+            pendingMessageQueue.refresh(m.id, {
               encryptedBody: m.body,
               recipientUserId: user.id,
               senderUserId: m.sender_id,
               messageId: m.id,
             });
-            if (r.ok && r.plaintext !== null) {
-              void savePlaintextForCiphertext(m.body, r.plaintext);
-              anyDecrypted = true;
-              continue;
-            }
-          } catch { /* fall through to refresh */ }
-          pendingMessageQueue.refresh(m.id, {
-            encryptedBody: m.body,
-            recipientUserId: user.id,
-            senderUserId: m.sender_id,
-            messageId: m.id,
+            return false;
           });
-        }
-        if (anyDecrypted && typeof window !== 'undefined') {
+
+        const results = await Promise.all(decryptTasks);
+        if (results.some(Boolean) && typeof window !== 'undefined') {
           try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
       }
