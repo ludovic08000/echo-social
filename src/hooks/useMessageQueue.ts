@@ -281,31 +281,60 @@ export function useMessageQueue(
 
     updatePending({ status: 'sending' });
 
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        body: bodyToStore,
-        image_url: imageUrl || null,
-        ...(extra || {}),
-      })
-      .select('id')
-      .single();
+    // Pre-allocate the server-side message id so we can encrypt per-device
+    // copies BEFORE the message row exists, and persist both transactionally
+    // via `send_message_with_device_copies` (no window where recipients see
+    // the parent row without their encrypted copy).
+    const serverMessageId = safeUUID();
+
+    let fanoutRows: Awaited<ReturnType<typeof buildFanoutCopies>>['rows'] = [];
+    let fanoutHasTargets = false;
+
+    if (encryptedSuccessfully || encryptionWasRequired) {
+      try {
+        const fanout = await buildFanoutCopies({
+          messageId: serverMessageId,
+          conversationId,
+          senderUserId: user.id,
+          plaintext: sanitized,
+        });
+        fanoutRows = fanout.rows;
+        fanoutHasTargets = fanout.hasTargets;
+      } catch (fanoutBuildError) {
+        console.warn('[MSG_SEND] fanout pre-encryption failed; falling back to async fanout', {
+          localId,
+          conversationId,
+          fanoutBuildError,
+        });
+      }
+    }
+
+    const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {
+      p_message_id: serverMessageId,
+      p_conversation_id: conversationId,
+      p_body: bodyToStore,
+      p_image_url: imageUrl || null,
+      p_extra: (extra ? { ...extra } : {}) as any,
+      p_copies: fanoutRows as any,
+    });
 
     if (error) {
-      console.error('[MSG_SEND] database insert failed', { conversationId, localId, error });
+      console.error('[MSG_SEND] transactional insert failed', { conversationId, localId, error });
       updatePending({ status: 'failed_visible', lastError: error.message });
       throw error;
     }
 
-    console.info('[MSG_SEND] message inserted', {
+    const data = { id: (rpcMessageId as unknown as string) || serverMessageId };
+
+    console.info('[MSG_SEND] message inserted (transactional)', {
       localId,
       conversationId,
-      serverId: data?.id,
+      serverId: data.id,
       encryptedSuccessfully,
       storedMultiDeviceEnvelope,
       hasMedia: !!imageUrl,
+      fanoutCopies: fanoutRows.length,
+      fanoutHasTargets,
     });
 
     if (!isSpecial) recordSentMessage(sanitized);
@@ -338,18 +367,17 @@ export function useMessageQueue(
         })();
       }
 
-      // Multi-device fan-out: encrypt the plaintext per recipient device
-      // (sender's other devices + each participant's devices) so iOS / Windows /
-      // Android all receive a readable copy via message_device_copies.
-      // Non-fatal: per-conv ratchet still delivers to the bootstrapping device.
-      if (encryptedSuccessfully || encryptionWasRequired) {
+      // Safety net: if fanout pre-encryption produced no rows but encryption
+      // was active (e.g. transient missing peer bundle), retry async fan-out
+      // so late-arriving devices still get their encrypted copy.
+      if ((encryptedSuccessfully || encryptionWasRequired) && fanoutHasTargets && fanoutRows.length === 0) {
         void fanoutMessageCopies({
           messageId: data.id,
           conversationId,
           senderUserId: user.id,
           plaintext: sanitized,
         }).catch((fanoutError) => {
-          console.warn('[MSG_SEND] multi-device fanout failed', {
+          console.warn('[MSG_SEND] async multi-device fanout (fallback) failed', {
             localId,
             conversationId,
             messageId: data.id,
@@ -357,6 +385,7 @@ export function useMessageQueue(
           });
         });
       }
+
       // Critical for iOS/Safari: after the server ACK, persist the newest
       // ratchet state + sender plaintext/media key into the encrypted backup
       // immediately so a WebView cache purge doesn't make recent messages blank.
