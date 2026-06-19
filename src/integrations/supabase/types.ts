@@ -7991,6 +7991,16 @@ export type Database = {
         Returns: boolean
       }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
+      send_message_with_device_copies: {
+        Args: {
+          p_body: string
+          p_conversation_id: string
+          p_copies?: Json
+          p_extra?: Json
+          p_image_url?: string
+        }
+        Returns: string
+      }
       set_message_archive_body: {
         Args: { p_archive_body: string; p_message_id: string }
         Returns: boolean
