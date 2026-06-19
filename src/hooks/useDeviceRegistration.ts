@@ -354,13 +354,31 @@ export function useDeviceRegistration() {
       void registerCurrentDevice('keys-unlocked');
     };
 
+    // Triggered by `tryReadDeviceCopy` when an incoming message has zero
+    // device copies targeting our user — meaning peers are silently
+    // skipping us in their fan-out. Re-running the registration republishes
+    // our SPK + signed-device-list entry, so the next refanout from the
+    // peer can target us. Cooldown 15s to avoid loops if the cause is
+    // server-side (RLS, banned device).
+    let lastSelfRepairAt = 0;
+    const onSelfRepairRequired = (ev: Event) => {
+      const now = Date.now();
+      if (now - lastSelfRepairAt < 15_000) return;
+      lastSelfRepairAt = now;
+      const detail = (ev as CustomEvent).detail;
+      ranRef.current = false;
+      void registerCurrentDevice(`self-repair:${detail?.reason ?? 'unknown'}`);
+    };
+
     void registerCurrentDevice('auth-mounted');
     window.addEventListener('forsure-keys-unlocked', onKeysAvailable);
     window.addEventListener('forsure-keys-restored', onKeysAvailable);
+    window.addEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
 
     return () => {
       window.removeEventListener('forsure-keys-unlocked', onKeysAvailable);
       window.removeEventListener('forsure-keys-restored', onKeysAvailable);
+      window.removeEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
     };
   }, [user]);
 }
