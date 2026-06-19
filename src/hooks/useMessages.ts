@@ -407,16 +407,43 @@ export function useMessages(conversationId: string) {
           // retry budget starts ticking immediately on arrival.
           if (user && newMsg.sender_id !== user.id) {
             if (isMultiDeviceEnvelopeBody(newMsg.body)) {
-              void resolvePlaintext({
-                body: newMsg.body,
-                messageId: newMsg.id,
-                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
-              }).then((outcome) => {
-                if (outcome && !outcome.hidden) {
-                  persistOutcome(newMsg.body, outcome);
-                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
-                }
-              }).catch(() => {});
+              // RACE GUARD: the `messages` realtime event can arrive BEFORE
+              // its sibling `message_device_copies` event (replication lag
+              // even for same-tx writes, or out-of-order delivery on WS
+              // reconnect). A naive immediate probe finds no copy → caches
+              // a 60s negative → the bubble stays "encrypted" until the
+              // device_copies event fires (or worse, if that event is
+              // dropped, until the 60s TTL expires — "ça décrypte quand
+              // ça veut"). We retry with a tiny backoff to let the copy
+              // replicate, and clear the negCache between attempts so the
+              // mounted bubble always re-resolves cleanly.
+              const probe = (attempt: number) => {
+                void resolvePlaintext({
+                  body: newMsg.body,
+                  messageId: newMsg.id,
+                  decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
+                }).then((outcome) => {
+                  if (outcome && !outcome.hidden) {
+                    persistOutcome(newMsg.body, outcome);
+                    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                    return;
+                  }
+                  if (attempt < 3) {
+                    // 250ms, 750ms, 1500ms — covers typical replication lag.
+                    const delay = 250 * Math.pow(2, attempt);
+                    setTimeout(() => {
+                      clearNegativeCache();
+                      probe(attempt + 1);
+                    }, delay);
+                  } else {
+                    // Final attempt failed — dispatch retry so the mounted
+                    // bubble re-tries when the device_copies realtime event
+                    // eventually fires (which also clears negCache).
+                    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                  }
+                }).catch(() => {});
+              };
+              probe(0);
             } else if (isStrictRatchetEnvelopeBody(newMsg.body)) {
               void routeIncoming({
                 encryptedBody: newMsg.body,
