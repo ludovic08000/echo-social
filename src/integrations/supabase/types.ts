@@ -7998,6 +7998,7 @@ export type Database = {
           p_copies?: Json
           p_extra?: Json
           p_image_url?: string
+          p_message_id: string
         }
         Returns: string
       }
