@@ -2,8 +2,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 
-const REQUEST_COOLDOWN_MS = 30_000;
-const lastRequestAt = new Map<string, number>();
+// First retry fires fast (3s) — covers the common case where Supabase
+// replication briefly lagged. Subsequent retries on the SAME key back off
+// to 30s to avoid hammering the sender if the device is genuinely missing.
+const FIRST_RETRY_COOLDOWN_MS = 3_000;
+const REPEAT_COOLDOWN_MS = 30_000;
+const lastRequestAt = new Map<string, { at: number; count: number }>();
 
 interface RetryRequestInput {
   messageId: string;
@@ -18,9 +22,10 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
   const requesterDeviceId = getCurrentDeviceId();
   const key = `${input.messageId}:${input.senderUserId}:${requesterDeviceId}`;
   const now = Date.now();
-  const last = lastRequestAt.get(key) ?? 0;
-  if (now - last < REQUEST_COOLDOWN_MS) return false;
-  lastRequestAt.set(key, now);
+  const prev = lastRequestAt.get(key);
+  const cooldown = (prev?.count ?? 0) === 0 ? FIRST_RETRY_COOLDOWN_MS : REPEAT_COOLDOWN_MS;
+  if (prev && now - prev.at < cooldown) return false;
+  lastRequestAt.set(key, { at: now, count: (prev?.count ?? 0) + 1 });
 
   try {
     const { data, error } = await (supabase as any).rpc("request_device_copy_retry", {
