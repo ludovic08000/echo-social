@@ -509,6 +509,38 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
     } else {
       const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', { p_message_id: messageId });
       if (!allCopies || allCopies.length === 0) {
+        // CRITICAL silent-drop case: no device copy exists for ANY of our
+        // devices. Either (a) the sender's `hygieneFilterDevices` skipped
+        // us because our signed prekey / signed device list entry was
+        // stale, or (b) we re-registered under a fresh device_id after a
+        // storage purge and no signed-list entry was published yet.
+        // Without action the message stays "encrypted forever" — refanout
+        // is the only way out. We resolve the sender from the parent
+        // message row and request a refanout (cooldown 3s on first try).
+        if (shouldRequestRetry) {
+          const senderUserId = expectedSenderUserId ?? (await (async () => {
+            try {
+              const { data } = await supabase
+                .from('messages')
+                .select('sender_id')
+                .eq('id', messageId)
+                .maybeSingle();
+              return (data as any)?.sender_id as string | undefined;
+            } catch { return undefined; }
+          })());
+          if (senderUserId) {
+            logCryptoError({
+              severity: 'warning',
+              context: 'decrypt',
+              errorCode: 'DEVICE_COPY_ABSENT_REQUESTING_REFANOUT',
+              errorMessage: 'No device copy exists for this user at all; requesting sender refanout',
+              myDeviceId,
+              peerUserId: senderUserId,
+              metadata: { messageId },
+            });
+            await requestDeviceCopyRetry({ messageId, senderUserId });
+          }
+        }
         return null;
       }
       const fallbackRows = filterCopyRowsByExpectedSender(allCopies as CopyRow[], expectedSenderUserId);
