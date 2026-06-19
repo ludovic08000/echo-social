@@ -406,19 +406,37 @@ export async function encryptPlaintextForDeviceTarget(
   return encrypted ? { encryptedBody: encrypted, senderDeviceId } : null;
 }
 
-export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
-  if (isDeviceIdTemporary()) return { inserted: 0, multiDevice: false };
+export interface FanoutCopyRow {
+  message_id: string;
+  recipient_user_id: string;
+  recipient_device_id: string;
+  sender_user_id: string;
+  sender_device_id: string;
+  encrypted_body: string;
+}
+
+/**
+ * Encrypts the plaintext for every recipient device WITHOUT inserting into the
+ * database. Returns the rows ready to be persisted (either via direct insert or
+ * via the transactional `send_message_with_device_copies` RPC alongside the
+ * parent message row).
+ *
+ * Pass a synthetic `messageId` (e.g. the to-be-assigned UUID) — the same id
+ * must then be reused when persisting the `messages` row.
+ */
+export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: FanoutCopyRow[]; hasTargets: boolean }> {
+  if (isDeviceIdTemporary()) return { rows: [], hasTargets: false };
   const senderDeviceId = getCurrentDeviceId();
 
   const { data: participants } = await supabase.from('conversation_participants').select('user_id').eq('conversation_id', input.conversationId);
-  if (!participants?.length) return { inserted: 0, multiDevice: false };
+  if (!participants?.length) return { rows: [], hasTargets: false };
   const userIds = participants.map(p => p.user_id);
 
   const targets = (await listFanoutTargets(input.senderUserId, userIds)).filter(d =>
     !(d.userId === input.senderUserId && d.deviceId === senderDeviceId) &&
     !isKnownInvalidDeviceId(d.deviceId),
   );
-  if (targets.length === 0) return { inserted: 0, multiDevice: false };
+  if (targets.length === 0) return { rows: [], hasTargets: false };
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
     if (!dev.devicePublicKey || isKnownInvalidDeviceId(dev.deviceId)) return null;
@@ -441,7 +459,7 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
         sender_user_id: input.senderUserId,
         sender_device_id: encrypted.senderDeviceId,
         encrypted_body: encrypted.encryptedBody,
-      };
+      } as FanoutCopyRow;
     } catch (e) {
       logCryptoException('fanout', e, {
         severity: 'warning',
@@ -454,19 +472,26 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
       return null;
     }
   });
-  const rows = rowResults.filter(Boolean) as Array<Record<string, string>>;
 
+  const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
+  return { rows, hasTargets: true };
+}
+
+export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
+  const { rows, hasTargets } = await buildFanoutCopies(input);
+  if (!hasTargets) return { inserted: 0, multiDevice: false };
   if (!rows.length) return { inserted: 0, multiDevice: true };
 
   const { error } = await supabase.from('message_device_copies').upsert(rows as any, { onConflict: 'message_id,recipient_device_id', ignoreDuplicates: true });
   if (error) {
-    logCryptoError({ severity: 'error', context: 'fanout', errorCode: 'E_FANOUT_INSERT', errorMessage: error.message, conversationId: input.conversationId, myDeviceId: senderDeviceId, metadata: { rows: rows.length } });
+    logCryptoError({ severity: 'error', context: 'fanout', errorCode: 'E_FANOUT_INSERT', errorMessage: error.message, conversationId: input.conversationId, myDeviceId: getCurrentDeviceId(), metadata: { rows: rows.length } });
     return { inserted: 0, multiDevice: true };
   }
 
   await supabase.from('messages').update({ body_kind: 'multi_device' } as any).eq('id', input.messageId);
   return { inserted: rows.length, multiDevice: true };
 }
+
 
 interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 
