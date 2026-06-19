@@ -8,7 +8,7 @@ import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
-import { fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
+import { buildFanoutCopies, fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
 import { encryptArchive, setMessageArchiveBody } from '@/lib/messaging/archive/archiveKey';
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
 
