@@ -539,6 +539,17 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
               metadata: { messageId },
             });
             await requestDeviceCopyRetry({ messageId, senderUserId });
+            // Also kick a local self-repair: if peers are skipping us, it
+            // may be because our own published SPK / signed-device-list
+            // entry is stale. `useDeviceRegistration` listens to this
+            // event and re-runs `refreshDeviceSignedPrekeyIfNeeded` +
+            // `publishOwnSignedDeviceList`, closing the loop without
+            // requiring the user to reload the app.
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
+                detail: { reason: 'absent-from-fanout', messageId, peerUserId: senderUserId },
+              }));
+            } catch { /* SSR */ }
           }
         }
         return null;
