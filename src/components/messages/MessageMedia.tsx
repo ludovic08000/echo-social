@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MessageMedia — renders media attached to a message.
  *
  * For encrypted conversations, it first checks the per-message media-key cache

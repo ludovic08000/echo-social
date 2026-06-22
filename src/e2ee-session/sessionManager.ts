@@ -32,6 +32,7 @@ import {
 } from '@/lib/crypto/deviceRatchet';
 import {
   fetchPrekeyBundleForDevice,
+  isDevicePrekeyBundleError,
   x3dhInitiate,
 } from '@/lib/crypto/x3dh';
 import type { IdentityKeyPair } from '@/lib/crypto/keyManager';
@@ -115,7 +116,18 @@ export async function ensureSession(
   }
 
   // Cold path — run X3DH and seed an initiator session.
-  const bundle = await fetchPrekeyBundleForDevice(peer.userId, peer.deviceId);
+  let bundle = null as Awaited<ReturnType<typeof fetchPrekeyBundleForDevice>>;
+  try {
+    bundle = await fetchPrekeyBundleForDevice(peer.userId, peer.deviceId);
+  } catch (e) {
+    if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID') && typeof console !== 'undefined') {
+      console.warn('[sessionManager] refusing X3DH bootstrap for device with invalid SPK', {
+        peerUserId: peer.userId,
+        peerDeviceId: peer.deviceId,
+      });
+    }
+    return desc;
+  }
   if (!bundle) return desc; // no published bundle — caller falls through to legacy
 
   const x3dh = await x3dhInitiate(myKeys, bundle);

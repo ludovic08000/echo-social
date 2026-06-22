@@ -1,4 +1,4 @@
-/**
+﻿/**
  * X3DH — Extended Triple Diffie-Hellman Key Agreement (Signal Protocol)
  * 
  * Implements the full X3DH handshake as specified by Signal:

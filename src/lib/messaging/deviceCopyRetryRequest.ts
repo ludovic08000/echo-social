@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+﻿import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 
@@ -7,12 +7,22 @@ import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 // to 30s to avoid hammering the sender if the device is genuinely missing.
 const FIRST_RETRY_COOLDOWN_MS = 3_000;
 const REPEAT_COOLDOWN_MS = 30_000;
+const SUCCESS_LOG_COOLDOWN_MS = 5 * 60_000;
 const lastRequestAt = new Map<string, { at: number; count: number }>();
+const lastSuccessLogAt = new Map<string, number>();
 
 interface RetryRequestInput {
   messageId: string;
   senderUserId: string;
   senderDeviceId?: string | null;
+}
+
+function shouldLogSuccess(senderUserId: string, requesterDeviceId: string, now: number): boolean {
+  const key = `${senderUserId}:${requesterDeviceId}`;
+  const last = lastSuccessLogAt.get(key) ?? 0;
+  if (now - last < SUCCESS_LOG_COOLDOWN_MS) return false;
+  lastSuccessLogAt.set(key, now);
+  return true;
 }
 
 export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<boolean> {
@@ -49,7 +59,21 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
     }
 
     const result = data as { ok?: boolean; code?: string } | null;
-    if (result?.ok === false || result?.code === 'RETRY_BUDGET_EXHAUSTED' || result?.code === 'RETRY_ALREADY_DONE') {
+    if (result?.ok === false && result?.code !== 'RETRY_BUDGET_EXHAUSTED' && result?.code !== 'RETRY_ALREADY_DONE') {
+      logCryptoError({
+        severity: 'warning',
+        context: 'decrypt',
+        errorCode: 'DEVICE_COPY_RETRY_REQUEST_FAILED',
+        errorMessage: result.code || 'DEVICE_COPY_RETRY_REQUEST_REJECTED',
+        myDeviceId: requesterDeviceId,
+        peerUserId: input.senderUserId,
+        peerDeviceId: input.senderDeviceId,
+        metadata: { messageId: input.messageId, senderUserId: input.senderUserId, senderDeviceId: input.senderDeviceId },
+      });
+      return false;
+    }
+
+    if (result?.code === 'RETRY_BUDGET_EXHAUSTED' || result?.code === 'RETRY_ALREADY_DONE') {
       logCryptoError({
         severity: 'info',
         context: 'decrypt',
@@ -63,16 +87,18 @@ export async function requestDeviceCopyRetry(input: RetryRequestInput): Promise<
       return false;
     }
 
-    logCryptoError({
-      severity: 'info',
-      context: 'decrypt',
-      errorCode: 'DEVICE_COPY_RETRY_REQUESTED',
-      errorMessage: 'Requested a fresh encrypted device copy from sender',
-      myDeviceId: requesterDeviceId,
-      peerUserId: input.senderUserId,
-      peerDeviceId: input.senderDeviceId,
-      metadata: { messageId: input.messageId, senderUserId: input.senderUserId, senderDeviceId: input.senderDeviceId },
-    });
+    if (shouldLogSuccess(input.senderUserId, requesterDeviceId, now)) {
+      logCryptoError({
+        severity: 'info',
+        context: 'decrypt',
+        errorCode: 'DEVICE_COPY_RETRY_REQUESTED',
+        errorMessage: 'Requested a fresh encrypted device copy from sender',
+        myDeviceId: requesterDeviceId,
+        peerUserId: input.senderUserId,
+        peerDeviceId: input.senderDeviceId,
+        metadata: { messageId: input.messageId, senderUserId: input.senderUserId, senderDeviceId: input.senderDeviceId },
+      });
+    }
     return true;
   } catch (e) {
     logCryptoException('decrypt', e, {

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Device-pair Double Ratchet (Signal-style) — bidirectional with DH-ratchet.
  *
  * Provides:

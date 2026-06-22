@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Multi-device fan-out — distributes a sent message as additional, per-device
  * encrypted copies in `message_device_copies`.
  */
@@ -477,9 +477,10 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
   return { rows, hasTargets: true };
 }
 
-export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
-  const { rows, hasTargets } = await buildFanoutCopies(input);
-  if (!hasTargets) return { inserted: 0, multiDevice: false };
+export async function insertFanoutCopyRows(
+  input: FanoutInput,
+  rows: FanoutCopyRow[],
+): Promise<{ inserted: number; multiDevice: boolean }> {
   if (!rows.length) return { inserted: 0, multiDevice: true };
 
   const { error } = await supabase.from('message_device_copies').upsert(rows as any, { onConflict: 'message_id,recipient_device_id', ignoreDuplicates: true });
@@ -490,6 +491,12 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
 
   await supabase.from('messages').update({ body_kind: 'multi_device' } as any).eq('id', input.messageId);
   return { inserted: rows.length, multiDevice: true };
+}
+
+export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
+  const { rows, hasTargets } = await buildFanoutCopies(input);
+  if (!hasTargets) return { inserted: 0, multiDevice: false };
+  return insertFanoutCopyRows(input, rows);
 }
 
 
