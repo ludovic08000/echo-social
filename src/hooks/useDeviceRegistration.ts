@@ -37,12 +37,15 @@ import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 import {
+  hasLocalKeys,
   restoreAccountKeysFromActiveSession,
   restoreFromInMemoryMasterKey,
   restoreKeysFromKeychainSnapshot,
 } from '@/lib/crypto/accountKeyBackup';
 
-const REVOKED_DEVICE_ERROR_RE = /USER_DEVICES_REACTIVATION_BLOCKED|revoked_device_cannot_be_reactivated|DEVICE_REVOKED|DEVICE_REVOKED_OR_LOCKED/i;
+const REVOKED_DEVICE_ERROR_RE = /USER_DEVICES_REACTIVATION_BLOCKED|revoked_device_cannot_be_reactivated|DEVICE_REVOKED_OR_LOCKED|DEVICE_REVOKED(?!_OR_REJECTED)/i;
+const DEVICE_APPROVAL_PENDING_RE = /DEVICE_APPROVAL_PENDING/i;
+const DEVICE_REJECTED_RE = /DEVICE_REJECTED|DEVICE_REVOKED_OR_REJECTED/i;
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
@@ -51,6 +54,65 @@ export function useDeviceRegistration() {
 
   useEffect(() => {
     if (!user) return;
+
+    const notifyDeviceApprovalPending = (deviceId: string, source: string, code = 'DEVICE_APPROVAL_PENDING') => {
+      console.warn('[useDeviceRegistration] current device requires approval before E2EE publish', {
+        deviceId: deviceId.slice(0, 8),
+        source,
+        code,
+      });
+      try {
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approval-required', {
+          detail: { source, deviceId, code },
+        }));
+      } catch {}
+      try {
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
+          detail: {
+            source,
+            deviceId,
+            reason: 'device_approval_required',
+            message: 'Déverrouillage requis pour approuver cet appareil',
+          },
+        }));
+      } catch {}
+    };
+
+    const approveCurrentDeviceIfKeysUnlocked = async (deviceId: string, source: string): Promise<boolean> => {
+      if (!(await hasLocalKeys().catch(() => false))) {
+        notifyDeviceApprovalPending(deviceId, source);
+        return false;
+      }
+
+      try {
+        const { data, error } = await (supabase as any).rpc('approve_user_device', {
+          p_device_id: deviceId,
+        });
+        if (!error && data?.ok === true) {
+          console.info('[useDeviceRegistration] pending device approved after local key unlock', {
+            deviceId: deviceId.slice(0, 8),
+            source,
+          });
+          try {
+            window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
+              detail: { source, deviceId },
+            }));
+          } catch {}
+          return true;
+        }
+        console.warn('[useDeviceRegistration] approve_user_device non-ok', {
+          deviceId: deviceId.slice(0, 8),
+          source,
+          error: error?.message,
+          data,
+        });
+      } catch (approvalErr) {
+        console.warn('[useDeviceRegistration] approve_user_device failed', approvalErr);
+      }
+
+      notifyDeviceApprovalPending(deviceId, source);
+      return false;
+    };
 
     const registerCurrentDevice = async (reason: string, attempt = 0) => {
       if (ranRef.current || inFlightRef.current) return;
@@ -98,12 +160,24 @@ export function useDeviceRegistration() {
         try {
           const { data: existing } = await supabase
             .from('user_devices')
-            .select('device_public_key,is_active,revoked_at')
+            .select('device_public_key,is_active,revoked_at,approval_status')
             .eq('user_id', user.id)
             .eq('device_id', deviceId)
             .maybeSingle();
 
-          if (existing && (existing.is_active === false || existing.revoked_at)) {
+          const approvalStatus = (existing as any)?.approval_status as string | null | undefined;
+          if (existing && approvalStatus === 'rejected') {
+            notifyDeviceApprovalPending(deviceId, `existing-rejected:${reason}`, 'DEVICE_REJECTED');
+            ranRef.current = false;
+            return;
+          }
+          if (existing && approvalStatus === 'pending') {
+            const approved = await approveCurrentDeviceIfKeysUnlocked(deviceId, `existing-pending:${reason}`);
+            if (!approved) {
+              ranRef.current = false;
+              return;
+            }
+          } else if (existing && (existing.is_active === false || existing.revoked_at)) {
             console.warn('[useDeviceRegistration] server says current device id is revoked — rotating local id instead of reactivating', {
               deviceId: deviceId.slice(0, 8),
               attempt,
@@ -244,6 +318,7 @@ export function useDeviceRegistration() {
         // Prefer the safe RPC added in the matching migration; fall back to the
         // legacy upsert while still detecting the revoked-device SQL error.
         let registered = false;
+        let allowLegacyUpsert = false;
         try {
           const { data: rpcResult, error: rpcErr } = await (supabase as any).rpc('register_user_device_safe', {
             p_user_id: payload.user_id,
@@ -257,6 +332,13 @@ export function useDeviceRegistration() {
 
           if (!rpcErr && rpcResult?.ok === true) {
             registered = true;
+          } else if (!rpcErr && DEVICE_APPROVAL_PENDING_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
+            const approved = await approveCurrentDeviceIfKeysUnlocked(deviceId, `register-pending:${reason}`);
+            if (!approved) {
+              ranRef.current = false;
+              return;
+            }
+            registered = true;
           } else if (!rpcErr && REVOKED_DEVICE_ERROR_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
             console.warn('[useDeviceRegistration] safe RPC rejected revoked device — rotating local id', rpcResult);
             if (attempt < 2) {
@@ -266,14 +348,35 @@ export function useDeviceRegistration() {
               return registerCurrentDevice('rotated-after-rpc-revoked', attempt + 1);
             }
             return;
+          } else if (!rpcErr && DEVICE_REJECTED_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
+            notifyDeviceApprovalPending(deviceId, `register-rejected:${reason}`, String(rpcResult?.code ?? 'DEVICE_REJECTED'));
+            ranRef.current = false;
+            return;
           } else if (rpcErr) {
-            console.warn('[useDeviceRegistration] safe RPC unavailable/failed, falling back to legacy upsert:', rpcErr.message);
+            allowLegacyUpsert = !!serverDevicePublicKey;
+            console.warn('[useDeviceRegistration] safe RPC unavailable/failed:', {
+              message: rpcErr.message,
+              legacyFallback: allowLegacyUpsert,
+            });
+          } else {
+            console.warn('[useDeviceRegistration] safe RPC non-ok; device publish paused:', rpcResult);
+            ranRef.current = false;
+            return;
           }
         } catch (rpcUnexpectedErr) {
-          console.warn('[useDeviceRegistration] safe RPC unexpected failure, falling back to legacy upsert:', rpcUnexpectedErr);
+          allowLegacyUpsert = !!serverDevicePublicKey;
+          console.warn('[useDeviceRegistration] safe RPC unexpected failure:', {
+            error: rpcUnexpectedErr,
+            legacyFallback: allowLegacyUpsert,
+          });
         }
 
         if (!registered) {
+          if (!allowLegacyUpsert) {
+            notifyDeviceApprovalPending(deviceId, `register-rpc-unavailable:${reason}`, 'DEVICE_REGISTRATION_RPC_UNAVAILABLE');
+            ranRef.current = false;
+            return;
+          }
           const { error: devErr } = await supabase
             .from('user_devices')
             .upsert(payload, { onConflict: 'user_id,device_id' });

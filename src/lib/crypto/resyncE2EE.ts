@@ -394,22 +394,44 @@ async function republishDeviceIdentity(
     devicePublicKeyLen: payload.device_public_key.length,
   });
   try {
-    const { error: devErr } = await supabase
-      .from('user_devices')
-      .upsert(payload, { onConflict: 'user_id,device_id' });
-    if (devErr) {
-      const dbDiag = formatSupabaseError('user_devices', 'user_devices_upsert', devErr, payload);
-      throw new Error(`E2EE_DB_UPSERT_FAILED table=user_devices step=user_devices_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
+    const { data: registerResult, error: registerErr } = await (supabase as any).rpc('register_user_device_safe', {
+      p_user_id: payload.user_id,
+      p_device_id: payload.device_id,
+      p_device_name: payload.device_name,
+      p_device_public_key: payload.device_public_key,
+      p_device_fingerprint: payload.device_fingerprint,
+      p_platform: payload.platform,
+      p_user_agent: payload.user_agent,
+    });
+
+    const code = String(registerResult?.code ?? registerResult?.message ?? '');
+    if (registerErr) {
+      throw new Error(`E2EE_DB_RPC_FAILED table=user_devices step=register_user_device_safe message=${registerErr.message}`);
+    }
+    if (registerResult?.ok === true) {
+      result.identity = true;
+    } else if (/DEVICE_APPROVAL_PENDING/i.test(code)) {
+      if (!(await hasLocalKeys())) {
+        throw new Error('DEVICE_APPROVAL_PENDING: local keys must be unlocked before device approval');
+      }
+      const { data: approveResult, error: approveErr } = await (supabase as any).rpc('approve_user_device', {
+        p_device_id: payload.device_id,
+      });
+      if (approveErr || approveResult?.ok !== true) {
+        throw new Error(`DEVICE_APPROVAL_PENDING: approve_user_device failed (${approveErr?.message ?? approveResult?.code ?? 'unknown'})`);
+      }
+      result.identity = true;
+    } else {
+      throw new Error(`E2EE_DB_RPC_FAILED table=user_devices step=register_user_device_safe code=${code || 'UNKNOWN'}`);
     }
   } catch (e) {
     console.error('[E2EE][IDENTITY][FAIL]', {
-      step: 'user_devices_upsert',
+      step: 'user_devices_register_safe',
       error: e,
       payload: sanitizePayloadForLog(payload),
     });
     throw e;
   }
-  result.identity = true;
 
   try {
     await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
