@@ -1015,25 +1015,59 @@ export function isAutoBackupActive(): boolean {
 let _bgBackupTimer: ReturnType<typeof setTimeout> | null = null;
 let _bgBackupInFlight = false;
 let _bgBackupPendingReason: string | null = null;
+let _bgBackupDirty = false;
+let _bgBackupLifecycleInstalled = false;
 const BG_BACKUP_DEBOUNCE_MS = 1_500;
+
+function runCoalescedBackupNow(reason: string): void {
+  if (!isAutoBackupActive()) return;
+  if (_bgBackupTimer) {
+    clearTimeout(_bgBackupTimer);
+    _bgBackupTimer = null;
+  }
+  if (_bgBackupInFlight) {
+    _bgBackupDirty = true;
+    _bgBackupPendingReason = reason;
+    return;
+  }
+
+  _bgBackupDirty = false;
+  _bgBackupInFlight = true;
+  const why = _bgBackupPendingReason ?? reason;
+  _bgBackupPendingReason = null;
+  syncBackupToServer()
+    .catch((e) => console.warn(`[MasterKey] background backup (${why}) failed:`, e))
+    .finally(() => {
+      _bgBackupInFlight = false;
+      if (_bgBackupDirty) requestBackgroundBackup(_bgBackupPendingReason ?? 'queued-mutation');
+    });
+}
+
+function installBackupLifecycleFlush(): void {
+  if (_bgBackupLifecycleInstalled || typeof window === 'undefined') return;
+  _bgBackupLifecycleInstalled = true;
+
+  const flush = () => {
+    if (!_bgBackupDirty && !_bgBackupTimer) return;
+    runCoalescedBackupNow('lifecycle-flush');
+  };
+
+  window.addEventListener('pagehide', flush);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flush();
+    });
+  }
+}
 
 export function requestBackgroundBackup(reason: string = 'mutation'): void {
   if (!isAutoBackupActive()) return;
+  installBackupLifecycleFlush();
+  _bgBackupDirty = true;
   _bgBackupPendingReason = reason;
   if (_bgBackupTimer) clearTimeout(_bgBackupTimer);
   _bgBackupTimer = setTimeout(() => {
-    _bgBackupTimer = null;
-    if (_bgBackupInFlight) {
-      // Re-arm shortly after — current upload will pick up the latest state
-      _bgBackupTimer = setTimeout(() => requestBackgroundBackup(reason), BG_BACKUP_DEBOUNCE_MS);
-      return;
-    }
-    _bgBackupInFlight = true;
-    const why = _bgBackupPendingReason ?? 'mutation';
-    _bgBackupPendingReason = null;
-    syncBackupToServer()
-      .catch((e) => console.warn(`[MasterKey] background backup (${why}) failed:`, e))
-      .finally(() => { _bgBackupInFlight = false; });
+    runCoalescedBackupNow(_bgBackupPendingReason ?? reason);
   }, BG_BACKUP_DEBOUNCE_MS);
 }
 

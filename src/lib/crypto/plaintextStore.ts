@@ -81,6 +81,7 @@ async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
 const SESSION_MIRROR_KEY = 'forsure-pt-mirror-v1';
 const SESSION_MIRROR_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_MIRROR_CAP = 200;
+const DEFAULT_BACKUP_EXPORT_CAP = 500;
 
 interface SessionMirrorEntry { p: string; t: number }
 
@@ -154,14 +155,18 @@ async function loadEntry(id: string): Promise<string | null> {
   }
 }
 
-export async function exportPlaintextCache(): Promise<PlaintextCacheExportEntry[]> {
+export async function exportPlaintextCache(limit = DEFAULT_BACKUP_EXPORT_CAP): Promise<PlaintextCacheExportEntry[]> {
   try {
     const entries = await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readonly', (tx) =>
       reqToPromise(tx.objectStore(STORE_MESSAGES).getAll() as IDBRequest<StoredEntry[]>),
     );
 
     const exported: PlaintextCacheExportEntry[] = [];
-    for (const entry of entries) {
+    const recentEntries = entries
+      .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
+      .slice(0, Math.max(0, limit));
+
+    for (const entry of recentEntries) {
       const plaintext = await loadEntry(entry.id);
       if (plaintext) exported.push({ id: entry.id, plaintext });
     }
