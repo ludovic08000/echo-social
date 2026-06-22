@@ -1,7 +1,13 @@
 /**
  * Current device identity (multi-device E2EE).
  *
- * Stable per-installation identifier. Persistance multi-couche :
+ * Stable per-account/per-installation identifier. The same physical browser can
+ * log into multiple accounts, but E2EE device state must remain scoped to the
+ * account. Signal/Sesame address devices as (UserID, DeviceID); sharing a single
+ * browser-global device id across accounts lets device KX/SPK/ratchet state get
+ * confused during account switching.
+ *
+ * Persistence multi-couche:
  *  1. Mémoire (runtime)
  *  2. localStorage / sessionStorage (web + WebView)
  *  3. Capacitor Preferences (UserDefaults iOS / SharedPreferences Android)
@@ -21,8 +27,9 @@ import { nativeSet, nativeGetSync, isNativePlatform } from '@/lib/nativeStore';
 import { secureGet, secureSet } from '@/lib/secureStore';
 import { supabase } from '@/integrations/supabase/client';
 
-const STORAGE_KEY = 'forsure-device-id-v1';
+const BASE_STORAGE_KEY = 'forsure-device-id-v1';
 const FINGERPRINT_KEY = 'forsure-device-fingerprint-v1';
+let currentDeviceUserScope: string | null = null;
 let memoryDeviceId: string | null = null;
 let hydrationPromise: Promise<string> | null = null;
 let memoryDeviceIdIsTemporary = false;
@@ -40,6 +47,23 @@ const BLOCKED_RECOVERY_DEVICE_IDS = new Set<string>([
   '92585130870cedf210af1019379dbc61',
   '450c0cd9af35813c8a99ec5bc0f39ab8',
 ]);
+
+function storageKey(): string {
+  return currentDeviceUserScope ? `${BASE_STORAGE_KEY}:${currentDeviceUserScope}` : BASE_STORAGE_KEY;
+}
+
+/**
+ * Scope the runtime device id to the authenticated account.
+ * Must be called before hydrateDeviceId() in account-aware flows.
+ */
+export function setCurrentDeviceUserScope(userId: string | null | undefined): void {
+  const next = userId || null;
+  if (currentDeviceUserScope === next) return;
+  currentDeviceUserScope = next;
+  memoryDeviceId = null;
+  hydrationPromise = null;
+  memoryDeviceIdIsTemporary = false;
+}
 
 function isBlockedRecoveryDeviceId(id: string | null | undefined): boolean {
   return !!id && BLOCKED_RECOVERY_DEVICE_IDS.has(id);
@@ -115,23 +139,18 @@ function generateId(): string {
 }
 
 function persistEverywhere(id: string): string {
+  const key = storageKey();
   memoryDeviceId = id;
   memoryDeviceIdIsTemporary = false;
-  try { localStorage.setItem(STORAGE_KEY, id); } catch {}
-  try { sessionStorage.setItem(STORAGE_KEY, id); } catch {}
+  try { localStorage.setItem(key, id); } catch {}
+  try { sessionStorage.setItem(key, id); } catch {}
   // Fire-and-forget native persistence (Keychain on iOS, Keystore on Android,
   // Preferences as a synchronous-readable mirror).
-  void secureSet(STORAGE_KEY, id).catch(() => {});
-  void nativeSet(STORAGE_KEY, id).catch(() => {});
+  void secureSet(key, id).catch(() => {});
+  void nativeSet(key, id).catch(() => {});
   return id;
 }
 
-/**
- * Synchronous accessor — used everywhere today.
- * On native platforms, the first call after install may return a fresh ID
- * if hydration hasn't completed yet. Call `hydrateDeviceId()` once at app
- * startup to guarantee the persisted native value wins.
- */
 /**
  * Force a specific device id to become the current one (memory + native + secure stores).
  * Used by the backup/restore path to recover the original device id of an account
@@ -143,7 +162,7 @@ export function setCurrentDeviceId(id: string): string {
   if (isBlockedRecoveryDeviceId(id)) return rotateCurrentDeviceId('blocked-recovery-device');
   if (memoryDeviceId === id) return id;
   hydrationPromise = null;
-  console.log('[device-id] forcing device id from backup', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8) });
+  console.log('[device-id] forcing device id from backup', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8), scoped: !!currentDeviceUserScope });
   return persistEverywhere(id);
 }
 
@@ -157,7 +176,8 @@ export function setCurrentDeviceId(id: string): string {
  * registration flow.
  */
 export function rotateCurrentDeviceId(reason = 'revoked-device'): string {
-  const previous = memoryDeviceId || nativeGetSync(STORAGE_KEY) || null;
+  const key = storageKey();
+  const previous = memoryDeviceId || nativeGetSync(key) || null;
   const next = generateId();
 
   // Break any pending hydration cache so future startup code cannot overwrite
@@ -168,28 +188,24 @@ export function rotateCurrentDeviceId(reason = 'revoked-device'): string {
     reason,
     previous: previous ? previous.slice(0, 8) : 'none',
     next: next.slice(0, 8),
+    scoped: !!currentDeviceUserScope,
   });
 
-  // Persist synchronously to memory + sync stores first. Native secure stores
-  // (Keychain on iOS, Keystore on Android) are written fire-and-forget by
-  // `persistEverywhere`. The next `hydrateDeviceId()` call races against
-  // those writes; to stop the OLD revoked id from resurfacing, mark the
-  // hydration cache as already resolved with the new id.
   persistEverywhere(next);
   hydrationPromise = Promise.resolve(next);
   return next;
 }
 
-
 export function getCurrentDeviceId(): string {
   if (memoryDeviceId) return memoryDeviceId;
 
-  const localId = nativeGetSync(STORAGE_KEY);
+  const key = storageKey();
+  const localId = nativeGetSync(key);
   if (localId) {
     if (isBlockedRecoveryDeviceId(localId)) return persistEverywhere(generateId());
     memoryDeviceId = localId;
     // Also push to native store on first read (covers PWA → native upgrade)
-    void nativeSet(STORAGE_KEY, localId).catch(() => {});
+    void nativeSet(key, localId).catch(() => {});
     return localId;
   }
 
@@ -202,11 +218,11 @@ export function getCurrentDeviceId(): string {
   if (isNativePlatform()) {
     memoryDeviceId = fresh;
     memoryDeviceIdIsTemporary = true;
-    try { sessionStorage.setItem(STORAGE_KEY, fresh); } catch {}
+    try { sessionStorage.setItem(key, fresh); } catch {}
     console.log('[device-id] Generated temporary device id pending native hydration');
     return fresh;
   }
-  console.log('[device-id] Generated new device id (no persisted value found)');
+  console.log('[device-id] Generated new device id (no persisted value found)', { scoped: !!currentDeviceUserScope });
   return persistEverywhere(fresh);
 }
 
@@ -230,8 +246,9 @@ export async function hydrateDeviceId(): Promise<string> {
   if (hydrationPromise) return hydrationPromise;
   hydrationPromise = (async () => {
     try {
+      const key = storageKey();
       // 1) Native Keychain / Keystore is the strongest source of truth.
-      const stored = await secureGet(STORAGE_KEY);
+      const stored = await secureGet(key);
       if (stored) {
         if (isBlockedRecoveryDeviceId(stored)) return persistEverywhere(generateId());
         if (memoryDeviceId && memoryDeviceId !== stored) {
@@ -239,13 +256,14 @@ export async function hydrateDeviceId(): Promise<string> {
             memory: memoryDeviceId.slice(0, 8),
             native: stored.slice(0, 8),
             temporary: memoryDeviceIdIsTemporary,
+            scoped: !!currentDeviceUserScope,
           });
         }
         return persistEverywhere(stored);
       }
 
       // 2) Local storage / sessionStorage may already hold the id.
-      const local = nativeGetSync(STORAGE_KEY);
+      const local = nativeGetSync(key);
       if (local) {
         if (isBlockedRecoveryDeviceId(local)) return persistEverywhere(generateId());
         return persistEverywhere(local);
@@ -254,7 +272,7 @@ export async function hydrateDeviceId(): Promise<string> {
       // 3) Fall back to the SERVER fingerprint binding so iOS reuses the
       //    same device_id after Safari purges everything (ITP). This is
       //    what stops anciens messages from devenir undecipherable on
-      //    every cold start.
+      //    every cold start. The server RPC is scoped by auth.uid().
       try {
         const candidates = await getDeviceFingerprintCandidates();
         const platform = getCurrentPlatform();
@@ -269,6 +287,7 @@ export async function hydrateDeviceId(): Promise<string> {
             console.log('[device-id] Recovered from server fingerprint binding', {
               recovered: serverId.slice(0, 8),
               platform,
+              scoped: !!currentDeviceUserScope,
             });
             return persistEverywhere(serverId);
           }
