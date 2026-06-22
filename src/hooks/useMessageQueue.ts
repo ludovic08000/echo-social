@@ -8,9 +8,15 @@ import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
-import { buildFanoutCopies, fanoutMessageCopies } from '@/lib/messaging/multiDeviceFanout';
+import {
+  buildFanoutCopies,
+  fanoutMessageCopies,
+  insertFanoutCopyRows,
+  type FanoutCopyRow,
+} from '@/lib/messaging/multiDeviceFanout';
 import { encryptArchive, setMessageArchiveBody } from '@/lib/messaging/archive/archiveKey';
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
+import { isAppleMobileWebKit } from '@/lib/platform';
 
 export interface OutboundMessage {
   localId: string;
@@ -81,6 +87,76 @@ export function shouldArchiveMessageBody({
   return hasMediaKey(sanitized);
 }
 
+const FANOUT_TIMEOUT = Symbol('fanout-precommit-timeout');
+const IOS_TEXT_FANOUT_PRECOMMIT_BUDGET_MS = 650;
+const DESKTOP_TEXT_FANOUT_PRECOMMIT_BUDGET_MS = 450;
+const IOS_MEDIA_FANOUT_PRECOMMIT_BUDGET_MS = 900;
+const DESKTOP_MEDIA_FANOUT_PRECOMMIT_BUDGET_MS = 650;
+
+function getFanoutPrecommitBudgetMs(isTextOnly: boolean): number {
+  const appleMobileWebKit = isAppleMobileWebKit();
+  if (isTextOnly) {
+    return appleMobileWebKit
+      ? IOS_TEXT_FANOUT_PRECOMMIT_BUDGET_MS
+      : DESKTOP_TEXT_FANOUT_PRECOMMIT_BUDGET_MS;
+  }
+  return appleMobileWebKit
+    ? IOS_MEDIA_FANOUT_PRECOMMIT_BUDGET_MS
+    : DESKTOP_MEDIA_FANOUT_PRECOMMIT_BUDGET_MS;
+}
+
+async function withFanoutPrecommitBudget<T>(promise: Promise<T>, budgetMs: number): Promise<T | typeof FANOUT_TIMEOUT> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  promise.catch(() => {});
+  return Promise.race<T | typeof FANOUT_TIMEOUT>([
+    promise,
+    new Promise<typeof FANOUT_TIMEOUT>((resolve) => {
+      timer = setTimeout(() => resolve(FANOUT_TIMEOUT), budgetMs);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function dispatchDecryptRetry(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+  } catch {}
+}
+
+function normalizeSupabaseError(error: any) {
+  return {
+    message: error?.message ?? String(error ?? 'unknown_error'),
+    code: error?.code ?? error?.statusCode ?? null,
+    details: error?.details ?? null,
+    hint: error?.hint ?? null,
+    status: error?.status ?? null,
+    name: error?.name ?? null,
+  };
+}
+
+function shouldFallbackToLegacyEncryptedInsert(error: any): boolean {
+  const normalized = normalizeSupabaseError(error);
+  const text = Object.values(normalized)
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (
+    text.includes('401') ||
+    text.includes('jwt') ||
+    text.includes('not_authenticated') ||
+    text.includes('unauthorized') ||
+    text.includes('sender_not_conversation_participant') ||
+    text.includes('e2ee_plaintext_message_rejected')
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export function useMessageQueue(
   conversationId: string,
   encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
@@ -114,7 +190,6 @@ export function useMessageQueue(
     const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
     const traceId = safeUUID();
 
-    // Optimistic UI: bubble appears instantly while crypto + insert run.
     const optimistic: OutboundMessage = {
       localId,
       traceId,
@@ -141,7 +216,6 @@ export function useMessageQueue(
       ));
     };
 
-    // Session freshness must be confirmed before any encrypted send.
     try {
       const { data: sess } = await supabase.auth.getSession();
       const liveUserId = sess.session?.user?.id;
@@ -168,7 +242,7 @@ export function useMessageQueue(
       try {
         await ensureUserE2EEIdentity(user.id);
       } catch (error) {
-        console.warn('[MSG_SEND] identity bootstrap failed; continuing with compatibility send', {
+        console.warn('[MSG_SEND] identity bootstrap failed; encrypted send may be blocked', {
           localId,
           conversationId,
           error,
@@ -208,11 +282,6 @@ export function useMessageQueue(
             }
           }
         } catch (encryptError) {
-          // STRICT E2EE: never send plaintext when encryption was required.
-          // Safety-number / fingerprint mismatch and any other crypto failure
-          // must surface to the UI (user can re-trust identity) and the
-          // multi-device fan-out below will still deliver encrypted copies
-          // to peer devices via message_device_copies.
           const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
           const normalized = errMsg
             .toLowerCase()
@@ -244,16 +313,12 @@ export function useMessageQueue(
               : new Error(errMsg);
           }
 
-          // For non-safety failures (missing peer bundle, transient ratchet
-          // bootstrap), attempt the fan-out path: store a current-protocol
-          // multi-device parent envelope and rely on per-device copies for
-          // delivery. This is encrypted-only; no plaintext body is persisted.
           bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
           storedMultiDeviceEnvelope = true;
           updatePending({ encryptedBody: bodyToStore, status: 'waiting_secure_channel', lastError: errMsg });
         }
       } else {
-        console.warn('[MSG_SEND] encrypt handler missing; compatibility send will continue', {
+        console.warn('[MSG_SEND] encrypt handler missing; plaintext fallback is blocked for E2EE peers', {
           localId,
           conversationId,
           isEncryptionReady,
@@ -275,31 +340,40 @@ export function useMessageQueue(
       throw new Error('Chiffrement v5 indisponible - restaurez les cles avant envoi.');
     }
 
-    // Long-life encrypted archive: done in background after INSERT (retroactive RPC path).
-    // Removes ~50-200ms from perceived send latency.
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
 
     updatePending({ status: 'sending' });
 
-    // Pre-allocate the server-side message id so we can encrypt per-device
-    // copies BEFORE the message row exists, and persist both transactionally
-    // via `send_message_with_device_copies` (no window where recipients see
-    // the parent row without their encrypted copy).
     const serverMessageId = safeUUID();
+    const fanoutInput = {
+      messageId: serverMessageId,
+      conversationId,
+      senderUserId: user.id,
+      plaintext: sanitized,
+    };
 
-    let fanoutRows: Awaited<ReturnType<typeof buildFanoutCopies>>['rows'] = [];
+    let fanoutRows: FanoutCopyRow[] = [];
     let fanoutHasTargets = false;
+    let fanoutTimedOut = false;
+    let fanoutPromise: ReturnType<typeof buildFanoutCopies> | null = null;
 
     if (encryptedSuccessfully || encryptionWasRequired) {
       try {
-        const fanout = await buildFanoutCopies({
-          messageId: serverMessageId,
-          conversationId,
-          senderUserId: user.id,
-          plaintext: sanitized,
-        });
-        fanoutRows = fanout.rows;
-        fanoutHasTargets = fanout.hasTargets;
+        fanoutPromise = buildFanoutCopies(fanoutInput);
+        const fanout = await withFanoutPrecommitBudget(
+          fanoutPromise,
+          getFanoutPrecommitBudgetMs(!isSpecial && !imageUrl),
+        );
+        if (fanout === FANOUT_TIMEOUT) {
+          fanoutTimedOut = true;
+          console.info('[MSG_SEND] fanout pre-encryption budget elapsed; inserting parent now', {
+            localId,
+            conversationId,
+          });
+        } else {
+          fanoutRows = fanout.rows;
+          fanoutHasTargets = fanout.hasTargets;
+        }
       } catch (fanoutBuildError) {
         console.warn('[MSG_SEND] fanout pre-encryption failed; falling back to async fanout', {
           localId,
@@ -309,39 +383,104 @@ export function useMessageQueue(
       }
     }
 
+    const rpcExtra = { ...(extra || {}) } as Record<string, unknown>;
+    if (fanoutRows.length > 0 || fanoutTimedOut || storedMultiDeviceEnvelope) {
+      rpcExtra.body_kind = 'multi_device';
+    }
+
     const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {
       p_message_id: serverMessageId,
       p_conversation_id: conversationId,
       p_body: bodyToStore,
       p_image_url: imageUrl || null,
-      p_extra: (extra ? { ...extra } : {}) as any,
+      p_extra: rpcExtra as any,
       p_copies: fanoutRows as any,
     });
 
+    let data = { id: (rpcMessageId as unknown as string) || serverMessageId };
+    let usedLegacyEncryptedFallback = false;
+
     if (error) {
-      console.error('[MSG_SEND] transactional insert failed', { conversationId, localId, error });
-      updatePending({ status: 'failed_visible', lastError: error.message });
-      throw error;
+      const normalizedError = normalizeSupabaseError(error);
+      console.error('[MSG_SEND] transactional insert failed', { conversationId, localId, error: normalizedError });
+
+      if (!shouldFallbackToLegacyEncryptedInsert(error)) {
+        updatePending({ status: 'failed_visible', lastError: normalizedError.message });
+        throw error;
+      }
+
+      console.warn('[MSG_SEND] falling back to encrypted legacy insert; RPC needs deploy/update', {
+        conversationId,
+        localId,
+        error: normalizedError,
+      });
+      usedLegacyEncryptedFallback = true;
+
+      const { data: legacyData, error: legacyError } = await supabase
+        .from('messages')
+        .insert({
+          id: serverMessageId,
+          conversation_id: conversationId,
+          sender_id: user.id,
+          body: bodyToStore,
+          image_url: imageUrl || null,
+          body_kind: String(rpcExtra.body_kind || 'legacy'),
+          status: 'delivered',
+          view_once: Boolean(extra?.view_once),
+          document_url: extra?.document_url ?? null,
+          document_name: extra?.document_name ?? null,
+          document_mime: extra?.document_mime ?? null,
+          document_size_bytes: extra?.document_size_bytes ?? null,
+        } as any)
+        .select('id')
+        .single();
+
+      if (legacyError) {
+        const normalizedLegacyError = normalizeSupabaseError(legacyError);
+        console.error('[MSG_SEND] encrypted legacy insert failed', {
+          conversationId,
+          localId,
+          error: normalizedLegacyError,
+        });
+        updatePending({ status: 'failed_visible', lastError: normalizedLegacyError.message });
+        throw legacyError;
+      }
+
+      data = { id: legacyData?.id || serverMessageId };
+
+      if (fanoutRows.length > 0) {
+        try {
+          await insertFanoutCopyRows(fanoutInput, fanoutRows);
+          dispatchDecryptRetry();
+        } catch (fanoutInsertError) {
+          console.warn('[MSG_SEND] legacy fallback fanout insert failed; retrying async fanout', {
+            localId,
+            conversationId,
+            messageId: data.id,
+            fanoutInsertError,
+          });
+          void fanoutMessageCopies(fanoutInput).then(dispatchDecryptRetry).catch(() => {});
+        }
+      }
     }
 
-    const data = { id: (rpcMessageId as unknown as string) || serverMessageId };
-
-    console.info('[MSG_SEND] message inserted (transactional)', {
+    console.info('[MSG_SEND] message inserted', {
       localId,
       conversationId,
       serverId: data.id,
+      method: usedLegacyEncryptedFallback ? 'encrypted_legacy_fallback' : 'transactional_rpc',
       encryptedSuccessfully,
       storedMultiDeviceEnvelope,
       hasMedia: !!imageUrl,
       fanoutCopies: fanoutRows.length,
       fanoutHasTargets,
+      fanoutTimedOut,
     });
 
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
 
-      // Background archive (non-blocking)
       if (shouldArchiveMessageBody({
         sanitized,
         isSpecial,
@@ -367,33 +506,46 @@ export function useMessageQueue(
         })();
       }
 
-      // Safety net: if fanout pre-encryption produced no rows but encryption
-      // was active (e.g. transient missing peer bundle), retry async fan-out
-      // so late-arriving devices still get their encrypted copy.
-      if ((encryptedSuccessfully || encryptionWasRequired) && fanoutHasTargets && fanoutRows.length === 0) {
-        void fanoutMessageCopies({
-          messageId: data.id,
-          conversationId,
-          senderUserId: user.id,
-          plaintext: sanitized,
-        }).catch((fanoutError) => {
-          console.warn('[MSG_SEND] async multi-device fanout (fallback) failed', {
-            localId,
-            conversationId,
-            messageId: data.id,
-            fanoutError,
+      if ((encryptedSuccessfully || encryptionWasRequired) && fanoutTimedOut) {
+        const pendingFanout = fanoutPromise ?? buildFanoutCopies(fanoutInput);
+        void pendingFanout
+          .then(async (fanout) => {
+            if (fanout.rows.length > 0) {
+              await insertFanoutCopyRows(fanoutInput, fanout.rows);
+              dispatchDecryptRetry();
+              return;
+            }
+            if (fanout.hasTargets) {
+              await fanoutMessageCopies(fanoutInput);
+              dispatchDecryptRetry();
+            }
+          })
+          .catch((fanoutError) => {
+            console.warn('[MSG_SEND] async precomputed fanout failed after parent insert', {
+              localId,
+              conversationId,
+              messageId: data.id,
+              fanoutError,
+            });
+            void fanoutMessageCopies(fanoutInput).then(dispatchDecryptRetry).catch(() => {});
           });
-        });
+      } else if ((encryptedSuccessfully || encryptionWasRequired) && fanoutHasTargets && fanoutRows.length === 0) {
+        void fanoutMessageCopies(fanoutInput)
+          .then(dispatchDecryptRetry)
+          .catch((fanoutError) => {
+            console.warn('[MSG_SEND] async multi-device fanout fallback failed', {
+              localId,
+              conversationId,
+              messageId: data.id,
+              fanoutError,
+            });
+          });
       }
 
-      // Critical for iOS/Safari: after the server ACK, persist the newest
-      // ratchet state + sender plaintext/media key into the encrypted backup
-      // immediately so a WebView cache purge doesn't make recent messages blank.
       void import('@/lib/crypto/accountKeyBackup')
         .then(({ requestImmediateBackup }) => requestImmediateBackup('message-sent'))
         .catch(() => {});
       await onMessageSent?.(localId);
-      // Remove optimistic bubble — realtime/refetch will surface the server copy
       setPendingMessages(prev => prev.filter(m => m.localId !== localId));
     }
 

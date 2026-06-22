@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
@@ -65,6 +65,17 @@ export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 /** Build the scoped messages query key. Must mirror the key used in useMessages(). */
 const messagesKey = (conversationId: string, userId: string | undefined) =>
   ['messages', conversationId, userId ?? 'anon'] as const;
+
+let keysRestoredConversationRefetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleKeysRestoredConversationRefetch(queryClient: QueryClient) {
+  if (keysRestoredConversationRefetchTimer) return;
+  keysRestoredConversationRefetchTimer = setTimeout(() => {
+    keysRestoredConversationRefetchTimer = null;
+    console.log('[messaging] keys restored - refetch conversations');
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+  }, 350);
+}
 
 // Helper to get the user's custom AI companion name
 async function getCompanionName(userId?: string): Promise<string> {
@@ -186,8 +197,7 @@ export function useConversations() {
   useEffect(() => {
     if (!user) return;
     const onRestored = () => {
-      console.log('[messaging] keys restored → refetch conversations');
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      scheduleKeysRestoredConversationRefetch(queryClient);
     };
     window.addEventListener('forsure-keys-restored', onRestored);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });

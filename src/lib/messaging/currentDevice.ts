@@ -28,6 +28,23 @@ let hydrationPromise: Promise<string> | null = null;
 let memoryDeviceIdIsTemporary = false;
 let cachedFingerprints: { strict: string; loose: string; ultraLoose: string } | null = null;
 
+const BLOCKED_RECOVERY_DEVICE_IDS = new Set<string>([
+  '84aaa52143235807214bf3aa161dd03a',
+  '6508eb47a200893f49720fe84b9290b3',
+  '9da8c742a4fe81d1d9ce6c0ffb4e055b',
+  '75e575fcbfaa8066bcbc9105fc5f4ac8',
+  'c6601674b0f700f28c9f2956774eca97',
+  '52adb13ff236ae5c833c9d9049c0df71',
+  'b166de502d729356dcbd6c0b5b1a39b0',
+  '49cfdeab59355de3051925b4f09fba75',
+  '92585130870cedf210af1019379dbc61',
+  '450c0cd9af35813c8a99ec5bc0f39ab8',
+]);
+
+function isBlockedRecoveryDeviceId(id: string | null | undefined): boolean {
+  return !!id && BLOCKED_RECOVERY_DEVICE_IDS.has(id);
+}
+
 /**
  * iOS Safari ITP rotates UA strings, screen metrics and locale subtly. We
  * therefore compute THREE candidate fingerprints from the most-stable to
@@ -123,7 +140,9 @@ function persistEverywhere(id: string): string {
  */
 export function setCurrentDeviceId(id: string): string {
   if (!id || typeof id !== 'string') return getCurrentDeviceId();
+  if (isBlockedRecoveryDeviceId(id)) return rotateCurrentDeviceId('blocked-recovery-device');
   if (memoryDeviceId === id) return id;
+  hydrationPromise = null;
   console.log('[device-id] forcing device id from backup', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8) });
   return persistEverywhere(id);
 }
@@ -167,6 +186,7 @@ export function getCurrentDeviceId(): string {
 
   const localId = nativeGetSync(STORAGE_KEY);
   if (localId) {
+    if (isBlockedRecoveryDeviceId(localId)) return persistEverywhere(generateId());
     memoryDeviceId = localId;
     // Also push to native store on first read (covers PWA → native upgrade)
     void nativeSet(STORAGE_KEY, localId).catch(() => {});
@@ -213,6 +233,7 @@ export async function hydrateDeviceId(): Promise<string> {
       // 1) Native Keychain / Keystore is the strongest source of truth.
       const stored = await secureGet(STORAGE_KEY);
       if (stored) {
+        if (isBlockedRecoveryDeviceId(stored)) return persistEverywhere(generateId());
         if (memoryDeviceId && memoryDeviceId !== stored) {
           console.log('[device-id] Native store overrides in-memory id', {
             memory: memoryDeviceId.slice(0, 8),
@@ -226,6 +247,7 @@ export async function hydrateDeviceId(): Promise<string> {
       // 2) Local storage / sessionStorage may already hold the id.
       const local = nativeGetSync(STORAGE_KEY);
       if (local) {
+        if (isBlockedRecoveryDeviceId(local)) return persistEverywhere(generateId());
         return persistEverywhere(local);
       }
 
@@ -243,6 +265,7 @@ export async function hydrateDeviceId(): Promise<string> {
             { p_fingerprints: candidates, p_platform: platform },
           );
           if (!error && typeof serverId === 'string' && serverId.length >= 16) {
+            if (isBlockedRecoveryDeviceId(serverId)) return persistEverywhere(generateId());
             console.log('[device-id] Recovered from server fingerprint binding', {
               recovered: serverId.slice(0, 8),
               platform,

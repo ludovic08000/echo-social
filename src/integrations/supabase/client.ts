@@ -6,8 +6,11 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 let last401At = 0;
+let confirmedAuthFailureCount = 0;
+let authRecoveryInFlight: Promise<void> | null = null;
+let supabaseClientRef: any = null;
 
-function clearStaleSupabaseAuthSession() {
+function clearStaleSupabaseAuthSession(reason = 'supabase-rest-401') {
   if (typeof window === 'undefined') return;
   try {
     const purge = (storage: Storage) => {
@@ -21,9 +24,51 @@ function clearStaleSupabaseAuthSession() {
     purge(window.localStorage);
     purge(window.sessionStorage);
     window.dispatchEvent(new CustomEvent('forsure:auth-session-invalid', {
-      detail: { reason: 'supabase-rest-401' },
+      detail: { reason },
     }));
   } catch {}
+}
+
+function recoverSupabaseAuthAfter401(): void {
+  if (typeof window === 'undefined') return;
+  if (authRecoveryInFlight) return;
+
+  authRecoveryInFlight = (async () => {
+    try {
+      const client = supabaseClientRef;
+      if (!client?.auth) return;
+
+      const { data: current } = await client.auth.getSession();
+      if (current?.session) {
+        const { data: refreshed, error } = await client.auth.refreshSession();
+        if (!error && refreshed?.session) {
+          confirmedAuthFailureCount = 0;
+          console.warn('[Supabase] REST 401 - session refreshed; keeping auth state');
+          window.dispatchEvent(new CustomEvent('forsure:auth-session-refreshed', {
+            detail: { reason: 'supabase-rest-401' },
+          }));
+          return;
+        }
+        console.warn('[Supabase] REST 401 - refresh failed once; keeping auth pending retry', error?.message ?? error);
+      } else {
+        console.warn('[Supabase] REST 401 - no local session found during recovery');
+      }
+
+      confirmedAuthFailureCount += 1;
+      if (confirmedAuthFailureCount >= 2) {
+        console.warn('[Supabase] REST 401 - confirmed stale auth twice; clearing local session');
+        clearStaleSupabaseAuthSession('supabase-rest-401-confirmed');
+      }
+    } catch (error) {
+      confirmedAuthFailureCount += 1;
+      console.warn('[Supabase] REST 401 - auth recovery threw; keeping session unless repeated', error);
+      if (confirmedAuthFailureCount >= 2) {
+        clearStaleSupabaseAuthSession('supabase-rest-401-recovery-failed');
+      }
+    } finally {
+      authRecoveryInFlight = null;
+    }
+  })();
 }
 
 const guardedFetch: typeof fetch = async (input, init) => {
@@ -31,12 +76,14 @@ const guardedFetch: typeof fetch = async (input, init) => {
   try {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const isSupabaseRest = typeof url === 'string' && url.includes('/rest/v1/');
+    if (isSupabaseRest && response.ok) {
+      confirmedAuthFailureCount = 0;
+    }
     if (response.status === 401 && isSupabaseRest) {
       const now = Date.now();
       if (now - last401At > 5_000) {
         last401At = now;
-        console.warn('[Supabase] REST 401 — stale auth session cleared, reconnect required');
-        clearStaleSupabaseAuthSession();
+        recoverSupabaseAuthAfter401();
       }
     }
   } catch {}
@@ -55,3 +102,5 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     flowType: 'pkce',
   },
 });
+
+supabaseClientRef = supabase;

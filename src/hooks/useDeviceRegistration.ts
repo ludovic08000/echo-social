@@ -31,6 +31,7 @@ import {
   refillDeviceOneTimePrekeysIfNeeded,
   refreshSignedPrekeyIfNeeded,
   peekDeviceSignedPrekey,
+  isDevicePrekeyBundleError,
 } from '@/lib/crypto/x3dh';
 import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
@@ -211,6 +212,21 @@ export function useDeviceRegistration() {
         // resolve_device_id_by_fingerprints RPC reuse this device_id after
         // Safari ITP wipes IndexedDB / localStorage / Keychain on iOS.
         const deviceFingerprint = await getDeviceFingerprint().catch(() => null);
+        const latestDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+        if (latestDeviceId !== deviceId) {
+          console.warn('[useDeviceRegistration] device id changed during restore - restarting publish with hydrated id', {
+            previous: deviceId.slice(0, 8),
+            next: latestDeviceId.slice(0, 8),
+            reason,
+            attempt,
+          });
+          ranRef.current = false;
+          inFlightRef.current = false;
+          if (attempt < 3) {
+            return registerCurrentDevice('device-id-changed-during-restore', attempt + 1);
+          }
+          return;
+        }
 
         const payload = {
           user_id: user.id,
@@ -310,7 +326,17 @@ export function useDeviceRegistration() {
             try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
           }
         } catch (spkErr) {
-          console.warn('[useDeviceRegistration] device SPK refresh/repair failed (non-fatal):', spkErr);
+          if (isDevicePrekeyBundleError(spkErr, 'DEVICE_SPK_SIGNATURE_INVALID')) {
+            try {
+              await repairCurrentDevicePrekeys(user.id, deviceId, keys.signingPrivateKey, 'current-device-spk-signature-invalid');
+              try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch {}
+              try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
+            } catch (repairErr) {
+              console.warn('[useDeviceRegistration] device SPK signature repair failed (non-fatal):', repairErr);
+            }
+          } else {
+            console.warn('[useDeviceRegistration] device SPK refresh/repair failed (non-fatal):', spkErr);
+          }
         }
 
         // 4. Refill the OPK pool if low (forward secrecy on bursts).
