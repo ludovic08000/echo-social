@@ -18,7 +18,9 @@
 import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { isMultiDeviceEnvelopeBody, isSecurePipelineEnvelopeBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import {
+  loadPlaintext,
   loadPlaintextForCiphertext,
+  savePlaintext,
   savePlaintextForCiphertext,
 } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
@@ -161,12 +163,42 @@ export function buildOutcomeFromText(text: string): DecryptionOutcome {
 }
 
 /** Persist plaintext in IndexedDB so cold-starts don't re-decrypt. */
-export function persistOutcome(body: string, outcome: DecryptionOutcome): string {
+export function persistOutcome(body: string, outcome: DecryptionOutcome, messageId?: string): string {
   const persisted = outcome.mediaKeyB64
     ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
     : outcome.text;
+  if (messageId) void savePlaintext(messageId, persisted);
   void savePlaintextForCiphertext(body, persisted);
   return persisted;
+}
+
+async function loadPersistedOutcome(
+  messageId: string | undefined,
+  body: string,
+): Promise<DecryptionOutcome | null> {
+  const byMessageId = messageId
+    ? await loadPlaintext(messageId).catch(() => null)
+    : null;
+  if (byMessageId) {
+    if (looksEncrypted(body)) void savePlaintextForCiphertext(body, byMessageId);
+    return buildOutcomeFromText(byMessageId);
+  }
+
+  const byCiphertext = await loadPlaintextForCiphertext(body).catch(() => null);
+  if (!byCiphertext) return null;
+  if (messageId) void savePlaintext(messageId, byCiphertext);
+  return buildOutcomeFromText(byCiphertext);
+}
+
+function cacheAndPersist(
+  key: string,
+  body: string,
+  outcome: DecryptionOutcome,
+  messageId?: string,
+): DecryptionOutcome {
+  cache.set(key, outcome);
+  persistOutcome(body, outcome, messageId);
+  return outcome;
 }
 
 /**
@@ -190,6 +222,12 @@ export async function resolvePlaintext(opts: {
   const cached = cache.get(key);
   if (cached) return cached;
 
+  const persisted = await loadPersistedOutcome(messageId, body);
+  if (persisted) {
+    cache.set(key, persisted);
+    return persisted;
+  }
+
   // Negative cache — avoid re-running a full decrypt cascade after a recent
   // failure. Bypassed by the retry event which calls clearNegativeCache().
   if (negCacheHit(key)) return null;
@@ -197,14 +235,8 @@ export async function resolvePlaintext(opts: {
   // Self-messages: only the persisted plaintext store can answer (sender
   // ratchet state ≠ receiver state). Stay silent on miss.
   if (isMe) {
-    const stored = await loadPlaintextForCiphertext(body).catch(() => null);
-    if (!stored) {
-      negCache.set(key, Date.now());
-      return null;
-    }
-    const outcome = buildOutcomeFromText(stored);
-    cache.set(key, outcome);
-    return outcome;
+    negCache.set(key, Date.now());
+    return null;
   }
 
   let promise = inflight.get(key);
@@ -223,8 +255,7 @@ export async function resolvePlaintext(opts: {
               return null;
             }
             const outcome = buildOutcomeFromText(result.text);
-            cache.set(key, outcome);
-            return outcome;
+            return cacheAndPersist(key, body, outcome, messageId);
           }
         } catch {
           /* fall through to alternate paths */
@@ -238,8 +269,7 @@ export async function resolvePlaintext(opts: {
           const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
           if (copyText !== null) {
             const outcome = buildOutcomeFromText(copyText);
-            cache.set(key, outcome);
-            return outcome;
+            return cacheAndPersist(key, body, outcome, messageId);
           }
         }
       }
@@ -266,8 +296,7 @@ export async function resolvePlaintext(opts: {
             });
             if (r.ok && r.plaintext !== null) {
               const outcome = buildOutcomeFromText(r.plaintext);
-              cache.set(key, outcome);
-              return outcome;
+              return cacheAndPersist(key, body, outcome, messageId);
             }
           }
         } catch {
@@ -292,8 +321,7 @@ export async function resolvePlaintext(opts: {
               const pt = await decryptArchive(ab, convId, user.id);
               if (pt !== null) {
                 const outcome = buildOutcomeFromText(pt);
-                cache.set(key, outcome);
-                return outcome;
+                return cacheAndPersist(key, body, outcome, messageId);
               }
             }
           }

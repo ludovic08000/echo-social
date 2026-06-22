@@ -125,6 +125,24 @@ function dispatchDecryptRetry(): void {
   } catch {}
 }
 
+function scheduleBackgroundTask(task: () => void, timeoutMs = 2_000): void {
+  if (typeof window === 'undefined') {
+    setTimeout(task, 0);
+    return;
+  }
+
+  const ric = (window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+  }).requestIdleCallback;
+
+  if (typeof ric === 'function') {
+    ric(task, { timeout: timeoutMs });
+    return;
+  }
+
+  setTimeout(task, isAppleMobileWebKit() ? 350 : 75);
+}
+
 function normalizeSupabaseError(error: any) {
   return {
     message: error?.message ?? String(error ?? 'unknown_error'),
@@ -488,7 +506,7 @@ export function useMessageQueue(
         encryptedSuccessfully,
         encryptionWasRequired,
       })) {
-        void (async () => {
+        scheduleBackgroundTask(() => void (async () => {
           try {
             const retroactive = await encryptArchive(sanitized, conversationId, user.id);
             if (retroactive) {
@@ -503,7 +521,7 @@ export function useMessageQueue(
           } catch (e) {
             console.warn('[MSG_SEND] retroactive archive failed', { messageId: data!.id, localId, e });
           }
-        })();
+        })(), 3_000);
       }
 
       if ((encryptedSuccessfully || encryptionWasRequired) && fanoutTimedOut) {
@@ -542,15 +560,33 @@ export function useMessageQueue(
           });
       }
 
+      queryClient.setQueriesData<any[]>({ queryKey: ['messages', conversationId] }, (old) => {
+        if (!Array.isArray(old) || old.some((m) => m?.id === data.id)) return old;
+        return [...old, {
+          id: data.id,
+          conversation_id: conversationId,
+          sender_id: user.id,
+          body: bodyToStore,
+          image_url: imageUrl || null,
+          created_at: new Date().toISOString(),
+          status: 'delivered',
+          profile: {
+            name: user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'Moi',
+            avatar_url: user.user_metadata?.avatar_url || null,
+          },
+        }];
+      });
+
       void import('@/lib/crypto/accountKeyBackup')
-        .then(({ requestImmediateBackup }) => requestImmediateBackup('message-sent'))
+        .then(({ requestBackgroundBackup }) => requestBackgroundBackup('message-sent'))
         .catch(() => {});
       await onMessageSent?.(localId);
       setPendingMessages(prev => prev.filter(m => m.localId !== localId));
     }
 
-    queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    scheduleBackgroundTask(() => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    }, 2_500);
   }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {

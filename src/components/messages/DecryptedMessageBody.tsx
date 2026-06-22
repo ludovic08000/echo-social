@@ -137,11 +137,11 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
           setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
         }
         if (!next.hidden) {
-          const persisted = persistOutcome(body, next);
-          // Once a message is readable, push the refreshed ratchet + small
-          // plaintext/media-key cache into the encrypted account backup quickly.
+          const persisted = persistOutcome(body, next, messageId);
+          // Once readable, coalesce backup in the background so decrypting a
+          // batch does not block scroll/input on iOS.
           void import('@/lib/crypto/accountKeyBackup')
-            .then(({ requestImmediateBackup }) => requestImmediateBackup('message-decrypted'))
+            .then(({ requestBackgroundBackup }) => requestBackgroundBackup('message-decrypted'))
             .catch(() => {});
           onDecryptedRef.current?.(persisted);
         }

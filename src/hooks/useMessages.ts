@@ -6,7 +6,7 @@ import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/m
 import { messageQueue } from '@/lib/messaging/messageQueue';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
-import { savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
@@ -434,7 +434,7 @@ export function useMessages(conversationId: string) {
                   decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
                 }).then((outcome) => {
                   if (outcome && !outcome.hidden) {
-                    persistOutcome(newMsg.body, outcome);
+                    persistOutcome(newMsg.body, outcome, newMsg.id);
                     try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
                     return;
                   }
@@ -462,6 +462,7 @@ export function useMessages(conversationId: string) {
                 messageId: newMsg.id,
               }).then((r) => {
                 if (r.ok && r.plaintext !== null) {
+                  void savePlaintext(newMsg.id, r.plaintext);
                   void savePlaintextForCiphertext(newMsg.body, r.plaintext);
                   try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
                 }
@@ -617,13 +618,11 @@ export function useMessages(conversationId: string) {
       // plaintext. Messages that genuinely cannot decrypt yet (out-of-order)
       // get a fresh 30 × 1.5s retry budget on the pending queue.
       if (user) {
-        // WhatsApp/Signal-style parallel fan-in: every incoming encrypted
-        // message resolves concurrently. The previous sequential `for await`
-        // loop turned N messages into N × (2 RPC + 1 decrypt) latency
-        // (5–15s for a small backlog, up to ~50s for a long message arriving
-        // behind others). Parallelizing collapses it to max(per-message),
-        // which matches the receiver fan-in pattern WhatsApp documents.
-        const decryptTasks = compatibleMessages
+        // WhatsApp/Signal-style parallel fan-in for the visible/recent window.
+        // Older messages resolve when they mount during scroll; doing all 500
+        // on chat open steals CPU from iOS input/scroll for no visible benefit.
+        const decryptWarmupMessages = compatibleMessages.slice(-80);
+        const decryptTasks = decryptWarmupMessages
           .filter((m) => m.sender_id !== user.id)
           .map(async (m) => {
             if (isMultiDeviceEnvelopeBody(m.body)) {
@@ -634,7 +633,7 @@ export function useMessages(conversationId: string) {
                   decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
                 });
                 if (outcome && !outcome.hidden) {
-                  persistOutcome(m.body, outcome);
+                  persistOutcome(m.body, outcome, m.id);
                   return true;
                 }
               } catch { /* silent — UI will retry on its own */ }
@@ -650,6 +649,7 @@ export function useMessages(conversationId: string) {
                 messageId: m.id,
               });
               if (r.ok && r.plaintext !== null) {
+                void savePlaintext(m.id, r.plaintext);
                 void savePlaintextForCiphertext(m.body, r.plaintext);
                 return true;
               }

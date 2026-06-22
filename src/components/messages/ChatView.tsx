@@ -668,9 +668,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
     let cancelled = false;
     (async () => {
       let added = false;
-      for (const msg of messages) {
+      const recentMessages = messages.slice(-120);
+      const loaded = await Promise.all(
+        recentMessages.map(async (msg) => ({
+          msg,
+          pt: decryptedCache.has(msg.id) ? null : await loadPlaintext(msg.id),
+        })),
+      );
+      for (const { msg, pt } of loaded) {
         if (decryptedCache.has(msg.id)) continue;
-        const pt = await loadPlaintext(msg.id);
         if (cancelled) return;
         if (pt) {
           const media = parseMediaMessage(pt);
