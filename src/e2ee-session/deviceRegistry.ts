@@ -14,6 +14,15 @@ import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
 const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
+interface DeviceListOptions {
+  /**
+   * Hot-path sends should not block on SPK network checks for every device.
+   * X3DH bootstrap verifies the SPK when a new session is actually needed;
+   * active Double Ratchet sessions do not need a fresh prekey fetch per send.
+   */
+  verifyPrekeys?: boolean;
+}
+
 /** Stable device id of the current installation. Persisted in Keychain on iOS. */
 export function selfDeviceId(): DeviceId {
   return getCurrentDeviceId();
@@ -39,7 +48,7 @@ function isDeviceTooOld(lastSeen?: number): boolean {
   return (Date.now() - lastSeen) > MAX_DEVICE_STALE_MS;
 }
 
-async function hygieneFilterDevices(devices: DeviceDescriptor[]): Promise<DeviceDescriptor[]> {
+async function hygieneFilterDevices(devices: DeviceDescriptor[], options: DeviceListOptions = {}): Promise<DeviceDescriptor[]> {
   const deduped = new Map<string, DeviceDescriptor>();
 
   for (const device of devices) {
@@ -53,6 +62,8 @@ async function hygieneFilterDevices(devices: DeviceDescriptor[]): Promise<Device
 
   const candidates = Array.from(deduped.values())
     .filter(device => !isDeviceTooOld(device.lastSeen));
+
+  if (options.verifyPrekeys === false) return candidates;
 
   const verified = await Promise.all(candidates.map(async (device) => {
     try {
@@ -90,7 +101,7 @@ async function hygieneFilterDevices(devices: DeviceDescriptor[]): Promise<Device
  * Never throws — returns [] on any error so the caller can fall back to the
  * single-device path.
  */
-export async function listDevicesForUser(userId: UserId): Promise<DeviceDescriptor[]> {
+export async function listDevicesForUser(userId: UserId, options: DeviceListOptions = {}): Promise<DeviceDescriptor[]> {
   // 1) Trusted (signed) list first.
   try {
     const verified = await fetchVerifiedDeviceList(userId);
@@ -110,6 +121,7 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
             devicePublicKey: t.devicePublicKey,
             lastSeen: undefined,
           })),
+        options,
       );
     }
   } catch (e) {
@@ -138,7 +150,7 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
         lastSeen: normalizeLastSeen(d.last_seen_at ?? d.last_seen),
       }));
 
-    return hygieneFilterDevices(mapped);
+    return hygieneFilterDevices(mapped, options);
   } catch {
     return [];
   }
@@ -155,8 +167,9 @@ export async function listDevicesForUser(userId: UserId): Promise<DeviceDescript
 export async function listFanoutTargets(
   senderUserId: UserId,
   recipientUserIds: UserId[],
+  options: DeviceListOptions = {},
 ): Promise<DeviceDescriptor[]> {
   const userIds = Array.from(new Set([...recipientUserIds, senderUserId]));
-  const lists = await Promise.all(userIds.map(listDevicesForUser));
+  const lists = await Promise.all(userIds.map(userId => listDevicesForUser(userId, options)));
   return lists.flat();
 }
