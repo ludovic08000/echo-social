@@ -725,11 +725,10 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
           return null;
         }
 
-        // CRITICAL silent-drop case: no device copy exists for ANY of our
-        // devices after the async fan-out grace window. Either (a) the sender's
-        // signed device list skipped us because our SPK entry was stale, or (b)
-        // we re-registered under a fresh device_id after a storage purge and no
-        // signed-list entry was published yet. Refanout is the recovery path.
+        // Missing copies are a message-delivery problem, not a device-validity
+        // problem. A valid local device must not re-publish itself just because
+        // an old message lacks a targeted copy. Ask the sender/refanout path to
+        // repair the message only.
         if (shouldRequestRetry) {
           const senderUserId = gate.senderUserId ?? (await (async () => {
             try {
@@ -746,17 +745,12 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
               severity: 'warning',
               context: 'decrypt',
               errorCode: 'DEVICE_COPY_ABSENT_REQUESTING_REFANOUT',
-              errorMessage: 'No device copy exists for this user after grace window; requesting sender refanout',
+              errorMessage: 'No device copy exists for this user after grace window; requesting message refanout only',
               myDeviceId,
               peerUserId: senderUserId,
               metadata: { messageId, ageMs: gate.ageMs },
             });
             await requestDeviceCopyRetry({ messageId, senderUserId });
-            try {
-              window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
-                detail: { reason: 'absent-from-fanout', messageId, peerUserId: senderUserId },
-              }));
-            } catch { /* SSR */ }
           }
         }
         return null;
@@ -788,7 +782,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
         severity: 'info',
         context: 'decrypt',
         errorCode: 'DEVICE_COPY_TARGET_MISSING',
-        errorMessage: 'No encrypted device copy targets the current device after grace window; requesting sender refanout',
+        errorMessage: 'No encrypted device copy targets the current device after grace window; requesting message refanout only',
         myDeviceId,
         peerUserId: firstSender?.sender_user_id,
         peerDeviceId: firstSender?.sender_device_id,
