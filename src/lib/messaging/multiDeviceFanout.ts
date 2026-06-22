@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Multi-device fan-out — distributes a sent message as additional, per-device
  * encrypted copies in `message_device_copies`.
  */
@@ -12,7 +12,7 @@ import {
   x3dhInitiate,
   x3dhRespondForDevice,
 } from '@/lib/crypto/x3dh';
-import { getOrCreateIdentityKeys, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import { getOrCreateIdentityKeys, PinUnlockRequiredError, exportPublicKeyRaw } from '@/lib/crypto/keyManager';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import {
@@ -49,6 +49,8 @@ interface DeviceEncryptTargetInput {
 }
 
 const X3DH_BOOTSTRAP_PREFIX_V5 = 'x3dh5.init.';
+const X3DH_BOOTSTRAP_ENVELOPE_V2 = 'v2';
+const X3DH_BOOTSTRAP_AAD_CONTEXT_V2 = 'ForSure-X3DH-v5-Sesame-bootstrap';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 const FANOUT_ENCRYPT_CONCURRENCY = 4;
 
@@ -73,6 +75,92 @@ function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
   if (body.startsWith(RATCHET_PREFIX_V5)) return 'x3dh5';
   if (body.startsWith(RATCHET_PREFIX_V4)) return 'x3dh4';
   return 'unsupported';
+}
+
+interface ParsedX3DHBootstrapV5 {
+  version: 'legacy' | 'v2';
+  ivB64: string;
+  ctB64: string;
+  ekB64: string;
+  spkId: number;
+  opkId?: number;
+  senderIdentityKeyB64?: string;
+  recipientIdentityKeyB64?: string;
+}
+
+interface X3DHBootstrapAADInput {
+  senderUserId: string;
+  senderDeviceId: string;
+  recipientUserId: string;
+  recipientDeviceId: string;
+  senderIdentityKeyB64: string;
+  recipientIdentityKeyB64: string;
+  ekB64: string;
+  spkId: number;
+  opkId?: number;
+}
+
+function buildX3DHBootstrapAAD(input: X3DHBootstrapAADInput): Uint8Array {
+  // Signal X3DH §3.3 binds AD to IK_A || IK_B; Sesame also binds sessions to
+  // UserID/DeviceID mailboxes. JSON keeps the tuple parseable and stable.
+  return new hardGlobals.TextEncoder().encode(JSON.stringify({
+    context: X3DH_BOOTSTRAP_AAD_CONTEXT_V2,
+    sender: {
+      userId: input.senderUserId,
+      deviceId: input.senderDeviceId,
+      identityKey: input.senderIdentityKeyB64,
+    },
+    recipient: {
+      userId: input.recipientUserId,
+      deviceId: input.recipientDeviceId,
+      identityKey: input.recipientIdentityKeyB64,
+    },
+    header: {
+      ek: input.ekB64,
+      spkId: input.spkId,
+      opkId: input.opkId ?? null,
+    },
+  }));
+}
+
+function parseX3DHBootstrapV5(payload: string): ParsedX3DHBootstrapV5 | null {
+  if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;
+  const parts = payload.slice(X3DH_BOOTSTRAP_PREFIX_V5.length).split('.');
+
+  if (parts[0] === X3DH_BOOTSTRAP_ENVELOPE_V2) {
+    if (parts.length !== 8) return null;
+    const [, ivB64, ctB64, ekB64, spkIdStr, opkIdStr, senderIdentityKeyB64, recipientIdentityKeyB64] = parts;
+    const spkId = parseInt(spkIdStr, 10);
+    if (Number.isNaN(spkId)) return null;
+    const opkId = opkIdStr === '0' ? undefined : parseInt(opkIdStr, 10);
+    if (opkIdStr !== '0' && Number.isNaN(opkId as number)) return null;
+    if (!senderIdentityKeyB64 || !recipientIdentityKeyB64) return null;
+    return {
+      version: 'v2',
+      ivB64,
+      ctB64,
+      ekB64,
+      spkId,
+      opkId,
+      senderIdentityKeyB64,
+      recipientIdentityKeyB64,
+    };
+  }
+
+  // Legacy reader for messages already emitted before the Signal/Sesame AAD
+  // hardening. Do not use this shape for new outbound traffic.
+  if (parts.length !== 4 && parts.length !== 5) return null;
+  const [ivB64, ctB64, ekB64, spkIdStr, opkIdStr] = parts;
+  const spkId = parseInt(spkIdStr, 10);
+  if (Number.isNaN(spkId)) return null;
+  const opkId = opkIdStr !== undefined ? parseInt(opkIdStr, 10) : undefined;
+  if (opkIdStr !== undefined && Number.isNaN(opkId as number)) return null;
+  return { version: 'legacy', ivB64, ctB64, ekB64, spkId, opkId };
+}
+
+async function exportIdentityKeyB64(publicKey: CryptoKey): Promise<string> {
+  const raw = await exportPublicKeyRaw(publicKey);
+  return bufferToBase64(raw);
 }
 
 const KNOWN_INVALID_DEVICE_IDS = new Set<string>([
@@ -156,6 +244,7 @@ async function aesFromSecret(secret: ArrayBuffer): Promise<CryptoKey> {
 async function x3dhWrapForDevice(
   plaintext: string,
   senderUserId: string,
+  senderDeviceId: string,
   recipientUserId: string,
   recipientDeviceId: string,
   options: { useOneTimePrekey?: boolean } = {},
@@ -180,27 +269,41 @@ async function x3dhWrapForDevice(
     }
 
     const myKeys = await getOrCreateIdentityKeys(senderUserId);
+    const senderIdentityKeyB64 = await exportIdentityKeyB64(myKeys.publicKey);
     const result = await x3dhInitiate(myKeys, bundle);
     const aes = await aesFromSecret(result.sharedSecret);
     const iv = randomBytes(12);
+    const aad = buildX3DHBootstrapAAD({
+      senderUserId,
+      senderDeviceId,
+      recipientUserId,
+      recipientDeviceId,
+      senderIdentityKeyB64,
+      recipientIdentityKeyB64: bundle.identityKey,
+      ekB64: result.ephemeralKey,
+      spkId: result.usedSPKId,
+      opkId: result.usedOTPKId,
+    });
     const ct = await hardCrypto.encrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
+      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> },
       aes,
       new hardGlobals.TextEncoder().encode(plaintext),
     );
 
     const parts = [
-      X3DH_BOOTSTRAP_PREFIX_V5 + bufferToBase64(iv.buffer as ArrayBuffer),
+      X3DH_BOOTSTRAP_PREFIX_V5 + X3DH_BOOTSTRAP_ENVELOPE_V2,
+      bufferToBase64(iv.buffer as ArrayBuffer),
       bufferToBase64(ct as ArrayBuffer),
       result.ephemeralKey,
       String(result.usedSPKId),
+      result.usedOTPKId === undefined ? '0' : String(result.usedOTPKId),
+      senderIdentityKeyB64,
+      bundle.identityKey,
     ];
-    if (result.usedOTPKId !== undefined) parts.push(String(result.usedOTPKId));
 
     try {
-      const myDeviceId = getCurrentDeviceId();
       await establishDeviceSession(
-        senderUserId, myDeviceId,
+        senderUserId, senderDeviceId,
         recipientUserId, recipientDeviceId,
         result.sharedSecret,
         undefined,
@@ -240,36 +343,76 @@ async function x3dhWrapForDevice(
 async function x3dhUnwrapForDevice(
   payload: string,
   recipientUserId: string,
-  senderIdentityKeyB64: string,
+  senderIdentityKeyB64: string | undefined,
   senderUserId: string,
   senderDeviceId: string,
 ): Promise<string | null> {
   try {
     if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;
 
-    const parts = payload.slice(X3DH_BOOTSTRAP_PREFIX_V5.length).split('.');
-    if (parts.length !== 4 && parts.length !== 5) return null;
-
-    const [ivB64, ctB64, ekB64, spkIdStr, opkIdStr] = parts;
-    const spkId = parseInt(spkIdStr, 10);
-    if (Number.isNaN(spkId)) return null;
-    const opkId = opkIdStr !== undefined ? parseInt(opkIdStr, 10) : undefined;
-    if (opkIdStr !== undefined && Number.isNaN(opkId as number)) return null;
+    const parsed = parseX3DHBootstrapV5(payload);
+    if (!parsed) return null;
 
     const myKeys = await getOrCreateIdentityKeys(recipientUserId);
     const myDeviceId = getCurrentDeviceId();
+    const senderIdentityForDH = parsed.senderIdentityKeyB64 ?? senderIdentityKeyB64;
+    if (!senderIdentityForDH) return null;
+
+    if (parsed.version === 'v2') {
+      if (senderIdentityKeyB64 && parsed.senderIdentityKeyB64 !== senderIdentityKeyB64) {
+        logCryptoError({
+          severity: 'error',
+          context: 'decrypt',
+          errorCode: 'X3DH_SENDER_IDENTITY_MISMATCH',
+          errorMessage: 'Rejected x3dh5.init.v2 envelope whose sender identity does not match the active sender identity',
+          myDeviceId,
+          peerUserId: senderUserId,
+          peerDeviceId: senderDeviceId,
+        });
+        return null;
+      }
+
+      const myIdentityKeyB64 = await exportIdentityKeyB64(myKeys.publicKey);
+      if (parsed.recipientIdentityKeyB64 !== myIdentityKeyB64) {
+        logCryptoError({
+          severity: 'error',
+          context: 'decrypt',
+          errorCode: 'X3DH_RECIPIENT_IDENTITY_MISMATCH',
+          errorMessage: 'Rejected x3dh5.init.v2 envelope targeted at another recipient identity',
+          myDeviceId,
+          peerUserId: senderUserId,
+          peerDeviceId: senderDeviceId,
+        });
+        return null;
+      }
+    }
 
     const { sharedSecret, spkKeyPair } = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
-      ik: senderIdentityKeyB64,
-      ek: ekB64,
-      spkId,
-      opkId,
+      ik: senderIdentityForDH,
+      ek: parsed.ekB64,
+      spkId: parsed.spkId,
+      opkId: parsed.opkId,
     });
     const aes = await aesFromSecret(sharedSecret);
+    const aad = parsed.version === 'v2'
+      ? buildX3DHBootstrapAAD({
+          senderUserId,
+          senderDeviceId,
+          recipientUserId,
+          recipientDeviceId: myDeviceId,
+          senderIdentityKeyB64: senderIdentityForDH,
+          recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
+          ekB64: parsed.ekB64,
+          spkId: parsed.spkId,
+          opkId: parsed.opkId,
+        })
+      : null;
     const pt = await hardCrypto.decrypt(
-      { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(ivB64)), tagLength: 128 },
+      aad
+        ? { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> }
+        : { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128 },
       aes,
-      base64ToBuffer(ctB64),
+      base64ToBuffer(parsed.ctB64),
     );
 
     try {
@@ -283,7 +426,7 @@ async function x3dhUnwrapForDevice(
         undefined,
         {
           isInitiator: false,
-          peerSpkId: spkId,
+          peerSpkId: parsed.spkId,
           selfInitialDhPrivJwk: spkPrivJwk,
           selfInitialDhPubB64: spkPubB64,
         },
@@ -385,7 +528,7 @@ export async function encryptPlaintextForDeviceTarget(
     });
   }
 
-  if (!encrypted) encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
+  if (!encrypted) encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
 
 
   if (!encrypted) {
@@ -672,11 +815,12 @@ async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: str
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
     if (prefix === 'x3dh5.init') {
+      const parsed = parseX3DHBootstrapV5(row.encrypted_body);
       const { data: senderPub } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
-      if (!senderPub?.identity_key) {
+      if (!senderPub?.identity_key && parsed?.version !== 'v2') {
         return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };
       }
-      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);
+      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub?.identity_key, row.sender_user_id, row.sender_device_id);
       return {
         plaintext,
         attemptedSupportedEnvelope: true,
