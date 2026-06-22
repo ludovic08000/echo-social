@@ -380,20 +380,27 @@ export function useDeviceRegistration() {
       void registerCurrentDevice('keys-unlocked');
     };
 
-    // Triggered by `tryReadDeviceCopy` when an incoming message has zero
-    // device copies targeting our user — meaning peers are silently
-    // skipping us in their fan-out. Re-running the registration republishes
-    // our SPK + signed-device-list entry, so the next refanout from the
-    // peer can target us. Cooldown 15s to avoid loops if the cause is
-    // server-side (RLS, banned device).
+    // A missing message copy is a message/refanout issue, not proof that the
+    // local device is invalid. Once PIN/backup/key restore succeeded, the device
+    // must stay valid unless a real key/SPK/mismatch error is detected.
     let lastSelfRepairAt = 0;
     const onSelfRepairRequired = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail;
+      const reason = String(detail?.reason ?? 'unknown');
+      if (reason === 'absent-from-fanout') {
+        console.info('[useDeviceRegistration] ignoring message-copy miss for device repair', {
+          reason,
+          messageId: detail?.messageId,
+          peerUserId: detail?.peerUserId,
+        });
+        return;
+      }
+
       const now = Date.now();
       if (now - lastSelfRepairAt < 15_000) return;
       lastSelfRepairAt = now;
-      const detail = (ev as CustomEvent).detail;
       ranRef.current = false;
-      void registerCurrentDevice(`self-repair:${detail?.reason ?? 'unknown'}`);
+      void registerCurrentDevice(`self-repair:${reason}`);
     };
 
     void registerCurrentDevice('auth-mounted');
