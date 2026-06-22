@@ -98,12 +98,12 @@ export function useDeviceRegistration() {
         try {
           const { data: existing } = await supabase
             .from('user_devices')
-            .select('device_public_key,is_active')
+            .select('device_public_key,is_active,revoked_at')
             .eq('user_id', user.id)
             .eq('device_id', deviceId)
             .maybeSingle();
 
-          if (existing && existing.is_active === false) {
+          if (existing && (existing.is_active === false || existing.revoked_at)) {
             console.warn('[useDeviceRegistration] server says current device id is revoked — rotating local id instead of reactivating', {
               deviceId: deviceId.slice(0, 8),
               attempt,

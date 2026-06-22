@@ -17,6 +17,7 @@ import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
   hydrateDeviceId,
+  rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 import {
   getOrCreateIdentityKeys,
@@ -174,6 +175,38 @@ function logPayloadBeforeUpsert(table: DBTableName, payload: DBPayload) {
     payload_keys: Object.keys(payload),
     fields: sanitizePayloadForLog(payload),
   });
+}
+
+async function ensureRepublishableDeviceId(
+  userId: string,
+  deviceId: string,
+  diag?: DiagRecorder,
+): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('user_devices')
+      .select('device_id,is_active,revoked_at')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .maybeSingle();
+
+    if (error) {
+      diag?.push('init', 'warn', 'device lifecycle lookup failed', { error: error.message });
+      return deviceId;
+    }
+
+    if (data && (data.is_active === false || data.revoked_at)) {
+      const next = rotateCurrentDeviceId('resync-revoked-device');
+      diag?.push('init', 'warn', 'current device id revoked before resync; rotated', {
+        previous: deviceId,
+        next,
+      });
+      return next;
+    }
+  } catch (e) {
+    diag?.push('init', 'warn', 'device lifecycle lookup threw', { error: describeError(e) });
+  }
+  return deviceId;
 }
 
 function formatSupabaseError(table: DBTableName, step: string, error: any, payload: DBPayload) {
@@ -569,7 +602,8 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
     return report;
   }
 
-  const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+  let deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+  deviceId = await ensureRepublishableDeviceId(userId, deviceId, diag);
   const platform = getCurrentPlatform();
   report.deviceId = deviceId;
   report.platform = platform;

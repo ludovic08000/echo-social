@@ -22,7 +22,7 @@ import {
   syncKeychainSnapshotFromLocal,
   restoreFromInMemoryMasterKey,
 } from '@/lib/crypto/accountKeyBackup';
-import { hydrateDeviceId, getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { hydrateDeviceId, getCurrentDeviceId, rotateCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
 import { transition, withEnsureLock, getSnapshot } from '@/lib/crypto/CryptoStateMachine';
 
@@ -408,13 +408,20 @@ export function useAccountKeySync() {
         if (cancelled) return;
         const done = sessionStorage.getItem(RESYNC_DONE_KEY);
         if (!(await hasLocalKeys())) return;
-        const did = await hydrateDeviceId();
+        let did = await hydrateDeviceId();
         const { data: row } = await supabase
           .from('user_devices')
-          .select('device_id')
+          .select('device_id,is_active,revoked_at')
           .eq('user_id', user.id)
           .eq('device_id', did)
           .maybeSingle();
+
+        if (row && (row.is_active === false || row.revoked_at)) {
+          console.warn('[AccountKeySync] current device is revoked/inactive during health check - rotating before resync', {
+            did: did.slice(0, 8),
+          });
+          did = rotateCurrentDeviceId('account-sync-revoked-device');
+        }
 
         const { data: spkRow } = await supabase
           .from('device_signed_prekeys' as any)
@@ -425,15 +432,20 @@ export function useAccountKeySync() {
           .maybeSingle();
         if (cancelled) return;
 
+        const registered =
+          !!row &&
+          row.device_id === did &&
+          row.is_active !== false &&
+          !row.revoked_at;
         const previousHealth = sessionStorage.getItem(RESYNC_HEALTH_KEY);
-        const currentHealth = JSON.stringify({ did, registered: !!row, spk: !!spkRow });
-        if (!row || !spkRow || (!done && previousHealth !== currentHealth)) {
+        const currentHealth = JSON.stringify({ did, registered, spk: !!spkRow });
+        if (!registered || !spkRow || (!done && previousHealth !== currentHealth)) {
           console.warn('[AccountKeySync] E2EE device health incomplete — auto-resync', {
             did: did.slice(0, 8),
-            registered: !!row,
+            registered,
             deviceSpk: !!spkRow,
           });
-          await runResync(!row ? 'device-not-registered' : 'device-prekeys-missing');
+          await runResync(!registered ? 'device-not-registered' : 'device-prekeys-missing');
           sessionStorage.setItem(RESYNC_HEALTH_KEY, currentHealth);
         }
       } catch (e) {
