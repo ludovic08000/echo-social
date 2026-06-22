@@ -53,6 +53,8 @@ const X3DH_BOOTSTRAP_ENVELOPE_V2 = 'v2';
 const X3DH_BOOTSTRAP_AAD_CONTEXT_V2 = 'ForSure-X3DH-v5-Sesame-bootstrap';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 const FANOUT_ENCRYPT_CONCURRENCY = 4;
+const DEVICE_COPY_ASYNC_FANOUT_GRACE_MS = 15000;
+const DEVICE_COPY_SELF_SENT_GRACE_MS = 60000;
 
 type DeviceCopyPrefix = 'x3dh5.init' | 'x3dh5' | 'x3dh4' | 'unsupported';
 
@@ -68,6 +70,18 @@ type CopyRow = {
   sender_user_id: string;
   sender_device_id: string;
   recipient_device_id?: string;
+};
+
+type ParentMessageContext = {
+  senderUserId?: string;
+  createdAtMs?: number;
+};
+
+type DeviceCopyGate = {
+  defer: boolean;
+  reason?: string;
+  senderUserId?: string;
+  ageMs?: number;
 };
 
 function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
@@ -239,6 +253,41 @@ async function mapWithConcurrency<T, R>(
 
 async function aesFromSecret(secret: ArrayBuffer): Promise<CryptoKey> {
   return hardCrypto.importKey('raw', secret.slice(0, 32), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+async function getParentMessageContext(messageId: string): Promise<ParentMessageContext> {
+  try {
+    const { data } = await supabase
+      .from('messages')
+      .select('sender_id,created_at')
+      .eq('id', messageId)
+      .maybeSingle();
+    const senderUserId = (data as any)?.sender_id as string | undefined;
+    const createdAtRaw = (data as any)?.created_at as string | undefined;
+    const createdAtMs = createdAtRaw ? new Date(createdAtRaw).getTime() : undefined;
+    return {
+      senderUserId,
+      createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function getDeviceCopyGate(
+  messageId: string,
+  currentUserId: string,
+  expectedSenderUserId?: string,
+): Promise<DeviceCopyGate> {
+  const parent = await getParentMessageContext(messageId);
+  const senderUserId = expectedSenderUserId ?? parent.senderUserId;
+  const ageMs = parent.createdAtMs !== undefined ? Date.now() - parent.createdAtMs : undefined;
+  const isFresh = ageMs !== undefined && ageMs >= 0 && ageMs < DEVICE_COPY_ASYNC_FANOUT_GRACE_MS;
+  const isFreshOwnMessage = senderUserId === currentUserId && ageMs !== undefined && ageMs >= 0 && ageMs < DEVICE_COPY_SELF_SENT_GRACE_MS;
+
+  if (isFreshOwnMessage) return { defer: true, reason: 'fresh_own_message', senderUserId, ageMs };
+  if (isFresh) return { defer: true, reason: 'async_fanout_grace', senderUserId, ageMs };
+  return { defer: false, senderUserId, ageMs };
 }
 
 async function x3dhWrapForDevice(
@@ -662,16 +711,27 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
     } else {
       const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', { p_message_id: messageId });
       if (!allCopies || allCopies.length === 0) {
+        const gate = await getDeviceCopyGate(messageId, user.id, expectedSenderUserId);
+        if (gate.defer) {
+          logCryptoError({
+            severity: 'info',
+            context: 'decrypt',
+            errorCode: 'DEVICE_COPY_ABSENT_GRACE',
+            errorMessage: 'Device copy absent but still inside async fanout grace window; deferring repair',
+            myDeviceId,
+            peerUserId: gate.senderUserId,
+            metadata: { messageId, reason: gate.reason, ageMs: gate.ageMs },
+          });
+          return null;
+        }
+
         // CRITICAL silent-drop case: no device copy exists for ANY of our
-        // devices. Either (a) the sender's `hygieneFilterDevices` skipped
-        // us because our signed prekey / signed device list entry was
-        // stale, or (b) we re-registered under a fresh device_id after a
-        // storage purge and no signed-list entry was published yet.
-        // Without action the message stays "encrypted forever" — refanout
-        // is the only way out. We resolve the sender from the parent
-        // message row and request a refanout (cooldown 3s on first try).
+        // devices after the async fan-out grace window. Either (a) the sender's
+        // signed device list skipped us because our SPK entry was stale, or (b)
+        // we re-registered under a fresh device_id after a storage purge and no
+        // signed-list entry was published yet. Refanout is the recovery path.
         if (shouldRequestRetry) {
-          const senderUserId = expectedSenderUserId ?? (await (async () => {
+          const senderUserId = gate.senderUserId ?? (await (async () => {
             try {
               const { data } = await supabase
                 .from('messages')
@@ -686,18 +746,12 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
               severity: 'warning',
               context: 'decrypt',
               errorCode: 'DEVICE_COPY_ABSENT_REQUESTING_REFANOUT',
-              errorMessage: 'No device copy exists for this user at all; requesting sender refanout',
+              errorMessage: 'No device copy exists for this user after grace window; requesting sender refanout',
               myDeviceId,
               peerUserId: senderUserId,
-              metadata: { messageId },
+              metadata: { messageId, ageMs: gate.ageMs },
             });
             await requestDeviceCopyRetry({ messageId, senderUserId });
-            // Also kick a local self-repair: if peers are skipping us, it
-            // may be because our own published SPK / signed-device-list
-            // entry is stale. `useDeviceRegistration` listens to this
-            // event and re-runs `refreshDeviceSignedPrekeyIfNeeded` +
-            // `publishOwnSignedDeviceList`, closing the loop without
-            // requiring the user to reload the app.
             try {
               window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
                 detail: { reason: 'absent-from-fanout', messageId, peerUserId: senderUserId },
@@ -709,11 +763,32 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       }
       const fallbackRows = filterCopyRowsByExpectedSender(allCopies as CopyRow[], expectedSenderUserId);
       const firstSender = fallbackRows[0] ?? (allCopies as CopyRow[])[0];
+      const gate = await getDeviceCopyGate(messageId, user.id, expectedSenderUserId ?? firstSender?.sender_user_id);
+      if (gate.defer) {
+        logCryptoError({
+          severity: 'info',
+          context: 'decrypt',
+          errorCode: 'DEVICE_COPY_TARGET_MISSING_GRACE',
+          errorMessage: 'Device copies exist but current target copy may still be async; deferring repair',
+          myDeviceId,
+          peerUserId: gate.senderUserId,
+          peerDeviceId: firstSender?.sender_device_id,
+          metadata: {
+            messageId,
+            candidates: (allCopies as CopyRow[]).length,
+            expectedSenderUserId,
+            reason: gate.reason,
+            ageMs: gate.ageMs,
+          },
+        });
+        return null;
+      }
+
       logCryptoError({
         severity: 'info',
         context: 'decrypt',
         errorCode: 'DEVICE_COPY_TARGET_MISSING',
-        errorMessage: 'No encrypted device copy targets the current device; requesting sender refanout',
+        errorMessage: 'No encrypted device copy targets the current device after grace window; requesting sender refanout',
         myDeviceId,
         peerUserId: firstSender?.sender_user_id,
         peerDeviceId: firstSender?.sender_device_id,
@@ -722,6 +797,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
           candidates: (allCopies as CopyRow[]).length,
           expectedSenderUserId,
           retryEnabled: shouldRequestRetry,
+          ageMs: gate.ageMs,
         },
       });
       if (shouldRequestRetry) {
