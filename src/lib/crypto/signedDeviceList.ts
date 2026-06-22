@@ -110,7 +110,7 @@ export async function publishCompanionSignature(
 /**
  * Republish the caller's full signed device list to `signed_device_lists`
  * via the `upsert_signed_device_list` RPC. Idempotent — safe to call after
- * any device add / rotation / revocation.
+ * any approved device add / rotation / revocation.
  */
 export async function publishOwnSignedDeviceList(args?: {
   signerDeviceId?: string | null;
@@ -123,7 +123,8 @@ export async function publishOwnSignedDeviceList(args?: {
     .from('user_devices')
     .select('device_id')
     .eq('user_id', uid)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .eq('approval_status', 'approved');
   if (listErr) return { ok: false, error: listErr.message };
   const deviceIds = (rows ?? [])
     .map(r => String((r as any).device_id || ''))
