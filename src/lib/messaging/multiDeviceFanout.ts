@@ -452,6 +452,33 @@ export async function encryptPlaintextForDeviceTarget(
     await invalidateDeviceSession(input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId).catch(() => {});
   }
 
+  let encrypted: string | null = null;
+  try {
+    encrypted = await ratchetEncrypt(
+      input.senderUserId,
+      senderDeviceId,
+      input.recipientUserId,
+      input.recipientDeviceId,
+      input.plaintext,
+    );
+    if (encrypted && encrypted.startsWith(RATCHET_PREFIX_V5)) {
+      return { encryptedBody: encrypted, senderDeviceId };
+    }
+    encrypted = null;
+  } catch (e) {
+    logCryptoException('fanout', e, {
+      severity: 'warning',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+      metadata: { stage: 'ratchet_encrypt' },
+    });
+  }
+
+  // Sesame fast path: an existing Double Ratchet session is used without a
+  // pre-send SPK network round-trip. Only when no usable ratchet session exists
+  // do we check SPK freshness and fall back to X3DH bootstrap.
   try {
     const cachedSpkId = await getSessionPeerSpkId(
       input.senderUserId,
@@ -505,31 +532,7 @@ export async function encryptPlaintextForDeviceTarget(
     });
   }
 
-  let encrypted: string | null = null;
-  try {
-    encrypted = await ratchetEncrypt(
-      input.senderUserId,
-      senderDeviceId,
-      input.recipientUserId,
-      input.recipientDeviceId,
-      input.plaintext,
-    );
-    if (encrypted && !encrypted.startsWith(RATCHET_PREFIX_V5)) {
-      encrypted = null;
-    }
-  } catch (e) {
-    logCryptoException('fanout', e, {
-      severity: 'warning',
-      conversationId: input.conversationId,
-      myDeviceId: senderDeviceId,
-      peerUserId: input.recipientUserId,
-      peerDeviceId: input.recipientDeviceId,
-      metadata: { stage: 'ratchet_encrypt' },
-    });
-  }
-
-  if (!encrypted) encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
-
+  encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
 
   if (!encrypted) {
     logCryptoError({
@@ -546,7 +549,7 @@ export async function encryptPlaintextForDeviceTarget(
     return null;
   }
 
-  return encrypted ? { encryptedBody: encrypted, senderDeviceId } : null;
+  return { encryptedBody: encrypted, senderDeviceId };
 }
 
 export interface FanoutCopyRow {
@@ -575,7 +578,7 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
   if (!participants?.length) return { rows: [], hasTargets: false };
   const userIds = participants.map(p => p.user_id);
 
-  const targets = (await listFanoutTargets(input.senderUserId, userIds)).filter(d =>
+  const targets = (await listFanoutTargets(input.senderUserId, userIds, { verifyPrekeys: false })).filter(d =>
     !(d.userId === input.senderUserId && d.deviceId === senderDeviceId) &&
     !isKnownInvalidDeviceId(d.deviceId),
   );
