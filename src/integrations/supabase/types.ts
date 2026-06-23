@@ -7518,6 +7518,15 @@ export type Database = {
           encrypted_payload: string
         }[]
       }
+      get_conversation_deliverable_devices: {
+        Args: { p_conversation_id: string; p_exclude_device_id?: string }
+        Returns: {
+          device_id: string
+          device_public_key: string
+          is_self: boolean
+          user_id: string
+        }[]
+      }
       get_conversations_with_details: {
         Args: { p_user_id: string }
         Returns: {
