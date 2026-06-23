@@ -19,7 +19,8 @@ export const _peerSyncPromise = new Map<string, Promise<unknown>>();
 /** Global cache for peer public keys — prevents repeated fetches. */
 export const _peerKeyCache = new Map<string, { data: PeerPublicKeys | null; ts: number }>();
 
-const PEER_KEY_TTL = 120_000; // 2 min
+const PEER_KEY_POSITIVE_TTL = 120_000; // 2 min
+const PEER_KEY_NEGATIVE_TTL = 5_000; // short miss cache so newly published keys are seen quickly
 
 let _cachedAuthUserId: string | null = null;
 let _cachedAuthUserIdTs = 0;
@@ -45,10 +46,16 @@ export async function getCachedAuthUserId(): Promise<string | null> {
   }
 }
 
+function isPeerKeyCacheFresh(entry: { data: PeerPublicKeys | null; ts: number } | undefined): boolean {
+  if (!entry) return false;
+  const ttl = entry.data ? PEER_KEY_POSITIVE_TTL : PEER_KEY_NEGATIVE_TTL;
+  return Date.now() - entry.ts < ttl;
+}
+
 /** Fetch peer public keys with global dedup + cache. */
 export async function fetchPeerPublicKeys(peerUserId: string): Promise<PeerPublicKeys | null> {
   const cached = _peerKeyCache.get(peerUserId);
-  if (cached && Date.now() - cached.ts < PEER_KEY_TTL) return cached.data;
+  if (isPeerKeyCacheFresh(cached)) return cached!.data;
 
   const inflightKey = `fetch:${peerUserId}`;
   const inflight = _peerSyncPromise.get(inflightKey);
@@ -58,12 +65,23 @@ export async function fetchPeerPublicKeys(peerUserId: string): Promise<PeerPubli
   }
 
   const p = (async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('user_public_keys')
       .select('identity_key, signing_key, fingerprint')
       .eq('user_id', peerUserId)
       .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
+
+    if (error) {
+      console.warn('[PEER_KEY] public key fetch failed', {
+        peerUserId,
+        error: error.message,
+      });
+      return false;
+    }
+
     _peerKeyCache.set(peerUserId, { data, ts: Date.now() });
     return !!data;
   })().finally(() => _peerSyncPromise.delete(inflightKey));
