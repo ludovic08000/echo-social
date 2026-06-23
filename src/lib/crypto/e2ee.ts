@@ -103,8 +103,25 @@ export async function establishSession(
   return session;
 }
 
+// M6 (audit) — context AAD for the static (non-ratchet) path.
+function staticEnvelopeAAD(senderFingerprint: string, sequenceNumber: number): Uint8Array {
+  return new Uint8Array(
+    encodeString(`forsure-static-ad-v${PROTOCOL_VERSION}|${senderFingerprint}|${sequenceNumber}`),
+  );
+}
+
 // ─── Encrypt ───
 
+/**
+ * @deprecated STATIC-KEY PATH — NO FORWARD SECRECY (audit M6).
+ *
+ * This derives one AES key per conversation from a STATIC X25519 DH and reuses
+ * it for every message (only a `seq` counter changes). A future key compromise
+ * exposes all past and future messages on this path. Use the Double Ratchet
+ * (`ratchet.ts`) for chat messages. This path is retained ONLY for the
+ * realtime call-setup handshake (one-shot SRTP secret exchange) and must not
+ * be used for durable messaging.
+ */
 export async function encryptMessage(
   plaintext: string,
   sessionKey: CryptoKey,
@@ -116,9 +133,14 @@ export async function encryptMessage(
   const timestamp = Date.now();
   const plaintextBuffer = encodeString(plaintext);
 
-  // AES-256-GCM
+  // AES-256-GCM with context AAD binding sender fingerprint + sequence.
   const ciphertext = await hardCrypto.encrypt(
-    { name: AES_ALGO, iv: ivArr as Uint8Array<ArrayBuffer>, tagLength: 128 },
+    {
+      name: AES_ALGO,
+      iv: ivArr as Uint8Array<ArrayBuffer>,
+      tagLength: 128,
+      additionalData: staticEnvelopeAAD(senderFingerprint, sequenceNumber) as Uint8Array<ArrayBuffer>,
+    },
     sessionKey,
     plaintextBuffer,
   );
@@ -178,11 +200,27 @@ export async function decryptMessage(
   const ivBytes = base64ToBuffer(envelope.iv);
   const ciphertext = base64ToBuffer(envelope.ct);
 
-  const plaintextBuffer = await hardCrypto.decrypt(
-    { name: AES_ALGO, iv: new Uint8Array(ivBytes), tagLength: 128 },
-    sessionKey,
-    ciphertext,
-  );
+  // M6: prefer the context-AAD form; fall back to no-AAD for legacy envelopes
+  // produced before the binding was added.
+  let plaintextBuffer: ArrayBuffer;
+  try {
+    plaintextBuffer = await hardCrypto.decrypt(
+      {
+        name: AES_ALGO,
+        iv: new Uint8Array(ivBytes),
+        tagLength: 128,
+        additionalData: staticEnvelopeAAD(envelope.fp, envelope.seq) as Uint8Array<ArrayBuffer>,
+      },
+      sessionKey,
+      ciphertext,
+    );
+  } catch {
+    plaintextBuffer = await hardCrypto.decrypt(
+      { name: AES_ALGO, iv: new Uint8Array(ivBytes), tagLength: 128 },
+      sessionKey,
+      ciphertext,
+    );
+  }
 
   const plaintext = decodeString(plaintextBuffer);
 
@@ -211,52 +249,4 @@ export async function decryptMessage(
       verified = await hardCrypto.verify(
         sigAlgo as any,
         peerSigningKey,
-        base64ToBuffer(envelope.sig),
-        signatureData,
-      );
-    } catch {
-      verified = false;
-    }
-  }
-
-  return { plaintext, verified, fingerprint: envelope.fp };
-}
-
-// ─── Key Rotation ───
-
-export async function needsKeyRotation(conversationId: string): Promise<boolean> {
-  const session = await loadSessionKey(conversationId);
-  if (!session) return true;
-  if (Date.now() - session.createdAt > KEY_ROTATION_INTERVAL_MS) return true;
-  if (session.messageCount >= MAX_MESSAGES_PER_KEY) return true;
-  return false;
-}
-
-export async function rotateSessionKey(
-  myKeys: IdentityKeyPair,
-  peerPublicKeyBase64: string,
-  conversationId: string,
-  peerFingerprint: string,
-): Promise<SessionKey> {
-  await deleteSessionKey(conversationId);
-  return establishSession(myKeys, peerPublicKeyBase64, conversationId, peerFingerprint);
-}
-
-// ─── Helpers ───
-
-export function isEncryptedMessage(body: string): boolean {
-  if (!body.startsWith('{')) return false;
-  try {
-    const p = hardGlobals.jsonParse(body);
-    return p.v !== undefined && p.kem !== undefined && p.ct !== undefined;
-  } catch {
-    return false;
-  }
-}
-
-// Post-Quantum upgrade path:
-// 1. Generate ML-KEM-768 keypair alongside X25519
-// 2. Encapsulate: (kyberCT, kyberSS) = KEM.encap(peerKyberPK)
-// 3. Combine: HKDF(x25519SS || kyberSS) → AES key
-// 4. Set kem = 'HYBRID-X25519-KYBER768', pq = base64(kyberCT)
-// Both must be broken to compromise a message
+        base64ToBu
