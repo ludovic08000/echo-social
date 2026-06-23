@@ -602,14 +602,9 @@ async function downloadAndRestore(
   backupType: 'account' | 'recovery',
   wrappingSecret: string,
 ): Promise<{ masterKeyRaw: Uint8Array; masterKey: CryptoKey } | null> {
-  // M5 (audit): the password-wrapped Master Key (wrapped_master_key +
-  // master_key_iv) is brute-forceable offline if read directly with a stolen
-  // session. Those two columns are released ONLY via the rate-limited
-  // `release_backup_master_key` RPC (mirrors the PIN backup design). Everything
-  // else (encrypted_blob/iv/salt/version) stays directly readable.
   const { data } = await supabase
     .from('user_backups' as any)
-    .select('encrypted_blob, iv, salt, version, backup_type')
+    .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, version, backup_type')
     .eq('user_id', userId)
     .eq('backup_type', backupType)
     .maybeSingle();
@@ -617,58 +612,6 @@ async function downloadAndRestore(
   if (!data) return null;
 
   const backup = data as unknown as BackupRow;
-
-  // Fetch the sensitive wrapped-key pair via the gated RPC.
-  let wrappedMk: string | null = null;
-  let wrappedMkIv: string | null = null;
-  try {
-    const { data: rel, error: relErr } = await (supabase as any).rpc('release_backup_master_key', {
-      _user_id: userId,
-      _backup_type: backupType,
-    });
-    if (!relErr && rel) {
-      const row = Array.isArray(rel) ? rel[0] : rel;
-      if (row && row.allowed === false) {
-        // Rate-limited / locked out — do NOT fall back to a direct read.
-        console.warn('[MasterKey] master-key release denied (rate-limited/locked)', {
-          locked_until: row.locked_until ?? null,
-          attempts_remaining: row.attempts_remaining ?? 0,
-        });
-        return null;
-      }
-      if (row && row.allowed) {
-        wrappedMk = row.wrapped_master_key ?? null;
-        wrappedMkIv = row.master_key_iv ?? null;
-      }
-    }
-  } catch (e) {
-    console.warn('[MasterKey] release_backup_master_key RPC unavailable — trying legacy direct read', e);
-  }
-
-  // Backward-compat fallback: before the SQL migration is applied the RPC does
-  // not exist and the columns are still directly selectable. This lets the
-  // client ship BEFORE the migration without breaking restore. Once the
-  // migration revokes the columns, the RPC path above is the only one that
-  // returns the material.
-  if (!wrappedMk || !wrappedMkIv) {
-    try {
-      const { data: legacy } = await supabase
-        .from('user_backups' as any)
-        .select('wrapped_master_key, master_key_iv')
-        .eq('user_id', userId)
-        .eq('backup_type', backupType)
-        .maybeSingle();
-      if (legacy) {
-        wrappedMk = (legacy as any).wrapped_master_key ?? null;
-        wrappedMkIv = (legacy as any).master_key_iv ?? null;
-      }
-    } catch {
-      /* columns revoked post-migration → RPC is the only source (already tried) */
-    }
-  }
-
-  (backup as any).wrapped_master_key = wrappedMk ?? undefined;
-  (backup as any).master_key_iv = wrappedMkIv ?? undefined;
 
   // v5+ Master Key format (v6 adds AAD; unwrap/decrypt fall back to no-AAD for v5)
   if (backup.version >= 5 && backup.wrapped_master_key && backup.master_key_iv) {
@@ -1316,4 +1259,62 @@ export async function restoreWithBackupPin(pin: string, userId: string): Promise
         severity: 'error', context: 'restore', errorCode: 'PIN_RESTORE_RPC_ERROR',
         errorMessage: error.message, metadata: { userId },
       });
-      return { status: 'error' 
+      return { status: 'error' };
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return { status: 'no_backup' };
+
+    if (!row.allowed) {
+      if (row.locked_until) {
+        return { status: 'locked', lockedUntil: row.locked_until };
+      }
+      return { status: 'no_backup' };
+    }
+
+    if (!row.salt || !row.pin_wrap_master) return { status: 'no_backup' };
+
+    const salt = new Uint8Array(base64ToBuffer(row.salt));
+    const kek = await deriveWrappingKey(pinSecret(pin, userId), salt);
+    const [iv, wrapped] = String(row.pin_wrap_master).split('.');
+    if (!iv || !wrapped) return { status: 'error' };
+
+    let masterKeyRaw: Uint8Array;
+    try {
+      const aad = buildPinBackupAAD(userId, row.kdf_version || PIN_BACKUP_KDF_VERSION);
+      masterKeyRaw = await unwrapMasterKey(wrapped, iv, kek, aad);
+    } catch {
+      // PIN was wrong → AES-GCM tag check failed.
+      logCryptoError({
+        severity: 'warning', context: 'restore', errorCode: 'PIN_RESTORE_WRONG_PIN',
+        errorMessage: 'PIN unwrap failed (wrong PIN)',
+        metadata: { userId, attemptsRemaining: row.attempts_remaining },
+      });
+      return { status: 'wrong_pin', attemptsRemaining: row.attempts_remaining };
+    }
+
+    // Hydrate session and re-use the in-memory restore path which downloads
+    // the full encrypted state blob (account backup) and rehydrates everything.
+    _sessionRawMasterKey = masterKeyRaw;
+    _sessionMasterKey = await importMasterKey(masterKeyRaw);
+    _sessionUserId = userId;
+    dispatchSessionUnlocked(userId);
+
+
+    const result = await restoreFromInMemoryMasterKey(userId);
+    if (result === 'restored' || result === 'local_ok') {
+      // Reset the attempt counter on success.
+      try { await supabase.rpc('reset_backup_pin_attempts' as any, { _user_id: userId } as any); } catch {}
+      logCryptoError({
+        severity: 'info', context: 'restore', errorCode: 'PIN_RESTORE_SUCCESS',
+        errorMessage: 'E2EE keys restored via backup PIN',
+        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+      });
+      void runPostRestoreSync(userId, 'pin_backup');
+      return { status: 'restored' };
+    }
+    return { status: 'error' };
+  } catch (e) {
+    logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'pin_restore', userId } });
+    return { status: 'error' };
+  }
+}

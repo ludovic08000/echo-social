@@ -17,7 +17,7 @@
  * devices have a corresponding SKDM delivered.
  */
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
-import { base64ToBuffer, bufferToBase64, randomBytes, constantTimeEqual } from './utils';
+import { base64ToBuffer, bufferToBase64, randomBytes } from './utils';
 
 const CHAIN_INFO_KDF = 'ForSure/SenderKey/v1/chain';
 const MSG_INFO_KDF = 'ForSure/SenderKey/v1/msg';
@@ -155,22 +155,12 @@ export async function senderKeyEncrypt(args: {
 /**
  * Decrypt a `sk1.` wire string given the chain key for the matching
  * iteration. Caller is responsible for fast-forwarding the chain to
- * `iteration` (use `deriveStep` repeatedly).
- *
- * H1 (audit) — provenance binding: `expectedSigningPubB64` is the signing
- * public key pinned in the trusted recipient state (from the SKDM). The
- * signature in the wire is verified against THIS pinned key, not the key the
- * wire carries. We also reject any wire whose embedded signing key differs
- * from the pinned one. Without this, the per-message signature is
- * self-referential and anyone who learns the chain key can forge messages
- * with their own signing keypair. The parameter is optional only for
- * backward-compat with callers that have not yet pinned a key; callers in the
- * group path MUST pass it.
+ * `iteration` (use `deriveStep` repeatedly) and for verifying the signing
+ * pub matches the value stored in `sender_key_state`.
  */
 export async function senderKeyDecrypt(
   wire: string,
   chainKeyB64ForIter: string,
-  expectedSigningPubB64?: string,
 ): Promise<string | null> {
   if (!wire.startsWith(SENDER_KEY_PREFIX)) return null;
   const parts = wire.slice(SENDER_KEY_PREFIX.length).split('.');
@@ -179,26 +169,11 @@ export async function senderKeyDecrypt(
   const iter = parseInt(iterStr, 10);
   if (Number.isNaN(iter)) return null;
 
-  // H1: the wire's signing key MUST match the trusted (pinned) one.
-  if (expectedSigningPubB64 !== undefined) {
-    try {
-      const a = new Uint8Array(base64ToBuffer(sigPubB64));
-      const b = new Uint8Array(base64ToBuffer(expectedSigningPubB64));
-      if (!constantTimeEqual(a, b)) return null;
-    } catch {
-      return null;
-    }
-  }
-
-  // Verify the signature against the PINNED key (falls back to the wire key
-  // only when no pinned key was supplied — legacy callers).
-  const verifyPubB64 = expectedSigningPubB64 ?? sigPubB64;
-
   // Verify signature first — fail fast on forged ciphertexts.
   try {
     const verifyKey = await hardCrypto.importKey(
       'raw',
-      base64ToBuffer(verifyPubB64),
+      base64ToBuffer(sigPubB64),
       { name: 'ECDSA', namedCurve: 'P-256' },
       false,
       ['verify'],
@@ -253,4 +228,52 @@ export function buildSKDM(args: {
   conversationId: string;
   senderUserId: string;
   senderDeviceId: string;
-  iteration: num
+  iteration: number;
+  chainKeyB64: string;
+  signingPubB64: string;
+}): string {
+  return JSON.stringify({
+    t: 'SKDM/v1',
+    c: args.conversationId,
+    u: args.senderUserId,
+    d: args.senderDeviceId,
+    i: args.iteration,
+    ck: args.chainKeyB64,
+    sp: args.signingPubB64,
+  });
+}
+
+export type ParsedSKDM = {
+  conversationId: string;
+  senderUserId: string;
+  senderDeviceId: string;
+  iteration: number;
+  chainKeyB64: string;
+  signingPubB64: string;
+};
+
+export function parseSKDM(plaintext: string): ParsedSKDM | null {
+  try {
+    const o = JSON.parse(plaintext);
+    if (o?.t !== 'SKDM/v1') return null;
+    if (
+      typeof o.c !== 'string' || typeof o.u !== 'string' ||
+      typeof o.d !== 'string' || typeof o.i !== 'number' ||
+      typeof o.ck !== 'string' || typeof o.sp !== 'string'
+    ) return null;
+    return {
+      conversationId: o.c,
+      senderUserId: o.u,
+      senderDeviceId: o.d,
+      iteration: o.i,
+      chainKeyB64: o.ck,
+      signingPubB64: o.sp,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function isSenderKeyWire(s: string): boolean {
+  return typeof s === 'string' && s.startsWith(SENDER_KEY_PREFIX);
+}

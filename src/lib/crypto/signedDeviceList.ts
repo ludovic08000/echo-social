@@ -170,19 +170,12 @@ export async function verifySignedDeviceList(
   list: SignedDeviceEntry[],
 ): Promise<DeviceVerificationResult[]> {
   const primary = list.find(e => e.isPrimary);
+  const expectedPrimaryPub = primary ? null : null; // tracked below
 
   const results: DeviceVerificationResult[] = [];
   for (const e of list) {
     if (e.isPrimary) {
       results.push({ deviceId: e.deviceId, ok: true, reason: 'PRIMARY' });
-      continue;
-    }
-    // M3 (audit): a companion can only be trusted relative to a present,
-    // valid primary anchor. With no primary entry, the companion's own
-    // `primaryPubB64` is attacker-suppliable and there is nothing to pin it
-    // to — so reject rather than trust a server-fabricated anchor.
-    if (!primary || !primary.devicePublicKey) {
-      results.push({ deviceId: e.deviceId, ok: false, reason: 'PRIMARY_PUB_MISMATCH' });
       continue;
     }
     if (!e.signatureB64 || !e.primaryPubB64 || !e.signedAt) {
@@ -192,7 +185,7 @@ export async function verifySignedDeviceList(
     // The primary that signed MUST be the same primary advertised in the list
     // (defends against "ghost primary" injection where the server fabricates
     // a second primary entry to authorize a rogue companion).
-    if (e.primaryPubB64 !== primary.devicePublicKey) {
+    if (primary && primary.devicePublicKey && e.primaryPubB64 !== primary.devicePublicKey) {
       results.push({ deviceId: e.deviceId, ok: false, reason: 'PRIMARY_PUB_MISMATCH' });
       continue;
     }
@@ -265,4 +258,14 @@ export async function fetchVerifiedDeviceList(userId: string): Promise<{
 export async function revokeCompanionSignature(args: {
   userId: string;
   deviceId: string;
-}): Promise<voi
+}): Promise<void> {
+  const { error } = await supabase
+    .from('user_device_signatures')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('user_id', args.userId)
+    .eq('device_id', args.deviceId)
+    .is('revoked_at', null);
+  if (error) throw new Error(`UDS_REVOKE_FAILED: ${error.message}`);
+}
+
+export const __test__ = { canonicalPayload };

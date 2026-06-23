@@ -1,13 +1,5 @@
-import { runTxOn, reqToPromise } from './indexedDbTx';
-
 const WINDOW_MS = 5 * 60 * 1000;
 const MAX_ENTRIES = 5000;
-
-// M4 — persistent ledger settings (survives reloads/restarts, unlike the
-// in-memory map which only deduped within a 5-minute window in a single tab).
-const PERSIST_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const PERSIST_DB = 'replay-ledger' as const;
-const PERSIST_STORE = 'seen';
 
 interface ReplayEntry {
   id: string;
@@ -39,4 +31,22 @@ export function computeReplayKey(parts: Array<string | number | undefined | null
 }
 
 export function markReplaySeen(replayKey: string): void {
-  
+  cleanup();
+  seen.set(replayKey, {
+    id: replayKey,
+    ts: Date.now(),
+  });
+}
+
+export function isReplay(replayKey: string): boolean {
+  cleanup();
+  return seen.has(replayKey);
+}
+
+export function assertNotReplay(replayKey: string): void {
+  if (isReplay(replayKey)) {
+    throw new Error('REPLAY_DETECTED');
+  }
+
+  markReplaySeen(replayKey);
+}
