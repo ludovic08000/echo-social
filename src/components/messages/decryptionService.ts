@@ -212,7 +212,7 @@ export async function resolvePlaintext(opts: {
   isMe?: boolean;
   decrypt: (body: string) => Promise<DecryptResult>;
 }): Promise<DecryptionOutcome | null> {
-  const { body, messageId, isMe, decrypt } = opts;
+  const { body, messageId, decrypt } = opts;
 
   // Cleartext shortcut.
   if (!looksEncrypted(body)) return { text: body, mediaKeyB64: null, hidden: false };
@@ -231,13 +231,6 @@ export async function resolvePlaintext(opts: {
   // Negative cache — avoid re-running a full decrypt cascade after a recent
   // failure. Bypassed by the retry event which calls clearNegativeCache().
   if (negCacheHit(key)) return null;
-
-  // Self-messages: only the persisted plaintext store can answer (sender
-  // ratchet state ≠ receiver state). Stay silent on miss.
-  if (isMe) {
-    negCache.set(key, Date.now());
-    return null;
-  }
 
   let promise = inflight.get(key);
   if (!promise) {
@@ -263,6 +256,9 @@ export async function resolvePlaintext(opts: {
       }
 
       // 2) Per-message device-copy fan-out.
+      // Important: do this even for isMe=true. A message sent from Windows by
+      // the same account can be received on iOS as a self-message, but the real
+      // plaintext still lives in that iOS device copy.
       if (messageId) {
         senderId = await getSenderIdBatched(messageId);
         if (senderId) {
