@@ -26,8 +26,6 @@ export type DBKey =
   | 'skipped-wrap'           // forsure-crypto-skipped-wrap
   | 'pin-wrap'               // forsure-pin-wrap
   | 'plaintext-cache'        // forsure-plaintext-cache
-  | 'sk-state'               // forsure-sender-key-state (C1: secrets local-only)
-  | 'replay-ledger'          // forsure-replay-ledger (M4: persistent anti-replay)
   | 'msg-queue';             // forsure-msg-queue
 
 interface DBSpec {
@@ -87,19 +85,6 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
       { name: 'messages', keyPath: 'id' },
       { name: 'device-keys', keyPath: 'id' },
     ],
-  },
-  'sk-state': {
-    // C1 — Sender Key secret state (chain key + owner signing private key)
-    // lives ONLY on-device. The server never receives this material.
-    name: 'forsure-sender-key-state',
-    version: 1,
-    stores: [{ name: 'sk-states', keyPath: 'id' }],
-  },
-  'replay-ledger': {
-    // M4 — persistent anti-replay ledger (survives reloads/restarts).
-    name: 'forsure-replay-ledger',
-    version: 1,
-    stores: [{ name: 'seen', keyPath: 'id' }],
   },
   'msg-queue': {
     name: 'forsure-msg-queue',
@@ -162,3 +147,31 @@ export function openDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
       const db = req.result;
       const closeForUpgrade = db.close.bind(db);
       try {
+        Object.defineProperty(db, 'close', {
+          configurable: true,
+          value: () => console.warn(`[E2EE][IDB:${spec.name}] ignored close()`),
+        });
+      } catch {}
+      db.onversionchange = () => {
+        closeForUpgrade();
+        reset(key);
+      };
+      db.onclose = () => reset(key);
+      db.onerror = () => reset(key);
+      resolve(db);
+    };
+  });
+
+  promises.set(key, p);
+  return p;
+}
+
+export function reopenDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
+  reset(key);
+  return openDB(key);
+}
+
+/** TEST helper. */
+export function __resetRegistryForTests(): void {
+  promises.clear();
+}

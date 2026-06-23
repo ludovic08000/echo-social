@@ -37,7 +37,10 @@ export function padPlaintext(text: string): Uint8Array {
 /** Reverse `padPlaintext`. Throws on missing 0x80 marker. */
 export function unpadPlaintext(padded: Uint8Array): string {
   let i = padded.length - 1;
-  // NOTE: this scan is NOT constant-time — it stops at the 0x80 marker, so its
-  // duration depends on the trailing-zero count. The padding hides plaintext
-  // length from network observers (its purpose); local timing is not a relevant
-  // channel here si
+  // Constant-time-ish scan: walk from the end, skip trailing zeros.
+  while (i >= 0 && padded[i] === 0x00) i--;
+  if (i < 0 || padded[i] !== 0x80) {
+    throw new Error('PADDING_MARKER_MISSING');
+  }
+  return new TextDecoder().decode(padded.subarray(0, i));
+}

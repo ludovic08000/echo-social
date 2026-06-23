@@ -249,4 +249,32 @@ export async function decryptMessage(
       verified = await hardCrypto.verify(
         sigAlgo as any,
         peerSigningKey,
-        base64ToBu
+        base64ToBuffer(envelope.sig),
+        signatureData,
+      );
+    } catch {
+      verified = false;
+    }
+  }
+
+  return { plaintext, verified, fingerprint: envelope.fp };
+}
+
+/** Quick structural check: does this string look like an encrypted envelope? */
+export function isEncryptedMessage(input: string): boolean {
+  if (typeof input !== 'string' || input.length < 2) return false;
+  if (input[0] !== '{') return false;
+  try {
+    const obj = hardGlobals.jsonParse(input);
+    return (
+      obj &&
+      typeof obj === 'object' &&
+      typeof obj.v === 'number' &&
+      typeof obj.iv === 'string' &&
+      typeof obj.ct === 'string' &&
+      typeof obj.sig === 'string'
+    );
+  } catch {
+    return false;
+  }
+}
