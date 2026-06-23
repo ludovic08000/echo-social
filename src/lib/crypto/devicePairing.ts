@@ -45,11 +45,7 @@ export async function generatePairingQRCode(
     expiresAt: Date.now() + PAIRING_TTL_MS,
   };
 
-  // N2 (audit): do NOT persist the pairing payload — it contains `pairingSecret`
-  // and nothing ever reads it back, so clear-text at rest is pure XSS exposure.
-  // The secret only travels inside the QR (scanned out-of-band). Purge any copy
-  // left by older builds.
-  try { localStorage.removeItem(storageKey(userId)); } catch {}
+  localStorage.setItem(storageKey(userId), JSON.stringify(payload));
 
   return bufferToBase64(new TextEncoder().encode(JSON.stringify(payload)).buffer);
 }

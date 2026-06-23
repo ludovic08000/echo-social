@@ -9,17 +9,13 @@
  *     to a future iteration when messages arrive out of order
  *   • Rotation: regenerate the entire chain when group membership changes
  *     (member-leave / device-add) to preserve forward secrecy
- *   • Persistence: SECRET material on-device (IndexedDB via senderKeyLocalStore),
- *     NON-secret presence rows on the server (`sender_key_state`).
+ *   • Persistence: read/write `sender_key_state` via Supabase
  *
- * ── SECURITY (audit C1) ────────────────────────────────────────────────────
- * The chain key and the owner signing PRIVATE key NEVER touch the server.
- * They are stored only in the local `sk-state` IndexedDB. The server row holds
- * only conversation/sender/device ids, `is_owner`, the PUBLIC signing key and
- * the iteration counter so multi-device ownership + the rotation watcher keep
- * working without ever exposing decryption/forgery material.
+ * The legacy pairwise device ratchet is STILL the transport for the SKDM
+ * itself — see `buildSKDM` / `parseSKDM`. This file does NOT touch the
+ * message send pipeline yet; that wiring is the next step.
  *
- * Spec: https://signal.org/docs/specifications/sender-key/ (C1 hardened)
+ * Spec: https://signal.org/docs/specifications/sender-key/
  */
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -31,12 +27,6 @@ import {
   parseSKDM,
   type ParsedSKDM,
 } from './senderKeys';
-import {
-  getLocalState,
-  putLocalState,
-  findRecipientStateByWire,
-  type LocalSenderKeyState,
-} from './senderKeyLocalStore';
 
 const MAX_FAST_FORWARD = 2000; // DoS ceiling on out-of-order skip
 
@@ -59,83 +49,48 @@ export interface RecipientState {
   signingPubB64: string;
 }
 
-// ─── NON-secret server presence (no chain key, no private key) ───────────────
-
-/**
- * Upsert a NON-secret presence row so cross-device ownership + the rotation
- * watcher keep working. Best-effort: a failure here must never block the
- * local (authoritative) secret state.
- */
-async function upsertServerPresence(args: {
-  conversationId: string;
-  senderUserId: string;
-  senderDeviceId: string;
-  iteration: number;
-  signingPubB64: string;
-  isOwner: boolean;
-}): Promise<void> {
-  try {
-    const { error } = await supabase
-      .from('sender_key_state')
-      .upsert({
-        conversation_id: args.conversationId,
-        sender_user_id: args.senderUserId,
-        sender_device_id: args.senderDeviceId,
-        iteration: args.iteration,
-        signing_pub_b64: args.signingPubB64,
-        is_owner: args.isOwner,
-      } as any, { onConflict: 'conversation_id,sender_user_id,sender_device_id' });
-    if (error) console.warn('[SK_STATE] presence upsert failed (non-fatal):', error.message);
-  } catch (e) {
-    console.warn('[SK_STATE] presence upsert threw (non-fatal):', e);
-  }
-}
-
-// ─── Local secret persistence ────────────────────────────────────────────────
+// ─── DB persistence ──────────────────────────────────────────────────────
 
 async function loadOwnerState(
   conversationId: string,
   senderUserId: string,
   senderDeviceId: string,
 ): Promise<OwnerState | null> {
-  const s = await getLocalState(conversationId, senderUserId, senderDeviceId, true);
-  if (!s || !s.signingPrivJwk) return null;
+  const { data, error } = await supabase
+    .from('sender_key_state')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .eq('sender_user_id', senderUserId)
+    .eq('sender_device_id', senderDeviceId)
+    .eq('is_owner', true)
+    .maybeSingle();
+  if (error || !data) return null;
+  if (!data.signing_priv_jwk) return null;
   return {
-    conversationId: s.conversationId,
-    senderUserId: s.senderUserId,
-    senderDeviceId: s.senderDeviceId,
-    iteration: s.iteration,
-    chainKeyB64: s.chainKeyB64,
-    signingPubB64: s.signingPubB64,
-    signingPrivJwk: s.signingPrivJwk,
+    conversationId,
+    senderUserId,
+    senderDeviceId,
+    iteration: data.iteration,
+    chainKeyB64: data.chain_key_b64,
+    signingPubB64: data.signing_pub_b64,
+    signingPrivJwk: data.signing_priv_jwk as JsonWebKey,
   };
 }
 
-async function saveOwnerState(s: OwnerState, createdAt?: number): Promise<void> {
-  const now = Date.now();
-  const existing = await getLocalState(s.conversationId, s.senderUserId, s.senderDeviceId, true);
-  const local: LocalSenderKeyState = {
-    id: `${s.conversationId}::${s.senderUserId}::${s.senderDeviceId}::o`,
-    conversationId: s.conversationId,
-    senderUserId: s.senderUserId,
-    senderDeviceId: s.senderDeviceId,
-    isOwner: true,
-    iteration: s.iteration,
-    chainKeyB64: s.chainKeyB64,
-    signingPubB64: s.signingPubB64,
-    signingPrivJwk: s.signingPrivJwk,
-    createdAt: createdAt ?? existing?.createdAt ?? now,
-    updatedAt: now,
-  };
-  await putLocalState(local);
-  await upsertServerPresence({
-    conversationId: s.conversationId,
-    senderUserId: s.senderUserId,
-    senderDeviceId: s.senderDeviceId,
-    iteration: s.iteration,
-    signingPubB64: s.signingPubB64,
-    isOwner: true,
-  });
+async function saveOwnerState(s: OwnerState): Promise<void> {
+  const { error } = await supabase
+    .from('sender_key_state')
+    .upsert({
+      conversation_id: s.conversationId,
+      sender_user_id: s.senderUserId,
+      sender_device_id: s.senderDeviceId,
+      chain_key_b64: s.chainKeyB64,
+      iteration: s.iteration,
+      signing_pub_b64: s.signingPubB64,
+      signing_priv_jwk: s.signingPrivJwk as any,
+      is_owner: true,
+    }, { onConflict: 'conversation_id,sender_user_id,sender_device_id' });
+  if (error) throw new Error(`SK_PERSIST_OWNER_FAILED: ${error.message}`);
 }
 
 async function loadRecipientState(
@@ -143,35 +98,39 @@ async function loadRecipientState(
   senderUserId: string,
   senderDeviceId: string,
 ): Promise<RecipientState | null> {
-  const s = await getLocalState(conversationId, senderUserId, senderDeviceId, false);
-  if (!s) return null;
+  const { data, error } = await supabase
+    .from('sender_key_state')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .eq('sender_user_id', senderUserId)
+    .eq('sender_device_id', senderDeviceId)
+    .eq('is_owner', false)
+    .maybeSingle();
+  if (error || !data) return null;
   return {
-    conversationId: s.conversationId,
-    senderUserId: s.senderUserId,
-    senderDeviceId: s.senderDeviceId,
-    iteration: s.iteration,
-    chainKeyB64: s.chainKeyB64,
-    signingPubB64: s.signingPubB64,
+    conversationId,
+    senderUserId,
+    senderDeviceId,
+    iteration: data.iteration,
+    chainKeyB64: data.chain_key_b64,
+    signingPubB64: data.signing_pub_b64,
   };
 }
 
 async function saveRecipientState(s: RecipientState): Promise<void> {
-  const now = Date.now();
-  const existing = await getLocalState(s.conversationId, s.senderUserId, s.senderDeviceId, false);
-  const local: LocalSenderKeyState = {
-    id: `${s.conversationId}::${s.senderUserId}::${s.senderDeviceId}::r`,
-    conversationId: s.conversationId,
-    senderUserId: s.senderUserId,
-    senderDeviceId: s.senderDeviceId,
-    isOwner: false,
-    iteration: s.iteration,
-    chainKeyB64: s.chainKeyB64,
-    signingPubB64: s.signingPubB64,
-    signingPrivJwk: null,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  };
-  await putLocalState(local);
+  const { error } = await supabase
+    .from('sender_key_state')
+    .upsert({
+      conversation_id: s.conversationId,
+      sender_user_id: s.senderUserId,
+      sender_device_id: s.senderDeviceId,
+      chain_key_b64: s.chainKeyB64,
+      iteration: s.iteration,
+      signing_pub_b64: s.signingPubB64,
+      signing_priv_jwk: null,
+      is_owner: false,
+    }, { onConflict: 'conversation_id,sender_user_id,sender_device_id' });
+  if (error) throw new Error(`SK_PERSIST_RECIPIENT_FAILED: ${error.message}`);
 }
 
 // ─── Owner side (sender) ─────────────────────────────────────────────────
@@ -200,7 +159,7 @@ export async function ensureOwnerSession(
     signingPubB64: fresh.signingPubB64,
     signingPrivJwk: fresh.signingPrivJwk,
   };
-  if (opts.persist !== false) await saveOwnerState(state, Date.now());
+  if (opts.persist !== false) await saveOwnerState(state);
   return state;
 }
 
@@ -268,7 +227,7 @@ export async function rotateOwnerSession(
     signingPubB64: fresh.signingPubB64,
     signingPrivJwk: fresh.signingPrivJwk,
   };
-  if (opts.persist !== false) await saveOwnerState(state, Date.now());
+  if (opts.persist !== false) await saveOwnerState(state);
   return state;
 }
 
@@ -279,28 +238,39 @@ export async function rotateOwnerSession(
 //   • iteration >= MAX_MESSAGES_PER_CHAIN (default 1000), or
 //   • the chain has been alive for AGE_LIMIT_MS (default 7 days).
 //
-// L5 fix: the chain birth time is read from the PERSISTED local state
-// (`createdAt`) instead of an in-memory map, so age-based rotation survives
-// reloads instead of resetting every session.
+// Callers wrap their send like:
+//
+//   let owner = await ensureOwnerSession(conv, uid, did);
+//   const rotated = await maybeAutoRotate(owner);
+//   if (rotated) {
+//     owner = rotated.state;
+//     await fanoutSKDM(snapshotForDistribution(owner));
+//   }
+//   const out = await encryptForGroup(owner, plaintext);
 
 const MAX_MESSAGES_PER_CHAIN = 1000;
 const CHAIN_AGE_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
+
+const _ownerCreatedAt = new Map<string, number>();
+function chainKey(s: { conversationId: string; senderDeviceId: string }): string {
+  return `${s.conversationId}::${s.senderDeviceId}`;
+}
 
 export async function maybeAutoRotate(
   s: OwnerState,
   now: number = Date.now(),
 ): Promise<{ state: OwnerState; reason: 'count' | 'age' } | null> {
+  const k = chainKey(s);
+  const createdAt = _ownerCreatedAt.get(k) ?? now;
+  if (!_ownerCreatedAt.has(k)) _ownerCreatedAt.set(k, createdAt);
+
   let reason: 'count' | 'age' | null = null;
-  if (s.iteration >= MAX_MESSAGES_PER_CHAIN) {
-    reason = 'count';
-  } else {
-    const local = await getLocalState(s.conversationId, s.senderUserId, s.senderDeviceId, true);
-    const createdAt = local?.createdAt ?? now;
-    if (now - createdAt >= CHAIN_AGE_LIMIT_MS) reason = 'age';
-  }
+  if (s.iteration >= MAX_MESSAGES_PER_CHAIN) reason = 'count';
+  else if (now - createdAt >= CHAIN_AGE_LIMIT_MS) reason = 'age';
   if (!reason) return null;
 
   const next = await rotateOwnerSession(s.conversationId, s.senderUserId, s.senderDeviceId);
+  _ownerCreatedAt.set(k, now);
   return { state: next, reason };
 }
 
@@ -308,40 +278,15 @@ export async function maybeAutoRotate(
 
 /**
  * Install (or replace) a recipient state from an SKDM that arrived via the
- * pairwise ratchet.
- *
- * H2 fix: the SKDM plaintext carries the claimed sender (`u`/`d`). Those
- * fields are now bound to the AUTHENTICATED pairwise sender — the caller
- * passes the sender identity proven by the pairwise channel that delivered
- * the SKDM. A mismatch is rejected, closing the group-impersonation hole
- * where a member could distribute an SKDM under another member's identity.
+ * pairwise ratchet. If a newer SKDM (higher iteration baseline) supersedes
+ * the previous one — typical after a rotation — we adopt it as-is.
  */
 export async function installSKDM(
   skdmPlaintext: string,
-  opts: {
-    persist?: boolean;
-    expectedSender?: { senderUserId: string; senderDeviceId: string };
-  } = { persist: true },
+  opts: { persist?: boolean } = { persist: true },
 ): Promise<RecipientState | null> {
   const parsed: ParsedSKDM | null = parseSKDM(skdmPlaintext);
   if (!parsed) return null;
-
-  const expectedSender = opts.expectedSender;
-  if (expectedSender) {
-    if (
-      parsed.senderUserId !== expectedSender.senderUserId ||
-      parsed.senderDeviceId !== expectedSender.senderDeviceId
-    ) {
-      console.warn('[SK_SESSION] SKDM sender mismatch — rejecting (impersonation guard)', {
-        claimed_user: parsed.senderUserId,
-        claimed_device: parsed.senderDeviceId,
-        authenticated_user: expectedSender.senderUserId,
-        authenticated_device: expectedSender.senderDeviceId,
-      });
-      return null;
-    }
-  }
-
   const state: RecipientState = {
     conversationId: parsed.conversationId,
     senderUserId: parsed.senderUserId,
@@ -362,12 +307,6 @@ export async function installSKDM(
  * Out-of-order BEFORE the current iteration is rejected (sender keys do
  * not cache historical message keys — Signal recommends per-recipient
  * pairwise fallback for that edge case).
- *
- * H1 fix: the per-message signature is verified against the signing public
- * key pinned in the installed recipient state (`state.signingPubB64`), NOT
- * the key embedded in the wire. This binds provenance to the trusted SKDM
- * and prevents anyone who learns the chain key (e.g. via a server breach)
- * from forging messages with their own freshly-generated signing key.
  */
 export async function decryptFromGroup(
   state: RecipientState,
@@ -392,10 +331,9 @@ export async function decryptFromGroup(
     chain = step.nextChainB64;
   }
 
-  // H1: pin the trusted signing public key from recipient state.
-  const plaintext = await senderKeyDecrypt(wire, chain, state.signingPubB64);
+  const plaintext = await senderKeyDecrypt(wire, chain);
   if (plaintext === null) {
-    // Auth failed (signature/key mismatch or AEAD) — DO NOT advance state
+    // Auth failed — DO NOT advance state
     return { plaintext: null, nextState: state };
   }
 
@@ -413,7 +351,7 @@ export async function decryptFromGroup(
 /**
  * Look up the recipient state matching a `sk1.` wire string. The wire
  * encodes `(conversationId, senderDeviceId)` but NOT the sender user id —
- * so we resolve from the local recipient store.
+ * so we resolve the user id from the persisted `sender_key_state` row.
  *
  * Returns null if no recipient state exists yet (caller should keep the
  * message buffered until the matching SKDM is installed).
@@ -423,15 +361,21 @@ export async function loadRecipientStateForWire(wire: string): Promise<Recipient
   const parts = wire.slice(4).split('.');
   if (parts.length !== 7) return null;
   const [conversationId, senderDeviceId] = parts;
-  const local = await findRecipientStateByWire(conversationId, senderDeviceId);
-  if (!local) return null;
+  const { data, error } = await supabase
+    .from('sender_key_state')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .eq('sender_device_id', senderDeviceId)
+    .eq('is_owner', false)
+    .maybeSingle();
+  if (error || !data) return null;
   return {
-    conversationId: local.conversationId,
-    senderUserId: local.senderUserId,
-    senderDeviceId: local.senderDeviceId,
-    iteration: local.iteration,
-    chainKeyB64: local.chainKeyB64,
-    signingPubB64: local.signingPubB64,
+    conversationId,
+    senderUserId: data.sender_user_id,
+    senderDeviceId,
+    iteration: data.iteration,
+    chainKeyB64: data.chain_key_b64,
+    signingPubB64: data.signing_pub_b64,
   };
 }
 

@@ -16,20 +16,28 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { rotateOwnerSession } from './senderKeySession';
-import { getLocalState, listOwnerStatesForDevice } from './senderKeyLocalStore';
 import { invalidateSenderKeysFlag } from './senderKeyOutbound';
 
 const activeWatchers = new Map<string, { refs: number; unsubscribe: () => void }>();
 
-// C1: ownership is determined from the LOCAL secret state, never the server
-// (the server no longer holds chain keys / private keys).
 async function ownsChain(
   conversationId: string,
   senderUserId: string,
   senderDeviceId: string,
 ): Promise<boolean> {
-  const local = await getLocalState(conversationId, senderUserId, senderDeviceId, true);
-  return !!local;
+  try {
+    const { data } = await supabase
+      .from('sender_key_state')
+      .select('conversation_id')
+      .eq('conversation_id', conversationId)
+      .eq('sender_user_id', senderUserId)
+      .eq('sender_device_id', senderDeviceId)
+      .eq('is_owner', true)
+      .maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
 }
 
 async function handleMembershipChange(
@@ -63,13 +71,17 @@ async function rotateAllOwnedChains(userId: string): Promise<void> {
   if (isDeviceIdTemporary()) return;
   const senderDeviceId = getCurrentDeviceId();
   try {
-    // C1: enumerate owned chains from the local store (server no longer holds them).
-    const owned = await listOwnerStatesForDevice(userId, senderDeviceId);
-    if (!owned.length) return;
+    const { data, error } = await supabase
+      .from('sender_key_state')
+      .select('conversation_id')
+      .eq('sender_user_id', userId)
+      .eq('sender_device_id', senderDeviceId)
+      .eq('is_owner', true);
+    if (error || !data?.length) return;
 
     let rotated = 0;
-    for (const row of owned) {
-      const convId = row.conversationId;
+    for (const row of data) {
+      const convId = (row as any).conversation_id as string;
       if (!convId) continue;
       try {
         await rotateOwnerSession(convId, userId, senderDeviceId);
@@ -79,7 +91,7 @@ async function rotateAllOwnedChains(userId: string): Promise<void> {
         console.warn('[SK_ROTATE] post-restore rotation failed', { convId, e });
       }
     }
-    console.info('[SK_ROTATE] post-restore rotated chains', { rotated, total: owned.length });
+    console.info('[SK_ROTATE] post-restore rotated chains', { rotated, total: data.length });
   } catch (e) {
     console.warn('[SK_ROTATE] post-restore enumeration failed', e);
   }

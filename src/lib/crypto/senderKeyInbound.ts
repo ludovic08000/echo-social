@@ -65,19 +65,9 @@ async function processRow(row: SkdmRow, recipientUserId: string): Promise<boolea
 
     // Defensive: a malformed payload shouldn't be marked delivered. installSKDM
     // returns null on parse failure (not an SKDM/v1 envelope).
-    //
-    // H2 (audit): bind the SKDM's claimed sender to the AUTHENTICATED pairwise
-    // sender that delivered it. The row's sender_user_id/sender_device_id come
-    // from the authenticated pairwise channel; installSKDM rejects any SKDM
-    // whose embedded (u/d) disagree, blocking group-sender impersonation.
-    const installed = await installSKDM(plaintext, {
-      expectedSender: {
-        senderUserId: row.sender_user_id,
-        senderDeviceId: row.sender_device_id,
-      },
-    });
+    const installed = await installSKDM(plaintext);
     if (!installed) {
-      console.warn('[SK_INBOUND] payload decrypted but not an SKDM / sender mismatch — skipping', { id: row.id });
+      console.warn('[SK_INBOUND] payload decrypted but not an SKDM — skipping', { id: row.id });
       return false;
     }
 

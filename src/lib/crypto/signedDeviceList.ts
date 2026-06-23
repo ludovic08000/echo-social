@@ -170,6 +170,7 @@ export async function verifySignedDeviceList(
   list: SignedDeviceEntry[],
 ): Promise<DeviceVerificationResult[]> {
   const primary = list.find(e => e.isPrimary);
+  const expectedPrimaryPub = primary ? null : null; // tracked below
 
   const results: DeviceVerificationResult[] = [];
   for (const e of list) {
@@ -184,13 +185,6 @@ export async function verifySignedDeviceList(
     // The primary that signed MUST be the same primary advertised in the list
     // (defends against "ghost primary" injection where the server fabricates
     // a second primary entry to authorize a rogue companion).
-    //
-    // NOTE (audit M3): when NO primary entry is present we intentionally fall
-    // back to verifying the companion against its own advertised primaryPubB64.
-    // Rejecting outright broke messaging for accounts whose signed device list
-    // has no is_primary entry (the server RPC does not always mark one). A
-    // stricter fix must pin the primary to the account identity key without
-    // depending on the is_primary flag — tracked as follow-up.
     if (primary && primary.devicePublicKey && e.primaryPubB64 !== primary.devicePublicKey) {
       results.push({ deviceId: e.deviceId, ok: false, reason: 'PRIMARY_PUB_MISMATCH' });
       continue;

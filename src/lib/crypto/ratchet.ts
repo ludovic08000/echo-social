@@ -261,39 +261,6 @@ function buildAssociatedDataV4(
   return out;
 }
 
-// ─── Signature payload (M2: binds metadata) ───
-//
-// Canonical bytes the Ed25519 signature covers. `extended=true` includes the
-// previously-unauthenticated `v`/`kem`/`pad` fields. Verification tries the
-// extended form first and falls back to the legacy form so messages signed
-// before this fix still verify — without weakening new messages (a tampered
-// new message fails BOTH forms because its signature was made over extended
-// bytes that no longer match).
-function buildRatchetSigData(args: {
-  header: RatchetHeader;
-  iv: Uint8Array;
-  ct: ArrayBuffer;
-  ts: number;
-  v?: number;
-  kem?: string;
-  pad?: 0 | 1;
-  extended?: boolean;
-}): Uint8Array {
-  const base = [
-    ...new Uint8Array(encodeString(hardGlobals.jsonStringify(args.header))),
-    ...args.iv,
-    ...new Uint8Array(args.ct),
-    ...new Uint8Array(encodeString(`${args.ts}`)),
-  ];
-  const extended = args.extended ?? true;
-  if (extended) {
-    base.push(
-      ...new Uint8Array(encodeString(`|v|${args.v ?? ''}|kem|${args.kem ?? ''}|pad|${args.pad ?? 0}`)),
-    );
-  }
-  return new Uint8Array(base);
-}
-
 // ─── Encrypt ───
 
 export async function ratchetEncrypt(
@@ -343,19 +310,13 @@ export async function ratchetEncrypt(
 
   const ts = Date.now();
 
-  // M2 (audit): the signature now also covers the unauthenticated metadata
-  // fields `pad`, `v` and `kem`. Previously only header||iv||ct||ts was signed,
-  // so a network attacker could flip `pad` (corrupting the rendered plaintext)
-  // or `v`/`kem` while keeping a valid signature. Binding them closes that gap.
-  const sigData = buildRatchetSigData({
-    header,
-    iv,
-    ct: ct as ArrayBuffer,
-    ts,
-    v: PROTOCOL_VERSION,
-    kem: CLASSICAL_KEM_ID,
-    pad: 1,
-  });
+  // Sign: header || iv || ciphertext || ts
+  const sigData = new Uint8Array([
+    ...new Uint8Array(encodeString(hardGlobals.jsonStringify(header))),
+    ...iv,
+    ...new Uint8Array(ct as ArrayBuffer),
+    ...new Uint8Array(encodeString(`${ts}`)),
+  ]);
 
   const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
 
@@ -525,24 +486,11 @@ async function decryptWithKey(
   //   v2 → no AAD                                  (legacy, migration)
   // We try in declared order and fall back on AES-GCM tag mismatch so that
   // mixed-version peer states migrate transparently without ciphertext loss.
-  // M1 (audit): NO AAD downgrade for v4. A v4 envelope MUST validate under the
-  // header-bound AAD; we no longer silently retry without AAD (which would
-  // strip the v4/v3 binding the sender promised). Legacy v3/v2 still get their
-  // historical fallbacks so old ciphertexts keep decrypting.
   const v = envelope.v ?? 2;
   const candidates: (Uint8Array | null)[] = [];
-  if (v >= 4) {
-    const ad4 = state ? buildAssociatedDataV4(state, envelope.hdr) : null;
-    if (ad4) candidates.push(ad4); // no null fallback → no downgrade
-  } else if (v === 3) {
-    if (state) {
-      const ad3 = buildAssociatedData(state);
-      if (ad3) candidates.push(ad3);
-    }
-    candidates.push(null); // legacy migration
-  } else {
-    candidates.push(null); // v2 legacy
-  }
+  if (v >= 4 && state) candidates.push(buildAssociatedDataV4(state, envelope.hdr));
+  if (v >= 3 && state) candidates.push(buildAssociatedData(state));
+  candidates.push(null); // legacy v2 / last-resort
 
   let ptBuf: ArrayBuffer | null = null;
   let lastErr: unknown = null;
@@ -579,20 +527,15 @@ async function decryptWithKey(
   if (peerSigningKeyBase64) {
     try {
       const sigKey = await importOkpPublicKeyFromBase64(peerSigningKeyBase64, 'Ed25519', ['verify'], true);
-      const sigBuf = base64ToBuffer(envelope.sig);
-      // M2: try the metadata-bound (extended) form first, then the legacy form
-      // so messages signed before this fix still verify.
-      const extendedSig = buildRatchetSigData({
-        header: envelope.hdr, iv: new Uint8Array(iv), ct, ts: envelope.ts,
-        v: envelope.v, kem: envelope.kem, pad: envelope.pad ?? 0, extended: true,
-      });
-      verified = await hardCrypto.verify('Ed25519' as any, sigKey, sigBuf, extendedSig);
-      if (!verified) {
-        const legacySig = buildRatchetSigData({
-          header: envelope.hdr, iv: new Uint8Array(iv), ct, ts: envelope.ts, extended: false,
-        });
-        verified = await hardCrypto.verify('Ed25519' as any, sigKey, sigBuf, legacySig);
-      }
+      const sigData = new Uint8Array([
+        ...new Uint8Array(encodeString(hardGlobals.jsonStringify(envelope.hdr))),
+        ...new Uint8Array(iv),
+        ...new Uint8Array(ct),
+        ...new Uint8Array(encodeString(`${envelope.ts}`)),
+      ]);
+      verified = await hardCrypto.verify(
+        'Ed25519' as any, sigKey, base64ToBuffer(envelope.sig), sigData,
+      );
     } catch {
       verified = false;
     }

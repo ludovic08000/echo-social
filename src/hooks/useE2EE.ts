@@ -255,16 +255,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const initRef = useRef(false);
   const legacySessionReadyRef = useRef(false);
   const peerHasRespondedRef = useRef(false);
-  // Mirror of state.fingerprintChanged that updates synchronously, so the
-  // encrypt path isn't blocked by a stale React closure right after the user
-  // acknowledges a key change (fixes "send still blocked after pressing OK").
-  const fingerprintChangedRef = useRef(false);
 
   const isZeus = peerUserId === ZEUS_ID;
-
-  useEffect(() => {
-    fingerprintChangedRef.current = state.fingerprintChanged;
-  }, [state.fingerprintChanged]);
 
   // Initialize identity keys + publish
   const initKeys = useCallback(async () => {
@@ -782,7 +774,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           } catch {}
         }
 
-        fingerprintChangedRef.current = true;
         setState(s => ({
           ...s,
           peerFingerprint: freshPeerKey.fingerprint,
@@ -999,7 +990,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
     // Fingerprint changes are a safety stop: no outbound plaintext or
     // ciphertext is produced until the user explicitly trusts the new key.
-    if (fingerprintChangedRef.current) {
+    if (state.fingerprintChanged) {
       throw new EncryptionError('Cle de securite du contact modifiee - verification obligatoire avant envoi');
     }
 
@@ -1426,9 +1417,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
   /** Acknowledge fingerprint change — user explicitly trusts new key */
   const acknowledgeFingerprint = useCallback(async () => {
-    // Unblock the encrypt gate immediately so a retry right after the user
-    // trusts the new key is not rejected by a stale flag (race-free).
-    fingerprintChangedRef.current = false;
     if (peerKeyRef.current && peerUserId) {
       saveKnownFingerprint(peerUserId, peerKeyRef.current.fingerprint);
       await saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint, true);
@@ -1445,7 +1433,6 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       // Legacy session purge/re-establish removed — Double Ratchet only.
     }
-    fingerprintChangedRef.current = false;
     setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false, initError: null }));
   }, [peerUserId, conversationId]);
 

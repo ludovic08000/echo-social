@@ -78,50 +78,49 @@ async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
   return `cipher:${bufferToHex(digest)}`;
 }
 
-const LEGACY_SESSION_MIRROR_KEY = 'forsure-pt-mirror-v1';
+const SESSION_MIRROR_KEY = 'forsure-pt-mirror-v1';
 const SESSION_MIRROR_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_MIRROR_CAP = 200;
 const DEFAULT_BACKUP_EXPORT_CAP = 500;
 
 interface SessionMirrorEntry { p: string; t: number }
 
-// N1 (audit): the low-latency mirror is kept ONLY in memory (RAM), never in
-// Web Storage. Previously decrypted plaintext was written to sessionStorage in
-// clear, which an XSS/extension could read — defeating the encrypted-at-rest
-// IndexedDB cache. The RAM map is wiped on reload/tab close.
-const _memMirror = new Map<string, SessionMirrorEntry>();
-
-// One-time purge of any plaintext left in sessionStorage by older builds.
-try {
-  if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(LEGACY_SESSION_MIRROR_KEY);
-} catch {}
-
-function pruneMemMirror() {
-  const cutoff = Date.now() - SESSION_MIRROR_TTL_MS;
-  for (const [k, v] of _memMirror) {
-    if (v.t <= cutoff) _memMirror.delete(k);
+function readSessionMirror(): Record<string, SessionMirrorEntry> {
+  try {
+    if (typeof sessionStorage === 'undefined') return {};
+    const raw = sessionStorage.getItem(SESSION_MIRROR_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, SessionMirrorEntry>;
+  } catch {
+    return {};
   }
-  if (_memMirror.size > SESSION_MIRROR_CAP) {
-    const ordered = [..._memMirror.entries()].sort(([, a], [, b]) => a.t - b.t);
-    const overflow = _memMirror.size - SESSION_MIRROR_CAP;
-    for (let i = 0; i < overflow; i++) _memMirror.delete(ordered[i][0]);
-  }
+}
+
+function writeSessionMirror(map: Record<string, SessionMirrorEntry>) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    const cutoff = Date.now() - SESSION_MIRROR_TTL_MS;
+    const entries = Object.entries(map)
+      .filter(([, value]) => value.t > cutoff)
+      .sort(([, a], [, b]) => b.t - a.t)
+      .slice(0, SESSION_MIRROR_CAP);
+    sessionStorage.setItem(SESSION_MIRROR_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {}
 }
 
 function mirrorSet(id: string, plaintext: string) {
-  _memMirror.set(id, { p: plaintext, t: Date.now() });
-  pruneMemMirror();
+  const map = readSessionMirror();
+  map[id] = { p: plaintext, t: Date.now() };
+  writeSessionMirror(map);
 }
 
 function mirrorGet(id: string): string | null {
-  const entry = _memMirror.get(id);
+  const map = readSessionMirror();
+  const entry = map[id];
   if (!entry) return null;
-  if (Date.now() - entry.t > SESSION_MIRROR_TTL_MS) { _memMirror.delete(id); return null; }
+  if (Date.now() - entry.t > SESSION_MIRROR_TTL_MS) return null;
   return entry.p;
 }
-
-function mirrorDelete(id: string) { _memMirror.delete(id); }
-function mirrorClear() { _memMirror.clear(); }
 
 async function saveEntry(id: string, plaintext: string): Promise<void> {
   if (!id || !plaintext) return;
@@ -238,7 +237,11 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
 
 export async function removePlaintext(messageId: string): Promise<void> {
   try {
-    mirrorDelete(messageId);
+    const map = readSessionMirror();
+    if (map[messageId]) {
+      delete map[messageId];
+      writeSessionMirror(map);
+    }
 
     await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', (tx) => {
       tx.objectStore(STORE_MESSAGES).delete(messageId);
@@ -249,9 +252,8 @@ export async function removePlaintext(messageId: string): Promise<void> {
 }
 
 export async function wipePlaintextStore(): Promise<void> {
-  mirrorClear();
   try {
-    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(LEGACY_SESSION_MIRROR_KEY);
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_MIRROR_KEY);
   } catch {}
 
   try {

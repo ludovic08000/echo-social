@@ -602,10 +602,6 @@ async function downloadAndRestore(
   backupType: 'account' | 'recovery',
   wrappingSecret: string,
 ): Promise<{ masterKeyRaw: Uint8Array; masterKey: CryptoKey } | null> {
-  // NOTE (M5 reverted): the rate-limited release RPC locked legitimate users
-  // out of their own key backup because restore runs on every startup/refresh.
-  // Reading the wrapped master key directly here; offline-brute-force hardening
-  // for the password path must be redesigned off the hot restore path.
   const { data } = await supabase
     .from('user_backups' as any)
     .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, version, backup_type')

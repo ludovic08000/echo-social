@@ -103,25 +103,8 @@ export async function establishSession(
   return session;
 }
 
-// M6 (audit) — context AAD for the static (non-ratchet) path.
-function staticEnvelopeAAD(senderFingerprint: string, sequenceNumber: number): Uint8Array {
-  return new Uint8Array(
-    encodeString(`forsure-static-ad-v${PROTOCOL_VERSION}|${senderFingerprint}|${sequenceNumber}`),
-  );
-}
-
 // ─── Encrypt ───
 
-/**
- * @deprecated STATIC-KEY PATH — NO FORWARD SECRECY (audit M6).
- *
- * This derives one AES key per conversation from a STATIC X25519 DH and reuses
- * it for every message (only a `seq` counter changes). A future key compromise
- * exposes all past and future messages on this path. Use the Double Ratchet
- * (`ratchet.ts`) for chat messages. This path is retained ONLY for the
- * realtime call-setup handshake (one-shot SRTP secret exchange) and must not
- * be used for durable messaging.
- */
 export async function encryptMessage(
   plaintext: string,
   sessionKey: CryptoKey,
@@ -133,14 +116,9 @@ export async function encryptMessage(
   const timestamp = Date.now();
   const plaintextBuffer = encodeString(plaintext);
 
-  // AES-256-GCM with context AAD binding sender fingerprint + sequence.
+  // AES-256-GCM
   const ciphertext = await hardCrypto.encrypt(
-    {
-      name: AES_ALGO,
-      iv: ivArr as Uint8Array<ArrayBuffer>,
-      tagLength: 128,
-      additionalData: staticEnvelopeAAD(senderFingerprint, sequenceNumber) as Uint8Array<ArrayBuffer>,
-    },
+    { name: AES_ALGO, iv: ivArr as Uint8Array<ArrayBuffer>, tagLength: 128 },
     sessionKey,
     plaintextBuffer,
   );
@@ -200,27 +178,11 @@ export async function decryptMessage(
   const ivBytes = base64ToBuffer(envelope.iv);
   const ciphertext = base64ToBuffer(envelope.ct);
 
-  // M6: prefer the context-AAD form; fall back to no-AAD for legacy envelopes
-  // produced before the binding was added.
-  let plaintextBuffer: ArrayBuffer;
-  try {
-    plaintextBuffer = await hardCrypto.decrypt(
-      {
-        name: AES_ALGO,
-        iv: new Uint8Array(ivBytes),
-        tagLength: 128,
-        additionalData: staticEnvelopeAAD(envelope.fp, envelope.seq) as Uint8Array<ArrayBuffer>,
-      },
-      sessionKey,
-      ciphertext,
-    );
-  } catch {
-    plaintextBuffer = await hardCrypto.decrypt(
-      { name: AES_ALGO, iv: new Uint8Array(ivBytes), tagLength: 128 },
-      sessionKey,
-      ciphertext,
-    );
-  }
+  const plaintextBuffer = await hardCrypto.decrypt(
+    { name: AES_ALGO, iv: new Uint8Array(ivBytes), tagLength: 128 },
+    sessionKey,
+    ciphertext,
+  );
 
   const plaintext = decodeString(plaintextBuffer);
 
