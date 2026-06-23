@@ -35,12 +35,14 @@ function publishSealedSenderTelemetry(params: {
   conversationId: string;
   meta: EpochBoundEnvelope<Record<string, unknown>>;
 }): void {
-  void supabase.from('sealed_sender_events' as any).insert({
-    conversation_id: params.conversationId,
-    anonymous_sender_tag: params.meta.sealedSender?.anonymousSenderTag || 'none',
-    sender_hint_hash: params.meta.senderCertificate?.payload?.fingerprint || null,
-    recipient_user_id: null,
-  }).catch(() => {});
+  void (async () => {
+    await supabase.from('sealed_sender_events' as any).insert({
+      conversation_id: params.conversationId,
+      anonymous_sender_tag: params.meta.sealedSender?.anonymousSenderTag || 'none',
+      sender_hint_hash: params.meta.senderCertificate?.payload?.fingerprint || null,
+      recipient_user_id: null,
+    });
+  })().catch(() => {});
 }
 
 export async function wrapOutboundSecureMessage(params: {
