@@ -5,21 +5,33 @@ import {
   type X3DHPrekeyBundle,
 } from './x3dh';
 
-const DEVICE_BUNDLE_TIMEOUT_MS = 8000;
-const LEGACY_BUNDLE_TIMEOUT_MS = 5000;
+const DEVICE_BUNDLE_TIMEOUT_MS = 2_000;
+const LEGACY_BUNDLE_TIMEOUT_MS = 5_000;
+const MAX_DEVICE_BUNDLE_CANDIDATES = 5;
+const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000;
 
 type ActiveDeviceRow = {
   device_id?: string | null;
+  last_seen_at?: string | null;
 };
 
-function uniqueDeviceIds(rows: ActiveDeviceRow[] | null | undefined): string[] {
+function isFresh(lastSeenAt?: string | null): boolean {
+  if (!lastSeenAt) return true;
+  const ts = new Date(lastSeenAt).getTime();
+  if (!Number.isFinite(ts)) return true;
+  return Date.now() - ts <= MAX_DEVICE_STALE_MS;
+}
+
+function uniqueFreshDeviceIds(rows: ActiveDeviceRow[] | null | undefined): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const row of rows || []) {
+    if (!isFresh(row.last_seen_at)) continue;
     const deviceId = typeof row.device_id === 'string' ? row.device_id.trim() : '';
     if (!deviceId || seen.has(deviceId)) continue;
     seen.add(deviceId);
     out.push(deviceId);
+    if (out.length >= MAX_DEVICE_BUNDLE_CANDIDATES) break;
   }
   return out;
 }
@@ -40,14 +52,15 @@ async function fetchActiveDeviceIds(peerUserId: string): Promise<string[]> {
     .select('device_id,last_seen_at,revoked_at')
     .eq('user_id', peerUserId)
     .is('revoked_at', null)
-    .order('last_seen_at', { ascending: false });
+    .order('last_seen_at', { ascending: false })
+    .limit(MAX_DEVICE_BUNDLE_CANDIDATES);
 
   if (error) {
     console.warn('[X3DH][ROUTE] active device lookup failed', { peerUserId, error: error.message });
     return [];
   }
 
-  return uniqueDeviceIds(data as ActiveDeviceRow[]);
+  return uniqueFreshDeviceIds(data as ActiveDeviceRow[]);
 }
 
 async function notifyDeviceBundleProblem(peerUserId: string, peerDeviceId: string, reason: string): Promise<void> {
