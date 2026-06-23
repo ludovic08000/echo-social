@@ -192,4 +192,22 @@ export function subscribeSenderKeyDistribution(userId: string): () => void {
     refs: 1,
     unsubscribe: () => {
       try {
-        supabase.removeChann
+        supabase.removeChannel(channel);
+      } catch {
+        /* noop */
+      }
+    },
+  };
+  activeSubscriptions.set(key, entry);
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    entry.refs -= 1;
+    if (entry.refs <= 0) {
+      entry.unsubscribe();
+      activeSubscriptions.delete(key);
+    }
+  };
+}
