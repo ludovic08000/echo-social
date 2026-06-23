@@ -5517,6 +5517,8 @@ export type Database = {
         ]
       }
       sender_key_state: {
+        // C1: chain_key_b64 and signing_priv_jwk removed — secret Sender Key
+        // material is stored on-device only (see senderKeyLocalStore.ts).
         Row: {
           conversation_id: string
           created_at: string
@@ -6055,9 +6057,6 @@ export type Database = {
           id: string
           iv: string
           master_key_iv: string | null
-          mk_attempts_count: number
-          mk_attempts_window_start: string | null
-          mk_locked_until: string | null
           salt: string
           user_id: string
           version: number
@@ -6070,9 +6069,6 @@ export type Database = {
           id?: string
           iv: string
           master_key_iv?: string | null
-          mk_attempts_count?: number
-          mk_attempts_window_start?: string | null
-          mk_locked_until?: string | null
           salt: string
           user_id: string
           version?: number
@@ -6085,9 +6081,6 @@ export type Database = {
           id?: string
           iv?: string
           master_key_iv?: string | null
-          mk_attempts_count?: number
-          mk_attempts_window_start?: string | null
-          mk_locked_until?: string | null
           salt?: string
           user_id?: string
           version?: number
@@ -7971,16 +7964,6 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
-      }
-      release_backup_master_key: {
-        Args: { _backup_type: string; _user_id: string }
-        Returns: {
-          allowed: boolean
-          attempts_remaining: number
-          locked_until: string
-          master_key_iv: string
-          wrapped_master_key: string
-        }[]
       }
       release_backup_pin_blob: {
         Args: { _user_id: string }

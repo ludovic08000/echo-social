@@ -194,7 +194,7 @@ export function subscribeSenderKeyDistribution(userId: string): () => void {
       try {
         supabase.removeChannel(channel);
       } catch {
-        /* noop */
+        // ignore — channel may already be torn down on hot reload
       }
     },
   };
@@ -205,9 +205,12 @@ export function subscribeSenderKeyDistribution(userId: string): () => void {
     if (released) return;
     released = true;
     entry.refs -= 1;
-    if (entry.refs <= 0) {
+    if (entry.refs > 0) return;
+    try {
       entry.unsubscribe();
-      activeSubscriptions.delete(key);
+    } catch {
+      // ignore — channel may already be torn down on hot reload
     }
+    activeSubscriptions.delete(key);
   };
 }

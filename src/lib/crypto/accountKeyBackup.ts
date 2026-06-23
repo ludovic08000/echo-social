@@ -602,9 +602,14 @@ async function downloadAndRestore(
   backupType: 'account' | 'recovery',
   wrappingSecret: string,
 ): Promise<{ masterKeyRaw: Uint8Array; masterKey: CryptoKey } | null> {
+  // M5 (audit): the password-wrapped Master Key (wrapped_master_key +
+  // master_key_iv) is brute-forceable offline if read directly with a stolen
+  // session. Those two columns are released ONLY via the rate-limited
+  // `release_backup_master_key` RPC (mirrors the PIN backup design). Everything
+  // else (encrypted_blob/iv/salt/version) stays directly readable.
   const { data } = await supabase
     .from('user_backups' as any)
-    .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, version, backup_type')
+    .select('encrypted_blob, iv, salt, version, backup_type')
     .eq('user_id', userId)
     .eq('backup_type', backupType)
     .maybeSingle();
@@ -612,6 +617,55 @@ async function downloadAndRestore(
   if (!data) return null;
 
   const backup = data as unknown as BackupRow;
+
+  // Fetch the sensitive wrapped-key pair via the gated RPC.
+  let wrappedMk: string | null = null;
+  let wrappedMkIv: string | null = null;
+  try {
+    const { data: rel, error: relErr } = await (supabase as any).rpc('release_backup_master_key', {
+      _user_id: userId,
+      _backup_type: backupType,
+    });
+    if (!relErr && rel) {
+      const row = Array.isArray(rel) ? rel[0] : rel;
+      if (row && row.allowed === false) {
+        console.warn('[MasterKey] master-key release denied (rate-limited/locked)', {
+          locked_until: row.locked_until ?? null,
+          attempts_remaining: row.attempts_remaining ?? 0,
+        });
+        return null;
+      }
+      if (row && row.allowed) {
+        wrappedMk = row.wrapped_master_key ?? null;
+        wrappedMkIv = row.master_key_iv ?? null;
+      }
+    }
+  } catch (e) {
+    console.warn('[MasterKey] release_backup_master_key RPC unavailable — trying legacy direct read', e);
+  }
+
+  // Backward-compat fallback: before the SQL migration is applied the RPC does
+  // not exist and the columns are still directly selectable. This lets the
+  // client ship BEFORE the migration without breaking restore.
+  if (!wrappedMk || !wrappedMkIv) {
+    try {
+      const { data: legacy } = await supabase
+        .from('user_backups' as any)
+        .select('wrapped_master_key, master_key_iv')
+        .eq('user_id', userId)
+        .eq('backup_type', backupType)
+        .maybeSingle();
+      if (legacy) {
+        wrappedMk = (legacy as any).wrapped_master_key ?? null;
+        wrappedMkIv = (legacy as any).master_key_iv ?? null;
+      }
+    } catch {
+      /* columns revoked post-migration → RPC is the only source (already tried) */
+    }
+  }
+
+  (backup as any).wrapped_master_key = wrappedMk ?? undefined;
+  (backup as any).master_key_iv = wrappedMkIv ?? undefined;
 
   // v5+ Master Key format (v6 adds AAD; unwrap/decrypt fall back to no-AAD for v5)
   if (backup.version >= 5 && backup.wrapped_master_key && backup.master_key_iv) {

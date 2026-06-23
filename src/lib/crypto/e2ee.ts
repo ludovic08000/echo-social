@@ -260,21 +260,41 @@ export async function decryptMessage(
   return { plaintext, verified, fingerprint: envelope.fp };
 }
 
-/** Quick structural check: does this string look like an encrypted envelope? */
-export function isEncryptedMessage(input: string): boolean {
-  if (typeof input !== 'string' || input.length < 2) return false;
-  if (input[0] !== '{') return false;
+// ─── Key Rotation ───
+
+export async function needsKeyRotation(conversationId: string): Promise<boolean> {
+  const session = await loadSessionKey(conversationId);
+  if (!session) return true;
+  if (Date.now() - session.createdAt > KEY_ROTATION_INTERVAL_MS) return true;
+  if (session.messageCount >= MAX_MESSAGES_PER_KEY) return true;
+  return false;
+}
+
+export async function rotateSessionKey(
+  myKeys: IdentityKeyPair,
+  peerPublicKeyBase64: string,
+  conversationId: string,
+  peerFingerprint: string,
+): Promise<SessionKey> {
+  await deleteSessionKey(conversationId);
+  return establishSession(myKeys, peerPublicKeyBase64, conversationId, peerFingerprint);
+}
+
+// ─── Helpers ───
+
+export function isEncryptedMessage(body: string): boolean {
+  if (!body.startsWith('{')) return false;
   try {
-    const obj = hardGlobals.jsonParse(input);
-    return (
-      obj &&
-      typeof obj === 'object' &&
-      typeof obj.v === 'number' &&
-      typeof obj.iv === 'string' &&
-      typeof obj.ct === 'string' &&
-      typeof obj.sig === 'string'
-    );
+    const p = hardGlobals.jsonParse(body);
+    return p.v !== undefined && p.kem !== undefined && p.ct !== undefined;
   } catch {
     return false;
   }
 }
+
+// Post-Quantum upgrade path:
+// 1. Generate ML-KEM-768 keypair alongside X25519
+// 2. Encapsulate: (kyberCT, kyberSS) = KEM.encap(peerKyberPK)
+// 3. Combine: HKDF(x25519SS || kyberSS) → AES key
+// 4. Set kem = 'HYBRID-X25519-KYBER768', pq = base64(kyberCT)
+// Both must be broken to compromise a message
