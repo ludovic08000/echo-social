@@ -103,6 +103,17 @@ function shouldFallbackToLegacyEncryptedInsert(error: any): boolean {
   );
 }
 
+function encryptedPayloadKind(payload: string): string {
+  try {
+    const parsed = JSON.parse(payload);
+    return parsed?.encryptionMode || parsed?.fs_secure_pipeline ? String(parsed.encryptionMode || 'secure_pipeline') : 'json_unknown';
+  } catch {
+    if (payload.startsWith('sk1.')) return 'sender_key';
+    if (payload.startsWith('x3dh') || payload.startsWith('x3dh5')) return 'x3dh_wire';
+    return 'opaque';
+  }
+}
+
 export function useMessageQueue(
   conversationId: string,
   encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
@@ -130,8 +141,25 @@ export function useMessageQueue(
 
     const sanitized = isSpecial ? effectiveBody : sanitizeMessageBody(effectiveBody);
     const now = Date.now();
+    const traceStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
     const traceId = safeUUID();
+    const trace = (stage: string, extra: Record<string, unknown> = {}) => {
+      const elapsedMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceStartedAt);
+      console.info('[MSG_TRACE]', {
+        stage,
+        elapsedMs,
+        localId,
+        traceId,
+        conversationId,
+        userId: user.id,
+        encryptionWasRequested: isEncryptionActive && !allowPlaintext,
+        isEncryptionReady,
+        hasMedia: !!imageUrl,
+        ...extra,
+      });
+    };
+    trace('created', { bodyLength: sanitized.length, isSpecial });
 
     const optimistic: OutboundMessage = {
       localId,
@@ -155,11 +183,14 @@ export function useMessageQueue(
       setPendingMessages(prev => prev.map(m => m.localId === localId ? { ...m, ...patch, updatedAt: Date.now() } : m));
     };
 
+    trace('session_check_start');
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session?.user?.id || sess.session.user.id !== user.id) {
+      trace('session_invalid', { liveUserId: sess.session?.user?.id ?? null });
       setPendingMessages(prev => prev.filter(m => m.localId !== localId));
       throw new Error('Session expirée — reconnectez-vous pour envoyer.');
     }
+    trace('session_ok');
 
     let bodyToStore = sanitized;
     let encryptedSuccessfully = false;
@@ -167,12 +198,16 @@ export function useMessageQueue(
 
     if (encryptionWasRequired) {
       try {
+        trace('identity_bootstrap_start');
         await ensureUserE2EEIdentity(user.id);
+        trace('identity_bootstrap_ok');
       } catch (error) {
+        trace('identity_bootstrap_failed_non_fatal', { error: error instanceof Error ? error.message : String(error) });
         console.warn('[MSG_SEND] identity bootstrap failed; encrypted send may be blocked', { localId, conversationId, error });
       }
 
       if (!encrypt) {
+        trace('encrypt_handler_missing');
         updatePending({ status: 'failed_visible', lastError: 'Chiffrement indisponible.' });
         throw new Error('Chiffrement indisponible.');
       }
@@ -181,9 +216,15 @@ export function useMessageQueue(
         if (!isEncryptionReady) {
           console.info('[MSG_SEND] encryption readiness flag false; attempting encrypt anyway', { localId, conversationId });
         }
+        trace('encrypt_start');
         const encryptedPayload = await encrypt(sanitized, localId);
+        trace('encrypt_ok', {
+          payloadLength: encryptedPayload?.length ?? 0,
+          payloadKind: encryptedPayload ? encryptedPayloadKind(encryptedPayload) : 'empty',
+        });
         if (!encryptedPayload || encryptedPayload === sanitized) throw new Error('Chiffrement v5 indisponible.');
         try {
+          trace('secure_wrap_start');
           const identityKeys = await getOrCreateIdentityKeys(user.id);
           const publicBundle = await exportPublicKeyBundle(identityKeys);
           bodyToStore = await wrapOutboundSecureMessage({
@@ -193,15 +234,19 @@ export function useMessageQueue(
             conversationId,
             localId,
           });
+          trace('secure_wrap_ok', { storedKind: encryptedPayloadKind(bodyToStore), storedLength: bodyToStore.length });
         } catch (wrapError) {
+          trace('secure_wrap_failed_using_raw_payload', { error: wrapError instanceof Error ? wrapError.message : String(wrapError) });
           console.warn('[MSG_SEND] secure wrapper failed; using raw encrypted payload', { localId, conversationId, wrapError });
           bodyToStore = encryptedPayload;
         }
         encryptedSuccessfully = true;
+        trace('encrypted_ready_for_rpc', { bodyKind: encryptedPayloadKind(bodyToStore), bodyLength: bodyToStore.length });
       } catch (encryptError) {
         const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
         const normalized = errMsg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const isSafetyMismatch = normalized.includes('cle de securite du contact modifiee') || normalized.includes('safety number changed') || normalized.includes('security key changed') || normalized.includes('verification obligatoire avant envoi') || normalized.includes('fingerprint changed');
+        trace('encrypt_failed', { isSafetyMismatch, error: errMsg });
         console.warn('[MSG_SEND] encrypt failed; strict E2EE send kept local', { localId, conversationId, isSafetyMismatch, encryptError });
         if (isSafetyMismatch) {
           try {
@@ -213,9 +258,12 @@ export function useMessageQueue(
         }
         throw encryptError instanceof Error ? encryptError : new Error(errMsg);
       }
+    } else {
+      trace('encryption_not_required');
     }
 
     updatePending({ status: 'sending' });
+    trace('status_sending');
 
     const serverMessageId = safeUUID();
     const fanoutInput = { messageId: serverMessageId, conversationId, senderUserId: user.id, plaintext: sanitized };
@@ -228,12 +276,19 @@ export function useMessageQueue(
       fanoutTimedOut = true;
       fanoutPromise = buildFanoutCopies(fanoutInput);
       fanoutPromise.catch(() => {});
+      trace('fanout_deferred_start', { serverMessageId });
       console.info('[MSG_SEND] fanout deferred; inserting parent immediately', { localId, conversationId });
     }
 
     const rpcExtra = { ...(extra || {}) } as Record<string, unknown>;
     if (fanoutRows.length > 0 || fanoutTimedOut) rpcExtra.body_kind = 'multi_device';
 
+    trace('rpc_insert_start', {
+      serverMessageId,
+      bodyKind: rpcExtra.body_kind ?? 'legacy',
+      encryptedSuccessfully,
+      fanoutCopies: fanoutRows.length,
+    });
     const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {
       p_message_id: serverMessageId,
       p_conversation_id: conversationId,
@@ -248,12 +303,14 @@ export function useMessageQueue(
 
     if (error) {
       const normalizedError = normalizeSupabaseError(error);
+      trace('rpc_insert_failed', normalizedError as Record<string, unknown>);
       console.error('[MSG_SEND] transactional insert failed', { conversationId, localId, error: normalizedError });
       if (!shouldFallbackToLegacyEncryptedInsert(error)) {
         updatePending({ status: 'failed_visible', lastError: normalizedError.message });
         throw error;
       }
       usedLegacyEncryptedFallback = true;
+      trace('legacy_insert_start');
       const { data: legacyData, error: legacyError } = await supabase
         .from('messages')
         .insert({
@@ -274,10 +331,12 @@ export function useMessageQueue(
         .single();
       if (legacyError) {
         const normalizedLegacyError = normalizeSupabaseError(legacyError);
+        trace('legacy_insert_failed', normalizedLegacyError as Record<string, unknown>);
         updatePending({ status: 'failed_visible', lastError: normalizedLegacyError.message });
         throw legacyError;
       }
       data = { id: legacyData?.id || serverMessageId };
+      trace('legacy_insert_ok', { serverId: data.id });
       if (fanoutRows.length > 0) {
         try {
           await insertFanoutCopyRows(fanoutInput, fanoutRows);
@@ -286,6 +345,8 @@ export function useMessageQueue(
           void fanoutMessageCopies(fanoutInput).then(dispatchDecryptRetry).catch(() => {});
         }
       }
+    } else {
+      trace('rpc_insert_ok', { serverId: data.id });
     }
 
     console.info('[MSG_SEND] message inserted', {
@@ -300,6 +361,7 @@ export function useMessageQueue(
       fanoutHasTargets,
       fanoutTimedOut,
     });
+    trace('message_inserted', { serverId: data.id, method: usedLegacyEncryptedFallback ? 'encrypted_legacy_fallback' : 'transactional_rpc' });
 
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
@@ -319,17 +381,21 @@ export function useMessageQueue(
         const pendingFanout = fanoutPromise ?? buildFanoutCopies(fanoutInput);
         void pendingFanout
           .then(async (fanout) => {
+            trace('fanout_async_built', { rows: fanout.rows.length, hasTargets: fanout.hasTargets, serverMessageId: data.id });
             if (fanout.rows.length > 0) {
               await insertFanoutCopyRows(fanoutInput, fanout.rows);
+              trace('fanout_async_inserted', { rows: fanout.rows.length, serverMessageId: data.id });
               dispatchDecryptRetry();
               return;
             }
             if (fanout.hasTargets) {
               await fanoutMessageCopies(fanoutInput);
+              trace('fanout_async_fallback_done', { serverMessageId: data.id });
               dispatchDecryptRetry();
             }
           })
           .catch((fanoutError) => {
+            trace('fanout_async_failed', { error: fanoutError instanceof Error ? fanoutError.message : String(fanoutError), serverMessageId: data.id });
             console.warn('[MSG_SEND] async fanout failed after parent insert', { localId, conversationId, messageId: data.id, fanoutError });
             void fanoutMessageCopies(fanoutInput).then(dispatchDecryptRetry).catch(() => {});
           });
