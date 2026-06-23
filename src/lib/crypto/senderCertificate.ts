@@ -39,22 +39,21 @@ async function signPayload(userId: string, payload: SenderCertificatePayload): P
 
 function publishSenderCertificate(cert: SenderCertificate): void {
   const payload = cert.payload;
-  void supabase
-    .from('user_sender_certificates' as any)
-    .upsert({
-      user_id: payload.userId,
-      device_id: payload.deviceId,
-      identity_epoch: payload.identityEpoch,
-      fingerprint: payload.fingerprint,
-      payload: JSON.stringify(payload),
-      signature: cert.signature,
-      issued_at: new Date(payload.issuedAt).toISOString(),
-      expires_at: new Date(payload.expiresAt).toISOString(),
-    }, { onConflict: 'user_id,device_id,identity_epoch' })
-    .then(({ error }) => {
-      if (error) console.warn('[E2EE][CERT] sender certificate publish skipped', error);
-    })
-    .catch((error) => console.warn('[E2EE][CERT] sender certificate publish skipped', error));
+  void (async () => {
+    const { error } = await supabase
+      .from('user_sender_certificates' as any)
+      .upsert({
+        user_id: payload.userId,
+        device_id: payload.deviceId,
+        identity_epoch: payload.identityEpoch,
+        fingerprint: payload.fingerprint,
+        payload: JSON.stringify(payload),
+        signature: cert.signature,
+        issued_at: new Date(payload.issuedAt).toISOString(),
+        expires_at: new Date(payload.expiresAt).toISOString(),
+      }, { onConflict: 'user_id,device_id,identity_epoch' });
+    if (error) console.warn('[E2EE][CERT] sender certificate publish skipped', error);
+  })().catch((error) => console.warn('[E2EE][CERT] sender certificate publish skipped', error));
 }
 
 export async function issueSenderCertificate(userId: string, fingerprint: string): Promise<SenderCertificate> {
