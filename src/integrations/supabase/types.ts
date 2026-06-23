@@ -6235,6 +6235,11 @@ export type Database = {
       }
       user_devices: {
         Row: {
+          approval_email_sent_at: string | null
+          approval_requested_at: string | null
+          approval_status: string
+          approved_at: string | null
+          approved_by: string | null
           created_at: string
           crypto_invalid_at: string | null
           crypto_invalid_reason: string | null
@@ -6248,6 +6253,8 @@ export type Database = {
           last_seen_at: string
           platform: string | null
           prekey_repair_requested_at: string | null
+          rejected_at: string | null
+          rejected_by: string | null
           revoke_reason: string | null
           revoked_at: string | null
           stale_at: string | null
@@ -6256,6 +6263,11 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          approval_email_sent_at?: string | null
+          approval_requested_at?: string | null
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           crypto_invalid_at?: string | null
           crypto_invalid_reason?: string | null
@@ -6269,6 +6281,8 @@ export type Database = {
           last_seen_at?: string
           platform?: string | null
           prekey_repair_requested_at?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           stale_at?: string | null
@@ -6277,6 +6291,11 @@ export type Database = {
           user_id: string
         }
         Update: {
+          approval_email_sent_at?: string | null
+          approval_requested_at?: string | null
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           crypto_invalid_at?: string | null
           crypto_invalid_reason?: string | null
@@ -6290,6 +6309,8 @@ export type Database = {
           last_seen_at?: string
           platform?: string | null
           prekey_repair_requested_at?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           stale_at?: string | null
@@ -7495,6 +7516,15 @@ export type Database = {
         Returns: {
           approver_device_id: string
           encrypted_payload: string
+        }[]
+      }
+      get_conversation_deliverable_devices: {
+        Args: { p_conversation_id: string; p_exclude_device_id?: string }
+        Returns: {
+          device_id: string
+          device_public_key: string
+          is_self: boolean
+          user_id: string
         }[]
       }
       get_conversations_with_details: {
