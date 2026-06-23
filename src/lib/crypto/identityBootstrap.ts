@@ -5,7 +5,7 @@ import { resolveUserIdentity } from './identityRecovery';
 import { createSecureBackupVault, hasSecureBackupVault } from './secureBackupVault';
 import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoState';
 
-const BOOTSTRAP_TTL_MS = 30_000;
+const BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 const attempts = new Map<string, Promise<void>>();
 const lastSuccessAt = new Map<string, number>();
 
