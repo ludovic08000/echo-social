@@ -86,39 +86,39 @@ async function hasValidDevicePrekey(userId: string, deviceId: string): Promise<b
 }
 
 export async function fetchActiveDevices(userId: string): Promise<DeviceListEntry[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('user_devices' as any)
-    .select('user_id, device_id, device_fingerprint, created_at, last_seen_at, revoked_at, stale_at, approval_status, is_active, device_public_key')
+    .select('user_id, device_id, device_fingerprint, created_at, last_seen_at, revoked_at')
     .eq('user_id', userId)
     .is('revoked_at', null)
     .order('last_seen_at', { ascending: false });
 
-  const raw = ((data || []) as any[])
+  if (error) {
+    console.warn('[E2EE][DEVICE_LIST] active device fetch failed', { userId, error });
+    return [];
+  }
+
+  const mapped = ((data || []) as any[])
     .filter((row) => row.device_id)
-    .filter((row) => row.is_active !== false)
-    .filter((row) => !row.stale_at)
-    .filter((row) => (row.approval_status ?? 'approved') === 'approved')
-    .filter((row) => isFresh(row.last_seen_at));
+    .filter((row) => isFresh(row.last_seen_at))
+    .map((row) => ({
+      userId: row.user_id,
+      deviceId: row.device_id,
+      fingerprint: row.device_fingerprint || '',
+      identityEpoch: 1,
+      createdAt: row.created_at || row.last_seen_at || new Date().toISOString(),
+      lastSeenAt: row.last_seen_at || new Date().toISOString(),
+      revokedAt: row.revoked_at || null,
+    }));
 
-  const mapped = raw.map((row) => ({
-    userId: row.user_id,
-    deviceId: row.device_id,
-    fingerprint: row.device_fingerprint || '',
-    identityEpoch: 1,
-    createdAt: row.created_at || row.last_seen_at || new Date().toISOString(),
-    lastSeenAt: row.last_seen_at || new Date().toISOString(),
-    revokedAt: row.revoked_at || null,
-  }));
-
-  if (mapped.length <= 1) return mapped;
+  if (mapped.length === 0) return [];
 
   const verified = await Promise.all(mapped.map(async (device) => {
     const ok = await hasValidDevicePrekey(device.userId, device.deviceId);
     return ok ? device : null;
   }));
 
-  const valid = verified.filter(Boolean) as DeviceListEntry[];
-  return valid.length > 0 ? valid : mapped;
+  return verified.filter(Boolean) as DeviceListEntry[];
 }
 
 export async function revokeCurrentDevice(userId: string): Promise<void> {
