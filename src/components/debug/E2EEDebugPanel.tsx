@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'forsure:e2ee:trace';
+const DEBUG_FLAG = 'forsure:e2ee:debug';
 
 type TraceRow = {
   at?: string;
@@ -16,7 +17,7 @@ type TraceRow = {
 function isDebugEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   const url = new URL(window.location.href);
-  return url.searchParams.get('debug_e2ee') === '1' || localStorage.getItem('forsure:e2ee:debug') === '1';
+  return url.searchParams.get('debug_e2ee') === '1' || localStorage.getItem(DEBUG_FLAG) === '1';
 }
 
 function readRows(): TraceRow[] {
@@ -28,6 +29,15 @@ function readRows(): TraceRow[] {
   } catch {
     return [];
   }
+}
+
+function pushRow(row: TraceRow) {
+  try {
+    const rows = readRows();
+    rows.push({ at: new Date().toLocaleTimeString(), ...row });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(-80)));
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-trace'));
+  } catch {}
 }
 
 function clearRows() {
@@ -43,15 +53,33 @@ function fmt(row: TraceRow): string {
   return `${row.at || ''} ${ms} ${stage}${err}`.trim();
 }
 
+function installConsoleCapture() {
+  if (typeof window === 'undefined') return;
+  const w = window as any;
+  if (w.__forsureE2EEDebugPanelCaptureInstalled) return;
+  w.__forsureE2EEDebugPanelCaptureInstalled = true;
+
+  const originalInfo = console.info.bind(console);
+  console.info = (...args: unknown[]) => {
+    try {
+      if (args[0] === '[MSG_TRACE]' && typeof args[1] === 'object' && args[1] !== null) {
+        pushRow(args[1] as TraceRow);
+      }
+    } catch {}
+    originalInfo(...args);
+  };
+}
+
 export function E2EEDebugPanel() {
   const [enabled, setEnabled] = useState(false);
   const [rows, setRows] = useState<TraceRow[]>([]);
 
   useEffect(() => {
+    installConsoleCapture();
     const active = isDebugEnabled();
     setEnabled(active);
     if (!active) return;
-    localStorage.setItem('forsure:e2ee:debug', '1');
+    localStorage.setItem(DEBUG_FLAG, '1');
     const refresh = () => setRows(readRows());
     refresh();
     const timer = window.setInterval(refresh, 700);
@@ -97,7 +125,7 @@ export function E2EEDebugPanel() {
           </button>
           <button
             type="button"
-            onClick={() => { localStorage.removeItem('forsure:e2ee:debug'); setEnabled(false); }}
+            onClick={() => { localStorage.removeItem(DEBUG_FLAG); setEnabled(false); }}
             style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, background: '#5b2330', color: '#fff', border: '0' }}
           >
             Hide
