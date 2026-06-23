@@ -5517,8 +5517,9 @@ export type Database = {
         ]
       }
       sender_key_state: {
+        // C1: chain_key_b64 and signing_priv_jwk removed — secret Sender Key
+        // material is stored on-device only (see senderKeyLocalStore.ts).
         Row: {
-          chain_key_b64: string
           conversation_id: string
           created_at: string
           id: string
@@ -5526,12 +5527,10 @@ export type Database = {
           iteration: number
           sender_device_id: string
           sender_user_id: string
-          signing_priv_jwk: Json | null
           signing_pub_b64: string
           updated_at: string
         }
         Insert: {
-          chain_key_b64: string
           conversation_id: string
           created_at?: string
           id?: string
@@ -5539,12 +5538,10 @@ export type Database = {
           iteration?: number
           sender_device_id: string
           sender_user_id: string
-          signing_priv_jwk?: Json | null
           signing_pub_b64: string
           updated_at?: string
         }
         Update: {
-          chain_key_b64?: string
           conversation_id?: string
           created_at?: string
           id?: string
@@ -5552,7 +5549,6 @@ export type Database = {
           iteration?: number
           sender_device_id?: string
           sender_user_id?: string
-          signing_priv_jwk?: Json | null
           signing_pub_b64?: string
           updated_at?: string
         }
@@ -8289,3 +8285,4 @@ export const Constants = {
     },
   },
 } as const
+                                                                
