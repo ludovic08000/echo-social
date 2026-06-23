@@ -904,31 +904,48 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     }
 
     // Prefer per-device bundle (4-DH with OPK); fall back to legacy per-user bundle (3-DH only).
+    //
+    // Bundle-wait (audit): the peer's device — especially iOS just after launch,
+    // while its device id is still hydrating — may not have republished its
+    // prekey bundle yet. Instead of failing immediately (which surfaced a
+    // "Bundle indisponible" error and pushed the message to a slow retry loop),
+    // retry a few times with short backoff so the message auto-sends as soon as
+    // the bundle appears. When the bundle is already present (common case) the
+    // first attempt succeeds with zero added delay.
     let bundle = null as Awaited<ReturnType<typeof fetchPrekeyBundle>>;
     let route: 'per-device-4dh' | 'legacy-3dh' = 'legacy-3dh';
-    try {
-      const { fetchActiveDevices } = await import('@/lib/crypto/deviceList');
-      const { fetchPrekeyBundleForDevice } = await import('@/lib/crypto/x3dh');
-      const peerDevices = await fetchActiveDevices(peerUserId);
-      // Pick most recently seen active device
-      const target = peerDevices[0];
-      if (target) {
-        const devBundle = await fetchPrekeyBundleForDevice(peerUserId, target.deviceId);
-        if (devBundle) {
-          bundle = devBundle;
-          route = 'per-device-4dh';
-          console.info(`[X3DH][ROUTE] per-device 4-DH bundle for ${peerUserId.slice(0, 8)}…/${target.deviceId.slice(0, 8)}…`);
+    const BUNDLE_BACKOFF_MS = [0, 400, 800, 1200]; // ~2.4s worst case, only when missing
+    for (let attempt = 0; attempt < BUNDLE_BACKOFF_MS.length && !bundle; attempt++) {
+      if (BUNDLE_BACKOFF_MS[attempt] > 0) {
+        await new Promise((r) => setTimeout(r, BUNDLE_BACKOFF_MS[attempt]));
+      }
+      try {
+        const { fetchActiveDevices } = await import('@/lib/crypto/deviceList');
+        const { fetchPrekeyBundleForDevice } = await import('@/lib/crypto/x3dh');
+        const peerDevices = await fetchActiveDevices(peerUserId);
+        // Pick most recently seen active device
+        const target = peerDevices[0];
+        if (target) {
+          const devBundle = await fetchPrekeyBundleForDevice(peerUserId, target.deviceId);
+          if (devBundle) {
+            bundle = devBundle;
+            route = 'per-device-4dh';
+            console.info(`[X3DH][ROUTE] per-device 4-DH bundle for ${peerUserId.slice(0, 8)}…/${target.deviceId.slice(0, 8)}… (attempt ${attempt})`);
+          }
+        }
+      } catch (e) {
+        console.warn('[X3DH][ROUTE] per-device bundle lookup failed, falling back to legacy:', e);
+      }
+      if (!bundle) {
+        bundle = await fetchPrekeyBundle(peerUserId);
+        if (bundle) {
+          route = 'legacy-3dh';
+          console.info(`[X3DH][ROUTE] legacy 3-DH bundle for ${peerUserId.slice(0, 8)}… (attempt ${attempt})`);
         }
       }
-    } catch (e) {
-      console.warn('[X3DH][ROUTE] per-device bundle lookup failed, falling back to legacy:', e);
     }
     if (!bundle) {
-      bundle = await fetchPrekeyBundle(peerUserId);
-      console.info(`[X3DH][ROUTE] legacy 3-DH bundle for ${peerUserId.slice(0, 8)}…`);
-    }
-    if (!bundle) {
-      console.error('[X3DH] ⛔ Bundle pair absent, expiré ou incohérent — impossible d\'initialiser X3DH');
+      console.error('[X3DH] ⛔ Bundle pair absent, expiré ou incohérent après retries — impossible d\'initialiser X3DH');
       throw new EncryptionError('🔒 Bundle X3DH du contact indisponible ou incohérent — message en attente chiffrée');
     }
 
