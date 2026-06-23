@@ -6,6 +6,8 @@ import { getOrCreateCurrentDeviceId } from './deviceList';
 import { getLocalSecurityEpoch } from './securityEpoch';
 
 const CERT_TTL_MS = 24 * 60 * 60 * 1000;
+const CERT_REFRESH_SKEW_MS = 5 * 60 * 1000;
+const certCache = new Map<string, SenderCertificate>();
 
 export interface SenderCertificatePayload {
   version: 1;
@@ -22,6 +24,10 @@ export interface SenderCertificate {
   signature: string;
 }
 
+function cacheKey(userId: string, deviceId: string, fingerprint: string, identityEpoch: number): string {
+  return `${userId}::${deviceId}::${fingerprint}::${identityEpoch}`;
+}
+
 async function signPayload(userId: string, payload: SenderCertificatePayload): Promise<string> {
   const keys = await loadIdentityKeys(userId);
   if (!keys) throw new Error('NO_IDENTITY_FOR_SENDER_CERTIFICATE');
@@ -31,14 +37,42 @@ async function signPayload(userId: string, payload: SenderCertificatePayload): P
   return bufferToBase64(sig);
 }
 
+function publishSenderCertificate(cert: SenderCertificate): void {
+  const payload = cert.payload;
+  void supabase
+    .from('user_sender_certificates' as any)
+    .upsert({
+      user_id: payload.userId,
+      device_id: payload.deviceId,
+      identity_epoch: payload.identityEpoch,
+      fingerprint: payload.fingerprint,
+      payload: JSON.stringify(payload),
+      signature: cert.signature,
+      issued_at: new Date(payload.issuedAt).toISOString(),
+      expires_at: new Date(payload.expiresAt).toISOString(),
+    }, { onConflict: 'user_id,device_id,identity_epoch' })
+    .then(({ error }) => {
+      if (error) console.warn('[E2EE][CERT] sender certificate publish skipped', error);
+    })
+    .catch((error) => console.warn('[E2EE][CERT] sender certificate publish skipped', error));
+}
+
 export async function issueSenderCertificate(userId: string, fingerprint: string): Promise<SenderCertificate> {
   const now = Date.now();
+  const deviceId = getOrCreateCurrentDeviceId();
+  const identityEpoch = getLocalSecurityEpoch(userId);
+  const key = cacheKey(userId, deviceId, fingerprint, identityEpoch);
+  const cached = certCache.get(key);
+  if (cached && cached.payload.expiresAt > now + CERT_REFRESH_SKEW_MS) {
+    return cached;
+  }
+
   const payload: SenderCertificatePayload = {
     version: 1,
     userId,
-    deviceId: getOrCreateCurrentDeviceId(),
+    deviceId,
     fingerprint,
-    identityEpoch: getLocalSecurityEpoch(userId),
+    identityEpoch,
     issuedAt: now,
     expiresAt: now + CERT_TTL_MS,
   };
@@ -48,22 +82,8 @@ export async function issueSenderCertificate(userId: string, fingerprint: string
     signature: await signPayload(userId, payload),
   };
 
-  try {
-    await supabase
-      .from('user_sender_certificates' as any)
-      .upsert({
-        user_id: userId,
-        device_id: payload.deviceId,
-        identity_epoch: payload.identityEpoch,
-        fingerprint,
-        payload: JSON.stringify(payload),
-        signature: cert.signature,
-        issued_at: new Date(payload.issuedAt).toISOString(),
-        expires_at: new Date(payload.expiresAt).toISOString(),
-      }, { onConflict: 'user_id,device_id,identity_epoch' });
-  } catch (error) {
-    console.warn('[E2EE][CERT] sender certificate publish skipped', error);
-  }
+  certCache.set(key, cert);
+  publishSenderCertificate(cert);
 
   return cert;
 }
