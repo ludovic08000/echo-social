@@ -5,8 +5,8 @@ import {
   type X3DHPrekeyBundle,
 } from './x3dh';
 
-const DEVICE_BUNDLE_TIMEOUT_MS = 2_000;
-const LEGACY_BUNDLE_TIMEOUT_MS = 5_000;
+const DEVICE_BUNDLE_TIMEOUT_MS = 12_000;
+const LEGACY_BUNDLE_TIMEOUT_MS = 25_000;
 const MAX_DEVICE_BUNDLE_CANDIDATES = 5;
 const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000;
 
