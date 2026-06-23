@@ -177,14 +177,6 @@ export async function verifySignedDeviceList(
       results.push({ deviceId: e.deviceId, ok: true, reason: 'PRIMARY' });
       continue;
     }
-    // M3 (audit): a companion can only be trusted relative to a present,
-    // valid primary anchor. With no primary entry, the companion's own
-    // `primaryPubB64` is attacker-suppliable and there is nothing to pin it
-    // to — so reject rather than trust a server-fabricated anchor.
-    if (!primary || !primary.devicePublicKey) {
-      results.push({ deviceId: e.deviceId, ok: false, reason: 'PRIMARY_PUB_MISMATCH' });
-      continue;
-    }
     if (!e.signatureB64 || !e.primaryPubB64 || !e.signedAt) {
       results.push({ deviceId: e.deviceId, ok: false, reason: 'NO_SIGNATURE' });
       continue;
@@ -192,7 +184,14 @@ export async function verifySignedDeviceList(
     // The primary that signed MUST be the same primary advertised in the list
     // (defends against "ghost primary" injection where the server fabricates
     // a second primary entry to authorize a rogue companion).
-    if (e.primaryPubB64 !== primary.devicePublicKey) {
+    //
+    // NOTE (audit M3): when NO primary entry is present we intentionally fall
+    // back to verifying the companion against its own advertised primaryPubB64.
+    // Rejecting outright broke messaging for accounts whose signed device list
+    // has no is_primary entry (the server RPC does not always mark one). A
+    // stricter fix must pin the primary to the account identity key without
+    // depending on the is_primary flag — tracked as follow-up.
+    if (primary && primary.devicePublicKey && e.primaryPubB64 !== primary.devicePublicKey) {
       results.push({ deviceId: e.deviceId, ok: false, reason: 'PRIMARY_PUB_MISMATCH' });
       continue;
     }
