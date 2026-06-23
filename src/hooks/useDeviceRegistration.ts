@@ -221,18 +221,22 @@ export function useDeviceRegistration() {
           }
 
           if (!localKx) {
-            console.warn('[useDeviceRegistration] server device key exists but local material is still unavailable — rotating device id');
+            console.warn('[useDeviceRegistration] server device key exists but local material is still unavailable - waiting for restore');
             try {
               window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
                 detail: { source: 'device-registration', deviceId, reason: 'local-missing' },
               }));
             } catch {}
-            if (attempt < 2) {
-              rotateCurrentDeviceId('missing-local-device-kx');
-              ranRef.current = false;
-              inFlightRef.current = false;
-              return registerCurrentDevice('rotated-missing-local-kx', attempt + 1);
-            }
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
+                detail: {
+                  source: 'device-registration',
+                  deviceId,
+                  reason: 'registered_device_key_missing',
+                  message: 'Deverrouillage requis pour restaurer cet appareil',
+                },
+              }));
+            } catch {}
             ranRef.current = false;
             return;
           }
@@ -245,7 +249,7 @@ export function useDeviceRegistration() {
             // specific one. Anything else is a hard mismatch → BLOCK.
             const isLegacyShared = serverDevicePublicKey === bundle.identityKey;
             if (!isLegacyShared) {
-              console.warn('[useDeviceRegistration] server/local device key mismatch — rotating device id');
+              console.warn('[useDeviceRegistration] server/local device key mismatch - waiting for restore');
               try {
                 window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
                   detail: {
@@ -255,12 +259,16 @@ export function useDeviceRegistration() {
                   },
                 }));
               } catch {}
-              if (attempt < 2) {
-                rotateCurrentDeviceId('device-kx-mismatch');
-                ranRef.current = false;
-                inFlightRef.current = false;
-                return registerCurrentDevice('rotated-device-kx-mismatch', attempt + 1);
-              }
+              try {
+                window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
+                  detail: {
+                    source: 'device-registration',
+                    deviceId,
+                    reason: 'registered_device_key_mismatch',
+                    message: 'Deverrouillage requis pour restaurer cet appareil',
+                  },
+                }));
+              } catch {}
               ranRef.current = false;
               return;
             }
