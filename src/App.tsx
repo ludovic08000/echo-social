@@ -33,6 +33,7 @@ import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
 import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
 import { E2EERestorePromptDialog } from "@/components/messages/E2EERestorePromptDialog";
 import { ContactVerificationDialog } from "@/components/messages/ContactVerificationDialog";
+import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
 
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -209,9 +210,6 @@ function AccountKeySyncRunner() {
     });
   }, [user?.id]);
 
-  // V5 retry/refanout worker: when another device asks for a fresh encrypted
-  // copy, the sender processes it from its local plaintext cache. No server
-  // plaintext, but active devices repair missing per-device copies quickly.
   useEffect(() => {
     if (!user?.id) return;
     let stopped = false;
@@ -273,8 +271,6 @@ function AccountKeySyncRunner() {
     };
   }, [user?.id]);
 
-  // Keep the active-device list clean so stale iOS/Web devices with invalid SPKs
-  // stop receiving new copies and stop producing repeated SPK invalid warnings.
   useEffect(() => {
     if (!user?.id) return;
     const t = window.setTimeout(() => {
@@ -339,6 +335,7 @@ function AppContent() {
               <SafetyNumberRevalidationBanner />
               <DevicePrimaryRepairDialog />
               <IncomingCallHandler />
+              <E2EEDebugPanel />
               <RoutedErrorBoundary>
                 <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
                   <Routes>
