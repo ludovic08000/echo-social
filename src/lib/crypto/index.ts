@@ -76,12 +76,6 @@ export {
 } from './senderCertificate';
 
 export {
-  generatePairingQRCode,
-  acceptPairingQRCode,
-  revokePairingQRCode,
-} from './devicePairing';
-
-export {
   publishCurrentDevice,
   fetchActiveDevices,
   revokeCurrentDevice,
@@ -159,10 +153,11 @@ export {
 
 export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
 
+export { fetchPrekeyBundle } from './x3dhBundleRouter';
+
 export {
   x3dhInitiate,
   x3dhRespond,
-  fetchPrekeyBundle,
   generateAndUploadSignedPrekey,
   refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
