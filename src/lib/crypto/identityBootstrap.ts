@@ -7,9 +7,31 @@ import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoSt
 
 const BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 const attempts = new Map<string, Promise<void>>();
+const localAttempts = new Map<string, Promise<{ keys: IdentityKeyPair; mode: 'local' | 'restored' | 'new_epoch' }>>();
 const lastSuccessAt = new Map<string, number>();
 
-async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<void> {
+interface EnsureIdentityOptions {
+  /**
+   * Fast path for message sending: wait only for local identity material.
+   * Server publication, SPK maintenance and backup vault creation continue in
+   * the background.
+   */
+  waitForMaintenance?: boolean;
+}
+
+async function resolveLocalIdentityOnce(userId: string): Promise<{ keys: IdentityKeyPair; mode: 'local' | 'restored' | 'new_epoch' }> {
+  const existing = localAttempts.get(userId);
+  if (existing) return existing;
+
+  const attempt = resolveUserIdentity(userId)
+    .finally(() => {
+      localAttempts.delete(userId);
+    });
+  localAttempts.set(userId, attempt);
+  return attempt;
+}
+
+async function publishIdentity(userId: string, keys: IdentityKeyPair, options: { refreshSignedPrekey?: boolean } = {}): Promise<void> {
   const bundle = await exportPublicKeyBundle(keys);
 
   const { error } = await supabase
@@ -32,10 +54,12 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<v
     console.warn('[E2EE][SERVER_STATE] ready update skipped', error);
   }
 
-  try {
-    await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
-  } catch (error) {
-    console.warn('[E2EE][IDENTITY] signed-prekey refresh skipped', error);
+  if (options.refreshSignedPrekey !== false) {
+    try {
+      await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
+    } catch (error) {
+      console.warn('[E2EE][IDENTITY] signed-prekey refresh skipped', error);
+    }
   }
 
   try {
@@ -48,6 +72,52 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<v
     userId,
     fingerprint: bundle.fingerprint,
   });
+}
+
+async function runIdentityMaintenance(
+  userId: string,
+  keys: IdentityKeyPair,
+  mode: 'local' | 'restored' | 'new_epoch',
+): Promise<void> {
+  try {
+    await ensureServerCryptoState();
+  } catch (error) {
+    console.warn('[E2EE][SERVER_STATE] provisioning skipped', error);
+  }
+
+  await publishIdentity(userId, keys);
+  await ensureEncryptedBackupVault(userId);
+
+  lastSuccessAt.set(userId, Date.now());
+
+  if (mode === 'new_epoch') {
+    try {
+      window.dispatchEvent(new CustomEvent('forsure-e2ee-security-code-changed', {
+        detail: { userId, fingerprint: keys.fingerprint },
+      }));
+    } catch {}
+  }
+
+  console.info('[E2EE][IDENTITY] bootstrap complete', { userId, mode });
+}
+
+function scheduleIdentityMaintenance(
+  userId: string,
+  keys: IdentityKeyPair,
+  mode: 'local' | 'restored' | 'new_epoch',
+): void {
+  const last = lastSuccessAt.get(userId) || 0;
+  if (Date.now() - last < BOOTSTRAP_TTL_MS) return;
+  if (attempts.has(userId)) return;
+
+  const attempt = runIdentityMaintenance(userId, keys, mode)
+    .catch((error) => {
+      console.warn('[E2EE][IDENTITY] background maintenance failed', error);
+    })
+    .finally(() => {
+      attempts.delete(userId);
+    });
+  attempts.set(userId, attempt);
 }
 
 async function ensureEncryptedBackupVault(userId: string) {
@@ -74,38 +144,24 @@ async function ensureEncryptedBackupVault(userId: string) {
   }
 }
 
-export async function ensureUserE2EEIdentity(userId: string): Promise<void> {
+export async function ensureUserE2EEIdentity(userId: string, options: EnsureIdentityOptions = {}): Promise<void> {
   if (!userId) return;
 
+  const waitForMaintenance = options.waitForMaintenance !== false;
   const last = lastSuccessAt.get(userId) || 0;
-  if (Date.now() - last < BOOTSTRAP_TTL_MS) return;
+  if (waitForMaintenance && Date.now() - last < BOOTSTRAP_TTL_MS) return;
+
+  const { keys, mode } = await resolveLocalIdentityOnce(userId);
+
+  if (!waitForMaintenance) {
+    scheduleIdentityMaintenance(userId, keys, mode);
+    return;
+  }
 
   const existing = attempts.get(userId);
   if (existing) return existing;
 
-  const attempt = (async () => {
-    try {
-      await ensureServerCryptoState();
-    } catch (error) {
-      console.warn('[E2EE][SERVER_STATE] provisioning skipped', error);
-    }
-
-    const { keys, mode } = await resolveUserIdentity(userId);
-    await publishIdentity(userId, keys);
-    await ensureEncryptedBackupVault(userId);
-
-    lastSuccessAt.set(userId, Date.now());
-
-    if (mode === 'new_epoch') {
-      try {
-        window.dispatchEvent(new CustomEvent('forsure-e2ee-security-code-changed', {
-          detail: { userId, fingerprint: keys.fingerprint },
-        }));
-      } catch {}
-    }
-
-    console.info('[E2EE][IDENTITY] bootstrap complete', { userId, mode });
-  })().catch((error) => {
+  const attempt = runIdentityMaintenance(userId, keys, mode).catch((error) => {
     console.error('[E2EE][IDENTITY] key assignment failed', error);
     throw error;
   }).finally(() => {

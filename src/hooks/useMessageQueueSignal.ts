@@ -199,7 +199,7 @@ export function useMessageQueue(
     if (encryptionWasRequired) {
       try {
         trace('identity_bootstrap_start');
-        await ensureUserE2EEIdentity(user.id);
+        await ensureUserE2EEIdentity(user.id, { waitForMaintenance: false });
         trace('identity_bootstrap_ok');
       } catch (error) {
         trace('identity_bootstrap_failed_non_fatal', { error: error instanceof Error ? error.message : String(error) });
