@@ -31,6 +31,18 @@ export function unwrapSecurePipelineEnvelope(input: string): SecurePipelineEnvel
   }
 }
 
+function publishSealedSenderTelemetry(params: {
+  conversationId: string;
+  meta: EpochBoundEnvelope<Record<string, unknown>>;
+}): void {
+  void supabase.from('sealed_sender_events' as any).insert({
+    conversation_id: params.conversationId,
+    anonymous_sender_tag: params.meta.sealedSender?.anonymousSenderTag || 'none',
+    sender_hint_hash: params.meta.senderCertificate?.payload?.fingerprint || null,
+    recipient_user_id: null,
+  }).catch(() => {});
+}
+
 export async function wrapOutboundSecureMessage(params: {
   userId: string;
   fingerprint: string;
@@ -56,14 +68,7 @@ export async function wrapOutboundSecureMessage(params: {
     meta,
   };
 
-  try {
-    await supabase.from('sealed_sender_events' as any).insert({
-      conversation_id: params.conversationId,
-      anonymous_sender_tag: meta.sealedSender?.anonymousSenderTag || 'none',
-      sender_hint_hash: meta.senderCertificate?.payload?.fingerprint || null,
-      recipient_user_id: null,
-    });
-  } catch {}
+  publishSealedSenderTelemetry({ conversationId: params.conversationId, meta });
 
   return JSON.stringify(envelope);
 }
