@@ -8,43 +8,27 @@
  *   triggers a sync when the app resumes from background.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  syncBackupToServer,
-  isAutoBackupActive,
   clearAccountKeySession,
   hasLocalKeys,
-  computeLocalCryptoDigest,
   restoreAccountKeysFromActiveSession,
   restoreKeysFromKeychainSnapshot,
   syncKeychainSnapshotFromLocal,
   restoreFromInMemoryMasterKey,
 } from '@/lib/crypto/accountKeyBackup';
-import { hydrateDeviceId, getCurrentDeviceId, rotateCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { hydrateDeviceId, rotateCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
 import { transition, withEnsureLock, getSnapshot } from '@/lib/crypto/CryptoStateMachine';
 
-const SYNC_DEBOUNCE_MS = 5_000;
-// Mobile WebViews can be paused — poll a bit more aggressively when foregrounded.
-const POLL_INTERVAL_MS = isNativePlatform() ? 20_000 : 30_000;
-
 export function useAccountKeySync() {
   const { user } = useAuth();
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastDigestRef = useRef('');
 
   const triggerSync = useCallback(() => {
-    if (!isAutoBackupActive()) return;
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(async () => {
-      try {
-        await syncBackupToServer();
-      } catch (e) {
-        console.warn('[AccountKeySync] Auto-sync failed:', e);
-      }
-    }, SYNC_DEBOUNCE_MS);
+    // Automatic server backup is paused while the E2EE core is stabilised.
+    // Manual backup controls can still call their explicit backup actions.
   }, []);
 
   // Hydrate the persistent device id + verify Keychain/Keystore health at boot.
@@ -98,7 +82,7 @@ export function useAccountKeySync() {
           localKeysPresent,
           rawIdentityPresent,
           wrappedKeysPresent,
-          autoBackupActive: isAutoBackupActive(),
+          autoBackupActive: false,
           native: isNativePlatform(),
         });
 
@@ -244,13 +228,6 @@ export function useAccountKeySync() {
           }
         }
 
-        if (!isAutoBackupActive()) return;
-        const digest = await computeLocalCryptoDigest();
-        if (lastDigestRef.current && digest !== lastDigestRef.current) {
-          console.log('[AccountKeySync] Crypto state changed, triggering sync');
-          triggerSync();
-        }
-        lastDigestRef.current = digest;
       } catch {}
     };
 
@@ -259,7 +236,6 @@ export function useAccountKeySync() {
 
     return () => {
       clearInterval(interval);
-      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [user, triggerSync]);
 
@@ -308,9 +284,6 @@ export function useAccountKeySync() {
       console.log('[AccountKeySync] app resumed — re-checking crypto');
       void (async () => {
         try {
-          const digest = await computeLocalCryptoDigest();
-          lastDigestRef.current = digest;
-          if (isAutoBackupActive()) triggerSync();
           await attemptSilentRestore('resume');
         } catch (e) {
           console.warn('[AccountKeySync] resume handler failed:', e);
@@ -463,9 +436,8 @@ export function useAccountKeySync() {
   useEffect(() => {
     if (!user) {
       clearAccountKeySession();
-      lastDigestRef.current = '';
     }
   }, [user]);
 
-  return { triggerSync, isActive: isAutoBackupActive() };
+  return { triggerSync, isActive: false };
 }

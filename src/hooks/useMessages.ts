@@ -537,7 +537,7 @@ export function useMessages(conversationId: string) {
         .eq('conversation_id', conversationId)
         .in('status', ['delivered', 'pending'])
         .order('created_at', { ascending: false })
-        .limit(500);
+        .limit(120);
       if (cancelled || !msgs) return;
       const ids = msgs.filter(m => isUnsupportedEncryptedBody(m.body)).map(m => m.id);
       if (ids.length > 0) {
@@ -565,14 +565,15 @@ export function useMessages(conversationId: string) {
 
       const hiddenIds = new Set((deletions || []).map(d => d.message_id));
 
-      // Load up to last 500 messages (most recent first then reversed)
+      // Load the recent window first. Older messages should be paged by scroll,
+      // not decrypted in bulk on mobile startup.
       const { data: messages, error } = await supabase
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
         .in('status', ['delivered', 'pending'])
         .order('created_at', { ascending: false })
-        .limit(500);
+        .limit(120);
 
       if (error) {
         console.error('[messaging] message fetch failed:', error.message);
@@ -621,7 +622,7 @@ export function useMessages(conversationId: string) {
         // WhatsApp/Signal-style parallel fan-in for the visible/recent window.
         // Older messages resolve when they mount during scroll; doing all 500
         // on chat open steals CPU from iOS input/scroll for no visible benefit.
-        const decryptWarmupMessages = compatibleMessages.slice(-80);
+        const decryptWarmupMessages = compatibleMessages.slice(-24);
         const decryptTasks = decryptWarmupMessages
           .filter((m) => m.sender_id !== user.id)
           .map(async (m) => {
@@ -689,8 +690,11 @@ export function useMessages(conversationId: string) {
       })) as Message[];
     },
     enabled: !!conversationId && !!user,
+    staleTime: 15_000,
+    gcTime: 10 * 60_000,
     refetchOnMount: 'always',
     refetchOnReconnect: 'always',
+    refetchOnWindowFocus: false,
   });
 
   return messagesQuery;

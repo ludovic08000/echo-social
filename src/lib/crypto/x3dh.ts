@@ -250,10 +250,6 @@ export async function generateAndUploadSignedPrekey(userId: string, signingPriva
   await supabase.from('user_signed_prekeys').update({ is_last_resort: false }).eq('user_id', userId).eq('is_last_resort', true);
   await supabase.from('user_signed_prekeys').update({ is_active: false, is_last_resort: true }).eq('user_id', userId).eq('is_active', true).neq('spk_id', spkId);
   console.log(`[X3DH] ✅ Signed prekey #${spkId} generated & uploaded`);
-  try {
-    const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
-    requestBackgroundBackup('spk-rotated');
-  } catch {}
   return { spkId, publicKey: publicBase64, signature: signatureBase64 };
 }
 
@@ -341,7 +337,6 @@ export async function generateAndUploadDeviceSignedPrekey(userId: string, device
   await supabase.from('device_signed_prekeys').update({ is_last_resort: false }).eq('user_id', userId).eq('device_id', deviceId).eq('is_last_resort', true);
   await supabase.from('device_signed_prekeys').update({ is_active: false, is_last_resort: true }).eq('user_id', userId).eq('device_id', deviceId).eq('is_active', true).neq('spk_id', spkId);
   console.log(`[X3DH-DEV] ✅ device SPK #${spkId} for ${deviceId.slice(0, 8)}… uploaded`);
-  try { const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup'); requestBackgroundBackup('device-spk-rotated'); } catch {}
   return { spkId, publicKey: publicBase64, signature: signatureBase64 };
 }
 
@@ -464,7 +459,6 @@ export async function refillDeviceOneTimePrekeysIfNeeded(userId: string, deviceI
     const { error: insErr } = await supabase.from('device_one_time_prekeys').upsert(rows as any, { onConflict: 'user_id,device_id,opk_id', ignoreDuplicates: true });
     if (insErr) { console.warn('[X3DH-OPK] batch upsert failed:', insErr.message); return; }
     console.log(`[X3DH-OPK] ✅ ${OPK_BATCH_SIZE} new OPKs published for ${deviceId.slice(0, 8)}…`);
-    try { const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup'); requestBackgroundBackup('opk-refilled'); } catch {}
   } catch (e) { console.warn('[X3DH-OPK] refill failed (non-fatal):', e); }
 }
 

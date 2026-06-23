@@ -9,7 +9,6 @@ import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 import { buildFanoutCopies, fanoutMessageCopies, insertFanoutCopyRows, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
-import { encryptArchive, setMessageArchiveBody } from '@/lib/messaging/archive/archiveKey';
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
 
 export interface OutboundMessage {
@@ -78,6 +77,16 @@ function dispatchDecryptRetry(): void {
   try {
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
   } catch {}
+}
+
+function scheduleLightConversationRefresh(queryClient: ReturnType<typeof useQueryClient>): void {
+  if (typeof window === 'undefined') {
+    void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    return;
+  }
+  window.setTimeout(() => {
+    void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+  }, 1_000);
 }
 
 function normalizeSupabaseError(error: any) {
@@ -366,16 +375,26 @@ export function useMessageQueue(
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
-      if (shouldArchiveMessageBody({ sanitized, isSpecial, viewOnce: extra?.view_once === true, encryptedSuccessfully, encryptionWasRequired })) {
-        void (async () => {
-          try {
-            const retroactive = await encryptArchive(sanitized, conversationId, user.id);
-            if (retroactive) await setMessageArchiveBody(data.id, retroactive);
-          } catch (e) {
-            console.warn('[MSG_SEND] retroactive archive failed', { messageId: data.id, localId, e });
-          }
-        })();
-      }
+      const sentMessage = {
+        id: data.id,
+        conversation_id: conversationId,
+        sender_id: user.id,
+        body: bodyToStore,
+        image_url: imageUrl || null,
+        created_at: new Date().toISOString(),
+        status: 'delivered',
+        profile: {
+          name: user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'Moi',
+          avatar_url: user.user_metadata?.avatar_url || null,
+        },
+      };
+      const upsertSentMessage = (old: any[] | undefined) => {
+        if (!Array.isArray(old)) return [sentMessage];
+        if (old.some((message) => message?.id === data.id)) return old;
+        return [...old, sentMessage];
+      };
+      queryClient.setQueryData<any[]>(['messages', conversationId, user.id], upsertSentMessage);
+      queryClient.setQueriesData<any[]>({ queryKey: ['messages', conversationId] }, upsertSentMessage);
 
       if (encryptedSuccessfully && fanoutTimedOut) {
         const pendingFanout = fanoutPromise ?? buildFanoutCopies(fanoutInput);
@@ -401,15 +420,11 @@ export function useMessageQueue(
           });
       }
 
-      void import('@/lib/crypto/accountKeyBackup')
-        .then(({ requestBackgroundBackup }) => requestBackgroundBackup('message-sent'))
-        .catch(() => {});
       await onMessageSent?.(localId);
       setPendingMessages(prev => prev.filter(m => m.localId !== localId));
     }
 
-    queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    scheduleLightConversationRefresh(queryClient);
   }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {

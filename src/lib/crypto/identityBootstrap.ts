@@ -2,7 +2,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { exportPublicKeyBundle, type IdentityKeyPair } from './keyManager';
 import { refreshSignedPrekeyIfNeeded } from './x3dh';
 import { resolveUserIdentity } from './identityRecovery';
-import { createSecureBackupVault, hasSecureBackupVault } from './secureBackupVault';
 import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoState';
 
 const BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
@@ -13,8 +12,7 @@ const lastSuccessAt = new Map<string, number>();
 interface EnsureIdentityOptions {
   /**
    * Fast path for message sending: wait only for local identity material.
-   * Server publication, SPK maintenance and backup vault creation continue in
-   * the background.
+   * Server publication and SPK maintenance continue in the background.
    */
   waitForMaintenance?: boolean;
 }
@@ -86,7 +84,6 @@ async function runIdentityMaintenance(
   }
 
   await publishIdentity(userId, keys);
-  await ensureEncryptedBackupVault(userId);
 
   lastSuccessAt.set(userId, Date.now());
 
@@ -118,30 +115,6 @@ function scheduleIdentityMaintenance(
       attempts.delete(userId);
     });
   attempts.set(userId, attempt);
-}
-
-async function ensureEncryptedBackupVault(userId: string) {
-  try {
-    const exists = await hasSecureBackupVault(userId);
-    if (exists) return;
-
-    const backup = await createSecureBackupVault(userId);
-    if (!backup) return;
-
-    try {
-      window.dispatchEvent(new CustomEvent('forsure-e2ee-backup-created', {
-        detail: {
-          userId,
-          fingerprint: backup.fingerprint,
-          recoveryKey: backup.recoveryKey,
-        },
-      }));
-    } catch {}
-
-    console.info('[E2EE][BACKUP] encrypted recovery vault created');
-  } catch (error) {
-    console.warn('[E2EE][BACKUP] vault creation skipped', error);
-  }
 }
 
 export async function ensureUserE2EEIdentity(userId: string, options: EnsureIdentityOptions = {}): Promise<void> {

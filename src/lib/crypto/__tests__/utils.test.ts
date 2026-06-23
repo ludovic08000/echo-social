@@ -54,4 +54,23 @@ describe('encodeString / decodeString', () => {
     const buf = encodeString(str);
     expect(decodeString(buf)).toBe(str);
   });
+
+  it('keeps iOS and Windows message payloads byte-perfect', () => {
+    const payloads = [
+      'Salut iOS <-> Windows - accents: éèàù ç Ç œ',
+      'emoji family: 👨‍👩‍👧‍👦 thumbs: 👍🏽 fire: 🔥',
+      'composed=é decomposed=e\u0301',
+      `Photo\x00MKEY:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`,
+      'line1\r\nline2\nline3',
+    ];
+
+    for (const payload of payloads) {
+      const encoded = encodeString(payload);
+      const asBase64 = bufferToBase64(encoded);
+      const decoded = decodeString(base64ToBuffer(asBase64));
+
+      expect(decoded).toBe(payload);
+      expect([...new Uint8Array(base64ToBuffer(asBase64))]).toEqual([...new Uint8Array(encoded)]);
+    }
+  });
 });

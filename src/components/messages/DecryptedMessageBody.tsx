@@ -138,11 +138,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         }
         if (!next.hidden) {
           const persisted = persistOutcome(body, next, messageId);
-          // Once readable, coalesce backup in the background so decrypting a
-          // batch does not block scroll/input on iOS.
-          void import('@/lib/crypto/accountKeyBackup')
-            .then(({ requestBackgroundBackup }) => requestBackgroundBackup('message-decrypted'))
-            .catch(() => {});
           onDecryptedRef.current?.(persisted);
         }
       })

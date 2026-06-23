@@ -53,10 +53,6 @@ export async function saveRatchetLocal(
     await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
       tx.objectStore(RATCHET_STORE_NAME).put(record);
     });
-    try {
-      const { requestBackgroundBackup } = await import('@/lib/crypto/accountKeyBackup');
-      requestBackgroundBackup('ratchet-save');
-    } catch {}
   } catch (e) {
     console.error('[E2EE] Failed to persist ratchet state:', e);
   }

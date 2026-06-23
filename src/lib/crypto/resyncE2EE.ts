@@ -33,7 +33,7 @@ import {
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { clearAllDeviceSessions } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
-import { syncBackupToServer, syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
+import { syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 
 export type ResyncStep = 'identity' | 'spk' | 'opks' | 'ratchets' | 'replay' | 'snapshot' | 'backup';
@@ -722,20 +722,13 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
     diag.push('snapshot', 'error', 'snapshot failed', { error: msg });
   }
 
-  // 5. Push the fresh state to the encrypted server backup (debounced inside).
-  const tBack = Date.now();
-  try {
-    const ok = await syncBackupToServer();
-    report.steps.backup = ok ? 'ok' : 'skipped';
-    diag.push('backup', ok ? 'success' : 'info', ok ? 'server backup synced' : 'backup skipped (debounced or no keys)', {
-      durationMs: Date.now() - tBack,
-    });
-  } catch (e) {
-    report.steps.backup = 'error';
-    const msg = e instanceof Error ? e.message : String(e);
-    report.errors.push(`backup: ${msg}`);
-    diag.push('backup', 'error', 'backup failed', { error: msg });
-  }
+  // 5. Server backup intentionally skipped while the E2EE core is stabilised.
+  // Device identity/SPK/OPK publication remains active; backup is a higher
+  // layer and must not add latency or failure modes to crypto recovery.
+  report.steps.backup = 'skipped';
+  diag.push('backup', 'info', 'server backup skipped (disabled during E2EE core stabilisation)', {
+    durationMs: 0,
+  });
 
   report.durationMs = Date.now() - t0;
   report.ok = report.errors.length === 0;
