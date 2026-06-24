@@ -68,6 +68,39 @@ export function setCurrentDeviceUserScope(userId: string | null | undefined): vo
   // cache when the account changes, otherwise the previous account's
   // fingerprint would leak into the next one.
   cachedFingerprints = null;
+
+  // Seed the per-account device id from the PRE-SCOPE (unscoped) id.
+  //
+  // Before the account is known (e.g. hydrateDeviceId running at app mount
+  // while the session is still restoring), the device id is resolved and
+  // persisted under the UNSCOPED key. When we then switch to the scoped key
+  // for the first time, that scoped slot is empty -> getCurrentDeviceId()
+  // would mint a BRAND NEW id, orphaning the device the account already has
+  // and forcing a full re-registration every session. That churn leaves stale
+  // `user_devices` rows behind (one of them may stay marked primary), which is
+  // the root cause of the cross-device "empty blue bubble". Carry the already
+  // established id over to the account slot instead of generating a new one.
+  if (next) {
+    try {
+      const scopedKey = `${BASE_STORAGE_KEY}:${next}`;
+      const scoped = nativeGetSync(scopedKey);
+      if (!scoped) {
+        const unscoped = nativeGetSync(BASE_STORAGE_KEY);
+        if (unscoped && unscoped.length >= 16 && !isBlockedRecoveryDeviceId(unscoped)) {
+          memoryDeviceId = unscoped;
+          memoryDeviceIdIsTemporary = false;
+          hydrationPromise = Promise.resolve(unscoped);
+          try { localStorage.setItem(scopedKey, unscoped); } catch {}
+          try { sessionStorage.setItem(scopedKey, unscoped); } catch {}
+          void secureSet(scopedKey, unscoped).catch(() => {});
+          void nativeSet(scopedKey, unscoped).catch(() => {});
+          console.log('[device-id] seeded per-account id from pre-scope id', {
+            id: unscoped.slice(0, 8), account: next.slice(0, 8),
+          });
+        }
+      }
+    } catch {}
+  }
 }
 
 async function ensureUserScopeFromAuth(): Promise<void> {
