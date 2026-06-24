@@ -162,7 +162,8 @@ export function useCreateComment() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['comments', variables.postId] });
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      // Force refetch even if feed query is inactive (PostDetail navigation)
+      queryClient.refetchQueries({ queryKey: ['posts'], type: 'all' });
     },
   });
 }
