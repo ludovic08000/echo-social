@@ -488,9 +488,8 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
           </div>
         )}
 
-        {/* Reaction picker for comments — Facebook style */}
         {showReactionPicker && (
-          <div className="flex gap-0.5 mt-1 p-1 bg-card/95 backdrop-blur-xl rounded-full border border-border/30 shadow-lg inline-flex animate-slide-up">
+          <div ref={pickerRef} className="flex gap-0.5 mt-1 p-1 bg-card/95 backdrop-blur-xl rounded-full border border-border/30 shadow-lg inline-flex animate-slide-up">
             {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type) => (
               <button
                 key={type}
@@ -511,15 +510,23 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
           </span>
           <button
             onClick={handleLike}
+            onMouseDown={startLongPress}
+            onMouseUp={cancelLongPress}
+            onMouseLeave={cancelLongPress}
+            onTouchStart={startLongPress}
+            onTouchEnd={cancelLongPress}
+            onTouchCancel={cancelLongPress}
+            onContextMenu={(e) => e.preventDefault()}
             disabled={reactionLock || likeComment.isPending}
             className={cn(
-              "text-[11px] font-semibold transition-colors",
-              comment.is_liked ? "text-primary" : "text-muted-foreground hover:text-foreground",
+              "text-[11px] font-semibold transition-colors select-none",
+              comment.user_reaction ? "text-primary" : "text-muted-foreground hover:text-foreground",
               (reactionLock || likeComment.isPending) && "opacity-50 pointer-events-none"
             )}
           >
-            {reactionEmoji ? reactionEmoji : "J'aime"}{comment.likes_count > 0 && ` · ${comment.likes_count}`}
+            {reactionEmoji ? `${reactionEmoji} ${REACTION_LABELS[comment.user_reaction!]}` : "J'aime"}{comment.likes_count > 0 && ` · ${comment.likes_count}`}
           </button>
+
           <button onClick={onReply} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
             Répondre
           </button>
