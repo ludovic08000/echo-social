@@ -460,10 +460,12 @@ export function useMessages(conversationId: string) {
                 recipientUserId: user.id,
                 senderUserId: newMsg.sender_id,
                 messageId: newMsg.id,
-              }).then((r) => {
+              }).then(async (r) => {
                 if (r.ok && r.plaintext !== null) {
-                  void savePlaintext(newMsg.id, r.plaintext);
-                  void savePlaintextForCiphertext(newMsg.body, r.plaintext);
+                  // B (durability): await so the decrypted copy is persisted
+                  // before the ratchet advances / the user leaves the screen.
+                  await savePlaintext(newMsg.id, r.plaintext);
+                  await savePlaintextForCiphertext(newMsg.body, r.plaintext);
                   try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
                 }
               }).catch(() => {});
@@ -650,8 +652,9 @@ export function useMessages(conversationId: string) {
                 messageId: m.id,
               });
               if (r.ok && r.plaintext !== null) {
-                void savePlaintext(m.id, r.plaintext);
-                void savePlaintextForCiphertext(m.body, r.plaintext);
+                // B (durability): await persistence of the decrypted copy.
+                await savePlaintext(m.id, r.plaintext);
+                await savePlaintextForCiphertext(m.body, r.plaintext);
                 return true;
               }
             } catch { /* fall through to refresh */ }

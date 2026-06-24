@@ -44,7 +44,7 @@ import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { NewConversationDialog } from './NewConversationDialog';
 import { ShareContentPicker } from './ShareContentPicker';
 import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constants';
-import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
+import { savePlaintext, loadPlaintext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { useTypingPresence } from '@/hooks/useTypingPresence';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { LRUMap } from '@/lib/utils/lruMap';
@@ -672,7 +672,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
       const loaded = await Promise.all(
         recentMessages.map(async (msg) => ({
           msg,
-          pt: decryptedCache.has(msg.id) ? null : await loadPlaintext(msg.id),
+          // A (durability): fall back to the ciphertext-hash key when the
+          // message-id lookup misses (id reconcile can break the id-keyed entry).
+          pt: decryptedCache.has(msg.id)
+            ? null
+            : ((await loadPlaintext(msg.id)) ?? (await loadPlaintextForCiphertext(msg.body))),
         })),
       );
       for (const { msg, pt } of loaded) {
