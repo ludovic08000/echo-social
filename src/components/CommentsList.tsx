@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Trash2, Send, Smile, Camera, Languages, Loader2, ChevronDown, Wand2, CornerDownRight } from 'lucide-react';
@@ -349,6 +349,9 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [reactionLock, setReactionLock] = useState(false);
   const likeComment = useLikeComment();
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const longPressTriggered = useRef(false);
 
   const { text, mediaUrl, isGif, isVideo, isImage } = parseCommentMedia(comment.body);
 
@@ -364,12 +367,6 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
       if (data?.reply) setTranslated(data.reply);
     } catch {} finally { setTranslating(false); }
   };
-
-  // Tap on like button: always open picker (to choose or change)
-  const handleLike = useCallback(() => {
-    if (reactionLock || likeComment.isPending) return;
-    setShowReactionPicker(prev => !prev);
-  }, [reactionLock, likeComment.isPending]);
 
   // Pick a specific reaction emoji: same emoji = remove, different = change
   const handlePickReaction = useCallback((type: ReactionType) => {
@@ -389,6 +386,47 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
       );
     }
   }, [comment.id, comment.user_reaction, postId, reactionLock, likeComment]);
+
+  // Short tap on like button: toggle current reaction (or default to love)
+  const handleLike = useCallback(() => {
+    if (longPressTriggered.current) { longPressTriggered.current = false; return; }
+    if (reactionLock || likeComment.isPending) return;
+    if (showReactionPicker) { setShowReactionPicker(false); return; }
+    const next: ReactionType = comment.user_reaction ?? 'love';
+    handlePickReaction(next);
+  }, [reactionLock, likeComment.isPending, showReactionPicker, comment.user_reaction, handlePickReaction]);
+
+  const startLongPress = useCallback(() => {
+    longPressTriggered.current = false;
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTriggered.current = true;
+      setShowReactionPicker(true);
+    }, 400);
+  }, []);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  // Close picker when clicking outside
+  useEffect(() => {
+    if (!showReactionPicker) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowReactionPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+    };
+  }, [showReactionPicker]);
 
   const reactionEmoji = comment.user_reaction ? REACTION_EMOJIS[comment.user_reaction] : null;
 
@@ -450,9 +488,8 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
           </div>
         )}
 
-        {/* Reaction picker for comments — Facebook style */}
         {showReactionPicker && (
-          <div className="flex gap-0.5 mt-1 p-1 bg-card/95 backdrop-blur-xl rounded-full border border-border/30 shadow-lg inline-flex animate-slide-up">
+          <div ref={pickerRef} className="flex gap-0.5 mt-1 p-1 bg-card/95 backdrop-blur-xl rounded-full border border-border/30 shadow-lg inline-flex animate-slide-up">
             {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type) => (
               <button
                 key={type}
@@ -473,15 +510,23 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
           </span>
           <button
             onClick={handleLike}
+            onMouseDown={startLongPress}
+            onMouseUp={cancelLongPress}
+            onMouseLeave={cancelLongPress}
+            onTouchStart={startLongPress}
+            onTouchEnd={cancelLongPress}
+            onTouchCancel={cancelLongPress}
+            onContextMenu={(e) => e.preventDefault()}
             disabled={reactionLock || likeComment.isPending}
             className={cn(
-              "text-[11px] font-semibold transition-colors",
-              comment.is_liked ? "text-primary" : "text-muted-foreground hover:text-foreground",
+              "text-[11px] font-semibold transition-colors select-none",
+              comment.user_reaction ? "text-primary" : "text-muted-foreground hover:text-foreground",
               (reactionLock || likeComment.isPending) && "opacity-50 pointer-events-none"
             )}
           >
-            {reactionEmoji ? reactionEmoji : "J'aime"}{comment.likes_count > 0 && ` · ${comment.likes_count}`}
+            {reactionEmoji ? `${reactionEmoji} ${REACTION_LABELS[comment.user_reaction!]}` : "J'aime"}{comment.likes_count > 0 && ` · ${comment.likes_count}`}
           </button>
+
           <button onClick={onReply} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
             Répondre
           </button>
