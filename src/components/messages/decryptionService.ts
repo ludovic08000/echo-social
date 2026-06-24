@@ -311,13 +311,27 @@ export async function resolvePlaintext(opts: {
               .select('archive_body, conversation_id')
               .eq('id', messageId)
               .maybeSingle();
-            const ab = (row as any)?.archive_body as string | null | undefined;
             const convId = (row as any)?.conversation_id as string | null | undefined;
-            if (ab && convId && isArchivePayload(ab)) {
-              const pt = await decryptArchive(ab, convId, user.id);
-              if (pt !== null) {
-                const outcome = buildOutcomeFromText(pt);
-                return cacheAndPersist(key, body, outcome, messageId);
+            if (convId) {
+              // Per-recipient archive first (covers RECEIVED messages), then the
+              // sender's write-once archive_body (covers SENT messages). Both are
+              // wrapped under the viewing user's own archive key.
+              let ab: string | null = ((row as any)?.archive_body as string | null) ?? null;
+              try {
+                const { data: mine } = await (supabase as any)
+                  .from('message_archives')
+                  .select('archive_body')
+                  .eq('message_id', messageId)
+                  .maybeSingle();
+                const mineAb = (mine as any)?.archive_body as string | null | undefined;
+                if (mineAb) ab = mineAb;
+              } catch { /* table absent pre-migration — ignore */ }
+              if (ab && isArchivePayload(ab)) {
+                const pt = await decryptArchive(ab, convId, user.id);
+                if (pt !== null) {
+                  const outcome = buildOutcomeFromText(pt);
+                  return cacheAndPersist(key, body, outcome, messageId);
+                }
               }
             }
           }

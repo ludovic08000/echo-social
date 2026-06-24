@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
+import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { safeUUID } from '@/e2ee-session';
@@ -375,6 +377,26 @@ export function useMessageQueue(
     if (!isSpecial) recordSentMessage(sanitized);
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
+
+      // C (durable history): archive the sender's OWN plaintext under the
+      // account master key (server-side, write-once) so sent messages survive
+      // local cache purge / device rotation / iOS ITP eviction. Best-effort,
+      // non-blocking, sender-only (matches set_message_archive_body), skipped
+      // for plaintext sends, view-once, and when the user disabled archiving.
+      if (encryptedSuccessfully && !extra?.view_once && isArchiveBackupEnabled()) {
+        const archiveMsgId = data.id;
+        void (async () => {
+          try {
+            const archived = await encryptArchive(sanitized, conversationId, user.id);
+            if (archived) {
+              await supabase.rpc('set_message_archive_body', {
+                p_message_id: archiveMsgId,
+                p_archive_body: archived,
+              });
+            }
+          } catch { /* best-effort — never blocks send */ }
+        })();
+      }
       const sentMessage = {
         id: data.id,
         conversation_id: conversationId,
