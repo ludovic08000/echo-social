@@ -3105,6 +3105,35 @@ export type Database = {
         }
         Relationships: []
       }
+      message_archives: {
+        Row: {
+          archive_body: string
+          created_at: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          archive_body: string
+          created_at?: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          archive_body?: string
+          created_at?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_archives_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_deletions: {
         Row: {
           created_at: string
@@ -5518,7 +5547,6 @@ export type Database = {
       }
       sender_key_state: {
         Row: {
-          chain_key_b64: string
           conversation_id: string
           created_at: string
           id: string
@@ -5526,12 +5554,10 @@ export type Database = {
           iteration: number
           sender_device_id: string
           sender_user_id: string
-          signing_priv_jwk: Json | null
           signing_pub_b64: string
           updated_at: string
         }
         Insert: {
-          chain_key_b64: string
           conversation_id: string
           created_at?: string
           id?: string
@@ -5539,12 +5565,10 @@ export type Database = {
           iteration?: number
           sender_device_id: string
           sender_user_id: string
-          signing_priv_jwk?: Json | null
           signing_pub_b64: string
           updated_at?: string
         }
         Update: {
-          chain_key_b64?: string
           conversation_id?: string
           created_at?: string
           id?: string
@@ -5552,7 +5576,6 @@ export type Database = {
           iteration?: number
           sender_device_id?: string
           sender_user_id?: string
-          signing_priv_jwk?: Json | null
           signing_pub_b64?: string
           updated_at?: string
         }
@@ -6061,6 +6084,9 @@ export type Database = {
           id: string
           iv: string
           master_key_iv: string | null
+          mk_attempts_count: number
+          mk_attempts_window_start: string | null
+          mk_locked_until: string | null
           salt: string
           user_id: string
           version: number
@@ -6073,6 +6099,9 @@ export type Database = {
           id?: string
           iv: string
           master_key_iv?: string | null
+          mk_attempts_count?: number
+          mk_attempts_window_start?: string | null
+          mk_locked_until?: string | null
           salt: string
           user_id: string
           version?: number
@@ -6085,6 +6114,9 @@ export type Database = {
           id?: string
           iv?: string
           master_key_iv?: string | null
+          mk_attempts_count?: number
+          mk_attempts_window_start?: string | null
+          mk_locked_until?: string | null
           salt?: string
           user_id?: string
           version?: number
@@ -7968,6 +8000,16 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      release_backup_master_key: {
+        Args: { _backup_type: string; _user_id: string }
+        Returns: {
+          allowed: boolean
+          attempts_remaining: number
+          locked_until: string
+          master_key_iv: string
+          wrapped_master_key: string
+        }[]
       }
       release_backup_pin_blob: {
         Args: { _user_id: string }
