@@ -195,11 +195,25 @@ export function useMessageQueue(
     };
 
     trace('session_check_start');
-    const { data: sess } = await supabase.auth.getSession();
-    if (!sess.session?.user?.id || sess.session.user.id !== user.id) {
-      trace('session_invalid', { liveUserId: sess.session?.user?.id ?? null });
-      setPendingMessages(prev => prev.filter(m => m.localId !== localId));
-      throw new Error('Session expirée — reconnectez-vous pour envoyer.');
+    // #1 perf: getSession() can await an in-progress token refresh (network),
+    // adding multi-second latency to the first send after idle. Race it against
+    // a short timeout; if it's slow we trust the live auth-context `user` (kept
+    // current by onAuthStateChange — the hook never runs without an authed user)
+    // instead of blocking the send. The strict liveness check still applies on
+    // the fast path; a truly invalid token is rejected by RLS server-side.
+    const sessProbe = await Promise.race([
+      supabase.auth.getSession().then((r) => ({ kind: 'ok' as const, data: r.data })),
+      new Promise<{ kind: 'slow' }>((res) => setTimeout(() => res({ kind: 'slow' }), 800)),
+    ]);
+    if (sessProbe.kind === 'ok') {
+      const sess = sessProbe.data;
+      if (!sess.session?.user?.id || sess.session.user.id !== user.id) {
+        trace('session_invalid', { liveUserId: sess.session?.user?.id ?? null });
+        setPendingMessages(prev => prev.filter(m => m.localId !== localId));
+        throw new Error('Session expirée — reconnectez-vous pour envoyer.');
+      }
+    } else {
+      trace('session_check_slow_trusting_context');
     }
     trace('session_ok');
 
