@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Trash2, Send, Smile, Camera, Languages, Loader2, ChevronDown, Wand2, CornerDownRight } from 'lucide-react';
