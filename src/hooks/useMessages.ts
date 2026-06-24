@@ -7,6 +7,7 @@ import { messageQueue } from '@/lib/messaging/messageQueue';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
@@ -466,6 +467,16 @@ export function useMessages(conversationId: string) {
                   // before the ratchet advances / the user leaves the screen.
                   await savePlaintext(newMsg.id, r.plaintext);
                   await savePlaintextForCiphertext(newMsg.body, r.plaintext);
+                  // C: archive the RECEIVED message under my own archive key so
+                  // it survives cache purge / device rotation (per-recipient).
+                  if (newMsg.sender_id !== user.id) {
+                    try {
+                      const ab = await encryptArchive(r.plaintext, conversationId, user.id);
+                      if (ab) await (supabase as any).from('message_archives').upsert(
+                        { message_id: newMsg.id, user_id: user.id, archive_body: ab },
+                        { onConflict: 'message_id,user_id', ignoreDuplicates: true });
+                    } catch { /* best-effort */ }
+                  }
                   try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
                 }
               }).catch(() => {});
@@ -655,6 +666,13 @@ export function useMessages(conversationId: string) {
                 // B (durability): await persistence of the decrypted copy.
                 await savePlaintext(m.id, r.plaintext);
                 await savePlaintextForCiphertext(m.body, r.plaintext);
+                // C: per-recipient durable archive of the received message.
+                try {
+                  const ab = await encryptArchive(r.plaintext, conversationId, user.id);
+                  if (ab) await (supabase as any).from('message_archives').upsert(
+                    { message_id: m.id, user_id: user.id, archive_body: ab },
+                    { onConflict: 'message_id,user_id', ignoreDuplicates: true });
+                } catch { /* best-effort */ }
                 return true;
               }
             } catch { /* fall through to refresh */ }
