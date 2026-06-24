@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import {
-  generatePairingQRCode,
   fetchActiveDevices,
   fetchTransparencyLog,
   hasLocalPasskeyVaultAlias,
 } from '@/lib/crypto';
+import { generatePairingQRCode } from '@/lib/crypto/devicePairing';
 
 interface Props {
   userId: string;
