@@ -63,6 +63,11 @@ export function setCurrentDeviceUserScope(userId: string | null | undefined): vo
   memoryDeviceId = null;
   hydrationPromise = null;
   memoryDeviceIdIsTemporary = false;
+  // Fingerprints are scoped to the account (see computeDeviceFingerprints) so a
+  // browser hosting several accounts gives each its own device id. Drop the
+  // cache when the account changes, otherwise the previous account's
+  // fingerprint would leak into the next one.
+  cachedFingerprints = null;
 }
 
 async function ensureUserScopeFromAuth(): Promise<void> {
@@ -120,10 +125,15 @@ async function computeDeviceFingerprints(): Promise<{ strict: string; loose: str
     return `${w}x${h}x${screen.colorDepth}`;
   })();
   const family = uaFamily(ua);
+  // Account scope: the SAME physical browser can host MULTIPLE accounts, and
+  // each must get its OWN device id (and recover its own after a storage purge).
+  // Without this, two accounts in one browser resolve to the SAME server device
+  // binding -> identical device_id -> message routing between them breaks.
+  const scope = currentDeviceUserScope || '';
 
-  const strict = await sha256Hex([ua, lang, cpu, tz, screenStr].join('|'));
-  const loose = await sha256Hex([family, lang.split('-')[0] || '', tz].join('|'));
-  const ultraLoose = await sha256Hex(`platform:${family}`);
+  const strict = await sha256Hex([scope, ua, lang, cpu, tz, screenStr].join('|'));
+  const loose = await sha256Hex([scope, family, lang.split('-')[0] || '', tz].join('|'));
+  const ultraLoose = await sha256Hex(`platform:${family}:${scope}`);
 
   cachedFingerprints = { strict, loose, ultraLoose };
   try { localStorage.setItem(FINGERPRINT_KEY, strict); } catch {}
@@ -161,6 +171,39 @@ export function setCurrentDeviceId(id: string): string {
   if (memoryDeviceId === id) return id;
   hydrationPromise = null;
   console.log('[device-id] forcing device id from backup', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8), scoped: !!currentDeviceUserScope });
+  return persistEverywhere(id);
+}
+
+/**
+ * Adopt a device id coming from the ACCOUNT key backup — but ONLY when this
+ * physical device has no stable id yet (fresh install / storage purge).
+ *
+ * The account backup is account-wide and syncs across every device. Forcing its
+ * `device:id` on every restore overwrote the local, already-established
+ * per-device id each session, so the id flipped between the locally-resolved one
+ * and the backup one — orphaning published prekeys and breaking delivery. A
+ * device id is per-physical-device (Signal/WhatsApp model) and must never be
+ * dictated by the account backup once the device is established.
+ */
+export function adoptDeviceIdFromBackup(id: string): string {
+  if (!id || typeof id !== 'string' || id.length < 16) return getCurrentDeviceId();
+  if (isBlockedRecoveryDeviceId(id)) return getCurrentDeviceId();
+
+  const key = storageKey();
+  const existing = memoryDeviceId || nativeGetSync(key);
+  // Keep an already-established, non-temporary local id — never override it.
+  if (existing && !memoryDeviceIdIsTemporary && !isBlockedRecoveryDeviceId(existing)) {
+    if (existing !== id) {
+      console.log('[device-id] keeping stable local id; ignoring backup id', {
+        local: existing.slice(0, 8), backup: id.slice(0, 8),
+      });
+    }
+    memoryDeviceId = existing;
+    return existing;
+  }
+
+  // No stable local id (fresh / purged) -> adopt the backup id for routing recovery.
+  console.log('[device-id] adopting backup device id (no stable local id)', { next: id.slice(0, 8) });
   return persistEverywhere(id);
 }
 

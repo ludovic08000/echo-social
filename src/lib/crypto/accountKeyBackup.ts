@@ -23,7 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
-import { getCurrentDeviceId, setCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { getCurrentDeviceId, adoptDeviceIdFromBackup } from '@/lib/messaging/currentDevice';
 import {
   exportPlaintextCache,
   importPlaintextCache,
@@ -361,7 +361,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     // matching per-device private key. This keeps message device-copies readable
     // after iOS/WebView storage purges without showing a "verify device" flow.
     if (typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
-      setCurrentDeviceId(data['device:id']);
+      adoptDeviceIdFromBackup(data['device:id']);
     }
 
     // Phase 1: E2EE stores
