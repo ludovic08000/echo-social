@@ -107,7 +107,7 @@ export function usePosts() {
             user_reaction: post.user_reaction || null,
           })) as Post[];
 
-          return await serverRankPosts(mapped, user.id, prefs.feedAlgorithm);
+          return enforceDiversity(mapped, 2);
         }
       } catch {
         // Fall through to legacy fallback

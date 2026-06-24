@@ -14,6 +14,7 @@ vi.mock('@/e2ee-session', () => ({
 }));
 
 vi.mock('@/lib/crypto/plaintextStore', () => ({
+  loadPlaintext: vi.fn().mockResolvedValue(null),
   loadPlaintextForCiphertext: vi.fn().mockResolvedValue(null),
   savePlaintextForCiphertext: vi.fn().mockResolvedValue(undefined),
 }));

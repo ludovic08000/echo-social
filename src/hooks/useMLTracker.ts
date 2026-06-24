@@ -5,10 +5,14 @@ import { recordSessionSignal } from "@/lib/feedDiversity";
 
 type SignalType =
   | "view"
+  | "dwell_medium"
   | "dwell_long"
+  | "watch_complete"
   | "like"
   | "comment"
   | "share"
+  | "save"
+  | "not_interested"
   | "hide"
   | "report"
   | "skip_fast"
@@ -16,18 +20,22 @@ type SignalType =
 
 const SIGNAL_WEIGHT: Record<SignalType, number> = {
   view: 0.5,
+  dwell_medium: 1.0,
   dwell_long: 1.5,
+  watch_complete: 2.2,
   like: 2.0,
   comment: 3.0,
   share: 4.0,
+  save: 3.2,
+  not_interested: -4.0,
   hide: -3.0,
   report: -5.0,
   skip_fast: -1.0,
   click: 1.0,
 };
 
-const POSITIVE_SIGNALS: SignalType[] = ["like", "comment", "share", "dwell_long", "click"];
-const NEGATIVE_SIGNALS: SignalType[] = ["hide", "report", "skip_fast"];
+const POSITIVE_SIGNALS: SignalType[] = ["like", "comment", "share", "save", "dwell_medium", "dwell_long", "watch_complete", "click"];
+const NEGATIVE_SIGNALS: SignalType[] = ["hide", "not_interested", "report", "skip_fast"];
 
 type QueuedInteraction = {
   user_id: string;
@@ -111,6 +119,10 @@ function sanitizeInteraction(row: QueuedInteraction): QueuedInteraction {
     next.dwell_ms = Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(row.dwell_ms)));
   }
 
+  if (typeof row.scroll_depth === "number" && Number.isFinite(row.scroll_depth)) {
+    next.scroll_depth = Math.max(0, Math.min(1, row.scroll_depth));
+  }
+
   return next;
 }
 
@@ -142,7 +154,7 @@ export function trackMLSignal(
   }
 
   // Watch-time learning: push dwell to post-level aggregate
-  if ((signal === "dwell_long" || signal === "skip_fast") && extra?.dwell_ms) {
+  if ((signal === "dwell_medium" || signal === "dwell_long" || signal === "watch_complete" || signal === "skip_fast") && extra?.dwell_ms) {
     watchTimeQueue.push({ post_id: postId, dwell_ms: extra.dwell_ms });
   }
 
@@ -172,14 +184,18 @@ export function useMLViewTracker(postId: string) {
             if (enterAtRef.current === null) enterAtRef.current = Date.now();
             if (!viewedRef.current) {
               viewedRef.current = true;
-              trackMLSignal(user.id, postId, "view");
+              trackMLSignal(user.id, postId, "view", { scroll_depth: entry.intersectionRatio });
             }
           } else if (enterAtRef.current !== null) {
             const dwell = Date.now() - enterAtRef.current;
             enterAtRef.current = null;
-            if (dwell >= 3000) {
-              trackMLSignal(user.id, postId, "dwell_long", { dwell_ms: dwell });
-            } else if (dwell < 600 && viewedRef.current) {
+            if (dwell >= 8000) {
+              trackMLSignal(user.id, postId, "watch_complete", { dwell_ms: dwell, scroll_depth: entry.intersectionRatio });
+            } else if (dwell >= 3000) {
+              trackMLSignal(user.id, postId, "dwell_long", { dwell_ms: dwell, scroll_depth: entry.intersectionRatio });
+            } else if (dwell >= 1200) {
+              trackMLSignal(user.id, postId, "dwell_medium", { dwell_ms: dwell, scroll_depth: entry.intersectionRatio });
+            } else if (dwell < 800 && viewedRef.current) {
               trackMLSignal(user.id, postId, "skip_fast", { dwell_ms: dwell });
             }
           }
@@ -193,7 +209,9 @@ export function useMLViewTracker(postId: string) {
       observer.disconnect();
       if (enterAtRef.current !== null) {
         const dwell = Date.now() - enterAtRef.current;
-        if (dwell >= 3000) trackMLSignal(user.id, postId, "dwell_long", { dwell_ms: dwell });
+        if (dwell >= 8000) trackMLSignal(user.id, postId, "watch_complete", { dwell_ms: dwell, scroll_depth: 1 });
+        else if (dwell >= 3000) trackMLSignal(user.id, postId, "dwell_long", { dwell_ms: dwell, scroll_depth: 1 });
+        else if (dwell >= 1200) trackMLSignal(user.id, postId, "dwell_medium", { dwell_ms: dwell, scroll_depth: 0.5 });
       }
     };
   }, [postId, user?.id]);

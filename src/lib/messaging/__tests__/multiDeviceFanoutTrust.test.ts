@@ -140,7 +140,7 @@ describe('multiDeviceFanout trust gate', () => {
     });
 
     expect(result).toEqual({ inserted: 1, multiDevice: true });
-    expect(listFanoutTargets).toHaveBeenCalledWith(ALICE, [ALICE, BOB]);
+    expect(listFanoutTargets).toHaveBeenCalledWith(ALICE, [ALICE, BOB], { verifyPrekeys: false });
     expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
     expect(inserted).toHaveLength(1);
     expect(inserted[0].recipient_device_id).toBe('bob-signed-dev');

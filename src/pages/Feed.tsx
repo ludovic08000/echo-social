@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from 'react';
-import { useMLScoring, useMLRecommendations, blendScores } from '@/hooks/useMLFeed';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePosts } from '@/hooks/usePosts';
 import { AppLayout } from '@/components/AppLayout';
@@ -77,29 +76,9 @@ export default function Feed() {
     });
   }, [data?.pages]);
 
-  // ML scoring — request AI scores for current posts
-  const postIds = useMemo(() => rawPosts.map(p => p.id), [rawPosts]);
-  const { data: mlData } = useMLScoring(postIds);
-  const { data: mlRecos } = useMLRecommendations();
-
-  // Blend ML scores once per post, then KEEP that order stable across renders
-  // to avoid the visible flicker when new pages arrive or scores update late.
-  const orderRef = useRef<Map<string, number>>(new Map());
-  const posts = useMemo(() => {
-    const mlScores = mlData?.scores || {};
-    const order = orderRef.current;
-
-    // Assign a stable rank to any post we haven't seen yet.
-    rawPosts.forEach((p, i) => {
-      if (order.has(p.id)) return;
-      const chrono = -i; // earlier = higher
-      const ml = mlScores[p.id];
-      order.set(p.id, ml != null ? blendScores(chrono, ml, 0.3) : chrono);
-    });
-
-    // Sort by frozen rank — never reshuffle posts already on screen.
-    return [...rawPosts].sort((a, b) => (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0));
-  }, [rawPosts, mlData?.scores]);
+  // `usePosts` already receives a server-ranked page. Keeping a second
+  // client-side ML sort here adds latency and can make the feed reshuffle.
+  const posts = rawPosts;
 
   // Track feed load performance
   useEffect(() => {

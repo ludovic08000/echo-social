@@ -75,9 +75,6 @@ function calculateLiveScore(
     }
   }
 
-  // 5. Un peu de randomisation
-  score += Math.random() * 0.05;
-
   return Math.max(0, Math.min(1, score));
 }
 
@@ -87,6 +84,40 @@ export function useLiveStreams() {
   return useQuery({
     queryKey: ['live-streams', user?.id],
     queryFn: async () => {
+      try {
+        const { data: bundle, error: bundleError } = await (supabase.rpc as any)('live_feed_bundle', {
+          p_user_id: user?.id ?? null,
+          p_active_limit: 80,
+          p_replay_limit: 0,
+        });
+
+        if (!bundleError && bundle?.active) {
+          const profiles = Array.isArray(bundle.profiles) ? bundle.profiles : [];
+          const ranks = bundle.ranks && typeof bundle.ranks === 'object' ? bundle.ranks : {};
+          const profileMap = new Map(
+            profiles.map((p: any) => [p.user_id, { name: p.name, avatar_url: p.avatar_url }])
+          );
+
+          return [...bundle.active]
+            .map((live: any) => ({
+              ...live,
+              peak_viewer_count: live.peak_viewer_count || live.viewer_count || 0,
+              host: profileMap.get(live.user_id),
+              _score: Number(ranks[live.id] ?? 0),
+            }))
+            .sort((a: any, b: any) => {
+              if (b._score !== a._score) return b._score - a._score;
+              if ((b.viewer_count || 0) !== (a.viewer_count || 0)) {
+                return (b.viewer_count || 0) - (a.viewer_count || 0);
+              }
+              return new Date(b.started_at || b.created_at).getTime() - new Date(a.started_at || a.created_at).getTime();
+            })
+            .map(({ _score, ...live }: any) => live) as LiveStream[];
+        }
+      } catch {
+        // Older deployments may not have live_feed_bundle yet.
+      }
+
       // 1. Récupérer les lives actifs
       const { data: lives, error } = await supabase
         .from('live_streams')
