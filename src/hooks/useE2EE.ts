@@ -255,6 +255,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
   const initRef = useRef(false);
   const legacySessionReadyRef = useRef(false);
   const peerHasRespondedRef = useRef(false);
+  // #2 perf: dedup concurrent X3DH inits (open-prewarm racing first send).
+  const initRatchetPromiseRef = useRef<Promise<RatchetState | null> | null>(null);
 
   const isZeus = peerUserId === ZEUS_ID;
 
@@ -847,6 +849,8 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
    * Never falls back to legacy for outbound modern messages.
    */
   const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
+    if (initRatchetPromiseRef.current) return initRatchetPromiseRef.current;
+    const run = (async (): Promise<RatchetState | null> => {
     if (!conversationId || !keysRef.current || !peerKeyRef.current || !peerUserId) return null;
 
     // ─── Cache-bust: si le SPK du pair a changé sur le serveur depuis notre
@@ -970,7 +974,35 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     await saveRatchetLocal(conversationId, ratchet, x3dhInfoRef.current);
     console.info('[RATCHET] ✅ init with X3DH (initiator) — ready for encrypt');
     return ratchet;
+    })();
+    initRatchetPromiseRef.current = run;
+    try { return await run; } finally { initRatchetPromiseRef.current = null; }
   }, [conversationId, peerUserId, resetRatchetBootstrapState, ensureKeysAndPeerSync]);
+
+  // #2 perf — pre-establish the X3DH/Double-Ratchet session when the
+  // conversation OPENS (WhatsApp model), so the FIRST message sends instantly
+  // instead of paying the bundle-fetch + X3DH cost at send time. Best-effort:
+  // any failure is swallowed and encrypt() still establishes it lazily.
+  useEffect(() => {
+    if (!conversationId || !peerUserId || isZeus || !user) return;
+    if (state.fingerprintChanged) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          if (cancelled) return;
+          if (ratchetRef.current && isRatchetFullyReady(ratchetRef.current)) return;
+          const synced = await ensureKeysAndPeerSync(false);
+          if (cancelled || !synced || state.fingerprintChanged) return;
+          await initRatchetIfNeeded();
+          if (!cancelled) console.debug('[E2EE] session prewarmed on conversation open');
+        } catch {
+          /* non-fatal — first send will establish lazily */
+        }
+      })();
+    }, 500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [conversationId, peerUserId, isZeus, user, state.fingerprintChanged, ensureKeysAndPeerSync, initRatchetIfNeeded]);
 
   /**
    * Encrypt — NEVER returns plaintext.
