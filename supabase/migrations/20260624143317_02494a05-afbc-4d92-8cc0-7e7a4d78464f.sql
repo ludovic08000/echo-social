@@ -1,0 +1,1 @@
+ALTER TABLE public.sender_key_state ADD COLUMN IF NOT EXISTS chain_key_b64 text; ALTER TABLE public.sender_key_state ADD COLUMN IF NOT EXISTS signing_priv_jwk jsonb;
