@@ -146,7 +146,6 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       setOptimisticReaction(reactionType);
       lockInteraction();
       haptic('medium');
-      setShowParticles(REACTION_EMOJIS[reactionType]);
       addReaction.mutate({ postId, reactionType });
     }
   }, [user, activeReaction, postId, addReaction, removeReaction, isBusy, lockInteraction]);
