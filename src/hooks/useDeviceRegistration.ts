@@ -470,6 +470,48 @@ export function useDeviceRegistration() {
         } catch (sdlErr) {
           console.warn('[useDeviceRegistration] publishOwnSignedDeviceList failed (non-fatal):', sdlErr);
         }
+
+        // 6. Self-heal a STALE PRIMARY. If THIS active device is published but
+        //    NOT primary, and the current primary is one of MY OTHER devices
+        //    that has NO active signed-prekey bundle (so it cannot receive any
+        //    message and only blocks promotion of the real device), quarantine
+        //    it. The DB trigger (ensure_primary_device_exists) then promotes
+        //    THIS device, so peers can finally target it (fixes the cross-device
+        //    "empty blue bubble"). A healthy secondary device (which always has
+        //    a valid bundle) is never touched. Best-effort, non-fatal.
+        try {
+          const { data: myDevices } = await supabase
+            .from('user_devices')
+            .select('device_id, is_primary')
+            .eq('user_id', user.id)
+            .eq('is_active', true)
+            .is('revoked_at', null);
+          const meRow = (myDevices ?? []).find((d: any) => d.device_id === deviceId) as any;
+          const stalePrimary = (myDevices ?? []).find((d: any) => d.is_primary && d.device_id !== deviceId) as any;
+          if (meRow && !meRow.is_primary && stalePrimary) {
+            const { data: spk } = await supabase
+              .from('device_signed_prekeys')
+              .select('spk_id')
+              .eq('user_id', user.id)
+              .eq('device_id', stalePrimary.device_id)
+              .eq('is_active', true)
+              .limit(1)
+              .maybeSingle();
+            if (!spk) {
+              console.warn('[useDeviceRegistration] stale primary without bundle — quarantining so current device is promoted', {
+                stalePrimary: String(stalePrimary.device_id).slice(0, 8),
+                current: String(deviceId).slice(0, 8),
+              });
+              await (supabase as any).rpc('quarantine_own_invalid_device', {
+                p_device_id: stalePrimary.device_id,
+                p_reason: 'stale_primary_no_bundle_blocking_current_device',
+              });
+              try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
+            }
+          }
+        } catch (healErr) {
+          console.warn('[useDeviceRegistration] stale-primary self-heal failed (non-fatal):', healErr);
+        }
       } catch (err) {
         if (err instanceof PinUnlockRequiredError || String(err).toLowerCase().includes('pin unlock required')) {
           ranRef.current = false;
