@@ -244,6 +244,11 @@ export async function resolvePlaintext(opts: {
           const result = await decrypt(body);
           if (!result.incompatible) {
             if (result.encrypted && !result.verified) {
+              if (typeof console !== 'undefined') {
+                console.warn('[DECRYPT] ratchet path: decrypted but NOT verified — dropping', {
+                  messageId, kind: isMultiDeviceEnvelopeBody(body) ? 'multidevice' : isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
+                });
+              }
               negCache.set(key, Date.now());
               return null;
             }
@@ -302,6 +307,8 @@ export async function resolvePlaintext(opts: {
 
       // 4) Encrypted archive fallback (long-life, wrapped under account master key).
       //    Survives device rotation, cache purge, ghost-device quarantine.
+      let archiveFound = false;
+      let archiveDecrypted = false;
       if (messageId) {
         try {
           const { data: { user } } = await supabase.auth.getUser();
@@ -327,8 +334,10 @@ export async function resolvePlaintext(opts: {
                 if (mineAb) ab = mineAb;
               } catch { /* table absent pre-migration — ignore */ }
               if (ab && isArchivePayload(ab)) {
+                archiveFound = true;
                 const pt = await decryptArchive(ab, convId, user.id);
                 if (pt !== null) {
+                  archiveDecrypted = true;
                   const outcome = buildOutcomeFromText(pt);
                   return cacheAndPersist(key, body, outcome, messageId);
                 }
@@ -341,6 +350,16 @@ export async function resolvePlaintext(opts: {
       }
 
       // 5) Nothing produced plaintext. Mark negative + stay silent.
+      if (typeof console !== 'undefined') {
+        console.warn('[DECRYPT-FAIL] no path produced plaintext (bubble stays empty)', {
+          messageId,
+          kind: isMultiDeviceEnvelopeBody(body) ? 'multidevice' : isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
+          isMe: opts.isMe === true,
+          senderId: senderId ? String(senderId).slice(0, 8) : null,
+          archiveFound,
+          archiveDecrypted,
+        });
+      }
       negCache.set(key, Date.now());
       return null;
     })();

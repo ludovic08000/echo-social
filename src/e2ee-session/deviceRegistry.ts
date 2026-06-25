@@ -105,6 +105,24 @@ export async function listDevicesForUser(userId: UserId, options: DeviceListOpti
   // 1) Trusted (signed) list first.
   try {
     const verified = await fetchVerifiedDeviceList(userId);
+    if (typeof console !== 'undefined') {
+      // [DIAG] Full visibility on the trust gate: which devices are accepted and
+      // WHY the others are rejected. A second device rejected as NO_SIGNATURE is
+      // the signature of the broken multi-device path (companion never signed).
+      const reasons: Record<string, number> = {};
+      for (const v of verified.verifications) {
+        const k = `${v.reason ?? '?'}${v.ok ? '' : '!'}`;
+        reasons[k] = (reasons[k] ?? 0) + 1;
+      }
+      console.info('[DEVTRUST] device list resolved', {
+        userId: String(userId).slice(0, 8),
+        signedListPresent: verified.signedListPresent,
+        total: verified.verifications.length,
+        trusted: verified.trusted.length,
+        trustedIds: verified.trusted.map(t => String(t.deviceId).slice(0, 8)),
+        reasons,
+      });
+    }
     if (verified.signedListPresent) {
       if (verified.trusted.length === 0 && typeof console !== 'undefined') {
         console.warn('[A1] signed device list present but no device verified; refusing raw fallback', {
