@@ -16,6 +16,7 @@ vi.mock('@/e2ee-session', () => ({
 vi.mock('@/lib/crypto/plaintextStore', () => ({
   loadPlaintext: vi.fn().mockResolvedValue(null),
   loadPlaintextForCiphertext: vi.fn().mockResolvedValue(null),
+  savePlaintext: vi.fn().mockResolvedValue(undefined),
   savePlaintextForCiphertext: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -84,5 +85,40 @@ describe('decryptionService multi-device routing', () => {
 
     expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('msg-missing-current-device-copy', 'sender-user');
     expect(mocks.routeIncoming).not.toHaveBeenCalled();
+  });
+
+  // Regression: multi-device messages are AEAD-authenticated by the ratchet
+  // session but fail the *secondary* Ed25519 check because the sending device
+  // signs with its own key while we only hold the peer's account-level signing
+  // key. Such a result (`verified: false`, non-empty text) must be SURFACED,
+  // not dropped to a blank bubble. This locks in the empty-bubble fix.
+  it('surfaces a decrypted-but-unverified ratchet message instead of dropping it', async () => {
+    const body = JSON.stringify({
+      encryptionMode: 'ratchet',
+      v: 4,
+      iv: 'aXYtYnl0ZXM=',
+      ct: 'Y2lwaGVydGV4dA==',
+      sig: 'c2lnbmF0dXJl',
+      fp: 'sender-device-fingerprint',
+      ts: Date.now(),
+      hdr: { dh: 'ZGgtcHVia2V5', n: 0, pn: 0 },
+    });
+
+    const result = await resolvePlaintext({
+      body,
+      messageId: 'msg-unverified-from-secondary-device',
+      decrypt: vi.fn().mockResolvedValue({
+        text: 'message from my other device',
+        encrypted: true,
+        verified: false,
+      }),
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.text).toBe('message from my other device');
+    expect(result?.hidden).toBe(false);
+    // Must not fall through to device-copy fallback — the primary decrypt
+    // already produced usable plaintext.
+    expect(mocks.tryReadDeviceCopy).not.toHaveBeenCalled();
   });
 });

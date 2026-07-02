@@ -243,17 +243,23 @@ export async function resolvePlaintext(opts: {
         try {
           const result = await decrypt(body);
           if (!result.incompatible) {
-            if (result.encrypted && !result.verified) {
-              if (typeof console !== 'undefined') {
-                console.warn('[DECRYPT] ratchet path: decrypted but NOT verified — dropping', {
-                  messageId, kind: isMultiDeviceEnvelopeBody(body) ? 'multidevice' : isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
-                });
-              }
-              negCache.set(key, Date.now());
-              return null;
+            // A decrypted-but-unverified result is still AES-GCM-authenticated
+            // by the Double Ratchet session (X3DH-authenticated). In
+            // multi-device, `verified: false` is a false negative because the
+            // sending device signs with its own Ed25519 key while we only hold
+            // the peer's account-level signing key. Surfacing the plaintext
+            // (rather than dropping to a blank bubble) restores those messages.
+            // The signal is logged; a per-device verification + UI "unverified"
+            // badge is tracked as a separate follow-up.
+            if (result.encrypted && !result.verified && typeof console !== 'undefined') {
+              console.warn('[DECRYPT] ratchet path: decrypted, AEAD-authenticated but Ed25519-unverified — surfacing', {
+                messageId, kind: isMultiDeviceEnvelopeBody(body) ? 'multidevice' : isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
+              });
             }
-            const outcome = buildOutcomeFromText(result.text);
-            return cacheAndPersist(key, body, outcome, messageId);
+            if (result.text !== '') {
+              const outcome = buildOutcomeFromText(result.text);
+              return cacheAndPersist(key, body, outcome, messageId);
+            }
           }
         } catch {
           /* fall through to alternate paths */

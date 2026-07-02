@@ -1213,14 +1213,26 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     const x3dhHeader: X3DHInitialMessage | undefined = parsed.x3dh;
     let ratchet = ratchetRef.current;
 
-    const rejectUnverified = (verified: boolean, stage: string): boolean => {
-      if (verified) return false;
-      console.error('[E2EE] Blocking ratchet plaintext with invalid or missing signature', {
+    // NOTE (multi-device signature verification):
+    // The Ed25519 signature is a *secondary*, defense-in-depth check. The
+    // primary authenticity guarantee is the AES-GCM AEAD tag, which only
+    // verifies if the message key derived from the X3DH-authenticated Double
+    // Ratchet session is correct — i.e. the message provably came from the
+    // peer's session. In multi-device, each device signs with its OWN Ed25519
+    // key, but the receiver only holds the peer's account-level signing key,
+    // so `verified` is a FALSE NEGATIVE for messages from a secondary device.
+    // Suppressing the (already AEAD-authenticated) plaintext on that basis is
+    // what produced empty "blank" bubbles. We therefore surface the plaintext
+    // and propagate `verified: false` for the UI to badge, instead of dropping.
+    // A proper fix (per-device signing-key resolution) requires backend work
+    // to publish device signing keys — tracked separately.
+    const noteUnverifiedSignature = (verified: boolean, stage: string): void => {
+      if (verified) return;
+      console.warn('[E2EE] ratchet plaintext AEAD-authenticated but Ed25519-unverified (surfacing, not dropping)', {
         conversationId,
         stage,
         hasPeerSigningKey: !!peerKeyRef.current?.signingKey,
       });
-      return true;
     };
 
     const bootstrapResponderFromHeader = async (reason: string): Promise<RatchetState | null> => {
@@ -1298,9 +1310,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               const { plaintext, verified, newState } = await ratchetDecrypt(
                 healed, envelope, peerKeyRef.current?.signingKey,
               );
-              if (rejectUnverified(verified, 'readiness_self_heal')) {
-                return { text: '', encrypted: true, verified: false, incompatible: true };
-              }
+              noteUnverifiedSignature(verified, 'readiness_self_heal');
               ratchetRef.current = newState;
               await saveRatchetLocal(conversationId!, newState, null);
               setState(s => ({ ...s, ratchetActive: true }));
@@ -1324,9 +1334,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         const { plaintext, verified, newState } = await ratchetDecrypt(
           ratchet, envelope, peerKeyRef.current?.signingKey,
         );
-        if (rejectUnverified(verified, 'primary')) {
-          return { text: '', encrypted: true, verified: false, incompatible: true };
-        }
+        noteUnverifiedSignature(verified, 'primary');
         ratchetRef.current = newState;
         if (!peerHasRespondedRef.current) {
           peerHasRespondedRef.current = true;
@@ -1352,9 +1360,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
               const { plaintext, verified, newState } = await ratchetDecrypt(
                 healed, envelope, peerKeyRef.current?.signingKey,
               );
-              if (rejectUnverified(verified, 'decrypt_self_heal')) {
-                return { text: '', encrypted: true, verified: false, incompatible: true };
-              }
+              noteUnverifiedSignature(verified, 'decrypt_self_heal');
               ratchetRef.current = newState;
               await saveRatchetLocal(conversationId!, newState, null);
               setState(s => ({ ...s, ratchetActive: true }));
