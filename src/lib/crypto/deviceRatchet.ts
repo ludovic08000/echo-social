@@ -30,6 +30,7 @@ import { bufferToBase64, base64ToBuffer, randomBytes, importKeyFromJWK, importOk
 import { logCryptoError } from './errorLogger';
 import { exportPublicKeyRaw } from './keyManager';
 import { runTxOn, reqToPromise } from './indexedDbTx';
+import { RATCHET_MAX_SKIP, RATCHET_MAX_SKIPPED_CACHE } from './constants';
 
 const STORE = 'sessions';
 
@@ -38,8 +39,11 @@ export const RATCHET_PREFIX_V5 = 'x3dh5.'; // Double Ratchet w/ DH + AAD (X3DH Â
 
 const AD_PREFIX_DEV_V5 = 'FORSURE-DEV-AD-v5|';
 
-const MAX_SKIP = 256;            // max skipped message keys per chain
-const MAX_SKIPPED_TOTAL = 2048;  // hard cap across all stored skipped keys
+// Unified with the pairwise ratchet (ratchet.ts) so a burst of reordered
+// messages (e.g. iOS APNs batch delivery after wake) does not throw on the
+// device path while the pairwise path would tolerate it.
+const MAX_SKIP = RATCHET_MAX_SKIP;            // max skipped message keys per chain
+const MAX_SKIPPED_TOTAL = RATCHET_MAX_SKIPPED_CACHE;  // hard cap across all stored skipped keys
 
 interface SkippedKey {
   /** dhPub (peer ratchet pub) of the chain the key belongs to, base64 */
