@@ -93,6 +93,11 @@ import {
   archiveRatchetState,
   tryDecryptWithArchivedSessions,
 } from '@/lib/crypto/ratchetArchive';
+import {
+  noteFailureAndDecideReset,
+  recordReset,
+  clearSessionReset,
+} from '@/lib/crypto/sessionResetTracker';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -1401,6 +1406,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
         setState(s => ({ ...s, ratchetActive: true }));
         console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}`);
+        if (conversationId) clearSessionReset(conversationId);
         const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
         if (skdmAbsorbed) return skdmAbsorbed;
         return { text: plaintext, encrypted: true, verified };
@@ -1474,17 +1480,32 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       envelopeDh: envelope?.hdr?.dh?.slice(0, 12),
     });
 
-    // SELF-HEAL: si on a un ratchet local mais le message arrive sans header X3DH
-    // et qu'on n'arrive pas à le déchiffrer, c'est qu'on est désynchronisé avec
-    // le pair (notre ratchet vient d'un ancien handshake obsolète). On purge notre
-    // ratchet local : au prochain envoi, l'un des deux côtés relancera un X3DH
-    // propre (via cache-bust SPK ou détection in_memory_incomplete).
+    // SELF-HEAL / SESSION RESET: si on a un ratchet local mais le message
+    // arrive sans header X3DH et qu'on n'arrive pas à le déchiffrer, on est
+    // désynchronisé avec le pair. Le remède (purge locale + rotation SPK pour
+    // forcer un re-handshake) est coûteux, donc on ne le déclenche qu'après un
+    // seuil d'échecs persistants, avec cooldown et cap anti-tempête (voir
+    // sessionResetTracker) — au lieu de roter le SPK à chaque échec.
     if (ratchet && !x3dhHeader && conversationId) {
-      console.warn('[E2EE] 🔄 Ratchet désynchronisé détecté — purge locale + rotation SPK pour forcer re-handshake côté pair');
+      const decision = noteFailureAndDecideReset(conversationId);
+      if (!decision.shouldReset) {
+        console.debug('[E2EE] session-reset deferred', {
+          conversationId,
+          reason: decision.reason,
+          fails: decision.fails,
+        });
+        // Not yet — leave state intact so the retry mechanism can re-drive; a
+        // reset that fires too eagerly causes handshake storms.
+        markRatchetTerminalFailure(conversationId, rawBody);
+        return { text: '', encrypted: true, verified: false, incompatible: true };
+      }
+
+      console.warn('[E2EE] 🔄 Session reset (peer ratchet desync) — purge locale + rotation SPK', {
+        conversationId,
+        fails: decision.fails,
+      });
       await resetRatchetBootstrapState('peer_ratchet_desync');
       // Rotate our SPK so the peer's next send detects isPeerSPKStale and re-runs X3DH automatically.
-      // Without this, the sender keeps using the same ratchet (no X3DH header attached after first peer response)
-      // and the receiver stays stuck in this terminal failure forever.
       if (user && keysRef.current) {
         try {
           await generateAndUploadSignedPrekey(user.id, keysRef.current.signingPrivateKey);
@@ -1493,6 +1514,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           console.warn('[E2EE] SPK rotation failed (peer may stay desynced):', e);
         }
       }
+      recordReset(conversationId);
       markRatchetTerminalFailure(conversationId, rawBody);
       return { text: '', encrypted: true, verified: false, incompatible: true };
     }
