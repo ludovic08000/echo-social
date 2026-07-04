@@ -89,6 +89,10 @@ import {
   resolveSigningKeyForEnvelope,
   type DeviceSigningKeyMap,
 } from '@/lib/crypto/peerDeviceSigningKeys';
+import {
+  archiveRatchetState,
+  tryDecryptWithArchivedSessions,
+} from '@/lib/crypto/ratchetArchive';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -770,6 +774,15 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       if (fingerprintChanged) {
         if (conversationId) {
+          // Signal-style: archive the current session instead of destroying it,
+          // so messages the peer already encrypted under the OLD key remain
+          // decryptable via the archived session (see ratchetArchive.ts). Only
+          // then reset the live ratchet for the new identity.
+          if (ratchetRef.current) {
+            try {
+              await archiveRatchetState(conversationId, ratchetRef.current);
+            } catch {}
+          }
           try {
             await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
               tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
@@ -1426,6 +1439,26 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           envelopeDh: envelope?.hdr?.dh?.slice(0, 12),
           errMsg,
         });
+      }
+    }
+
+    // Last resort before declaring failure: try sessions we archived on a past
+    // key change (Signal previousStates). This recovers messages the peer
+    // encrypted under the OLD identity key after an iOS reinstall/restore.
+    if (conversationId) {
+      try {
+        const archived = await tryDecryptWithArchivedSessions(
+          conversationId,
+          envelope,
+          resolvePeerSigningKeyB64(),
+        );
+        if (archived) {
+          noteUnverifiedSignature(archived.verified, 'archived_session');
+          console.debug('[E2EE] ✅ decrypted via archived session (post key-change recovery)');
+          return { text: archived.plaintext, encrypted: true, verified: archived.verified };
+        }
+      } catch (e) {
+        console.warn('[E2EE][ARCHIVE] archived-session decrypt attempt failed', e);
       }
     }
 
