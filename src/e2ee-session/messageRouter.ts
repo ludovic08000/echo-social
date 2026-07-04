@@ -6,7 +6,8 @@
  * Recovery rule:
  * - secure pipeline envelopes are validated first: epoch, replay, sender cert.
  * - legacy encrypted payloads remain supported as fallback.
- * - unreadable old payloads are dropped once, never retried forever.
+ * - unreadable payloads are retried a bounded number of times (transient
+ *   failures at cold start), then dropped once retries are exhausted.
  */
 import {
   RATCHET_PREFIX_V4,
@@ -19,6 +20,7 @@ import { tryEveryRatchetSession } from './fallbackDecrypt';
 import { legacyDecryptByMessageId, isKnownLegacyFormat } from './legacyDecryptRouter';
 import { hasSeenMessage, markSeenMessage, makeSeenKey } from './seenMessageStore';
 import { noteDecryptFailure, clearDecryptFailure } from './refanoutQueue';
+import { noteRetryAttempt, clearRetry } from './pendingRetryStore';
 import type { DecryptResult, UserId } from './types';
 
 interface RouteInput {
@@ -94,6 +96,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
       const pt = await deviceRatchetDecrypt(recipientUserId, me, encryptedBody);
       if (pt !== null) {
         clearDecryptFailure(messageId);
+        clearRetry(seenKey);
         markSeenMessage(seenKey);
         return {
           ok: true,
@@ -116,6 +119,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
       );
       if (fb.ok) {
         clearDecryptFailure(messageId);
+        clearRetry(seenKey);
         markSeenMessage(seenKey);
         return fb;
       }
@@ -123,6 +127,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
       const r = await legacyDecryptByMessageId(messageId, senderUserId);
       if (r.ok) {
         clearDecryptFailure(messageId);
+        clearRetry(seenKey);
         markSeenMessage(seenKey);
         return r;
       }
@@ -136,6 +141,16 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
       return { ok: false, plaintext: null, errorCode: 'REFANOUT_REQUESTED' };
     }
 
+    // No refanout dispatched. Rather than dropping once (which permanently
+    // loses messages that failed transiently — e.g. ratchet not yet loaded at
+    // cold start), leave the envelope UN-seen and retry on the next re-route,
+    // up to a bounded number of attempts.
+    const retry = noteRetryAttempt(seenKey);
+    if (!retry.exhausted) {
+      console.debug('[E2EE] decrypt pending retry (ratchet path)', { messageId: messageId || null, attempt: retry.attempts });
+      return { ok: false, plaintext: null, errorCode: 'DECRYPT_RETRY_PENDING' };
+    }
+
     markSeenMessage(seenKey);
     return dropUnreadableEnvelope(messageId, 'RATCHET_DECRYPT_DROPPED');
   }
@@ -144,6 +159,7 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
     const r = await legacyDecryptByMessageId(messageId, senderUserId);
     if (r.ok) {
       clearDecryptFailure(messageId);
+      clearRetry(seenKey);
       markSeenMessage(seenKey);
       return r;
     }
@@ -151,6 +167,12 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
     const refanoutSent = await noteDecryptFailure(messageId, senderUserId);
     if (refanoutSent) {
       return { ok: false, plaintext: null, errorCode: 'REFANOUT_REQUESTED' };
+    }
+
+    const retry = noteRetryAttempt(seenKey);
+    if (!retry.exhausted) {
+      console.debug('[E2EE] decrypt pending retry (legacy path)', { messageId, attempt: retry.attempts });
+      return { ok: false, plaintext: null, errorCode: 'DECRYPT_RETRY_PENDING' };
     }
 
     markSeenMessage(seenKey);
@@ -164,5 +186,5 @@ let wired = false;
 export function wirePendingQueue(): void {
   if (wired) return;
   wired = true;
-  console.info('[E2EE] pending decrypt retry queue disabled; unreadable envelopes are dropped once');
+  console.info('[E2EE] decrypt retry enabled; transient failures are retried up to MAX_DECRYPT_RETRIES, then dropped');
 }
