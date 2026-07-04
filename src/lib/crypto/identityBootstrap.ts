@@ -3,6 +3,7 @@ import { exportPublicKeyBundle, type IdentityKeyPair } from './keyManager';
 import { refreshSignedPrekeyIfNeeded } from './x3dh';
 import { resolveUserIdentity } from './identityRecovery';
 import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoState';
+import { appendTransparencyLog } from './transparencyLog';
 
 const BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 const attempts = new Map<string, Promise<void>>();
@@ -86,6 +87,18 @@ async function runIdentityMaintenance(
   await publishIdentity(userId, keys);
 
   lastSuccessAt.set(userId, Date.now());
+
+  // Key Transparency: record the identity binding in the append-only log so the
+  // kt-publish-epoch aggregator can include it in a signed Merkle epoch.
+  // Best-effort — appendTransparencyLog already swallows its own errors.
+  void appendTransparencyLog({
+    userId,
+    eventType:
+      mode === 'restored' ? 'identity_restored'
+      : mode === 'new_epoch' ? 'identity_epoch_changed'
+      : 'identity_bootstrap',
+    fingerprint: keys.fingerprint,
+  });
 
   if (mode === 'new_epoch') {
     try {
