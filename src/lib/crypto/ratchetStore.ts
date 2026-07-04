@@ -19,6 +19,17 @@ export const RATCHET_DB_NAME = 'forsure-ratchet';
 export const RATCHET_DB_VERSION = 1;
 export const RATCHET_STORE_NAME = 'ratchet-states';
 
+/**
+ * Optional off-device sync hook, fired best-effort after every local save.
+ * Injected by the app (see useE2EE) so this store stays free of any network /
+ * Supabase dependency — tests that don't register a hook are unaffected.
+ */
+type RatchetSyncHook = (convId: string, state: RatchetState) => void | Promise<void>;
+let _syncHook: RatchetSyncHook | null = null;
+export function setRatchetSyncHook(hook: RatchetSyncHook | null): void {
+  _syncHook = hook;
+}
+
 export function recreateLegacyE2EEDatabase(): Promise<void> {
   return new Promise((resolve) => {
     void (async () => {
@@ -53,6 +64,13 @@ export async function saveRatchetLocal(
     await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
       tx.objectStore(RATCHET_STORE_NAME).put(record);
     });
+    if (_syncHook) {
+      try {
+        void _syncHook(convId, state);
+      } catch {
+        /* sync is best-effort — never block or fail the local save */
+      }
+    }
   } catch (e) {
     console.error('[E2EE] Failed to persist ratchet state:', e);
   }

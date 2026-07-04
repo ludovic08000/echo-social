@@ -56,6 +56,7 @@ import {
   RATCHET_DB_NAME,
   RATCHET_DB_VERSION,
   RATCHET_STORE_NAME,
+  setRatchetSyncHook,
 } from '@/lib/crypto/ratchetStore';
 import {
   fetchPeerPublicKeys,
@@ -89,6 +90,23 @@ import {
   resolveSigningKeyForEnvelope,
   type DeviceSigningKeyMap,
 } from '@/lib/crypto/peerDeviceSigningKeys';
+import {
+  archiveRatchetState,
+  tryDecryptWithArchivedSessions,
+  exportArchiveJson,
+  importArchiveJson,
+} from '@/lib/crypto/ratchetArchive';
+import {
+  noteFailureAndDecideReset,
+  recordReset,
+  clearSessionReset,
+} from '@/lib/crypto/sessionResetTracker';
+import {
+  pushEncryptedSession,
+  pushEncryptedArchive,
+  pullEncryptedSession,
+  pullEncryptedArchive,
+} from '@/lib/crypto/encryptedSessionSync';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -443,6 +461,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     });
   }, [user, initKeys]);
 
+  // Register the off-device encrypted-sync hook once: every local ratchet save
+  // best-effort pushes an encrypted copy to Supabase (durability against iOS
+  // IndexedDB purges). The store stays network-free; this injects the behaviour.
+  // pushEncryptedSession is a no-op when the vault is locked and never throws.
+  useEffect(() => {
+    setRatchetSyncHook((convId, state) => {
+      void pushEncryptedSession(convId, state);
+    });
+    return () => setRatchetSyncHook(null);
+  }, []);
+
   // Re-init when PIN unlocks keys
   useEffect(() => {
     const handler = () => {
@@ -770,6 +799,18 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
 
       if (fingerprintChanged) {
         if (conversationId) {
+          // Signal-style: archive the current session instead of destroying it,
+          // so messages the peer already encrypted under the OLD key remain
+          // decryptable via the archived session (see ratchetArchive.ts). Only
+          // then reset the live ratchet for the new identity.
+          if (ratchetRef.current) {
+            try {
+              await archiveRatchetState(conversationId, ratchetRef.current);
+              // Mirror the archive off-device (encrypted) so it survives a purge.
+              const archiveJson = await exportArchiveJson(conversationId);
+              if (archiveJson) void pushEncryptedArchive(conversationId, archiveJson);
+            } catch {}
+          }
           try {
             await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
               tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
@@ -899,6 +940,27 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         return persisted.state;
       }
       await resetRatchetBootstrapState('persisted_incomplete');
+    }
+
+    // Restore-on-purge: local IndexedDB had nothing usable (e.g. WKWebView
+    // evicted it on iOS). Before falling back to a fresh X3DH handshake, try the
+    // encrypted Supabase backup. The blob is decrypted client-side with the
+    // Master Key — Supabase never saw the keys. Also restore the archive so
+    // old-key messages stay recoverable.
+    try {
+      const restored = await pullEncryptedSession(conversationId);
+      if (restored && isRatchetFullyReady(restored)) {
+        ratchetRef.current = restored;
+        await saveRatchetLocal(conversationId, restored, null);
+        const archiveJson = await pullEncryptedArchive(conversationId);
+        if (archiveJson) {
+          try { await importArchiveJson(conversationId, archiveJson); } catch {}
+        }
+        console.info('[E2EE] ✅ Ratchet restored from encrypted Supabase backup (local purge recovery)');
+        return restored;
+      }
+    } catch (e) {
+      console.warn('[E2EE] encrypted session restore failed', e);
     }
 
     // X3DH key agreement (Signal spec) — NO legacy fallback
@@ -1388,6 +1450,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
         setState(s => ({ ...s, ratchetActive: true }));
         console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}`);
+        if (conversationId) clearSessionReset(conversationId);
         const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
         if (skdmAbsorbed) return skdmAbsorbed;
         return { text: plaintext, encrypted: true, verified };
@@ -1429,6 +1492,26 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       }
     }
 
+    // Last resort before declaring failure: try sessions we archived on a past
+    // key change (Signal previousStates). This recovers messages the peer
+    // encrypted under the OLD identity key after an iOS reinstall/restore.
+    if (conversationId) {
+      try {
+        const archived = await tryDecryptWithArchivedSessions(
+          conversationId,
+          envelope,
+          resolvePeerSigningKeyB64(),
+        );
+        if (archived) {
+          noteUnverifiedSignature(archived.verified, 'archived_session');
+          console.debug('[E2EE] ✅ decrypted via archived session (post key-change recovery)');
+          return { text: archived.plaintext, encrypted: true, verified: archived.verified };
+        }
+      } catch (e) {
+        console.warn('[E2EE][ARCHIVE] archived-session decrypt attempt failed', e);
+      }
+    }
+
     // Diagnostic dump before declaring "session expirée" — helps identify the
     // exact path that led here (no ratchet, no X3DH header, peer key missing…).
     console.error('[E2EE] ⛔ decryptRatchetMessage reached terminal fallback', {
@@ -1441,17 +1524,32 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
       envelopeDh: envelope?.hdr?.dh?.slice(0, 12),
     });
 
-    // SELF-HEAL: si on a un ratchet local mais le message arrive sans header X3DH
-    // et qu'on n'arrive pas à le déchiffrer, c'est qu'on est désynchronisé avec
-    // le pair (notre ratchet vient d'un ancien handshake obsolète). On purge notre
-    // ratchet local : au prochain envoi, l'un des deux côtés relancera un X3DH
-    // propre (via cache-bust SPK ou détection in_memory_incomplete).
+    // SELF-HEAL / SESSION RESET: si on a un ratchet local mais le message
+    // arrive sans header X3DH et qu'on n'arrive pas à le déchiffrer, on est
+    // désynchronisé avec le pair. Le remède (purge locale + rotation SPK pour
+    // forcer un re-handshake) est coûteux, donc on ne le déclenche qu'après un
+    // seuil d'échecs persistants, avec cooldown et cap anti-tempête (voir
+    // sessionResetTracker) — au lieu de roter le SPK à chaque échec.
     if (ratchet && !x3dhHeader && conversationId) {
-      console.warn('[E2EE] 🔄 Ratchet désynchronisé détecté — purge locale + rotation SPK pour forcer re-handshake côté pair');
+      const decision = noteFailureAndDecideReset(conversationId);
+      if (!decision.shouldReset) {
+        console.debug('[E2EE] session-reset deferred', {
+          conversationId,
+          reason: decision.reason,
+          fails: decision.fails,
+        });
+        // Not yet — leave state intact so the retry mechanism can re-drive; a
+        // reset that fires too eagerly causes handshake storms.
+        markRatchetTerminalFailure(conversationId, rawBody);
+        return { text: '', encrypted: true, verified: false, incompatible: true };
+      }
+
+      console.warn('[E2EE] 🔄 Session reset (peer ratchet desync) — purge locale + rotation SPK', {
+        conversationId,
+        fails: decision.fails,
+      });
       await resetRatchetBootstrapState('peer_ratchet_desync');
       // Rotate our SPK so the peer's next send detects isPeerSPKStale and re-runs X3DH automatically.
-      // Without this, the sender keeps using the same ratchet (no X3DH header attached after first peer response)
-      // and the receiver stays stuck in this terminal failure forever.
       if (user && keysRef.current) {
         try {
           await generateAndUploadSignedPrekey(user.id, keysRef.current.signingPrivateKey);
@@ -1460,6 +1558,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           console.warn('[E2EE] SPK rotation failed (peer may stay desynced):', e);
         }
       }
+      recordReset(conversationId);
       markRatchetTerminalFailure(conversationId, rawBody);
       return { text: '', encrypted: true, verified: false, incompatible: true };
     }
