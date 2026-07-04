@@ -56,6 +56,7 @@ import {
   RATCHET_DB_NAME,
   RATCHET_DB_VERSION,
   RATCHET_STORE_NAME,
+  setRatchetSyncHook,
 } from '@/lib/crypto/ratchetStore';
 import {
   fetchPeerPublicKeys,
@@ -92,12 +93,20 @@ import {
 import {
   archiveRatchetState,
   tryDecryptWithArchivedSessions,
+  exportArchiveJson,
+  importArchiveJson,
 } from '@/lib/crypto/ratchetArchive';
 import {
   noteFailureAndDecideReset,
   recordReset,
   clearSessionReset,
 } from '@/lib/crypto/sessionResetTracker';
+import {
+  pushEncryptedSession,
+  pushEncryptedArchive,
+  pullEncryptedSession,
+  pullEncryptedArchive,
+} from '@/lib/crypto/encryptedSessionSync';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -452,6 +461,17 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
     });
   }, [user, initKeys]);
 
+  // Register the off-device encrypted-sync hook once: every local ratchet save
+  // best-effort pushes an encrypted copy to Supabase (durability against iOS
+  // IndexedDB purges). The store stays network-free; this injects the behaviour.
+  // pushEncryptedSession is a no-op when the vault is locked and never throws.
+  useEffect(() => {
+    setRatchetSyncHook((convId, state) => {
+      void pushEncryptedSession(convId, state);
+    });
+    return () => setRatchetSyncHook(null);
+  }, []);
+
   // Re-init when PIN unlocks keys
   useEffect(() => {
     const handler = () => {
@@ -786,6 +806,9 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           if (ratchetRef.current) {
             try {
               await archiveRatchetState(conversationId, ratchetRef.current);
+              // Mirror the archive off-device (encrypted) so it survives a purge.
+              const archiveJson = await exportArchiveJson(conversationId);
+              if (archiveJson) void pushEncryptedArchive(conversationId, archiveJson);
             } catch {}
           }
           try {
@@ -917,6 +940,27 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
         return persisted.state;
       }
       await resetRatchetBootstrapState('persisted_incomplete');
+    }
+
+    // Restore-on-purge: local IndexedDB had nothing usable (e.g. WKWebView
+    // evicted it on iOS). Before falling back to a fresh X3DH handshake, try the
+    // encrypted Supabase backup. The blob is decrypted client-side with the
+    // Master Key — Supabase never saw the keys. Also restore the archive so
+    // old-key messages stay recoverable.
+    try {
+      const restored = await pullEncryptedSession(conversationId);
+      if (restored && isRatchetFullyReady(restored)) {
+        ratchetRef.current = restored;
+        await saveRatchetLocal(conversationId, restored, null);
+        const archiveJson = await pullEncryptedArchive(conversationId);
+        if (archiveJson) {
+          try { await importArchiveJson(conversationId, archiveJson); } catch {}
+        }
+        console.info('[E2EE] ✅ Ratchet restored from encrypted Supabase backup (local purge recovery)');
+        return restored;
+      }
+    } catch (e) {
+      console.warn('[E2EE] encrypted session restore failed', e);
     }
 
     // X3DH key agreement (Signal spec) — NO legacy fallback

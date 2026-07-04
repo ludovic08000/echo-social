@@ -115,6 +115,41 @@ export async function clearArchivedRatchetStates(convId: string): Promise<void> 
 }
 
 /**
+ * Export the raw archive entries as a JSON string for encrypted off-device
+ * sync. Returns null if there is nothing to sync. Does NOT touch the network —
+ * the caller encrypts + uploads (see encryptedSessionSync).
+ */
+export async function exportArchiveJson(convId: string): Promise<string | null> {
+  const entries = await readArchive(convId);
+  if (!entries.length) return null;
+  try {
+    return JSON.stringify(entries);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restore archive entries from a JSON string previously produced by
+ * exportArchiveJson (e.g. after a local purge). Merges by keeping the newest
+ * MAX_ARCHIVED_SESSIONS across local + restored. Best-effort.
+ */
+export async function importArchiveJson(convId: string, json: string): Promise<void> {
+  try {
+    const restored = JSON.parse(json) as ArchivedEntry[];
+    if (!Array.isArray(restored)) return;
+    const existing = await readArchive(convId);
+    const merged = capArchive(
+      [...existing, ...restored].sort((a, b) => a.archivedAt - b.archivedAt),
+      MAX_ARCHIVED_SESSIONS,
+    );
+    await writeArchive(convId, merged);
+  } catch {
+    /* ignore corrupt payload */
+  }
+}
+
+/**
  * Try to decrypt an envelope against archived sessions, newest first. On the
  * first success, the advanced state is written back into that archive slot so
  * further late messages from the same old session keep decrypting in order.
