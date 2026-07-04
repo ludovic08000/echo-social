@@ -2051,6 +2051,42 @@ export type Database = {
           },
         ]
       }
+      e2ee_session_sync: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          device_id: string
+          encrypted_blob: string
+          id: string
+          iv: string
+          kind: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          device_id: string
+          encrypted_blob: string
+          id?: string
+          iv: string
+          kind?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          device_id?: string
+          encrypted_blob?: string
+          id?: string
+          iv?: string
+          kind?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       e2ee_transparency_log: {
         Row: {
           created_at: string
@@ -7499,6 +7535,7 @@ export type Database = {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
       }
+      email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
