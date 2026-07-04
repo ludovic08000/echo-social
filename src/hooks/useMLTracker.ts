@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { recordSessionSignal } from "@/lib/feedDiversity";
+import { buildFeedExperimentEvent, capExperimentEventBatch } from "@/lib/recsysV8";
 
 type SignalType =
   | "view"
@@ -76,6 +77,25 @@ function flushSoon() {
           }));
           const { error: fallbackError } = await supabase.from("ml_interactions").insert(minimalRows);
           if (fallbackError) throw fallbackError;
+        }
+
+        const experimentEvents = capExperimentEventBatch(
+          rows
+            .map((row) => buildFeedExperimentEvent({
+              postId: row.post_id,
+              signal: row.signal_type,
+              dwellMs: row.dwell_ms,
+              weight: row.weight,
+              surface: "feed",
+            }))
+            .filter(Boolean) as NonNullable<ReturnType<typeof buildFeedExperimentEvent>>[]
+        );
+        if (experimentEvents.length) {
+          void supabase
+            .rpc("ml_record_feed_ab_events" as any, { p_events: experimentEvents as any })
+            .then(({ error }) => {
+              if (error) console.warn("[ML] Failed to record feed experiment events", error);
+            });
         }
       } catch (e) {
         console.warn("[ML] Failed to flush interactions", e);
