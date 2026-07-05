@@ -176,20 +176,49 @@ serve(async (req) => {
 
       const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+
+      // Verify JWT and identify caller
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const token = authHeader.replace("Bearer ", "");
+      const { data: claims, error: authError } = await userClient.auth.getClaims(token);
+      if (authError || !claims?.claims?.sub) {
+        return new Response(JSON.stringify({ error: "Non authentifié" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const callerId = claims.claims.sub as string;
+
       const supabase = createClient(supabaseUrl, serviceKey);
 
       const { order_id, sender, relay_id } = body;
       const shipment = body?.package ?? {};
       if (!order_id) throw new Error("order_id requis");
 
-      // Get order
+      // Get order + items with seller info
       const { data: order } = await supabase
         .from("orders")
-        .select("*, order_items(*)")
+        .select("*, order_items(*, products(seller_id))")
         .eq("id", order_id)
         .single();
 
       if (!order) throw new Error("Commande introuvable");
+
+      // Verify caller is a seller on this order
+      const sellerIds = new Set<string>(
+        (order.order_items ?? [])
+          .map((it: any) => it?.products?.seller_id)
+          .filter(Boolean),
+      );
+      if (!sellerIds.has(callerId)) {
+        return new Response(JSON.stringify({ error: "Accès refusé" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       const parsedWeight = Number(shipment.weight_grams);
       const weight = Number.isFinite(parsedWeight) && parsedWeight > 0
