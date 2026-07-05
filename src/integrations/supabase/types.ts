@@ -8159,6 +8159,7 @@ export type Database = {
         Args: { p_post_id: string }
         Returns: undefined
       }
+      ml_embeddings_cron_tick: { Args: never; Returns: undefined }
       ml_find_similar_posts: {
         Args: { p_limit?: number; p_user_id: string }
         Returns: {
