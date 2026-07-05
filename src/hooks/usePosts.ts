@@ -5,6 +5,7 @@ import { ReactionType } from '@/hooks/useReactions';
 import { loadContentPrefs, containsMutedKeyword } from '@/lib/feedAlgorithm';
 import { enforceDiversity, getSessionAdjustment } from '@/lib/feedDiversity';
 import { syncFeedPrefsFromServer } from '@/lib/feedPreferences';
+import { mapFeedRpcRow } from '@/lib/recsysV8';
 
 // One-shot sync per user (refreshes localStorage cache from DB-backed prefs)
 const _syncedPrefsUsers = new Set<string>();
@@ -44,34 +45,30 @@ export function usePosts() {
 
       // ── Guest mode: simple chronological feed (no personalization) ──
       if (!user) {
-        const { data: guestPosts, error } = await supabase.rpc('get_feed_posts', {
+        const v8 = await (supabase.rpc as any)('get_feed_posts_v8', {
           p_user_id: null,
           p_limit: PAGE_SIZE,
           p_offset: offset,
         });
 
+        const legacy = v8.error
+          ? await supabase.rpc('get_feed_posts', {
+              p_user_id: null,
+              p_limit: PAGE_SIZE,
+              p_offset: offset,
+            })
+          : { data: v8.data, error: null };
+
+        const { data: guestPosts, error } = legacy;
+
         if (error) throw error;
         if (!guestPosts || guestPosts.length === 0) return [];
 
-        return guestPosts.map((post: any) => {
-          return {
-            id: post.id,
-            user_id: post.user_id,
-            body: post.body,
-            image_url: post.image_url,
-            created_at: post.created_at,
-            expires_at: post.expires_at || null,
-            profile: {
-              name: post.author_name || 'Utilisateur',
-              avatar_url: post.author_avatar || null,
-              mood_emoji: post.author_mood || null,
-            },
-            likes_count: post.likes_count || 0,
-            comments_count: post.comments_count || 0,
-            is_liked: false,
-            user_reaction: null,
-          } as Post;
-        });
+        return guestPosts.map((post: any) => ({
+          ...(mapFeedRpcRow(post) as Post),
+          is_liked: false,
+          user_reaction: null,
+        }));
       }
 
       // ── Authenticated feed: server-side scoring (anti-cheat) ──
@@ -80,32 +77,26 @@ export function usePosts() {
 
       // ── Strategy 1: Single RPC call ──
       try {
-        const { data: rpcPosts, error: rpcError } = await supabase.rpc('get_feed_posts', {
+        const v8 = await (supabase.rpc as any)('get_feed_posts_v8', {
           p_user_id: user.id,
           p_limit: PAGE_SIZE,
           p_offset: offset,
         });
 
+        const legacy = v8.error
+          ? await supabase.rpc('get_feed_posts', {
+              p_user_id: user.id,
+              p_limit: PAGE_SIZE,
+              p_offset: offset,
+            })
+          : { data: v8.data, error: null };
+
+        const { data: rpcPosts, error: rpcError } = legacy;
+
         if (!rpcError && rpcPosts && rpcPosts.length > 0) {
           const filtered = rpcPosts.filter((p: any) => !containsMutedKeyword(p.body, prefs.mutedKeywords));
 
-          const mapped = filtered.map((post: any) => ({
-            id: post.id,
-            user_id: post.user_id,
-            body: post.body,
-            image_url: post.image_url,
-            created_at: post.created_at,
-            expires_at: post.expires_at || null,
-            profile: {
-              name: post.author_name || 'Unknown',
-              avatar_url: post.author_avatar || null,
-              mood_emoji: post.author_mood || null,
-            },
-            likes_count: post.likes_count || 0,
-            comments_count: post.comments_count || 0,
-            is_liked: !!post.user_reaction,
-            user_reaction: post.user_reaction || null,
-          })) as Post[];
+          const mapped = filtered.map((post: any) => mapFeedRpcRow(post) as Post);
 
           return enforceDiversity(mapped, 2);
         }
