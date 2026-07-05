@@ -3438,6 +3438,174 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_creator_features: {
+        Row: {
+          avg_watch_time_ms: number
+          creator_id: string
+          embedding: string | null
+          fatigue_score: number
+          negative_feedback_rate: number
+          novelty_score: number
+          quality_score: number
+          total_posts: number
+          updated_at: string
+        }
+        Insert: {
+          avg_watch_time_ms?: number
+          creator_id: string
+          embedding?: string | null
+          fatigue_score?: number
+          negative_feedback_rate?: number
+          novelty_score?: number
+          quality_score?: number
+          total_posts?: number
+          updated_at?: string
+        }
+        Update: {
+          avg_watch_time_ms?: number
+          creator_id?: string
+          embedding?: string | null
+          fatigue_score?: number
+          negative_feedback_rate?: number
+          novelty_score?: number
+          quality_score?: number
+          total_posts?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ml_embedding_jobs: {
+        Row: {
+          attempts: number
+          created_at: string
+          id: string
+          last_error: string | null
+          priority: number
+          requested_by: string | null
+          source_text: string | null
+          status: string
+          target_id: string
+          target_type: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          priority?: number
+          requested_by?: string | null
+          source_text?: string | null
+          status?: string
+          target_id: string
+          target_type: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          priority?: number
+          requested_by?: string | null
+          source_text?: string | null
+          status?: string
+          target_id?: string
+          target_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ml_feed_experiment_events: {
+        Row: {
+          created_at: string
+          dwell_ms: number | null
+          event_type: string
+          experiment_key: string
+          id: string
+          metadata: Json
+          post_id: string | null
+          surface: string
+          user_id: string
+          variant: string
+          weight: number
+        }
+        Insert: {
+          created_at?: string
+          dwell_ms?: number | null
+          event_type: string
+          experiment_key?: string
+          id?: string
+          metadata?: Json
+          post_id?: string | null
+          surface?: string
+          user_id: string
+          variant: string
+          weight?: number
+        }
+        Update: {
+          created_at?: string
+          dwell_ms?: number | null
+          event_type?: string
+          experiment_key?: string
+          id?: string
+          metadata?: Json
+          post_id?: string | null
+          surface?: string
+          user_id?: string
+          variant?: string
+          weight?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_feed_experiment_events_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_feed_experiment_events_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_feed_experiments: {
+        Row: {
+          created_at: string
+          key: string
+          status: string
+          target_metric: string
+          traffic_split: number
+          updated_at: string
+          variant_a: Json
+          variant_b: Json
+        }
+        Insert: {
+          created_at?: string
+          key: string
+          status?: string
+          target_metric?: string
+          traffic_split?: number
+          updated_at?: string
+          variant_a?: Json
+          variant_b?: Json
+        }
+        Update: {
+          created_at?: string
+          key?: string
+          status?: string
+          target_metric?: string
+          traffic_split?: number
+          updated_at?: string
+          variant_a?: Json
+          variant_b?: Json
+        }
+        Relationships: []
+      }
       ml_fraud_signals: {
         Row: {
           created_at: string
@@ -3684,8 +3852,12 @@ export type Database = {
       ml_post_features: {
         Row: {
           avg_watch_time_ms: number | null
+          content_sensitivity_score: number
+          creator_id: string | null
           ctr: number
           embedding: string | null
+          embedding_source: string | null
+          embedding_text: string | null
           embedding_updated_at: string | null
           engagement_score: number
           engagement_velocity: number
@@ -3693,10 +3865,13 @@ export type Database = {
           has_media: boolean
           hashtags: string[]
           language: string | null
+          last_embedding_requested_at: string | null
           negative_count: number
+          novelty_score: number
           positive_count: number
           post_id: string
           quality_score: number
+          repetitive_score: number
           revenue_score: number
           sentiment: number
           topics: string[]
@@ -3707,8 +3882,12 @@ export type Database = {
         }
         Insert: {
           avg_watch_time_ms?: number | null
+          content_sensitivity_score?: number
+          creator_id?: string | null
           ctr?: number
           embedding?: string | null
+          embedding_source?: string | null
+          embedding_text?: string | null
           embedding_updated_at?: string | null
           engagement_score?: number
           engagement_velocity?: number
@@ -3716,10 +3895,13 @@ export type Database = {
           has_media?: boolean
           hashtags?: string[]
           language?: string | null
+          last_embedding_requested_at?: string | null
           negative_count?: number
+          novelty_score?: number
           positive_count?: number
           post_id: string
           quality_score?: number
+          repetitive_score?: number
           revenue_score?: number
           sentiment?: number
           topics?: string[]
@@ -3730,8 +3912,12 @@ export type Database = {
         }
         Update: {
           avg_watch_time_ms?: number | null
+          content_sensitivity_score?: number
+          creator_id?: string | null
           ctr?: number
           embedding?: string | null
+          embedding_source?: string | null
+          embedding_text?: string | null
           embedding_updated_at?: string | null
           engagement_score?: number
           engagement_velocity?: number
@@ -3739,10 +3925,13 @@ export type Database = {
           has_media?: boolean
           hashtags?: string[]
           language?: string | null
+          last_embedding_requested_at?: string | null
           negative_count?: number
+          novelty_score?: number
           positive_count?: number
           post_id?: string
           quality_score?: number
+          repetitive_score?: number
           revenue_score?: number
           sentiment?: number
           topics?: string[]
@@ -3880,12 +4069,14 @@ export type Database = {
           avg_dwell_ms: number | null
           avg_session_dwell_ms: number
           created_at: string
+          creator_affinity: Json
           daily_activity: Json
           embedding: string | null
           embedding_updated_at: string | null
           hashtag_weights: Json
           hourly_activity: Json
           last_trained_at: string | null
+          negative_topic_weights: Json
           preferred_content_length: string | null
           topic_weights: Json
           total_interactions: number
@@ -3897,12 +4088,14 @@ export type Database = {
           avg_dwell_ms?: number | null
           avg_session_dwell_ms?: number
           created_at?: string
+          creator_affinity?: Json
           daily_activity?: Json
           embedding?: string | null
           embedding_updated_at?: string | null
           hashtag_weights?: Json
           hourly_activity?: Json
           last_trained_at?: string | null
+          negative_topic_weights?: Json
           preferred_content_length?: string | null
           topic_weights?: Json
           total_interactions?: number
@@ -3914,12 +4107,14 @@ export type Database = {
           avg_dwell_ms?: number | null
           avg_session_dwell_ms?: number
           created_at?: string
+          creator_affinity?: Json
           daily_activity?: Json
           embedding?: string | null
           embedding_updated_at?: string | null
           hashtag_weights?: Json
           hourly_activity?: Json
           last_trained_at?: string | null
+          negative_topic_weights?: Json
           preferred_content_length?: string | null
           topic_weights?: Json
           total_interactions?: number
@@ -7243,6 +7438,19 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_training_labels_v8: {
+        Row: {
+          avg_dwell_ms: number | null
+          label_negative_action: number | null
+          label_positive_action: number | null
+          label_watch_complete: number | null
+          last_signal_at: string | null
+          post_id: string | null
+          sample_count: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       profiles_public: {
         Row: {
           age_verified: boolean | null
@@ -7676,6 +7884,27 @@ export type Database = {
           user_reaction: string
         }[]
       }
+      get_feed_posts_v8: {
+        Args: { p_limit?: number; p_offset?: number; p_user_id: string }
+        Returns: {
+          author_avatar: string
+          author_mood: string
+          author_name: string
+          body: string
+          comments_count: number
+          created_at: string
+          experiment_variant: string
+          expires_at: string
+          final_score: number
+          id: string
+          image_url: string
+          is_friend: boolean
+          likes_count: number
+          rank_reason: string
+          user_id: string
+          user_reaction: string
+        }[]
+      }
       get_friend_suggestions: {
         Args: { limit_count?: number; target_user_id: string }
         Returns: {
@@ -7911,6 +8140,14 @@ export type Database = {
               user_id: string
             }[]
           }
+      ml_build_post_embedding_text: {
+        Args: { p_post_id: string }
+        Returns: string
+      }
+      ml_build_user_embedding_text: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
       ml_cold_start_feed: {
         Args: { p_limit?: number; p_user_id: string }
         Returns: {
@@ -7947,9 +8184,41 @@ export type Database = {
           score: number
         }[]
       }
+      ml_queue_post_embedding: {
+        Args: { p_post_id: string; p_priority?: number }
+        Returns: boolean
+      }
+      ml_queue_user_embedding: {
+        Args: { p_priority?: number; p_user_id?: string }
+        Returns: boolean
+      }
+      ml_record_feed_ab_events: { Args: { p_events: Json }; Returns: number }
       ml_record_watch_time: {
         Args: { p_post_id: string; p_sample_count: number; p_total_ms: number }
         Returns: undefined
+      }
+      ml_recsys_v8_assignment: {
+        Args: { p_experiment_key?: string; p_user_id: string }
+        Returns: {
+          diversity_author_cap: number
+          experiment_key: string
+          exploration_weight: number
+          new_creator_boost: number
+          retrieval_weight: number
+          variant: string
+        }[]
+      }
+      ml_refresh_creator_features_v8: {
+        Args: { p_creator_id: string }
+        Returns: boolean
+      }
+      ml_retrieve_feed_candidates_v8: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          post_id: string
+          retrieval_score: number
+          retrieval_source: string
+        }[]
       }
       ml_score_post: {
         Args: { p_post_id: string; p_user_id: string }
