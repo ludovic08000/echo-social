@@ -56,7 +56,7 @@ export function VerificationsSection() {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) return;
-      const { data: profile } = await supabase.from('profiles').select('*').eq('user_id', v.reported_user_id).maybeSingle();
+      const { data: profile } = await supabase.from('profiles').select('id, user_id, name, avatar_url, bio, city, created_at').eq('user_id', v.reported_user_id).maybeSingle();
       const { data: fingerprints } = await supabase.from('device_fingerprints').select('*').eq('user_id', v.reported_user_id);
       const ips = [...new Set((fingerprints || []).map((f: any) => f.ip_address).filter(Boolean))] as string[];
       const { data: connLogs } = await supabase.from('security_logs').select('*').or(`details->>user_id.eq.${v.reported_user_id},ip_address.in.(${ips.join(',')})`).order('created_at', { ascending: false }).limit(50);
