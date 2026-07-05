@@ -52,7 +52,7 @@ async function encryptWithSessionKey(plaintext: string): Promise<EncryptedBlob |
   const iv = randomBytes(12);
   const data = new TextEncoder().encode(plaintext);
   const ct = await hardCrypto.encrypt({ name: 'AES-GCM', iv }, key, data);
-  return { encrypted_blob: bufferToBase64(ct), iv: bufferToBase64(iv.buffer) };
+  return { encrypted_blob: bufferToBase64(ct), iv: bufferToBase64(iv.buffer as ArrayBuffer) };
 }
 
 /** Decrypt a blob produced by encryptWithSessionKey. Null if locked/invalid. */
