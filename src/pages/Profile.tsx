@@ -399,7 +399,7 @@ export default function Profile() {
       if (!data) return [];
       const friendIds = data.map(f => f.requester_id === userId ? f.addressee_id : f.requester_id);
       if (friendIds.length === 0) return [];
-      const { data: profiles } = await supabase.from('profiles').select('*').in('user_id', friendIds).limit(3);
+      const { data: profiles } = await supabase.from('profiles').select('id, user_id, name, avatar_url, bio, mood_emoji').in('user_id', friendIds).limit(3);
       return profiles || [];
     },
     enabled: !!userId && !isOwnProfile,
