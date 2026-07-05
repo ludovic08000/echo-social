@@ -89,7 +89,7 @@ export function useUpdateProfile() {
         .from('profiles')
         .update(supabaseUpdates)
         .eq('user_id', user.id)
-        .select()
+        .select('id, user_id, name, avatar_url, bio, created_at, updated_at, cover_url, date_of_birth, city, website_url, profile_type, cover_position_y, education_level, education_city, work, field_visibility, relationship_status, interests, mood_emoji, mood_text, mood_updated_at, profile_music_url, is_creator, creator_since, creator_tier, profile_bg_url, feed_bg_url, age_verified, age_verification_status, onboarding_completed, onboarding_step')
         .single();
 
       if (error) throw error;
