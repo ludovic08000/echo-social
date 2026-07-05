@@ -83,6 +83,16 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+    const { data: runRow } = await supabase
+      .from("ml_training_runs")
+      .insert({
+        job_name: "ml-twotower-train",
+        status: "started",
+        metadata: { embed_dim: EMBED_DIM, lr: LR, epochs: EPOCHS, batch_limit: BATCH_LIMIT },
+      })
+      .select("id")
+      .maybeSingle();
+    const runId = runRow?.id as string | undefined;
 
     // 1) Pull recent interactions
     const { data: interactions, error } = await supabase
@@ -93,8 +103,20 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
     if (!interactions || interactions.length === 0) {
+      if (runId) {
+        await supabase
+          .from("ml_training_runs")
+          .update({
+            status: "completed",
+            trained_samples: 0,
+            elapsed_ms: Date.now() - startedAt,
+            finished_at: new Date().toISOString(),
+            metadata: { message: "No recent interactions" },
+          })
+          .eq("id", runId);
+      }
       return new Response(
-        JSON.stringify({ trained_samples: 0, message: "No recent interactions" }),
+        JSON.stringify({ trained_samples: 0, message: "No recent interactions", run_id: runId ?? null }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -203,8 +225,7 @@ Deno.serve(async (req) => {
       })
     );
 
-    return new Response(
-      JSON.stringify({
+    const payload = {
         trained_samples: interactions.length,
         users_updated: userRows.length,
         posts_updated: postRows.length,
@@ -213,11 +234,49 @@ Deno.serve(async (req) => {
         scores_refreshed: postsToRefresh.length,
         elapsed_ms: Date.now() - startedAt,
         budget_hit: overBudget(),
-      }),
+        run_id: runId ?? null,
+      };
+    if (runId) {
+      await supabase
+        .from("ml_training_runs")
+        .update({
+          status: payload.budget_hit ? "partial" : "completed",
+          trained_samples: payload.trained_samples,
+          users_updated: payload.users_updated,
+          posts_updated: payload.posts_updated,
+          avg_loss: payload.avg_loss,
+          elapsed_ms: payload.elapsed_ms,
+          budget_hit: payload.budget_hit,
+          finished_at: new Date().toISOString(),
+          metadata: {
+            epochs_run: payload.epochs_run,
+            scores_refreshed: payload.scores_refreshed,
+          },
+        })
+        .eq("id", runId);
+    }
+
+    return new Response(
+      JSON.stringify(payload),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
     console.error("[ml-twotower-train]", err);
+    try {
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      );
+      await supabase.from("ml_training_runs").insert({
+        job_name: "ml-twotower-train",
+        status: "failed",
+        elapsed_ms: Date.now() - startedAt,
+        finished_at: new Date().toISOString(),
+        metadata: { error: (err as Error).message },
+      });
+    } catch (_) {
+      // Logging must never mask the original training failure.
+    }
     return new Response(
       JSON.stringify({ error: (err as Error).message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

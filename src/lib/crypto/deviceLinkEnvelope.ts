@@ -25,6 +25,12 @@ export interface DeviceLinkTransferEnvelope {
   salt: string;
   iv: string;
   ct: string;
+  aadHash?: string;
+}
+
+export interface DeviceLinkTransferContext {
+  tokenHash: string;
+  requesterDeviceId: string;
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -36,6 +42,20 @@ function hexFromBuffer(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer))
     .map(byte => byte.toString(16).padStart(2, '0'))
     .join('');
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  return hexFromBuffer(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
+}
+
+async function buildTransferAAD(context?: DeviceLinkTransferContext): Promise<Uint8Array | undefined> {
+  if (!context) return undefined;
+  const canonical = JSON.stringify({
+    purpose: 'forsure-linked-device-transfer-v3',
+    requesterDeviceId: context.requesterDeviceId,
+    tokenHash: context.tokenHash,
+  });
+  return new TextEncoder().encode(canonical);
 }
 
 function assertP256Jwk(jwk: JsonWebKey, role: 'public' | 'private'): void {
@@ -167,6 +187,7 @@ export async function generateDeviceLinkKeyPair(): Promise<DeviceLinkKeyPair> {
 export async function encryptDeviceLinkPayload(
   plaintext: string,
   requesterPublicJwk: JsonWebKey,
+  context?: DeviceLinkTransferContext,
 ): Promise<DeviceLinkTransferEnvelope> {
   const senderPair = await crypto.subtle.generateKey(ECDH_PARAMS, true, ['deriveBits']);
   const { publicKey, privateKey } = senderPair as CryptoKeyPair;
@@ -174,8 +195,9 @@ export async function encryptDeviceLinkPayload(
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveTransferKey(privateKey, requesterPublicJwk, salt);
+  const aad = await buildTransferAAD(context);
   const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    aad ? { name: 'AES-GCM', iv, additionalData: aad } : { name: 'AES-GCM', iv },
     key,
     new TextEncoder().encode(plaintext),
   );
@@ -187,12 +209,14 @@ export async function encryptDeviceLinkPayload(
     salt: bufferToBase64(salt.buffer),
     iv: bufferToBase64(iv.buffer),
     ct: bufferToBase64(ct),
+    ...(aad ? { aadHash: await sha256Hex(new TextDecoder().decode(aad)) } : {}),
   };
 }
 
 export async function decryptDeviceLinkPayload(
   envelope: DeviceLinkTransferEnvelope,
   requesterPrivateJwk: JsonWebKey,
+  context?: DeviceLinkTransferContext,
 ): Promise<string> {
   if (envelope?.v !== 2 || envelope.alg !== DEVICE_LINK_ENVELOPE_ALG) {
     throw new Error('Format de transfert non supporte');
@@ -201,8 +225,14 @@ export async function decryptDeviceLinkPayload(
   const salt = new Uint8Array(base64ToBuffer(envelope.salt));
   const iv = new Uint8Array(base64ToBuffer(envelope.iv));
   const key = await deriveTransferKey(privateKey, envelope.senderPublicJwk, salt);
+  const aad = await buildTransferAAD(context);
+  if (envelope.aadHash) {
+    if (!aad) throw new Error('Contexte de transfert manquant');
+    const actualHash = await sha256Hex(new TextDecoder().decode(aad));
+    if (actualHash !== envelope.aadHash) throw new Error('Contexte de transfert invalide');
+  }
   const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    aad ? { name: 'AES-GCM', iv, additionalData: aad } : { name: 'AES-GCM', iv },
     key,
     base64ToBuffer(envelope.ct),
   );

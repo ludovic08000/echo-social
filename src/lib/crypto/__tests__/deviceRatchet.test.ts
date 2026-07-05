@@ -76,12 +76,12 @@ describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
   // deeper investigation. The fix #3 establishes the session correctly, but
   // first-message decryption still returns null in jsdom WebCrypto. Real-device
   // traces show the path works in production; tracking separately.
-  it.skip('responder primed with SPK keypair can decrypt initiator’s first v4 message', async () => {
+  it('responder primed with SPK keypair can decrypt initiator first v5 message', async () => {
     const ss = makeSharedSecret(2);
     const spk = await generateX25519();
 
     // 1) Initiator side
-    await establishDeviceSession(
+    const sessionId = await establishDeviceSession(
       A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
       { isInitiator: true, peerInitialDhPubB64: spk.pubB64, peerSpkId: 7 },
     );
@@ -90,7 +90,7 @@ describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
 
     // 2) Responder side (Bob), seeded with the SPK keypair (the priming fix #3)
     await establishDeviceSession(
-      B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
+      B_USER, B_DEV, A_USER, A_DEV, ss, sessionId,
       {
         isInitiator: false,
         peerSpkId: 7,
@@ -103,13 +103,13 @@ describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
     expect(pt).toBe('first inbound');
   });
 
-  it.skip('round-trip: bidirectional conversation with multiple messages', async () => {
+  it('round-trip: bidirectional conversation with multiple messages', async () => {
     const ss = makeSharedSecret(3);
     const spk = await generateX25519();
 
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
+    const sessionId = await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
       { isInitiator: true, peerInitialDhPubB64: spk.pubB64, peerSpkId: 1 });
-    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
+    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, sessionId,
       { isInitiator: false, peerSpkId: 1, selfInitialDhPrivJwk: spk.privJwk, selfInitialDhPubB64: spk.pubB64 });
 
     // Alice → Bob ×3
@@ -126,13 +126,13 @@ describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
     expect(decoded).toBe('reply from bob');
   });
 
-  it.skip('out-of-order delivery: skipped keys cached & resolved (defensive IV copy)', async () => {
+  it('out-of-order delivery: skipped keys cached and resolved', async () => {
     const ss = makeSharedSecret(4);
     const spk = await generateX25519();
 
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
+    const sessionId = await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
       { isInitiator: true, peerInitialDhPubB64: spk.pubB64, peerSpkId: 9 });
-    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
+    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, sessionId,
       { isInitiator: false, peerSpkId: 9, selfInitialDhPrivJwk: spk.privJwk, selfInitialDhPubB64: spk.pubB64 });
 
     const ct0 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm0');
@@ -150,12 +150,12 @@ describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
     expect(ct).toBeNull();
   });
 
-  it.skip('decrypt returns null for tampered ciphertext (no false positives)', async () => {
+  it('decrypt returns null for tampered ciphertext (no false positives)', async () => {
     const ss = makeSharedSecret(5);
     const spk = await generateX25519();
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
+    const sessionId = await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
       { isInitiator: true, peerInitialDhPubB64: spk.pubB64, peerSpkId: 1 });
-    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
+    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, sessionId,
       { isInitiator: false, peerSpkId: 1, selfInitialDhPrivJwk: spk.privJwk, selfInitialDhPubB64: spk.pubB64 });
 
     const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'auth me');

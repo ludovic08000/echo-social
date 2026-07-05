@@ -50,6 +50,7 @@ interface DeviceEncryptTargetInput {
 
 const X3DH_BOOTSTRAP_PREFIX_V5 = 'x3dh5.init.';
 const X3DH_BOOTSTRAP_ENVELOPE_V2 = 'v2';
+const X3DH_BOOTSTRAP_ENVELOPE_V3 = 'v3';
 const X3DH_BOOTSTRAP_AAD_CONTEXT_V2 = 'ForSure-X3DH-v5-Sesame-bootstrap';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 const FANOUT_ENCRYPT_CONCURRENCY = 4;
@@ -92,7 +93,8 @@ function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
 }
 
 interface ParsedX3DHBootstrapV5 {
-  version: 'legacy' | 'v2';
+  version: 'legacy' | 'v2' | 'v3';
+  sessionId?: string;
   ivB64: string;
   ctB64: string;
   ekB64: string;
@@ -103,6 +105,7 @@ interface ParsedX3DHBootstrapV5 {
 }
 
 interface X3DHBootstrapAADInput {
+  sessionId?: string | null;
   senderUserId: string;
   senderDeviceId: string;
   recipientUserId: string;
@@ -130,6 +133,7 @@ function buildX3DHBootstrapAAD(input: X3DHBootstrapAADInput): Uint8Array {
       identityKey: input.recipientIdentityKeyB64,
     },
     header: {
+      sessionId: input.sessionId ?? null,
       ek: input.ekB64,
       spkId: input.spkId,
       opkId: input.opkId ?? null,
@@ -140,6 +144,27 @@ function buildX3DHBootstrapAAD(input: X3DHBootstrapAADInput): Uint8Array {
 function parseX3DHBootstrapV5(payload: string): ParsedX3DHBootstrapV5 | null {
   if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;
   const parts = payload.slice(X3DH_BOOTSTRAP_PREFIX_V5.length).split('.');
+
+  if (parts[0] === X3DH_BOOTSTRAP_ENVELOPE_V3) {
+    if (parts.length !== 9) return null;
+    const [, sessionId, ivB64, ctB64, ekB64, spkIdStr, opkIdStr, senderIdentityKeyB64, recipientIdentityKeyB64] = parts;
+    const spkId = parseInt(spkIdStr, 10);
+    if (!sessionId || Number.isNaN(spkId)) return null;
+    const opkId = opkIdStr === '0' ? undefined : parseInt(opkIdStr, 10);
+    if (opkIdStr !== '0' && Number.isNaN(opkId as number)) return null;
+    if (!senderIdentityKeyB64 || !recipientIdentityKeyB64) return null;
+    return {
+      version: 'v3',
+      sessionId,
+      ivB64,
+      ctB64,
+      ekB64,
+      spkId,
+      opkId,
+      senderIdentityKeyB64,
+      recipientIdentityKeyB64,
+    };
+  }
 
   if (parts[0] === X3DH_BOOTSTRAP_ENVELOPE_V2) {
     if (parts.length !== 8) return null;
@@ -170,6 +195,10 @@ function parseX3DHBootstrapV5(payload: string): ParsedX3DHBootstrapV5 | null {
   const opkId = opkIdStr !== undefined ? parseInt(opkIdStr, 10) : undefined;
   if (opkIdStr !== undefined && Number.isNaN(opkId as number)) return null;
   return { version: 'legacy', ivB64, ctB64, ekB64, spkId, opkId };
+}
+
+function createDeviceSessionId(): string {
+  return bufferToBase64(randomBytes(8).buffer as ArrayBuffer).replace(/[+/=]/g, '').slice(0, 12);
 }
 
 async function exportIdentityKeyB64(publicKey: CryptoKey): Promise<string> {
@@ -320,9 +349,11 @@ async function x3dhWrapForDevice(
     const myKeys = await getOrCreateIdentityKeys(senderUserId);
     const senderIdentityKeyB64 = await exportIdentityKeyB64(myKeys.publicKey);
     const result = await x3dhInitiate(myKeys, bundle);
+    const sessionId = createDeviceSessionId();
     const aes = await aesFromSecret(result.sharedSecret);
     const iv = randomBytes(12);
     const aad = buildX3DHBootstrapAAD({
+      sessionId,
       senderUserId,
       senderDeviceId,
       recipientUserId,
@@ -340,7 +371,8 @@ async function x3dhWrapForDevice(
     );
 
     const parts = [
-      X3DH_BOOTSTRAP_PREFIX_V5 + X3DH_BOOTSTRAP_ENVELOPE_V2,
+      X3DH_BOOTSTRAP_PREFIX_V5 + X3DH_BOOTSTRAP_ENVELOPE_V3,
+      sessionId,
       bufferToBase64(iv.buffer as ArrayBuffer),
       bufferToBase64(ct as ArrayBuffer),
       result.ephemeralKey,
@@ -355,7 +387,7 @@ async function x3dhWrapForDevice(
         senderUserId, senderDeviceId,
         recipientUserId, recipientDeviceId,
         result.sharedSecret,
-        undefined,
+        sessionId,
         {
           peerInitialDhPubB64: bundle.signedPrekey,
           isInitiator: true,
@@ -407,7 +439,7 @@ async function x3dhUnwrapForDevice(
     const senderIdentityForDH = parsed.senderIdentityKeyB64 ?? senderIdentityKeyB64;
     if (!senderIdentityForDH) return null;
 
-    if (parsed.version === 'v2') {
+    if (parsed.version === 'v2' || parsed.version === 'v3') {
       if (senderIdentityKeyB64 && parsed.senderIdentityKeyB64 !== senderIdentityKeyB64) {
         logCryptoError({
           severity: 'error',
@@ -455,6 +487,19 @@ async function x3dhUnwrapForDevice(
           spkId: parsed.spkId,
           opkId: parsed.opkId,
         })
+      : parsed.version === 'v3'
+      ? buildX3DHBootstrapAAD({
+          sessionId: parsed.sessionId,
+          senderUserId,
+          senderDeviceId,
+          recipientUserId,
+          recipientDeviceId: myDeviceId,
+          senderIdentityKeyB64: senderIdentityForDH,
+          recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
+          ekB64: parsed.ekB64,
+          spkId: parsed.spkId,
+          opkId: parsed.opkId,
+        })
       : null;
     const pt = await hardCrypto.decrypt(
       aad
@@ -472,7 +517,7 @@ async function x3dhUnwrapForDevice(
         recipientUserId, myDeviceId,
         senderUserId, senderDeviceId,
         sharedSecret,
-        undefined,
+        parsed.sessionId,
         {
           isInitiator: false,
           peerSpkId: parsed.spkId,

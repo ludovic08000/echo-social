@@ -151,7 +151,13 @@ export {
   deleteWrappedKeys,
 } from './pinWrap';
 
-export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
+export {
+  fetchTransparencyLog,
+  appendTransparencyLog,
+  verifyLatestTransparencyEpoch,
+  type TransparencyEventType,
+  type TransparencyEpochVerification,
+} from './transparencyLog';
 
 export { fetchPrekeyBundle } from './x3dhBundleRouter';
 

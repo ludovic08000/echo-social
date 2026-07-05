@@ -254,13 +254,17 @@ export function useDeviceLink() {
         throw new Error('QR de liaison non authentifie: cle publique differente');
       }
 
+      const transferContext = {
+        tokenHash,
+        requesterDeviceId: String(request.requester_device_id),
+      };
       let keysJson = await collectLocalKeys();
-      let envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
+      let envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey, transferContext);
       let encryptedPayload = JSON.stringify(envelope);
 
       if (encryptedPayload.length > 1_900_000) {
         keysJson = await collectLocalKeys({ includePlaintextCache: false });
-        envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
+        envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey, transferContext);
         encryptedPayload = JSON.stringify(envelope);
       }
 
@@ -310,7 +314,10 @@ export function useDeviceLink() {
       }
 
       const envelope = JSON.parse(row.encrypted_payload) as DeviceLinkTransferEnvelope;
-      const keysJson = await decryptDeviceLinkPayload(envelope, pending.privateJwk);
+      const keysJson = await decryptDeviceLinkPayload(envelope, pending.privateJwk, {
+        tokenHash,
+        requesterDeviceId: pending.requesterDeviceId,
+      });
       await restoreLocalKeys(keysJson);
 
       await (supabase as any).rpc("complete_device_link_request", {

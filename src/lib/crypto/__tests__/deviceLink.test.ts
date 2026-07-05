@@ -38,8 +38,9 @@ describe('Device link crypto (new device)', () => {
     });
     const token = generateDeviceLinkToken();
     const qrData = buildDeviceLinkQrData(token, requester.publicJwk);
+    const context = { tokenHash: 'hash-token-1', requesterDeviceId: 'requester-device-1' };
 
-    const envelope = await encryptDeviceLinkPayload(keysJson, requester.publicJwk);
+    const envelope = await encryptDeviceLinkPayload(keysJson, requester.publicJwk, context);
     const wire = JSON.stringify(envelope);
 
     expect(parseDeviceLinkToken(qrData)).toBe(token);
@@ -49,7 +50,7 @@ describe('Device link crypto (new device)', () => {
     expect(wire).not.toContain('secret');
     expect(wire).not.toContain('cached history');
 
-    const restored = JSON.parse(await decryptDeviceLinkPayload(envelope, requester.privateJwk));
+    const restored = JSON.parse(await decryptDeviceLinkPayload(envelope, requester.privateJwk, context));
     expect(restored['e2ee:identity-keys'][0].key).toBe('secret');
     expect(restored['plaintext:cache'][0].plaintext).toBe('cached history');
   });
@@ -60,6 +61,22 @@ describe('Device link crypto (new device)', () => {
     const envelope = await encryptDeviceLinkPayload('secret data', requester.publicJwk);
 
     await expect(decryptDeviceLinkPayload(envelope, otherDevice.privateJwk)).rejects.toThrow();
+  });
+
+  it('binds approved transfers to the token hash and requester device id', async () => {
+    const requester = await generateDeviceLinkKeyPair();
+    const context = { tokenHash: 'hash-token-a', requesterDeviceId: 'device-a' };
+    const envelope = await encryptDeviceLinkPayload('bound secret', requester.publicJwk, context);
+
+    await expect(decryptDeviceLinkPayload(envelope, requester.privateJwk, {
+      tokenHash: 'hash-token-b',
+      requesterDeviceId: 'device-a',
+    })).rejects.toThrow();
+    await expect(decryptDeviceLinkPayload(envelope, requester.privateJwk, {
+      tokenHash: 'hash-token-a',
+      requesterDeviceId: 'device-b',
+    })).rejects.toThrow();
+    await expect(decryptDeviceLinkPayload(envelope, requester.privateJwk, context)).resolves.toBe('bound secret');
   });
 
   it('encrypts keys with PIN and decrypts on new device', async () => {
