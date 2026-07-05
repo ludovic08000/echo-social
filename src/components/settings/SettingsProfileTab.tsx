@@ -100,9 +100,17 @@ export function SettingsProfileTab() {
       setName(profile.name || '');
       setBio(profile.bio || '');
       setMusicUrl(profile.profile_music_url || '');
-      setPhoneNumber((profile as any).phone_number || '');
     }
   }, [profile]);
+
+  // Phone number lives outside the profiles table read path — fetch via RPC
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data } = await supabase.rpc('get_own_phone_number');
+      if (typeof data === 'string') setPhoneNumber(data);
+    })();
+  }, [user?.id]);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
