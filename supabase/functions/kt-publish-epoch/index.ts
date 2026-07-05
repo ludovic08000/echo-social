@@ -158,8 +158,18 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const cronSecret = Deno.env.get("KT_CRON_SECRET");
-  const provided = req.headers.get("x-cron-secret");
-  if (cronSecret && provided !== cronSecret) {
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const providedCron = req.headers.get("x-cron-secret");
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const providedBearer = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length)
+    : "";
+
+  const cronOk = !!cronSecret && providedCron === cronSecret;
+  const serviceOk = !!serviceRoleKey && providedBearer === serviceRoleKey;
+
+  // Fail closed: require either a matching cron secret or the service-role bearer.
+  if (!cronOk && !serviceOk) {
     return new Response(JSON.stringify({ error: "forbidden" }), {
       status: 403,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
