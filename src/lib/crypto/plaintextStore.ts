@@ -38,15 +38,43 @@ async function getOrCreateDeviceKey(): Promise<CryptoKey> {
   if (cachedKeyPromise) return cachedKeyPromise;
 
   cachedKeyPromise = (async () => {
-    const existing = await runTxOn('plaintext-cache', [STORE_KEYS], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore(STORE_KEYS).get(DEVICE_KEY_ID) as IDBRequest<{ id: string; key: CryptoKey } | undefined>),
-    ).catch(() => undefined);
+    // Lecture robuste de la clé existante. CRITIQUE : il faut distinguer
+    // "la clé n'existe pas" (→ on peut en créer une) de "la lecture a échoué"
+    // (→ erreur transitoire : NE PAS régénérer, sinon on écrase la clé et TOUS
+    // les plaintexts déjà chiffrés deviennent illisibles → bulles vides à la
+    // reconnexion). C'était la cause du bug : un simple .catch(()=>undefined)
+    // traitait une erreur de lecture comme une absence de clé.
+    let readOk = false;
+    let existing: { id: string; key: CryptoKey } | undefined;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        existing = await runTxOn('plaintext-cache', [STORE_KEYS], 'readonly', (tx) =>
+          reqToPromise(tx.objectStore(STORE_KEYS).get(DEVICE_KEY_ID) as IDBRequest<{ id: string; key: CryptoKey } | undefined>),
+        );
+        readOk = true;
+        break;
+      } catch (e) {
+        lastErr = e;
+        await new Promise((r) => setTimeout(r, 120 * (attempt + 1))); // petit backoff
+      }
+    }
 
-    if (existing?.key) {
+    if (readOk && existing?.key) {
       cachedDeviceKey = existing.key;
       return existing.key;
     }
 
+    // La lecture a échoué 3 fois → on ne sait PAS si la clé existe. Abandonner
+    // sans générer de nouvelle clé, pour ne jamais écraser l'accès aux anciens
+    // messages. Le cache mémoire prend le relais le temps de la session ; la
+    // prochaine tentative (reconnexion suivante) pourra relire la vraie clé.
+    if (!readOk) {
+      cachedKeyPromise = null;
+      throw new Error('[plaintextStore] device key read failed, refusing to regenerate: ' + String(lastErr));
+    }
+
+    // Lecture OK et clé réellement absente (premier lancement) → on la crée.
     const key = await crypto.subtle.generateKey(
       { name: 'AES-GCM', length: 256 },
       false,
