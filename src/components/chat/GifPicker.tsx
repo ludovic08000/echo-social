@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Search, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -24,7 +24,7 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
   const [trending, setTrending] = useState<GifResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadedTrending, setLoadedTrending] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchGifs = useCallback(async (query: string) => {
     setLoading(true);
@@ -34,15 +34,18 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
         : `https://tenor.googleapis.com/v2/featured?key=${TENOR_API_KEY}&client_key=${TENOR_CLIENT_KEY}&limit=20&media_filter=gif,tinygif`;
 
       const res = await fetch(endpoint);
+      if (!res.ok) throw new Error(`Tenor HTTP ${res.status}`);
       const data = await res.json();
 
-      const gifs: GifResult[] = (data.results || []).map((r: any) => ({
-        id: r.id,
-        url: r.media_formats?.gif?.url || r.media_formats?.tinygif?.url || '',
-        preview: r.media_formats?.tinygif?.url || r.media_formats?.gif?.url || '',
-        width: r.media_formats?.tinygif?.dims?.[0] || 200,
-        height: r.media_formats?.tinygif?.dims?.[1] || 200,
-      }));
+      const gifs: GifResult[] = (data.results || [])
+        .map((r: any) => ({
+          id: String(r.id || crypto.randomUUID?.() || Math.random()),
+          url: r.media_formats?.gif?.url || r.media_formats?.tinygif?.url || '',
+          preview: r.media_formats?.tinygif?.url || r.media_formats?.gif?.url || '',
+          width: r.media_formats?.tinygif?.dims?.[0] || 200,
+          height: r.media_formats?.tinygif?.dims?.[1] || 200,
+        }))
+        .filter((gif: GifResult) => gif.url.startsWith('https://') && gif.preview.startsWith('https://'));
 
       if (query.trim()) {
         setResults(gifs);
@@ -52,19 +55,31 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
       }
     } catch (err) {
       console.error('GIF fetch error:', err);
+      if (query.trim()) setResults([]);
+      else {
+        setTrending([]);
+        setLoadedTrending(true);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Load trending on mount
-  useState(() => {
-    if (!loadedTrending) fetchGifs('');
-  });
+  // Load trending on mount. This must be an effect, not a useState initializer:
+  // initializers are for pure state creation and can behave badly under remounts.
+  useEffect(() => {
+    if (!loadedTrending) void fetchGifs('');
+  }, [fetchGifs, loadedTrending]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const handleSearch = (value: string) => {
     setSearch(value);
-    clearTimeout(debounceRef.current);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       if (value.trim()) {
         fetchGifs(value);
@@ -109,7 +124,7 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
         ) : displayGifs.length === 0 ? (
           <div className="text-center py-4">
             <p className="text-[10px] text-muted-foreground">
-              {search.trim() ? 'Aucun GIF trouvé' : 'Chargement…'}
+              {search.trim() ? 'Aucun GIF trouvé' : 'Aucun GIF disponible'}
             </p>
           </div>
         ) : (
