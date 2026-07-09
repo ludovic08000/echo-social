@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { groupNotifications, type GroupedNotification } from '@/lib/feedAlgorithm';
+import { groupNotifications, type GroupedNotification } from '@/lib/ml/feedAlgorithm';
 
 export interface Notification {
   id: string;

@@ -179,7 +179,9 @@ export function trackMinute() {
     const cleaned: Record<string, number> = {};
     keys.forEach(k => { cleaned[k] = data[k]; });
     localStorage.setItem('forsure-daily-usage', JSON.stringify(cleaned));
-  } catch {}
+  } catch {
+    // localStorage can be unavailable in privacy modes.
+  }
 }
 
 export function getWeeklyUsage(): number[] {

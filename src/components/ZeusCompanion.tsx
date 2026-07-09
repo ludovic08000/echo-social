@@ -20,8 +20,8 @@ import { cn } from '@/lib/utils';
 import { SafeMarkdown } from '@/components/SafeMarkdown';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
-import { saveFeedPrefs } from '@/lib/feedPreferences';
+import { loadFeedWeights, type FeedWeights } from '@/lib/ml/feedAlgorithm';
+import { saveFeedPrefs } from '@/lib/ml/feedPreferences';
 
 
 type Msg = { role: string; content: string };

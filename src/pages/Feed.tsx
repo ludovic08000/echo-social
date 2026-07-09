@@ -14,7 +14,7 @@ import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
 import { Coffee, X, Sparkles, Lock, Shield, Radio } from 'lucide-react';
 import { FeedZeusCard } from '@/components/feed/FeedZeusCard';
 import { LazyMount } from '@/components/feed/LazyMount';
-import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
+import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/ml/feedAlgorithm';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';

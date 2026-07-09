@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Cpu, MessageSquare, Zap, Brain, Bot } from 'lucide-react';
-import { getAIModules, getAIEngineStats, getCategoryLabel, getCategoryColor } from '@/lib/aiEngine';
+import { getAIModules, getAIEngineStats, getCategoryLabel, getCategoryColor } from '@/lib/ml/aiEngine';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 

@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
-import { saveFeedPrefs, syncFeedPrefsFromServer } from '@/lib/feedPreferences';
+import { loadFeedWeights, type FeedWeights } from '@/lib/ml/feedAlgorithm';
+import { saveFeedPrefs, syncFeedPrefsFromServer } from '@/lib/ml/feedPreferences';
 import { useAuth } from '@/lib/auth';
 
 type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';

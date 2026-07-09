@@ -2,7 +2,7 @@ import { useProducts } from '@/hooks/useMarketplace';
 import { Link } from 'react-router-dom';
 import { ShoppingBag } from 'lucide-react';
 import { ProductCard } from '@/components/marketplace/ProductCard';
-import { rotateMarketplaceProducts } from '@/lib/feedAlgorithm';
+import { rotateMarketplaceProducts } from '@/lib/ml/feedAlgorithm';
 import { useMemo } from 'react';
 import { useIsMarketplaceEnabled } from '@/hooks/usePlatformStats';
 

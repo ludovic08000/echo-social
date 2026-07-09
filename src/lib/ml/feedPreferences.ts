@@ -7,10 +7,11 @@
 // ────────────────────────────────────────────────────────
 
 import { supabase } from '@/integrations/supabase/client';
-import type { ContentPrefs, FeedWeights } from '@/lib/feedAlgorithm';
+import type { ContentPrefs, FeedWeights } from '@/lib/ml/feedAlgorithm';
 
 const PREFS_KEY = 'content-prefs';
 const WEIGHTS_KEY = 'feed-weights';
+const FEED_PREFS_TABLE = 'user_feed_preferences' as never;
 
 const DEFAULT_PREFS: ContentPrefs = {
   feedAlgorithm: 'smart',
@@ -64,7 +65,9 @@ function writeCache(prefs: ContentPrefs, weights: FeedWeights) {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     localStorage.setItem(WEIGHTS_KEY, JSON.stringify(weights));
-  } catch {}
+  } catch {
+    // localStorage can be unavailable in privacy modes.
+  }
 }
 
 /**
@@ -75,7 +78,7 @@ function writeCache(prefs: ContentPrefs, weights: FeedWeights) {
 export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
   try {
     const { data, error } = await supabase
-      .from('user_feed_preferences' as any)
+      .from(FEED_PREFS_TABLE)
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
@@ -96,9 +99,11 @@ export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
       if (sp) localPrefs = { ...DEFAULT_PREFS, ...JSON.parse(sp) };
       const sw = localStorage.getItem(WEIGHTS_KEY);
       if (sw) localWeights = { ...DEFAULT_WEIGHTS, ...JSON.parse(sw) };
-    } catch {}
+    } catch {
+      // Keep defaults when the cache is unreadable.
+    }
 
-    await supabase.from('user_feed_preferences' as any).upsert({
+    await supabase.from(FEED_PREFS_TABLE).upsert({
       user_id: userId,
       feed_algorithm: localPrefs.feedAlgorithm,
       diversity_boost: localPrefs.diversityBoost,
@@ -135,13 +140,15 @@ export async function saveFeedPrefs(
     if (sp) currentPrefs = { ...DEFAULT_PREFS, ...JSON.parse(sp) };
     const sw = localStorage.getItem(WEIGHTS_KEY);
     if (sw) currentWeights = { ...DEFAULT_WEIGHTS, ...JSON.parse(sw) };
-  } catch {}
+  } catch {
+    // Keep defaults when the cache is unreadable.
+  }
 
   const nextPrefs: ContentPrefs = { ...currentPrefs, ...patch };
   const nextWeights: FeedWeights = patch.weights ? { ...currentWeights, ...patch.weights } : currentWeights;
 
   const { data, error } = await supabase
-    .from('user_feed_preferences' as any)
+    .from(FEED_PREFS_TABLE)
     .upsert({
       user_id: userId,
       feed_algorithm: nextPrefs.feedAlgorithm,

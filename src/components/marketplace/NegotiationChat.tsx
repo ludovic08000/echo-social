@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/auth';
 import { useMessages, useSendMessage, useCreateConversation, useConversations } from '@/hooks/useMessages';
 import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, type Negotiation } from '@/hooks/useNegotiations';
 import { supabase } from '@/integrations/supabase/client';
-import { trackAICall } from '@/lib/aiEngine';
+import { trackAICall } from '@/lib/ml/aiEngine';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

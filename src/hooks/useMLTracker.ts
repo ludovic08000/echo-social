@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { recordSessionSignal } from "@/lib/feedDiversity";
-import { buildFeedExperimentEvent, capExperimentEventBatch } from "@/lib/recsysV8";
+import { recordSessionSignal } from "@/lib/ml/feedDiversity";
+import { buildFeedExperimentEvent, capExperimentEventBatch } from "@/lib/ml/recsysV8";
 
 type SignalType =
   | "view"

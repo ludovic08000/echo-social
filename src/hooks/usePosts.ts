@@ -2,10 +2,10 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
-import { loadContentPrefs, containsMutedKeyword } from '@/lib/feedAlgorithm';
-import { enforceDiversity, getSessionAdjustment } from '@/lib/feedDiversity';
-import { syncFeedPrefsFromServer } from '@/lib/feedPreferences';
-import { mapFeedRpcRow } from '@/lib/recsysV8';
+import { loadContentPrefs, containsMutedKeyword } from '@/lib/ml/feedAlgorithm';
+import { enforceDiversity, getSessionAdjustment } from '@/lib/ml/feedDiversity';
+import { syncFeedPrefsFromServer } from '@/lib/ml/feedPreferences';
+import { mapFeedRpcRow } from '@/lib/ml/recsysV8';
 
 // One-shot sync per user (refreshes localStorage cache from DB-backed prefs)
 const _syncedPrefsUsers = new Set<string>();

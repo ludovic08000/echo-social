@@ -298,14 +298,15 @@ import { supabase } from '@/integrations/supabase/client';
 
 export async function fetchServerMetrics(windowMinutes = 1440): Promise<Record<string, AIModuleMetrics>> {
   try {
-    const { data, error } = await supabase.rpc('ai_engine_module_stats' as any, { p_window_minutes: windowMinutes });
+    const { data, error } = await supabase.rpc('ai_engine_module_stats' as never, { p_window_minutes: windowMinutes } as never);
     if (error || !Array.isArray(data)) return {};
     const out: Record<string, AIModuleMetrics> = {};
     for (const row of data as Array<{ module_id: string; total_calls: number; avg_latency_ms: number; success_rate: number; last_used: string }>) {
+      const successRate = Number(row.success_rate);
       out[row.module_id] = {
         totalCalls: Number(row.total_calls) || 0,
         avgResponseMs: Number(row.avg_latency_ms) || 0,
-        successRate: Number(row.success_rate) ?? 100,
+        successRate: Number.isFinite(successRate) ? successRate : 100,
         lastUsed: row.last_used,
       };
     }

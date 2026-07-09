@@ -3,7 +3,7 @@ import {
   buildFeedExperimentEvent,
   capExperimentEventBatch,
   mapFeedRpcRow,
-} from '../recsysV8';
+} from './recsysV8';
 
 describe('recsysV8 helpers', () => {
   it('maps v8 RPC rows to the existing post view shape', () => {

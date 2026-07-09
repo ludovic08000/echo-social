@@ -6,7 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { DetoxSchedulePanel } from './DetoxSchedulePanel';
-import { getTodayMinutes, getWeeklyUsage } from '@/lib/feedAlgorithm';
+import { getTodayMinutes, getWeeklyUsage } from '@/lib/ml/feedAlgorithm';
 import { useWellbeingPreferences } from '@/hooks/useWellbeingPreferences';
 
 function formatMinutes(m: number) {

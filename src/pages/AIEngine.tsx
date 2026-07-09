@@ -12,7 +12,7 @@ import {
   getAIModules, getCategoryLabel, getCategoryColor,
   fetchServerMetrics, subscribeAIEvents,
   type AIModule, type AICategory, type AIModuleMetrics,
-} from '@/lib/aiEngine';
+} from '@/lib/ml/aiEngine';
 import { useAIEngine, type ModerationResult, type SentimentResult } from '@/hooks/useAIEngine';
 import {
   Brain, FileText, Languages, Sparkles, BellRing, ShoppingBag, Crown,
