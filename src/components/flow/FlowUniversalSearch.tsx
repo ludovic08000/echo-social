@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, X, Home, Users, ShoppingBag, Radio, Gamepad2, FileText, Settings, MessageCircle, Bot, Trophy, BookOpen, Heart, Megaphone, Bell, Video } from 'lucide-react';
+import { Search, X, Home, Users, FileText, Settings, MessageCircle, Bot, BookOpen, Heart, Megaphone, Bell, Radio } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -11,8 +11,6 @@ const SEARCH_ITEMS = [
   { label: 'Lives', path: '/live', icon: Radio, keywords: ['live', 'stream', 'direct', 'en direct'] },
   { label: 'Groupes', path: '/groups', icon: Users, keywords: ['groupes', 'groups', 'communauté'] },
   { label: 'Pages', path: '/pages', icon: FileText, keywords: ['pages', 'page'] },
-  { label: 'Jeux', path: '/games', icon: Gamepad2, keywords: ['jeux', 'games', 'jouer'] },
-  { label: 'Challenges', path: '/challenges', icon: Trophy, keywords: ['challenges', 'défis', 'challenge'] },
   { label: 'Journal', path: '/journal', icon: BookOpen, keywords: ['journal', 'diary', 'écrire'] },
   { label: 'Notifications', path: '/notifications', icon: Bell, keywords: ['notifications', 'notifs', 'alertes'] },
   { label: 'Publicité', path: '/ads', icon: Megaphone, keywords: ['pub', 'ads', 'publicité', 'campagne'] },

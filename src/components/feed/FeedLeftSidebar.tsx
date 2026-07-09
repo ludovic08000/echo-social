@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   Home, Users, Search, 
   Bell, MessageCircle, Settings,
-  PlusCircle, BookOpen, Trophy, Heart, Gamepad2,
+  PlusCircle, BookOpen,
   BarChart3, Bot, Megaphone, Store, Sparkles, Radio,
   FileText, UsersRound
 } from 'lucide-react';
@@ -18,14 +18,11 @@ import { useIsMobile } from '@/hooks/use-mobile';
 const mainLinks = [
   { path: '/feed', icon: Home, label: 'Fil d\'actualité', bg: 'bg-blue-500', iconClass: 'text-white' },
   { path: '/friends', icon: Users, label: 'Amis', bg: 'bg-sky-500', iconClass: 'text-white' },
-  { path: '/friend-match', icon: Heart, label: 'Matchmaking', bg: 'bg-pink-500', iconClass: 'text-white' },
   { path: '/messages', icon: MessageCircle, label: 'Messenger', bg: 'bg-violet-500', iconClass: 'text-white' },
   { path: '/groups', icon: UsersRound, label: 'Groupes', bg: 'bg-cyan-500', iconClass: 'text-white' },
   { path: '/pages', icon: FileText, label: 'Pages', bg: 'bg-orange-500', iconClass: 'text-white' },
   { path: '/lives', icon: Radio, label: 'Lives', bg: 'bg-red-500', iconClass: 'text-white' },
   { path: '/marketplace', icon: Store, label: 'Marketplace', bg: 'bg-emerald-500', iconClass: 'text-white' },
-  { path: '/challenges', icon: Trophy, label: 'Défis', bg: 'bg-amber-500', iconClass: 'text-white' },
-  { path: '/games', icon: Gamepad2, label: 'Jeux', bg: 'bg-purple-500', iconClass: 'text-white' },
   { path: '/journal', icon: BookOpen, label: 'Journal privé', bg: 'bg-teal-500', iconClass: 'text-white' },
   { path: '/dashboard', icon: BarChart3, label: 'Tableau de bord', bg: 'bg-indigo-500', iconClass: 'text-white' },
   { path: '/ai-agents', icon: Bot, label: 'Discuter avec des IA', bg: 'bg-fuchsia-500', iconClass: 'text-white' },

@@ -220,6 +220,7 @@ export type Database = {
           impressions: number
           moderation_reason: string | null
           moderation_status: string | null
+          objective: string
           reach: number
           spent: number
           starts_at: string
@@ -250,6 +251,7 @@ export type Database = {
           impressions?: number
           moderation_reason?: string | null
           moderation_status?: string | null
+          objective?: string
           reach?: number
           spent?: number
           starts_at?: string
@@ -280,6 +282,7 @@ export type Database = {
           impressions?: number
           moderation_reason?: string | null
           moderation_status?: string | null
+          objective?: string
           reach?: number
           spent?: number
           starts_at?: string
@@ -365,6 +368,154 @@ export type Database = {
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_sets: {
+        Row: {
+          advertiser_id: string
+          campaign_id: string
+          created_at: string
+          daily_budget: number | null
+          ends_at: string
+          id: string
+          lifetime_budget: number | null
+          name: string
+          optimization_goal: string
+          placements: string[]
+          starts_at: string
+          status: string
+          target_age_max: number | null
+          target_age_min: number | null
+          target_gender: string | null
+          target_interests: string[] | null
+          target_location: Json | null
+          updated_at: string
+        }
+        Insert: {
+          advertiser_id: string
+          campaign_id: string
+          created_at?: string
+          daily_budget?: number | null
+          ends_at?: string
+          id?: string
+          lifetime_budget?: number | null
+          name?: string
+          optimization_goal?: string
+          placements?: string[]
+          starts_at?: string
+          status?: string
+          target_age_max?: number | null
+          target_age_min?: number | null
+          target_gender?: string | null
+          target_interests?: string[] | null
+          target_location?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          advertiser_id?: string
+          campaign_id?: string
+          created_at?: string
+          daily_budget?: number | null
+          ends_at?: string
+          id?: string
+          lifetime_budget?: number | null
+          name?: string
+          optimization_goal?: string
+          placements?: string[]
+          starts_at?: string
+          status?: string
+          target_age_max?: number | null
+          target_age_min?: number | null
+          target_gender?: string | null
+          target_interests?: string[] | null
+          target_location?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_sets_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ads: {
+        Row: {
+          ad_set_id: string
+          advertiser_id: string
+          clicks: number
+          created_at: string
+          cta_text: string | null
+          cta_url: string | null
+          description: string | null
+          headline: string
+          id: string
+          image_url: string | null
+          impressions: number
+          moderation_reason: string | null
+          moderation_status: string
+          name: string
+          primary_text: string
+          reach: number
+          spent: number
+          status: string
+          updated_at: string
+          video_url: string | null
+        }
+        Insert: {
+          ad_set_id: string
+          advertiser_id: string
+          clicks?: number
+          created_at?: string
+          cta_text?: string | null
+          cta_url?: string | null
+          description?: string | null
+          headline: string
+          id?: string
+          image_url?: string | null
+          impressions?: number
+          moderation_reason?: string | null
+          moderation_status?: string
+          name?: string
+          primary_text: string
+          reach?: number
+          spent?: number
+          status?: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Update: {
+          ad_set_id?: string
+          advertiser_id?: string
+          clicks?: number
+          created_at?: string
+          cta_text?: string | null
+          cta_url?: string | null
+          description?: string | null
+          headline?: string
+          id?: string
+          image_url?: string | null
+          impressions?: number
+          moderation_reason?: string | null
+          moderation_status?: string
+          name?: string
+          primary_text?: string
+          reach?: number
+          spent?: number
+          status?: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ads_ad_set_id_fkey"
+            columns: ["ad_set_id"]
+            isOneToOne: false
+            referencedRelation: "ad_sets"
             referencedColumns: ["id"]
           },
         ]

@@ -55,12 +55,6 @@ const STEPS: BubbleStep[] = [
     position: 'bottom',
   },
   {
-    icon: <Gamepad2 className="w-5 h-5" />,
-    title: 'Jeux & Défis 🎮',
-    description: '8 jeux (Échecs, Dames, Tetris, Snake…) contre l\'IA avec niveaux de difficulté. Participe aussi à des défis communautaires.',
-    position: 'bottom',
-  },
-  {
     icon: <Bell className="w-5 h-5" />,
     title: 'Notifications en temps réel 🔔',
     description: 'Likes, commentaires, demandes d\'amis, messages — tout en temps réel avec sons personnalisables.',
