@@ -383,7 +383,7 @@ function CreateWizard({ open, onClose }: { open: boolean; onClose: () => void })
   const handleImage = async (file: File) => {
     setUploading(true);
     try {
-      const url = await uploadImage(file, 'ad');
+      const url = await upload(file);
       if (url) setImageUrl(url);
     } finally {
       setUploading(false);
