@@ -46,33 +46,6 @@ export function useFraudDetection() {
   return { scanUser, batchScan, loading };
 }
 
-// ── ML Matching ──
-export function useMLMatching() {
-  const [loading, setLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const { user } = useAuth();
-
-  const fetchSuggestions = useCallback(async (limit = 20) => {
-    if (!user) return [];
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('ml-matching', {
-        body: { action: 'suggest', limit },
-      });
-      if (error) throw error;
-      const results = data?.suggestions || [];
-      setSuggestions(results);
-      return results;
-    } catch (e) {
-      console.error('ML Matching error:', e);
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  return { suggestions, fetchSuggestions, loading };
-}
 
 // ── ML Moderation ──
 export function useMLModeration() {
