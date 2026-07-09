@@ -351,7 +351,7 @@ function CreateWizard({ open, onClose }: { open: boolean; onClose: () => void })
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
 
-  const { uploadImage } = useImageUpload();
+  const { upload } = useImageUpload({ bucket: 'uploads' });
   const createCampaign = useCreateAdCampaign();
   const createAdSet = useCreateAdSet();
   const createAd = useCreateAd();
