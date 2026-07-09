@@ -101,11 +101,21 @@ export function shouldArchiveMessageBody({
 }
 
 const INLINE_ARCHIVE_BUDGET_MS = 180;
+const INLINE_FANOUT_BUDGET_MS = 1_200;
+
+type FanoutBuildResult = Awaited<ReturnType<typeof buildFanoutCopies>>;
 
 function waitForInlineArchive(archivePromise: Promise<string | null>): Promise<string | null> {
   return Promise.race([
     archivePromise,
     new Promise<null>((resolve) => setTimeout(() => resolve(null), INLINE_ARCHIVE_BUDGET_MS)),
+  ]);
+}
+
+function waitForInlineFanout(fanoutPromise: Promise<FanoutBuildResult>): Promise<FanoutBuildResult | null> {
+  return Promise.race([
+    fanoutPromise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), INLINE_FANOUT_BUDGET_MS)),
   ]);
 }
 
@@ -151,7 +161,10 @@ function shouldFallbackToLegacyEncryptedInsert(error: unknown): boolean {
     text.includes('not_authenticated') ||
     text.includes('unauthorized') ||
     text.includes('sender_not_conversation_participant') ||
-    text.includes('e2ee_plaintext_message_rejected')
+    text.includes('e2ee_plaintext_message_rejected') ||
+    text.includes('e2ee_missing_device_copies') ||
+    text.includes('e2ee_invalid_device_copy') ||
+    text.includes('empty_device_copies')
   );
 }
 
@@ -335,8 +348,8 @@ export function useMessageQueue(
 
     const serverMessageId = safeUUID();
     const fanoutInput = { messageId: serverMessageId, conversationId, senderUserId: user.id, plaintext: sanitized };
-    const fanoutRows: FanoutCopyRow[] = [];
-    const fanoutHasTargets = false;
+    let fanoutRows: FanoutCopyRow[] = [];
+    let fanoutHasTargets = false;
     let fanoutTimedOut = false;
     let fanoutPromise: ReturnType<typeof buildFanoutCopies> | null = null;
     const archiveAllowed =
@@ -356,11 +369,22 @@ export function useMessageQueue(
       : Promise.resolve(null);
 
     if (encryptedSuccessfully) {
-      fanoutTimedOut = true;
       fanoutPromise = buildFanoutCopies(fanoutInput);
       fanoutPromise.catch(() => {});
-      trace('fanout_deferred_start', { serverMessageId });
-      console.info('[MSG_SEND] fanout deferred; inserting parent immediately', { localId, conversationId });
+      trace('fanout_inline_start', { serverMessageId, budgetMs: INLINE_FANOUT_BUDGET_MS });
+      const inlineFanout = await waitForInlineFanout(fanoutPromise).catch((fanoutError) => {
+        trace('fanout_inline_failed', { error: fanoutError instanceof Error ? fanoutError.message : String(fanoutError), serverMessageId });
+        return null;
+      });
+      if (inlineFanout) {
+        fanoutRows = inlineFanout.rows;
+        fanoutHasTargets = inlineFanout.hasTargets;
+        trace('fanout_inline_ready', { rows: fanoutRows.length, hasTargets: fanoutHasTargets, serverMessageId });
+      } else {
+        fanoutTimedOut = true;
+        trace('fanout_deferred_start', { serverMessageId });
+        console.info('[MSG_SEND] fanout deferred; inserting parent immediately', { localId, conversationId });
+      }
     }
 
     const inlineArchiveBody = archiveAllowed ? await waitForInlineArchive(archivePromise) : null;

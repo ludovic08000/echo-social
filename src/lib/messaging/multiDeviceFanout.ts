@@ -53,8 +53,8 @@ const X3DH_BOOTSTRAP_ENVELOPE_V2 = 'v2';
 const X3DH_BOOTSTRAP_AAD_CONTEXT_V2 = 'ForSure-X3DH-v5-Sesame-bootstrap';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 const FANOUT_ENCRYPT_CONCURRENCY = 4;
-const DEVICE_COPY_ASYNC_FANOUT_GRACE_MS = 15000;
-const DEVICE_COPY_SELF_SENT_GRACE_MS = 60000;
+const DEVICE_COPY_ASYNC_FANOUT_GRACE_MS = 3000;
+const DEVICE_COPY_SELF_SENT_GRACE_MS = 3000;
 
 type DeviceCopyPrefix = 'x3dh5.init' | 'x3dh5' | 'x3dh4' | 'unsupported';
 

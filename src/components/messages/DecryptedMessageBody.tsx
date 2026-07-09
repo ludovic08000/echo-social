@@ -51,6 +51,8 @@ interface DecryptedMessageBodyProps {
   hasMedia?: boolean;
 }
 
+const SILENT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000];
+
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
   decrypt,
@@ -83,6 +85,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
+  const silentRetryAttemptRef = useRef(0);
 
   // Listen for the global retry event fired after key restoration / queue
   // success. Drop any stale RAM entry so the effect below re-resolves.
@@ -97,6 +100,29 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     window.addEventListener('forsure-decrypt-retry', handler);
     return () => window.removeEventListener('forsure-decrypt-retry', handler);
   }, [messageId, body]);
+
+  // Mobile/realtime guard: Supabase can deliver the parent message before the
+  // sibling device-copy row, or miss the copy realtime event after iOS wake.
+  // While the bubble is silent, retry a few bounded times so the copy/archive
+  // can be picked up without requiring a full chat refetch.
+  useEffect(() => {
+    if (!looksEncrypted(body) || !pending || outcome !== null) {
+      silentRetryAttemptRef.current = 0;
+      return;
+    }
+
+    const attempt = silentRetryAttemptRef.current;
+    if (attempt >= SILENT_RETRY_DELAYS_MS.length) return;
+
+    const timer = window.setTimeout(() => {
+      silentRetryAttemptRef.current = attempt + 1;
+      clearNegativeCache();
+      dropCache(messageId, body);
+      setRetryTick((t) => t + 1);
+    }, SILENT_RETRY_DELAYS_MS[attempt]);
+
+    return () => window.clearTimeout(timer);
+  }, [body, messageId, outcome, pending, retryTick]);
 
   useEffect(() => {
     let cancelled = false;

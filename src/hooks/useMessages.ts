@@ -67,6 +67,13 @@ export const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 const messagesKey = (conversationId: string, userId: string | undefined) =>
   ['messages', conversationId, userId ?? 'anon'] as const;
 
+function isMultiDeviceMessageRow(message: { body?: string | null; body_kind?: string | null }): boolean {
+  return Boolean(
+    message.body &&
+    (isMultiDeviceEnvelopeBody(message.body) || message.body_kind === 'multi_device')
+  );
+}
+
 let keysRestoredConversationRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleKeysRestoredConversationRefetch(queryClient: QueryClient) {
@@ -154,6 +161,7 @@ export interface Message {
   conversation_id: string;
   sender_id: string;
   body: string;
+  body_kind?: string | null;
   image_url: string | null;
   created_at: string;
   status: 'delivered' | 'pending' | 'blocked';
@@ -416,8 +424,8 @@ export function useMessages(conversationId: string) {
           // bodies. This catches out-of-order Double Ratchet deliveries before
           // the user even mounts a `DecryptedMessageBody` for the row, so the
           // retry budget starts ticking immediately on arrival.
-          if (user && newMsg.sender_id !== user.id) {
-            if (isMultiDeviceEnvelopeBody(newMsg.body)) {
+          if (user) {
+            if (isMultiDeviceMessageRow(newMsg)) {
               // RACE GUARD: the `messages` realtime event can arrive BEFORE
               // its sibling `message_device_copies` event (replication lag
               // even for same-tx writes, or out-of-order delivery on WS
@@ -455,7 +463,7 @@ export function useMessages(conversationId: string) {
                 }).catch(() => {});
               };
               probe(0);
-            } else if (isStrictRatchetEnvelopeBody(newMsg.body)) {
+            } else if (newMsg.sender_id !== user.id && isStrictRatchetEnvelopeBody(newMsg.body)) {
               void routeIncoming({
                 encryptedBody: newMsg.body,
                 recipientUserId: user.id,
@@ -637,9 +645,9 @@ export function useMessages(conversationId: string) {
         // on chat open steals CPU from iOS input/scroll for no visible benefit.
         const decryptWarmupMessages = compatibleMessages.slice(-24);
         const decryptTasks = decryptWarmupMessages
-          .filter((m) => m.sender_id !== user.id)
+          .filter((m) => isMultiDeviceMessageRow(m) || m.sender_id !== user.id)
           .map(async (m) => {
-            if (isMultiDeviceEnvelopeBody(m.body)) {
+            if (isMultiDeviceMessageRow(m)) {
               try {
                 const outcome = await resolvePlaintext({
                   body: m.body,
