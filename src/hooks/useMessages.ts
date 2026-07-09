@@ -685,10 +685,15 @@ export function useMessages(conversationId: string) {
             return false;
           });
 
-        const results = await Promise.all(decryptTasks);
-        if (results.some(Boolean) && typeof window !== 'undefined') {
-          try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
-        }
+        // Do not block the React Query result on crypto warmup. Signal/WhatsApp
+        // render the local timeline immediately, then decrypt/cache visible
+        // items as device state catches up. Awaiting this made bubbles appear
+        // late or briefly disappear on iOS when IndexedDB/Supabase was slow.
+        void Promise.all(decryptTasks).then((results) => {
+          if (results.some(Boolean) && typeof window !== 'undefined') {
+            try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+          }
+        }).catch(() => {});
       }
 
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];

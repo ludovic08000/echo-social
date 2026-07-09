@@ -149,15 +149,18 @@ async function bootstrap() {
         crypto,
         identity,
         sessionInvalidation,
+        e2eeSession,
       ] = await Promise.all([
         import('@/lib/runtimeShield'),
         import('@/lib/crypto'),
         import('@/lib/crypto/identityBootstrap'),
         import('@/lib/crypto/sessionInvalidation'),
+        import('@/e2ee-session'),
       ]);
 
       activateRuntimeShield();
       crypto.hardenPrototypes();
+      e2eeSession.wirePendingQueue();
       identity.startIdentityBootstrap();
       sessionInvalidation.startSessionInvalidationWatcher();
 

@@ -25,6 +25,8 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 vi.mock('@/lib/crypto/plaintextStore', () => ({
+  savePlaintext: vi.fn().mockResolvedValue(undefined),
+  loadPlaintext: vi.fn().mockResolvedValue(null),
   savePlaintextForCiphertext: vi.fn().mockResolvedValue(undefined),
   loadPlaintextForCiphertext: vi.fn().mockResolvedValue(null),
 }));
@@ -46,7 +48,17 @@ import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody
 import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { clearMediaKey, getMediaKey } from '@/components/messages/mediaKeyCache';
 
-const RATCHET_BODY = 'x3dh4.sess-id.AAAA.0.0.IV.CT';
+const ratchetBody = (ct = 'CT') => JSON.stringify({
+  encryptionMode: 'ratchet',
+  v: 4,
+  hdr: { dh: 'DH', pn: 0, n: 0 },
+  iv: 'IV',
+  ct,
+  sig: 'SIG',
+  fp: 'FP',
+  ts: 1,
+});
+const RATCHET_BODY = ratchetBody('base');
 
 describe('DecryptedMessageBody', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -112,28 +124,26 @@ describe('DecryptedMessageBody', () => {
     expect(screen.queryByText(/GIF:https/)).not.toBeInTheDocument();
   });
 
-  it.skip('renders the decrypted text when decrypt resolves', async () => {
+  it('renders the decrypted text when decrypt resolves', async () => {
     const decrypt = vi.fn().mockResolvedValue({ text: 'decrypted!', incompatible: false });
     render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={ratchetBody('success')}
         decrypt={decrypt}
         isEncryptionActive={true}
-        messageId="msg-1"
       />,
     );
     expect(await screen.findByText('decrypted!')).toBeInTheDocument();
-    expect(decrypt).toHaveBeenCalledWith(RATCHET_BODY);
+    expect(decrypt).toHaveBeenCalledWith(ratchetBody('success'));
   });
 
-  it.skip('stays silent (no placeholder text) when all decrypt paths fail', async () => {
+  it('stays silent (no placeholder text) when all decrypt paths fail', async () => {
     const decrypt = vi.fn().mockResolvedValue({ text: '', incompatible: true });
     const { container } = render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={ratchetBody('fail')}
         decrypt={decrypt}
         isEncryptionActive={true}
-        messageId="msg-fail"
       />,
     );
 
@@ -148,7 +158,7 @@ describe('DecryptedMessageBody', () => {
     expect(text).not.toMatch(/🔒/);
   });
 
-  it.skip('forsure-decrypt-retry event drops the cache and re-attempts', async () => {
+  it('forsure-decrypt-retry event re-attempts pending bubbles', async () => {
     let call = 0;
     const decrypt = vi.fn().mockImplementation(async () => {
       call += 1;
@@ -159,10 +169,9 @@ describe('DecryptedMessageBody', () => {
 
     render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={ratchetBody('retry-after-fail')}
         decrypt={decrypt}
         isEncryptionActive={true}
-        messageId="msg-retry"
       />,
     );
 
@@ -174,6 +183,26 @@ describe('DecryptedMessageBody', () => {
 
     expect(await screen.findByText('finally!')).toBeInTheDocument();
     expect(decrypt).toHaveBeenCalledTimes(2);
+  });
+
+  it('forsure-decrypt-retry does not blank an already visible plaintext bubble', async () => {
+    const decrypt = vi.fn().mockResolvedValue({ text: 'stable clear', incompatible: false });
+    render(
+      <DecryptedMessageBody
+        body={ratchetBody('stable-visible')}
+        decrypt={decrypt}
+        isEncryptionActive={true}
+      />,
+    );
+
+    expect(await screen.findByText('stable clear')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+    });
+
+    expect(await screen.findByText('stable clear')).toBeInTheDocument();
+    expect(decrypt).toHaveBeenCalledTimes(1);
   });
 
   it('isMe self-message: tries plaintext store, stays silent if missing', async () => {

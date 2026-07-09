@@ -83,14 +83,23 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
+  const outcomeRef = useRef<DecryptionOutcome | null>(outcome);
+  const pendingRef = useRef(pending);
+
+  useEffect(() => {
+    outcomeRef.current = outcome;
+    pendingRef.current = pending;
+  }, [outcome, pending]);
 
   // Listen for the global retry event fired after key restoration / queue
-  // success. Drop any stale RAM entry so the effect below re-resolves.
+  // success. A bubble that is already visible must stay visible: Double
+  // Ratchet message keys are one-use, so a global retry should only wake
+  // pending/empty bubbles instead of blanking a validated plaintext bubble.
   useEffect(() => {
     const handler = () => {
-      // A successful queue retry/key restore wipes the negative cache so
-      // every silent bubble re-attempts on the next render pass.
       clearNegativeCache();
+      const current = outcomeRef.current;
+      if (current && !current.hidden && !pendingRef.current) return;
       dropCache(messageId, body);
       setRetryTick((t) => t + 1);
     };

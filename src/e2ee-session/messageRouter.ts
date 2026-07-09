@@ -21,6 +21,13 @@ import { legacyDecryptByMessageId, isKnownLegacyFormat } from './legacyDecryptRo
 import { hasSeenMessage, markSeenMessage, makeSeenKey } from './seenMessageStore';
 import { noteDecryptFailure, clearDecryptFailure } from './refanoutQueue';
 import { noteRetryAttempt, clearRetry } from './pendingRetryStore';
+import { pendingMessageQueue } from './pendingMessageQueue';
+import {
+  loadPlaintext,
+  loadPlaintextForCiphertext,
+  savePlaintext,
+  savePlaintextForCiphertext,
+} from '@/lib/crypto/plaintextStore';
 import type { DecryptResult, UserId } from './types';
 
 interface RouteInput {
@@ -41,6 +48,14 @@ function dropUnreadableEnvelope(messageId: string | undefined, errorCode: string
     plaintext: null,
     errorCode,
   };
+}
+
+async function loadDeliveredPlaintext(messageId: string | undefined, encryptedBody: string): Promise<string | null> {
+  if (messageId) {
+    const byId = await loadPlaintext(messageId).catch(() => null);
+    if (byId) return byId;
+  }
+  return loadPlaintextForCiphertext(encryptedBody).catch(() => null);
 }
 
 async function unwrapAndValidateInbound(input: RouteInput): Promise<{ body: string; secureValidated: boolean } | { errorCode: string }> {
@@ -85,7 +100,8 @@ export async function routeIncoming(input: RouteInput): Promise<DecryptResult> {
   });
 
   if (hasSeenMessage(seenKey)) {
-    return { ok: true, plaintext: null, via: 'plaintext-cache', errorCode: 'ALREADY_SEEN' };
+    const plaintext = await loadDeliveredPlaintext(messageId, encryptedBody);
+    return { ok: true, plaintext, via: 'plaintext-cache', errorCode: plaintext ? undefined : 'ALREADY_SEEN' };
   }
 
   if (
@@ -186,5 +202,29 @@ let wired = false;
 export function wirePendingQueue(): void {
   if (wired) return;
   wired = true;
-  console.info('[E2EE] decrypt retry enabled; transient failures are retried up to MAX_DECRYPT_RETRIES, then dropped');
+  pendingMessageQueue.setRetryHandler(async (envelope) => {
+    const input = envelope as Partial<RouteInput>;
+    if (!input.encryptedBody || !input.recipientUserId) return false;
+
+    const result = await routeIncoming({
+      encryptedBody: input.encryptedBody,
+      recipientUserId: input.recipientUserId,
+      senderUserId: input.senderUserId,
+      messageId: input.messageId,
+    });
+
+    if (!result.ok || result.plaintext === null) return false;
+
+    if (input.messageId) await savePlaintext(input.messageId, result.plaintext);
+    await savePlaintextForCiphertext(input.encryptedBody, result.plaintext);
+
+    try {
+      window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+    } catch {
+      // Non-browser tests.
+    }
+
+    return true;
+  });
+  console.info('[E2EE] decrypt retry enabled; transient failures are retried off the render path');
 }
