@@ -1,5 +1,5 @@
 /**
- * Public entry point for the e2ee-session façade.
+ * Public entry point for the Sesame protocol orchestration layer.
  *
  * Import-safe: no top-level side effects. Call `wirePendingQueue()` once at
  * app startup if you want background retry of out-of-order envelopes.
@@ -30,3 +30,4 @@ export { tryEveryRatchetSession } from './fallbackDecrypt';
 export { routeIncoming, wirePendingQueue } from './messageRouter';
 export { pendingMessageQueue } from './pendingMessageQueue';
 export { listKnownSessionIds } from '@/lib/crypto/deviceRatchet';
+export * as sesameCrypto from './crypto';

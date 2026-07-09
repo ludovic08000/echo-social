@@ -9,7 +9,7 @@ vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   tryReadDeviceCopy: mocks.tryReadDeviceCopy,
 }));
 
-vi.mock('@/e2ee-session', () => ({
+vi.mock('@/lib/sesame', () => ({
   routeIncoming: mocks.routeIncoming,
 }));
 

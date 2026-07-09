@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { messageQueue } from '@/lib/messaging/messageQueue';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
+import { pendingMessageQueue, routeIncoming } from '@/lib/sesame';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
@@ -412,7 +412,7 @@ export function useMessages(conversationId: string) {
             createdAt: newMsg.created_at,
           }]).catch(() => {});
 
-          // Proactively prime the e2ee-session router for incoming encrypted
+          // Proactively prime the Sesame router for incoming encrypted
           // bodies. This catches out-of-order Double Ratchet deliveries before
           // the user even mounts a `DecryptedMessageBody` for the row, so the
           // retry budget starts ticking immediately on arrival.

@@ -25,7 +25,7 @@ import {
   RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
-import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
+import { listFanoutTargets } from '@/lib/sesame/deviceRegistry';
 
 interface FanoutInput {
   messageId: string;

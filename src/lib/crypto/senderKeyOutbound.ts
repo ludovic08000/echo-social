@@ -23,7 +23,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
-import { listDevicesForUser } from '@/e2ee-session/deviceRegistry';
+import { listDevicesForUser } from '@/lib/sesame/deviceRegistry';
 import {
   ensureOwnerSession,
   encryptForGroup,

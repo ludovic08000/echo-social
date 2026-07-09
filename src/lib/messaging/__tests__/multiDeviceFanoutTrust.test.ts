@@ -14,7 +14,7 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-vi.mock('@/e2ee-session/deviceRegistry', () => ({
+vi.mock('@/lib/sesame/deviceRegistry', () => ({
   listFanoutTargets: mocks.listFanoutTargets,
 }));
 
@@ -63,7 +63,7 @@ vi.mock('@/lib/crypto/utils', () => ({
 }));
 
 import { supabase } from '@/integrations/supabase/client';
-import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
+import { listFanoutTargets } from '@/lib/sesame/deviceRegistry';
 import { ratchetEncrypt } from '@/lib/crypto/deviceRatchet';
 import { fanoutMessageCopies } from '../multiDeviceFanout';
 

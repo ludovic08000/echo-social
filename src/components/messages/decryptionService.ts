@@ -9,7 +9,7 @@
  *   1. Already-known plaintext (cachedPlaintext / RAM LRU / IndexedDB).
  *   2. Conversation-level decrypt delegate (Double Ratchet primary path).
  *   3. Per-message device-copy fan-out (orthogonal X3DH bootstrap).
- *   4. e2ee-session façade (multi-session ratchet enumeration + queue).
+ *   4. Sesame façade (multi-session ratchet enumeration + queue).
  *   5. Silent — pending queue retries off-screen, UI stays neutral.
  *
  * No string is ever surfaced to the UI on failure — the component decides
@@ -24,7 +24,7 @@ import {
   savePlaintextForCiphertext,
 } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
-import { routeIncoming } from '@/e2ee-session';
+import { routeIncoming } from '@/lib/sesame';
 import { supabase } from '@/integrations/supabase/client';
 import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiveKey';
 import type { DecryptResult } from '@/hooks/useE2EE';
@@ -290,7 +290,7 @@ export async function resolvePlaintext(opts: {
         return null;
       }
 
-      // 3) e2ee-session façade (multi-session ratchet + queue).
+      // 3) Sesame façade (multi-session ratchet + queue).
       if (messageId) {
         try {
           const { data: { user } } = await supabase.auth.getUser();

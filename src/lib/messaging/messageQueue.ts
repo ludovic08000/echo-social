@@ -24,7 +24,7 @@ export type OutboundMessageStatus =
   | 'failed_visible';
 
 import { logCryptoError } from '@/lib/crypto/errorLogger';
-import { safeUUID } from '@/e2ee-session/safeUuid';
+import { safeUUID } from '@/lib/sesame/safeUuid';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 

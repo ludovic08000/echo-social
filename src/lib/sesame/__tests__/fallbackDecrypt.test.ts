@@ -30,7 +30,7 @@ vi.mock('../legacyDecryptRouter', () => ({
   isKnownLegacyFormat: () => false,
 }));
 
-import { tryEveryRatchetSession } from '@/e2ee-session/fallbackDecrypt';
+import { tryEveryRatchetSession } from '@/lib/sesame/fallbackDecrypt';
 import {
   ratchetDecrypt,
   listKnownSessionIds,

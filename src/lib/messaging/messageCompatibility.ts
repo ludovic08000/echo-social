@@ -127,7 +127,7 @@ export function isKnownCryptoEnvelopeBody(body: string | null | undefined): bool
       return true;
     }
 
-    // Structured v4 facade used by e2ee-session diagnostics/router.
+    // Structured v4 facade used by Sesame diagnostics/router.
     if (
       parsed.version === 4 &&
       typeof parsed.ciphertext === 'string' &&

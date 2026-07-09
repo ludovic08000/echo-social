@@ -33,7 +33,7 @@ vi.mock('@/lib/crypto/plaintextStore', () => ({
 vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   tryReadDeviceCopy: vi.fn().mockResolvedValue(null),
 }));
-vi.mock('@/e2ee-session', () => ({
+vi.mock('@/lib/sesame', () => ({
   routeIncoming: vi.fn().mockResolvedValue({ ok: false, plaintext: null }),
 }));
 vi.mock('@/components/chat/VoiceRecorder', () => ({

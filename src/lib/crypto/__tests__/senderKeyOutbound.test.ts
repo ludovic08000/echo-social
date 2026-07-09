@@ -34,13 +34,13 @@ vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   })),
 }));
 
-vi.mock('@/e2ee-session/deviceRegistry', () => ({
+vi.mock('@/lib/sesame/deviceRegistry', () => ({
   listDevicesForUser: vi.fn(),
 }));
 
 import { supabase } from '@/integrations/supabase/client';
 import { encryptPlaintextForDeviceTarget } from '@/lib/messaging/multiDeviceFanout';
-import { listDevicesForUser } from '@/e2ee-session/deviceRegistry';
+import { listDevicesForUser } from '@/lib/sesame/deviceRegistry';
 import {
   tryEncryptViaSenderKeys,
   invalidateSenderKeysFlag,

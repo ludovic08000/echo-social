@@ -5,7 +5,7 @@ import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
-import { safeUUID } from '@/e2ee-session';
+import { safeUUID } from '@/lib/sesame';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
