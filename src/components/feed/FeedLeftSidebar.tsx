@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   Home, Users, Search, 
   Bell, MessageCircle, Settings,
-  BookOpen,
+  PlusCircle, BookOpen,
   BarChart3, Bot, Megaphone, Store, Sparkles, Radio,
   FileText, UsersRound
 } from 'lucide-react';
