@@ -1,7 +1,11 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import {
+  recoverRecentMessagesAfterUnlock,
+  installRecoverRecentMessagesListeners,
+} from '@/lib/crypto/recoverRecentMessagesAfterUnlock';
 import {
   useMessageQueue as useSignalMessageQueue,
   shouldArchiveMessageBody,
@@ -56,6 +60,24 @@ export function useMessageQueue(
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
 ) {
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user?.id || allowPlaintext || !isEncryptionActive) return;
+
+    const stop = installRecoverRecentMessagesListeners(user.id);
+
+    // Conversation mount / return path: if PIN already restored the keys before
+    // this hook mounted, run a small recovery pass now so encrypted server rows
+    // are re-linked to plaintext before the user sees empty bubbles.
+    const timer = window.setTimeout(() => {
+      void recoverRecentMessagesAfterUnlock(user.id, 'message-queue-mounted').catch(() => undefined);
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      stop();
+    };
+  }, [user?.id, allowPlaintext, isEncryptionActive]);
 
   const queue = useSignalMessageQueue(
     conversationId,
