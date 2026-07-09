@@ -96,9 +96,6 @@ const Lives = lazyWithOneRetry(() => import("./pages/Lives"), 'r-lives');
 const LiveWatch = lazyWithOneRetry(() => import("./pages/LiveWatch"), 'r-livew');
 const LiveScreen = lazyWithOneRetry(() => import("./pages/LiveScreen"), 'r-lives2');
 const Journal = lazyWithOneRetry(() => import("./pages/Journal"), 'r-journal');
-const Challenges = lazyWithOneRetry(() => import("./pages/Challenges"), 'r-chall');
-const Games = lazyWithOneRetry(() => import("./pages/Games"), 'r-games');
-const FriendMatch = lazyWithOneRetry(() => import("./pages/FriendMatch"), 'r-fmatch');
 const Channels = lazyWithOneRetry(() => import("./pages/Channels"), 'r-channels');
 const Marketplace = lazyWithOneRetry(() => import("./pages/Marketplace"), 'r-market');
 const ProductDetailPage = lazyWithOneRetry(() => import("./pages/ProductDetail"), 'r-product');
@@ -371,9 +368,7 @@ function AppContent() {
                     <Route path="/live/:id" element={<LiveWatch />} />
                     <Route path="/marketplace" element={<Marketplace />} />
                     <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
-                    <Route path="/challenges" element={<Challenges />} />
                     <Route path="/channels" element={<Channels />} />
-                    <Route path="/games" element={<Games />} />
                     <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
                     <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
                     <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
@@ -388,7 +383,7 @@ function AppContent() {
                     <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
                     <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
                     <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
-                    <Route path="/friend-match" element={<ProtectedRoute><FriendMatch /></ProtectedRoute>} />
+                    
                     <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
                     <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
                     <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />

@@ -31,10 +31,7 @@ const quickLinks = [
   { path: '/friends', icon: Users, label: 'Amis', color: 'bg-sky-500/10 text-sky-500' },
   { path: '/search', icon: Search, label: 'Rechercher', color: 'bg-violet-500/10 text-violet-500' },
   { path: '/messages', icon: MessageCircle, label: 'Messages', color: 'bg-primary/10 text-primary' },
-  { path: '/games', icon: Gamepad2, label: 'Jeux', color: 'bg-emerald-500/10 text-emerald-500' },
-  { path: '/challenges', icon: Trophy, label: 'Défis', color: 'bg-amber-500/10 text-amber-500' },
   { path: '/journal', icon: BookOpen, label: 'Journal', color: 'bg-rose-500/10 text-rose-500' },
-  { path: '/friend-match', icon: Heart, label: 'Match', color: 'bg-pink-500/10 text-pink-500' },
   { path: '/channels', icon: Tv, label: 'Canaux TV', color: 'bg-purple-500/10 text-purple-500' },
 ];
 

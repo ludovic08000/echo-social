@@ -75,12 +75,6 @@ export default function Friends() {
             <Users className="w-5 h-5 text-primary" />
             Amis
           </h1>
-          <Link to="/friend-match">
-            <Button variant="outline" size="sm" className="rounded-xl gap-1.5 text-xs">
-              <UserPlus className="w-3.5 h-3.5" />
-              Découvrir
-            </Button>
-          </Link>
         </div>
       </header>
 
