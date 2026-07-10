@@ -57,7 +57,7 @@ jobs:
           name: vitest-report
           path: vitest-report.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 2
 
       - name: Enforce tests
         if: always()
