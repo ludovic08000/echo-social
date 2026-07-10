@@ -41,7 +41,27 @@ jobs:
           fi
 
       - name: Test
-        run: npm run test
+        id: tests
+        shell: bash
+        run: |
+          set +e
+          npx vitest run --reporter=json --outputFile=vitest-report.json
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload Vitest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-report
+          path: vitest-report.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Enforce tests
+        if: always()
+        run: test "${{ steps.tests.outputs.exit_code }}" = "0"
 
       - name: Build
         run: npm run build
