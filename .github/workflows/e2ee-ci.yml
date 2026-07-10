@@ -48,6 +48,14 @@ jobs:
               raise RuntimeError('x3dhUnwrapForDevice rethrow wrapper not found')
           text = text.replace(end, replacement, 1)
           fanout.write_text(text, encoding='utf-8')
+
+          registration = Path('src/hooks/useDeviceRegistration.ts')
+          text = registration.read_text(encoding='utf-8')
+          old = '(primaryRow as any)?.device_id ?? deviceId'
+          new = '(primaryRow as { device_id?: string } | null)?.device_id ?? deviceId'
+          if old not in text:
+              raise RuntimeError('primary device row cast not found')
+          registration.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
 
       - name: Setup Node
