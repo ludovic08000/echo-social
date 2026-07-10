@@ -27,7 +27,9 @@ async function tryRestoreLatestBackup(userId: string): Promise<IdentityKeyPair |
           window.dispatchEvent(new CustomEvent('forsure-e2ee-identity-restored', {
             detail: { source: 'latest_backup', fingerprint: keys.fingerprint },
           }));
-        } catch {}
+        } catch {
+          // Event dispatch is best-effort outside browser contexts.
+        }
         return keys;
       }
 
