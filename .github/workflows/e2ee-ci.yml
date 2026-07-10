@@ -83,7 +83,13 @@ jobs:
           fi
 
       - name: Test
-        run: npm run test
+        shell: bash
+        run: |
+          set +e
+          npm run test 2>&1 | tee test-output.txt
+          test_status=${PIPESTATUS[0]}
+          set -e
+          exit "$test_status"
 
       - name: Build
         run: npm run build
@@ -96,6 +102,7 @@ jobs:
           retention-days: 2
           path: |
             eslint-report.json
+            test-output.txt
             src/hooks/useMessageQueueSignal.ts
             src/lib/messaging/multiDeviceFanout.ts
             src/lib/crypto/deviceRatchet.ts
