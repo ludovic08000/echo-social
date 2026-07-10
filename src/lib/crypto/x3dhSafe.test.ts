@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { IdentityKeyPair } from './keyManager';
 
 const mocks = vi.hoisted(() => ({
   accountRespond: vi.fn(),
@@ -19,7 +20,7 @@ vi.mock('./x3dh', () => ({
 
 import { x3dhRespond } from './x3dhSafe';
 
-const keys = {} as any;
+const keys = {} as IdentityKeyPair;
 const result = { sharedSecret: new ArrayBuffer(32), spkKeyPair: {} as CryptoKeyPair };
 
 describe('x3dhSafe', () => {
