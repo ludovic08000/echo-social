@@ -41,6 +41,8 @@ vi.mock('@/integrations/supabase/client', () => ({
 const USER = '11111111-1111-4111-8111-111111111111';
 const PRIMARY_DEV = 'primary-dev-1';
 const COMP_DEV = 'companion-dev-1';
+const ED25519: AlgorithmIdentifier = { name: 'Ed25519' };
+const X25519: AlgorithmIdentifier = { name: 'X25519' };
 
 let primaryKp: CryptoKeyPair;
 let primaryPubB64: string;
@@ -48,17 +50,17 @@ let primaryDeviceKxPubB64: string;
 let companionPubB64: string;
 
 beforeAll(async () => {
-  primaryKp = (await hardCrypto.generateKey({ name: 'Ed25519' } as any, true, ['sign', 'verify'])) as CryptoKeyPair;
+  primaryKp = (await hardCrypto.generateKey(ED25519, true, ['sign', 'verify'])) as CryptoKeyPair;
   const pub = await hardCrypto.exportKey('raw', primaryKp.publicKey);
   primaryPubB64 = bufferToBase64(pub as ArrayBuffer);
   mocks.accountSigningKey = primaryPubB64;
 
-  const primaryDeviceKx = (await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits'])) as CryptoKeyPair;
+  const primaryDeviceKx = (await hardCrypto.generateKey(X25519, true, ['deriveBits'])) as CryptoKeyPair;
   primaryDeviceKxPubB64 = bufferToBase64(
     await hardCrypto.exportKey('raw', primaryDeviceKx.publicKey) as ArrayBuffer,
   );
 
-  const compKp = (await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits'])) as CryptoKeyPair;
+  const compKp = (await hardCrypto.generateKey(X25519, true, ['deriveBits'])) as CryptoKeyPair;
   const compPub = await hardCrypto.exportKey('raw', compKp.publicKey);
   companionPubB64 = bufferToBase64(compPub as ArrayBuffer);
 });
@@ -152,7 +154,7 @@ describe('L4 — signed device list', () => {
   });
 
   it('rejects a ghost signing-root attack', async () => {
-    const attackerKp = (await hardCrypto.generateKey({ name: 'Ed25519' } as any, true, ['sign', 'verify'])) as CryptoKeyPair;
+    const attackerKp = (await hardCrypto.generateKey(ED25519, true, ['sign', 'verify'])) as CryptoKeyPair;
     const attackerPub = bufferToBase64(await hardCrypto.exportKey('raw', attackerKp.publicKey) as ArrayBuffer);
     const sig = await signCompanionDevice({
       userId: USER,
@@ -189,7 +191,7 @@ describe('L4 — signed device list', () => {
       companionDeviceId: COMP_DEV,
       companionPublicKeyB64: companionPubB64,
     });
-    const fakeKp = (await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits'])) as CryptoKeyPair;
+    const fakeKp = (await hardCrypto.generateKey(X25519, true, ['deriveBits'])) as CryptoKeyPair;
     const fakePub = bufferToBase64(await hardCrypto.exportKey('raw', fakeKp.publicKey) as ArrayBuffer);
 
     const list: SignedDeviceEntry[] = [
