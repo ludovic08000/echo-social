@@ -1,8 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
-import {
-  fetchPrekeyBundle as fetchLegacyAccountBundle,
-  type X3DHPrekeyBundle,
-} from './x3dh';
+import type { X3DHPrekeyBundle } from './x3dh';
 
 export class DeviceX3DHRouteRequiredError extends Error {
   constructor(peerUserId: string) {
@@ -12,25 +8,13 @@ export class DeviceX3DHRouteRequiredError extends Error {
 }
 
 /**
- * Legacy account-wide X3DH is only valid for accounts that have never published
- * an active device route. Once device records exist, a failed device lookup is
- * a hard failure rather than permission to silently downgrade to account 3-DH.
+ * Account-wide X3DH bundles are retired.
+ *
+ * Callers must select an active peer device and use
+ * fetchPrekeyBundleForDevice(). Returning null here would invite retry code to
+ * treat the failure as transient; throwing keeps the pipeline fail-closed and
+ * prevents the old 3-DH route from producing an incompatible first message.
  */
 export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyBundle | null> {
-  const { data, error } = await supabase
-    .from('user_devices' as any)
-    .select('device_id')
-    .eq('user_id', peerUserId)
-    .is('revoked_at', null)
-    .limit(1);
-
-  if (error) {
-    throw new Error(`X3DH_DEVICE_ROUTE_CHECK_FAILED: ${error.message}`);
-  }
-
-  if (Array.isArray(data) && data.length > 0) {
-    throw new DeviceX3DHRouteRequiredError(peerUserId);
-  }
-
-  return fetchLegacyAccountBundle(peerUserId);
+  throw new DeviceX3DHRouteRequiredError(peerUserId);
 }
