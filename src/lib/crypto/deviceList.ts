@@ -44,9 +44,6 @@ export async function publishCurrentDevice(
   const deviceId = getOrCreateCurrentDeviceId();
   const now = new Date().toISOString();
 
-  // Revocation is monotonic from the client's point of view. A device that still
-  // possesses an old authenticated session must not be able to clear its own
-  // revoked_at value by republishing the same identifier.
   const { data: existing, error: readError } = await supabase
     .from('user_devices' as any)
     .select('created_at, last_seen_at, revoked_at')
@@ -64,8 +61,8 @@ export async function publishCurrentDevice(
       device_id: deviceId,
       device_fingerprint: fingerprint,
       last_seen_at: now,
-      // Deliberately omit revoked_at. Only an explicit, separately authorized
-      // recovery flow may un-revoke a device.
+      // revoked_at is intentionally omitted. A revoked device cannot clear its
+      // own revocation merely by retaining an old authenticated session.
     }, { onConflict: 'user_id,device_id' });
 
   if (publishError) throw publishError;
@@ -100,11 +97,30 @@ function isFresh(lastSeenAt: string | null | undefined): boolean {
   return Date.now() - ts <= MAX_DEVICE_STALE_MS;
 }
 
+async function hasAvailableDeviceOneTimePrekey(userId: string, deviceId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('count_device_one_time_prekeys', {
+      p_user_id: userId,
+      p_device_id: deviceId,
+    });
+    if (error) return false;
+    return Number(data ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function hasValidDevicePrekey(userId: string, deviceId: string): Promise<boolean> {
   try {
     const { peekDeviceSignedPrekey } = await import('./x3dh');
     const spk = await peekDeviceSignedPrekey(userId, deviceId);
-    return !!spk;
+    if (!spk) return false;
+
+    // The conversation-level hook cannot safely distinguish a device-scoped
+    // 3-DH SPK from the legacy account SPK. Select the device route only when
+    // an OPK is available, so the initial header carries opkId and the receiver
+    // is deterministically routed through x3dhRespondForDevice().
+    return hasAvailableDeviceOneTimePrekey(userId, deviceId);
   } catch (error) {
     console.warn('[E2EE][DEVICE_LIST] skipping device with invalid X3DH prekey', {
       userId,
