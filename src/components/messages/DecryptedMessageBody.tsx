@@ -20,10 +20,11 @@ import type { DecryptResult } from '@/hooks/useE2EE';
  * It owns NO crypto logic. It delegates every resolution step to
  * `decryptionService.resolvePlaintext` and only decides:
  *   - Which media renderer to pick (voice / GIF / text).
- *   - Whether to show the neutral placeholder while waiting.
+ *   - Whether to show the neutral recovery state while waiting.
  *
- * On failure the component renders an invisible spacer — no string,
- * no lock icon — and waits for `forsure-decrypt-retry` to re-attempt.
+ * Protocol-only metadata is still hidden. A user message that cannot yet be
+ * decrypted is never rendered as an empty bubble: it remains visible as a
+ * neutral recovery state while bounded retries and device-copy repair run.
  */
 
 function parseVoiceMessage(text: string): { url: string; duration: number } | null {
@@ -52,6 +53,7 @@ interface DecryptedMessageBodyProps {
 }
 
 const SILENT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000];
+const RECOVERY_PLACEHOLDER = 'Message chiffré en cours de récupération…';
 
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
@@ -92,7 +94,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   useEffect(() => {
     const handler = () => {
       // A successful queue retry/key restore wipes the negative cache so
-      // every silent bubble re-attempts on the next render pass.
+      // every pending bubble re-attempts on the next render pass.
       clearNegativeCache();
       dropCache(messageId, body);
       setRetryTick((t) => t + 1);
@@ -103,7 +105,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   // Mobile/realtime guard: Supabase can deliver the parent message before the
   // sibling device-copy row, or miss the copy realtime event after iOS wake.
-  // While the bubble is silent, retry a few bounded times so the copy/archive
+  // While recovery is pending, retry a few bounded times so the copy/archive
   // can be picked up without requiring a full chat refetch.
   useEffect(() => {
     if (!looksEncrypted(body) || !pending || outcome !== null) {
@@ -152,7 +154,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       .then((next) => {
         if (cancelled) return;
         if (!next) {
-          // Silent pending — UI shows neutral placeholder, queue will retry.
           setOutcome(null);
           setPending(true);
           return;
@@ -182,8 +183,11 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   if (outcome?.hidden) return null;
 
   if (pending || outcome === null) {
-    // Neutral, invisible placeholder — never reveals state to the user.
-    return <span className="opacity-0 select-none" aria-hidden="true">·</span>;
+    return (
+      <span className="opacity-70 italic select-none" role="status" aria-live="polite">
+        {RECOVERY_PLACEHOLDER}
+      </span>
+    );
   }
 
   const { text, mediaKeyB64 } = outcome;
