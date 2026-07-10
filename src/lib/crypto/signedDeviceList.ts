@@ -170,7 +170,13 @@ export async function verifySignedDeviceList(
   list: SignedDeviceEntry[],
 ): Promise<DeviceVerificationResult[]> {
   const primary = list.find(e => e.isPrimary);
-  const expectedPrimaryPub = primary ? null : null; // tracked below
+  const { data: accountKeys } = await supabase
+    .from('user_public_keys')
+    .select('signing_key')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle();
+  const expectedPrimaryPub = (accountKeys as { signing_key?: string } | null)?.signing_key ?? null;
 
   const results: DeviceVerificationResult[] = [];
   for (const e of list) {
@@ -185,7 +191,7 @@ export async function verifySignedDeviceList(
     // The primary that signed MUST be the same primary advertised in the list
     // (defends against "ghost primary" injection where the server fabricates
     // a second primary entry to authorize a rogue companion).
-    if (primary && primary.devicePublicKey && e.primaryPubB64 !== primary.devicePublicKey) {
+    if (!expectedPrimaryPub || e.primaryPubB64 !== expectedPrimaryPub) {
       results.push({ deviceId: e.deviceId, ok: false, reason: 'PRIMARY_PUB_MISMATCH' });
       continue;
     }

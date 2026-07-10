@@ -312,9 +312,20 @@ async function x3dhWrapForDevice(
       });
       return null;
     }
-    if (options.useOneTimePrekey === false) {
-      delete bundle.oneTimePrekey;
-      delete bundle.oneTimePrekeyId;
+    if (
+      !bundle.oneTimePrekey ||
+      !Number.isSafeInteger(bundle.oneTimePrekeyId) ||
+      (bundle.oneTimePrekeyId as number) <= 0
+    ) {
+      logCryptoError({
+        severity: 'warning',
+        context: 'fanout',
+        errorCode: 'DEVICE_OPK_UNAVAILABLE',
+        errorMessage: 'Strict X3DH5 requires a device one-time prekey',
+        peerUserId: recipientUserId,
+        peerDeviceId: recipientDeviceId,
+      });
+      return null;
     }
 
     const myKeys = await getOrCreateIdentityKeys(senderUserId);
@@ -350,19 +361,17 @@ async function x3dhWrapForDevice(
       bundle.identityKey,
     ];
 
-    try {
-      await establishDeviceSession(
-        senderUserId, senderDeviceId,
-        recipientUserId, recipientDeviceId,
-        result.sharedSecret,
-        undefined,
-        {
-          peerInitialDhPubB64: bundle.signedPrekey,
-          isInitiator: true,
-          peerSpkId: bundle.signedPrekeyId,
-        },
-      );
-    } catch {}
+    await establishDeviceSession(
+      senderUserId, senderDeviceId,
+      recipientUserId, recipientDeviceId,
+      result.sharedSecret,
+      undefined,
+      {
+        peerInitialDhPubB64: bundle.signedPrekey,
+        isInitiator: true,
+        peerSpkId: bundle.signedPrekeyId,
+      },
+    );
 
     return parts.join('.');
   } catch (e) {
@@ -396,7 +405,6 @@ async function x3dhUnwrapForDevice(
   senderUserId: string,
   senderDeviceId: string,
 ): Promise<string | null> {
-  try {
     if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;
 
     const parsed = parseX3DHBootstrapV5(payload);
@@ -464,28 +472,23 @@ async function x3dhUnwrapForDevice(
       base64ToBuffer(parsed.ctB64),
     );
 
-    try {
-      const spkPrivJwk = await hardCrypto.exportKey('jwk', spkKeyPair.privateKey);
-      const spkPubRaw = await hardCrypto.exportKey('raw', spkKeyPair.publicKey);
-      const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
-      await establishDeviceSession(
-        recipientUserId, myDeviceId,
-        senderUserId, senderDeviceId,
-        sharedSecret,
-        undefined,
-        {
-          isInitiator: false,
-          peerSpkId: parsed.spkId,
-          selfInitialDhPrivJwk: spkPrivJwk,
-          selfInitialDhPubB64: spkPubB64,
-        },
-      );
-    } catch {}
+    const spkPrivJwk = await hardCrypto.exportKey('jwk', spkKeyPair.privateKey);
+    const spkPubRaw = await hardCrypto.exportKey('raw', spkKeyPair.publicKey);
+    const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
+    await establishDeviceSession(
+      recipientUserId, myDeviceId,
+      senderUserId, senderDeviceId,
+      sharedSecret,
+      undefined,
+      {
+        isInitiator: false,
+        peerSpkId: parsed.spkId,
+        selfInitialDhPrivJwk: spkPrivJwk,
+        selfInitialDhPubB64: spkPubB64,
+      },
+    );
 
     return new hardGlobals.TextDecoder().decode(pt);
-  } catch (e) {
-    throw e;
-  }
 }
 
 export async function encryptPlaintextForDeviceTarget(
@@ -669,6 +672,22 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
   });
 
   const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
+  if (rows.length != targets.length) {
+    logCryptoError({
+      severity: 'error',
+      context: 'fanout',
+      errorCode: 'E_FANOUT_INCOMPLETE',
+      errorMessage: 'Refusing to insert a parent message without a copy for every active trusted device',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      metadata: {
+        expectedTargets: targets.length,
+        encryptedCopies: rows.length,
+        missingCopies: targets.length - rows.length,
+      },
+    });
+    throw new Error(`E_FANOUT_INCOMPLETE:${rows.length}/${targets.length}`);
+  }
   return { rows, hasTargets: true };
 }
 

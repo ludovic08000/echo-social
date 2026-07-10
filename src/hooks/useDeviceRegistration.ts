@@ -29,7 +29,6 @@ import { getOrCreateIdentityKeys, exportPublicKeyBundle, PinUnlockRequiredError 
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
-  refreshSignedPrekeyIfNeeded,
   peekDeviceSignedPrekey,
   isDevicePrekeyBundleError,
 } from '@/lib/crypto/x3dh';
@@ -202,7 +201,7 @@ export function useDeviceRegistration() {
           // ONLY load the local one — never auto-generate / overwrite.
           try {
             const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
-            localKx = await loadDeviceKxKey(deviceId);
+            localKx = await loadDeviceKxKey(deviceId, user.id);
           } catch (loadErr) {
             console.warn('[useDeviceRegistration] loadDeviceKxKey failed:', loadErr);
           }
@@ -215,7 +214,7 @@ export function useDeviceRegistration() {
             if (restored) {
               try {
                 const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
-                localKx = await loadDeviceKxKey(deviceId);
+                localKx = await loadDeviceKxKey(deviceId, user.id);
               } catch {}
             }
           }
@@ -279,7 +278,7 @@ export function useDeviceRegistration() {
         } else {
           // First-time publish for this device_id → generation allowed.
           try {
-            const kx = await getOrCreateDeviceKxKey(deviceId);
+            const kx = await getOrCreateDeviceKxKey(deviceId, user.id);
             if (kx?.publicB64) {
               devicePublicKeyB64 = kx.publicB64;
               localKx = kx;
@@ -414,15 +413,6 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] stale device cleanup failed (non-fatal):', cleanupErr);
         }
 
-        // 2. Ensure the legacy/shared Signed PreKey also exists.
-        //    The main conversation X3DH bootstrap still depends on this bundle,
-        //    so publishing it here prevents peers from seeing "Bundle X3DH ... indisponible".
-        try {
-          await refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey);
-        } catch (spkErr) {
-          console.warn('[useDeviceRegistration] shared SPK refresh failed (non-fatal):', spkErr);
-        }
-
         // 3. Ensure a per-device Signed PreKey exists & is fresh.
         //    This is what makes targeted X3DH per device possible. After the
         //    normal refresh, peek the SPK without consuming OPK. If it is still
@@ -451,11 +441,38 @@ export function useDeviceRegistration() {
         }
 
         // 4. Refill the OPK pool if low (forward secrecy on bursts).
-        //    Non-fatal: X3DH gracefully degrades to 3-DH when no OPK is available.
+        //    Non-fatal here, but strict X3DH5 sending remains blocked until OPKs are available.
         try {
           await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);
         } catch (opkErr) {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
+        }
+
+        // Sign this device with the account Ed25519 trust root. Device KX keys
+        // are X25519 and must never be interpreted as signing keys.
+        try {
+          if (!devicePublicKeyB64) throw new Error('DEVICE_PUBLIC_KEY_MISSING');
+          const { data: primaryRow } = await supabase
+            .from('user_devices')
+            .select('device_id')
+            .eq('user_id', user.id)
+            .eq('is_primary', true)
+            .eq('is_active', true)
+            .is('revoked_at', null)
+            .limit(1)
+            .maybeSingle();
+          const { signCompanionDevice, publishCompanionSignature } = await import('@/lib/crypto/signedDeviceList');
+          const signedRow = await signCompanionDevice({
+            userId: user.id,
+            primaryDeviceId: (primaryRow as { device_id?: string } | null)?.device_id ?? deviceId,
+            primaryEdPrivate: keys.signingPrivateKey,
+            primaryEdPublicB64: bundle.signingKey,
+            companionDeviceId: deviceId,
+            companionPublicKeyB64: devicePublicKeyB64,
+          });
+          await publishCompanionSignature(signedRow);
+        } catch (signErr) {
+          console.warn('[useDeviceRegistration] device trust-root signature publish failed:', signErr);
         }
 
         // 5. Publish the canonical signed device list (L4 / P1 — peers route
