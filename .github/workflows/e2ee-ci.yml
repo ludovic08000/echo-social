@@ -22,41 +22,9 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
-      - name: Apply one-shot audited delivery patch
+      - name: Apply scoped account backup boundary
         if: github.actor != 'github-actions[bot]'
-        shell: bash
-        run: |
-          python3 scripts/apply-e2ee-audit-fixes.py
-          python3 <<'PY'
-          from pathlib import Path
-
-          queue = Path('src/hooks/useMessageQueueSignal.ts')
-          text = queue.read_text(encoding='utf-8')
-          text = text.replace('    let fanoutTimedOut = false;', '    const fanoutTimedOut = false;', 1)
-          queue.write_text(text, encoding='utf-8')
-
-          fanout = Path('src/lib/messaging/multiDeviceFanout.ts')
-          text = fanout.read_text(encoding='utf-8')
-          start = "): Promise<string | null> {\n  try {\n    if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;"
-          replacement = "): Promise<string | null> {\n    if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;"
-          if start not in text:
-              raise RuntimeError('x3dhUnwrapForDevice try wrapper not found')
-          text = text.replace(start, replacement, 1)
-          end = "    return new hardGlobals.TextDecoder().decode(pt);\n  } catch (e) {\n    throw e;\n  }\n}"
-          replacement = "    return new hardGlobals.TextDecoder().decode(pt);\n}"
-          if end not in text:
-              raise RuntimeError('x3dhUnwrapForDevice rethrow wrapper not found')
-          text = text.replace(end, replacement, 1)
-          fanout.write_text(text, encoding='utf-8')
-
-          registration = Path('src/hooks/useDeviceRegistration.ts')
-          text = registration.read_text(encoding='utf-8')
-          old = '(primaryRow as any)?.device_id ?? deviceId'
-          new = '(primaryRow as { device_id?: string } | null)?.device_id ?? deviceId'
-          if old not in text:
-              raise RuntimeError('primary device row cast not found')
-          registration.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
+        run: python3 scripts/apply-account-backup-scope.py
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -103,13 +71,9 @@ jobs:
           path: |
             eslint-report.json
             test-output.txt
-            src/hooks/useMessageQueueSignal.ts
-            src/lib/messaging/multiDeviceFanout.ts
-            src/lib/crypto/deviceRatchet.ts
-            src/hooks/useDeviceRegistration.ts
-            src/lib/crypto/signedDeviceList.ts
+            src/lib/crypto/accountKeyBackup.ts
 
-      - name: Commit audited delivery fixes
+      - name: Commit scoped backup fix
         if: github.actor != 'github-actions[bot]' && success()
         shell: bash
         run: |
@@ -119,7 +83,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/hooks/useMessageQueueSignal.ts src/lib/messaging/multiDeviceFanout.ts src/lib/crypto/deviceRatchet.ts src/hooks/useDeviceRegistration.ts src/lib/crypto/signedDeviceList.ts
+          git add src/lib/crypto/accountKeyBackup.ts
           git diff --cached --check
-          git commit -m "fix(e2ee): stabilize iOS Windows device delivery"
+          git commit -m "fix(e2ee): separate account and device backup state"
           git push origin HEAD:agent/cryptography-hardening
