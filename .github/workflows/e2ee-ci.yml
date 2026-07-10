@@ -7,39 +7,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-          fetch-depth: 0
-
-      - name: Apply scoped account backup boundary
-        if: github.actor != 'github-actions[bot]'
-        shell: bash
-        run: |
-          python3 scripts/apply-account-backup-scope.py
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path('src/lib/crypto/accountKeyBackup.ts')
-          text = path.read_text(encoding='utf-8')
-          start = text.index('async function collectAllKeys(scope: BackupScope)')
-          end = text.index('async function writeKeychainSnapshot', start)
-          block = text[start:end].replace(
-              '} catch {}',
-              '} catch {\n    // Optional backup source unavailable; continue with remaining account material.\n  }',
-          )
-          path.write_text(text[:start] + block + text[end:], encoding='utf-8')
-          PY
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -66,39 +41,7 @@ jobs:
           fi
 
       - name: Test
-        shell: bash
-        run: |
-          set +e
-          npm run test 2>&1 | tee test-output.txt
-          test_status=${PIPESTATUS[0]}
-          set -e
-          exit "$test_status"
+        run: npm run test
 
       - name: Build
         run: npm run build
-
-      - name: Upload audit diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2ee-audit-diagnostics
-          retention-days: 2
-          path: |
-            eslint-report.json
-            test-output.txt
-            src/lib/crypto/accountKeyBackup.ts
-
-      - name: Commit scoped backup fix
-        if: github.actor != 'github-actions[bot]' && success()
-        shell: bash
-        run: |
-          if git diff --quiet; then
-            echo "No generated patch to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/lib/crypto/accountKeyBackup.ts
-          git diff --cached --check
-          git commit -m "fix(e2ee): separate account and device backup state"
-          git push origin HEAD:agent/cryptography-hardening
