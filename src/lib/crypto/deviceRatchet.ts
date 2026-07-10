@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Device-pair Double Ratchet (Signal-style) — bidirectional with DH-ratchet.
  *
  * Provides:
@@ -132,13 +132,9 @@ async function loadSession(key: string): Promise<StoredSession | null> {
 }
 
 async function saveSession(key: string, session: StoredSession): Promise<void> {
-  try {
-    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
-      tx.objectStore(STORE).put({ ...session, id: key });
-    });
-  } catch {
-    // non-fatal
-  }
+  await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
+    tx.objectStore(STORE).put({ ...session, id: key });
+  });
 }
 
 async function lookupSessionById(

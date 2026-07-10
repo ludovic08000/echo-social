@@ -40,6 +40,8 @@ const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
 const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
 
+type BackupScope = 'account' | 'device';
+
 /** Domain-separated AAD bound to userId|backupType|version (Signal SVR / WA backup style). */
 function buildBackupAAD(userId: string, backupType: 'account' | 'recovery', version: number): Uint8Array {
   return new hardGlobals.TextEncoder().encode(`forsure-backup|${userId}|${backupType}|v${version}`);
@@ -158,6 +160,7 @@ const LEGACY_DB_TO_KEY: Record<string, Exclude<DBKey, 'e2ee-keys'>> = {
   'forsure-pin-wrap': 'pin-wrap',
   'forsure-prekeys': 'prekeys',
   'forsure-spk': 'spk',
+  'forsure-device-sessions': 'device-sessions',
 };
 
 function dbKeyForLegacyName(name: string): Exclude<DBKey, 'e2ee-keys'> {
@@ -242,60 +245,104 @@ async function putAllInStore(db: IDBDatabase, storeName: string, records: any[])
   await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
 }
 
-/** Collect all local E2EE keys for backup */
-async function collectAllKeys(): Promise<string | null> {
+/**
+ * Collect encrypted backup material with an explicit trust boundary.
+ *
+ * `account` is portable across devices and therefore contains only the account
+ * identity, its PIN-wrapped form and account-level fingerprint decisions.
+ * Device ids, X25519 device keys, OPKs/SPKs and ratchets are deliberately
+ * excluded so restoring on Windows can never impersonate the iOS device.
+ *
+ * `device` is a native Keychain snapshot bound to the same physical device and
+ * may contain the routing id plus device-local ratchets/prekeys for WebView
+ * eviction recovery.
+ */
+async function collectAllKeys(scope: BackupScope): Promise<string | null> {
   const data: Record<string, any> = {};
 
   try {
     const db = await openE2EEDB();
     for (const storeName of Array.from(db.objectStoreNames)) {
-      data[`e2ee:${storeName}`] = await getAllFromStore(db, storeName);
+      const records = await getAllFromStore(db, storeName);
+      if (scope === 'account') {
+        if (storeName !== 'identity-keys') continue;
+        data[`e2ee:${storeName}`] = records.filter((record: unknown) => {
+          const id = (record as { id?: unknown })?.id;
+          return typeof id !== 'string' || !id.startsWith('device-kx::');
+        });
+      } else {
+        data[`e2ee:${storeName}`] = records;
+      }
     }
     // db.close() skipped — shared singleton, see indexedDb.ts
-  } catch {}
-
-  try {
-    data['ratchet:states'] = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
-  } catch {}
+  } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
 
   try {
     data['pinwrap:keys'] = await getAllFromSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
-  } catch {}
+  } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
 
   try {
-    data['prekeys:private'] = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
-  } catch {}
-
-  try {
-    data['spk:private'] = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
-  } catch {}
-
-  try {
-    const db = await openE2EEDB();
-    data['device:kx'] = (await getAllFromStore(db, 'identity-keys'))
-      .filter((r: any) => typeof r?.id === 'string' && r.id.startsWith('device-kx::'));
-    // db.close() skipped — shared singleton, see indexedDb.ts
     const fps = localStorage.getItem('forsure-known-fps');
     if (fps) data['fingerprints'] = fps;
-  } catch {}
+  } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
+
+  if (scope === 'device') {
+    try {
+      data['ratchet:states'] = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
+    } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
+
+    try {
+      data['prekeys:private'] = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
+    } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
+
+    try {
+      data['spk:private'] = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
+    } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
+
+    try {
+      data['device:sessions'] = await getAllFromSideDB('forsure-device-sessions', 'sessions');
+    } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
+
+    try {
+      const db = await openE2EEDB();
+      data['device:kx'] = (await getAllFromStore(db, 'identity-keys'))
+        .filter((record: unknown) => {
+          const id = (record as { id?: unknown })?.id;
+          return typeof id === 'string' && id.startsWith('device-kx::');
+        });
+      data['device:id'] = getCurrentDeviceId();
+    } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
+
+    try {
+      const plaintextCache = await exportPlaintextCache();
+      if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
+    } catch {
+    // Optional backup source unavailable; continue with remaining account material.
+  }
+  }
 
   const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
   if (!hasIdentity) return null;
 
-  try {
-    data['device:id'] = getCurrentDeviceId();
-  } catch {}
-
-  try {
-    // Signal/WhatsApp-style secure backup: keep a small decryptable history
-    // cache inside the encrypted Master-Key backup so the latest messages and
-    // media keys remain readable after iOS/WebView purges IndexedDB.
-    const plaintextCache = await exportPlaintextCache();
-    if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
-  } catch {}
-
   data['_meta'] = {
     version: BACKUP_VERSION,
+    scope,
     createdAt: new Date().toISOString(),
     stores: Object.keys(data).filter(k => k !== '_meta'),
   };
@@ -305,7 +352,7 @@ async function collectAllKeys(): Promise<string | null> {
 
 async function writeKeychainSnapshot(userId: string, keysJson?: string): Promise<boolean> {
   try {
-    const snapshot = keysJson ?? await collectAllKeys();
+    const snapshot = keysJson ?? await collectAllKeys('device');
     if (!snapshot) return false;
     return await secureSetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`, snapshot);
   } catch (e) {
@@ -324,7 +371,7 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
     const snapshot = await secureGetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`);
     if (!snapshot) return 'unavailable';
 
-    await restoreAllKeys(snapshot);
+    await restoreAllKeys(snapshot, 'device');
     const validated = await hasLocalKeys();
     if (!validated) return 'error';
 
@@ -345,7 +392,7 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
 /**
  * Restore all local E2EE keys from backup — TRULY ATOMIC.
  */
-async function restoreAllKeys(json: string): Promise<void> {
+async function restoreAllKeys(json: string, scope: BackupScope): Promise<void> {
   const data = JSON.parse(json);
 
   const hasIdentityKeys = data['e2ee:identity-keys']?.length > 0;
@@ -360,7 +407,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     // Phase 0: restore the encrypted device routing id before restoring the
     // matching per-device private key. This keeps message device-copies readable
     // after iOS/WebView storage purges without showing a "verify device" flow.
-    if (typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
+    if (scope === 'device' && typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
       adoptDeviceIdFromBackup(data['device:id']);
     }
 
@@ -368,10 +415,23 @@ async function restoreAllKeys(json: string): Promise<void> {
     for (const [key, records] of Object.entries(data)) {
       if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
       const storeName = key.replace('e2ee:', '');
+      if (scope === 'account' && storeName !== 'identity-keys') continue;
       const db = await openE2EEDB();
       if (db.objectStoreNames.contains(storeName)) {
         const existing = await getAllFromStore(db, storeName);
-        await putAllInStore(db, storeName, records);
+        const scopedRecords = scope === 'account' && storeName === 'identity-keys'
+          ? [
+              ...existing.filter((record: unknown) => {
+                const id = (record as { id?: unknown })?.id;
+                return typeof id === 'string' && id.startsWith('device-kx::');
+              }),
+              ...records.filter((record: unknown) => {
+                const id = (record as { id?: unknown })?.id;
+                return typeof id !== 'string' || !id.startsWith('device-kx::');
+              }),
+            ]
+          : records;
+        await putAllInStore(db, storeName, scopedRecords);
         const sn = storeName;
         const ed = existing;
         rollbackOps.push(async () => {
@@ -383,7 +443,7 @@ async function restoreAllKeys(json: string): Promise<void> {
       // db.close() skipped — shared singleton, see indexedDb.ts
     }
 
-    if (Array.isArray(data['device:kx'])) {
+    if (scope === 'device' && Array.isArray(data['device:kx'])) {
       const currentDeviceKxId = `device-kx::${getCurrentDeviceId()}`;
       const deviceKx = data['device:kx'].filter((r: any) => r?.id === currentDeviceKxId);
       if (deviceKx.length > 0) {
@@ -395,7 +455,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     }
 
     // Phase 2: Ratchet states
-    if (Array.isArray(data['ratchet:states'])) {
+    if (scope === 'device' && Array.isArray(data['ratchet:states'])) {
       const existing = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
       await putAllInSideDB('forsure-ratchet', 'ratchet-states', data['ratchet:states']);
       rollbackOps.push(async () => {
@@ -413,7 +473,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     }
 
     // Phase 4: Private prekeys
-    if (Array.isArray(data['prekeys:private'])) {
+    if (scope === 'device' && Array.isArray(data['prekeys:private'])) {
       const existing = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
       await putAllInSideDB('forsure-prekeys', 'private-prekeys', data['prekeys:private']);
       rollbackOps.push(async () => {
@@ -422,11 +482,21 @@ async function restoreAllKeys(json: string): Promise<void> {
     }
 
     // Phase 4b: Signed prekey private halves (required to decrypt X3DH/device copies)
-    if (Array.isArray(data['spk:private'])) {
+    if (scope === 'device' && Array.isArray(data['spk:private'])) {
       const existing = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
       await putAllInSideDB('forsure-spk', 'signed-prekeys', data['spk:private']);
       rollbackOps.push(async () => {
         await putAllInSideDB('forsure-spk', 'signed-prekeys', existing);
+      });
+    }
+
+    // Phase 4c: per-device Double Ratchet sessions. These are only restored
+    // from the native snapshot of the same physical device.
+    if (scope === 'device' && Array.isArray(data['device:sessions'])) {
+      const existing = await getAllFromSideDB('forsure-device-sessions', 'sessions');
+      await putAllInSideDB('forsure-device-sessions', 'sessions', data['device:sessions']);
+      rollbackOps.push(async () => {
+        await putAllInSideDB('forsure-device-sessions', 'sessions', existing);
       });
     }
 
@@ -444,7 +514,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     // rest by the Master Key backup, and re-imports into an IndexedDB cache
     // protected by a fresh local AES key. It lets the app show the latest
     // messages/media immediately after iOS clears WebView storage.
-    if (Array.isArray(data['plaintext:cache'])) {
+    if (scope === 'device' && Array.isArray(data['plaintext:cache'])) {
       await importPlaintextCache(data['plaintext:cache'] as PlaintextCacheExportEntry[]);
     }
 
@@ -545,7 +615,7 @@ async function uploadBackup(
   backupType: 'account' | 'recovery',
   wrappingSecret: string,
 ): Promise<boolean> {
-  const keysJson = await collectAllKeys();
+  const keysJson = await collectAllKeys('account');
   if (!keysJson) return false;
 
   // 1. Encrypt all E2EE state with Master Key (AAD-bound to userId|backupType|version)
@@ -579,7 +649,7 @@ async function uploadBackup(
   if (backupType === 'account') {
     try {
       const digest = await computeLocalCryptoDigest();
-      await writeKeychainSnapshot(userId, keysJson);
+      await writeKeychainSnapshot(userId);
       await writeKeySentinel({
         userId,
         digest,
@@ -621,7 +691,7 @@ async function downloadAndRestore(
     const masterKeyRaw = await unwrapMasterKey(backup.wrapped_master_key, backup.master_key_iv, wrappingKey, aad);
     const masterKey = await importMasterKey(masterKeyRaw);
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, masterKey, aad);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, 'account');
     return { masterKeyRaw, masterKey };
   }
 
@@ -633,7 +703,7 @@ async function downloadAndRestore(
     const ciphertext = base64ToBuffer(backup.encrypted_blob);
     const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
     const json = new hardGlobals.TextDecoder().decode(plainBuf);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, 'account');
     // Migrate: generate Master Key and re-upload in v5 format
     const mkRaw = generateMasterKey();
     const mk = await importMasterKey(mkRaw);
@@ -650,7 +720,7 @@ async function downloadAndRestore(
     const ciphertext = base64ToBuffer(backup.encrypted_blob);
     const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
     const json = new hardGlobals.TextDecoder().decode(plainBuf);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, 'account');
     const mkRaw = generateMasterKey();
     const mk = await importMasterKey(mkRaw);
     return { masterKeyRaw: mkRaw, masterKey: mk };
@@ -845,7 +915,7 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
 
     const aad = backup.version >= 6 ? buildBackupAAD(targetUserId, 'account', backup.version) : undefined;
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey, aad);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, 'account');
     if (!(await hasLocalKeys())) return 'error';
 
     await writeKeychainSnapshot(targetUserId);

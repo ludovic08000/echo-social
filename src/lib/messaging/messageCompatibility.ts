@@ -1,8 +1,13 @@
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 
+const MIN_SUPPORTED_RATCHET_VERSION = 2;
+const MAX_ENCODED_FIELD_LENGTH = 2_000_000;
+const MAX_HEADER_COUNTER = Number.MAX_SAFE_INTEGER;
+
 export interface StrictRatchetEnvelopeShape {
-  encryptionMode: 'ratchet';
+  encryptionMode?: 'ratchet';
   v: number;
+  kem?: string;
   hdr: {
     dh: string;
     pn: number;
@@ -28,118 +33,107 @@ export interface SecurePipelineEnvelopeShape {
   meta?: unknown;
 }
 
-export function isSecurePipelineEnvelopeBody(body: string | null | undefined): body is string {
-  if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
-
+function parseObject(body: string | null | undefined): Record<string, unknown> | null {
+  if (!body || typeof body !== 'string' || !body.startsWith('{')) return null;
   try {
-    const parsed = JSON.parse(body) as Partial<SecurePipelineEnvelopeShape>;
-    return parsed.fs_secure_pipeline === 1 && typeof parsed.body === 'string' && parsed.body.length > 0;
+    const parsed = JSON.parse(body);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isBoundedString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= MAX_ENCODED_FIELD_LENGTH;
+}
+
+function isCounter(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= MAX_HEADER_COUNTER;
+}
+
+function isSupportedRatchetVersion(value: unknown): value is number {
+  return Number.isInteger(value) &&
+    (value as number) >= MIN_SUPPORTED_RATCHET_VERSION &&
+    (value as number) <= PROTOCOL_VERSION;
+}
+
+export function isSecurePipelineEnvelopeBody(body: string | null | undefined): body is string {
+  const parsed = parseObject(body) as Partial<SecurePipelineEnvelopeShape> | null;
+  return !!parsed && parsed.fs_secure_pipeline === 1 && isBoundedString(parsed.body);
 }
 
 export function isCryptoJsonBody(body: string | null | undefined): boolean {
-  if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
-  return body.includes('"ct"') || body.includes('"hdr"') || body.includes('"kem"') || body.includes('"encryptionMode"') || body.includes('"fs_secure_pipeline"');
+  const parsed = parseObject(body);
+  if (!parsed) return false;
+
+  return parsed.fs_secure_pipeline === 1 ||
+    parsed.encryptionMode === 'ratchet' ||
+    parsed.encryptionMode === 'multi_device' ||
+    parsed.kem === 'X25519' ||
+    ('hdr' in parsed && 'ct' in parsed && 'iv' in parsed);
 }
 
 export function isStrictRatchetEnvelopeBody(body: string | null | undefined): body is string {
-  if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
+  const parsed = parseObject(body) as (Partial<StrictRatchetEnvelopeShape> & { hdr?: Partial<StrictRatchetEnvelopeShape['hdr']> }) | null;
+  if (!parsed) return false;
 
-  try {
-    const parsed = JSON.parse(body) as Partial<StrictRatchetEnvelopeShape> & { kem?: string };
-    // Accept either:
-    //   - the current strict envelope (encryptionMode === 'ratchet')
-    //   - the legacy v2 envelope that omitted `encryptionMode` but carried
-    //     the same ratchet header + X25519 kem. The decryption pipeline
-    //     handles both, so we must NOT mark legacy bodies as unsupported
-    //     (which would hide them as "anciens messages chiffrés").
-    const modeOk =
-      parsed.encryptionMode === 'ratchet' ||
-      (parsed.encryptionMode === undefined && parsed.kem === 'X25519');
-    return (
-      modeOk &&
-      parsed.v === PROTOCOL_VERSION &&
-      typeof parsed.iv === 'string' && parsed.iv.length > 0 &&
-      typeof parsed.ct === 'string' && parsed.ct.length > 0 &&
-      typeof parsed.sig === 'string' && parsed.sig.length > 0 &&
-      typeof parsed.fp === 'string' && parsed.fp.length > 0 &&
-      typeof parsed.ts === 'number' &&
-      !!parsed.hdr &&
-      typeof parsed.hdr.dh === 'string' && parsed.hdr.dh.length > 0 &&
-      typeof parsed.hdr.n === 'number' &&
-      typeof parsed.hdr.pn === 'number'
-    );
-  } catch {
-    return false;
-  }
+  // Current messages are explicitly tagged. Historical v2/v3 messages may omit
+  // the tag, but are only routed as ratchet envelopes when the KEM is X25519.
+  const modeOk = parsed.encryptionMode === 'ratchet' ||
+    (parsed.encryptionMode === undefined && parsed.kem === 'X25519');
+
+  return modeOk &&
+    isSupportedRatchetVersion(parsed.v) &&
+    isBoundedString(parsed.iv) &&
+    isBoundedString(parsed.ct) &&
+    isBoundedString(parsed.sig) &&
+    isBoundedString(parsed.fp) &&
+    typeof parsed.ts === 'number' && Number.isFinite(parsed.ts) && parsed.ts > 0 &&
+    !!parsed.hdr &&
+    isBoundedString(parsed.hdr.dh) &&
+    isCounter(parsed.hdr.n) &&
+    isCounter(parsed.hdr.pn);
 }
 
 export function isMultiDeviceEnvelopeBody(body: string | null | undefined): body is string {
-  if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
-
-  try {
-    const parsed = JSON.parse(body) as Partial<MultiDeviceEnvelopeShape>;
-    return (
-      parsed.encryptionMode === 'multi_device' &&
-      parsed.v === PROTOCOL_VERSION &&
-      parsed.ct === 'device_copies' &&
-      typeof parsed.ts === 'number'
-    );
-  } catch {
-    return false;
-  }
+  const parsed = parseObject(body) as Partial<MultiDeviceEnvelopeShape> | null;
+  return !!parsed &&
+    parsed.encryptionMode === 'multi_device' &&
+    parsed.v === PROTOCOL_VERSION &&
+    parsed.ct === 'device_copies' &&
+    typeof parsed.ts === 'number' && Number.isFinite(parsed.ts) && parsed.ts > 0;
 }
 
 export function isKnownCryptoEnvelopeBody(body: string | null | undefined): boolean {
   if (!isCryptoJsonBody(body)) return false;
 
-  try {
-    const parsed = JSON.parse(body);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+  const parsed = parseObject(body);
+  if (!parsed) return false;
 
-    if (parsed.fs_secure_pipeline === 1 && typeof parsed.body === 'string') {
-      return true;
-    }
+  if (parsed.fs_secure_pipeline === 1 && isBoundedString(parsed.body)) return true;
+  if (isStrictRatchetEnvelopeBody(body)) return true;
+  if (isMultiDeviceEnvelopeBody(body)) return true;
 
-    if (isStrictRatchetEnvelopeBody(body)) return true;
-    if (isMultiDeviceEnvelopeBody(body)) return true;
+  const hdr = parsed.hdr as Record<string, unknown> | undefined;
+  const hasRatchetHeader = !!hdr &&
+    typeof hdr === 'object' &&
+    isBoundedString(hdr.dh) &&
+    isCounter(hdr.n) &&
+    isCounter(hdr.pn);
 
-    const hdr = parsed.hdr;
-    const hasRatchetHeader =
-      !!hdr &&
-      typeof hdr === 'object' &&
-      typeof hdr.dh === 'string' &&
-      typeof hdr.n === 'number' &&
-      typeof hdr.pn === 'number';
-
-    // Legacy conversation-level ratchet payloads may have older `v` values
-    // or miss the newer encryptionMode tag. They are still recoverable through
-    // device-copy / plaintext-cache fallbacks, so they must not be persisted as
-    // "deleted for me" just because the current strict parser cannot decrypt
-    // them immediately after a session restore.
-    if (
-      typeof parsed.ct === 'string' &&
-      typeof parsed.iv === 'string' &&
-      hasRatchetHeader
-    ) {
-      return true;
-    }
-
-    // Structured v4 facade used by e2ee-session diagnostics/router.
-    if (
-      parsed.version === 4 &&
-      typeof parsed.ciphertext === 'string' &&
-      typeof parsed.sessionId === 'string'
-    ) {
-      return true;
-    }
-
-    return false;
-  } catch {
-    return false;
+  // Keep structurally valid historical ciphertext visible for explicit recovery,
+  // but do not pass it into the live ratchet unless its declared version is
+  // supported by isStrictRatchetEnvelopeBody().
+  if (isBoundedString(parsed.ct) && isBoundedString(parsed.iv) && hasRatchetHeader) {
+    return true;
   }
+
+  if (parsed.version === 4 && isBoundedString(parsed.ciphertext) && isBoundedString(parsed.sessionId)) {
+    return true;
+  }
+
+  return false;
 }
 
 export function isUnsupportedEncryptedBody(body: string | null | undefined): boolean {

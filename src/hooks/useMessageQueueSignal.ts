@@ -285,58 +285,25 @@ export function useMessageQueue(
         console.warn('[MSG_SEND] identity bootstrap failed; encrypted send may be blocked', { localId, conversationId, error });
       }
 
-      if (!encrypt) {
-        trace('encrypt_handler_missing');
-        updatePending({ status: 'failed_visible', lastError: 'Chiffrement indisponible.' });
-        throw new Error('Chiffrement indisponible.');
-      }
-
       try {
-        if (!isEncryptionReady) {
-          console.info('[MSG_SEND] encryption readiness flag false; attempting encrypt anyway', { localId, conversationId });
+        const identityKeys = await getOrCreateIdentityKeys(user.id);
+        const publicBundle = await exportPublicKeyBundle(identityKeys);
+        if (!publicBundle.identityKey || !publicBundle.signingKey) {
+          throw new Error('Identité E2EE incomplète — envoi différé.');
         }
-        trace('encrypt_start');
-        const encryptedPayload = await encrypt(sanitized, localId);
-        trace('encrypt_ok', {
-          payloadLength: encryptedPayload?.length ?? 0,
-          payloadKind: encryptedPayload ? encryptedPayloadKind(encryptedPayload) : 'empty',
-        });
-        if (!encryptedPayload || encryptedPayload === sanitized) throw new Error('Chiffrement v5 indisponible.');
-        try {
-          trace('secure_wrap_start');
-          const identityKeys = await getOrCreateIdentityKeys(user.id);
-          const publicBundle = await exportPublicKeyBundle(identityKeys);
-          bodyToStore = await wrapOutboundSecureMessage({
-            userId: user.id,
-            fingerprint: publicBundle.fingerprint,
-            encryptedBody: encryptedPayload,
-            conversationId,
-            localId,
-          });
-          trace('secure_wrap_ok', { storedKind: encryptedPayloadKind(bodyToStore), storedLength: bodyToStore.length });
-        } catch (wrapError) {
-          trace('secure_wrap_failed_using_raw_payload', { error: wrapError instanceof Error ? wrapError.message : String(wrapError) });
-          console.warn('[MSG_SEND] secure wrapper failed; using raw encrypted payload', { localId, conversationId, wrapError });
-          bodyToStore = encryptedPayload;
-        }
+
+        // New traffic is carried exclusively by per-device X3DH5/Double-Ratchet
+        // copies. The parent row is only a non-secret routing marker.
+        bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
         encryptedSuccessfully = true;
-        trace('encrypted_ready_for_rpc', { bodyKind: encryptedPayloadKind(bodyToStore), bodyLength: bodyToStore.length });
+        trace('device_fanout_parent_ready', {
+          bodyKind: 'multi_device',
+          bodyLength: bodyToStore.length,
+        });
       } catch (encryptError) {
         const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
-        const normalized = errMsg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        const isSafetyMismatch = normalized.includes('cle de securite du contact modifiee') || normalized.includes('safety number changed') || normalized.includes('security key changed') || normalized.includes('verification obligatoire avant envoi') || normalized.includes('fingerprint changed');
-        trace('encrypt_failed', { isSafetyMismatch, error: errMsg });
-        console.warn('[MSG_SEND] encrypt failed; strict E2EE send kept local', { localId, conversationId, isSafetyMismatch, encryptError });
-        if (isSafetyMismatch) {
-          try {
-            window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', { detail: { conversationId, localId, reason: errMsg } }));
-          } catch {
-            // Non-fatal: the send remains blocked and visible even if the UI event is unavailable.
-          }
-          updatePending({ status: 'failed_visible', lastError: errMsg });
-        } else {
-          updatePending({ encryptedBody: null, status: 'waiting_secure_channel', lastError: errMsg });
-        }
+        trace('device_fanout_identity_failed', { error: errMsg });
+        updatePending({ encryptedBody: null, status: 'waiting_secure_channel', lastError: errMsg });
         throw encryptError instanceof Error ? encryptError : new Error(errMsg);
       }
     } else {
@@ -350,7 +317,7 @@ export function useMessageQueue(
     const fanoutInput = { messageId: serverMessageId, conversationId, senderUserId: user.id, plaintext: sanitized };
     let fanoutRows: FanoutCopyRow[] = [];
     let fanoutHasTargets = false;
-    let fanoutTimedOut = false;
+    const fanoutTimedOut = false;
     let fanoutPromise: ReturnType<typeof buildFanoutCopies> | null = null;
     const archiveAllowed =
       isArchiveBackupEnabled() &&
@@ -370,22 +337,38 @@ export function useMessageQueue(
 
     if (encryptedSuccessfully) {
       fanoutPromise = buildFanoutCopies(fanoutInput);
-      fanoutPromise.catch(() => {});
-      trace('fanout_inline_start', { serverMessageId, budgetMs: INLINE_FANOUT_BUDGET_MS });
+      trace('fanout_strict_start', { serverMessageId, budgetMs: INLINE_FANOUT_BUDGET_MS });
       const inlineFanout = await waitForInlineFanout(fanoutPromise).catch((fanoutError) => {
-        trace('fanout_inline_failed', { error: fanoutError instanceof Error ? fanoutError.message : String(fanoutError), serverMessageId });
+        trace('fanout_strict_failed', {
+          error: fanoutError instanceof Error ? fanoutError.message : String(fanoutError),
+          serverMessageId,
+        });
         return null;
       });
-      if (inlineFanout) {
-        fanoutRows = inlineFanout.rows;
-        fanoutHasTargets = inlineFanout.hasTargets;
-        trace('fanout_inline_ready', { rows: fanoutRows.length, hasTargets: fanoutHasTargets, serverMessageId });
-      } else {
-        fanoutTimedOut = true;
-        trace('fanout_deferred_start', { serverMessageId });
-        console.info('[MSG_SEND] fanout deferred; inserting parent immediately', { localId, conversationId });
+
+      if (!inlineFanout) {
+        const message = 'Canal sécurisé multi-appareil non prêt — message conservé localement.';
+        updatePending({ status: 'waiting_secure_channel', lastError: message });
+        throw new Error(message);
       }
+
+      fanoutRows = inlineFanout.rows;
+      fanoutHasTargets = inlineFanout.hasTargets;
+      if (!fanoutHasTargets || fanoutRows.length === 0) {
+        const message = 'Aucun appareil destinataire sécurisé disponible — message conservé localement.';
+        trace('fanout_no_secure_target', { serverMessageId });
+        updatePending({ status: 'waiting_secure_channel', lastError: message });
+        throw new Error(message);
+      }
+
+      bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
+      trace('fanout_strict_ready', {
+        rows: fanoutRows.length,
+        hasTargets: fanoutHasTargets,
+        serverMessageId,
+      });
     }
+
 
     const inlineArchiveBody = archiveAllowed ? await waitForInlineArchive(archivePromise) : null;
     if (archiveAllowed) {
@@ -394,7 +377,7 @@ export function useMessageQueue(
 
     const rpcExtra = { ...(extra || {}) } as Record<string, unknown>;
     if (inlineArchiveBody) rpcExtra.archive_body = inlineArchiveBody;
-    if (fanoutRows.length > 0 || fanoutTimedOut) rpcExtra.body_kind = 'multi_device';
+    if (encryptedSuccessfully) rpcExtra.body_kind = 'multi_device';
 
     trace('rpc_insert_start', {
       serverMessageId,
@@ -469,7 +452,7 @@ export function useMessageQueue(
       serverId: data.id,
       method: usedLegacyEncryptedFallback ? 'encrypted_legacy_fallback' : 'transactional_rpc',
       encryptedSuccessfully,
-      storedMultiDeviceEnvelope: false,
+      storedMultiDeviceEnvelope: encryptedSuccessfully,
       hasMedia: !!imageUrl,
       fanoutCopies: fanoutRows.length,
       fanoutHasTargets,

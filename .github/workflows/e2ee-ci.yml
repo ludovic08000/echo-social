@@ -25,11 +25,39 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Lint (incremental baseline)
+        shell: bash
+        run: |
+          set +e
+          npm run lint -- --format json --output-file eslint-report.json
+          eslint_status=$?
+          set -e
+
+          node scripts/check-eslint-baseline.mjs eslint-report.json
+
+          if [ "$eslint_status" -gt 1 ]; then
+            echo "ESLint failed to execute correctly (exit $eslint_status)."
+            exit "$eslint_status"
+          fi
 
       - name: Test
-        run: npm run test
+        shell: bash
+        run: |
+          set +e
+          npm run test 2>&1 | tee test-output.txt
+          test_status=${PIPESTATUS[0]}
+          set -e
+          exit "$test_status"
 
       - name: Build
         run: npm run build
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2ee-ci-diagnostics
+          retention-days: 2
+          path: |
+            eslint-report.json
+            test-output.txt

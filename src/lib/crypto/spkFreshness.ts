@@ -1,39 +1,23 @@
 /**
- * Peer SPK freshness probe — extracted from useE2EE.ts.
+ * Established-session freshness policy.
  *
- * Throttled (30s/peer) check that returns true when the local cached
- * lastUsedSpkId no longer matches the active SPK on the server, so the caller
- * can purge the local ratchet and re-handshake against the fresh bundle.
+ * A Signed PreKey is only an X3DH bootstrap input. Rotating the peer's SPK must
+ * not invalidate an already-established Double Ratchet session: the session has
+ * moved on to its own DH ratchet keys and no longer depends on that SPK.
+ *
+ * The previous implementation compared a device-scoped SPK id with the legacy
+ * account-wide `get_signed_prekey` RPC. On multi-device accounts this produced
+ * false mismatches, repeated local session purges and intermittent undecryptable
+ * messages between iOS and Windows.
+ *
+ * Device-scoped bootstrap code already validates the current SPK immediately
+ * before creating a new session. Therefore this compatibility probe is now a
+ * deliberate no-op until all callers are removed from the conversation-level
+ * legacy ratchet.
  */
-
-import { supabase } from '@/integrations/supabase/client';
-
-const _spkCheckCache = new Map<string, number>();
-const SPK_CHECK_TTL = 30_000;
-
 export async function isPeerSPKStale(
-  peerUserId: string,
-  lastUsedSpkId: number | undefined,
+  _peerUserId: string,
+  _lastUsedSpkId: number | undefined,
 ): Promise<boolean> {
-  if (lastUsedSpkId === undefined || lastUsedSpkId === null) return false;
-  const now = Date.now();
-  const last = _spkCheckCache.get(peerUserId) ?? 0;
-  if (now - last < SPK_CHECK_TTL) return false;
-  _spkCheckCache.set(peerUserId, now);
-
-  try {
-    const { data, error } = await supabase.rpc('get_signed_prekey', { p_user_id: peerUserId });
-    if (error || !data || data.length === 0) return false;
-    const currentSpkId = data[0].spk_id as number;
-    if (currentSpkId !== lastUsedSpkId) {
-      console.warn(
-        `[E2EE] ⚠️ SPK du pair ${peerUserId} a changé (local=#${lastUsedSpkId} → serveur=#${currentSpkId}) — re-handshake requis`,
-      );
-      return true;
-    }
-    return false;
-  } catch (e) {
-    console.warn('[E2EE] isPeerSPKStale check failed:', e);
-    return false;
-  }
+  return false;
 }

@@ -2,7 +2,8 @@
  * ForSure E2EE - Public API v2
  *
  * X25519 + Ed25519 + AES-256-GCM + HKDF-SHA-256
- * Double Ratchet + Hybrid Post-Quantum Ready (Kyber768)
+ * Double Ratchet. Post-quantum mode is not enabled until a real PQ KEM and
+ * ratchet are negotiated and tested end-to-end.
  */
 
 export {
@@ -17,7 +18,6 @@ export {
   initRatchetAsInitiator,
   initRatchetAsResponder,
   ratchetEncrypt,
-  ratchetDecrypt,
   serializeRatchetState,
   deserializeRatchetState,
   getRatchetReadiness,
@@ -27,6 +27,7 @@ export {
   type RatchetEnvelope,
   type RatchetReadiness,
 } from './ratchet';
+export { ratchetDecrypt } from './ratchetSafe';
 
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
@@ -65,9 +66,7 @@ export {
   assertEnvelopeEpochValid,
 } from './epochEnvelope';
 
-export {
-  createSealedSenderEnvelope,
-} from './sealedSender';
+export { createSealedSenderEnvelope } from './sealedSender';
 
 export {
   issueSenderCertificate,
@@ -119,11 +118,7 @@ export {
   type SessionKey,
 } from './keyManager';
 
-export {
-  PROTOCOL_VERSION,
-  CLASSICAL_KEM_ID,
-  PQ_KEM_ID,
-} from './constants';
+export { PROTOCOL_VERSION, CLASSICAL_KEM_ID, PQ_KEM_ID } from './constants';
 
 export {
   cryptoRateCheck,
@@ -149,19 +144,23 @@ export {
   unwrapKeysWithPin,
   hasWrappedKeys,
   deleteWrappedKeys,
+  WeakLocalWrappingSecretError,
 } from './pinWrap';
 
 export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
-
-export { fetchPrekeyBundle } from './x3dhBundleRouter';
 
 export {
   x3dhInitiate,
   x3dhRespond,
   generateAndUploadSignedPrekey,
   refreshSignedPrekeyIfNeeded,
+  LegacyX3DHDisabledError,
+} from './x3dhSafe';
+export { fetchPrekeyBundle, DeviceX3DHRouteRequiredError } from './x3dhBundleSafe';
+export {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
+  fetchPrekeyBundleForDevice,
   isPQXDHAvailable,
   type X3DHPrekeyBundle,
   type X3DHResult,

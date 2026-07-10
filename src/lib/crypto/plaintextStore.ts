@@ -1,7 +1,11 @@
 /**
- * Persistent plaintext cache for messages — hardened IndexedDB version.
+ * Device-local decrypted-message cache.
  *
- * Migrated to dbRegistry + runTxOn for Safari-safe singleton + queue.
+ * Plaintext is encrypted with a non-extractable, device-local AES key before it
+ * reaches IndexedDB. It is never mirrored to Web Storage and never exported in
+ * account backups. A short-lived in-memory cache avoids repeated decrypt work
+ * during the current JavaScript lifetime without creating a recoverable
+ * plaintext history.
  */
 
 import { runTxOn, reqToPromise } from './indexedDbTx';
@@ -9,6 +13,8 @@ import { runTxOn, reqToPromise } from './indexedDbTx';
 const STORE_MESSAGES = 'messages';
 const STORE_KEYS = 'device-keys';
 const DEVICE_KEY_ID = 'plaintext-cache-key-v1';
+const MEMORY_TTL_MS = 30 * 60 * 1000;
+const MEMORY_CAP = 200;
 
 let cachedDeviceKey: CryptoKey | null = null;
 let cachedKeyPromise: Promise<CryptoKey> | null = null;
@@ -26,6 +32,13 @@ interface StoredEntry {
   ts: number;
 }
 
+interface MemoryEntry {
+  plaintext: string;
+  ts: number;
+}
+
+const memoryMirror = new Map<string, MemoryEntry>();
+
 function warnOnce(message: string, error?: unknown) {
   const now = Date.now();
   if (now - lastIndexedDbWarningAt < 5000) return;
@@ -33,20 +46,43 @@ function warnOnce(message: string, error?: unknown) {
   console.warn(message, error);
 }
 
+function pruneMemoryMirror(): void {
+  const cutoff = Date.now() - MEMORY_TTL_MS;
+  for (const [id, entry] of memoryMirror) {
+    if (entry.ts < cutoff) memoryMirror.delete(id);
+  }
+  while (memoryMirror.size > MEMORY_CAP) {
+    const oldest = memoryMirror.keys().next().value as string | undefined;
+    if (!oldest) break;
+    memoryMirror.delete(oldest);
+  }
+}
+
+function mirrorSet(id: string, plaintext: string): void {
+  memoryMirror.delete(id);
+  memoryMirror.set(id, { plaintext, ts: Date.now() });
+  pruneMemoryMirror();
+}
+
+function mirrorGet(id: string): string | null {
+  const entry = memoryMirror.get(id);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > MEMORY_TTL_MS) {
+    memoryMirror.delete(id);
+    return null;
+  }
+  return entry.plaintext;
+}
+
 async function getOrCreateDeviceKey(): Promise<CryptoKey> {
   if (cachedDeviceKey) return cachedDeviceKey;
   if (cachedKeyPromise) return cachedKeyPromise;
 
   cachedKeyPromise = (async () => {
-    // Lecture robuste de la clé existante. CRITIQUE : il faut distinguer
-    // "la clé n'existe pas" (→ on peut en créer une) de "la lecture a échoué"
-    // (→ erreur transitoire : NE PAS régénérer, sinon on écrase la clé et TOUS
-    // les plaintexts déjà chiffrés deviennent illisibles → bulles vides à la
-    // reconnexion). C'était la cause du bug : un simple .catch(()=>undefined)
-    // traitait une erreur de lecture comme une absence de clé.
     let readOk = false;
     let existing: { id: string; key: CryptoKey } | undefined;
     let lastErr: unknown;
+
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         existing = await runTxOn('plaintext-cache', [STORE_KEYS], 'readonly', (tx) =>
@@ -54,9 +90,9 @@ async function getOrCreateDeviceKey(): Promise<CryptoKey> {
         );
         readOk = true;
         break;
-      } catch (e) {
-        lastErr = e;
-        await new Promise((r) => setTimeout(r, 120 * (attempt + 1))); // petit backoff
+      } catch (error) {
+        lastErr = error;
+        await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
       }
     }
 
@@ -65,16 +101,10 @@ async function getOrCreateDeviceKey(): Promise<CryptoKey> {
       return existing.key;
     }
 
-    // La lecture a échoué 3 fois → on ne sait PAS si la clé existe. Abandonner
-    // sans générer de nouvelle clé, pour ne jamais écraser l'accès aux anciens
-    // messages. Le cache mémoire prend le relais le temps de la session ; la
-    // prochaine tentative (reconnexion suivante) pourra relire la vraie clé.
     if (!readOk) {
-      cachedKeyPromise = null;
       throw new Error('[plaintextStore] device key read failed, refusing to regenerate: ' + String(lastErr));
     }
 
-    // Lecture OK et clé réellement absente (premier lancement) → on la crée.
     const key = await crypto.subtle.generateKey(
       { name: 'AES-GCM', length: 256 },
       false,
@@ -83,7 +113,7 @@ async function getOrCreateDeviceKey(): Promise<CryptoKey> {
 
     await runTxOn('plaintext-cache', [STORE_KEYS], 'readwrite', (tx) => {
       tx.objectStore(STORE_KEYS).put({ id: DEVICE_KEY_ID, key });
-    }).catch((e) => warnOnce('[plaintextStore] device key persist failed', e));
+    });
 
     cachedDeviceKey = key;
     return key;
@@ -106,56 +136,13 @@ async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
   return `cipher:${bufferToHex(digest)}`;
 }
 
-const SESSION_MIRROR_KEY = 'forsure-pt-mirror-v1';
-const SESSION_MIRROR_TTL_MS = 24 * 60 * 60 * 1000;
-const SESSION_MIRROR_CAP = 200;
-const DEFAULT_BACKUP_EXPORT_CAP = 500;
-
-interface SessionMirrorEntry { p: string; t: number }
-
-function readSessionMirror(): Record<string, SessionMirrorEntry> {
-  try {
-    if (typeof sessionStorage === 'undefined') return {};
-    const raw = sessionStorage.getItem(SESSION_MIRROR_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Record<string, SessionMirrorEntry>;
-  } catch {
-    return {};
-  }
-}
-
-function writeSessionMirror(map: Record<string, SessionMirrorEntry>) {
-  try {
-    if (typeof sessionStorage === 'undefined') return;
-    const cutoff = Date.now() - SESSION_MIRROR_TTL_MS;
-    const entries = Object.entries(map)
-      .filter(([, value]) => value.t > cutoff)
-      .sort(([, a], [, b]) => b.t - a.t)
-      .slice(0, SESSION_MIRROR_CAP);
-    sessionStorage.setItem(SESSION_MIRROR_KEY, JSON.stringify(Object.fromEntries(entries)));
-  } catch {}
-}
-
-function mirrorSet(id: string, plaintext: string) {
-  const map = readSessionMirror();
-  map[id] = { p: plaintext, t: Date.now() };
-  writeSessionMirror(map);
-}
-
-function mirrorGet(id: string): string | null {
-  const map = readSessionMirror();
-  const entry = map[id];
-  if (!entry) return null;
-  if (Date.now() - entry.t > SESSION_MIRROR_TTL_MS) return null;
-  return entry.p;
-}
-
 async function saveEntry(id: string, plaintext: string): Promise<void> {
   if (!id || !plaintext) return;
   const key = await getOrCreateDeviceKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
+  const aad = new TextEncoder().encode(`forsure-plaintext-cache|${id}|v2`);
   const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv, additionalData: aad },
     key,
     new TextEncoder().encode(plaintext),
   );
@@ -176,45 +163,30 @@ async function loadEntry(id: string): Promise<string | null> {
 
   try {
     const key = await getOrCreateDeviceKey();
-    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: entry.iv }, key, entry.ct);
-    return new TextDecoder().decode(pt);
+    const aad = new TextEncoder().encode(`forsure-plaintext-cache|${id}|v2`);
+    const pt = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: entry.iv, additionalData: aad },
+      key,
+      entry.ct,
+    );
+    const plaintext = new TextDecoder().decode(pt);
+    mirrorSet(id, plaintext);
+    return plaintext;
   } catch {
+    // Legacy cache entries had no AAD. They are intentionally not decrypted or
+    // migrated because doing so would preserve plaintext history indefinitely.
     return null;
   }
 }
 
-export async function exportPlaintextCache(limit = DEFAULT_BACKUP_EXPORT_CAP): Promise<PlaintextCacheExportEntry[]> {
-  try {
-    const entries = await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore(STORE_MESSAGES).getAll() as IDBRequest<StoredEntry[]>),
-    );
-
-    const exported: PlaintextCacheExportEntry[] = [];
-    const recentEntries = entries
-      .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
-      .slice(0, Math.max(0, limit));
-
-    for (const entry of recentEntries) {
-      const plaintext = await loadEntry(entry.id);
-      if (plaintext) exported.push({ id: entry.id, plaintext });
-    }
-    return exported;
-  } catch (error) {
-    warnOnce('[plaintextStore] exportPlaintextCache failed', error);
-    return [];
-  }
+/** Plaintext is deliberately excluded from all account/key backups. */
+export async function exportPlaintextCache(_limit?: number): Promise<PlaintextCacheExportEntry[]> {
+  return [];
 }
 
-export async function importPlaintextCache(entries: PlaintextCacheExportEntry[]): Promise<void> {
-  if (!Array.isArray(entries) || entries.length === 0) return;
-  for (const entry of entries) {
-    if (!entry || typeof entry.id !== 'string' || typeof entry.plaintext !== 'string') continue;
-    try {
-      await saveEntry(entry.id, entry.plaintext);
-    } catch (error) {
-      warnOnce('[plaintextStore] import entry skipped', error);
-    }
-  }
+/** Legacy backups may contain plaintext entries; ignore them on restore. */
+export async function importPlaintextCache(_entries: PlaintextCacheExportEntry[]): Promise<void> {
+  return;
 }
 
 export async function savePlaintext(messageId: string, plaintext: string): Promise<void> {
@@ -264,13 +236,8 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
 }
 
 export async function removePlaintext(messageId: string): Promise<void> {
+  memoryMirror.delete(messageId);
   try {
-    const map = readSessionMirror();
-    if (map[messageId]) {
-      delete map[messageId];
-      writeSessionMirror(map);
-    }
-
     await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', (tx) => {
       tx.objectStore(STORE_MESSAGES).delete(messageId);
     });
@@ -280,10 +247,7 @@ export async function removePlaintext(messageId: string): Promise<void> {
 }
 
 export async function wipePlaintextStore(): Promise<void> {
-  try {
-    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_MIRROR_KEY);
-  } catch {}
-
+  memoryMirror.clear();
   try {
     await runTxOn('plaintext-cache', [STORE_MESSAGES, STORE_KEYS], 'readwrite', (tx) => {
       tx.objectStore(STORE_MESSAGES).clear();

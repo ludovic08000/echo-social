@@ -1,16 +1,8 @@
 /**
  * ForSure Double Ratchet
- * 
- * Signal-style Double Ratchet combining:
- *   1. DH Ratchet (X25519) — new ephemeral keys per turn
- *   2. Symmetric Ratchet (HMAC-SHA-256 KDF chain) — new key per message
- * 
- * Provides:
- *   - Forward secrecy per message
- *   - Break-in recovery (future secrecy)
- *   - Out-of-order message decryption (skipped message keys cache)
- * 
- * State stored locally in IndexedDB, never on server.
+ *
+ * X25519 DH ratchet + HMAC-SHA-256 symmetric chains + AES-256-GCM.
+ * State transitions are returned only after authenticated decryption succeeds.
  */
 
 import { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
@@ -21,8 +13,9 @@ import {
   randomBytes,
   decodeString,
   importOkpPublicKeyFromBase64,
+  exportKeyToJWK,
+  importKeyFromJWK,
 } from './utils';
-import { exportKeyToJWK, importKeyFromJWK } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import {
   AES_ALGO, IV_LENGTH, PROTOCOL_VERSION, AD_PREFIX_V3, AD_HEADER_PREFIX_V4,
@@ -33,49 +26,25 @@ import { exportPublicKeyRaw } from './keyManager';
 import { wrapSkippedJwk, unwrapSkippedJwk, isWrappedSkippedEntry } from './skippedKeyWrap';
 import { padPlaintext, unpadPlaintext } from './lengthPadding';
 
-// ─── Types ───
-
 export interface RatchetState {
   conversationId: string;
-  /** Our current DH ratchet key pair */
   dhSendingPair: CryptoKeyPair;
-  /** Peer's current DH ratchet public key */
   dhReceivingKey: CryptoKey | null;
-  /** Root key for DH ratchet steps */
   rootKey: CryptoKey;
-  /** Sending chain key */
   sendingChainKey: CryptoKey | null;
-  /** Receiving chain key */
   receivingChainKey: CryptoKey | null;
-  /** Message counters */
   sendCount: number;
   recvCount: number;
-  /** Previous sending chain length (for header) */
   prevSendCount: number;
-  /** Skipped message keys: Map<"dhPub:msgNum", { key, createdAt }> with TTL purge */
   skippedKeys: Map<string, { key: CryptoKey; ts: number }>;
-  /**
-   * Identity keys snapshot at X3DH time. Used to build AES-GCM Associated
-   * Data (AD = "FORSURE-AD-v3|" || base64(IKa) || "|" || base64(IKb)) so
-   * the ciphertext is cryptographically bound to the conversation parties
-   * (Signal X3DH spec §3.3). Optional for backward-compat with v2 states
-   * loaded from disk before the upgrade.
-   */
   myIdentityKeyB64?: string;
   peerIdentityKeyB64?: string;
-  /**
-   * X3DH role for canonical AD ordering (initiator IK first). Optional for
-   * backward-compat with v2 states loaded from disk before the upgrade.
-   */
   role?: 'initiator' | 'responder';
 }
 
 export interface RatchetHeader {
-  /** Sender's current DH ratchet public key (base64) */
   dh: string;
-  /** Previous chain message count */
   pn: number;
-  /** Message number in current chain */
   n: number;
 }
 
@@ -86,19 +55,15 @@ export interface RatchetEnvelope {
   iv: string;
   ct: string;
   sig: string;
+  /** Signature format. Undefined/1 is the historical header|iv|ct|ts format. */
+  sigv?: 1 | 2;
   fp: string;
   ts: number;
-  /**
-   * Lot B — length-padding flag.
-   *   undefined / 0 → legacy (raw UTF-8 plaintext, no padding)
-   *   1             → plaintext padded with `padPlaintext()` (bucketed)
-   * Decrypt routes on this flag: must NEVER assume padding without it,
-   * otherwise pre-flag messages would lose their trailing 0x80 lookalikes.
-   */
   pad?: 0 | 1;
 }
 
-const MAX_SKIP = RATCHET_MAX_SKIP; // Signal-conformant DoS protection ceiling
+const MAX_SKIP = RATCHET_MAX_SKIP;
+const MIN_SUPPORTED_VERSION = 2;
 
 export interface RatchetReadiness {
   canEncrypt: boolean;
@@ -106,36 +71,16 @@ export interface RatchetReadiness {
   reason: 'missing_state' | 'missing_root_key' | 'missing_sending_chain' | 'missing_sending_pair' | 'missing_peer_dh' | 'ready';
 }
 
-/**
- * Central low-level readiness guard for Double Ratchet.
- *
- * IMPORTANT:
- * - A responder ratchet MAY legitimately exist without a sending chain yet.
- * - That state is valid for decrypt, but NOT for encrypt.
- */
 export function getRatchetReadiness(state: RatchetState | null | undefined): RatchetReadiness {
-  if (!state) {
-    return { canEncrypt: false, canDecrypt: false, reason: 'missing_state' };
-  }
-  if (!state.rootKey) {
-    return { canEncrypt: false, canDecrypt: false, reason: 'missing_root_key' };
-  }
+  if (!state) return { canEncrypt: false, canDecrypt: false, reason: 'missing_state' };
+  if (!state.rootKey) return { canEncrypt: false, canDecrypt: false, reason: 'missing_root_key' };
   if (!state.dhSendingPair?.publicKey || !state.dhSendingPair?.privateKey) {
     return { canEncrypt: false, canDecrypt: false, reason: 'missing_sending_pair' };
   }
 
-  // A responder that has completed X3DH but has not yet received the first
-  // Double Ratchet message is still decrypt-capable: the incoming header DH
-  // will seed the first receiving chain from the root key.
-  const canDecrypt = !!state.rootKey && !!state.dhSendingPair?.privateKey;
-
-  if (!state.dhReceivingKey) {
-    return { canEncrypt: false, canDecrypt, reason: 'missing_peer_dh' };
-  }
-  if (!state.sendingChainKey) {
-    return { canEncrypt: false, canDecrypt, reason: 'missing_sending_chain' };
-  }
-
+  const canDecrypt = !!state.rootKey && !!state.dhSendingPair.privateKey;
+  if (!state.dhReceivingKey) return { canEncrypt: false, canDecrypt, reason: 'missing_peer_dh' };
+  if (!state.sendingChainKey) return { canEncrypt: false, canDecrypt, reason: 'missing_sending_chain' };
   return { canEncrypt: true, canDecrypt: true, reason: 'ready' };
 }
 
@@ -147,24 +92,20 @@ export function isRatchetReadyForDecrypt(state: RatchetState | null | undefined)
   return getRatchetReadiness(state).canDecrypt;
 }
 
-// ─── Initialize ───
-
-/** Initialize ratchet as the initiator (Alice) */
 export async function initRatchetAsInitiator(
   conversationId: string,
   sharedSecret: ArrayBuffer,
   peerDhPublicKey: CryptoKey,
   identityKeys?: { myIdentityKeyB64: string; peerIdentityKeyB64: string },
 ): Promise<RatchetState> {
-  // Generate our first ratchet key pair
   const dhPair = await hardCrypto.generateKey(
-    KX_KEY_PARAMS as any, true, ['deriveBits']
+    KX_KEY_PARAMS as any, true, ['deriveBits'],
   ) as CryptoKeyPair;
 
   const rootKey = await hardCrypto.importKey(
     'raw', sharedSecret.slice(0, 32),
     { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
-    true, ['sign']
+    true, ['sign'],
   );
 
   const dhOutput = await hardCrypto.deriveBits(
@@ -172,7 +113,6 @@ export async function initRatchetAsInitiator(
     dhPair.privateKey,
     256,
   );
-
   const { newRootKey, newChainKey } = await kdfRootStep(rootKey, dhOutput);
 
   return {
@@ -192,7 +132,6 @@ export async function initRatchetAsInitiator(
   };
 }
 
-/** Initialize ratchet as the responder (Bob) */
 export async function initRatchetAsResponder(
   conversationId: string,
   sharedSecret: ArrayBuffer,
@@ -202,7 +141,7 @@ export async function initRatchetAsResponder(
   const rootKey = await hardCrypto.importKey(
     'raw', sharedSecret.slice(0, 32),
     { name: 'HMAC', hash: 'SHA-256', length: 256 } as any,
-    true, ['sign']
+    true, ['sign'],
   );
 
   return {
@@ -216,38 +155,24 @@ export async function initRatchetAsResponder(
     recvCount: 0,
     prevSendCount: 0,
     skippedKeys: new Map(),
-    // Note for responder: AD = "FORSURE-AD-v3|" || IKa || IKb (initiator first).
-    // From responder's POV: peerIdentityKeyB64 = IKa (initiator), myIdentityKeyB64 = IKb (us).
     myIdentityKeyB64: identityKeys?.myIdentityKeyB64,
     peerIdentityKeyB64: identityKeys?.peerIdentityKeyB64,
     role: 'responder',
   };
 }
 
-// ─── Associated Data (Signal X3DH §3.3) ───
-//
-// Canonical order: initiator IK first. For sender (Alice) AD is built as
-// `prefix || IKa || IKb`. For responder (Bob) it is `prefix || IKa || IKb`
-// — i.e. `peerIdentityKeyB64 || myIdentityKeyB64`. The state always stores
-// keys in our local frame; this helper produces the canonical shared bytes.
 function buildAssociatedData(
   state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
-  roleOverride?: 'initiator' | 'responder',
 ): Uint8Array | null {
   const my = state.myIdentityKeyB64;
   const peer = state.peerIdentityKeyB64;
-  const role = roleOverride ?? state.role;
+  const role = state.role;
   if (!my || !peer || !role) return null;
   const initiatorIK = role === 'initiator' ? my : peer;
   const responderIK = role === 'initiator' ? peer : my;
   return new Uint8Array(encodeString(`${AD_PREFIX_V3}${initiatorIK}|${responderIK}`));
 }
 
-/**
- * Signal Double Ratchet rev.4 §3.4 — AEAD AAD = identity_AD || canonical(header).
- * Canonical header: "FORSURE-HDR-v4|" || dh || "|" || pn || "|" || n.
- * Order is fixed (NOT JSON.stringify) to be deterministic across runtimes.
- */
 function buildAssociatedDataV4(
   state: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
   header: RatchetHeader,
@@ -261,7 +186,60 @@ function buildAssociatedDataV4(
   return out;
 }
 
-// ─── Encrypt ───
+function buildLegacySignatureData(envelope: Pick<RatchetEnvelope, 'hdr' | 'iv' | 'ct' | 'ts'>): Uint8Array {
+  return new Uint8Array([
+    ...new Uint8Array(encodeString(hardGlobals.jsonStringify(envelope.hdr))),
+    ...new Uint8Array(base64ToBuffer(envelope.iv)),
+    ...new Uint8Array(base64ToBuffer(envelope.ct)),
+    ...new Uint8Array(encodeString(`${envelope.ts}`)),
+  ]);
+}
+
+function buildSignatureDataV2(envelope: Pick<RatchetEnvelope, 'v' | 'kem' | 'hdr' | 'iv' | 'ct' | 'fp' | 'ts' | 'pad'>): Uint8Array {
+  return new Uint8Array(encodeString(
+    `FORSURE-RATCHET-SIG-v2|${envelope.v}|${envelope.kem}|${envelope.hdr.dh}|${envelope.hdr.pn}|${envelope.hdr.n}|${envelope.iv}|${envelope.ct}|${envelope.fp}|${envelope.ts}|${envelope.pad ?? 0}`,
+  ));
+}
+
+function validateEnvelope(envelope: RatchetEnvelope): void {
+  if (!Number.isInteger(envelope.v) || envelope.v < MIN_SUPPORTED_VERSION || envelope.v > PROTOCOL_VERSION) {
+    throw new Error('RATCHET_UNSUPPORTED_VERSION');
+  }
+  if (envelope.kem !== CLASSICAL_KEM_ID) throw new Error('RATCHET_UNSUPPORTED_KEM');
+  if (!envelope.hdr || typeof envelope.hdr.dh !== 'string' || envelope.hdr.dh.length === 0) {
+    throw new Error('RATCHET_INVALID_HEADER');
+  }
+  for (const counter of [envelope.hdr.pn, envelope.hdr.n]) {
+    if (!Number.isSafeInteger(counter) || counter < 0) throw new Error('RATCHET_INVALID_COUNTER');
+  }
+  if (!Number.isFinite(envelope.ts) || envelope.ts <= 0) throw new Error('RATCHET_INVALID_TIMESTAMP');
+  if (envelope.pad !== undefined && envelope.pad !== 0 && envelope.pad !== 1) {
+    throw new Error('RATCHET_INVALID_PADDING_FLAG');
+  }
+}
+
+function paramsForDeclaredVersion(
+  envelope: RatchetEnvelope,
+  state?: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
+): AesGcmParams {
+  const iv = new Uint8Array(base64ToBuffer(envelope.iv));
+  if (envelope.v === 2) return { name: AES_ALGO, iv, tagLength: 128 };
+  if (!state) throw new Error('RATCHET_IDENTITY_AAD_STATE_MISSING');
+
+  if (envelope.v === 3) {
+    const ad = buildAssociatedData(state);
+    if (!ad) throw new Error('RATCHET_V3_AAD_MISSING');
+    return { name: AES_ALGO, iv, tagLength: 128, additionalData: ad };
+  }
+
+  if (envelope.v === 4) {
+    const ad = buildAssociatedDataV4(state, envelope.hdr);
+    if (!ad) throw new Error('RATCHET_V4_AAD_MISSING');
+    return { name: AES_ALGO, iv, tagLength: 128, additionalData: ad };
+  }
+
+  throw new Error('RATCHET_UNSUPPORTED_VERSION');
+}
 
 export async function ratchetEncrypt(
   state: RatchetState,
@@ -269,14 +247,9 @@ export async function ratchetEncrypt(
   signingKey: CryptoKey,
   fingerprint: string,
 ): Promise<{ envelope: RatchetEnvelope; newState: RatchetState }> {
-  if (!state.sendingChainKey) {
-    throw new Error('Sending chain not initialized — wait for first incoming message');
-  }
+  if (!state.sendingChainKey) throw new Error('Sending chain not initialized — wait for first incoming message');
 
-  // Symmetric ratchet step
   const { nextChainKey, messageKey } = await kdfChainStep(state.sendingChainKey);
-
-  // Build header
   const dhPubRaw = await exportPublicKeyRaw(state.dhSendingPair.publicKey);
   const header: RatchetHeader = {
     dh: bufferToBase64(dhPubRaw),
@@ -284,87 +257,52 @@ export async function ratchetEncrypt(
     n: state.sendCount,
   };
 
-  // Encrypt with AES-256-GCM. Signal Double Ratchet rev.4 §3.4 (mandatory):
-  //   AAD = identity_AD || canonical(header)  → header bound to ciphertext.
-  // v4 is REQUIRED for all outbound envelopes — no downgrade allowed.
-  // If identity keys are missing the state is invalid (corrupt) and we abort.
   const ad = buildAssociatedDataV4(state, header);
   if (!ad) {
-    throw new Error(
-      'E_RATCHET_V4_REQUIRED: ratchet state missing identity keys / role — refusing to emit pre-v4 envelope. Re-run X3DH.'
-    );
+    throw new Error('E_RATCHET_V4_REQUIRED: ratchet state missing identity keys / role — re-run X3DH.');
   }
+
   const iv = randomBytes(IV_LENGTH);
-  const encryptParams: AesGcmParams = {
+  const padded = padPlaintext(plaintext);
+  const ct = await hardCrypto.encrypt({
     name: AES_ALGO,
     iv: iv.slice() as Uint8Array<ArrayBuffer>,
     tagLength: 128,
     additionalData: ad as Uint8Array<ArrayBuffer>,
-  };
-  // Lot B — bucketed length padding (Signal §6 / WhatsApp whitepaper).
-  // Plaintext is padded to a length-bucket BEFORE encryption so AES-GCM
-  // ciphertext length does not leak msg length to network observers.
-  // The `pad: 1` flag below tells the receiver to call `unpadPlaintext()`.
-  const padded = padPlaintext(plaintext);
-  const ct = await hardCrypto.encrypt(encryptParams, messageKey, padded);
-
-  const ts = Date.now();
-
-  // Sign: header || iv || ciphertext || ts
-  const sigData = new Uint8Array([
-    ...new Uint8Array(encodeString(hardGlobals.jsonStringify(header))),
-    ...iv,
-    ...new Uint8Array(ct as ArrayBuffer),
-    ...new Uint8Array(encodeString(`${ts}`)),
-  ]);
-
-  const sig = await hardCrypto.sign('Ed25519' as any, signingKey, sigData);
+  }, messageKey, padded);
 
   const envelope: RatchetEnvelope = {
-    v: PROTOCOL_VERSION, // always 4
+    v: PROTOCOL_VERSION,
     kem: CLASSICAL_KEM_ID,
     hdr: header,
     iv: bufferToBase64(iv.buffer as ArrayBuffer),
     ct: bufferToBase64(ct as ArrayBuffer),
-    sig: bufferToBase64(sig),
+    sig: '',
+    sigv: 2,
     fp: fingerprint,
-    ts,
+    ts: Date.now(),
     pad: 1,
   };
+  const sig = await hardCrypto.sign('Ed25519' as any, signingKey, buildSignatureDataV2(envelope));
+  envelope.sig = bufferToBase64(sig);
 
   return {
     envelope,
-    newState: {
-      ...state,
-      sendingChainKey: nextChainKey,
-      sendCount: state.sendCount + 1,
-    },
+    newState: { ...state, sendingChainKey: nextChainKey, sendCount: state.sendCount + 1 },
   };
 }
-
-// ─── Decrypt ───
 
 export async function ratchetDecrypt(
   state: RatchetState,
   envelope: RatchetEnvelope,
   peerSigningKeyBase64?: string,
 ): Promise<{ plaintext: string; verified: boolean; newState: RatchetState }> {
-  // Anti-replay: handled by Double Ratchet header counters (pn/n) +
-  // skippedKeys cache below. Timestamps are sanity-checked but never used
-  // as a hard cutoff, so historical messages remain decryptable after
-  // restoration (PIN re-unlock, device re-sync, key backup restore).
-  if (typeof envelope.ts !== 'number' || envelope.ts <= 0) {
-    throw new Error('Ratchet envelope timestamp invalide');
-  }
+  validateEnvelope(envelope);
 
   const headerDhRaw = base64ToBuffer(envelope.hdr.dh);
-  const headerDhKey = await hardCrypto.importKey(
-    'raw', headerDhRaw, KX_KEY_PARAMS as any, true, []
-  );
-
+  const headerDhKey = await hardCrypto.importKey('raw', headerDhRaw, KX_KEY_PARAMS as any, true, []);
   let newState = { ...state, skippedKeys: new Map(state.skippedKeys) };
 
-  // Check skipped keys first
   const skipKey = `${envelope.hdr.dh}:${envelope.hdr.n}`;
   const cachedEntry = newState.skippedKeys.get(skipKey);
   if (cachedEntry) {
@@ -373,24 +311,18 @@ export async function ratchetDecrypt(
     return { ...result, newState };
   }
 
-  // Check if DH ratchet step needed
   const currentDhPub = newState.dhReceivingKey
     ? bufferToBase64(await exportPublicKeyRaw(newState.dhReceivingKey))
     : null;
 
   if (currentDhPub !== envelope.hdr.dh) {
-    // Skip any remaining messages in current receiving chain
-    if (newState.receivingChainKey) {
-      newState = await skipMessages(newState, envelope.hdr.pn);
-    }
+    if (newState.receivingChainKey) newState = await skipMessages(newState, envelope.hdr.pn);
 
-    // DH ratchet step
     const dhOutput = await hardCrypto.deriveBits(
       { name: 'X25519', public: headerDhKey } as any,
       newState.dhSendingPair.privateKey,
       256,
     );
-
     const { newRootKey, newChainKey: newRecvChain } = await kdfRootStep(newState.rootKey, dhOutput);
     newState.dhReceivingKey = headerDhKey;
     newState.receivingChainKey = newRecvChain;
@@ -399,27 +331,19 @@ export async function ratchetDecrypt(
     newState.sendCount = 0;
     newState.recvCount = 0;
 
-    // Generate new sending pair
-    const newDhPair = await hardCrypto.generateKey(
-      KX_KEY_PARAMS as any, true, ['deriveBits']
-    ) as CryptoKeyPair;
-
+    const newDhPair = await hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']) as CryptoKeyPair;
     const dhOutput2 = await hardCrypto.deriveBits(
       { name: 'X25519', public: headerDhKey } as any,
       newDhPair.privateKey,
       256,
     );
-
     const { newRootKey: rk2, newChainKey: sendChain } = await kdfRootStep(newState.rootKey, dhOutput2);
     newState.rootKey = rk2;
     newState.sendingChainKey = sendChain;
     newState.dhSendingPair = newDhPair;
   }
 
-  // Skip messages in current chain if needed
   newState = await skipMessages(newState, envelope.hdr.n);
-
-  // Symmetric ratchet step
   if (!newState.receivingChainKey) throw new Error('No receiving chain');
   const { nextChainKey, messageKey } = await kdfChainStep(newState.receivingChainKey);
   newState.receivingChainKey = nextChainKey;
@@ -429,26 +353,20 @@ export async function ratchetDecrypt(
   return { ...result, newState };
 }
 
-// ─── Helpers ───
-
 async function skipMessages(state: RatchetState, until: number): Promise<RatchetState> {
   const newState = { ...state, skippedKeys: new Map(state.skippedKeys) };
-
   if (!newState.receivingChainKey) return newState;
 
   const toSkip = until - newState.recvCount;
   if (toSkip > MAX_SKIP) throw new Error('Too many skipped messages');
   if (toSkip <= 0) return newState;
 
-  // Get current DH pub for cache key
   const dhPub = newState.dhReceivingKey
     ? bufferToBase64(await exportPublicKeyRaw(newState.dhReceivingKey))
     : 'init';
-
   let ck = newState.receivingChainKey;
   const now = Date.now();
   for (let i = newState.recvCount; i < until; i++) {
-    // Use exportable variant since skipped keys need IndexedDB persistence
     const { nextChainKey, messageKey } = await kdfChainStepExportable(ck);
     newState.skippedKeys.set(`${dhPub}:${i}`, { key: messageKey, ts: now });
     ck = nextChainKey;
@@ -456,18 +374,18 @@ async function skipMessages(state: RatchetState, until: number): Promise<Ratchet
   newState.receivingChainKey = ck;
   newState.recvCount = until;
 
-  // Signal-conformant pruning: TTL purge first, then size cap.
   const cutoff = now - RATCHET_SKIPPED_TTL_MS;
-  for (const [k, v] of newState.skippedKeys) {
-    if (v.ts < cutoff) newState.skippedKeys.delete(k);
+  for (const [key, value] of newState.skippedKeys) {
+    if (value.ts < cutoff) newState.skippedKeys.delete(key);
   }
   if (newState.skippedKeys.size > RATCHET_MAX_SKIPPED_CACHE) {
-    // Evict oldest first (insertion order preserved by Map).
     const overflow = newState.skippedKeys.size - RATCHET_MAX_SKIPPED_CACHE;
-    const it = newState.skippedKeys.keys();
-    for (let i = 0; i < overflow; i++) newState.skippedKeys.delete(it.next().value as string);
+    const iterator = newState.skippedKeys.keys();
+    for (let i = 0; i < overflow; i++) {
+      const key = iterator.next().value as string | undefined;
+      if (key) newState.skippedKeys.delete(key);
+    }
   }
-
   return newState;
 }
 
@@ -477,64 +395,26 @@ async function decryptWithKey(
   peerSigningKeyBase64?: string,
   state?: Pick<RatchetState, 'myIdentityKeyB64' | 'peerIdentityKeyB64' | 'role'>,
 ): Promise<{ plaintext: string; verified: boolean }> {
-  const iv = base64ToBuffer(envelope.iv);
   const ct = base64ToBuffer(envelope.ct);
+  const params = paramsForDeclaredVersion(envelope, state);
+  const ptBuf = await hardCrypto.decrypt(params, messageKey, ct);
 
-  // Multi-version AAD fallback (Signal Double Ratchet rev.4 §3.4):
-  //   v4 → AAD = identity_AD || canonical(header)  (header-bound, current)
-  //   v3 → AAD = identity_AD                       (id-bound only)
-  //   v2 → no AAD                                  (legacy, migration)
-  // We try in declared order and fall back on AES-GCM tag mismatch so that
-  // mixed-version peer states migrate transparently without ciphertext loss.
-  const v = envelope.v ?? 2;
-  const candidates: (Uint8Array | null)[] = [];
-  if (v >= 4 && state) candidates.push(buildAssociatedDataV4(state, envelope.hdr));
-  if (v >= 3 && state) candidates.push(buildAssociatedData(state));
-  candidates.push(null); // legacy v2 / last-resort
+  const plaintext = envelope.pad === 1
+    ? unpadPlaintext(new Uint8Array(ptBuf))
+    : decodeString(ptBuf);
 
-  let ptBuf: ArrayBuffer | null = null;
-  let lastErr: unknown = null;
-  for (const ad of candidates) {
-    try {
-      const params: AesGcmParams = ad
-        ? { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128, additionalData: ad as Uint8Array<ArrayBuffer> }
-        : { name: AES_ALGO, iv: new Uint8Array(iv), tagLength: 128 };
-      ptBuf = await hardCrypto.decrypt(params, messageKey, ct);
-      break;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  if (!ptBuf) throw lastErr instanceof Error ? lastErr : new Error('AEAD tag verification failed');
-
-  // Lot B — unpad iff sender flagged `pad: 1`. Legacy envelopes (no flag)
-  // remain raw UTF-8 to preserve historical message readability.
-  let plaintext: string;
-  if (envelope.pad === 1) {
-    try {
-      plaintext = unpadPlaintext(new Uint8Array(ptBuf));
-    } catch {
-      // Padding marker missing → treat as legacy/raw to avoid losing the
-      // message in a botched migration.
-      plaintext = decodeString(ptBuf);
-    }
-  } else {
-    plaintext = decodeString(ptBuf);
-  }
-
-  // Verify Ed25519 signature
   let verified = false;
   if (peerSigningKeyBase64) {
     try {
       const sigKey = await importOkpPublicKeyFromBase64(peerSigningKeyBase64, 'Ed25519', ['verify'], true);
-      const sigData = new Uint8Array([
-        ...new Uint8Array(encodeString(hardGlobals.jsonStringify(envelope.hdr))),
-        ...new Uint8Array(iv),
-        ...new Uint8Array(ct),
-        ...new Uint8Array(encodeString(`${envelope.ts}`)),
-      ]);
+      const sigData = envelope.sigv === 2
+        ? buildSignatureDataV2(envelope)
+        : buildLegacySignatureData(envelope);
       verified = await hardCrypto.verify(
-        'Ed25519' as any, sigKey, base64ToBuffer(envelope.sig), sigData,
+        'Ed25519' as any,
+        sigKey,
+        base64ToBuffer(envelope.sig),
+        sigData,
       );
     } catch {
       verified = false;
@@ -544,8 +424,6 @@ async function decryptWithKey(
   return { plaintext, verified };
 }
 
-// ─── Serialization (for IndexedDB) ───
-
 export async function serializeRatchetState(state: RatchetState): Promise<string> {
   const dhSendPubJWK = await exportKeyToJWK(state.dhSendingPair.publicKey);
   const dhSendPrivJWK = await exportKeyToJWK(state.dhSendingPair.privateKey);
@@ -554,20 +432,20 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
   const sendCKJWK = state.sendingChainKey ? await exportKeyToJWK(state.sendingChainKey) : null;
   const recvCKJWK = state.receivingChainKey ? await exportKeyToJWK(state.receivingChainKey) : null;
 
-  // Lot A3: Skipped keys are at-rest WRAPPED (AES-GCM-256, non-extractable
-  // SWK in IndexedDB). Format per entry: [k, "v1.<wrapped>", ts]. Legacy
-  // entries kept on disk as [k, JsonWebKey, ts] are still readable on load.
   const skippedEntries: [string, string, number][] = [];
-  for (const [k, v] of state.skippedKeys) {
-    const jwk = await exportKeyToJWK(v.key);
-    const wrapped = await wrapSkippedJwk(jwk);
-    skippedEntries.push([k, wrapped, v.ts]);
+  for (const [key, value] of state.skippedKeys) {
+    const jwk = await exportKeyToJWK(value.key);
+    skippedEntries.push([key, await wrapSkippedJwk(jwk), value.ts]);
   }
 
   return hardGlobals.jsonStringify({
     conversationId: state.conversationId,
-    dhSendPubJWK, dhSendPrivJWK, dhRecvJWK,
-    rootJWK, sendCKJWK, recvCKJWK,
+    dhSendPubJWK,
+    dhSendPrivJWK,
+    dhRecvJWK,
+    rootJWK,
+    sendCKJWK,
+    recvCKJWK,
     sendCount: state.sendCount,
     recvCount: state.recvCount,
     prevSendCount: state.prevSendCount,
@@ -581,17 +459,6 @@ export async function serializeRatchetState(state: RatchetState): Promise<string
 
 export async function deserializeRatchetState(json: string): Promise<RatchetState> {
   const d = hardGlobals.jsonParse(json);
-
-  // Signal-style extractability rules:
-  // ALL keys that need re-serialization MUST be extractable.
-  // In Signal's libsignal, keys are stored as raw bytes — Web Crypto requires
-  // extractable=true for any key that will be exported to JWK for IndexedDB persistence.
-  //
-  // - Public keys: EXTRACTABLE (headers + DH comparison + re-serialization)
-  // - Private keys: EXTRACTABLE (deriveBits + re-serialization after state update)
-  // - Root key: EXTRACTABLE (HKDF salt export + re-serialization)
-  // - Chain keys: EXTRACTABLE (HMAC chain + re-serialization)
-  // - Skipped message keys: EXTRACTABLE (re-serialization to IndexedDB)
   const dhSendPub = await importKeyFromJWK(d.dhSendPubJWK, KX_KEY_PARAMS as any, [], true);
   const dhSendPriv = await importKeyFromJWK(d.dhSendPrivJWK, KX_KEY_PARAMS as any, ['deriveBits'], true);
   const dhRecv = d.dhRecvJWK ? await importKeyFromJWK(d.dhRecvJWK, KX_KEY_PARAMS as any, [], true) : null;
@@ -599,20 +466,16 @@ export async function deserializeRatchetState(json: string): Promise<RatchetStat
   const sendCK = d.sendCKJWK ? await importKeyFromJWK(d.sendCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
   const recvCK = d.recvCKJWK ? await importKeyFromJWK(d.recvCKJWK, { name: 'HMAC', hash: 'SHA-256' } as any, ['sign'], true) : null;
 
-  // Lot A3: accept BOTH legacy [k, JWK, ts?] and wrapped [k, "v1.…", ts].
   const skippedKeys = new Map<string, { key: CryptoKey; ts: number }>();
   const now = Date.now();
   for (const entry of (d.skippedEntries || []) as Array<[string, unknown, number?]>) {
-    const [k, raw, ts] = entry;
+    const [keyId, raw, ts] = entry;
     let jwk: JsonWebKey | null = null;
-    if (isWrappedSkippedEntry(raw)) {
-      jwk = await unwrapSkippedJwk(raw);
-    } else if (raw && typeof raw === 'object') {
-      jwk = raw as JsonWebKey;
-    }
-    if (!jwk) continue; // unwrap failure → drop the skipped entry (safe; just no decrypt)
-    const key = await importKeyFromJWK(jwk as any, { name: AES_ALGO } as any, ['encrypt', 'decrypt'], true);
-    skippedKeys.set(k, { key, ts: typeof ts === 'number' ? ts : now });
+    if (isWrappedSkippedEntry(raw)) jwk = await unwrapSkippedJwk(raw);
+    else if (raw && typeof raw === 'object') jwk = raw as JsonWebKey;
+    if (!jwk) continue;
+    const key = await importKeyFromJWK(jwk, { name: AES_ALGO } as any, ['encrypt', 'decrypt'], true);
+    skippedKeys.set(keyId, { key, ts: typeof ts === 'number' ? ts : now });
   }
 
   return {
