@@ -147,7 +147,7 @@ describe('multiDeviceFanout trust gate', () => {
     expect(inserted[0].recipient_user_id).toBe(BOB);
   });
 
-  it('does not let one broken device abort fan-out to the remaining devices', async () => {
+  it('refuses the parent message when one active trusted device lacks a copy', async () => {
     const inserted: any[] = [];
     installSupabaseTables(inserted);
     (listFanoutTargets as any).mockResolvedValue([
@@ -169,15 +169,13 @@ describe('multiDeviceFanout trust gate', () => {
       },
     );
 
-    const result = await fanoutMessageCopies({
+    await expect(fanoutMessageCopies({
       messageId: 'msg-2',
       conversationId: 'conv-1',
       senderUserId: ALICE,
       plaintext: 'hello',
-    });
+    })).rejects.toThrow('E_FANOUT_INCOMPLETE:1/2');
 
-    expect(result).toEqual({ inserted: 1, multiDevice: true });
-    expect(inserted).toHaveLength(1);
-    expect(inserted[0].recipient_device_id).toBe('bob-good-dev');
+    expect(inserted).toHaveLength(0);
   });
 });
