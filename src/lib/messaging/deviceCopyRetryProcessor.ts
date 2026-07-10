@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { loadPlaintext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { decryptArchive, isArchivePayload } from './archive/archiveKey';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import { encryptPlaintextForDeviceTarget } from './multiDeviceFanout';
 
@@ -26,12 +27,40 @@ let inFlight: Promise<RetryProcessingResult> | null = null;
 
 async function markRetryFailed(requestId: string, errorMessage: string): Promise<void> {
   try {
-    await (supabase as any).rpc("mark_device_copy_retry_failed", {
+    await (supabase as any).rpc('mark_device_copy_retry_failed', {
       p_request_id: requestId,
       p_error: errorMessage,
     });
   } catch {
     // Non-fatal; the next processing pass can retry the request.
+  }
+}
+
+async function recoverSenderPlaintext(
+  row: PendingDeviceCopyRetry,
+  senderUserId: string,
+): Promise<string | null> {
+  const cached =
+    (await loadPlaintext(row.message_id)) ||
+    (row.message_body ? await loadPlaintextForCiphertext(row.message_body) : null);
+  if (cached) return cached;
+
+  // iOS can evict IndexedDB and Windows may have restarted before a delayed
+  // device-copy retry arrives. The sender-side encrypted archive is the durable
+  // zero-access recovery source; use it before declaring the retry impossible.
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('archive_body')
+      .eq('id', row.message_id)
+      .eq('sender_id', senderUserId)
+      .maybeSingle();
+    if (error) return null;
+    const archiveBody = (data as { archive_body?: string | null } | null)?.archive_body;
+    if (!archiveBody || !isArchivePayload(archiveBody)) return null;
+    return decryptArchive(archiveBody, row.conversation_id, senderUserId);
+  } catch {
+    return null;
   }
 }
 
@@ -48,12 +77,11 @@ export async function processDeviceCopyRetryRequests(_limit = 20): Promise<Retry
 
     if (isDeviceIdTemporary()) return result;
 
-
     const senderDeviceId = getCurrentDeviceId();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return result;
 
-    const { data, error } = await (supabase as any).rpc("list_pending_device_copy_retries", {
+    const { data, error } = await (supabase as any).rpc('list_pending_device_copy_retries', {
       p_limit: _limit,
     });
 
@@ -73,17 +101,11 @@ export async function processDeviceCopyRetryRequests(_limit = 20): Promise<Retry
 
     for (const row of rows) {
       try {
-        const plaintext =
-          (await loadPlaintext(row.message_id)) ||
-          (row.message_body ? await loadPlaintextForCiphertext(row.message_body) : null);
+        const plaintext = await recoverSenderPlaintext(row, user.id);
 
         if (!plaintext) {
-          // Per Signal/WhatsApp model: history is never re-encrypted across own
-          // devices on demand. If this device no longer caches the plaintext,
-          // the retry can NEVER succeed → close it permanently to avoid an
-          // infinite re-list/re-log loop on every polling cycle.
           result.skipped += 1;
-          await markRetryFailed(row.request_id, 'plaintext_unavailable_on_sender_device');
+          await markRetryFailed(row.request_id, 'plaintext_and_encrypted_archive_unavailable');
           continue;
         }
 
@@ -97,7 +119,7 @@ export async function processDeviceCopyRetryRequests(_limit = 20): Promise<Retry
           plaintext,
           forceFreshSession: true,
           forceX3DH: true,
-          useOneTimePrekey: false,
+          useOneTimePrekey: true,
         });
 
         if (!encrypted) {
@@ -106,7 +128,7 @@ export async function processDeviceCopyRetryRequests(_limit = 20): Promise<Retry
           continue;
         }
 
-        const { error: completeError } = await (supabase as any).rpc("complete_device_copy_retry", {
+        const { error: completeError } = await (supabase as any).rpc('complete_device_copy_retry', {
           p_request_id: row.request_id,
           p_encrypted_body: encrypted.encryptedBody,
           p_sender_device_id: encrypted.senderDeviceId,
