@@ -41,7 +41,23 @@ jobs:
           fi
 
       - name: Test
-        run: npm run test
+        shell: bash
+        run: |
+          set +e
+          npm run test 2>&1 | tee test-output.txt
+          test_status=${PIPESTATUS[0]}
+          set -e
+          exit "$test_status"
 
       - name: Build
         run: npm run build
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2ee-ci-diagnostics
+          retention-days: 2
+          path: |
+            eslint-report.json
+            test-output.txt
