@@ -56,8 +56,22 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Upload audit diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2ee-audit-diagnostics
+          retention-days: 2
+          path: |
+            eslint-report.json
+            src/hooks/useMessageQueueSignal.ts
+            src/lib/messaging/multiDeviceFanout.ts
+            src/lib/crypto/deviceRatchet.ts
+            src/hooks/useDeviceRegistration.ts
+            src/lib/crypto/signedDeviceList.ts
+
       - name: Commit audited delivery fixes
-        if: github.actor != 'github-actions[bot]'
+        if: github.actor != 'github-actions[bot]' && success()
         shell: bash
         run: |
           if git diff --quiet; then
