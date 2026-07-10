@@ -2,7 +2,8 @@
  * ForSure E2EE - Public API v2
  *
  * X25519 + Ed25519 + AES-256-GCM + HKDF-SHA-256
- * Double Ratchet + Hybrid Post-Quantum Ready (Kyber768)
+ * Double Ratchet. Post-quantum mode is not enabled until a real PQ KEM and
+ * ratchet are negotiated and tested end-to-end.
  */
 
 export {
@@ -149,19 +150,20 @@ export {
   unwrapKeysWithPin,
   hasWrappedKeys,
   deleteWrappedKeys,
+  WeakLocalWrappingSecretError,
 } from './pinWrap';
 
 export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
 
-export { fetchPrekeyBundle } from './x3dhBundleRouter';
-
+export { x3dhRespond } from './x3dhSafe';
 export {
   x3dhInitiate,
-  x3dhRespond,
   generateAndUploadSignedPrekey,
   refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
+  fetchPrekeyBundle,
+  fetchPrekeyBundleForDevice,
   isPQXDHAvailable,
   type X3DHPrekeyBundle,
   type X3DHResult,
