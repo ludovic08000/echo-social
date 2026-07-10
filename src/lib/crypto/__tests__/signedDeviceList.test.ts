@@ -1,17 +1,11 @@
 /**
  * L4 — Signed device list integration test
  *
- * Verifies that a companion device's public key signed by the primary's
- * Ed25519 identity is accepted, while every tampering vector is rejected:
- *   1. valid signature → trusted
- *   2. missing signature → rejected
- *   3. bad signature (flipped byte) → rejected
- *   4. signed by a DIFFERENT primary key (server fabricates a "ghost
- *      primary") → rejected via PRIMARY_PUB_MISMATCH
- *   5. tampered companion public key → rejected (signature no longer
- *      covers the new payload)
+ * Verifies that a companion device's X25519 transport key signed by the
+ * account Ed25519 signing root is accepted, while every tampering vector is
+ * rejected.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { hardCrypto } from '../cryptoIntegrity';
 import { bufferToBase64 } from '../utils';
 import {
@@ -20,18 +14,49 @@ import {
   type SignedDeviceEntry,
 } from '../signedDeviceList';
 
+const mocks = vi.hoisted(() => ({
+  accountSigningKey: '',
+}));
+
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    from: (table: string) => {
+      if (table !== 'user_public_keys') throw new Error(`Unexpected table: ${table}`);
+      return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { signing_key: mocks.accountSigningKey },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      };
+    },
+  },
+}));
+
 const USER = '11111111-1111-4111-8111-111111111111';
 const PRIMARY_DEV = 'primary-dev-1';
 const COMP_DEV = 'companion-dev-1';
 
 let primaryKp: CryptoKeyPair;
 let primaryPubB64: string;
+let primaryDeviceKxPubB64: string;
 let companionPubB64: string;
 
 beforeAll(async () => {
   primaryKp = (await hardCrypto.generateKey({ name: 'Ed25519' } as any, true, ['sign', 'verify'])) as CryptoKeyPair;
   const pub = await hardCrypto.exportKey('raw', primaryKp.publicKey);
   primaryPubB64 = bufferToBase64(pub as ArrayBuffer);
+  mocks.accountSigningKey = primaryPubB64;
+
+  const primaryDeviceKx = (await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits'])) as CryptoKeyPair;
+  primaryDeviceKxPubB64 = bufferToBase64(
+    await hardCrypto.exportKey('raw', primaryDeviceKx.publicKey) as ArrayBuffer,
+  );
 
   const compKp = (await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits'])) as CryptoKeyPair;
   const compPub = await hardCrypto.exportKey('raw', compKp.publicKey);
@@ -41,7 +66,7 @@ beforeAll(async () => {
 function primaryEntry(): SignedDeviceEntry {
   return {
     deviceId: PRIMARY_DEV,
-    devicePublicKey: primaryPubB64, // primary's own (Ed25519) advertised pub
+    devicePublicKey: primaryDeviceKxPubB64,
     isPrimary: true,
     primaryDeviceId: null,
     primaryPubB64: null,
@@ -51,7 +76,7 @@ function primaryEntry(): SignedDeviceEntry {
 }
 
 describe('L4 — signed device list', () => {
-  it('accepts a companion signed by the primary', async () => {
+  it('accepts a companion signed by the account signing root', async () => {
     const sig = await signCompanionDevice({
       userId: USER,
       primaryDeviceId: PRIMARY_DEV,
@@ -126,8 +151,7 @@ describe('L4 — signed device list', () => {
     expect(r.find(x => x.deviceId === COMP_DEV)?.reason).toBe('BAD_SIGNATURE');
   });
 
-  it('rejects ghost-primary attack: signature from a DIFFERENT pub than the advertised primary', async () => {
-    // Attacker generates a parallel Ed25519 keypair and signs a rogue companion
+  it('rejects a ghost signing-root attack', async () => {
     const attackerKp = (await hardCrypto.generateKey({ name: 'Ed25519' } as any, true, ['sign', 'verify'])) as CryptoKeyPair;
     const attackerPub = bufferToBase64(await hardCrypto.exportKey('raw', attackerKp.publicKey) as ArrayBuffer);
     const sig = await signCompanionDevice({
@@ -140,13 +164,13 @@ describe('L4 — signed device list', () => {
     });
 
     const list: SignedDeviceEntry[] = [
-      primaryEntry(), // legitimate primary's pub advertised
+      primaryEntry(),
       {
         deviceId: COMP_DEV,
         devicePublicKey: companionPubB64,
         isPrimary: false,
         primaryDeviceId: PRIMARY_DEV,
-        primaryPubB64: attackerPub, // ⚠ does NOT match the advertised primary pub
+        primaryPubB64: attackerPub,
         signatureB64: sig.signature_b64,
         signedAt: sig.signed_at,
       },
@@ -156,7 +180,7 @@ describe('L4 — signed device list', () => {
     expect(r.find(x => x.deviceId === COMP_DEV)?.reason).toBe('PRIMARY_PUB_MISMATCH');
   });
 
-  it('rejects a tampered companion public key (signature payload mismatch)', async () => {
+  it('rejects a tampered companion transport key', async () => {
     const sig = await signCompanionDevice({
       userId: USER,
       primaryDeviceId: PRIMARY_DEV,
@@ -165,8 +189,6 @@ describe('L4 — signed device list', () => {
       companionDeviceId: COMP_DEV,
       companionPublicKeyB64: companionPubB64,
     });
-    // Generate ANOTHER companion key — the server claims this new key
-    // belongs to the same companion, with the original signature
     const fakeKp = (await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits'])) as CryptoKeyPair;
     const fakePub = bufferToBase64(await hardCrypto.exportKey('raw', fakeKp.publicKey) as ArrayBuffer);
 
@@ -174,7 +196,7 @@ describe('L4 — signed device list', () => {
       primaryEntry(),
       {
         deviceId: COMP_DEV,
-        devicePublicKey: fakePub, // ⚠ swapped
+        devicePublicKey: fakePub,
         isPrimary: false,
         primaryDeviceId: PRIMARY_DEV,
         primaryPubB64: primaryPubB64,
