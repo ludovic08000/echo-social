@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Local identity-key wrapping.
  *
  * Security boundary:
@@ -181,5 +181,7 @@ export async function deleteWrappedKeys(userId: string): Promise<void> {
     await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readwrite', (tx) => {
       tx.objectStore(PIN_WRAP_STORE).delete(userId);
     });
-  } catch {}
+  } catch {
+    // Deletion is best-effort during logout/account cleanup.
+  }
 }
