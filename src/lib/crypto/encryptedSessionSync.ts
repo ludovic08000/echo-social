@@ -21,7 +21,10 @@ import {
 } from './ratchet';
 
 const TABLE = 'e2ee_session_sync';
-const SESSION_ESCROW_ENABLED = import.meta.env.VITE_ALLOW_E2EE_SESSION_ESCROW === 'true';
+
+function isSessionEscrowEnabled(): boolean {
+  return import.meta.env.VITE_ALLOW_E2EE_SESSION_ESCROW === 'true';
+}
 
 export type SyncKind = 'session' | 'archive';
 
@@ -129,7 +132,7 @@ async function fetchBlob(context: SyncContext): Promise<EncryptedBlob | null> {
 }
 
 export async function pushEncryptedSession(convId: string, state: RatchetState): Promise<boolean> {
-  if (!SESSION_ESCROW_ENABLED) return false;
+  if (!isSessionEscrowEnabled()) return false;
   const context = getContext(convId, 'session');
   if (!context) return false;
 
@@ -149,7 +152,7 @@ export async function pushEncryptedArchive(_convId: string, _archiveJson: string
 }
 
 export async function pullEncryptedSession(convId: string): Promise<RatchetState | null> {
-  if (!SESSION_ESCROW_ENABLED) return null;
+  if (!isSessionEscrowEnabled()) return null;
   const context = getContext(convId, 'session');
   if (!context) return null;
 
