@@ -45,15 +45,16 @@ import {
   initRatchetAsResponder,
 } from '../ratchet';
 import { bufferToBase64 } from '../utils';
-import {
-  pushEncryptedSession,
-  pullEncryptedSession,
-} from '../encryptedSessionSync';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- X25519/Ed25519 not in lib.dom types */
 const KX = { name: 'X25519' } as any;
 const SIG = { name: 'Ed25519' } as any;
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+async function loadSessionSync(enabled: boolean) {
+  vi.stubEnv('VITE_ALLOW_E2EE_SESSION_ESCROW', enabled ? 'true' : 'false');
+  return import('../encryptedSessionSync');
+}
 
 async function makeState() {
   const sharedSecret = crypto.getRandomValues(new Uint8Array(64)).buffer;
@@ -72,11 +73,23 @@ async function makeState() {
 
 describe('encryptedSessionSync', () => {
   beforeEach(async () => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
     store.length = 0;
     masterKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   });
 
-  it('round-trips a ratchet state through Supabase', async () => {
+  it('is disabled by default to preserve forward secrecy', async () => {
+    const { pushEncryptedSession, pullEncryptedSession } = await loadSessionSync(false);
+    const state = await makeState();
+
+    expect(await pushEncryptedSession('conv-default-off', state)).toBe(false);
+    expect(await pullEncryptedSession('conv-default-off')).toBeNull();
+    expect(store).toHaveLength(0);
+  });
+
+  it('round-trips a ratchet state when escrow is explicitly enabled', async () => {
+    const { pushEncryptedSession, pullEncryptedSession } = await loadSessionSync(true);
     const state = await makeState();
     const pushed = await pushEncryptedSession('conv-sync', state);
     expect(pushed).toBe(true);
@@ -86,20 +99,21 @@ describe('encryptedSessionSync', () => {
     expect(restored!.conversationId).toBe(state.conversationId);
   });
 
-  it('stores only opaque ciphertext — the server never sees the ratchet (server-blind)', async () => {
+  it('stores only opaque ciphertext when explicitly enabled', async () => {
+    const { pushEncryptedSession } = await loadSessionSync(true);
     const state = await makeState();
     await pushEncryptedSession('conv-blind', state);
 
     const row = store.find(r => r.conversation_id === 'conv-blind');
     expect(row).toBeTruthy();
-    // The stored blob must not contain recognizable state fields.
     expect(row!.encrypted_blob).not.toContain('conversationId');
     expect(row!.encrypted_blob).not.toContain('rootKey');
     expect(row!.encrypted_blob).not.toContain(state.conversationId);
     expect(row!.iv).toBeTruthy();
   });
 
-  it('is a no-op when the vault is locked (no master key)', async () => {
+  it('is a no-op when the vault is locked', async () => {
+    const { pushEncryptedSession } = await loadSessionSync(true);
     masterKey = null;
     const state = await makeState();
     const pushed = await pushEncryptedSession('conv-locked', state);
@@ -108,14 +122,16 @@ describe('encryptedSessionSync', () => {
   });
 
   it('returns null when pulling with a locked vault even if a blob exists', async () => {
+    const { pushEncryptedSession, pullEncryptedSession } = await loadSessionSync(true);
     const state = await makeState();
     await pushEncryptedSession('conv-lock-pull', state);
-    masterKey = null; // vault locks before restore
+    masterKey = null;
     const restored = await pullEncryptedSession('conv-lock-pull');
     expect(restored).toBeNull();
   });
 
   it('returns null when there is no backup', async () => {
+    const { pullEncryptedSession } = await loadSessionSync(true);
     const restored = await pullEncryptedSession('conv-absent');
     expect(restored).toBeNull();
   });
