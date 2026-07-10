@@ -149,12 +149,15 @@ export {
 
 export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
 
-export { x3dhRespond } from './x3dhSafe';
-export { fetchPrekeyBundle, DeviceX3DHRouteRequiredError } from './x3dhBundleSafe';
 export {
   x3dhInitiate,
+  x3dhRespond,
   generateAndUploadSignedPrekey,
   refreshSignedPrekeyIfNeeded,
+  LegacyX3DHDisabledError,
+} from './x3dhSafe';
+export { fetchPrekeyBundle, DeviceX3DHRouteRequiredError } from './x3dhBundleSafe';
+export {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
   fetchPrekeyBundleForDevice,
