@@ -1,6 +1,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from './cryptoIntegrity';
-import { saveTrustedDevice } from './deviceTrust';
+import {
+  isCryptographicallyTrustedDevice,
+  loadTrustedDevice,
+  saveTrustedDevice,
+} from './deviceTrust';
 
 const DEVICE_ID_KEY = 'forsure-current-device-id-v2';
 const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000;
@@ -13,6 +17,13 @@ export interface DeviceListEntry {
   createdAt: string;
   lastSeenAt: string;
   revokedAt: string | null;
+}
+
+export class DeviceRevokedError extends Error {
+  constructor(deviceId: string) {
+    super(`DEVICE_REVOKED: ${deviceId}`);
+    this.name = 'DeviceRevokedError';
+  }
 }
 
 export function getOrCreateCurrentDeviceId(): string {
@@ -33,22 +44,41 @@ export async function publishCurrentDevice(
   const deviceId = getOrCreateCurrentDeviceId();
   const now = new Date().toISOString();
 
-  await supabase
+  // Revocation is monotonic from the client's point of view. A device that still
+  // possesses an old authenticated session must not be able to clear its own
+  // revoked_at value by republishing the same identifier.
+  const { data: existing, error: readError } = await supabase
+    .from('user_devices' as any)
+    .select('created_at, last_seen_at, revoked_at')
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (readError) throw readError;
+  if ((existing as any)?.revoked_at) throw new DeviceRevokedError(deviceId);
+
+  const { error: publishError } = await supabase
     .from('user_devices' as any)
     .upsert({
       user_id: userId,
       device_id: deviceId,
       device_fingerprint: fingerprint,
       last_seen_at: now,
-      revoked_at: null,
+      // Deliberately omit revoked_at. Only an explicit, separately authorized
+      // recovery flow may un-revoke a device.
     }, { onConflict: 'user_id,device_id' });
 
+  if (publishError) throw publishError;
+
+  const cached = loadTrustedDevice(userId, deviceId);
+  const remainsTrusted = isCryptographicallyTrustedDevice(cached);
   saveTrustedDevice({
     userId,
     deviceId,
     fingerprint,
-    trustLevel: 'trusted',
-    createdAt: Date.now(),
+    signedBy: remainsTrusted ? cached?.signedBy : undefined,
+    trustLevel: remainsTrusted ? 'trusted' : 'unverified',
+    createdAt: cached?.createdAt ?? Date.now(),
     lastSeenAt: Date.now(),
   });
 
@@ -57,16 +87,16 @@ export async function publishCurrentDevice(
     userId,
     fingerprint,
     identityEpoch,
-    createdAt: now,
+    createdAt: (existing as any)?.created_at || now,
     lastSeenAt: now,
     revokedAt: null,
   };
 }
 
 function isFresh(lastSeenAt: string | null | undefined): boolean {
-  if (!lastSeenAt) return true;
+  if (!lastSeenAt) return false;
   const ts = new Date(lastSeenAt).getTime();
-  if (!Number.isFinite(ts)) return true;
+  if (!Number.isFinite(ts)) return false;
   return Date.now() - ts <= MAX_DEVICE_STALE_MS;
 }
 
@@ -106,8 +136,8 @@ export async function fetchActiveDevices(userId: string): Promise<DeviceListEntr
       deviceId: row.device_id,
       fingerprint: row.device_fingerprint || '',
       identityEpoch: 1,
-      createdAt: row.created_at || row.last_seen_at || new Date().toISOString(),
-      lastSeenAt: row.last_seen_at || new Date().toISOString(),
+      createdAt: row.created_at || row.last_seen_at,
+      lastSeenAt: row.last_seen_at,
       revokedAt: row.revoked_at || null,
     }));
 
@@ -125,9 +155,11 @@ export async function revokeCurrentDevice(userId: string): Promise<void> {
   const deviceId = getOrCreateCurrentDeviceId();
   const now = new Date().toISOString();
 
-  await supabase
+  const { error } = await supabase
     .from('user_devices' as any)
     .update({ revoked_at: now, last_seen_at: now } as any)
     .eq('user_id', userId)
     .eq('device_id', deviceId);
+
+  if (error) throw error;
 }
