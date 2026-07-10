@@ -89,7 +89,9 @@ export function listTrustedDevices(userId: string): TrustedDeviceRecord[] {
     try {
       const parsed = JSON.parse(localStorage.getItem(k) || 'null');
       if (isValidRecord(parsed)) out.push(normalizeRecord(parsed));
-    } catch {}
+    } catch {
+      // Ignore malformed cache entries; localStorage is not a trust authority.
+    }
   }
 
   return out.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
