@@ -18,7 +18,6 @@ export {
   initRatchetAsInitiator,
   initRatchetAsResponder,
   ratchetEncrypt,
-  ratchetDecrypt,
   serializeRatchetState,
   deserializeRatchetState,
   getRatchetReadiness,
@@ -28,6 +27,7 @@ export {
   type RatchetEnvelope,
   type RatchetReadiness,
 } from './ratchet';
+export { ratchetDecrypt } from './ratchetSafe';
 
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
@@ -66,9 +66,7 @@ export {
   assertEnvelopeEpochValid,
 } from './epochEnvelope';
 
-export {
-  createSealedSenderEnvelope,
-} from './sealedSender';
+export { createSealedSenderEnvelope } from './sealedSender';
 
 export {
   issueSenderCertificate,
@@ -120,11 +118,7 @@ export {
   type SessionKey,
 } from './keyManager';
 
-export {
-  PROTOCOL_VERSION,
-  CLASSICAL_KEM_ID,
-  PQ_KEM_ID,
-} from './constants';
+export { PROTOCOL_VERSION, CLASSICAL_KEM_ID, PQ_KEM_ID } from './constants';
 
 export {
   cryptoRateCheck,
@@ -156,10 +150,7 @@ export {
 export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
 
 export { x3dhRespond } from './x3dhSafe';
-export {
-  fetchPrekeyBundle,
-  DeviceX3DHRouteRequiredError,
-} from './x3dhBundleSafe';
+export { fetchPrekeyBundle, DeviceX3DHRouteRequiredError } from './x3dhBundleSafe';
 export {
   x3dhInitiate,
   generateAndUploadSignedPrekey,
