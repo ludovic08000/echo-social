@@ -24,7 +24,31 @@ jobs:
 
       - name: Apply one-shot audited delivery patch
         if: github.actor != 'github-actions[bot]'
-        run: python3 scripts/apply-e2ee-audit-fixes.py
+        shell: bash
+        run: |
+          python3 scripts/apply-e2ee-audit-fixes.py
+          python3 <<'PY'
+          from pathlib import Path
+
+          queue = Path('src/hooks/useMessageQueueSignal.ts')
+          text = queue.read_text(encoding='utf-8')
+          text = text.replace('    let fanoutTimedOut = false;', '    const fanoutTimedOut = false;', 1)
+          queue.write_text(text, encoding='utf-8')
+
+          fanout = Path('src/lib/messaging/multiDeviceFanout.ts')
+          text = fanout.read_text(encoding='utf-8')
+          start = "): Promise<string | null> {\n  try {\n    if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;"
+          replacement = "): Promise<string | null> {\n    if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;"
+          if start not in text:
+              raise RuntimeError('x3dhUnwrapForDevice try wrapper not found')
+          text = text.replace(start, replacement, 1)
+          end = "    return new hardGlobals.TextDecoder().decode(pt);\n  } catch (e) {\n    throw e;\n  }\n}"
+          replacement = "    return new hardGlobals.TextDecoder().decode(pt);\n}"
+          if end not in text:
+              raise RuntimeError('x3dhUnwrapForDevice rethrow wrapper not found')
+          text = text.replace(end, replacement, 1)
+          fanout.write_text(text, encoding='utf-8')
+          PY
 
       - name: Setup Node
         uses: actions/setup-node@v4
