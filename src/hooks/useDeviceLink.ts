@@ -28,6 +28,7 @@ import {
   exportArchiveMasterKeyForDeviceLink,
   importArchiveMasterKeyFromDeviceLink,
 } from '@/lib/crypto/archiveMasterKey';
+import { finalizeLinkedDeviceAfterRestore } from '@/lib/crypto/deviceLinkTrust';
 import {
   getCurrentDeviceId,
   getCurrentDeviceLabel,
@@ -364,6 +365,11 @@ export function useDeviceLink() {
       });
       if (completeError) throw completeError;
 
+      const trusted = await finalizeLinkedDeviceAfterRestore(user.id, pending.requesterDeviceId);
+      if (!trusted) {
+        console.warn('[DeviceLink] device restored but signed-list publication is pending');
+      }
+
       clearPendingLink(token);
       notifyKeysRestored('restored_from_linked_device');
       console.log('[DeviceLink] fresh Sesame device restored successfully');
@@ -448,6 +454,9 @@ export function useDeviceLink() {
       const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
       const keysJson = new TextDecoder().decode(plainBuf);
       await restoreLocalKeys(keysJson, user.id);
+
+      const currentDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+      void finalizeLinkedDeviceAfterRestore(user.id, currentDeviceId).catch(() => {});
 
       notifyKeysRestored('restored_from_legacy_device_link');
       console.log('[DeviceLink] legacy keys restored successfully');
