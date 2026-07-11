@@ -130,14 +130,19 @@ function installSupabaseTables(insertSink: any[]) {
 }
 
 describe('multiDeviceFanout trust gate', () => {
-  it('fans out only to devices returned by the verified device registry', async () => {
+  it('excludes the current sender device but keeps another sender device and peer devices', async () => {
     const inserted: any[] = [];
     installSupabaseTables(inserted);
     (listFanoutTargets as any).mockResolvedValue([
       {
         userId: ALICE,
         deviceId: 'alice-dev-1',
-        devicePublicKey: 'SELF',
+        devicePublicKey: 'CURRENT_SELF',
+      },
+      {
+        userId: ALICE,
+        deviceId: 'alice-dev-2',
+        devicePublicKey: 'OTHER_SELF',
       },
       {
         userId: BOB,
@@ -163,9 +168,10 @@ describe('multiDeviceFanout trust gate', () => {
     expect(listFanoutTargets).toHaveBeenCalledWith(ALICE, [ALICE, BOB], { verifyPrekeys: false });
     expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
     expect(inserted).toHaveLength(2);
-    expect(inserted.map(row => row.recipient_device_id).sort()).toEqual(['alice-dev-1', 'bob-signed-dev']);
+    expect(inserted.map(row => row.recipient_device_id).sort()).toEqual(['alice-dev-2', 'bob-signed-dev']);
+    expect(inserted.some(row => row.recipient_device_id === 'alice-dev-1')).toBe(false);
     expect(inserted.find(row => row.recipient_device_id === 'bob-signed-dev')?.recipient_user_id).toBe(BOB);
-    expect(inserted.find(row => row.recipient_device_id === 'alice-dev-1')?.recipient_user_id).toBe(ALICE);
+    expect(inserted.find(row => row.recipient_device_id === 'alice-dev-2')?.recipient_user_id).toBe(ALICE);
   });
 
   it('does not let one broken device abort fan-out to the remaining devices', async () => {
