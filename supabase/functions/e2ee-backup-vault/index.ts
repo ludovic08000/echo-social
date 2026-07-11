@@ -10,6 +10,8 @@ const ALLOWED_ORIGINS = [
   'https://www.forsure.fans',
 ];
 
+type BackupType = 'account' | 'recovery';
+
 interface EncryptedBackupEnvelope {
   encrypted_blob: string;
   iv: string;
@@ -17,15 +19,22 @@ interface EncryptedBackupEnvelope {
   wrapped_master_key: string;
   master_key_iv: string;
   version: number;
-  backup_type: 'account' | 'recovery';
+  backup_type: BackupType;
   created_at: string;
 }
 
+interface R2Config {
+  endpoint: string;
+  host: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
 function isAllowedOrigin(origin: string): boolean {
-  if (ALLOWED_ORIGINS.includes(origin)) return true;
-  if (/^https:\/\/[a-z0-9-]+--[a-f0-9-]+\.lovable\.app$/.test(origin)) return true;
-  if (/^https:\/\/[a-z0-9-]+\.lovableproject\.com$/.test(origin)) return true;
-  return false;
+  return ALLOWED_ORIGINS.includes(origin)
+    || /^https:\/\/[a-z0-9-]+--[a-f0-9-]+\.lovable\.app$/.test(origin)
+    || /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/.test(origin);
 }
 
 function corsHeaders(req: Request): Record<string, string> {
@@ -35,33 +44,30 @@ function corsHeaders(req: Request): Record<string, string> {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin',
+    'Cache-Control': 'no-store',
+    Vary: 'Origin',
   };
 }
 
-function json(req: Request, payload: unknown, status = 200): Response {
-  return new Response(JSON.stringify(payload), {
+function json(req: Request, body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      ...corsHeaders(req),
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
-    },
+    headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
   });
 }
 
-function validateBase64Like(value: unknown, maxLength: number): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
+function isNonEmptyString(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
 
 function validateEnvelope(value: unknown): EncryptedBackupEnvelope | null {
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
-  if (!validateBase64Like(row.encrypted_blob, MAX_BACKUP_BYTES * 2)) return null;
-  if (!validateBase64Like(row.iv, 256)) return null;
-  if (!validateBase64Like(row.salt, 512)) return null;
-  if (!validateBase64Like(row.wrapped_master_key, 4096)) return null;
-  if (!validateBase64Like(row.master_key_iv, 256)) return null;
+  if (!isNonEmptyString(row.encrypted_blob, MAX_BACKUP_BYTES * 2)) return null;
+  if (!isNonEmptyString(row.iv, 256)) return null;
+  if (!isNonEmptyString(row.salt, 512)) return null;
+  if (!isNonEmptyString(row.wrapped_master_key, 4096)) return null;
+  if (!isNonEmptyString(row.master_key_iv, 256)) return null;
   if (!Number.isInteger(row.version) || Number(row.version) < 1 || Number(row.version) > 100) return null;
   if (row.backup_type !== 'account' && row.backup_type !== 'recovery') return null;
   if (typeof row.created_at !== 'string' || Number.isNaN(Date.parse(row.created_at))) return null;
@@ -79,54 +85,46 @@ function validateEnvelope(value: unknown): EncryptedBackupEnvelope | null {
 }
 
 function toHex(bytes: Uint8Array): string {
-  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function sha256Hex(data: Uint8Array): Promise<string> {
-  const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
-  return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', buffer)));
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const source = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', source)));
 }
 
-async function hmacBytes(key: Uint8Array, message: string): Promise<Uint8Array> {
+async function hmac(key: Uint8Array, message: string): Promise<Uint8Array> {
   const raw = key.buffer.slice(key.byteOffset, key.byteOffset + key.byteLength) as ArrayBuffer;
   const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    raw,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
+    'raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   );
-  return new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(message)));
+  return new Uint8Array(
+    await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(message)),
+  );
 }
 
-async function hmacString(key: string, message: string): Promise<Uint8Array> {
-  return hmacBytes(new TextEncoder().encode(key), message);
+async function hmacText(key: string, message: string): Promise<Uint8Array> {
+  return hmac(new TextEncoder().encode(key), message);
 }
 
-async function opaqueUserNamespace(userId: string, namespaceSecret: string): Promise<string> {
-  const digest = await hmacString(namespaceSecret, `forsure-r2-backup-v1:${userId}`);
-  return toHex(digest);
-}
-
-interface R2Config {
-  endpoint: string;
-  host: string;
-  bucket: string;
-  accessKeyId: string;
-  secretAccessKey: string;
+async function opaqueNamespace(userId: string, secret: string): Promise<string> {
+  return toHex(await hmacText(secret, `forsure-r2-backup-v1:${userId}`));
 }
 
 function loadR2Config(): R2Config {
   const accountId = Deno.env.get('R2_ACCOUNT_ID')?.trim() ?? '';
   let accessKeyId = Deno.env.get('R2_ACCESS_KEY_ID')?.trim() ?? '';
   let secretAccessKey = Deno.env.get('R2_SECRET_ACCESS_KEY')?.trim() ?? '';
-  const bucket = Deno.env.get('R2_BACKUP_BUCKET_NAME')?.trim() ?? '';
+  const bucket = (
+    Deno.env.get('R2_BACKUP_BUCKET_NAME')
+    || Deno.env.get('R2_BUCKET_NAME')
+    || ''
+  ).trim();
   const region = Deno.env.get('R2_REGION')?.trim() ?? '';
 
   if (accessKeyId.length === 64 && secretAccessKey.length === 32) {
     [accessKeyId, secretAccessKey] = [secretAccessKey, accessKeyId];
   }
-
   if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
     throw new Error('R2 backup configuration incomplete');
   }
@@ -142,33 +140,30 @@ function loadR2Config(): R2Config {
   };
 }
 
-function buildAmzDate(now = new Date()): { amzDate: string; shortDate: string } {
-  const amzDate = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-  return { amzDate, shortDate: amzDate.slice(0, 8) };
+function awsDate(now = new Date()): { full: string; short: string } {
+  const full = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  return { full, short: full.slice(0, 8) };
 }
 
-async function signRequest(args: {
+async function awsAuthorization(args: {
   method: 'GET' | 'PUT' | 'DELETE';
-  canonicalPath: string;
+  path: string;
   headers: Record<string, string>;
   payloadHash: string;
-  amzDate: string;
+  date: string;
   shortDate: string;
   accessKeyId: string;
   secretAccessKey: string;
 }): Promise<string> {
-  const signedHeaderKeys = Object.keys(args.headers).map((key) => key.toLowerCase()).sort();
-  const normalizedHeaders: Record<string, string> = {};
-  for (const [key, value] of Object.entries(args.headers)) {
-    normalizedHeaders[key.toLowerCase()] = value.trim().replace(/\s+/g, ' ');
-  }
-  const signedHeaders = signedHeaderKeys.join(';');
-  const canonicalHeaders = signedHeaderKeys
-    .map((key) => `${key}:${normalizedHeaders[key]}\n`)
-    .join('');
+  const normalized = Object.fromEntries(
+    Object.entries(args.headers).map(([key, value]) => [key.toLowerCase(), value.trim().replace(/\s+/g, ' ')]),
+  );
+  const keys = Object.keys(normalized).sort();
+  const signedHeaders = keys.join(';');
+  const canonicalHeaders = keys.map((key) => `${key}:${normalized[key]}\n`).join('');
   const canonicalRequest = [
     args.method,
-    args.canonicalPath,
+    args.path,
     '',
     canonicalHeaders,
     signedHeaders,
@@ -177,55 +172,54 @@ async function signRequest(args: {
   const scope = `${args.shortDate}/auto/s3/aws4_request`;
   const stringToSign = [
     'AWS4-HMAC-SHA256',
-    args.amzDate,
+    args.date,
     scope,
     await sha256Hex(new TextEncoder().encode(canonicalRequest)),
   ].join('\n');
 
-  const kDate = await hmacString(`AWS4${args.secretAccessKey}`, args.shortDate);
-  const kRegion = await hmacBytes(kDate, 'auto');
-  const kService = await hmacBytes(kRegion, 's3');
-  const kSigning = await hmacBytes(kService, 'aws4_request');
-  const signature = toHex(await hmacBytes(kSigning, stringToSign));
+  const kDate = await hmacText(`AWS4${args.secretAccessKey}`, args.shortDate);
+  const kRegion = await hmac(kDate, 'auto');
+  const kService = await hmac(kRegion, 's3');
+  const kSigning = await hmac(kService, 'aws4_request');
+  const signature = toHex(await hmac(kSigning, stringToSign));
   return `AWS4-HMAC-SHA256 Credential=${args.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 }
 
-async function r2Request(args: {
-  config: R2Config;
-  method: 'GET' | 'PUT' | 'DELETE';
-  objectKey: string;
-  body?: Uint8Array;
-}): Promise<Response> {
-  const { amzDate, shortDate } = buildAmzDate();
-  const payload = args.body ?? new Uint8Array(0);
+async function r2Request(
+  config: R2Config,
+  method: 'GET' | 'PUT' | 'DELETE',
+  objectKey: string,
+  body?: Uint8Array,
+): Promise<Response> {
+  const payload = body ?? new Uint8Array(0);
   const payloadHash = await sha256Hex(payload);
-  const canonicalPath = `/${args.config.bucket}/${args.objectKey}`;
+  const date = awsDate();
+  const path = `/${config.bucket}/${objectKey}`;
   const headers: Record<string, string> = {
-    host: args.config.host,
+    host: config.host,
     'x-amz-content-sha256': payloadHash,
-    'x-amz-date': amzDate,
+    'x-amz-date': date.full,
   };
-
-  if (args.method === 'PUT') {
+  if (method === 'PUT') {
     headers['content-type'] = 'application/octet-stream';
     headers['cache-control'] = 'private, no-store';
   }
 
-  const authorization = await signRequest({
-    method: args.method,
-    canonicalPath,
+  const authorization = await awsAuthorization({
+    method,
+    path,
     headers,
     payloadHash,
-    amzDate,
-    shortDate,
-    accessKeyId: args.config.accessKeyId,
-    secretAccessKey: args.config.secretAccessKey,
+    date: date.full,
+    shortDate: date.short,
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
   });
 
-  return fetch(`${args.config.endpoint}${canonicalPath}`, {
-    method: args.method,
+  return fetch(`${config.endpoint}${path}`, {
+    method,
     headers: { ...headers, Authorization: authorization },
-    body: args.method === 'PUT' ? payload : undefined,
+    body: method === 'PUT' ? payload : undefined,
   });
 }
 
@@ -234,12 +228,12 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json(req, { error: 'Method not allowed' }, 405);
 
   try {
-    const authorization = req.headers.get('Authorization');
+    const authorization = req.headers.get('authorization');
     if (!authorization?.startsWith('Bearer ')) {
       return json(req, { error: 'Not authenticated' }, 401);
     }
 
-    const token = authorization.slice('Bearer '.length);
+    const token = authorization.slice(7);
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -257,39 +251,39 @@ Deno.serve(async (req) => {
     );
     if (rateLimited) return rateLimited;
 
-    const namespaceSecret = Deno.env.get('R2_BACKUP_NAMESPACE_SECRET')?.trim() ?? '';
+    const namespaceSecret = (
+      Deno.env.get('R2_BACKUP_NAMESPACE_SECRET')
+      || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      || ''
+    ).trim();
     if (namespaceSecret.length < 32) {
       return json(req, { error: 'Backup vault unavailable' }, 503);
     }
 
-    const config = loadR2Config();
     const input = await req.json().catch(() => null) as Record<string, unknown> | null;
     const action = input?.action;
-    const backupType = input?.backup_type === 'recovery' ? 'recovery' : 'account';
-    const namespace = await opaqueUserNamespace(userId, namespaceSecret);
+    const backupType: BackupType = input?.backup_type === 'recovery' ? 'recovery' : 'account';
+    const namespace = await opaqueNamespace(userId, namespaceSecret);
     const objectKey = `e2ee-backups/v1/${namespace}/${backupType}/latest.enc`;
+    const config = loadR2Config();
 
     if (action === 'put') {
       const backup = validateEnvelope(input?.backup);
       if (!backup || backup.backup_type !== backupType) {
         return json(req, { error: 'Invalid encrypted backup envelope' }, 400);
       }
-
-      const vaultObject = {
+      const bytes = new TextEncoder().encode(JSON.stringify({
         schema: 'forsure-e2ee-r2-v1',
         backup,
-      };
-      const bytes = new TextEncoder().encode(JSON.stringify(vaultObject));
+      }));
       if (bytes.byteLength > MAX_BACKUP_BYTES) {
         return json(req, { error: 'Encrypted backup too large' }, 413);
       }
-
-      const response = await r2Request({ config, method: 'PUT', objectKey, body: bytes });
+      const response = await r2Request(config, 'PUT', objectKey, bytes);
       if (!response.ok) {
         console.error('[e2ee-backup-vault] R2 PUT failed', response.status);
         return json(req, { error: 'Backup mirror write failed' }, 502);
       }
-
       return json(req, {
         ok: true,
         backup_type: backupType,
@@ -300,12 +294,9 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'get') {
-      const response = await r2Request({ config, method: 'GET', objectKey });
+      const response = await r2Request(config, 'GET', objectKey);
       if (response.status === 404) return json(req, { ok: true, found: false });
-      if (!response.ok) {
-        console.error('[e2ee-backup-vault] R2 GET failed', response.status);
-        return json(req, { error: 'Backup mirror read failed' }, 502);
-      }
+      if (!response.ok) return json(req, { error: 'Backup mirror read failed' }, 502);
 
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (bytes.byteLength === 0 || bytes.byteLength > MAX_BACKUP_BYTES) {
@@ -318,7 +309,6 @@ Deno.serve(async (req) => {
       if (!backup || backup.backup_type !== backupType) {
         return json(req, { error: 'Corrupted backup mirror object' }, 502);
       }
-
       return json(req, {
         ok: true,
         found: true,
@@ -328,7 +318,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'delete') {
-      const response = await r2Request({ config, method: 'DELETE', objectKey });
+      const response = await r2Request(config, 'DELETE', objectKey);
       if (!response.ok && response.status !== 404) {
         return json(req, { error: 'Backup mirror delete failed' }, 502);
       }
