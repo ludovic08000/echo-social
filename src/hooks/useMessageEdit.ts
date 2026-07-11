@@ -5,19 +5,20 @@ import { canEditMessage, createEncryptedMessageEdit } from '@/lib/messaging/mess
 import { loadMessageEditContext, type MessageEditContext } from '@/lib/messaging/messageEditContext';
 import { retainMessageEditRealtime } from '@/lib/messaging/messageEditRealtime';
 
-export function useMessageEdit(messageId?: string) {
+export function useMessageEdit(messageId?: string, enabled = true) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const active = Boolean(enabled && messageId && user);
 
   useEffect(() => {
-    if (!user) return;
+    if (!active || !user) return;
     return retainMessageEditRealtime(user.id, queryClient);
-  }, [user?.id, queryClient]);
+  }, [active, user?.id, queryClient]);
 
   const queryKey = ['message-edit', messageId ?? 'none', user?.id ?? 'anon'] as const;
   const contextQuery = useQuery({
     queryKey,
-    enabled: Boolean(messageId && user),
+    enabled: active,
     queryFn: () => loadMessageEditContext(messageId!, user!.id),
     staleTime: 10_000,
     gcTime: 10 * 60_000,
@@ -56,8 +57,8 @@ export function useMessageEdit(messageId?: string) {
   });
 
   const canEdit = useMemo(
-    () => canEditMessage(contextQuery.data?.meta, user?.id),
-    [contextQuery.data?.meta, user?.id],
+    () => active && canEditMessage(contextQuery.data?.meta, user?.id),
+    [active, contextQuery.data?.meta, user?.id],
   );
 
   return {
