@@ -68,6 +68,28 @@ export async function mirrorCurrentBackupToR2(
 }
 
 /**
+ * Backup creation is asynchronous in the legacy account module. Retry a few
+ * bounded times so the first successful row is mirrored without delaying login.
+ */
+export function scheduleBackupMirrorToR2(
+  userId: string,
+  backupType: 'account' | 'recovery' = 'account',
+): void {
+  if (!userId || typeof window === 'undefined') return;
+  const delays = [0, 2_000, 8_000];
+  let completed = false;
+
+  for (const delay of delays) {
+    window.setTimeout(() => {
+      if (completed) return;
+      void mirrorCurrentBackupToR2(userId, backupType)
+        .then((ok) => { if (ok) completed = true; })
+        .catch(() => {});
+    }, delay);
+  }
+}
+
+/**
  * If the hot Supabase backup row is missing, recover its encrypted envelope
  * from R2 and re-index it. No plaintext or unwrapped key crosses the network.
  */
