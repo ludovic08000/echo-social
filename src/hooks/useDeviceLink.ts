@@ -43,6 +43,7 @@ import {
 
 const PBKDF2_ITERATIONS = 600_000;
 const LINK_PRIVATE_KEY_PREFIX = 'forsure:device-link:private:';
+const IDENTITY_STORE = 'identity-keys';
 
 interface StoredLinkRequest {
   privateJwk: JsonWebKey;
@@ -137,8 +138,9 @@ async function writeSideStore(dbKey: 'ratchet', storeName: string, records: any[
 }
 
 /**
- * Collect account-scoped E2EE material. Device-specific KX identities are
- * filtered out; the new device must publish its own keys after restore.
+ * Collect account-scoped E2EE material. In the approved Sesame flow only the
+ * account identity store is transferred. Session and prekey stores are
+ * installation-specific and are deliberately excluded.
  */
 async function collectLocalKeys(userId: string, options: CollectOptions = {}): Promise<string> {
   const includePlaintextCache = options.includePlaintextCache ?? true;
@@ -148,11 +150,13 @@ async function collectLocalKeys(userId: string, options: CollectOptions = {}): P
   try {
     const db = await openE2EEDB();
     for (const storeName of Array.from(db.objectStoreNames)) {
+      if (!includeLegacySessions && storeName !== IDENTITY_STORE) continue;
+
       let records = await runTx([storeName], 'readonly', (tx) =>
         reqToPromise(tx.objectStore(storeName).getAll() as IDBRequest<any[]>),
       ).catch(() => []);
 
-      if (storeName === 'identity-keys') {
+      if (storeName === IDENTITY_STORE) {
         records = records.filter((record: any) =>
           !(typeof record?.id === 'string' && record.id.startsWith('device-kx::')),
         );
@@ -162,8 +166,7 @@ async function collectLocalKeys(userId: string, options: CollectOptions = {}): P
     }
   } catch {}
 
-  // Only old PIN payloads retain the old ratchet snapshot for backwards
-  // compatibility. The approved v2 flow always starts fresh Sesame sessions.
+  // Only the explicitly legacy PIN payload keeps old ratchet state.
   if (includeLegacySessions) {
     const ratchets = await readSideStore('ratchet', 'ratchet-states');
     if (ratchets.length > 0) data['ratchet:states'] = ratchets;
@@ -196,10 +199,13 @@ async function collectLocalKeys(userId: string, options: CollectOptions = {}): P
 /** Restore account material without adopting the source device's sessions. */
 async function restoreLocalKeys(json: string, userId: string): Promise<void> {
   const data = JSON.parse(json) as Record<string, any>;
+  const restoreLegacyDeviceState = data?._meta?.mode === 'legacy';
 
   for (const [key, records] of Object.entries(data)) {
     if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
     const storeName = key.replace('e2ee:', '');
+    if (!restoreLegacyDeviceState && storeName !== IDENTITY_STORE) continue;
+
     try {
       const db = await openE2EEDB();
       if (!db.objectStoreNames.contains(storeName)) continue;
@@ -207,7 +213,7 @@ async function restoreLocalKeys(json: string, userId: string): Promise<void> {
         const store = tx.objectStore(storeName);
         for (const record of records) {
           if (
-            storeName === 'identity-keys' &&
+            storeName === IDENTITY_STORE &&
             typeof record?.id === 'string' &&
             record.id.startsWith('device-kx::')
           ) {
@@ -219,8 +225,7 @@ async function restoreLocalKeys(json: string, userId: string): Promise<void> {
     } catch {}
   }
 
-  // Old payloads may contain ratchets. New approved links never do.
-  if (Array.isArray(data['ratchet:states'])) {
+  if (restoreLegacyDeviceState && Array.isArray(data['ratchet:states'])) {
     await writeSideStore('ratchet', 'ratchet-states', data['ratchet:states']);
   }
 
