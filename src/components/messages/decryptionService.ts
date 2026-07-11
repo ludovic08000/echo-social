@@ -96,8 +96,41 @@ export function clearNegativeCache(messageId?: string, body?: string): void {
   negCache.clear();
 }
 
+/**
+ * Clears every negative-cache entry for a message, regardless of which body
+ * variant produced it. This is required for realtime device-copy delivery:
+ * the copy may arrive while no bubble is mounted, so a component-local retry
+ * listener alone cannot invalidate the stale 60-second failure entry.
+ */
+export function clearNegativeCacheForMessage(messageId: string): void {
+  if (!messageId) return;
+  const prefix = `${messageId}|`;
+  for (const key of negCache.keys()) {
+    if (key.startsWith(prefix)) negCache.delete(key);
+  }
+}
+
 export function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
+}
+
+// Install one module-level listener. It runs even when DecryptedMessageBody is
+// not mounted, so targeted realtime retry events cannot be lost. The marker
+// avoids duplicate listeners during Vite HMR.
+if (typeof window !== 'undefined') {
+  const marker = '__forsureDecryptRetryCacheListenerV1';
+  const globalWindow = window as typeof window & Record<string, unknown>;
+  if (!globalWindow[marker]) {
+    globalWindow[marker] = true;
+    window.addEventListener('forsure-decrypt-retry', (event: Event) => {
+      const messageId = (event as CustomEvent<{ messageId?: string }>).detail?.messageId;
+      if (messageId) {
+        clearNegativeCacheForMessage(messageId);
+        return;
+      }
+      clearNegativeCache();
+    });
+  }
 }
 
 /**
