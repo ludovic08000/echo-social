@@ -1,4 +1,4 @@
-﻿/**
+/**
  * X3DH — Extended Triple Diffie-Hellman Key Agreement (Signal Protocol)
  * 
  * Implements the full X3DH handshake as specified by Signal:
@@ -30,6 +30,16 @@ export interface X3DHPrekeyBundle {
   signingKey: string;
   oneTimePrekey?: string;
   oneTimePrekeyId?: number;
+}
+
+export interface FetchDevicePrekeyBundleOptions {
+  /**
+   * Claim and consume a server-side one-time prekey for this bootstrap.
+   * Defaults to true. Callers that deliberately build an SPK-only envelope
+   * must set this to false before the bundle is fetched, otherwise an OPK is
+   * consumed and then discarded.
+   */
+  claimOneTimePrekey?: boolean;
 }
 
 export interface X3DHResult {
@@ -136,7 +146,7 @@ function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys' | 'user_signed_
 
 function logDBUpsertError(table: 'device_signed_prekeys' | 'user_signed_prekeys', step: string, error: any, payload: Record<string, unknown>) {
   const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
-  const rejectedColumn = Object.keys(payload).find((key) => new RegExp(`\\b${key}\\b`, 'i').test(haystack));
+  const rejectedColumn = Object.keys(payload).find((key) => new RegExp(`\b${key}\b`, 'i').test(haystack));
   const violatedConstraint = haystack.match(/constraint "([^"]+)"/i)?.[1]
     ?? haystack.match(/violates ([^\s]+) constraint/i)?.[1]
     ?? undefined;
@@ -503,7 +513,11 @@ export async function peekDeviceSignedPrekey(peerUserId: string, peerDeviceId: s
   return { signedPrekeyId: material.spkId };
 }
 
-export async function fetchPrekeyBundleForDevice(peerUserId: string, peerDeviceId: string): Promise<X3DHPrekeyBundle | null> {
+export async function fetchPrekeyBundleForDevice(
+  peerUserId: string,
+  peerDeviceId: string,
+  options: FetchDevicePrekeyBundleOptions = {},
+): Promise<X3DHPrekeyBundle | null> {
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
   if (!material) return null;
   const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, { source: 'fetchPrekeyBundleForDevice', identityKeyB64: material.identityKey, userId: peerUserId, deviceId: peerDeviceId, spkId: material.spkId });
@@ -511,7 +525,9 @@ export async function fetchPrekeyBundleForDevice(peerUserId: string, peerDeviceI
     console.warn('[X3DH-DEV] device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false });
     throw new DevicePrekeyBundleError('DEVICE_SPK_SIGNATURE_INVALID', peerUserId, peerDeviceId, material.spkId);
   }
-  const opk = await claimPeerDeviceOPK(peerUserId, peerDeviceId);
+  const opk = options.claimOneTimePrekey === false
+    ? null
+    : await claimPeerDeviceOPK(peerUserId, peerDeviceId);
   return { identityKey: material.identityKey, signingKey: material.signingKey, signedPrekey: material.publicKey, signedPrekeySignature: material.signature, signedPrekeyId: material.spkId, oneTimePrekey: opk?.publicKey, oneTimePrekeyId: opk?.opkId };
 }
 
