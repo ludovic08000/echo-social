@@ -14,18 +14,6 @@ import {
 import { isImageMediaLabel, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
 import type { DecryptResult } from '@/hooks/useE2EE';
 
-/**
- * DecryptedMessageBody — passive presentational component.
- *
- * It owns NO crypto logic. It delegates every resolution step to
- * `decryptionService.resolvePlaintext` and only decides:
- *   - Which media renderer to pick (voice / GIF / text).
- *   - Whether to show the neutral placeholder while waiting.
- *
- * On failure the component renders an invisible spacer — no string,
- * no lock icon — and waits for `forsure-decrypt-retry` to re-attempt.
- */
-
 function parseVoiceMessage(text: string): { url: string; duration: number } | null {
   const m1 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|(\d+)$/);
   if (m1) return { url: m1[1], duration: parseInt(m1[2], 10) };
@@ -52,6 +40,7 @@ interface DecryptedMessageBodyProps {
 }
 
 const SILENT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000];
+const RECOVERY_UNAVAILABLE_AFTER_MS = 15_000;
 
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
@@ -64,8 +53,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   messageId,
   hasMedia,
 }: DecryptedMessageBodyProps) {
-  // Synchronous initial state — uses RAM cache + cleartext shortcut so the
-  // first paint never flashes a placeholder when plaintext is already known.
   const initial: { outcome: DecryptionOutcome | null; pending: boolean } = (() => {
     if (cachedPlaintext) {
       const outcome = buildOutcomeFromText(cachedPlaintext);
@@ -82,29 +69,34 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const [outcome, setOutcome] = useState<DecryptionOutcome | null>(initial.outcome);
   const [pending, setPending] = useState(initial.pending);
   const [retryTick, setRetryTick] = useState(0);
+  const [recoveryExpired, setRecoveryExpired] = useState(false);
 
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
   const silentRetryAttemptRef = useRef(0);
 
-  // Listen for the global retry event fired after key restoration / queue
-  // success. Drop any stale RAM entry so the effect below re-resolves.
   useEffect(() => {
-    const handler = () => {
-      // A successful queue retry/key restore wipes the negative cache so
-      // every silent bubble re-attempts on the next render pass.
+    if (!pending || outcome !== null || !looksEncrypted(body)) {
+      setRecoveryExpired(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setRecoveryExpired(true), RECOVERY_UNAVAILABLE_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [body, outcome, pending, retryTick]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ messageId?: string }>).detail;
+      if (detail?.messageId && messageId && detail.messageId !== messageId) return;
       clearNegativeCache();
       dropCache(messageId, body);
+      setRecoveryExpired(false);
       setRetryTick((t) => t + 1);
     };
     window.addEventListener('forsure-decrypt-retry', handler);
     return () => window.removeEventListener('forsure-decrypt-retry', handler);
   }, [messageId, body]);
 
-  // Mobile/realtime guard: Supabase can deliver the parent message before the
-  // sibling device-copy row, or miss the copy realtime event after iOS wake.
-  // While the bubble is silent, retry a few bounded times so the copy/archive
-  // can be picked up without requiring a full chat refetch.
   useEffect(() => {
     if (!looksEncrypted(body) || !pending || outcome !== null) {
       silentRetryAttemptRef.current = 0;
@@ -127,23 +119,21 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   useEffect(() => {
     let cancelled = false;
 
-    // cachedPlaintext provided by parent always wins (post-send echo).
     if (cachedPlaintext) {
       const next = buildOutcomeFromText(cachedPlaintext);
       setOutcome(next);
       setPending(false);
+      setRecoveryExpired(false);
       if (next.mediaKeyB64 && messageId) {
         setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
       }
-      // NOTE: do NOT re-notify parent — it already owns this plaintext.
-      // Calling onDecrypted here would trigger a parent state bump, change
-      // `refreshKey`, re-run this effect, and create an infinite loop.
       return;
     }
 
     if (!looksEncrypted(body)) {
       setOutcome({ text: body, mediaKeyB64: null, hidden: false });
       setPending(false);
+      setRecoveryExpired(false);
       return;
     }
 
@@ -152,13 +142,13 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       .then((next) => {
         if (cancelled) return;
         if (!next) {
-          // Silent pending — UI shows neutral placeholder, queue will retry.
           setOutcome(null);
           setPending(true);
           return;
         }
         setOutcome(next);
         setPending(false);
+        setRecoveryExpired(false);
         if (next.mediaKeyB64 && messageId) {
           setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
         }
@@ -175,15 +165,39 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       });
 
     return () => { cancelled = true; };
-    // retryTick + refreshKey force a re-attempt after key restoration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body, messageId, cachedPlaintext, retryTick, refreshKey]);
+
+  const retryNow = () => {
+    clearNegativeCache();
+    dropCache(messageId, body);
+    setRecoveryExpired(false);
+    silentRetryAttemptRef.current = 0;
+    setRetryTick((t) => t + 1);
+  };
 
   if (outcome?.hidden) return null;
 
   if (pending || outcome === null) {
-    // Neutral, invisible placeholder — never reveals state to the user.
-    return <span className="opacity-0 select-none" aria-hidden="true">·</span>;
+    if (recoveryExpired) {
+      return (
+        <span className="inline-flex max-w-[260px] flex-col items-start gap-1 text-xs text-muted-foreground" role="status">
+          <span>Message chiffré indisponible sur cet appareil.</span>
+          <button
+            type="button"
+            onClick={retryNow}
+            className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Réessayer
+          </button>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" role="status" aria-live="polite">
+        Message en cours de récupération…
+      </span>
+    );
   }
 
   const { text, mediaKeyB64 } = outcome;
