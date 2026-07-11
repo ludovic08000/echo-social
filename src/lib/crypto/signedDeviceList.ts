@@ -138,29 +138,10 @@ export async function fetchSignedDeviceList(userId: string): Promise<SignedDevic
   }));
 }
 
-/**
- * Resolve the Ed25519 root advertised by the primary row. Older server rows
- * may omit it on the primary itself; during that migration window accept a
- * single unanimous root from already-signed companions, never mixed roots.
- */
-function resolvePrimarySigningRoot(
-  primary: SignedDeviceEntry | undefined,
-  list: SignedDeviceEntry[],
-): string | null {
-  if (!primary) return null;
-  if (primary.primaryPubB64) return primary.primaryPubB64;
-
-  const roots = new Set(
-    list
-      .filter((entry) =>
-        !entry.isPrimary &&
-        entry.primaryDeviceId === primary.deviceId &&
-        typeof entry.primaryPubB64 === 'string' &&
-        entry.primaryPubB64.length > 0,
-      )
-      .map((entry) => entry.primaryPubB64 as string),
-  );
-  return roots.size === 1 ? [...roots][0] : null;
+/** The Ed25519 root must be advertised by the primary row itself. */
+function resolvePrimarySigningRoot(primary: SignedDeviceEntry | undefined): string | null {
+  if (!primary?.primaryPubB64) return null;
+  return primary.primaryPubB64;
 }
 
 export async function verifySignedDeviceList(
@@ -168,7 +149,7 @@ export async function verifySignedDeviceList(
   list: SignedDeviceEntry[],
 ): Promise<DeviceVerificationResult[]> {
   const primary = list.find((entry) => entry.isPrimary);
-  const primarySigningRoot = resolvePrimarySigningRoot(primary, list);
+  const primarySigningRoot = resolvePrimarySigningRoot(primary);
   const results: DeviceVerificationResult[] = [];
 
   for (const entry of list) {
@@ -183,8 +164,8 @@ export async function verifySignedDeviceList(
     }
 
     // Bind the signature to the one advertised primary DeviceID and its
-    // Ed25519 root. Do not compare it to primary.devicePublicKey: that field is
-    // the unrelated X25519 transport key.
+    // Ed25519 root. primary.devicePublicKey is the unrelated X25519 transport
+    // key and must never be used as a signing-key anchor.
     if (
       !primary ||
       entry.primaryDeviceId !== primary.deviceId ||
