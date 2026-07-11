@@ -280,10 +280,19 @@ export async function preloadAllArchiveKeys(userId: string): Promise<number> {
   }
 }
 
+function wait(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Retroactively set archive_body on an existing message via the server-side
  * RPC. This is necessary because RLS UPDATE policies on `messages` do not
  * allow the sender to modify `archive_body` after insert.
+ *
+ * The write is idempotent and retried with short bounded delays. This matters
+ * on mobile where the parent message can commit before the RPC or network
+ * channel is fully ready. Only opaque ciphertext is retried.
  *
  * Returns true if the row was updated.
  */
@@ -291,18 +300,29 @@ export async function setMessageArchiveBody(
   messageId: string,
   archiveBody: string,
 ): Promise<boolean> {
-  if (!archiveBody || !archiveBody.trim()) return false;
-  try {
-    const { data, error } = await supabase.rpc('set_message_archive_body' as any, {
-      p_message_id: messageId,
-      p_archive_body: archiveBody,
-    });
-    if (error) {
-      console.warn('[archive] setMessageArchiveBody RPC failed:', error.message);
-      return false;
+  if (!messageId || !archiveBody || !archiveBody.trim()) return false;
+
+  const delays = [0, 500, 2_000];
+  let lastError: string | null = null;
+
+  for (const delay of delays) {
+    await wait(delay);
+    try {
+      const { data, error } = await supabase.rpc('set_message_archive_body' as any, {
+        p_message_id: messageId,
+        p_archive_body: archiveBody,
+      });
+      if (!error && data) return true;
+      lastError = error?.message ?? 'archive_write_not_applied';
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
     }
-    return !!data;
-  } catch {
-    return false;
   }
+
+  console.warn('[archive] setMessageArchiveBody failed after retries', {
+    messageId: messageId.slice(0, 8),
+    attempts: delays.length,
+    error: lastError,
+  });
+  return false;
 }
