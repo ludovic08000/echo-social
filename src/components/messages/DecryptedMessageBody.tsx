@@ -88,7 +88,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ messageId?: string }>).detail;
       if (detail?.messageId && messageId && detail.messageId !== messageId) return;
-      clearNegativeCache();
+      clearNegativeCache(messageId, body);
       dropCache(messageId, body);
       setRecoveryExpired(false);
       setRetryTick((t) => t + 1);
@@ -108,7 +108,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     const timer = window.setTimeout(() => {
       silentRetryAttemptRef.current = attempt + 1;
-      clearNegativeCache();
+      clearNegativeCache(messageId, body);
       dropCache(messageId, body);
       setRetryTick((t) => t + 1);
     }, SILENT_RETRY_DELAYS_MS[attempt]);
@@ -169,7 +169,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   }, [body, messageId, cachedPlaintext, retryTick, refreshKey]);
 
   const retryNow = () => {
-    clearNegativeCache();
+    clearNegativeCache(messageId, body);
     dropCache(messageId, body);
     setRecoveryExpired(false);
     silentRetryAttemptRef.current = 0;

@@ -88,7 +88,11 @@ function negCacheHit(k: string): boolean {
   }
   return true;
 }
-export function clearNegativeCache(): void {
+export function clearNegativeCache(messageId?: string, body?: string): void {
+  if (messageId !== undefined && body !== undefined) {
+    negCache.delete(cacheKey(messageId, body));
+    return;
+  }
   negCache.clear();
 }
 
@@ -357,7 +361,7 @@ export async function resolvePlaintext(opts: {
 
       // 5) Nothing produced plaintext. Mark negative + stay silent.
       if (typeof console !== 'undefined') {
-        console.warn('[DECRYPT-FAIL] no path produced plaintext (bubble stays empty)', {
+        console.warn('[DECRYPT-FAIL] no path produced plaintext (bubble stays in recovery)', {
           messageId,
           kind: isMultiDeviceEnvelopeBody(body) ? 'multidevice' : isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
           isMe: opts.isMe === true,

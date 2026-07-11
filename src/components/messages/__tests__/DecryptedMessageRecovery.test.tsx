@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-const resolvePlaintext = vi.fn();
-const clearNegativeCache = vi.fn();
-const dropCache = vi.fn();
+const mocks = vi.hoisted(() => ({
+  resolvePlaintext: vi.fn(),
+  clearNegativeCache: vi.fn(),
+  dropCache: vi.fn(),
+}));
 
 vi.mock('@/components/messages/decryptionService', () => ({
-  resolvePlaintext,
-  clearNegativeCache,
-  dropCache,
+  resolvePlaintext: mocks.resolvePlaintext,
+  clearNegativeCache: mocks.clearNegativeCache,
+  dropCache: mocks.dropCache,
   readCache: vi.fn(() => undefined),
   persistOutcome: vi.fn((_body: string, outcome: { text: string }) => outcome.text),
   looksEncrypted: vi.fn(() => true),
@@ -24,7 +26,7 @@ describe('DecryptedMessageBody recovery state', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    resolvePlaintext.mockResolvedValue(null);
+    mocks.resolvePlaintext.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -65,8 +67,8 @@ describe('DecryptedMessageBody recovery state', () => {
 
     expect(screen.getByText('Message chiffré indisponible sur cet appareil.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
-    expect(clearNegativeCache).toHaveBeenCalled();
-    expect(dropCache).toHaveBeenCalledWith('message-b', 'encrypted');
+    expect(mocks.clearNegativeCache).toHaveBeenCalledWith('message-b', 'encrypted');
+    expect(mocks.dropCache).toHaveBeenCalledWith('message-b', 'encrypted');
     expect(screen.getByText('Message en cours de récupération…')).toBeInTheDocument();
   });
 
@@ -82,10 +84,10 @@ describe('DecryptedMessageBody recovery state', () => {
       );
     });
 
-    const callsBefore = resolvePlaintext.mock.calls.length;
+    const callsBefore = mocks.resolvePlaintext.mock.calls.length;
     act(() => {
       window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId: 'other-message' } }));
     });
-    expect(resolvePlaintext.mock.calls.length).toBe(callsBefore);
+    expect(mocks.resolvePlaintext.mock.calls.length).toBe(callsBefore);
   });
 });

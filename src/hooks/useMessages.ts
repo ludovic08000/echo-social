@@ -444,21 +444,21 @@ export function useMessages(conversationId: string) {
                 }).then((outcome) => {
                   if (outcome && !outcome.hidden) {
                     persistOutcome(newMsg.body, outcome, newMsg.id);
-                    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId: newMsg.id } })); } catch { /* SSR */ }
                     return;
                   }
                   if (attempt < 3) {
                     // 250ms, 750ms, 1500ms — covers typical replication lag.
                     const delay = 250 * Math.pow(2, attempt);
                     setTimeout(() => {
-                      clearNegativeCache();
+                      clearNegativeCache(newMsg.id, newMsg.body);
                       probe(attempt + 1);
                     }, delay);
                   } else {
                     // Final attempt failed — dispatch retry so the mounted
                     // bubble re-tries when the device_copies realtime event
                     // eventually fires (which also clears negCache).
-                    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId: newMsg.id } })); } catch { /* SSR */ }
                   }
                 }).catch(() => {});
               };
@@ -485,7 +485,7 @@ export function useMessages(conversationId: string) {
                         { onConflict: 'message_id,user_id', ignoreDuplicates: true });
                     } catch { /* best-effort */ }
                   }
-                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
+                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId: newMsg.id } })); } catch { /* SSR */ }
                 }
               }).catch(() => {});
             }
@@ -500,9 +500,13 @@ export function useMessages(conversationId: string) {
           table: 'message_device_copies',
           filter: `recipient_user_id=eq.${user.id}`,
         },
-        () => {
+        (payload) => {
+          const messageId = (payload.new as any)?.message_id as string | undefined;
+          if (messageId) {
+            try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId } })); } catch { /* SSR */ }
+            return;
+          }
           clearNegativeCache();
-          queryClient.invalidateQueries({ queryKey: messagesKey(conversationId, user.id) });
           try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* SSR */ }
         }
       )
