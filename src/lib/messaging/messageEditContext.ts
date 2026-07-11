@@ -64,16 +64,21 @@ async function flush(): Promise<void> {
         .order('revision', { ascending: false }),
     ]);
 
+    // Older deployments may not have the migration yet. In that case, do not
+    // expose a button that can only fail; the rest of messaging remains intact.
+    if (messageResult.error || editResult.error) {
+      for (const list of local.values()) for (const done of list) done(emptyContext());
+      return;
+    }
+
     const meta = new Map<string, MessageEditMeta>();
     for (const row of messageResult.data ?? []) meta.set(row.id, row as MessageEditMeta);
 
     const grouped = new Map<string, MessageEditRow[]>();
-    if (!editResult.error) {
-      for (const row of (editResult.data ?? []) as MessageEditRow[]) {
-        const rows = grouped.get(row.message_id) ?? [];
-        rows.push(row);
-        grouped.set(row.message_id, rows);
-      }
+    for (const row of (editResult.data ?? []) as MessageEditRow[]) {
+      const rows = grouped.get(row.message_id) ?? [];
+      rows.push(row);
+      grouped.set(row.message_id, rows);
     }
 
     await Promise.all(ids.map(async (messageId) => {
