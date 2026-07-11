@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
+import { encryptArchive, setMessageArchiveBody } from '@/lib/messaging/archive/archiveKey';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
@@ -119,9 +119,12 @@ function waitForInlineFanout(fanoutPromise: Promise<FanoutBuildResult>): Promise
   ]);
 }
 
-function dispatchDecryptRetry(): void {
+function dispatchDecryptRetry(messageId?: string): void {
   try {
-    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+    const event = messageId
+      ? new CustomEvent('forsure-decrypt-retry', { detail: { messageId } })
+      : new CustomEvent('forsure-decrypt-retry');
+    window.dispatchEvent(event);
   } catch {
     // Browser event dispatch is best-effort; sending must never fail because of UI wakeups.
   }
@@ -454,9 +457,9 @@ export function useMessageQueue(
       if (fanoutRows.length > 0) {
         try {
           await insertFanoutCopyRows(fanoutInput, fanoutRows);
-          dispatchDecryptRetry();
+          dispatchDecryptRetry(data.id);
         } catch {
-          void fanoutMessageCopies(fanoutInput).then(dispatchDecryptRetry).catch(() => {});
+          void fanoutMessageCopies(fanoutInput).then(() => dispatchDecryptRetry(data.id)).catch(() => {});
         }
       }
     } else {
@@ -487,27 +490,26 @@ export function useMessageQueue(
         // maintenance is still settling.
         void savePlaintext(data.id, sanitized);
         void savePlaintextForCiphertext(bodyToStore, sanitized);
-        dispatchDecryptRetry();
+        dispatchDecryptRetry(data.id);
       }
 
       // C (durable history): archive the sender's OWN plaintext under the
       // account master key (server-side, write-once) so sent messages survive
-      // local cache purge / device rotation / iOS ITP eviction. Best-effort,
-      // non-blocking, sender-only (matches set_message_archive_body), skipped
-      // for plaintext sends, view-once, and when the user disabled archiving.
+      // local cache purge / device rotation / iOS ITP eviction. The already
+      // running archive promise is reused; the ciphertext write itself has a
+      // bounded retry policy in setMessageArchiveBody().
       if (archiveAllowed && !inlineArchiveBody) {
         const archiveMsgId = data.id;
         void (async () => {
-          try {
-            const archived = await encryptArchive(sanitized, conversationId, user.id);
-            if (archived) {
-              await supabase.rpc('set_message_archive_body', {
-                p_message_id: archiveMsgId,
-                p_archive_body: archived,
-              });
-            }
-          } catch { /* best-effort — never blocks send */ }
-        })();
+          const archived = await archivePromise;
+          if (!archived) {
+            trace('archive_deferred_unavailable', { serverMessageId: archiveMsgId });
+            return;
+          }
+          const stored = await setMessageArchiveBody(archiveMsgId, archived);
+          trace(stored ? 'archive_deferred_stored' : 'archive_deferred_failed', { serverMessageId: archiveMsgId });
+          if (stored) dispatchDecryptRetry(archiveMsgId);
+        })().catch(() => {});
       }
       const sentMessage: SentMessageSnapshot = {
         id: data.id,
@@ -538,19 +540,19 @@ export function useMessageQueue(
             if (fanout.rows.length > 0) {
               await insertFanoutCopyRows(fanoutInput, fanout.rows);
               trace('fanout_async_inserted', { rows: fanout.rows.length, serverMessageId: data.id });
-              dispatchDecryptRetry();
+              dispatchDecryptRetry(data.id);
               return;
             }
             if (fanout.hasTargets) {
               await fanoutMessageCopies(fanoutInput);
               trace('fanout_async_fallback_done', { serverMessageId: data.id });
-              dispatchDecryptRetry();
+              dispatchDecryptRetry(data.id);
             }
           })
           .catch((fanoutError) => {
             trace('fanout_async_failed', { error: fanoutError instanceof Error ? fanoutError.message : String(fanoutError), serverMessageId: data.id });
             console.warn('[MSG_SEND] async fanout failed after parent insert', { localId, conversationId, messageId: data.id, fanoutError });
-            void fanoutMessageCopies(fanoutInput).then(dispatchDecryptRetry).catch(() => {});
+            void fanoutMessageCopies(fanoutInput).then(() => dispatchDecryptRetry(data.id)).catch(() => {});
           });
       }
 
