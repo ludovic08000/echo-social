@@ -296,7 +296,7 @@ async function x3dhWrapForDevice(
   senderDeviceId: string,
   recipientUserId: string,
   recipientDeviceId: string,
-  options: { useOneTimePrekey?: boolean } = {},
+  options: { useOneTimePrekey?: boolean; persistSession?: boolean } = {},
 ): Promise<string | null> {
   if (isKnownInvalidDeviceId(recipientDeviceId)) return null;
   try {
@@ -351,6 +351,7 @@ async function x3dhWrapForDevice(
     ];
 
     try {
+      if (options.persistSession === false) return parts.join('.');
       await establishDeviceSession(
         senderUserId, senderDeviceId,
         recipientUserId, recipientDeviceId,
@@ -496,9 +497,30 @@ export async function encryptPlaintextForDeviceTarget(
   if (isKnownInvalidDeviceId(input.recipientDeviceId)) return null;
 
   const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
+  const isCurrentDeviceSelfCopy =
+    input.senderUserId === input.recipientUserId &&
+    senderDeviceId === input.recipientDeviceId;
 
   if (input.forceFreshSession) {
     await invalidateDeviceSession(input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId).catch(() => {});
+  }
+
+  // Sender self-copy: keep a durable, decryptable copy for the current browser
+  // too. This is what saves iOS after Safari/WebKit purges IndexedDB: the
+  // sender can recover their own outgoing bubble from message_device_copies
+  // after the account keys are restored. Do not persist a self/self ratchet
+  // session here; use a fresh X3DH bootstrap row so a later read is stateless
+  // and cannot poison normal peer-device ratchets.
+  if (isCurrentDeviceSelfCopy) {
+    const selfBootstrap = await x3dhWrapForDevice(
+      input.plaintext,
+      input.senderUserId,
+      senderDeviceId,
+      input.recipientUserId,
+      input.recipientDeviceId,
+      { useOneTimePrekey: false, persistSession: false },
+    );
+    return selfBootstrap ? { encryptedBody: selfBootstrap, senderDeviceId } : null;
   }
 
   let encrypted: string | null = null;
@@ -627,10 +649,8 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
   if (!participants?.length) return { rows: [], hasTargets: false };
   const userIds = participants.map(p => p.user_id);
 
-  const targets = (await listFanoutTargets(input.senderUserId, userIds, { verifyPrekeys: false })).filter(d =>
-    !(d.userId === input.senderUserId && d.deviceId === senderDeviceId) &&
-    !isKnownInvalidDeviceId(d.deviceId),
-  );
+  const targets = (await listFanoutTargets(input.senderUserId, userIds, { verifyPrekeys: false }))
+    .filter(d => !isKnownInvalidDeviceId(d.deviceId));
   if (targets.length === 0) return { rows: [], hasTargets: false };
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {

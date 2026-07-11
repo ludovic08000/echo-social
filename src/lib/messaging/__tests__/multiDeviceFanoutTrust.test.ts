@@ -5,6 +5,10 @@ const mocks = vi.hoisted(() => ({
   supabaseRpc: vi.fn(),
   listFanoutTargets: vi.fn(),
   ratchetEncrypt: vi.fn(),
+  fetchPrekeyBundleForDevice: vi.fn(),
+  x3dhInitiate: vi.fn(),
+  getOrCreateIdentityKeys: vi.fn(),
+  exportPublicKeyRaw: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -34,20 +38,21 @@ vi.mock('@/lib/crypto/deviceRatchet', () => ({
 }));
 
 vi.mock('@/lib/crypto/x3dh', () => ({
-  fetchPrekeyBundleForDevice: vi.fn(),
+  fetchPrekeyBundleForDevice: mocks.fetchPrekeyBundleForDevice,
   isDevicePrekeyBundleError: vi.fn(() => false),
   peekDeviceSignedPrekey: vi.fn(),
-  x3dhInitiate: vi.fn(),
+  x3dhInitiate: mocks.x3dhInitiate,
   x3dhRespondForDevice: vi.fn(),
 }));
 
 vi.mock('@/lib/crypto/keyManager', () => ({
-  getOrCreateIdentityKeys: vi.fn(),
+  getOrCreateIdentityKeys: mocks.getOrCreateIdentityKeys,
+  exportPublicKeyRaw: mocks.exportPublicKeyRaw,
   PinUnlockRequiredError: class PinUnlockRequiredError extends Error {},
 }));
 
 vi.mock('@/lib/crypto/cryptoIntegrity', () => ({
-  hardCrypto: globalThis.crypto,
+  hardCrypto: globalThis.crypto.subtle,
   hardGlobals: { TextEncoder, TextDecoder },
 }));
 
@@ -73,6 +78,21 @@ const BOB = 'bob-user';
 beforeEach(() => {
   vi.clearAllMocks();
   (ratchetEncrypt as any).mockResolvedValue('x3dh5.session.peerDh.0.0.iv.ct');
+  mocks.fetchPrekeyBundleForDevice.mockResolvedValue({
+    identityKey: 'recipient-identity',
+    signingKey: 'recipient-signing',
+    signedPrekey: 'recipient-spk',
+    signedPrekeySignature: 'recipient-spk-sig',
+    signedPrekeyId: 1,
+  });
+  mocks.x3dhInitiate.mockResolvedValue({
+    sharedSecret: new Uint8Array(32).buffer,
+    ephemeralKey: 'ephemeral-key',
+    usedSPKId: 1,
+    usedOTPKId: undefined,
+  });
+  mocks.getOrCreateIdentityKeys.mockResolvedValue({ publicKey: {} });
+  mocks.exportPublicKeyRaw.mockResolvedValue(new Uint8Array(32).buffer);
 });
 
 function installSupabaseTables(insertSink: any[]) {
@@ -139,12 +159,13 @@ describe('multiDeviceFanout trust gate', () => {
       plaintext: 'hello',
     });
 
-    expect(result).toEqual({ inserted: 1, multiDevice: true });
+    expect(result).toEqual({ inserted: 2, multiDevice: true });
     expect(listFanoutTargets).toHaveBeenCalledWith(ALICE, [ALICE, BOB], { verifyPrekeys: false });
     expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
-    expect(inserted).toHaveLength(1);
-    expect(inserted[0].recipient_device_id).toBe('bob-signed-dev');
-    expect(inserted[0].recipient_user_id).toBe(BOB);
+    expect(inserted).toHaveLength(2);
+    expect(inserted.map(row => row.recipient_device_id).sort()).toEqual(['alice-dev-1', 'bob-signed-dev']);
+    expect(inserted.find(row => row.recipient_device_id === 'bob-signed-dev')?.recipient_user_id).toBe(BOB);
+    expect(inserted.find(row => row.recipient_device_id === 'alice-dev-1')?.recipient_user_id).toBe(ALICE);
   });
 
   it('does not let one broken device abort fan-out to the remaining devices', async () => {
@@ -168,6 +189,16 @@ describe('multiDeviceFanout trust gate', () => {
         return 'x3dh5.session.peerDh.0.0.iv.ct';
       },
     );
+    mocks.fetchPrekeyBundleForDevice.mockImplementation(async (_userId: string, deviceId: string) => {
+      if (deviceId === 'bob-broken-dev') return null;
+      return {
+        identityKey: 'recipient-identity',
+        signingKey: 'recipient-signing',
+        signedPrekey: 'recipient-spk',
+        signedPrekeySignature: 'recipient-spk-sig',
+        signedPrekeyId: 1,
+      };
+    });
 
     const result = await fanoutMessageCopies({
       messageId: 'msg-2',
