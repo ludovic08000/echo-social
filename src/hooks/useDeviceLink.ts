@@ -1,17 +1,11 @@
 /**
- * useDeviceLink - approved linked-device E2EE transfer.
+ * Approved linked-device E2EE transfer.
  *
- * New flow (Signal-style shape):
- *   1. The new device creates a short-lived QR request containing only a token.
- *   2. The already-connected device approves that token.
- *   3. Local keys + decryptable history cache are encrypted to the new device's
- *      ephemeral public key and uploaded as ciphertext.
- *   4. The new device decrypts locally, restores IndexedDB, then triggers resync.
- *
- * The legacy PIN flow is kept for backwards compatibility with old links, but
- * the UI now uses the approval flow by default.
+ * Sesame rule: a newly linked physical device receives account identity and
+ * recoverable history, but keeps a unique DeviceID and creates fresh sessions,
+ * device KX keys and prekeys. Old Double-Ratchet state must not be cloned from
+ * iOS to Windows (or between two phones).
  */
-
 import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -30,6 +24,10 @@ import {
   parseDeviceLinkToken,
   type DeviceLinkTransferEnvelope,
 } from '@/lib/crypto/deviceLinkEnvelope';
+import {
+  exportArchiveMasterKeyForDeviceLink,
+  importArchiveMasterKeyFromDeviceLink,
+} from '@/lib/crypto/archiveMasterKey';
 import {
   getCurrentDeviceId,
   getCurrentDeviceLabel,
@@ -51,6 +49,11 @@ interface StoredLinkRequest {
   createdAt: number;
 }
 
+interface CollectOptions {
+  includePlaintextCache?: boolean;
+  includeLegacySessions?: boolean;
+}
+
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -68,18 +71,17 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
-/** Generate a random 8-character alphanumeric PIN for legacy links. */
 function generatePin(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const bytes = crypto.getRandomValues(new Uint8Array(8));
-  return Array.from(bytes).map(b => chars[b % chars.length]).join('');
+  return Array.from(bytes).map((byte) => chars[byte % chars.length]).join('');
 }
 
 function persistPendingLink(token: string, request: StoredLinkRequest): void {
   try {
     sessionStorage.setItem(`${LINK_PRIVATE_KEY_PREFIX}${token}`, JSON.stringify(request));
   } catch {
-    // Safari private mode can reject sessionStorage; the user can recreate a QR.
+    // Safari private mode can reject sessionStorage; recreate the QR if needed.
   }
 }
 
@@ -105,33 +107,69 @@ function notifyKeysRestored(status: string): void {
       detail: { status, source: 'device_link' },
     }));
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-request-refanout-scan'));
   } catch {
     // SSR/tests
   }
 }
 
-/** Collect all local E2EE state plus, when possible, the local plaintext cache. */
-async function collectLocalKeys(options: { includePlaintextCache?: boolean } = {}): Promise<string> {
+async function readSideStore(dbKey: 'ratchet', storeName: string): Promise<any[]> {
+  try {
+    return await runTxOn(dbKey, [storeName], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore(storeName).getAll()),
+    ) as any[];
+  } catch {
+    return [];
+  }
+}
+
+async function writeSideStore(dbKey: 'ratchet', storeName: string, records: any[]): Promise<void> {
+  if (!Array.isArray(records) || records.length === 0) return;
+  try {
+    await runTxOn(dbKey, [storeName], 'readwrite', (tx) => {
+      const store = tx.objectStore(storeName);
+      for (const record of records) store.put(record);
+    });
+  } catch {
+    // Legacy session restore is best-effort only.
+  }
+}
+
+/**
+ * Collect account-scoped E2EE material. Device-specific KX identities are
+ * filtered out; the new device must publish its own keys after restore.
+ */
+async function collectLocalKeys(userId: string, options: CollectOptions = {}): Promise<string> {
   const includePlaintextCache = options.includePlaintextCache ?? true;
+  const includeLegacySessions = options.includeLegacySessions ?? false;
   const data: Record<string, any> = {};
 
   try {
     const db = await openE2EEDB();
-    const storeNames = Array.from(db.objectStoreNames);
-    for (const storeName of storeNames) {
-      const all = await runTx([storeName], 'readonly', (tx) =>
+    for (const storeName of Array.from(db.objectStoreNames)) {
+      let records = await runTx([storeName], 'readonly', (tx) =>
         reqToPromise(tx.objectStore(storeName).getAll() as IDBRequest<any[]>),
       ).catch(() => []);
-      data[`e2ee:${storeName}`] = all;
+
+      if (storeName === 'identity-keys') {
+        records = records.filter((record: any) =>
+          !(typeof record?.id === 'string' && record.id.startsWith('device-kx::')),
+        );
+      }
+
+      if (records.length > 0) data[`e2ee:${storeName}`] = records;
     }
   } catch {}
 
-  try {
-    const all = await runTxOn('ratchet', ['ratchet-states'], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore('ratchet-states').getAll()),
-    );
-    if (all && all.length) data['ratchet:states'] = all;
-  } catch {}
+  // Only old PIN payloads retain the old ratchet snapshot for backwards
+  // compatibility. The approved v2 flow always starts fresh Sesame sessions.
+  if (includeLegacySessions) {
+    const ratchets = await readSideStore('ratchet', 'ratchet-states');
+    if (ratchets.length > 0) data['ratchet:states'] = ratchets;
+  }
+
+  const archiveMasterKey = await exportArchiveMasterKeyForDeviceLink(userId);
+  if (archiveMasterKey) data['archive:master-key'] = archiveMasterKey;
 
   if (includePlaintextCache) {
     try {
@@ -141,16 +179,22 @@ async function collectLocalKeys(options: { includePlaintextCache?: boolean } = {
   }
 
   try {
-    const fps = localStorage.getItem('forsure-known-fps');
-    if (fps) data['fingerprints'] = fps;
+    const fingerprints = localStorage.getItem('forsure-known-fps');
+    if (fingerprints) data.fingerprints = fingerprints;
   } catch {}
+
+  data._meta = {
+    v: 3,
+    mode: includeLegacySessions ? 'legacy' : 'sesame-fresh-device',
+    createdAt: new Date().toISOString(),
+  };
 
   return JSON.stringify(data);
 }
 
-/** Restore keys from JSON into local stores. */
-async function restoreLocalKeys(json: string): Promise<void> {
-  const data = JSON.parse(json);
+/** Restore account material without adopting the source device's sessions. */
+async function restoreLocalKeys(json: string, userId: string): Promise<void> {
+  const data = JSON.parse(json) as Record<string, any>;
 
   for (const [key, records] of Object.entries(data)) {
     if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
@@ -160,26 +204,39 @@ async function restoreLocalKeys(json: string): Promise<void> {
       if (!db.objectStoreNames.contains(storeName)) continue;
       await runTx([storeName], 'readwrite', (tx) => {
         const store = tx.objectStore(storeName);
-        for (const record of records) store.put(record);
+        for (const record of records) {
+          if (
+            storeName === 'identity-keys' &&
+            typeof record?.id === 'string' &&
+            record.id.startsWith('device-kx::')
+          ) {
+            continue;
+          }
+          store.put(record);
+        }
       });
     } catch {}
   }
 
-  if (data['ratchet:states'] && Array.isArray(data['ratchet:states'])) {
-    try {
-      await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
-        const store = tx.objectStore('ratchet-states');
-        for (const r of data['ratchet:states']) store.put(r);
-      });
-    } catch {}
+  // Old payloads may contain ratchets. New approved links never do.
+  if (Array.isArray(data['ratchet:states'])) {
+    await writeSideStore('ratchet', 'ratchet-states', data['ratchet:states']);
+  }
+
+  if (typeof data['archive:master-key'] === 'string') {
+    const imported = await importArchiveMasterKeyFromDeviceLink(
+      data['archive:master-key'],
+      userId,
+    );
+    if (!imported) throw new Error('Cle archive du compte invalide');
   }
 
   if (Array.isArray(data['plaintext:cache'])) {
     await importPlaintextCache(data['plaintext:cache'] as PlaintextCacheExportEntry[]);
   }
 
-  if (data['fingerprints']) {
-    localStorage.setItem('forsure-known-fps', data['fingerprints']);
+  if (typeof data.fingerprints === 'string') {
+    localStorage.setItem('forsure-known-fps', data.fingerprints);
   }
 }
 
@@ -188,10 +245,6 @@ export function useDeviceLink() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * New device: create an approval request QR. The private key never leaves
-   * this browser and is held only in sessionStorage until claim/expiry.
-   */
   const createLinkRequest = useCallback(async (): Promise<{ qrData: string; token: string } | null> => {
     if (!user) { setError('Non authentifie'); return null; }
     setIsLoading(true);
@@ -208,7 +261,7 @@ export function useDeviceLink() {
         createdAt: Date.now(),
       });
 
-      const { error: rpcError } = await (supabase as any).rpc("create_device_link_request", {
+      const { error: rpcError } = await (supabase as any).rpc('create_device_link_request', {
         p_token_hash: tokenHash,
         p_requester_device_id: requesterDeviceId,
         p_requester_public_key: pair.publicJwk as any,
@@ -225,10 +278,6 @@ export function useDeviceLink() {
     }
   }, [user]);
 
-  /**
-   * Existing device: approve a QR request and upload the encrypted initial
-   * transfer for that exact requester key.
-   */
   const approveLinkRequest = useCallback(async (qrData: string): Promise<boolean> => {
     if (!user) { setError('Non authentifie'); return false; }
     setIsLoading(true);
@@ -240,7 +289,7 @@ export function useDeviceLink() {
       const tokenHash = await hashDeviceLinkToken(token);
       const currentDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
 
-      const { data, error: lookupError } = await (supabase as any).rpc("get_device_link_request_for_approval", {
+      const { data, error: lookupError } = await (supabase as any).rpc('get_device_link_request_for_approval', {
         p_token_hash: tokenHash,
       });
       if (lookupError) throw lookupError;
@@ -254,17 +303,17 @@ export function useDeviceLink() {
         throw new Error('QR de liaison non authentifie: cle publique differente');
       }
 
-      let keysJson = await collectLocalKeys();
+      let keysJson = await collectLocalKeys(user.id);
       let envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
       let encryptedPayload = JSON.stringify(envelope);
 
       if (encryptedPayload.length > 1_900_000) {
-        keysJson = await collectLocalKeys({ includePlaintextCache: false });
+        keysJson = await collectLocalKeys(user.id, { includePlaintextCache: false });
         envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
         encryptedPayload = JSON.stringify(envelope);
       }
 
-      const { data: approved, error: approveError } = await (supabase as any).rpc("approve_device_link_request", {
+      const { data: approved, error: approveError } = await (supabase as any).rpc('approve_device_link_request', {
         p_token_hash: tokenHash,
         p_approver_device_id: currentDeviceId,
         p_encrypted_payload: encryptedPayload,
@@ -281,10 +330,6 @@ export function useDeviceLink() {
     }
   }, [user]);
 
-  /**
-   * New device: fetch the approved ciphertext, decrypt with the local private
-   * key from the original request, restore, then mark the request complete.
-   */
   const claimApprovedLink = useCallback(async (qrData: string): Promise<boolean> => {
     if (!user) { setError('Non authentifie'); return false; }
     setIsLoading(true);
@@ -298,7 +343,7 @@ export function useDeviceLink() {
       }
 
       const tokenHash = await hashDeviceLinkToken(token);
-      const { data, error: payloadError } = await (supabase as any).rpc("get_approved_device_link_payload", {
+      const { data, error: payloadError } = await (supabase as any).rpc('get_approved_device_link_payload', {
         p_token_hash: tokenHash,
         p_requester_device_id: pending.requesterDeviceId,
       });
@@ -311,16 +356,17 @@ export function useDeviceLink() {
 
       const envelope = JSON.parse(row.encrypted_payload) as DeviceLinkTransferEnvelope;
       const keysJson = await decryptDeviceLinkPayload(envelope, pending.privateJwk);
-      await restoreLocalKeys(keysJson);
+      await restoreLocalKeys(keysJson, user.id);
 
-      await (supabase as any).rpc("complete_device_link_request", {
+      const { error: completeError } = await (supabase as any).rpc('complete_device_link_request', {
         p_token_hash: tokenHash,
         p_requester_device_id: pending.requesterDeviceId,
       });
+      if (completeError) throw completeError;
 
       clearPendingLink(token);
       notifyKeysRestored('restored_from_linked_device');
-      console.log('[DeviceLink] linked-device keys restored successfully');
+      console.log('[DeviceLink] fresh Sesame device restored successfully');
       return true;
     } catch (err: any) {
       if (err.name === 'OperationError') {
@@ -334,9 +380,7 @@ export function useDeviceLink() {
     }
   }, [user]);
 
-  /**
-   * Legacy source-device flow kept for old QR/PIN links.
-   */
+  /** Legacy source-device flow kept for old QR/PIN links. */
   const createLink = useCallback(async (): Promise<{ qrData: string; pin: string } | null> => {
     if (!user) { setError('Non authentifie'); return null; }
     setIsLoading(true);
@@ -351,7 +395,7 @@ export function useDeviceLink() {
 
       const token = tokenData.token as string;
       const pin = generatePin();
-      const keysJson = await collectLocalKeys();
+      const keysJson = await collectLocalKeys(user.id, { includeLegacySessions: true });
       const salt = crypto.getRandomValues(new Uint8Array(32));
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const key = await deriveKey(pin, salt);
@@ -382,9 +426,7 @@ export function useDeviceLink() {
     }
   }, [user]);
 
-  /**
-   * Legacy new-device claim for old QR/PIN links.
-   */
+  /** Legacy new-device claim for old QR/PIN links. */
   const claimLink = useCallback(async (qrData: string, pin: string): Promise<boolean> => {
     if (!user) { setError('Non authentifie'); return false; }
     setIsLoading(true);
@@ -405,7 +447,7 @@ export function useDeviceLink() {
       const key = await deriveKey(pin, salt);
       const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
       const keysJson = new TextDecoder().decode(plainBuf);
-      await restoreLocalKeys(keysJson);
+      await restoreLocalKeys(keysJson, user.id);
 
       notifyKeysRestored('restored_from_legacy_device_link');
       console.log('[DeviceLink] legacy keys restored successfully');
@@ -430,5 +472,6 @@ export function useDeviceLink() {
     claimLink,
     isLoading,
     error,
+    clearError: () => setError(null),
   };
 }
