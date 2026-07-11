@@ -1,23 +1,21 @@
 /**
  * Conversation Archive Key — long-life symmetric key per conversation,
- * wrapped under the account master key so any device that can unlock the
- * account (password / Backup PIN / Recovery Key) can re-read the full
- * message history. WhatsApp-style "encrypted history backup".
+ * wrapped under the convergent account archive Master Key so every linked
+ * device can re-read the same encrypted history.
  *
- * Zero-access: the server only ever sees `wrapped_key` ciphertext. The
- * wrapping key (account master) never leaves the device unencrypted.
- *
- * This layer is COMPLEMENTARY to Double Ratchet — DR remains the primary
- * (forward-secret) channel; archive is the safety net that survives device
- * loss, cache purges and ghost-device quarantines.
+ * Double Ratchet remains the primary forward-secret channel. This layer is a
+ * zero-access recovery path: the server sees only wrapped keys and ciphertext.
  */
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
-import { getSessionMasterKey } from '@/lib/crypto/accountKeyBackup';
+import { getArchiveMasterKey } from '@/lib/crypto/archiveMasterKey';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 
 const ACTIVATED_FLAG = 'forsure:archive-activated-toast-shown:v1';
+const KDF_VERSION = 1;
+const IV_LEN = 12;
+const KEY_LEN = 32;
 
 function maybeShowActivationToastOnce(): void {
   try {
@@ -37,11 +35,7 @@ function maybeShowActivationToastOnce(): void {
   }
 }
 
-const KDF_VERSION = 1;
-const IV_LEN = 12;
-const KEY_LEN = 32;
-
-/** In-RAM cache of decrypted archive keys. Purged on session clear. */
+/** In-RAM cache of decrypted conversation archive keys. */
 const ramCache = new Map<string, CryptoKey>();
 
 export function clearArchiveKeyCache(): void {
@@ -63,20 +57,18 @@ if (typeof window !== 'undefined') {
   window.addEventListener('forsure:e2ee-purge', clearArchiveKeyCache);
   window.addEventListener('forsure:e2ee-restore-needed', clearArchiveKeyCache);
 
-  // Once the account Master Key is available, warm every conversation archive
-  // key and wake pending bubbles. This is particularly important on Windows
-  // after an iOS send (and vice versa): the parent row can already be mounted
-  // before the account archive becomes decryptable.
-  const preloadOnUnlock = (ev: Event) => {
-    const detail = (ev as CustomEvent).detail || {};
-    const uid = (detail as any).userId as string | undefined;
-    if (!uid) return;
-    void preloadAllArchiveKeys(uid)
-      .then((loaded) => dispatchArchiveKeysReady(uid, loaded))
+  const preloadOnUnlock = (event: Event) => {
+    const detail = (event as CustomEvent).detail || {};
+    const userId = (detail as any).userId as string | undefined;
+    if (!userId) return;
+    void preloadAllArchiveKeys(userId)
+      .then((loaded) => dispatchArchiveKeysReady(userId, loaded))
       .catch(() => {});
   };
+
   window.addEventListener('forsure:e2ee-unlocked', preloadOnUnlock);
   window.addEventListener('forsure:e2ee-post-restore', preloadOnUnlock);
+  window.addEventListener('forsure:archive-master-ready', preloadOnUnlock);
 }
 
 interface ArchiveKeyRow {
@@ -89,9 +81,14 @@ interface ArchiveKeyRow {
 async function wrapKey(rawKey: Uint8Array, masterKey: CryptoKey, aad: Uint8Array): Promise<string> {
   const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LEN));
   const ct = await hardCrypto.encrypt(
-    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, additionalData: aad.slice().buffer, tagLength: 128 },
+    {
+      name: 'AES-GCM',
+      iv: iv as Uint8Array<ArrayBuffer>,
+      additionalData: aad.buffer.slice(aad.byteOffset, aad.byteOffset + aad.byteLength),
+      tagLength: 128,
+    },
     masterKey,
-    rawKey.slice().buffer,
+    rawKey.buffer.slice(rawKey.byteOffset, rawKey.byteOffset + rawKey.byteLength),
   );
   const combined = new Uint8Array(IV_LEN + ct.byteLength);
   combined.set(iv, 0);
@@ -105,29 +102,42 @@ async function unwrapKey(wrapped: string, masterKey: CryptoKey, aad: Uint8Array)
   const iv = combined.slice(0, IV_LEN);
   const ct = combined.slice(IV_LEN);
   const pt = await hardCrypto.decrypt(
-    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, additionalData: aad.slice().buffer, tagLength: 128 },
+    {
+      name: 'AES-GCM',
+      iv: iv as Uint8Array<ArrayBuffer>,
+      additionalData: aad.buffer.slice(aad.byteOffset, aad.byteOffset + aad.byteLength),
+      tagLength: 128,
+    },
     masterKey,
-    ct.buffer,
+    ct.buffer.slice(ct.byteOffset, ct.byteOffset + ct.byteLength),
   );
   return new Uint8Array(pt);
 }
 
-function aadFor(userId: string, convId: string): Uint8Array {
-  return new hardGlobals.TextEncoder().encode(`forsure-conv-archive-v1:${userId}:${convId}`);
+function aadFor(userId: string, conversationId: string): Uint8Array {
+  return new hardGlobals.TextEncoder().encode(`forsure-conv-archive-v1:${userId}:${conversationId}`);
 }
 
 async function importAesKey(raw: Uint8Array): Promise<CryptoKey> {
-  return hardCrypto.importKey('raw', raw.slice().buffer, { name: 'AES-GCM' } as any, false, ['encrypt', 'decrypt']);
+  return hardCrypto.importKey(
+    'raw',
+    raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength),
+    { name: 'AES-GCM' } as any,
+    false,
+    ['encrypt', 'decrypt'],
+  );
 }
 
-export async function getOrCreateArchiveKey(conversationId: string, userId: string): Promise<CryptoKey | null> {
+export async function getOrCreateArchiveKey(
+  conversationId: string,
+  userId: string,
+): Promise<CryptoKey | null> {
   const cacheKey = `${userId}:${conversationId}`;
   const cached = ramCache.get(cacheKey);
   if (cached) return cached;
 
-  const masterKey = getSessionMasterKey();
+  const masterKey = await getArchiveMasterKey(userId);
   if (!masterKey) return null;
-
   const aad = aadFor(userId, conversationId);
 
   try {
@@ -140,19 +150,20 @@ export async function getOrCreateArchiveKey(conversationId: string, userId: stri
 
     if (data && (data as any).wrapped_key) {
       const raw = await unwrapKey((data as any).wrapped_key, masterKey, aad);
-      const ck = await importAesKey(raw);
+      const key = await importAesKey(raw);
       raw.fill(0);
-      ramCache.set(cacheKey, ck);
-      return ck;
+      ramCache.set(cacheKey, key);
+      return key;
     }
   } catch {
-    /* fall through to creation */
+    // An existing row that cannot be unwrapped must not be replaced with a new
+    // random key. Another linked device may still hold the correct Master Key.
+    return null;
   }
 
   try {
     const raw = hardCrypto.getRandomValues(new Uint8Array(KEY_LEN));
     const wrapped = await wrapKey(raw, masterKey, aad);
-
     const { error } = await supabase
       .from('conversation_archive_keys' as any)
       .upsert({
@@ -167,7 +178,7 @@ export async function getOrCreateArchiveKey(conversationId: string, userId: stri
       return null;
     }
 
-    const { data: existing } = await supabase
+    const { data: stored } = await supabase
       .from('conversation_archive_keys' as any)
       .select('wrapped_key')
       .eq('conversation_id', conversationId)
@@ -175,14 +186,14 @@ export async function getOrCreateArchiveKey(conversationId: string, userId: stri
       .maybeSingle();
 
     raw.fill(0);
-    if (!existing || !(existing as any).wrapped_key) return null;
+    if (!stored || !(stored as any).wrapped_key) return null;
 
-    const storedRaw = await unwrapKey((existing as any).wrapped_key, masterKey, aad);
-    const ck = await importAesKey(storedRaw);
+    const storedRaw = await unwrapKey((stored as any).wrapped_key, masterKey, aad);
+    const key = await importAesKey(storedRaw);
     storedRaw.fill(0);
-    ramCache.set(cacheKey, ck);
+    ramCache.set(cacheKey, key);
     maybeShowActivationToastOnce();
-    return ck;
+    return key;
   } catch {
     return null;
   }
@@ -194,20 +205,25 @@ export interface ArchivePayload {
   ct: string;
 }
 
-export function isArchivePayload(s: string | null | undefined): boolean {
-  if (!s) return false;
+export function isArchivePayload(value: string | null | undefined): boolean {
+  if (!value) return false;
   try {
-    const o = JSON.parse(s);
-    return o?.v === 1 && typeof o.iv === 'string' && typeof o.ct === 'string';
+    const payload = JSON.parse(value);
+    return payload?.v === 1 && typeof payload.iv === 'string' && typeof payload.ct === 'string';
   } catch {
     return false;
   }
 }
 
-export async function encryptArchive(plaintext: string, conversationId: string, userId: string): Promise<string | null> {
+export async function encryptArchive(
+  plaintext: string,
+  conversationId: string,
+  userId: string,
+): Promise<string | null> {
   if (!plaintext || !isArchiveBackupEnabled()) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
   if (!key) return null;
+
   try {
     const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LEN));
     const ct = await hardCrypto.encrypt(
@@ -215,56 +231,63 @@ export async function encryptArchive(plaintext: string, conversationId: string, 
       key,
       new hardGlobals.TextEncoder().encode(plaintext),
     );
-    const payload: ArchivePayload = {
+    return JSON.stringify({
       v: 1,
       iv: bufferToBase64(iv.buffer as ArrayBuffer),
       ct: bufferToBase64(ct as ArrayBuffer),
-    };
-    return JSON.stringify(payload);
+    } satisfies ArchivePayload);
   } catch {
     return null;
   }
 }
 
-export async function decryptArchive(archiveBody: string, conversationId: string, userId: string): Promise<string | null> {
+export async function decryptArchive(
+  archiveBody: string,
+  conversationId: string,
+  userId: string,
+): Promise<string | null> {
   if (!isArchivePayload(archiveBody)) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
   if (!key) return null;
+
   try {
     const parsed = JSON.parse(archiveBody) as ArchivePayload;
     const iv = new Uint8Array(base64ToBuffer(parsed.iv));
-    const ct = base64ToBuffer(parsed.ct);
-    const pt = await hardCrypto.decrypt(
+    const ciphertext = base64ToBuffer(parsed.ct);
+    const plaintext = await hardCrypto.decrypt(
       { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
       key,
-      ct,
+      ciphertext,
     );
-    return new hardGlobals.TextDecoder().decode(pt);
+    return new hardGlobals.TextDecoder().decode(plaintext);
   } catch {
     return null;
   }
 }
 
 export async function preloadAllArchiveKeys(userId: string): Promise<number> {
-  const masterKey = getSessionMasterKey();
+  const masterKey = await getArchiveMasterKey(userId);
   if (!masterKey) return 0;
+
   try {
     const { data } = await supabase.rpc('get_user_archive_keys' as any);
     const rows = (data || []) as ArchiveKeyRow[];
     let loaded = 0;
+
     for (const row of rows) {
       const cacheKey = `${userId}:${row.conversation_id}`;
       if (ramCache.has(cacheKey)) continue;
       try {
         const raw = await unwrapKey(row.wrapped_key, masterKey, aadFor(userId, row.conversation_id));
-        const ck = await importAesKey(raw);
+        const key = await importAesKey(raw);
         raw.fill(0);
-        ramCache.set(cacheKey, ck);
-        loaded++;
+        ramCache.set(cacheKey, key);
+        loaded += 1;
       } catch {
-        /* one archive key may belong to an obsolete account key */
+        // Keep the row untouched: it may require the correct linked-device key.
       }
     }
+
     return loaded;
   } catch {
     return 0;
