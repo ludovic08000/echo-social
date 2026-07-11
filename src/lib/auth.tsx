@@ -11,6 +11,10 @@ import {
   initializeArchiveMasterKeyAfterBackupCreation,
   initializeArchiveMasterKeyFromPassword,
 } from '@/lib/crypto/archiveMasterKey';
+import {
+  ensureBackupIndexedFromR2,
+  scheduleBackupMirrorToR2,
+} from '@/lib/crypto/r2BackupVault';
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
@@ -27,7 +31,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 const initialRecovery = detectRecoveryFromHash() || isRecoveryPending();
 
 async function inspectCryptoReadiness(userId: string | undefined, reason: 'session_restored' | 'signed_in') {
@@ -159,16 +162,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     void initAuth();
-
     return () => subscription.unsubscribe();
   }, []);
 
   const signUp = async (email: string, password: string, name: string, dateOfBirth?: string) => {
     try {
       const { inspectThreat } = await import('@/hooks/useThreatShield');
-      const t = await inspectThreat({ endpoint: 'auth.signup', payload: `${email}|${name}` });
-      if (t.blocked) return { error: { message: 'Requête bloquée par le bouclier de sécurité.' } as any };
+      const threat = await inspectThreat({ endpoint: 'auth.signup', payload: `${email}|${name}` });
+      if (threat.blocked) return { error: { message: 'Requête bloquée par le bouclier de sécurité.' } as any };
     } catch {}
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -183,34 +186,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       const { inspectThreat } = await import('@/hooks/useThreatShield');
-      const t = await inspectThreat({ endpoint: 'auth.signin', payload: email });
-      if (t.blocked) return { error: { message: 'Requête bloquée par le bouclier de sécurité.' } as any };
+      const threat = await inspectThreat({ endpoint: 'auth.signin', payload: email });
+      if (threat.blocked) return { error: { message: 'Requête bloquée par le bouclier de sécurité.' } as any };
     } catch {}
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (!error && data.user) {
       const userId = data.user.id;
       try {
-        const localKeysPresent = await hasLocalKeys();
+        // R2 is a cold encrypted mirror. Re-index the opaque backup in
+        // Supabase only when the hot row is absent; this never restores
+        // plaintext and never exposes the raw account identifier to R2.
+        const r2IndexStatus = await ensureBackupIndexedFromR2(userId);
+        console.log(`[AUTH][E2EE] R2 backup index status=${r2IndexStatus}`);
 
-        // Establish the already-existing account Master Key first. This key is
-        // shared by iOS and Windows only for archive/history recovery; each
-        // physical device still keeps its own Sesame DeviceID and ratchets.
+        const localKeysPresent = await hasLocalKeys();
         const archiveStatus = await initializeArchiveMasterKeyFromPassword(password, userId);
         console.log(`[AUTH][E2EE] archive master status=${archiveStatus}`);
 
         if (localKeysPresent && archiveStatus === 'restored') {
-          // Critical: do not call the legacy initializer here. Its old
-          // local-keys branch generates a random Master Key and can overwrite
-          // the existing backup, splitting iOS and Windows archive access.
+          // Do not call the legacy initializer: its old local-keys branch can
+          // generate a random Master Key and split iOS/Windows archive access.
           console.log('[AUTH][E2EE] local device keys kept; convergent archive key reused');
         } else if (localKeysPresent && archiveStatus === 'blocked') {
-          // A backup exists but could not be unwrapped. Preserve it intact and
-          // keep device messaging available rather than replacing its key.
+          // Preserve the existing backup rather than replacing its key.
           console.warn('[AUTH][E2EE] existing archive key could not be unlocked; backup preserved');
           try {
             window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
@@ -221,9 +221,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const status = await initAccountKeySync(password, userId);
           console.log(`[AUTH][E2EE] initAccountKeySync status=${status}`);
 
-          // First account/device: the legacy initializer has just created the
-          // encrypted account backup. Read that same key back into the
-          // convergent archive manager instead of creating a second key.
           if (archiveStatus === 'no_backup') {
             const postCreateStatus = await initializeArchiveMasterKeyAfterBackupCreation(password, userId);
             console.log(`[AUTH][E2EE] archive master after backup=${postCreateStatus}`);
@@ -233,6 +230,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('[AUTH][E2EE] key initialization failed:', syncError);
       }
 
+      // Best-effort and bounded. The app remains usable when R2 is not yet
+      // configured or its Edge Function has not been deployed.
+      scheduleBackupMirrorToR2(userId);
       void inspectCryptoReadiness(userId, 'signed_in');
     }
 
@@ -260,8 +260,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const purge = (storage: Storage) => {
         const keys: string[] = [];
-        for (let i = 0; i < storage.length; i++) {
-          const key = storage.key(i);
+        for (let index = 0; index < storage.length; index++) {
+          const key = storage.key(index);
           if (key && (key.startsWith('sb-') || key.startsWith('supabase.auth.'))) keys.push(key);
         }
         keys.forEach((key) => storage.removeItem(key));
