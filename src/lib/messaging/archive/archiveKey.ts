@@ -24,7 +24,6 @@ function maybeShowActivationToastOnce(): void {
     if (typeof window === 'undefined') return;
     if (localStorage.getItem(ACTIVATED_FLAG) === '1') return;
     localStorage.setItem(ACTIVATED_FLAG, '1');
-    // Dynamic import to keep the crypto module UI-free.
     void import('sonner')
       .then(({ toast }) => {
         toast.success('Sauvegarde chiffrée d\u2019historique activ\u00e9e', {
@@ -40,28 +39,41 @@ function maybeShowActivationToastOnce(): void {
 
 const KDF_VERSION = 1;
 const IV_LEN = 12;
-const KEY_LEN = 32; // AES-256
+const KEY_LEN = 32;
 
-/** In-RAM cache of decrypted (CryptoKey) archive keys. Purged on session clear. */
+/** In-RAM cache of decrypted archive keys. Purged on session clear. */
 const ramCache = new Map<string, CryptoKey>();
 
 export function clearArchiveKeyCache(): void {
   ramCache.clear();
 }
 
+function dispatchArchiveKeysReady(userId: string, loaded: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+      detail: { reason: 'archive_keys_ready', userId, loaded },
+    }));
+  } catch {
+    // UI wakeup is best-effort and carries metadata only.
+  }
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('forsure:e2ee-purge', clearArchiveKeyCache);
   window.addEventListener('forsure:e2ee-restore-needed', clearArchiveKeyCache);
 
-  // Pre-warm all archive keys as soon as the session master key is unlocked.
-  // This guarantees that the user's full message history is decryptable
-  // synchronously, even after device rotation or cache purge.
+  // Once the account Master Key is available, warm every conversation archive
+  // key and wake pending bubbles. This is particularly important on Windows
+  // after an iOS send (and vice versa): the parent row can already be mounted
+  // before the account archive becomes decryptable.
   const preloadOnUnlock = (ev: Event) => {
     const detail = (ev as CustomEvent).detail || {};
     const uid = (detail as any).userId as string | undefined;
     if (!uid) return;
-    // Fire-and-forget; safe to run multiple times (idempotent on cache).
-    void preloadAllArchiveKeys(uid).catch(() => {});
+    void preloadAllArchiveKeys(uid)
+      .then((loaded) => dispatchArchiveKeysReady(uid, loaded))
+      .catch(() => {});
   };
   window.addEventListener('forsure:e2ee-unlocked', preloadOnUnlock);
   window.addEventListener('forsure:e2ee-post-restore', preloadOnUnlock);
@@ -69,7 +81,7 @@ if (typeof window !== 'undefined') {
 
 interface ArchiveKeyRow {
   conversation_id: string;
-  wrapped_key: string; // base64( IV(12) || ciphertext )
+  wrapped_key: string;
   kdf_version: number;
   created_at: string;
 }
@@ -108,11 +120,6 @@ async function importAesKey(raw: Uint8Array): Promise<CryptoKey> {
   return hardCrypto.importKey('raw', raw.slice().buffer, { name: 'AES-GCM' } as any, false, ['encrypt', 'decrypt']);
 }
 
-/**
- * Returns the AES-GCM CryptoKey for this conversation+user, creating and
- * uploading it on first use. Returns `null` when the master key is not
- * unlocked — caller must skip archiving silently.
- */
 export async function getOrCreateArchiveKey(conversationId: string, userId: string): Promise<CryptoKey | null> {
   const cacheKey = `${userId}:${conversationId}`;
   const cached = ramCache.get(cacheKey);
@@ -123,7 +130,6 @@ export async function getOrCreateArchiveKey(conversationId: string, userId: stri
 
   const aad = aadFor(userId, conversationId);
 
-  // 1) Try fetch existing row
   try {
     const { data } = await supabase
       .from('conversation_archive_keys' as any)
@@ -143,7 +149,6 @@ export async function getOrCreateArchiveKey(conversationId: string, userId: stri
     /* fall through to creation */
   }
 
-  // 2) Create + publish
   try {
     const raw = hardCrypto.getRandomValues(new Uint8Array(KEY_LEN));
     const wrapped = await wrapKey(raw, masterKey, aad);
@@ -199,14 +204,8 @@ export function isArchivePayload(s: string | null | undefined): boolean {
   }
 }
 
-/**
- * Encrypts plaintext to an archive payload (JSON string) suitable for
- * messages.archive_body. Returns null if the archive layer isn't available
- * (no master key / no convergent key) — caller proceeds without archive.
- */
 export async function encryptArchive(plaintext: string, conversationId: string, userId: string): Promise<string | null> {
-  if (!plaintext) return null;
-  if (!isArchiveBackupEnabled()) return null;
+  if (!plaintext || !isArchiveBackupEnabled()) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
   if (!key) return null;
   try {
@@ -227,10 +226,6 @@ export async function encryptArchive(plaintext: string, conversationId: string, 
   }
 }
 
-/**
- * Decrypts an archive payload. Returns null when the key cannot be derived
- * or the payload is malformed — caller must keep waiting for other paths.
- */
 export async function decryptArchive(archiveBody: string, conversationId: string, userId: string): Promise<string | null> {
   if (!isArchivePayload(archiveBody)) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
@@ -250,10 +245,6 @@ export async function decryptArchive(archiveBody: string, conversationId: string
   }
 }
 
-/**
- * Pre-warm all archive keys for the authenticated user. Call once after
- * unlock so subsequent decrypt calls are synchronous-ish.
- */
 export async function preloadAllArchiveKeys(userId: string): Promise<number> {
   const masterKey = getSessionMasterKey();
   if (!masterKey) return 0;
@@ -271,7 +262,7 @@ export async function preloadAllArchiveKeys(userId: string): Promise<number> {
         ramCache.set(cacheKey, ck);
         loaded++;
       } catch {
-        /* skip — corrupted wrap, will be re-issued on next send */
+        /* one archive key may belong to an obsolete account key */
       }
     }
     return loaded;
@@ -285,17 +276,6 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Retroactively set archive_body on an existing message via the server-side
- * RPC. This is necessary because RLS UPDATE policies on `messages` do not
- * allow the sender to modify `archive_body` after insert.
- *
- * The write is idempotent and retried with short bounded delays. This matters
- * on mobile where the parent message can commit before the RPC or network
- * channel is fully ready. Only opaque ciphertext is retried.
- *
- * Returns true if the row was updated.
- */
 export async function setMessageArchiveBody(
   messageId: string,
   archiveBody: string,
