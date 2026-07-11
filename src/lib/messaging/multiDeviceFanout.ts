@@ -296,11 +296,13 @@ async function x3dhWrapForDevice(
   senderDeviceId: string,
   recipientUserId: string,
   recipientDeviceId: string,
-  options: { useOneTimePrekey?: boolean; persistSession?: boolean } = {},
+  options: { useOneTimePrekey?: boolean } = {},
 ): Promise<string | null> {
   if (isKnownInvalidDeviceId(recipientDeviceId)) return null;
   try {
-    const bundle = await fetchPrekeyBundleForDevice(recipientUserId, recipientDeviceId);
+    const bundle = await fetchPrekeyBundleForDevice(recipientUserId, recipientDeviceId, {
+      claimOneTimePrekey: options.useOneTimePrekey !== false,
+    });
     if (!bundle) {
       logCryptoError({
         severity: 'warning',
@@ -311,10 +313,6 @@ async function x3dhWrapForDevice(
         peerDeviceId: recipientDeviceId,
       });
       return null;
-    }
-    if (options.useOneTimePrekey === false) {
-      delete bundle.oneTimePrekey;
-      delete bundle.oneTimePrekeyId;
     }
 
     const myKeys = await getOrCreateIdentityKeys(senderUserId);
@@ -351,7 +349,6 @@ async function x3dhWrapForDevice(
     ];
 
     try {
-      if (options.persistSession === false) return parts.join('.');
       await establishDeviceSession(
         senderUserId, senderDeviceId,
         recipientUserId, recipientDeviceId,
@@ -497,30 +494,9 @@ export async function encryptPlaintextForDeviceTarget(
   if (isKnownInvalidDeviceId(input.recipientDeviceId)) return null;
 
   const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
-  const isCurrentDeviceSelfCopy =
-    input.senderUserId === input.recipientUserId &&
-    senderDeviceId === input.recipientDeviceId;
 
   if (input.forceFreshSession) {
     await invalidateDeviceSession(input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId).catch(() => {});
-  }
-
-  // Sender self-copy: keep a durable, decryptable copy for the current browser
-  // too. This is what saves iOS after Safari/WebKit purges IndexedDB: the
-  // sender can recover their own outgoing bubble from message_device_copies
-  // after the account keys are restored. Do not persist a self/self ratchet
-  // session here; use a fresh X3DH bootstrap row so a later read is stateless
-  // and cannot poison normal peer-device ratchets.
-  if (isCurrentDeviceSelfCopy) {
-    const selfBootstrap = await x3dhWrapForDevice(
-      input.plaintext,
-      input.senderUserId,
-      senderDeviceId,
-      input.recipientUserId,
-      input.recipientDeviceId,
-      { useOneTimePrekey: false, persistSession: false },
-    );
-    return selfBootstrap ? { encryptedBody: selfBootstrap, senderDeviceId } : null;
   }
 
   let encrypted: string | null = null;
@@ -638,6 +614,11 @@ export interface FanoutCopyRow {
  * via the transactional `send_message_with_device_copies` RPC alongside the
  * parent message row).
  *
+ * The current sender device is deliberately excluded. Its durable recovery
+ * path is the account-wrapped encrypted archive, which survives a complete
+ * IndexedDB purge. Other devices belonging to the sender remain fan-out
+ * targets so cross-device self history continues to work.
+ *
  * Pass a synthetic `messageId` (e.g. the to-be-assigned UUID) — the same id
  * must then be reused when persisting the `messages` row.
  */
@@ -650,7 +631,10 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
   const userIds = participants.map(p => p.user_id);
 
   const targets = (await listFanoutTargets(input.senderUserId, userIds, { verifyPrekeys: false }))
-    .filter(d => !isKnownInvalidDeviceId(d.deviceId));
+    .filter(d =>
+      !(d.userId === input.senderUserId && d.deviceId === senderDeviceId) &&
+      !isKnownInvalidDeviceId(d.deviceId),
+    );
   if (targets.length === 0) return { rows: [], hasTargets: false };
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
@@ -713,7 +697,6 @@ export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserte
   if (!hasTargets) return { inserted: 0, multiDevice: false };
   return insertFanoutCopyRows(input, rows);
 }
-
 
 interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 
@@ -898,7 +881,6 @@ function filterCopyRowsByExpectedSender(rows: CopyRow[], expectedSenderUserId?: 
   if (!expectedSenderUserId) return rows;
   return rows.filter(row => row.sender_user_id === expectedSenderUserId);
 }
-
 
 export async function tryDecryptDeviceTargetedBody(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<string | null> {
   return (await tryDecryptCopy(row, userId, myDeviceId)).plaintext;
