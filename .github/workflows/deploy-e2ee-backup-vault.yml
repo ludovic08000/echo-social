@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: deploy-e2ee-backup-vault
@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Verify deployment credentials
         shell: bash
@@ -57,3 +59,22 @@ jobs:
             echo "Expected HTTP 401, received $status" >&2
             exit 1
           fi
+
+      - name: Record successful deployment
+        shell: bash
+        run: |
+          mkdir -p supabase/.deploy
+          cat > supabase/.deploy/e2ee-backup-vault.json <<EOF
+          {
+            "project_ref": "$PROJECT_REF",
+            "function": "e2ee-backup-vault",
+            "source_commit": "$GITHUB_SHA",
+            "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "verification": "unauthenticated_request_returned_401"
+          }
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/.deploy/e2ee-backup-vault.json
+          git commit -m "chore(supabase): mark e2ee backup vault deployment"
+          git push origin HEAD:main
