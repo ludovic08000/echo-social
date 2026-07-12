@@ -11,6 +11,7 @@ import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 import { buildFanoutCopies, fanoutMessageCopies, insertFanoutCopyRows, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
+import { fanoutNeedsRepair, repairFanoutWithRetry } from '@/lib/messaging/fanoutRepair';
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 
@@ -252,12 +253,6 @@ export function useMessageQueue(
     };
 
     trace('session_check_start');
-    // #1 perf: getSession() can await an in-progress token refresh (network),
-    // adding multi-second latency to the first send after idle. Race it against
-    // a short timeout; if it's slow we trust the live auth-context `user` (kept
-    // current by onAuthStateChange — the hook never runs without an authed user)
-    // instead of blocking the send. The strict liveness check still applies on
-    // the fast path; a truly invalid token is rejected by RLS server-side.
     const sessProbe = await Promise.race([
       supabase.auth.getSession().then((r) => ({ kind: 'ok' as const, data: r.data })),
       new Promise<{ kind: 'slow' }>((res) => setTimeout(() => res({ kind: 'slow' }), 800)),
@@ -382,7 +377,11 @@ export function useMessageQueue(
       if (inlineFanout) {
         fanoutRows = inlineFanout.rows;
         fanoutHasTargets = inlineFanout.hasTargets;
-        trace('fanout_inline_ready', { rows: fanoutRows.length, hasTargets: fanoutHasTargets, serverMessageId });
+        fanoutTimedOut = fanoutNeedsRepair(inlineFanout);
+        trace(
+          fanoutTimedOut ? 'fanout_zero_copy_deferred' : 'fanout_inline_ready',
+          { rows: fanoutRows.length, hasTargets: fanoutHasTargets, serverMessageId },
+        );
       } else {
         fanoutTimedOut = true;
         trace('fanout_deferred_start', { serverMessageId });
@@ -456,10 +455,15 @@ export function useMessageQueue(
       trace('legacy_insert_ok', { serverId: data.id });
       if (fanoutRows.length > 0) {
         try {
-          await insertFanoutCopyRows(fanoutInput, fanoutRows);
-          dispatchDecryptRetry(data.id);
+          const inserted = await insertFanoutCopyRows(fanoutInput, fanoutRows);
+          if (inserted.inserted > 0) {
+            dispatchDecryptRetry(data.id);
+          } else if (fanoutHasTargets) {
+            fanoutTimedOut = true;
+            trace('legacy_fanout_zero_insert_deferred', { serverMessageId: data.id });
+          }
         } catch {
-          void fanoutMessageCopies(fanoutInput).then(() => dispatchDecryptRetry(data.id)).catch(() => {});
+          fanoutTimedOut = true;
         }
       }
     } else {
@@ -484,20 +488,11 @@ export function useMessageQueue(
     if (data?.id) {
       onPlaintextCached?.(data.id, sanitized);
       if (encryptedSuccessfully) {
-        // Own sent messages cannot always decrypt their outbound ratchet frame.
-        // Cache by both the server id and ciphertext hash immediately so a
-        // realtime echo/refetch cannot blank the bubble while archive/fanout
-        // maintenance is still settling.
         void savePlaintext(data.id, sanitized);
         void savePlaintextForCiphertext(bodyToStore, sanitized);
         dispatchDecryptRetry(data.id);
       }
 
-      // C (durable history): archive the sender's OWN plaintext under the
-      // account master key (server-side, write-once) so sent messages survive
-      // local cache purge / device rotation / iOS ITP eviction. The already
-      // running archive promise is reused; the ciphertext write itself has a
-      // bounded retry policy in setMessageArchiveBody().
       if (archiveAllowed && !inlineArchiveBody) {
         const archiveMsgId = data.id;
         void (async () => {
@@ -538,21 +533,30 @@ export function useMessageQueue(
           .then(async (fanout) => {
             trace('fanout_async_built', { rows: fanout.rows.length, hasTargets: fanout.hasTargets, serverMessageId: data.id });
             if (fanout.rows.length > 0) {
-              await insertFanoutCopyRows(fanoutInput, fanout.rows);
-              trace('fanout_async_inserted', { rows: fanout.rows.length, serverMessageId: data.id });
-              dispatchDecryptRetry(data.id);
-              return;
+              const inserted = await insertFanoutCopyRows(fanoutInput, fanout.rows);
+              if (inserted.inserted > 0) {
+                trace('fanout_async_inserted', { rows: inserted.inserted, serverMessageId: data.id });
+                dispatchDecryptRetry(data.id);
+                return;
+              }
             }
-            if (fanout.hasTargets) {
-              await fanoutMessageCopies(fanoutInput);
-              trace('fanout_async_fallback_done', { serverMessageId: data.id });
-              dispatchDecryptRetry(data.id);
-            }
+
+            const repaired = await repairFanoutWithRetry(fanoutInput);
+            trace('fanout_async_repaired', { inserted: repaired.inserted, multiDevice: repaired.multiDevice, serverMessageId: data.id });
+            if (repaired.inserted > 0) dispatchDecryptRetry(data.id);
           })
           .catch((fanoutError) => {
             trace('fanout_async_failed', { error: fanoutError instanceof Error ? fanoutError.message : String(fanoutError), serverMessageId: data.id });
             console.warn('[MSG_SEND] async fanout failed after parent insert', { localId, conversationId, messageId: data.id, fanoutError });
-            void fanoutMessageCopies(fanoutInput).then(() => dispatchDecryptRetry(data.id)).catch(() => {});
+            void repairFanoutWithRetry(fanoutInput)
+              .then((repaired) => {
+                trace('fanout_async_recovered_after_error', { inserted: repaired.inserted, multiDevice: repaired.multiDevice, serverMessageId: data.id });
+                if (repaired.inserted > 0) dispatchDecryptRetry(data.id);
+              })
+              .catch((repairError) => {
+                trace('fanout_async_repair_exhausted', { error: repairError instanceof Error ? repairError.message : String(repairError), serverMessageId: data.id });
+                console.warn('[MSG_SEND] fanout repair exhausted', { localId, conversationId, messageId: data.id, repairError });
+              });
           });
       }
 
