@@ -1,12 +1,9 @@
 /**
  * LRU cache of decrypted media object URLs, keyed by encrypted R2 URL.
  *
- * Why: scrolling through a chat re-mounts <EncryptedMedia/> instances. Without
- * a cache, every remount triggers another R2 download + AES-GCM decrypt, which
- * is what makes photos feel slow to (re)appear. With this cache, a media that
- * was decrypted once shows instantly forever after.
- *
- * Memory: we cap entries and revoke the oldest object URL when evicted.
+ * Mounted media retain their object URL. Eviction only revokes unmounted
+ * entries; otherwise a still-visible image/video can suddenly turn blank when
+ * the cache crosses its cap.
  */
 
 const MAX_ENTRIES = 80;
@@ -14,32 +11,67 @@ const MAX_ENTRIES = 80;
 interface Entry {
   objectUrl: string;
   isVideo: boolean;
+  refs: number;
 }
 
 const store = new Map<string, Entry>();
 
+function touch(encryptedUrl: string, entry: Entry): void {
+  store.delete(encryptedUrl);
+  store.set(encryptedUrl, entry);
+}
+
+function trim(): void {
+  if (store.size <= MAX_ENTRIES) return;
+
+  for (const [key, entry] of store) {
+    if (store.size <= MAX_ENTRIES) break;
+    if (entry.refs > 0) continue;
+    store.delete(key);
+    try { URL.revokeObjectURL(entry.objectUrl); } catch { /* noop */ }
+  }
+  // If every entry is mounted, temporarily exceed the cap. The next release()
+  // calls trim() again and safely frees the oldest unmounted entries.
+}
+
 export function getDecryptedMedia(encryptedUrl: string): Entry | undefined {
   const entry = store.get(encryptedUrl);
   if (!entry) return undefined;
-  // Touch — move to most-recently-used
-  store.delete(encryptedUrl);
-  store.set(encryptedUrl, entry);
+  touch(encryptedUrl, entry);
   return entry;
 }
 
-export function rememberDecryptedMedia(encryptedUrl: string, objectUrl: string, isVideo: boolean): void {
-  if (store.has(encryptedUrl)) return;
-  if (store.size >= MAX_ENTRIES) {
-    const oldestKey = store.keys().next().value;
-    if (oldestKey) {
-      const old = store.get(oldestKey);
-      store.delete(oldestKey);
-      if (old) {
-        try { URL.revokeObjectURL(old.objectUrl); } catch { /* noop */ }
-      }
+export function rememberDecryptedMedia(
+  encryptedUrl: string,
+  objectUrl: string,
+  isVideo: boolean,
+): void {
+  const existing = store.get(encryptedUrl);
+  if (existing) {
+    touch(encryptedUrl, existing);
+    if (existing.objectUrl !== objectUrl) {
+      // The existing cache owns the canonical URL; avoid leaking a duplicate.
+      try { URL.revokeObjectURL(objectUrl); } catch { /* noop */ }
     }
+    return;
   }
-  store.set(encryptedUrl, { objectUrl, isVideo });
+
+  store.set(encryptedUrl, { objectUrl, isVideo, refs: 0 });
+  trim();
+}
+
+export function retainDecryptedMedia(encryptedUrl: string): void {
+  const entry = store.get(encryptedUrl);
+  if (!entry) return;
+  entry.refs += 1;
+  touch(encryptedUrl, entry);
+}
+
+export function releaseDecryptedMedia(encryptedUrl: string): void {
+  const entry = store.get(encryptedUrl);
+  if (!entry) return;
+  entry.refs = Math.max(0, entry.refs - 1);
+  trim();
 }
 
 export function clearDecryptedMediaCache(): void {
@@ -48,3 +80,5 @@ export function clearDecryptedMediaCache(): void {
   }
   store.clear();
 }
+
+export const __test__ = { trim };
