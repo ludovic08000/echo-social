@@ -39,8 +39,11 @@ vi.mock('@/lib/messaging/archive/archiveKey', () => ({
 }));
 
 import {
+  clearLastGoodOutcome,
   clearNegativeCache,
   clearNegativeCacheForMessage,
+  dropCache,
+  looksEncrypted,
   resolvePlaintext,
 } from '@/components/messages/decryptionService';
 
@@ -57,10 +60,20 @@ function ratchetBody(seed: string): string {
   });
 }
 
-describe('targeted decryption negative cache', () => {
+function failedDecrypt() {
+  return {
+    text: '',
+    incompatible: true,
+    encrypted: true,
+    verified: false,
+  };
+}
+
+describe('targeted decryption cache and Bubble Hold', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearNegativeCache();
+    clearLastGoodOutcome();
     mocks.loadPlaintext.mockResolvedValue(null);
     mocks.loadPlaintextForCiphertext.mockResolvedValue(null);
     mocks.savePlaintext.mockResolvedValue(undefined);
@@ -85,12 +98,7 @@ describe('targeted decryption negative cache', () => {
     const bodyA1 = ratchetBody('a1');
     const bodyA2 = ratchetBody('a2');
     const bodyB = ratchetBody('b');
-    const fail = vi.fn(async () => ({
-      text: '',
-      incompatible: true,
-      encrypted: true,
-      verified: false,
-    }));
+    const fail = vi.fn(async () => failedDecrypt());
 
     await Promise.all([
       resolvePlaintext({ body: bodyA1, messageId: 'message-a', decrypt: fail }),
@@ -126,5 +134,45 @@ describe('targeted decryption negative cache', () => {
     expect(recoverA1).toHaveBeenCalledOnce();
     expect(recoverA2).toHaveBeenCalledOnce();
     expect(recoverB).not.toHaveBeenCalled();
+  });
+
+  it('keeps the last authenticated plaintext when a later retry fails', async () => {
+    const body = ratchetBody('sticky');
+    const firstDecrypt = vi.fn(async () => ({
+      text: 'Cette bulle doit rester visible',
+      incompatible: false,
+      encrypted: true,
+      verified: true,
+    }));
+
+    const first = await resolvePlaintext({
+      body,
+      messageId: 'message-sticky',
+      decrypt: firstDecrypt,
+    });
+    expect(first?.text).toBe('Cette bulle doit rester visible');
+
+    // Reproduce the old bug: positive body cache removed, persistence not yet
+    // readable, then the fresh decrypt/device-copy/archive retry fails.
+    dropCache('message-sticky', body);
+    clearNegativeCacheForMessage('message-sticky');
+    const retryDecrypt = vi.fn(async () => failedDecrypt());
+
+    const retried = await resolvePlaintext({
+      body,
+      messageId: 'message-sticky',
+      decrypt: retryDecrypt,
+    });
+
+    expect(retryDecrypt).toHaveBeenCalledOnce();
+    expect(retried?.text).toBe('Cette bulle doit rester visible');
+  });
+
+  it('treats future crypto JSON envelopes as encrypted recovery rows', () => {
+    expect(looksEncrypted(JSON.stringify({
+      encryptionMode: 'future_device_mode',
+      v: 99,
+      ct: 'opaque-ciphertext',
+    }))).toBe(true);
   });
 });
