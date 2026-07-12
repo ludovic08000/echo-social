@@ -1,22 +1,25 @@
 /**
  * decryptionService — single crypto entry point for message UI.
  *
- * Centralizes every decryption path so `DecryptedMessageBody` stays a pure
- * presentational component. Returns a normalized `DecryptionOutcome` that
- * the UI renders directly without making any further decisions.
- *
  * Resolution order for a single message body:
- *   1. Already-known plaintext (cachedPlaintext / RAM LRU / IndexedDB).
- *   2. Conversation-level decrypt delegate (Double Ratchet primary path).
- *   3. Per-message device-copy fan-out (orthogonal X3DH bootstrap).
- *   4. e2ee-session façade (multi-session ratchet enumeration + queue).
- *   5. Silent — pending queue retries off-screen, UI stays neutral.
+ *   1. Already-known plaintext (RAM / IndexedDB).
+ *   2. Conversation-level Double Ratchet.
+ *   3. Per-message Sesame device copy.
+ *   4. Multi-session router.
+ *   5. Account-wrapped encrypted archive.
  *
- * No string is ever surfaced to the UI on failure — the component decides
- * the neutral placeholder. No console noise on the hot path either.
+ * Bubble Hold invariant: once authenticated plaintext has been displayed for an
+ * immutable message id, a later transient retry is never allowed to replace it
+ * with an empty result. Only a valid newer result or an explicit message delete
+ * may remove it from the UI.
  */
 import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
-import { isMultiDeviceEnvelopeBody, isSecurePipelineEnvelopeBody, isStrictRatchetEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import {
+  isCryptoJsonBody,
+  isMultiDeviceEnvelopeBody,
+  isSecurePipelineEnvelopeBody,
+  isStrictRatchetEnvelopeBody,
+} from '@/lib/messaging/messageCompatibility';
 import {
   loadPlaintext,
   loadPlaintextForCiphertext,
@@ -30,34 +33,35 @@ import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiv
 import type { DecryptResult } from '@/hooks/useE2EE';
 
 export interface DecryptionOutcome {
-  /** Plaintext to show. Includes label only (no embedded media key). */
   text: string;
-  /** Optional media key, b64 raw 32B AES-GCM. */
   mediaKeyB64: string | null;
-  /** True when the parsed payload asks the UI to render nothing. */
   hidden: boolean;
 }
 
 export function looksEncrypted(body: string): boolean {
-  return isStrictRatchetEnvelopeBody(body) || isMultiDeviceEnvelopeBody(body) || isSecurePipelineEnvelopeBody(body);
+  return (
+    isCryptoJsonBody(body) ||
+    isStrictRatchetEnvelopeBody(body) ||
+    isMultiDeviceEnvelopeBody(body) ||
+    isSecurePipelineEnvelopeBody(body)
+  );
 }
 
-/** Bounded LRU plaintext cache shared across mounted bubbles. */
 const CACHE_CAP = 500;
 class LruMap<K, V> {
   private m = new Map<K, V>();
   constructor(private readonly cap: number) {}
   get(k: K): V | undefined {
-    const v = this.m.get(k);
-    if (v !== undefined) {
+    const value = this.m.get(k);
+    if (value !== undefined) {
       this.m.delete(k);
-      this.m.set(k, v);
+      this.m.set(k, value);
     }
-    return v;
+    return value;
   }
-  set(k: K, v: V): void {
+  set(k: K, value: V): void {
     if (this.m.has(k)) this.m.delete(k);
-    this.m.set(k, v);
+    this.m.set(k, value);
     while (this.m.size > this.cap) {
       const oldest = this.m.keys().next().value;
       if (oldest === undefined) break;
@@ -65,29 +69,46 @@ class LruMap<K, V> {
     }
   }
   delete(k: K): void { this.m.delete(k); }
+  clear(): void { this.m.clear(); }
 }
+
 const cache = new LruMap<string, DecryptionOutcome>(CACHE_CAP);
+const lastGoodByMessage = new LruMap<string, DecryptionOutcome>(CACHE_CAP);
 const inflight = new Map<string, Promise<DecryptionOutcome | null>>();
 
-/**
- * Negative cache — when a decrypt round produces no plaintext we remember
- * the failure for `NEG_TTL_MS` so a re-render storm (50 bubbles re-mount on
- * scroll) does not re-fire the full decrypt cascade for each one.
- *
- * The cache is invalidated by the global `forsure-decrypt-retry` event
- * (dispatched after key restoration / pending-queue success).
- */
+export function readLastGoodOutcome(messageId?: string): DecryptionOutcome | undefined {
+  if (!messageId) return undefined;
+  return lastGoodByMessage.get(messageId);
+}
+
+export function rememberLastGoodOutcome(
+  messageId: string | undefined,
+  outcome: DecryptionOutcome,
+): void {
+  if (!messageId || outcome.hidden || outcome.text === '') return;
+  lastGoodByMessage.set(messageId, outcome);
+}
+
+export function clearLastGoodOutcome(messageId?: string): void {
+  if (messageId) {
+    lastGoodByMessage.delete(messageId);
+    return;
+  }
+  lastGoodByMessage.clear();
+}
+
 const NEG_TTL_MS = 60_000;
 const negCache = new Map<string, number>();
-function negCacheHit(k: string): boolean {
-  const at = negCache.get(k);
+function negCacheHit(key: string): boolean {
+  const at = negCache.get(key);
   if (at === undefined) return false;
   if (Date.now() - at > NEG_TTL_MS) {
-    negCache.delete(k);
+    negCache.delete(key);
     return false;
   }
   return true;
 }
+
 export function clearNegativeCache(messageId?: string, body?: string): void {
   if (messageId !== undefined && body !== undefined) {
     negCache.delete(cacheKey(messageId, body));
@@ -96,12 +117,6 @@ export function clearNegativeCache(messageId?: string, body?: string): void {
   negCache.clear();
 }
 
-/**
- * Clears every negative-cache entry for a message, regardless of which body
- * variant produced it. This is required for realtime device-copy delivery:
- * the copy may arrive while no bubble is mounted, so a component-local retry
- * listener alone cannot invalidate the stale 60-second failure entry.
- */
 export function clearNegativeCacheForMessage(messageId: string): void {
   if (!messageId) return;
   const prefix = `${messageId}|`;
@@ -114,9 +129,6 @@ export function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
 }
 
-// Install one module-level listener. It runs even when DecryptedMessageBody is
-// not mounted, so targeted realtime retry events cannot be lost. The marker
-// avoids duplicate listeners during Vite HMR.
 if (typeof window !== 'undefined') {
   const marker = '__forsureDecryptRetryCacheListenerV1';
   const globalWindow = window as typeof window & Record<string, unknown>;
@@ -133,13 +145,8 @@ if (typeof window !== 'undefined') {
   }
 }
 
-/**
- * Batched sender_id lookup — when many bubbles mount in a single chat
- * scroll, fold all `messages.id → sender_id` queries into one round-trip
- * (≤50 ms window). Removes the N+1 Supabase chatter on the decrypt path.
- */
 const BATCH_WINDOW_MS = 50;
-const senderBatchPending = new Map<string, Array<(v: string | null) => void>>();
+const senderBatchPending = new Map<string, Array<(value: string | null) => void>>();
 const senderCache = new LruMap<string, string | null>(500);
 let senderBatchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -159,13 +166,13 @@ async function flushSenderBatch(): Promise<void> {
       map.set(row.id, row.sender_id ?? null);
     }
     for (const id of ids) {
-      const v = map.get(id) ?? null;
-      senderCache.set(id, v);
-      (localWaiters.get(id) ?? []).forEach((fn) => fn(v));
+      const value = map.get(id) ?? null;
+      senderCache.set(id, value);
+      (localWaiters.get(id) ?? []).forEach((resolve) => resolve(value));
     }
   } catch {
     for (const id of ids) {
-      (localWaiters.get(id) ?? []).forEach((fn) => fn(null));
+      (localWaiters.get(id) ?? []).forEach((resolve) => resolve(null));
     }
   }
 }
@@ -174,9 +181,9 @@ function getSenderIdBatched(messageId: string): Promise<string | null> {
   const cached = senderCache.get(messageId);
   if (cached !== undefined) return Promise.resolve(cached);
   return new Promise<string | null>((resolve) => {
-    const arr = senderBatchPending.get(messageId) ?? [];
-    arr.push(resolve);
-    senderBatchPending.set(messageId, arr);
+    const pending = senderBatchPending.get(messageId) ?? [];
+    pending.push(resolve);
+    senderBatchPending.set(messageId, pending);
     if (!senderBatchTimer) {
       senderBatchTimer = setTimeout(() => void flushSenderBatch(), BATCH_WINDOW_MS);
     }
@@ -199,11 +206,11 @@ export function buildOutcomeFromText(text: string): DecryptionOutcome {
   return { text, mediaKeyB64: null, hidden: false };
 }
 
-/** Persist plaintext in IndexedDB so cold-starts don't re-decrypt. */
 export function persistOutcome(body: string, outcome: DecryptionOutcome, messageId?: string): string {
   const persisted = outcome.mediaKeyB64
     ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
     : outcome.text;
+  rememberLastGoodOutcome(messageId, outcome);
   if (messageId) void savePlaintext(messageId, persisted);
   void savePlaintextForCiphertext(body, persisted);
   return persisted;
@@ -218,13 +225,17 @@ async function loadPersistedOutcome(
     : null;
   if (byMessageId) {
     if (looksEncrypted(body)) void savePlaintextForCiphertext(body, byMessageId);
-    return buildOutcomeFromText(byMessageId);
+    const outcome = buildOutcomeFromText(byMessageId);
+    rememberLastGoodOutcome(messageId, outcome);
+    return outcome;
   }
 
   const byCiphertext = await loadPlaintextForCiphertext(body).catch(() => null);
   if (!byCiphertext) return null;
   if (messageId) void savePlaintext(messageId, byCiphertext);
-  return buildOutcomeFromText(byCiphertext);
+  const outcome = buildOutcomeFromText(byCiphertext);
+  rememberLastGoodOutcome(messageId, outcome);
+  return outcome;
 }
 
 function cacheAndPersist(
@@ -238,11 +249,10 @@ function cacheAndPersist(
   return outcome;
 }
 
-/**
- * Resolve plaintext for a message body.
- * Returns `null` when no path produced plaintext — the UI must stay silent
- * and wait for `forsure-decrypt-retry`.
- */
+function stickyOrNull(messageId?: string): DecryptionOutcome | null {
+  return readLastGoodOutcome(messageId) ?? null;
+}
+
 export async function resolvePlaintext(opts: {
   body: string;
   messageId?: string;
@@ -251,11 +261,13 @@ export async function resolvePlaintext(opts: {
 }): Promise<DecryptionOutcome | null> {
   const { body, messageId, decrypt } = opts;
 
-  // Cleartext shortcut.
-  if (!looksEncrypted(body)) return { text: body, mediaKeyB64: null, hidden: false };
+  if (!looksEncrypted(body)) {
+    const outcome = { text: body, mediaKeyB64: null, hidden: false };
+    rememberLastGoodOutcome(messageId, outcome);
+    return outcome;
+  }
 
   const key = cacheKey(messageId, body);
-
   const cached = cache.get(key);
   if (cached) return cached;
 
@@ -265,91 +277,66 @@ export async function resolvePlaintext(opts: {
     return persisted;
   }
 
-  // Negative cache — avoid re-running a full decrypt cascade after a recent
-  // failure. Bypassed by the retry event which calls clearNegativeCache().
-  if (negCacheHit(key)) return null;
+  if (negCacheHit(key)) return stickyOrNull(messageId);
 
   let promise = inflight.get(key);
   if (!promise) {
     promise = (async (): Promise<DecryptionOutcome | null> => {
       let senderId: string | null = null;
 
-      // 1) Conversation-level Double Ratchet (primary). Multi-device-only
-      // envelopes intentionally skip this path and resolve via device copies.
       if (!isMultiDeviceEnvelopeBody(body)) {
         try {
           const result = await decrypt(body);
           if (!result.incompatible) {
-            // A decrypted-but-unverified result is still AES-GCM-authenticated
-            // by the Double Ratchet session (X3DH-authenticated). In
-            // multi-device, `verified: false` is a false negative because the
-            // sending device signs with its own Ed25519 key while we only hold
-            // the peer's account-level signing key. Surfacing the plaintext
-            // (rather than dropping to a blank bubble) restores those messages.
-            // The signal is logged; a per-device verification + UI "unverified"
-            // badge is tracked as a separate follow-up.
             if (result.encrypted && !result.verified && typeof console !== 'undefined') {
-              console.warn('[DECRYPT] ratchet path: decrypted, AEAD-authenticated but Ed25519-unverified — surfacing', {
-                messageId, kind: isMultiDeviceEnvelopeBody(body) ? 'multidevice' : isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
+              console.warn('[DECRYPT] AEAD-authenticated but Ed25519-unverified plaintext surfaced', {
+                messageId,
+                kind: isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
               });
             }
             if (result.text !== '') {
-              const outcome = buildOutcomeFromText(result.text);
-              return cacheAndPersist(key, body, outcome, messageId);
+              return cacheAndPersist(key, body, buildOutcomeFromText(result.text), messageId);
             }
           }
         } catch {
-          /* fall through to alternate paths */
+          /* fall through */
         }
       }
 
-      // 2) Per-message device-copy fan-out.
-      // Important: do this even for isMe=true. A message sent from Windows by
-      // the same account can be received on iOS as a self-message, but the real
-      // plaintext still lives in that iOS device copy.
       if (messageId) {
         senderId = await getSenderIdBatched(messageId);
         if (senderId) {
           const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
           if (copyText !== null) {
-            const outcome = buildOutcomeFromText(copyText);
-            return cacheAndPersist(key, body, outcome, messageId);
+            return cacheAndPersist(key, body, buildOutcomeFromText(copyText), messageId);
           }
         }
       }
 
-      // WhatsApp-style multi-device parent envelopes are placeholders: the
-      // real ciphertext lives in the per-device copy. Retrying legacy routes
-      // here only duplicates refanout requests and can never decrypt the
-      // parent body itself.
       if (isMultiDeviceEnvelopeBody(body)) {
         negCache.set(key, Date.now());
-        return null;
+        return stickyOrNull(messageId);
       }
 
-      // 3) e2ee-session façade (multi-session ratchet + queue).
       if (messageId) {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user && senderId) {
-            const r = await routeIncoming({
+            const routed = await routeIncoming({
               encryptedBody: body,
               recipientUserId: user.id,
               senderUserId: senderId,
               messageId,
             });
-            if (r.ok && r.plaintext !== null) {
-              const outcome = buildOutcomeFromText(r.plaintext);
-              return cacheAndPersist(key, body, outcome, messageId);
+            if (routed.ok && routed.plaintext !== null) {
+              return cacheAndPersist(key, body, buildOutcomeFromText(routed.plaintext), messageId);
             }
           }
         } catch {
-          /* swallow — pending queue will retry */
+          /* pending queue will retry */
         }
       }
 
-      // 4) Encrypted archive fallback (long-life, wrapped under account master key).
-      //    Survives device rotation, cache purge, ghost-device quarantine.
       let archiveFound = false;
       let archiveDecrypted = false;
       if (messageId) {
@@ -361,50 +348,52 @@ export async function resolvePlaintext(opts: {
               .select('archive_body, conversation_id')
               .eq('id', messageId)
               .maybeSingle();
-            const convId = (row as any)?.conversation_id as string | null | undefined;
-            if (convId) {
-              // Per-recipient archive first (covers RECEIVED messages), then the
-              // sender's write-once archive_body (covers SENT messages). Both are
-              // wrapped under the viewing user's own archive key.
-              let ab: string | null = ((row as any)?.archive_body as string | null) ?? null;
+            const conversationId = (row as any)?.conversation_id as string | null | undefined;
+            if (conversationId) {
+              let archiveBody: string | null = ((row as any)?.archive_body as string | null) ?? null;
               try {
                 const { data: mine } = await (supabase as any)
                   .from('message_archives')
                   .select('archive_body')
                   .eq('message_id', messageId)
                   .maybeSingle();
-                const mineAb = (mine as any)?.archive_body as string | null | undefined;
-                if (mineAb) ab = mineAb;
-              } catch { /* table absent pre-migration — ignore */ }
-              if (ab && isArchivePayload(ab)) {
+                const mineArchive = (mine as any)?.archive_body as string | null | undefined;
+                if (mineArchive) archiveBody = mineArchive;
+              } catch {
+                /* table may be absent before migration */
+              }
+              if (archiveBody && isArchivePayload(archiveBody)) {
                 archiveFound = true;
-                const pt = await decryptArchive(ab, convId, user.id);
-                if (pt !== null) {
+                const plaintext = await decryptArchive(archiveBody, conversationId, user.id);
+                if (plaintext !== null) {
                   archiveDecrypted = true;
-                  const outcome = buildOutcomeFromText(pt);
-                  return cacheAndPersist(key, body, outcome, messageId);
+                  return cacheAndPersist(key, body, buildOutcomeFromText(plaintext), messageId);
                 }
               }
             }
           }
         } catch {
-          /* swallow */
+          /* fall through to sticky snapshot */
         }
       }
 
-      // 5) Nothing produced plaintext. Mark negative + stay silent.
       if (typeof console !== 'undefined') {
-        console.warn('[DECRYPT-FAIL] no path produced plaintext (bubble stays in recovery)', {
+        console.warn('[DECRYPT-FAIL] no fresh path; preserving last valid bubble snapshot', {
           messageId,
-          kind: isMultiDeviceEnvelopeBody(body) ? 'multidevice' : isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
+          kind: isMultiDeviceEnvelopeBody(body)
+            ? 'multidevice'
+            : isStrictRatchetEnvelopeBody(body)
+              ? 'strict'
+              : 'secure_or_future',
           isMe: opts.isMe === true,
           senderId: senderId ? String(senderId).slice(0, 8) : null,
           archiveFound,
           archiveDecrypted,
+          stickyAvailable: Boolean(readLastGoodOutcome(messageId)),
         });
       }
       negCache.set(key, Date.now());
-      return null;
+      return stickyOrNull(messageId);
     })();
     inflight.set(key, promise);
     promise.finally(() => inflight.delete(key));
