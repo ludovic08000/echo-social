@@ -3,11 +3,12 @@
  * and keeps the last valid object URL visible while a retry runs.
  */
 
-import { useState, useEffect, memo } from 'react';
-import { Lock } from 'lucide-react';
+import { useState, useEffect, memo, useCallback } from 'react';
+import { Lock, RotateCcw } from 'lucide-react';
 import { importMediaKey, decryptMedia } from '@/lib/crypto/mediaEncrypt';
 import { fetchR2Object } from '@/lib/r2';
 import {
+  forgetDecryptedMedia,
   getDecryptedMedia,
   rememberDecryptedMedia,
   retainDecryptedMedia,
@@ -30,6 +31,23 @@ export const EncryptedMedia = memo(function EncryptedMedia({
   const [objectUrl, setObjectUrl] = useState<string | null>(cached?.objectUrl ?? null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(!cached);
+  const [retryTick, setRetryTick] = useState(0);
+
+  const retry = useCallback(() => {
+    forgetDecryptedMedia(encryptedUrl);
+    setObjectUrl(null);
+    setError(false);
+    setLoading(true);
+    setRetryTick((tick) => tick + 1);
+  }, [encryptedUrl]);
+
+  useEffect(() => {
+    const onOnline = () => {
+      if (error || !objectUrl) retry();
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [error, objectUrl, retry]);
 
   useEffect(() => {
     if (!objectUrl) return;
@@ -49,10 +67,8 @@ export const EncryptedMedia = memo(function EncryptedMedia({
     }
 
     let cancelled = false;
-    // Preserve a previously valid URL while refreshing. Only show a skeleton
-    // when this component has never rendered valid media.
     setError(false);
-    setLoading((current) => objectUrl ? false : current || true);
+    setLoading(true);
 
     (async () => {
       const t0 = performance.now();
@@ -97,14 +113,14 @@ export const EncryptedMedia = memo(function EncryptedMedia({
             durationMs: Math.round(performance.now() - t0),
           },
         });
-        if (!cancelled && !objectUrl) setError(true);
+        if (!cancelled) setError(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [encryptedUrl, mediaKeyB64, isVideo]);
+  }, [encryptedUrl, mediaKeyB64, isVideo, retryTick]);
 
   if (loading && !objectUrl) {
     return (
@@ -118,11 +134,23 @@ export const EncryptedMedia = memo(function EncryptedMedia({
 
   if (!objectUrl) {
     return (
-      <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-destructive/10 min-h-[60px]">
-        <Lock className="w-4 h-4 text-destructive" />
-        <span className="text-xs text-destructive">
-          {error ? 'Impossible de déchiffrer ce média' : 'Média en cours de récupération'}
-        </span>
+      <div className="flex min-h-[72px] min-w-[180px] flex-col items-center justify-center gap-2 rounded-lg bg-destructive/10 p-4">
+        <div className="flex items-center gap-2">
+          <Lock className="w-4 h-4 text-destructive" />
+          <span className="text-xs text-destructive">
+            {error ? 'Impossible de déchiffrer ce média' : 'Média en cours de récupération'}
+          </span>
+        </div>
+        {error && (
+          <button
+            type="button"
+            onClick={retry}
+            className="inline-flex items-center gap-1 text-xs underline underline-offset-2"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Réessayer
+          </button>
+        )}
       </div>
     );
   }
@@ -133,6 +161,7 @@ export const EncryptedMedia = memo(function EncryptedMedia({
         src={objectUrl}
         controls
         playsInline
+        onError={retry}
         className="max-w-full max-h-[300px] rounded-lg"
       />
     );
@@ -142,6 +171,7 @@ export const EncryptedMedia = memo(function EncryptedMedia({
     <img
       src={objectUrl}
       alt="Photo chiffrée"
+      onError={retry}
       className="max-w-full max-h-[300px] object-cover rounded-lg"
     />
   );
