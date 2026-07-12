@@ -36,6 +36,7 @@ export const MessageMedia = memo(function MessageMedia({
     if (!source) return null;
     return parseMediaMessage(source);
   }, [body, cachedPlaintext, isEncryptionActive]);
+  const bodyEncrypted = looksEncryptedMessage(body);
 
   const initialCached = messageId ? getMediaKey(messageId) : undefined;
   const [mediaKey, setMediaKey] = useState<string | null>(
@@ -45,7 +46,7 @@ export const MessageMedia = memo(function MessageMedia({
     initialCached?.isVideo ?? (inlineMedia ? isVideoMediaLabel(inlineMedia.label) : false),
   );
   const [resolved, setResolved] = useState<boolean>(
-    !isEncryptionActive || Boolean(initialCached || inlineMedia),
+    !(isEncryptionActive || bodyEncrypted) || Boolean(initialCached || inlineMedia),
   );
   const [retryTick, setRetryTick] = useState(0);
   const mediaKeyRef = useRef<string | null>(mediaKey);
@@ -56,7 +57,6 @@ export const MessageMedia = memo(function MessageMedia({
       const target = (event as CustomEvent<{ messageId?: string }>).detail?.messageId;
       if (target && messageId && target !== messageId) return;
 
-      // Preserve a positive key. A retry only wakes unresolved media.
       const cached = messageId ? getMediaKey(messageId) : undefined;
       if (!cached && !mediaKeyRef.current) setResolved(false);
       setRetryTick((tick) => tick + 1);
@@ -104,8 +104,7 @@ export const MessageMedia = memo(function MessageMedia({
       });
     }
 
-    const encrypted = looksEncryptedMessage(body);
-    if (!(isEncryptionActive || encrypted) || !encrypted) {
+    if (!(isEncryptionActive || bodyEncrypted) || !bodyEncrypted) {
       setResolved(true);
       return () => { cancelled = true; unsubscribe(); };
     }
@@ -125,8 +124,6 @@ export const MessageMedia = memo(function MessageMedia({
             acceptKey(result.mediaKeyB64, isVideoMediaLabel(result.text));
             return;
           }
-          // Do not clear a key that was already displayed while this async
-          // fallback was running.
           if (!mediaKeyRef.current) setResolved(true);
         })
         .catch(() => {
@@ -139,7 +136,7 @@ export const MessageMedia = memo(function MessageMedia({
       unsubscribe();
       if (fallbackTimer) clearTimeout(fallbackTimer);
     };
-  }, [body, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, retryTick]);
+  }, [body, bodyEncrypted, cachedPlaintext, decrypt, inlineMedia, isEncryptionActive, messageId, retryTick]);
 
   if (!resolved && !mediaKey) {
     return (
@@ -160,7 +157,7 @@ export const MessageMedia = memo(function MessageMedia({
     );
   }
 
-  if (isEncryptionActive) {
+  if (isEncryptionActive || bodyEncrypted) {
     return (
       <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 min-h-[72px] min-w-[180px] max-w-full">
         <Lock className="w-4 h-4 text-muted-foreground" />
