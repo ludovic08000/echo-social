@@ -18,7 +18,7 @@ import { setMediaKey } from './mediaKeyCache';
 import {
   resolvePlaintext,
   readCache,
-  dropCache,
+  readLastGoodOutcome,
   clearNegativeCache,
   persistOutcome,
   looksEncrypted,
@@ -56,6 +56,22 @@ interface DecryptedMessageBodyProps {
 const SILENT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000];
 const RECOVERY_UNAVAILABLE_AFTER_MS = 15_000;
 
+function initialOutcomeFor(
+  body: string,
+  messageId?: string,
+  cachedPlaintext?: string,
+): { outcome: DecryptionOutcome | null; pending: boolean } {
+  if (cachedPlaintext) {
+    return { outcome: buildOutcomeFromText(cachedPlaintext), pending: false };
+  }
+  if (!looksEncrypted(body)) {
+    return { outcome: { text: body, mediaKeyB64: null, hidden: false }, pending: false };
+  }
+  const cached = readCache(messageId, body) ?? readLastGoodOutcome(messageId);
+  if (cached) return { outcome: cached, pending: false };
+  return { outcome: null, pending: true };
+}
+
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
   decrypt,
@@ -67,19 +83,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   messageId,
   hasMedia,
 }: DecryptedMessageBodyProps) {
-  const initial: { outcome: DecryptionOutcome | null; pending: boolean } = (() => {
-    if (cachedPlaintext) {
-      const outcome = buildOutcomeFromText(cachedPlaintext);
-      return { outcome, pending: false };
-    }
-    if (!looksEncrypted(body)) {
-      return { outcome: { text: body, mediaKeyB64: null, hidden: false }, pending: false };
-    }
-    const cached = readCache(messageId, body);
-    if (cached) return { outcome: cached, pending: false };
-    return { outcome: null, pending: true };
-  })();
-
+  const initial = initialOutcomeFor(body, messageId, cachedPlaintext);
   const [outcome, setOutcome] = useState<DecryptionOutcome | null>(initial.outcome);
   const [pending, setPending] = useState(initial.pending);
   const [retryTick, setRetryTick] = useState(0);
@@ -96,6 +100,37 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
   const silentRetryAttemptRef = useRef(0);
+  const identityRef = useRef(messageId ?? body);
+  const lastGoodOutcomeRef = useRef<DecryptionOutcome | null>(
+    initial.outcome && !initial.outcome.hidden ? initial.outcome : null,
+  );
+
+  const keepOrWait = () => {
+    const sticky = lastGoodOutcomeRef.current ?? readLastGoodOutcome(messageId) ?? null;
+    if (sticky) {
+      lastGoodOutcomeRef.current = sticky;
+      setOutcome(sticky);
+      setPending(false);
+      setRecoveryExpired(false);
+      return;
+    }
+    setOutcome(null);
+    setPending(true);
+  };
+
+  useEffect(() => {
+    const identity = messageId ?? body;
+    if (identityRef.current === identity) return;
+    identityRef.current = identity;
+
+    const next = initialOutcomeFor(body, messageId, cachedPlaintext);
+    lastGoodOutcomeRef.current = next.outcome && !next.outcome.hidden ? next.outcome : null;
+    setOutcome(next.outcome);
+    setPending(next.pending);
+    setRecoveryExpired(false);
+    setLocalEditedText(null);
+    silentRetryAttemptRef.current = 0;
+  }, [body, cachedPlaintext, messageId]);
 
   useEffect(() => {
     if (!pending || outcome !== null || !looksEncrypted(body)) {
@@ -110,10 +145,13 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ messageId?: string }>).detail;
       if (detail?.messageId && messageId && detail.messageId !== messageId) return;
+
+      // A retry may invalidate a previous failure, but it must never erase an
+      // already-authenticated positive result. Bubble Hold keeps that snapshot
+      // visible while the fresh device-copy/archive probe runs in background.
       clearNegativeCache(messageId, body);
-      dropCache(messageId, body);
       setRecoveryExpired(false);
-      setRetryTick((t) => t + 1);
+      setRetryTick((tick) => tick + 1);
     };
     window.addEventListener('forsure-decrypt-retry', handler);
     return () => window.removeEventListener('forsure-decrypt-retry', handler);
@@ -131,8 +169,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     const timer = window.setTimeout(() => {
       silentRetryAttemptRef.current = attempt + 1;
       clearNegativeCache(messageId, body);
-      dropCache(messageId, body);
-      setRetryTick((t) => t + 1);
+      setRetryTick((tick) => tick + 1);
     }, SILENT_RETRY_DELAYS_MS[attempt]);
 
     return () => window.clearTimeout(timer);
@@ -141,49 +178,50 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   useEffect(() => {
     let cancelled = false;
 
-    if (cachedPlaintext) {
-      const next = buildOutcomeFromText(cachedPlaintext);
+    const commit = (next: DecryptionOutcome) => {
+      if (cancelled) return;
+      if (!next.hidden && next.text !== '') lastGoodOutcomeRef.current = next;
       setOutcome(next);
       setPending(false);
       setRecoveryExpired(false);
       if (next.mediaKeyB64 && messageId) {
         setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
       }
-      return;
+      if (!next.hidden) {
+        const persisted = persistOutcome(body, next, messageId);
+        onDecryptedRef.current?.(persisted);
+      }
+    };
+
+    if (cachedPlaintext) {
+      commit(buildOutcomeFromText(cachedPlaintext));
+      return () => { cancelled = true; };
     }
 
     if (!looksEncrypted(body)) {
-      setOutcome({ text: body, mediaKeyB64: null, hidden: false });
-      setPending(false);
-      setRecoveryExpired(false);
-      return;
+      commit({ text: body, mediaKeyB64: null, hidden: false });
+      return () => { cancelled = true; };
     }
 
-    setPending(true);
+    // Only show recovery state when the bubble has never had valid plaintext.
+    // A background refresh must not replace visible text with a loader.
+    if (!lastGoodOutcomeRef.current && !readLastGoodOutcome(messageId)) {
+      setPending(true);
+    } else {
+      keepOrWait();
+    }
+
     void resolvePlaintext({ body, messageId, isMe, decrypt })
       .then((next) => {
         if (cancelled) return;
         if (!next) {
-          setOutcome(null);
-          setPending(true);
+          keepOrWait();
           return;
         }
-        setOutcome(next);
-        setPending(false);
-        setRecoveryExpired(false);
-        if (next.mediaKeyB64 && messageId) {
-          setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
-        }
-        if (!next.hidden) {
-          const persisted = persistOutcome(body, next, messageId);
-          onDecryptedRef.current?.(persisted);
-        }
+        commit(next);
       })
       .catch(() => {
-        if (!cancelled) {
-          setOutcome(null);
-          setPending(true);
-        }
+        if (!cancelled) keepOrWait();
       });
 
     return () => { cancelled = true; };
@@ -199,19 +237,22 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   const retryNow = () => {
     clearNegativeCache(messageId, body);
-    dropCache(messageId, body);
     setRecoveryExpired(false);
     silentRetryAttemptRef.current = 0;
-    setRetryTick((t) => t + 1);
+    setRetryTick((tick) => tick + 1);
   };
 
   if (outcome?.hidden) return null;
 
-  if (pending || outcome === null) {
+  // Pending state is only rendered when no last valid plaintext exists.
+  if (outcome === null) {
     if (recoveryExpired) {
       return (
-        <span className="inline-flex max-w-[260px] flex-col items-start gap-1 text-xs text-muted-foreground" role="status">
-          <span>Message chiffré indisponible sur cet appareil.</span>
+        <span
+          className="inline-flex min-h-[1.25rem] min-w-[180px] max-w-[280px] flex-col items-start gap-1 text-xs text-muted-foreground"
+          role="status"
+        >
+          <span>Message conservé, synchronisation en attente.</span>
           <button
             type="button"
             onClick={retryNow}
@@ -223,7 +264,11 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" role="status" aria-live="polite">
+      <span
+        className="inline-flex min-h-[1.25rem] min-w-[150px] items-center gap-1 text-xs text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
         Message en cours de récupération…
       </span>
     );
