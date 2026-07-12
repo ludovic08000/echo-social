@@ -49,12 +49,6 @@ export function isStrictRatchetEnvelopeBody(body: string | null | undefined): bo
 
   try {
     const parsed = JSON.parse(body) as Partial<StrictRatchetEnvelopeShape> & { kem?: string };
-    // Accept either:
-    //   - the current strict envelope (encryptionMode === 'ratchet')
-    //   - the legacy v2 envelope that omitted `encryptionMode` but carried
-    //     the same ratchet header + X25519 kem. The decryption pipeline
-    //     handles both, so we must NOT mark legacy bodies as unsupported
-    //     (which would hide them as "anciens messages chiffrés").
     const modeOk =
       parsed.encryptionMode === 'ratchet' ||
       (parsed.encryptionMode === undefined && parsed.kem === 'X25519');
@@ -114,11 +108,6 @@ export function isKnownCryptoEnvelopeBody(body: string | null | undefined): bool
       typeof hdr.n === 'number' &&
       typeof hdr.pn === 'number';
 
-    // Legacy conversation-level ratchet payloads may have older `v` values
-    // or miss the newer encryptionMode tag. They are still recoverable through
-    // device-copy / plaintext-cache fallbacks, so they must not be persisted as
-    // "deleted for me" just because the current strict parser cannot decrypt
-    // them immediately after a session restore.
     if (
       typeof parsed.ct === 'string' &&
       typeof parsed.iv === 'string' &&
@@ -127,7 +116,6 @@ export function isKnownCryptoEnvelopeBody(body: string | null | undefined): bool
       return true;
     }
 
-    // Structured v4 facade used by e2ee-session diagnostics/router.
     if (
       parsed.version === 4 &&
       typeof parsed.ciphertext === 'string' &&
@@ -142,6 +130,12 @@ export function isKnownCryptoEnvelopeBody(body: string | null | undefined): bool
   }
 }
 
-export function isUnsupportedEncryptedBody(body: string | null | undefined): boolean {
-  return isCryptoJsonBody(body) && !isKnownCryptoEnvelopeBody(body);
+/**
+ * Crypto rows are never removed from the UI merely because this build does not
+ * recognise their current envelope version. They remain opaque recovery
+ * bubbles: plaintext cache, device copies, archives, or a future app update can
+ * still recover them. Explicit user deletion remains the only local hide path.
+ */
+export function isUnsupportedEncryptedBody(_body: string | null | undefined): boolean {
+  return false;
 }
