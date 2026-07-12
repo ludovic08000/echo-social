@@ -30,8 +30,6 @@ function trim(): void {
     store.delete(key);
     try { URL.revokeObjectURL(entry.objectUrl); } catch { /* noop */ }
   }
-  // If every entry is mounted, temporarily exceed the cap. The next release()
-  // calls trim() again and safely frees the oldest unmounted entries.
 }
 
 export function getDecryptedMedia(encryptedUrl: string): Entry | undefined {
@@ -50,7 +48,6 @@ export function rememberDecryptedMedia(
   if (existing) {
     touch(encryptedUrl, existing);
     if (existing.objectUrl !== objectUrl) {
-      // The existing cache owns the canonical URL; avoid leaking a duplicate.
       try { URL.revokeObjectURL(objectUrl); } catch { /* noop */ }
     }
     return;
@@ -72,6 +69,14 @@ export function releaseDecryptedMedia(encryptedUrl: string): void {
   if (!entry) return;
   entry.refs = Math.max(0, entry.refs - 1);
   trim();
+}
+
+/** Remove one stale/dead object URL so the component can download again. */
+export function forgetDecryptedMedia(encryptedUrl: string): void {
+  const entry = store.get(encryptedUrl);
+  if (!entry) return;
+  store.delete(encryptedUrl);
+  try { URL.revokeObjectURL(entry.objectUrl); } catch { /* noop */ }
 }
 
 export function clearDecryptedMediaCache(): void {
