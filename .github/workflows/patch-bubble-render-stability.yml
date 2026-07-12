@@ -1,0 +1,146 @@
+name: Patch Bubble Render Stability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-bubble-render-stability.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: patch-bubble-render-stability
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded source patches
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding='utf-8-sig')
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}: {old[:100]!r}')
+              file.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          use_messages = 'src/hooks/useMessages.ts'
+          replace_once(
+              use_messages,
+              """          if (isUnsupportedEncryptedBody(newMsg.body)) {
+            console.warn('[messaging] ignoring unsupported encrypted message without hiding it', newMsg.id);
+            return;
+          }
+""",
+              """          if (isUnsupportedEncryptedBody(newMsg.body)) {
+            // Never remove a server row merely because this client does not yet
+            // recognise its envelope version. DecryptedMessageBody keeps a stable
+            // recovery bubble and a future client/key update may recover it.
+            console.warn('[messaging] retaining unsupported encrypted message for recovery', newMsg.id);
+          }
+""",
+          )
+          replace_once(
+              use_messages,
+              """              // Remove any optimistic message for this real one, and prevent duplicates
+              const filtered = old.filter(m =>
+                m.id !== enriched.id && !m.id.startsWith('optimistic-')
+              );
+              // Only skip if already present with same id
+              if (old.some(m => m.id === enriched.id)) return old;
+              return [...filtered, enriched];
+""",
+              """              // Never remove every optimistic bubble when one ACK arrives. Only
+              // match the legacy/plaintext optimistic row exactly (Zeus path).
+              // Encrypted queue sends render from their own local queue and are
+              // reconciled by localId/serverId, not by deleting unrelated rows.
+              if (old.some(m => m.id === enriched.id)) return old;
+              const filtered = old.filter(m =>
+                m.id !== enriched.id &&
+                !(m.id.startsWith('optimistic-') &&
+                  m.sender_id === enriched.sender_id &&
+                  m.body === enriched.body)
+              );
+              return [...filtered, enriched].sort((a, b) => {
+                const timeDelta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                return timeDelta !== 0 ? timeDelta : a.id.localeCompare(b.id);
+              });
+""",
+          )
+          replace_once(
+              use_messages,
+              """      // Filter out hidden + incompatible messages locally — no DB writes here.
+      const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+      const compatibleMessages = visibleMessages.filter(m => !isUnsupportedEncryptedBody(m.body));
+""",
+              """      // Only explicit user deletions hide a row. Unknown/future crypto
+      // envelopes remain visible as stable recovery bubbles.
+      const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+      const compatibleMessages = visibleMessages;
+""",
+          )
+
+          chat_view = 'src/components/messages/ChatView.tsx'
+          replace_once(
+              chat_view,
+              "groupedMessages.map((group, gi) => (",
+              "groupedMessages.map((group) => (",
+          )
+          replace_once(
+              chat_view,
+              "<div key={gi}>",
+              "<div key={format(new Date(group.date), 'yyyy-MM-dd')}>",
+          )
+          replace_once(
+              chat_view,
+              """                                isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                                messageId={msg.id}
+                              />
+""",
+              """                                isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                                messageId={msg.id}
+                                cachedPlaintext={decryptedCache.get(msg.id)}
+                              />
+""",
+          )
+          replace_once(
+              chat_view,
+              "rememberDecryptedMedia(url, previewUrl || URL.createObjectURL(prepared), isVideo);",
+              "rememberDecryptedMedia(url, URL.createObjectURL(prepared), isVideo);",
+          )
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run bubble and E2EE tests
+        run: npm run test -- --run src/components/messages/__tests__/decryptionNegativeCache.test.ts src/lib/messaging/__tests__/messageEdits.test.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Patch already applied"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/hooks/useMessages.ts src/components/messages/ChatView.tsx
+          git commit -m "fix(messaging): retain and stabilise every bubble row"
+          git push origin HEAD:main
