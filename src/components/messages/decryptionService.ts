@@ -147,7 +147,9 @@ if (typeof window !== 'undefined') {
 
 const BATCH_WINDOW_MS = 50;
 const senderBatchPending = new Map<string, Array<(value: string | null) => void>>();
-const senderCache = new LruMap<string, string | null>(500);
+// Only positive immutable sender ids are cached. A missing row can be caused by
+// realtime/RLS/replication timing and must remain retryable.
+const senderCache = new LruMap<string, string>(500);
 let senderBatchTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function flushSenderBatch(): Promise<void> {
@@ -161,13 +163,13 @@ async function flushSenderBatch(): Promise<void> {
       .from('messages')
       .select('id,sender_id')
       .in('id', ids);
-    const map = new Map<string, string | null>();
+    const map = new Map<string, string>();
     for (const row of (data as Array<{ id: string; sender_id: string | null }> | null) ?? []) {
-      map.set(row.id, row.sender_id ?? null);
+      if (row.sender_id) map.set(row.id, row.sender_id);
     }
     for (const id of ids) {
       const value = map.get(id) ?? null;
-      senderCache.set(id, value);
+      if (value) senderCache.set(id, value);
       (localWaiters.get(id) ?? []).forEach((resolve) => resolve(value));
     }
   } catch {
@@ -256,6 +258,7 @@ function stickyOrNull(messageId?: string): DecryptionOutcome | null {
 export async function resolvePlaintext(opts: {
   body: string;
   messageId?: string;
+  senderId?: string | null;
   isMe?: boolean;
   decrypt: (body: string) => Promise<DecryptResult>;
 }): Promise<DecryptionOutcome | null> {
@@ -282,7 +285,7 @@ export async function resolvePlaintext(opts: {
   let promise = inflight.get(key);
   if (!promise) {
     promise = (async (): Promise<DecryptionOutcome | null> => {
-      let senderId: string | null = null;
+      let senderId: string | null = opts.senderId ?? null;
 
       if (!isMultiDeviceEnvelopeBody(body)) {
         try {
@@ -304,7 +307,7 @@ export async function resolvePlaintext(opts: {
       }
 
       if (messageId) {
-        senderId = await getSenderIdBatched(messageId);
+        if (!senderId) senderId = await getSenderIdBatched(messageId);
         if (senderId) {
           const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
           if (copyText !== null) {
