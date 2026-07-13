@@ -1,6 +1,14 @@
-import { STORE_KEYS, STORE_OUTBOX } from '@/lib/crypto/constants';
-import { reqToPromise, runTx, txDelete, txGet, txPut } from '@/lib/crypto/indexedDbTx';
+import { STORE_KEYS as LEGACY_KEY_STORE, STORE_OUTBOX as LEGACY_OUTBOX_STORE } from '@/lib/crypto/constants';
+import {
+  reqToPromise,
+  runTx,
+  runTxOn,
+  txDelete,
+  txGet,
+} from '@/lib/crypto/indexedDbTx';
 
+const OUTBOX_STORE = 'outbound';
+const OUTBOX_KEY_STORE = 'device-keys';
 const OUTBOX_KEY_PREFIX = 'outbox-vault-key::';
 const OUTBOX_AAD_PREFIX = 'FORSURE-OUTBOX-v1|';
 const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -60,6 +68,7 @@ interface StoredOutboxRecord {
 
 const keyPromises = new Map<string, Promise<CryptoKey>>();
 const writeChains = new Map<string, Promise<void>>();
+const migrationPromises = new Map<string, Promise<void>>();
 
 function aadFor(userId: string, conversationId: string, localId: string): Uint8Array {
   return new TextEncoder().encode(
@@ -67,9 +76,89 @@ function aadFor(userId: string, conversationId: string, localId: string): Uint8A
   );
 }
 
+function localGet<T>(storeName: string, key: IDBValidKey): Promise<T | undefined> {
+  return runTxOn('msg-queue', [storeName], 'readonly', (tx) =>
+    reqToPromise(tx.objectStore(storeName).get(key) as IDBRequest<T | undefined>),
+  );
+}
+
+function localPut<T>(storeName: string, value: T): Promise<void> {
+  return runTxOn('msg-queue', [storeName], 'readwrite', (tx) =>
+    new Promise<void>((resolve, reject) => {
+      const request = tx.objectStore(storeName).put(value as object);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    }),
+  );
+}
+
+function localDelete(storeName: string, key: IDBValidKey): Promise<void> {
+  return runTxOn('msg-queue', [storeName], 'readwrite', (tx) =>
+    new Promise<void>((resolve, reject) => {
+      const request = tx.objectStore(storeName).delete(key);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    }),
+  );
+}
+
+function localGetAll<T>(storeName: string): Promise<T[]> {
+  return runTxOn('msg-queue', [storeName], 'readonly', (tx) =>
+    reqToPromise(tx.objectStore(storeName).getAll() as IDBRequest<T[]>),
+  );
+}
+
+/**
+ * v1 briefly stored the outbox in the account E2EE DB. Move both ciphertext
+ * rows and the non-extractable key into the device-only queue DB, then erase the
+ * legacy copies so account backup / QR linking can never transfer the outbox.
+ */
+async function migrateLegacyOutbox(userId: string): Promise<void> {
+  let promise = migrationPromises.get(userId);
+  if (promise) return promise;
+
+  promise = (async () => {
+    const keyId = `${OUTBOX_KEY_PREFIX}${userId}`;
+    const currentKey = await localGet<OutboxKeyRecord>(OUTBOX_KEY_STORE, keyId).catch(() => undefined);
+    const legacyKey = await txGet<OutboxKeyRecord>(LEGACY_KEY_STORE, keyId).catch(() => undefined);
+
+    if (!currentKey && legacyKey?.key) {
+      await localPut(OUTBOX_KEY_STORE, legacyKey);
+    }
+
+    if (currentKey?.key || legacyKey?.key) {
+      const legacyRows = await runTx([LEGACY_OUTBOX_STORE], 'readonly', (tx) =>
+        reqToPromise(tx.objectStore(LEGACY_OUTBOX_STORE).getAll() as IDBRequest<StoredOutboxRecord[]>),
+      ).catch(() => []);
+
+      const mine = legacyRows.filter((row) => row.userId === userId);
+      for (const row of mine) {
+        const existing = await localGet<StoredOutboxRecord>(OUTBOX_STORE, row.localId).catch(() => undefined);
+        if (!existing || existing.updatedAt < row.updatedAt) {
+          await localPut(OUTBOX_STORE, row);
+        }
+      }
+      await Promise.all(mine.map((row) => txDelete(LEGACY_OUTBOX_STORE, row.localId).catch(() => {})));
+    }
+
+    if (legacyKey) await txDelete(LEGACY_KEY_STORE, keyId).catch(() => {});
+  })()
+    .catch((error) => {
+      migrationPromises.delete(userId);
+      throw error;
+    });
+
+  migrationPromises.set(userId, promise);
+  await promise;
+}
+
 async function createOrLoadOutboxKey(userId: string): Promise<CryptoKey> {
+  await migrateLegacyOutbox(userId).catch((error) => {
+    console.warn('[OUTBOX] legacy device-local migration failed', error);
+  });
+
   const id = `${OUTBOX_KEY_PREFIX}${userId}`;
-  const existing = await txGet<OutboxKeyRecord>(STORE_KEYS, id);
+  const existing = await localGet<OutboxKeyRecord>(OUTBOX_KEY_STORE, id);
   if (existing?.key) return existing.key;
 
   const key = await crypto.subtle.generateKey(
@@ -78,12 +167,10 @@ async function createOrLoadOutboxKey(userId: string): Promise<CryptoKey> {
     ['encrypt', 'decrypt'],
   );
 
-  // Re-read before writing because another tab may have created the key while
-  // WebCrypto was generating ours.
-  const raced = await txGet<OutboxKeyRecord>(STORE_KEYS, id);
+  const raced = await localGet<OutboxKeyRecord>(OUTBOX_KEY_STORE, id);
   if (raced?.key) return raced.key;
 
-  await txPut(STORE_KEYS, { id, key, createdAt: Date.now() } satisfies OutboxKeyRecord);
+  await localPut(OUTBOX_KEY_STORE, { id, key, createdAt: Date.now() } satisfies OutboxKeyRecord);
   return key;
 }
 
@@ -177,7 +264,8 @@ export function putOutboxPayload(userId: string, payload: OutboxPayload): Promis
   };
 
   return enqueueWrite(payload.localId, async () => {
-    await txPut(STORE_OUTBOX, await encryptPayload(userId, normalized));
+    await migrateLegacyOutbox(userId);
+    await localPut(OUTBOX_STORE, await encryptPayload(userId, normalized));
     void pruneOutbox(userId).catch(() => {});
   });
 }
@@ -206,12 +294,13 @@ export async function getOutboxPayload(
   userId: string,
   localId: string,
 ): Promise<OutboxPayload | null> {
+  await migrateLegacyOutbox(userId);
   await waitForPendingWrite(localId);
-  const record = await txGet<StoredOutboxRecord>(STORE_OUTBOX, localId);
+  const record = await localGet<StoredOutboxRecord>(OUTBOX_STORE, localId);
   if (!record) return null;
   const payload = await decryptRecord(userId, record);
   if (!payload) {
-    await enqueueWrite(localId, () => txDelete(STORE_OUTBOX, localId)).catch(() => {});
+    await enqueueWrite(localId, () => localDelete(OUTBOX_STORE, localId)).catch(() => {});
   }
   return payload;
 }
@@ -220,20 +309,29 @@ export async function listOutboxPayloads(
   userId: string,
   conversationId?: string,
 ): Promise<OutboxPayload[]> {
+  await migrateLegacyOutbox(userId);
   await Promise.all([...writeChains.values()].map((promise) => promise.catch(() => {})));
-  const records = await runTx([STORE_OUTBOX], 'readonly', (tx) => {
-    const store = tx.objectStore(STORE_OUTBOX);
-    if (conversationId && store.indexNames.contains('by-user-conversation')) {
-      return reqToPromise(
-        store.index('by-user-conversation').getAll([userId, conversationId]) as IDBRequest<StoredOutboxRecord[]>,
-      );
-    }
-    return reqToPromise(store.getAll() as IDBRequest<StoredOutboxRecord[]>);
-  });
+
+  let records: StoredOutboxRecord[];
+  if (conversationId) {
+    records = await runTxOn('msg-queue', [OUTBOX_STORE], 'readonly', (tx) => {
+      const store = tx.objectStore(OUTBOX_STORE);
+      if (store.indexNames.contains('by-user-conversation')) {
+        return reqToPromise(
+          store.index('by-user-conversation').getAll([userId, conversationId]) as IDBRequest<StoredOutboxRecord[]>,
+        );
+      }
+      return reqToPromise(store.getAll() as IDBRequest<StoredOutboxRecord[]>);
+    });
+  } else {
+    records = await localGetAll<StoredOutboxRecord>(OUTBOX_STORE);
+  }
 
   const decrypted = await Promise.all(
     records
-      .filter((record) => record.userId === userId)
+      .filter((record) =>
+        record.userId === userId && (!conversationId || record.conversationId === conversationId),
+      )
       .map((record) => decryptRecord(userId, record)),
   );
 
@@ -243,15 +341,13 @@ export async function listOutboxPayloads(
 }
 
 export function deleteOutboxPayload(localId: string): Promise<void> {
-  return enqueueWrite(localId, () => txDelete(STORE_OUTBOX, localId));
+  return enqueueWrite(localId, () => localDelete(OUTBOX_STORE, localId));
 }
 
 export async function pruneOutbox(userId: string): Promise<void> {
+  await migrateLegacyOutbox(userId);
   const now = Date.now();
-  const records = await runTx([STORE_OUTBOX], 'readonly', (tx) =>
-    reqToPromise(tx.objectStore(STORE_OUTBOX).getAll() as IDBRequest<StoredOutboxRecord[]>),
-  );
-  const mine = records
+  const mine = (await localGetAll<StoredOutboxRecord>(OUTBOX_STORE))
     .filter((record) => record.userId === userId)
     .sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -261,4 +357,4 @@ export async function pruneOutbox(userId: string): Promise<void> {
   await Promise.all(expired.map((record) => deleteOutboxPayload(record.localId)));
 }
 
-export const __test__ = { aadFor };
+export const __test__ = { aadFor, migrateLegacyOutbox };
