@@ -83,5 +83,13 @@ export default defineConfig(({ mode }) => ({
       },
     }),
   ].filter(Boolean),
-  resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
+  resolve: {
+    alias: [
+      {
+        find: /^@\/hooks\/useMessages$/,
+        replacement: path.resolve(__dirname, "./src/hooks/useMessagesStable.ts"),
+      },
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+    ],
+  },
 }));
