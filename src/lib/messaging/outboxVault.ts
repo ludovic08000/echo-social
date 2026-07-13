@@ -58,13 +58,16 @@ interface StoredOutboxRecord {
   version: 1;
 }
 
+const keyPromises = new Map<string, Promise<CryptoKey>>();
+const writeChains = new Map<string, Promise<void>>();
+
 function aadFor(userId: string, conversationId: string, localId: string): Uint8Array {
   return new TextEncoder().encode(
     `${OUTBOX_AAD_PREFIX}${userId}|${conversationId}|${localId}`,
   );
 }
 
-async function getOrCreateOutboxKey(userId: string): Promise<CryptoKey> {
+async function createOrLoadOutboxKey(userId: string): Promise<CryptoKey> {
   const id = `${OUTBOX_KEY_PREFIX}${userId}`;
   const existing = await txGet<OutboxKeyRecord>(STORE_KEYS, id);
   if (existing?.key) return existing.key;
@@ -74,8 +77,42 @@ async function getOrCreateOutboxKey(userId: string): Promise<CryptoKey> {
     false,
     ['encrypt', 'decrypt'],
   );
+
+  // Re-read before writing because another tab may have created the key while
+  // WebCrypto was generating ours.
+  const raced = await txGet<OutboxKeyRecord>(STORE_KEYS, id);
+  if (raced?.key) return raced.key;
+
   await txPut(STORE_KEYS, { id, key, createdAt: Date.now() } satisfies OutboxKeyRecord);
   return key;
+}
+
+async function getOrCreateOutboxKey(userId: string): Promise<CryptoKey> {
+  let promise = keyPromises.get(userId);
+  if (!promise) {
+    promise = createOrLoadOutboxKey(userId).catch((error) => {
+      keyPromises.delete(userId);
+      throw error;
+    });
+    keyPromises.set(userId, promise);
+  }
+  return promise;
+}
+
+function enqueueWrite(localId: string, operation: () => Promise<void>): Promise<void> {
+  const previous = writeChains.get(localId) ?? Promise.resolve();
+  const next = previous
+    .catch(() => {})
+    .then(operation)
+    .finally(() => {
+      if (writeChains.get(localId) === next) writeChains.delete(localId);
+    });
+  writeChains.set(localId, next);
+  return next;
+}
+
+async function waitForPendingWrite(localId: string): Promise<void> {
+  await (writeChains.get(localId) ?? Promise.resolve()).catch(() => {});
 }
 
 async function encryptPayload(userId: string, payload: OutboxPayload): Promise<StoredOutboxRecord> {
@@ -98,7 +135,7 @@ async function encryptPayload(userId: string, payload: OutboxPayload): Promise<S
     userId,
     conversationId: payload.conversationId,
     updatedAt: payload.updatedAt,
-    iv: iv.buffer.slice(iv.byteOffset, iv.byteOffset + iv.byteLength),
+    iv: iv.buffer.slice(iv.byteOffset, iv.byteOffset + iv.byteLength) as ArrayBuffer,
     ciphertext,
     version: 1,
   };
@@ -132,14 +169,17 @@ async function decryptRecord(userId: string, record: StoredOutboxRecord): Promis
   }
 }
 
-export async function putOutboxPayload(userId: string, payload: OutboxPayload): Promise<void> {
-  if (!userId || !payload.localId || payload.senderId !== userId) return;
+export function putOutboxPayload(userId: string, payload: OutboxPayload): Promise<void> {
+  if (!userId || !payload.localId || payload.senderId !== userId) return Promise.resolve();
   const normalized: OutboxPayload = {
     ...payload,
     updatedAt: Date.now(),
   };
-  await txPut(STORE_OUTBOX, await encryptPayload(userId, normalized));
-  void pruneOutbox(userId).catch(() => {});
+
+  return enqueueWrite(payload.localId, async () => {
+    await txPut(STORE_OUTBOX, await encryptPayload(userId, normalized));
+    void pruneOutbox(userId).catch(() => {});
+  });
 }
 
 export async function patchOutboxPayload(
@@ -147,6 +187,7 @@ export async function patchOutboxPayload(
   localId: string,
   patch: Partial<OutboxPayload>,
 ): Promise<OutboxPayload | null> {
+  await waitForPendingWrite(localId);
   const current = await getOutboxPayload(userId, localId);
   if (!current) return null;
   const next: OutboxPayload = {
@@ -165,11 +206,12 @@ export async function getOutboxPayload(
   userId: string,
   localId: string,
 ): Promise<OutboxPayload | null> {
+  await waitForPendingWrite(localId);
   const record = await txGet<StoredOutboxRecord>(STORE_OUTBOX, localId);
   if (!record) return null;
   const payload = await decryptRecord(userId, record);
   if (!payload) {
-    await txDelete(STORE_OUTBOX, localId).catch(() => {});
+    await enqueueWrite(localId, () => txDelete(STORE_OUTBOX, localId)).catch(() => {});
   }
   return payload;
 }
@@ -178,6 +220,7 @@ export async function listOutboxPayloads(
   userId: string,
   conversationId?: string,
 ): Promise<OutboxPayload[]> {
+  await Promise.all([...writeChains.values()].map((promise) => promise.catch(() => {})));
   const records = await runTx([STORE_OUTBOX], 'readonly', (tx) => {
     const store = tx.objectStore(STORE_OUTBOX);
     if (conversationId && store.indexNames.contains('by-user-conversation')) {
@@ -199,8 +242,8 @@ export async function listOutboxPayloads(
     .sort((a, b) => a.createdAt - b.createdAt || a.localId.localeCompare(b.localId));
 }
 
-export async function deleteOutboxPayload(localId: string): Promise<void> {
-  await txDelete(STORE_OUTBOX, localId);
+export function deleteOutboxPayload(localId: string): Promise<void> {
+  return enqueueWrite(localId, () => txDelete(STORE_OUTBOX, localId));
 }
 
 export async function pruneOutbox(userId: string): Promise<void> {
@@ -215,7 +258,7 @@ export async function pruneOutbox(userId: string): Promise<void> {
   const expired = mine.filter((record, index) =>
     now - record.updatedAt > OUTBOX_MAX_AGE_MS || index >= OUTBOX_MAX_ENTRIES,
   );
-  await Promise.all(expired.map((record) => txDelete(STORE_OUTBOX, record.localId)));
+  await Promise.all(expired.map((record) => deleteOutboxPayload(record.localId)));
 }
 
 export const __test__ = { aadFor };
