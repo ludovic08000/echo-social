@@ -26,7 +26,7 @@ export type DBKey =
   | 'skipped-wrap'           // forsure-crypto-skipped-wrap
   | 'pin-wrap'               // forsure-pin-wrap
   | 'plaintext-cache'        // forsure-plaintext-cache
-  | 'msg-queue';             // forsure-msg-queue
+  | 'msg-queue';             // forsure-msg-queue (strictly device-local)
 
 interface DBSpec {
   name: string;
@@ -34,7 +34,7 @@ interface DBSpec {
   stores: Array<{
     name: string;
     keyPath?: string;
-    indexes?: Array<{ name: string; keyPath: string; options?: IDBIndexParameters }>;
+    indexes?: Array<{ name: string; keyPath: string | string[]; options?: IDBIndexParameters }>;
   }>;
 }
 
@@ -67,7 +67,6 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   'skipped-wrap': {
     name: 'forsure-crypto-skipped-wrap',
     version: 1,
-    // No keyPath: manual keys.
     stores: [{ name: 'wrap-keys' }],
   },
   'pin-wrap': {
@@ -75,7 +74,7 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
     version: 2,
     stores: [
       { name: 'pin-wrapped-keys', keyPath: 'id' },
-      { name: 'wrapped-keys', keyPath: 'id' }, // legacy migration store
+      { name: 'wrapped-keys', keyPath: 'id' },
     ],
   },
   'plaintext-cache': {
@@ -88,7 +87,7 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   },
   'msg-queue': {
     name: 'forsure-msg-queue',
-    version: 1,
+    version: 2,
     stores: [
       {
         name: 'outbound',
@@ -96,7 +95,13 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
         indexes: [
           { name: 'conversationId', keyPath: 'conversationId' },
           { name: 'status', keyPath: 'status' },
+          { name: 'by-user-conversation', keyPath: ['userId', 'conversationId'] },
+          { name: 'by-updated-at', keyPath: 'updatedAt' },
         ],
+      },
+      {
+        name: 'device-keys',
+        keyPath: 'id',
       },
     ],
   },
@@ -108,20 +113,23 @@ function reset(key: DBKey) {
   promises.delete(key);
 }
 
-function ensureStores(db: IDBDatabase, spec: DBSpec) {
-  for (const s of spec.stores) {
-    if (!db.objectStoreNames.contains(s.name)) {
-      const store = db.createObjectStore(
-        s.name,
-        s.keyPath ? { keyPath: s.keyPath } : undefined,
+function ensureStores(db: IDBDatabase, spec: DBSpec, upgradeTx?: IDBTransaction | null) {
+  for (const storeSpec of spec.stores) {
+    let store: IDBObjectStore;
+    if (!db.objectStoreNames.contains(storeSpec.name)) {
+      store = db.createObjectStore(
+        storeSpec.name,
+        storeSpec.keyPath ? { keyPath: storeSpec.keyPath } : undefined,
       );
-      for (const idx of s.indexes ?? []) {
-        store.createIndex(idx.name, idx.keyPath, idx.options);
+    } else {
+      if (!upgradeTx) continue;
+      store = upgradeTx.objectStore(storeSpec.name);
+    }
+
+    for (const index of storeSpec.indexes ?? []) {
+      if (!store.indexNames.contains(index.name)) {
+        store.createIndex(index.name, index.keyPath, index.options);
       }
-    } else if (s.indexes) {
-      // Add missing indexes during upgrade transactions.
-      const tx = db.transaction(s.name);
-      // No-op outside upgrade context; indexes added inside onupgradeneeded only.
     }
   }
 }
@@ -131,20 +139,20 @@ export function openDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
   if (cached) return cached;
   const spec = SPECS[key];
 
-  const p = new Promise<IDBDatabase>((resolve, reject) => {
-    const req = hardGlobals.idbOpen(spec.name, spec.version);
+  const promise = new Promise<IDBDatabase>((resolve, reject) => {
+    const request = hardGlobals.idbOpen(spec.name, spec.version);
 
-    req.onerror = () => {
+    request.onerror = () => {
       reset(key);
-      reject(req.error);
+      reject(request.error);
     };
-    req.onblocked = () => {
+    request.onblocked = () => {
       reset(key);
       reject(new Error(`IndexedDB open blocked: ${spec.name}`));
     };
-    req.onupgradeneeded = () => ensureStores(req.result, spec);
-    req.onsuccess = () => {
-      const db = req.result;
+    request.onupgradeneeded = () => ensureStores(request.result, spec, request.transaction);
+    request.onsuccess = () => {
+      const db = request.result;
       const closeForUpgrade = db.close.bind(db);
       try {
         Object.defineProperty(db, 'close', {
@@ -162,8 +170,8 @@ export function openDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
     };
   });
 
-  promises.set(key, p);
-  return p;
+  promises.set(key, promise);
+  return promise;
 }
 
 export function reopenDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
@@ -171,7 +179,6 @@ export function reopenDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase>
   return openDB(key);
 }
 
-/** TEST helper. */
 export function __resetRegistryForTests(): void {
   promises.clear();
 }
