@@ -1,4 +1,11 @@
-import { DB_NAME, DB_VERSION, STORE_KEYS, STORE_PREKEYS, STORE_SESSION } from './constants';
+import {
+  DB_NAME,
+  DB_VERSION,
+  STORE_KEYS,
+  STORE_OUTBOX,
+  STORE_PREKEYS,
+  STORE_SESSION,
+} from './constants';
 import { hardGlobals } from './cryptoIntegrity';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -12,6 +19,11 @@ export function ensureE2EEObjectStores(db: IDBDatabase) {
   }
   if (!db.objectStoreNames.contains(STORE_PREKEYS)) {
     db.createObjectStore(STORE_PREKEYS, { keyPath: 'id' });
+  }
+  if (!db.objectStoreNames.contains(STORE_OUTBOX)) {
+    const outbox = db.createObjectStore(STORE_OUTBOX, { keyPath: 'localId' });
+    outbox.createIndex('by-user-conversation', ['userId', 'conversationId'], { unique: false });
+    outbox.createIndex('by-updated-at', 'updatedAt', { unique: false });
   }
 }
 
