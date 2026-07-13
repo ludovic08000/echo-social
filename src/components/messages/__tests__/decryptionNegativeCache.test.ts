@@ -60,6 +60,16 @@ function ratchetBody(seed: string): string {
   });
 }
 
+function multiDeviceBody(seed: string): string {
+  return JSON.stringify({
+    encryptionMode: 'multi_device',
+    v: 4,
+    ct: 'device_copies',
+    ts: 1,
+    seed,
+  });
+}
+
 function failedDecrypt() {
   return {
     text: '',
@@ -152,8 +162,6 @@ describe('targeted decryption cache and Bubble Hold', () => {
     });
     expect(first?.text).toBe('Cette bulle doit rester visible');
 
-    // Reproduce the old bug: positive body cache removed, persistence not yet
-    // readable, then the fresh decrypt/device-copy/archive retry fails.
     dropCache('message-sticky', body);
     clearNegativeCacheForMessage('message-sticky');
     const retryDecrypt = vi.fn(async () => failedDecrypt());
@@ -166,6 +174,73 @@ describe('targeted decryption cache and Bubble Hold', () => {
 
     expect(retryDecrypt).toHaveBeenCalledOnce();
     expect(retried?.text).toBe('Cette bulle doit rester visible');
+  });
+
+  it('retries sender lookup after a transient empty realtime result', async () => {
+    const body = multiDeviceBody('sender-retry');
+    let senderLookupCount = 0;
+
+    mocks.from.mockImplementation((table: string) => {
+      if (table !== 'messages') throw new Error(`Unexpected table: ${table}`);
+      return {
+        select: (columns: string) => {
+          if (columns === 'id,sender_id') {
+            return {
+              in: async (ids: string[]) => {
+                senderLookupCount += 1;
+                return {
+                  data: ids.map((id) => ({
+                    id,
+                    sender_id: senderLookupCount === 1 ? null : 'sender-user',
+                  })),
+                  error: null,
+                };
+              },
+            };
+          }
+          return {
+            eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+          };
+        },
+      };
+    });
+
+    const first = await resolvePlaintext({
+      body,
+      messageId: 'message-sender-retry',
+      decrypt: vi.fn(async () => failedDecrypt()),
+    });
+    expect(first).toBeNull();
+    expect(senderLookupCount).toBe(1);
+
+    clearNegativeCacheForMessage('message-sender-retry');
+    mocks.tryReadDeviceCopy.mockResolvedValueOnce('copie Sesame récupérée');
+
+    const second = await resolvePlaintext({
+      body,
+      messageId: 'message-sender-retry',
+      decrypt: vi.fn(async () => failedDecrypt()),
+    });
+
+    expect(senderLookupCount).toBe(2);
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('message-sender-retry', 'sender-user');
+    expect(second?.text).toBe('copie Sesame récupérée');
+  });
+
+  it('uses a known sender id without waiting for a sender lookup query', async () => {
+    const body = multiDeviceBody('known-sender');
+    mocks.tryReadDeviceCopy.mockResolvedValueOnce('copie directe');
+
+    const result = await resolvePlaintext({
+      body,
+      messageId: 'message-known-sender',
+      senderId: 'sender-known',
+      decrypt: vi.fn(async () => failedDecrypt()),
+    });
+
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('message-known-sender', 'sender-known');
+    expect(result?.text).toBe('copie directe');
   });
 
   it('treats future crypto JSON envelopes as encrypted recovery rows', () => {
