@@ -86,11 +86,12 @@ export function rememberDecryptedMedia(
   encryptedUrl: string,
   objectUrl: string,
   isVideo: boolean,
+  transient = true,
 ): void {
   const existing = store.get(encryptedUrl);
   if (existing) {
     touch(encryptedUrl, existing);
-    if (existing.objectUrl !== objectUrl && !objectUrl.startsWith('blob:')) {
+    if (existing.objectUrl !== objectUrl && !transient) {
       try { URL.revokeObjectURL(objectUrl); } catch { /* noop */ }
     }
     return;
@@ -100,7 +101,7 @@ export function rememberDecryptedMedia(
   store.set(encryptedUrl, entry);
   trim();
 
-  if (objectUrl.startsWith('blob:') && !cloneInflight.has(encryptedUrl)) {
+  if (transient && objectUrl.startsWith('blob:') && !cloneInflight.has(encryptedUrl)) {
     const task = cloneTransientObjectUrl(encryptedUrl, objectUrl, isVideo);
     cloneInflight.set(encryptedUrl, task);
   }
