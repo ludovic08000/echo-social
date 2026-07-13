@@ -26,7 +26,7 @@ import {
 const USER = '11111111-1111-4111-8111-111111111111';
 const CONVERSATION = '22222222-2222-4222-8222-222222222222';
 
-function payload(): OutboxPayload {
+function payload(overrides: Partial<OutboxPayload> = {}): OutboxPayload {
   return {
     localId: 'local-outbox-test',
     traceId: 'trace-outbox-test',
@@ -43,6 +43,7 @@ function payload(): OutboxPayload {
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
     reservedServerId: null,
+    ...overrides,
   };
 }
 
@@ -66,13 +67,28 @@ describe('encrypted outbox vault', () => {
     expect(listed.map((entry) => entry.localId)).toContain('local-outbox-test');
   });
 
+  it('serializes concurrent writes and keeps the last requested status', async () => {
+    const first = putOutboxPayload(USER, payload({ status: 'encrypting' }));
+    const second = putOutboxPayload(USER, payload({
+      status: 'sending',
+      encryptedBody: 'ciphertext-v1',
+      reservedServerId: '33333333-3333-4333-8333-333333333333',
+    }));
+
+    await Promise.all([first, second]);
+    const restored = await getOutboxPayload(USER, 'local-outbox-test');
+    expect(restored?.status).toBe('sending');
+    expect(restored?.encryptedBody).toBe('ciphertext-v1');
+    expect(restored?.reservedServerId).toBe('33333333-3333-4333-8333-333333333333');
+  });
+
   it('persists status and reserved server id for duplicate-safe retry', async () => {
     const patched = await patchOutboxPayload(USER, 'local-outbox-test', {
-      status: 'sending',
-      reservedServerId: '33333333-3333-4333-8333-333333333333',
+      status: 'retry_pending',
+      lastError: 'restored',
     });
 
-    expect(patched?.status).toBe('sending');
+    expect(patched?.status).toBe('retry_pending');
     expect(patched?.reservedServerId).toBe('33333333-3333-4333-8333-333333333333');
 
     await deleteOutboxPayload('local-outbox-test');
