@@ -1,7 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
 import { bufferToBase64 } from '@/lib/crypto/utils';
 import { exportPublicKeyRaw, loadIdentityKeys } from '@/lib/crypto/keyManager';
+import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import {
+  fetchVerifiedDeviceList,
   publishCompanionSignature,
   publishOwnSignedDeviceList,
   signCompanionDevice,
@@ -21,10 +23,101 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function listApprovedDevices(userId: string): Promise<DeviceRow[]> {
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('device_id, device_public_key, is_primary, is_active, approval_status, revoked_at')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .eq('approval_status', 'approved')
+    .is('revoked_at', null);
+  if (error) throw error;
+  return (data ?? []) as DeviceRow[];
+}
+
+async function isDeviceCryptographicallyReady(
+  userId: string,
+  deviceId: string,
+): Promise<boolean> {
+  const [verified, spk] = await Promise.all([
+    fetchVerifiedDeviceList(userId),
+    peekDeviceSignedPrekey(userId, deviceId).catch(() => null),
+  ]);
+  return Boolean(
+    verified.trusted.some((entry) => entry.deviceId === deviceId) && spk,
+  );
+}
+
+async function signOneCompanion(args: {
+  userId: string;
+  primary: DeviceRow;
+  companion: DeviceRow;
+  signingPrivateKey: CryptoKey;
+  signingPublicKey: CryptoKey;
+}): Promise<void> {
+  const primarySigningPublic = bufferToBase64(
+    await exportPublicKeyRaw(args.signingPublicKey),
+  );
+  const signatureRow = await signCompanionDevice({
+    userId: args.userId,
+    primaryDeviceId: args.primary.device_id,
+    primaryEdPrivate: args.signingPrivateKey,
+    primaryEdPublicB64: primarySigningPublic,
+    companionDeviceId: args.companion.device_id,
+    companionPublicKeyB64: args.companion.device_public_key,
+  });
+  await publishCompanionSignature(signatureRow);
+}
+
 /**
- * Register fresh device KX/SPK/OPKs, then authenticate its transport key in
- * the signed device list. The account Ed25519 identity arrived inside the
- * approved ECDH transfer; the server never receives its private half.
+ * Repair existing approved-but-unsigned companions. The account Ed25519 key is
+ * shared through the encrypted account vault; no private material is sent to
+ * Supabase. This lets existing iOS/Windows links heal without re-linking.
+ */
+export async function repairApprovedDeviceTrust(userId: string): Promise<number> {
+  if (!userId) return 0;
+  const devices = await listApprovedDevices(userId);
+  const primary = devices.find((device) => device.is_primary);
+  if (!primary) return 0;
+
+  const identity = await loadIdentityKeys(userId);
+  if (!identity?.signingPrivateKey || !identity.signingPublicKey) return 0;
+
+  const verified = await fetchVerifiedDeviceList(userId).catch(() => ({
+    trusted: [] as Array<{ deviceId: string }>,
+    signedListPresent: false,
+    verifications: [],
+  }));
+  const trusted = new Set(verified.trusted.map((entry) => entry.deviceId));
+  let repaired = 0;
+
+  for (const companion of devices) {
+    if (companion.is_primary || trusted.has(companion.device_id) || !companion.device_public_key) continue;
+    try {
+      await signOneCompanion({
+        userId,
+        primary,
+        companion,
+        signingPrivateKey: identity.signingPrivateKey,
+        signingPublicKey: identity.signingPublicKey,
+      });
+      repaired += 1;
+    } catch (error) {
+      console.warn('[DeviceLinkTrust] companion trust repair failed', {
+        deviceId: companion.device_id.slice(0, 8),
+        error,
+      });
+    }
+  }
+
+  await publishOwnSignedDeviceList({ signerDeviceId: primary.device_id }).catch(() => ({ ok: false }));
+  return repaired;
+}
+
+/**
+ * Register fresh device KX/SPK/OPKs, authenticate its transport key in the
+ * signed device list, and verify the result before link completion is exposed
+ * to the UI.
  */
 export async function finalizeLinkedDeviceAfterRestore(
   userId: string,
@@ -39,57 +132,47 @@ export async function finalizeLinkedDeviceAfterRestore(
     console.warn('[DeviceLinkTrust] device resync failed before trust publish', error);
   }
 
-  const retryDelays = [0, 500, 1_500, 3_000];
+  const retryDelays = [0, 500, 1_500, 3_000, 5_000];
   for (const waitMs of retryDelays) {
     await delay(waitMs);
 
     try {
-      const { data, error } = await supabase
-        .from('user_devices')
-        .select('device_id, device_public_key, is_primary, is_active, approval_status, revoked_at')
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .eq('approval_status', 'approved');
-      if (error) continue;
-
-      const devices = (data ?? []) as DeviceRow[];
+      const devices = await listApprovedDevices(userId);
       const companion = devices.find((device) => device.device_id === companionDeviceId);
-      const primary = devices.find((device) => device.is_primary && !device.revoked_at);
+      const primary = devices.find((device) => device.is_primary);
       if (!companion?.device_public_key || !primary) continue;
 
       if (companion.is_primary) {
         const result = await publishOwnSignedDeviceList({ signerDeviceId: companion.device_id });
-        return result.ok;
+        if (!result.ok) continue;
+      } else {
+        const identity = await loadIdentityKeys(userId);
+        if (!identity?.signingPrivateKey || !identity.signingPublicKey) continue;
+        await signOneCompanion({
+          userId,
+          primary,
+          companion,
+          signingPrivateKey: identity.signingPrivateKey,
+          signingPublicKey: identity.signingPublicKey,
+        });
       }
 
-      const identity = await loadIdentityKeys(userId);
-      if (!identity?.signingPrivateKey || !identity.signingPublicKey) continue;
-
-      const primarySigningPublic = bufferToBase64(
-        await exportPublicKeyRaw(identity.signingPublicKey),
-      );
-      const signatureRow = await signCompanionDevice({
-        userId,
-        primaryDeviceId: primary.device_id,
-        primaryEdPrivate: identity.signingPrivateKey,
-        primaryEdPublicB64: primarySigningPublic,
-        companionDeviceId: companion.device_id,
-        companionPublicKeyB64: companion.device_public_key,
-      });
-      await publishCompanionSignature(signatureRow);
+      await repairApprovedDeviceTrust(userId).catch(() => 0);
+      if (!(await isDeviceCryptographicallyReady(userId, companionDeviceId))) continue;
 
       try {
         window.dispatchEvent(new CustomEvent('forsure:e2ee-request-refanout-scan', {
           detail: { reason: 'linked_device_trusted', deviceId: companion.device_id },
         }));
+        window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
       } catch {}
       return true;
     } catch {
-      // Device registration and realtime replication can settle on next pass.
+      // Registration and realtime replication can settle on the next pass.
     }
   }
 
-  console.warn('[DeviceLinkTrust] linked device remained unsigned after bounded retries', {
+  console.warn('[DeviceLinkTrust] linked device failed readiness verification', {
     deviceId: companionDeviceId.slice(0, 8),
   });
   return false;
