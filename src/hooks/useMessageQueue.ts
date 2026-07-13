@@ -100,11 +100,8 @@ export function useMessageQueue(
     },
   );
 
-  const liveForConversation = queue.pendingMessages.filter(
-    (message) => message.conversationId === conversationId,
-  );
-  latestLivePendingRef.current = liveForConversation;
-
+  // Capture the old hook state before React runs the internal conversation
+  // reset effect. This covers immediate navigation just after pressing Send.
   if (previousConversationRef.current !== conversationId) {
     const previousId = previousConversationRef.current;
     const previousLive = latestLivePendingRef.current.filter(
@@ -113,6 +110,11 @@ export function useMessageQueue(
     if (previousLive.length > 0) writePending(previousId, previousLive);
     previousConversationRef.current = conversationId;
   }
+
+  latestLivePendingRef.current = queue.pendingMessages;
+  const liveForConversation = queue.pendingMessages.filter(
+    (message) => message.conversationId === conversationId,
+  );
 
   useEffect(() => {
     if (liveForConversation.length > 0) {
