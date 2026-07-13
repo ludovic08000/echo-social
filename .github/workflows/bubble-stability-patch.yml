@@ -1,0 +1,171 @@
+name: Bubble Stability Patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/bubble-stability-trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bubble-stability-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded patches
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding='utf-8-sig')
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          use_messages = 'src/hooks/useMessages.ts'
+          replace_once(
+              use_messages,
+              """          if (isUnsupportedEncryptedBody(newMsg.body)) {
+            console.warn('[messaging] ignoring unsupported encrypted message without hiding it', newMsg.id);
+            return;
+          }
+""",
+              """          if (isUnsupportedEncryptedBody(newMsg.body)) {
+            console.warn('[messaging] retaining future encrypted message as recovery bubble', newMsg.id);
+          }
+""",
+          )
+          replace_once(
+              use_messages,
+              """              // Remove any optimistic message for this real one, and prevent duplicates
+              const filtered = old.filter(m =>
+                m.id !== enriched.id && !m.id.startsWith('optimistic-')
+              );
+              // Only skip if already present with same id
+              if (old.some(m => m.id === enriched.id)) return old;
+              return [...filtered, enriched];
+""",
+              """              // An ACK must never erase unrelated optimistic bubbles. Match only
+              // the legacy optimistic row that has the same sender/body/media.
+              if (old.some(m => m.id === enriched.id)) return old;
+              const filtered = old.filter(m =>
+                m.id !== enriched.id &&
+                !(
+                  m.id.startsWith('optimistic-') &&
+                  m.sender_id === enriched.sender_id &&
+                  m.body === enriched.body &&
+                  (m.image_url ?? null) === (enriched.image_url ?? null)
+                )
+              );
+              return [...filtered, enriched].sort((a, b) => {
+                const delta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                return delta !== 0 ? delta : a.id.localeCompare(b.id);
+              });
+""",
+          )
+
+          chat_view = 'src/components/messages/ChatView.tsx'
+          replace_once(
+              chat_view,
+              'groupedMessages.map((group, gi) => (',
+              'groupedMessages.map((group) => (',
+          )
+          replace_once(
+              chat_view,
+              '<div key={gi}>',
+              "<div key={format(new Date(group.date), 'yyyy-MM-dd')}>",
+          )
+          replace_once(
+              chat_view,
+              """                                isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                                messageId={msg.id}
+                              />
+""",
+              """                                isEncryptionActive={e2ee.encrypted && !isZeusConversation}
+                                messageId={msg.id}
+                                cachedPlaintext={decryptedCache.get(msg.id)}
+                              />
+""",
+          )
+          replace_once(
+              chat_view,
+              'rememberDecryptedMedia(url, previewUrl || URL.createObjectURL(prepared), isVideo);',
+              'rememberDecryptedMedia(url, URL.createObjectURL(prepared), isVideo);',
+          )
+
+          queue_file = 'src/hooks/useMessageQueueSignal.ts'
+          replace_once(
+              queue_file,
+              "import { useCallback, useEffect, useState } from 'react';",
+              "import { useCallback, useEffect, useState, type SetStateAction } from 'react';",
+          )
+          replace_once(
+              queue_file,
+              """export function useMessageQueue(
+""",
+              """const pendingMessagesByConversation = new Map<string, OutboundMessage[]>();
+
+export function useMessageQueue(
+""",
+          )
+          replace_once(
+              queue_file,
+              """  const [pendingMessages, setPendingMessages] = useState<OutboundMessage[]>([]);
+
+  useEffect(() => setPendingMessages([]), [conversationId]);
+""",
+              """  const [pendingMessages, setPendingMessagesState] = useState<OutboundMessage[]>(
+    () => pendingMessagesByConversation.get(conversationId) ?? [],
+  );
+  const setPendingMessages = useCallback((next: SetStateAction<OutboundMessage[]>) => {
+    setPendingMessagesState((previous) => {
+      const resolved = typeof next === 'function'
+        ? (next as (value: OutboundMessage[]) => OutboundMessage[])(previous)
+        : next;
+      pendingMessagesByConversation.set(conversationId, resolved);
+      return resolved;
+    });
+  }, [conversationId]);
+
+  useEffect(() => {
+    setPendingMessagesState(pendingMessagesByConversation.get(conversationId) ?? []);
+  }, [conversationId]);
+""",
+          )
+
+      - name: Install
+        run: npm ci
+
+      - name: Tests
+        run: npm run test -- --run src/components/messages/__tests__/decryptionNegativeCache.test.ts src/lib/messaging/__tests__/fanoutRepair.test.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/hooks/useMessages.ts src/components/messages/ChatView.tsx src/hooks/useMessageQueueSignal.ts
+          if git diff --cached --quiet; then
+            echo "No source change required"
+            exit 0
+          fi
+          git commit -m "fix(messaging): stabilise optimistic and mounted bubbles"
+          git push origin HEAD:main
