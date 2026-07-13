@@ -13,6 +13,7 @@ import {
   rememberDecryptedMedia,
   retainDecryptedMedia,
   releaseDecryptedMedia,
+  subscribeDecryptedMedia,
 } from './decryptedMediaCache';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 
@@ -40,6 +41,12 @@ export const EncryptedMedia = memo(function EncryptedMedia({
     setLoading(true);
     setRetryTick((tick) => tick + 1);
   }, [encryptedUrl]);
+
+  useEffect(() => subscribeDecryptedMedia(encryptedUrl, (entry) => {
+    setObjectUrl(entry.objectUrl);
+    setError(false);
+    setLoading(false);
+  }), [encryptedUrl]);
 
   useEffect(() => {
     const onOnline = () => {
@@ -85,7 +92,9 @@ export const EncryptedMedia = memo(function EncryptedMedia({
         const mimeType = isVideo ? 'video/mp4' : 'image/jpeg';
         const blob = new Blob([decrypted], { type: mimeType });
         const createdUrl = URL.createObjectURL(blob);
-        rememberDecryptedMedia(encryptedUrl, createdUrl, isVideo);
+        // This URL is owned by the decrypted-media cache; unlike an upload
+        // preview it must not be cloned or revoked by another component.
+        rememberDecryptedMedia(encryptedUrl, createdUrl, isVideo, false);
         const canonical = getDecryptedMedia(encryptedUrl)?.objectUrl ?? createdUrl;
 
         setObjectUrl(canonical);
