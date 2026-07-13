@@ -19,6 +19,11 @@ type ExpectedTarget = {
   devicePublicKey: string;
 };
 
+type CoverageSeed = {
+  input: FanoutInput;
+  coveredTargetKeys: string[];
+};
+
 export interface FanoutCoverageResult extends FanoutResult {
   expected: number;
   covered: number;
@@ -119,10 +124,10 @@ async function buildMissingRows(
  */
 export async function ensureFanoutCoverageWithRetry(
   input: FanoutInput,
-  initiallyCoveredDeviceIds: readonly string[] = [],
+  initiallyCoveredTargetKeys: readonly string[] = [],
   delaysMs: readonly number[] = DEFAULT_FANOUT_REPAIR_DELAYS_MS,
 ): Promise<FanoutCoverageResult> {
-  const covered = new Set(initiallyCoveredDeviceIds);
+  const covered = new Set(initiallyCoveredTargetKeys);
   let inserted = 0;
   let latestTargets: ExpectedTarget[] = [];
 
@@ -212,7 +217,7 @@ export async function repairFanoutWithRetry(
 
 const backgroundCoverage = new Map<string, Promise<void>>();
 
-async function loadSentMessageForCoverage(messageId: string): Promise<FanoutInput | null> {
+async function loadSentMessageForCoverage(messageId: string): Promise<CoverageSeed | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
@@ -228,11 +233,28 @@ async function loadSentMessageForCoverage(messageId: string): Promise<FanoutInpu
     await loadPlaintextForCiphertext(message.body).catch(() => null);
   if (!plaintext) return null;
 
+  // Read existing coverage first. If RLS does not allow the sender to inspect
+  // its own copy rows, skip background repair rather than advancing ratchets for
+  // devices that may already be covered.
+  const { data: existingCopies, error: copyError } = await supabase
+    .from('message_device_copies')
+    .select('recipient_user_id, recipient_device_id')
+    .eq('message_id', messageId);
+  if (copyError) return null;
+
+  const coveredTargetKeys = (existingCopies ?? []).map((row) => targetKey({
+    userId: row.recipient_user_id,
+    deviceId: row.recipient_device_id,
+  }));
+
   return {
-    messageId,
-    conversationId: message.conversation_id,
-    senderUserId: user.id,
-    plaintext,
+    input: {
+      messageId,
+      conversationId: message.conversation_id,
+      senderUserId: user.id,
+      plaintext,
+    },
+    coveredTargetKeys,
   };
 }
 
@@ -245,16 +267,16 @@ function scheduleBackgroundCoverage(messageId: string): void {
   if (!messageId || backgroundCoverage.has(messageId)) return;
 
   const task = (async () => {
-    const plaintextDelays = [250, 1_000, 3_000];
-    let input: FanoutInput | null = null;
-    for (const delay of plaintextDelays) {
+    const readinessDelays = [500, 1_500, 3_000];
+    let seed: CoverageSeed | null = null;
+    for (const delay of readinessDelays) {
       await sleep(delay);
-      input = await loadSentMessageForCoverage(messageId);
-      if (input) break;
+      seed = await loadSentMessageForCoverage(messageId);
+      if (seed) break;
     }
-    if (!input) return;
+    if (!seed) return;
 
-    const coverage = await ensureFanoutCoverageWithRetry(input);
+    const coverage = await ensureFanoutCoverageWithRetry(seed.input, seed.coveredTargetKeys);
     if (coverage.covered > 0 && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('forsure:fanout-coverage-ready', {
         detail: { messageId, expected: coverage.expected, covered: coverage.covered },
