@@ -69,11 +69,6 @@ async function signOneCompanion(args: {
   await publishCompanionSignature(signatureRow);
 }
 
-/**
- * Repair existing approved-but-unsigned companions. The account Ed25519 key is
- * shared through the encrypted account vault; no private material is sent to
- * Supabase. This lets existing iOS/Windows links heal without re-linking.
- */
 export async function repairApprovedDeviceTrust(userId: string): Promise<number> {
   if (!userId) return 0;
   const devices = await listApprovedDevices(userId);
@@ -114,16 +109,11 @@ export async function repairApprovedDeviceTrust(userId: string): Promise<number>
   return repaired;
 }
 
-/**
- * Register fresh device KX/SPK/OPKs, authenticate its transport key in the
- * signed device list, and verify the result before link completion is exposed
- * to the UI.
- */
 export async function finalizeLinkedDeviceAfterRestore(
   userId: string,
   companionDeviceId: string,
 ): Promise<boolean> {
-  if (!userId || !companionDeviceId) return false;
+  if (!userId || !companionDeviceId) throw new Error('LINKED_DEVICE_INVALID');
 
   try {
     const { resyncE2EE } = await import('@/lib/crypto/resyncE2EE');
@@ -175,5 +165,5 @@ export async function finalizeLinkedDeviceAfterRestore(
   console.warn('[DeviceLinkTrust] linked device failed readiness verification', {
     deviceId: companionDeviceId.slice(0, 8),
   });
-  return false;
+  throw new Error('LINKED_DEVICE_NOT_READY');
 }
