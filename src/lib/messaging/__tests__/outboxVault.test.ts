@@ -11,9 +11,7 @@ beforeAll(() => {
   }
 });
 
-import { STORE_OUTBOX } from '@/lib/crypto/constants';
-import { openE2EEDB } from '@/lib/crypto/indexedDb';
-import { reqToPromise, runTx } from '@/lib/crypto/indexedDbTx';
+import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
 import {
   deleteOutboxPayload,
   getOutboxPayload,
@@ -48,20 +46,25 @@ function payload(overrides: Partial<OutboxPayload> = {}): OutboxPayload {
 }
 
 describe('encrypted outbox vault', () => {
-  it('round-trips a pending message while raw IndexedDB contains no plaintext', async () => {
-    await openE2EEDB();
+  it('round-trips locally while raw device-only IndexedDB contains no plaintext', async () => {
     await putOutboxPayload(USER, payload());
 
     const restored = await getOutboxPayload(USER, 'local-outbox-test');
     expect(restored?.plaintext).toBe('texte ultra secret à ne jamais stocker en clair');
     expect(restored?.conversationId).toBe(CONVERSATION);
 
-    const raw = await runTx([STORE_OUTBOX], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore(STORE_OUTBOX).get('local-outbox-test')),
+    const raw = await runTxOn('msg-queue', ['outbound'], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore('outbound').get('local-outbox-test')),
     ) as { ciphertext: ArrayBuffer };
     const rawBytes = new Uint8Array(raw.ciphertext);
     const rawText = new TextDecoder().decode(rawBytes);
     expect(rawText).not.toContain('texte ultra secret');
+
+    const localKeyRows = await runTxOn('msg-queue', ['device-keys'], 'readonly', (tx) =>
+      reqToPromise(tx.objectStore('device-keys').getAll()),
+    ) as Array<{ key: CryptoKey }>;
+    expect(localKeyRows).toHaveLength(1);
+    expect(localKeyRows[0].key.extractable).toBe(false);
 
     const listed = await listOutboxPayloads(USER, CONVERSATION);
     expect(listed.map((entry) => entry.localId)).toContain('local-outbox-test');
