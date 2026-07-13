@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
 import {
   useMessages as useBaseMessages,
   ZEUS_BOT_ID,
@@ -62,9 +63,44 @@ function mergeMessages(
 ): Message[] {
   const realMessages = [...older, ...recent].filter((message) => !message.id.startsWith('optimistic-'));
   const remembered = rememberOptimistics(conversationId, recent);
-  const unmatchedOptimistics = remembered.filter(
-    (optimistic) => !realMessages.some((real) => sameAcknowledgedMessage(optimistic, real)),
-  );
+
+  bubbleDiagnostic('MERGE_START', {
+    conversationId,
+    details: {
+      recentCount: recent.length,
+      olderCount: older.length,
+      realCount: realMessages.length,
+      optimisticCount: remembered.length,
+    },
+  });
+
+  const unmatchedOptimistics = remembered.filter((optimistic) => {
+    const acknowledgedBy = realMessages.find((real) => sameAcknowledgedMessage(optimistic, real));
+    if (acknowledgedBy) {
+      bubbleDiagnostic('OPTIMISTIC_ACK_MATCH', {
+        conversationId,
+        messageId: acknowledgedBy.id,
+        localId: optimistic.id,
+        reason: 'same_sender_body_media_within_ack_window',
+        details: {
+          optimisticCreatedAt: optimistic.created_at,
+          serverCreatedAt: acknowledgedBy.created_at,
+          hasMedia: Boolean(optimistic.image_url),
+        },
+      });
+      return false;
+    }
+    bubbleDiagnostic('OPTIMISTIC_RETAINED', {
+      conversationId,
+      localId: optimistic.id,
+      reason: 'no_matching_server_ack',
+      details: {
+        ageMs: Date.now() - messageTime(optimistic),
+        hasMedia: Boolean(optimistic.image_url),
+      },
+    });
+    return true;
+  });
 
   if (unmatchedOptimistics.length > 0) {
     optimisticByConversation.set(conversationId, unmatchedOptimistics);
@@ -75,10 +111,22 @@ function mergeMessages(
   const byId = new Map<string, Message>();
   for (const message of [...realMessages, ...unmatchedOptimistics]) byId.set(message.id, message);
 
-  return [...byId.values()].sort((a, b) => {
+  const merged = [...byId.values()].sort((a, b) => {
     const delta = messageTime(a) - messageTime(b);
     return delta !== 0 ? delta : a.id.localeCompare(b.id);
   });
+
+  bubbleDiagnostic('MERGE_RESULT', {
+    conversationId,
+    details: {
+      mergedCount: merged.length,
+      serverCount: realMessages.length,
+      retainedOptimisticCount: unmatchedOptimistics.length,
+      firstId: merged[0]?.id ?? null,
+      lastId: merged[merged.length - 1]?.id ?? null,
+    },
+  });
+  return merged;
 }
 
 async function fetchOlderPage(
@@ -126,13 +174,6 @@ async function fetchOlderPage(
   };
 }
 
-/**
- * Compatibility layer over the existing E2EE/realtime hook.
- *
- * The base hook remains responsible for current-window decryption and realtime
- * delivery. This layer retains unrelated optimistic rows and pages older rows
- * with a deterministic `(created_at,id)` cursor.
- */
 export function useMessages(conversationId: string) {
   const { user } = useAuth();
   const base = useBaseMessages(conversationId);
@@ -184,6 +225,69 @@ export function useMessages(conversationId: string) {
     () => mergeMessages(conversationId, recent, older),
     [conversationId, recent, older],
   );
+
+  const previousIdsRef = useRef<string[]>([]);
+  useEffect(() => {
+    const previousIds = previousIdsRef.current;
+    const currentIds = data.map((message) => message.id);
+    const previousSet = new Set(previousIds);
+    const currentSet = new Set(currentIds);
+
+    for (const id of currentIds) {
+      if (!previousSet.has(id)) {
+        const message = data.find((entry) => entry.id === id);
+        bubbleDiagnostic('MESSAGE_ADDED', {
+          conversationId,
+          messageId: id.startsWith('optimistic-') ? undefined : id,
+          localId: id.startsWith('optimistic-') ? id : undefined,
+          reason: id.startsWith('optimistic-') ? 'optimistic_entered_render_list' : 'server_message_entered_render_list',
+          details: {
+            index: currentIds.indexOf(id),
+            total: currentIds.length,
+            hasMedia: Boolean(message?.image_url),
+            status: message?.status ?? null,
+          },
+        });
+      }
+    }
+
+    for (const id of previousIds) {
+      if (!currentSet.has(id)) {
+        bubbleDiagnostic('MESSAGE_REMOVED', {
+          conversationId,
+          messageId: id.startsWith('optimistic-') ? undefined : id,
+          localId: id.startsWith('optimistic-') ? id : undefined,
+          reason: hiddenIds.has(id)
+            ? 'local_deletion_policy'
+            : id.startsWith('optimistic-')
+              ? 'optimistic_removed_or_acknowledged'
+              : 'missing_from_merged_query_result',
+          details: {
+            previousIndex: previousIds.indexOf(id),
+            previousTotal: previousIds.length,
+            currentTotal: currentIds.length,
+            baseRecentCount: recent.length,
+            olderCount: older.length,
+          },
+        });
+      }
+    }
+
+    const shared = currentIds.filter((id) => previousSet.has(id));
+    const reordered = shared.filter((id) => previousIds.indexOf(id) !== currentIds.indexOf(id));
+    if (reordered.length > 0) {
+      bubbleDiagnostic('MESSAGE_REORDERED', {
+        conversationId,
+        reason: 'stable_ids_changed_render_index',
+        details: {
+          count: reordered.length,
+          sampleIds: reordered.slice(0, 10),
+        },
+      });
+    }
+
+    previousIdsRef.current = currentIds;
+  }, [conversationId, data, hiddenIds, older.length, recent.length]);
 
   const pendingScrollRef = useRef<{ element: HTMLElement; height: number } | null>(null);
 
