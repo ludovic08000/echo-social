@@ -37,12 +37,13 @@ export const HKDF_SALT_LENGTH = 32;
 export const KEY_ROTATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 export const MAX_MESSAGES_PER_KEY = 500;
 
-// IndexedDB — schema repair version to restore missing stores without deleting identity keys
+// IndexedDB — v5 adds the encrypted local outbox without deleting E2EE keys.
 export const DB_NAME = 'forsure-e2ee';
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 export const STORE_KEYS = 'identity-keys';
 export const STORE_SESSION = 'session-keys';
 export const STORE_PREKEYS = 'pre-keys';
+export const STORE_OUTBOX = 'encrypted-outbox';
 
 // Protocol version (bump = breaking change)
 //   v1 — legacy P-384 envelopes (read-only)
