@@ -1,0 +1,87 @@
+name: Direct ChatView Cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/direct-chatview-trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: direct-chatview-cleanup
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch source directly
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace_exact(path: str, old: str, new: str, expected: int = 1):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8-sig')
+              count = text.count(old)
+              if count == 0 and new in text:
+                  return
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} matches, found {count}: {old[:100]!r}')
+              p.write_text(text.replace(old, new, expected), encoding='utf-8')
+
+          chat = 'src/components/messages/ChatView.tsx'
+          replace_exact(chat, 'groupedMessages.map((group, gi) => (', 'groupedMessages.map((group) => (')
+          replace_exact(chat, '<div key={gi}>', "<div key={format(new Date(group.date), 'yyyy-MM-dd')}>")
+          replace_exact(
+              chat,
+              '                                messageId={msg.id}\n                              />',
+              '                                messageId={msg.id}\n                                cachedPlaintext={decryptedCache.get(msg.id)}\n                              />',
+          )
+          replace_exact(
+              chat,
+              'rememberDecryptedMedia(url, previewUrl || URL.createObjectURL(prepared), isVideo);',
+              'rememberDecryptedMedia(url, URL.createObjectURL(prepared), isVideo, false);',
+          )
+
+          vite = Path('vite.config.ts')
+          text = vite.read_text(encoding='utf-8-sig')
+          text = text.replace('import { defineConfig, type Plugin } from "vite";', 'import { defineConfig } from "vite";')
+          text, count = re.subn(
+              r'/\*\*\n \* Temporary guarded source fix.*?\n}\n\n(?=export default defineConfig)',
+              '',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1 and 'chatBubbleStabilityGuard' in text:
+              raise SystemExit('vite.config.ts: failed to remove stability guard function')
+          text = text.replace('    chatBubbleStabilityGuard(),\n', '')
+          vite.write_text(text, encoding='utf-8')
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused tests
+        run: npm run test -- --run src/components/messages/__tests__/decryptionNegativeCache.test.ts src/lib/messaging/__tests__/fanoutRepair.test.ts src/lib/messaging/__tests__/outboxVault.test.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit direct source cleanup
+        shell: bash
+        run: |
+          git rm .github/workflows/direct-chatview-patch.yml .github/direct-chatview-trigger
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/messages/ChatView.tsx vite.config.ts
+          git commit -m "refactor(messaging): apply bubble stability directly in ChatView"
+          git push origin HEAD:main
