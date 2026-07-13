@@ -8,6 +8,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from './cryptoIntegrity';
 import { base64ToBuffer, bufferToBase64, encodeString } from './utils';
+import { exportPublicKeyRaw, loadIdentityKeys } from './keyManager';
 
 export interface SignedDeviceEntry {
   deviceId: string;
@@ -83,15 +84,62 @@ export async function publishCompanionSignature(
     await publishOwnSignedDeviceList({
       signerDeviceId: row.primary_device_id,
       signatureB64: row.signature_b64,
+      repairCompanions: false,
     });
   } catch (publishError) {
     console.warn('[signedDeviceList] publishOwnSignedDeviceList failed (non-fatal):', publishError);
   }
 }
 
+async function repairApprovedCompanionSignatures(
+  userId: string,
+  rows: Array<{ device_id: string; device_public_key: string; is_primary: boolean }>,
+): Promise<void> {
+  const primary = rows.find((row) => row.is_primary);
+  if (!primary) return;
+
+  const companions = rows.filter((row) => !row.is_primary && row.device_public_key);
+  if (companions.length === 0) return;
+
+  const { data: signatures } = await supabase
+    .from('user_device_signatures')
+    .select('device_id, primary_device_id, revoked_at')
+    .eq('user_id', userId)
+    .eq('primary_device_id', primary.device_id)
+    .is('revoked_at', null);
+  const alreadySigned = new Set((signatures ?? []).map((row) => row.device_id));
+  const missing = companions.filter((row) => !alreadySigned.has(row.device_id));
+  if (missing.length === 0) return;
+
+  const identity = await loadIdentityKeys(userId);
+  if (!identity?.signingPrivateKey || !identity.signingPublicKey) return;
+  const primaryPubB64 = bufferToBase64(await exportPublicKeyRaw(identity.signingPublicKey));
+
+  for (const companion of missing) {
+    const signatureRow = await signCompanionDevice({
+      userId,
+      primaryDeviceId: primary.device_id,
+      primaryEdPrivate: identity.signingPrivateKey,
+      primaryEdPublicB64: primaryPubB64,
+      companionDeviceId: companion.device_id,
+      companionPublicKeyB64: companion.device_public_key,
+    });
+    const { error } = await supabase
+      .from('user_device_signatures')
+      .upsert(signatureRow, { onConflict: 'user_id,device_id,primary_device_id' });
+    if (error) {
+      console.warn('[signedDeviceList] approved companion auto-sign failed', {
+        deviceId: companion.device_id.slice(0, 8),
+        error: error.message,
+      });
+    }
+  }
+}
+
 export async function publishOwnSignedDeviceList(args?: {
   signerDeviceId?: string | null;
   signatureB64?: string | null;
+  repairCompanions?: boolean;
 }): Promise<{ ok: boolean; deviceCount?: number; error?: string }> {
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData?.user?.id;
@@ -99,14 +147,26 @@ export async function publishOwnSignedDeviceList(args?: {
 
   const { data: rows, error: listError } = await supabase
     .from('user_devices')
-    .select('device_id')
+    .select('device_id, device_public_key, is_primary')
     .eq('user_id', userId)
     .eq('is_active', true)
-    .eq('approval_status', 'approved');
+    .eq('approval_status', 'approved')
+    .is('revoked_at', null);
   if (listError) return { ok: false, error: listError.message };
 
-  const deviceIds = (rows ?? [])
-    .map((row) => String((row as any).device_id || ''))
+  const approvedRows = (rows ?? []) as Array<{
+    device_id: string;
+    device_public_key: string;
+    is_primary: boolean;
+  }>;
+  if (args?.repairCompanions !== false) {
+    await repairApprovedCompanionSignatures(userId, approvedRows).catch((error) => {
+      console.warn('[signedDeviceList] companion auto-repair failed', error);
+    });
+  }
+
+  const deviceIds = approvedRows
+    .map((row) => String(row.device_id || ''))
     .filter((deviceId) => deviceId.length >= 8);
 
   const { data, error } = await (supabase as any).rpc('upsert_signed_device_list', {
@@ -163,9 +223,6 @@ export async function verifySignedDeviceList(
       continue;
     }
 
-    // Bind the signature to the one advertised primary DeviceID and its
-    // Ed25519 root. primary.devicePublicKey is the unrelated X25519 transport
-    // key and must never be used as a signing-key anchor.
     if (
       !primary ||
       entry.primaryDeviceId !== primary.deviceId ||
