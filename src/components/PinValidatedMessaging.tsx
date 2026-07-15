@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { repairApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
-import { publishOwnSignedDeviceList } from '@/lib/crypto/signedDeviceList';
+import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import {
   getCurrentDeviceId,
   hydrateDeviceId,
@@ -30,10 +30,9 @@ function wakeMessageDecryptors(deviceId: string | null, reason: string): void {
 }
 
 /**
- * The outer MessagingPinGate renders this component only after verifyPin()
- * successfully restored the local crypto blob. Device registration, Signed
- * PreKey maintenance and companion trust are network maintenance tasks: they
- * must never hide an already-restorable local conversation.
+ * verifyPin() has already restored the local crypto blob before this component
+ * exists. Render conversations immediately; server/device maintenance is a
+ * detached optimisation and can never replace or delay the message tree.
  */
 export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) {
   const { user } = useAuth();
@@ -43,19 +42,18 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
 
     let cancelled = false;
     const userId = user.id;
+    const wake = (reason: string) => {
+      if (!cancelled) wakeMessageDecryptors(getCurrentDeviceId() || null, reason);
+    };
 
-    // The bubbles mount on this render. Wake decryptors now and once more after
-    // React has committed the message tree so cached encrypted rows are retried.
-    wakeMessageDecryptors(getCurrentDeviceId() || null, 'pin_gate_opened');
-    const retryTimer = window.setTimeout(() => {
-      if (!cancelled) {
-        wakeMessageDecryptors(getCurrentDeviceId() || null, 'pin_gate_bubbles_mounted');
-      }
-    }, 250);
+    // Bubble components may subscribe during different React commit phases.
+    // Wake every phase without waiting for any network operation.
+    wake('pin_gate_opened');
+    queueMicrotask(() => wake('pin_gate_microtask'));
+    const frame = window.requestAnimationFrame(() => wake('pin_gate_next_frame'));
+    const shortTimer = window.setTimeout(() => wake('pin_gate_bubbles_mounted'), 80);
 
-    // Best-effort maintenance only. Failure is logged but never replaces the
-    // conversation with a repair screen.
-    void runDeviceOperation(`pin-post-unlock-maintenance:${userId}`, async () => {
+    void runDeviceOperation(`pin-fast-maintenance:${userId}`, async () => {
       await requireAuthenticatedDeviceSession(userId);
       await hydrateDeviceId();
       const deviceId = getCurrentDeviceId();
@@ -69,43 +67,41 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
         });
       }
 
-      try {
-        await resyncE2EE(userId);
-      } catch (error) {
-        console.warn('[PIN-DEVTRUST] prekey/resync maintenance deferred', {
-          deviceId: deviceId.slice(0, 8),
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      // Run independent maintenance concurrently. A valid SPK is left untouched;
+      // companion signatures are repaired in one batch by DeviceLinkTrust.
+      const [prekeyResult, trustResult] = await Promise.allSettled([
+        (async () => {
+          const existingSpk = await peekDeviceSignedPrekey(userId, deviceId).catch(() => null);
+          if (existingSpk) return 'already-valid';
+          await resyncE2EE(userId);
+          return 'repaired';
+        })(),
+        repairApprovedDeviceTrust(userId),
+      ]);
 
-      try {
-        const repaired = await repairApprovedDeviceTrust(userId);
-        const published = await publishOwnSignedDeviceList();
-        console.info('[PIN-DEVTRUST] background maintenance complete', {
-          userId: userId.slice(0, 8),
-          deviceId: getCurrentDeviceId().slice(0, 8),
-          repaired,
-          published: published.ok,
-        });
-      } catch (error) {
-        console.warn('[PIN-DEVTRUST] companion maintenance deferred', {
-          deviceId: getCurrentDeviceId().slice(0, 8),
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      console.info('[PIN-DEVTRUST] fast maintenance complete', {
+        userId: userId.slice(0, 8),
+        deviceId: getCurrentDeviceId().slice(0, 8),
+        prekey: prekeyResult.status === 'fulfilled'
+          ? prekeyResult.value
+          : `deferred:${String(prekeyResult.reason)}`,
+        repairedCompanions: trustResult.status === 'fulfilled'
+          ? trustResult.value
+          : `deferred:${String(trustResult.reason)}`,
+      });
 
-      if (!cancelled) {
-        wakeMessageDecryptors(getCurrentDeviceId() || null, 'pin_background_maintenance_complete');
-      }
-    }, { coalesce: true }).catch((error) => {
-      console.warn('[PIN-DEVTRUST] post-unlock maintenance unavailable', {
+      wake('pin_fast_maintenance_complete');
+    }, { coalesce: true, cooldownMs: 2_000 }).catch((error) => {
+      // Cooldown or network failure never affects already-mounted bubbles.
+      console.warn('[PIN-DEVTRUST] fast maintenance unavailable', {
         error: error instanceof Error ? error.message : String(error),
       });
     });
 
     return () => {
       cancelled = true;
-      window.clearTimeout(retryTimer);
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(shortTimer);
     };
   }, [user?.id]);
 
