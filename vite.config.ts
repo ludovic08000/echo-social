@@ -54,11 +54,6 @@ function messagingStabilityGuard(): Plugin {
 
       if (cleanId.endsWith("/src/hooks/useChatPin.ts")) {
         let transformed = code;
-
-        // While the PIN session is unlocked, the local identity and ratchet
-        // material must remain readable by bubble decryptors. The crypto blob is
-        // already encrypted and persisted here; deletion belongs exclusively to
-        // lockWithoutWiping(), not setup/verify success.
         transformed = transformed.replace(
           `        await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
         await deleteRawIdentityBlob(user.id);
@@ -73,7 +68,6 @@ function messagingStabilityGuard(): Plugin {
           `            await encryptAndSaveWrappedCrypto(user.id, wrapKey, verifyResult.salt, fullBlob);
             console.log('[PIN] Full crypto blob wrapped on first verify and kept active (v2)');`,
         );
-
         return transformed === code ? null : { code: transformed, map: null };
       }
 
@@ -92,7 +86,6 @@ function messagingStabilityGuard(): Plugin {
   const key = cacheKey(messageId, body);
   const memoryCached = cache.get(key);
   if (memoryCached) return memoryCached;
-
   const hotPlaintext = readHotPlaintext(messageId, body);
   if (!hotPlaintext) return undefined;
   const outcome = buildOutcomeFromText(hotPlaintext);
@@ -128,7 +121,83 @@ function messagingStabilityGuard(): Plugin {
   if (messageId) void savePlaintext(messageId, byCiphertext);
   const outcome = buildOutcomeFromText(byCiphertext);`;
         transformed = transformed.replace(byCipherAnchor, byCipherHot);
+        return transformed === code ? null : { code: transformed, map: null };
+      }
 
+      if (cleanId.endsWith("/src/lib/crypto/deviceRatchet.ts")) {
+        let transformed = code;
+        const saveAnchor = `async function saveSession(key: string, session: StoredSession): Promise<void> {
+  try {
+    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
+      tx.objectStore(STORE).put({ ...session, id: key });
+    });
+  } catch {
+    // non-fatal
+  }
+}`;
+        const saveFailClosed = `async function saveSession(key: string, session: StoredSession): Promise<void> {
+  await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
+    tx.objectStore(STORE).put({ ...session, id: key });
+  });
+}`;
+        transformed = transformed.replace(saveAnchor, saveFailClosed);
+        return transformed === code ? null : { code: transformed, map: null };
+      }
+
+      if (cleanId.endsWith("/src/lib/crypto/x3dh.ts")) {
+        let transformed = code;
+        const signatureAnchor = `export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: string, myDeviceId: string, initialMessage: X3DHInitialMessage): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
+  const { assertNotReplayedAndRecord } = await import('./x3dhReplayGuard');
+  await assertNotReplayedAndRecord({ myUserId: \`${'${myUserId}'}::${'${myDeviceId}'}\`, ik: initialMessage.ik, ek: initialMessage.ek, spkId: initialMessage.spkId, opkId: initialMessage.opkId });`;
+        const signatureTwoPhase = `export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: string, myDeviceId: string, initialMessage: X3DHInitialMessage): Promise<{
+  sharedSecret: ArrayBuffer;
+  spkKeyPair: CryptoKeyPair;
+  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation;
+  usedOpkId?: number;
+}> {
+  const { reserveX3dhInitial } = await import('./x3dhReplayGuard');
+  const replayReservation = await reserveX3dhInitial({ myUserId: \`${'${myUserId}'}::${'${myDeviceId}'}\`, ik: initialMessage.ik, ek: initialMessage.ek, spkId: initialMessage.spkId, opkId: initialMessage.opkId });`;
+        transformed = transformed.replace(signatureAnchor, signatureTwoPhase);
+        transformed = transformed.replace(
+          `    await deleteDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);`,
+          `    // OPK deletion is deferred until the bootstrap ciphertext has been
+    // authenticated and the responder ratchet has been persisted.`,
+        );
+        transformed = transformed.replace(
+          `  return { sharedSecret, spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate } };
+}
+
+export function isPQXDHAvailable(): boolean { return false; }`,
+          `  return {
+    sharedSecret,
+    spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate },
+    replayReservation,
+    usedOpkId: initialMessage.opkId,
+  };
+}
+
+export async function finalizeDeviceX3DHInitial(args: {
+  userId: string;
+  deviceId: string;
+  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation;
+  usedOpkId?: number;
+}): Promise<void> {
+  const { finalizeX3dhInitial } = await import('./x3dhReplayGuard');
+  await finalizeX3dhInitial(args.replayReservation);
+  if (args.usedOpkId !== undefined) {
+    await deleteDeviceOPKPrivate(args.userId, args.deviceId, args.usedOpkId);
+  }
+}
+
+export async function cancelDeviceX3DHInitial(
+  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation,
+): Promise<void> {
+  const { cancelX3dhInitial } = await import('./x3dhReplayGuard');
+  await cancelX3dhInitial(replayReservation);
+}
+
+export function isPQXDHAvailable(): boolean { return false; }`,
+        );
         return transformed === code ? null : { code: transformed, map: null };
       }
 
@@ -143,11 +212,15 @@ function messagingStabilityGuard(): Plugin {
         if (!transformed.includes(transactionImport)) {
           transformed = transformed.replace(routeImport, `${routeImport}\n${transactionImport}`);
         }
-
         transformed = transformed.replace(
-          "const FANOUT_ENCRYPT_CONCURRENCY = 4;",
-          "const FANOUT_ENCRYPT_CONCURRENCY = 8;",
+          `  x3dhRespondForDevice,
+} from '@/lib/crypto/x3dh';`,
+          `  x3dhRespondForDevice,
+  finalizeDeviceX3DHInitial,
+  cancelDeviceX3DHInitial,
+} from '@/lib/crypto/x3dh';`,
         );
+        transformed = transformed.replace("const FANOUT_ENCRYPT_CONCURRENCY = 4;", "const FANOUT_ENCRYPT_CONCURRENCY = 8;");
 
         const routeAnchor = `  const { data: participants } = await supabase.from('conversation_participants').select('user_id').eq('conversation_id', input.conversationId);
   if (!participants?.length) return { rows: [], hasTargets: false };
@@ -177,6 +250,109 @@ function messagingStabilityGuard(): Plugin {
           transformed = transformed.replace(encryptAnchor, transactionalEncrypt);
         }
 
+        const unwrapAnchor = `    const { sharedSecret, spkKeyPair } = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
+      ik: senderIdentityForDH,
+      ek: parsed.ekB64,
+      spkId: parsed.spkId,
+      opkId: parsed.opkId,
+    });
+    const aes = await aesFromSecret(sharedSecret);
+    const aad = parsed.version === 'v2'
+      ? buildX3DHBootstrapAAD({
+          senderUserId,
+          senderDeviceId,
+          recipientUserId,
+          recipientDeviceId: myDeviceId,
+          senderIdentityKeyB64: senderIdentityForDH,
+          recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
+          ekB64: parsed.ekB64,
+          spkId: parsed.spkId,
+          opkId: parsed.opkId,
+        })
+      : null;
+    const pt = await hardCrypto.decrypt(
+      aad
+        ? { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> }
+        : { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128 },
+      aes,
+      base64ToBuffer(parsed.ctB64),
+    );
+
+    try {
+      const spkPrivJwk = await hardCrypto.exportKey('jwk', spkKeyPair.privateKey);
+      const spkPubRaw = await hardCrypto.exportKey('raw', spkKeyPair.publicKey);
+      const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
+      await establishDeviceSession(
+        recipientUserId, myDeviceId,
+        senderUserId, senderDeviceId,
+        sharedSecret,
+        undefined,
+        {
+          isInitiator: false,
+          peerSpkId: parsed.spkId,
+          selfInitialDhPrivJwk: spkPrivJwk,
+          selfInitialDhPubB64: spkPubB64,
+        },
+      );
+    } catch {}
+
+    return new hardGlobals.TextDecoder().decode(pt);`;
+        const unwrapTwoPhase = `    const response = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
+      ik: senderIdentityForDH,
+      ek: parsed.ekB64,
+      spkId: parsed.spkId,
+      opkId: parsed.opkId,
+    });
+    try {
+      const aes = await aesFromSecret(response.sharedSecret);
+      const aad = parsed.version === 'v2'
+        ? buildX3DHBootstrapAAD({
+            senderUserId,
+            senderDeviceId,
+            recipientUserId,
+            recipientDeviceId: myDeviceId,
+            senderIdentityKeyB64: senderIdentityForDH,
+            recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
+            ekB64: parsed.ekB64,
+            spkId: parsed.spkId,
+            opkId: parsed.opkId,
+          })
+        : null;
+      const pt = await hardCrypto.decrypt(
+        aad
+          ? { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> }
+          : { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128 },
+        aes,
+        base64ToBuffer(parsed.ctB64),
+      );
+
+      const spkPrivJwk = await hardCrypto.exportKey('jwk', response.spkKeyPair.privateKey);
+      const spkPubRaw = await hardCrypto.exportKey('raw', response.spkKeyPair.publicKey);
+      const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
+      await establishDeviceSession(
+        recipientUserId, myDeviceId,
+        senderUserId, senderDeviceId,
+        response.sharedSecret,
+        undefined,
+        {
+          isInitiator: false,
+          peerSpkId: parsed.spkId,
+          selfInitialDhPrivJwk: spkPrivJwk,
+          selfInitialDhPubB64: spkPubB64,
+        },
+      );
+      await finalizeDeviceX3DHInitial({
+        userId: recipientUserId,
+        deviceId: myDeviceId,
+        replayReservation: response.replayReservation,
+        usedOpkId: response.usedOpkId,
+      });
+      return new hardGlobals.TextDecoder().decode(pt);
+    } catch (error) {
+      await cancelDeviceX3DHInitial(response.replayReservation).catch(() => undefined);
+      throw error;
+    }`;
+        transformed = transformed.replace(unwrapAnchor, unwrapTwoPhase);
         return transformed === code ? null : { code: transformed, map: null };
       }
 
@@ -191,15 +367,9 @@ function messagingStabilityGuard(): Plugin {
           transformed = transformed.replace(importAnchor, `${importAnchor}\n${warmImport}`);
         }
         for (const extraImport of [sesameImport, rollbackImport, deviceImport]) {
-          if (!transformed.includes(extraImport)) {
-            transformed = transformed.replace(warmImport, `${warmImport}\n${extraImport}`);
-          }
+          if (!transformed.includes(extraImport)) transformed = transformed.replace(warmImport, `${warmImport}\n${extraImport}`);
         }
-
-        transformed = transformed.replace(
-          "const INLINE_ARCHIVE_BUDGET_MS = 180;",
-          "const INLINE_ARCHIVE_BUDGET_MS = 40;",
-        );
+        transformed = transformed.replace("const INLINE_ARCHIVE_BUDGET_MS = 180;", "const INLINE_ARCHIVE_BUDGET_MS = 40;");
 
         const stateAnchor = `  const queryClient = useQueryClient();
   const [pendingMessages, setPendingMessages] = useState<OutboundMessage[]>([]);`;
@@ -209,35 +379,22 @@ function messagingStabilityGuard(): Plugin {
   useEffect(() => {
     if (!user?.id || !conversationId) return;
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    console.info('[MSG_TRACE]', {
-      stage: 'route_warm_started',
-      elapsedMs: 0,
-      conversationId,
-      userId: user.id,
-    });
+    console.info('[MSG_TRACE]', { stage: 'route_warm_started', elapsedMs: 0, conversationId, userId: user.id });
     void warmFanoutRoute(conversationId, user.id)
-      .then(() => {
-        console.info('[MSG_TRACE]', {
-          stage: 'route_warm_ready',
-          elapsedMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt),
-          conversationId,
-          userId: user.id,
-        });
-      })
-      .catch((error) => {
-        console.warn('[MSG_TRACE] route_warm_deferred', {
-          conversationId,
-          userId: user.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
+      .then(() => console.info('[MSG_TRACE]', {
+        stage: 'route_warm_ready',
+        elapsedMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt),
+        conversationId,
+        userId: user.id,
+      }))
+      .catch((error) => console.warn('[MSG_TRACE] route_warm_deferred', {
+        conversationId,
+        userId: user.id,
+        error: error instanceof Error ? error.message : String(error),
+      }));
   }, [conversationId, user?.id]);`;
         transformed = transformed.replace(stateAnchor, stateFast);
-
-        transformed = transformed.replace(
-          "    const traceId = safeUUID();",
-          "    const traceId = safeUUID();\n    const serverMessageId = safeUUID();",
-        );
+        transformed = transformed.replace("    const traceId = safeUUID();", "    const traceId = safeUUID();\n    const serverMessageId = safeUUID();");
         transformed = transformed.replace(
           `      createdAt: now,
       updatedAt: now,
@@ -256,12 +413,10 @@ function messagingStabilityGuard(): Plugin {
       extra,
       reservedServerId: serverMessageId,`,
         );
-
         transformed = transformed.replace(
           "      new Promise<{ kind: 'slow' }>((resolve) => setTimeout(() => resolve({ kind: 'slow' }), 800)),",
           "      new Promise<{ kind: 'slow' }>((resolve) => setTimeout(() => resolve({ kind: 'slow' }), 100)),",
         );
-
         transformed = transformed.replace(
           `    updatePending({ status: 'sending' });
     const serverMessageId = safeUUID();
@@ -269,7 +424,6 @@ function messagingStabilityGuard(): Plugin {
     void putOutboxPayload(user.id, outboxSnapshot).catch(() => {});`,
           `    updatePending({ status: 'sending', serverId: serverMessageId });`,
         );
-
         transformed = transformed.replace(
           `    if (encryptedSuccessfully) {
       fanoutPromise = buildFanoutCopies(fanoutInput);`,
@@ -320,10 +474,7 @@ function messagingStabilityGuard(): Plugin {
       senderUserId: user.id,
       senderDeviceId: getCurrentDeviceId(),
       initialCopies: fanoutRows,
-      rebuildCopies: async () => {
-        const rebuilt = await buildFanoutCopies(fanoutInput);
-        return rebuilt.rows;
-      },
+      rebuildCopies: async () => (await buildFanoutCopies(fanoutInput)).rows,
     });
     fanoutRows = sesameResult.copies;
     const rpcMessageId = sesameResult.data;
@@ -335,12 +486,10 @@ function messagingStabilityGuard(): Plugin {
       copies: fanoutRows.length,
     });`;
         transformed = transformed.replace(rpcBlock, sesameRpc);
-
         transformed = transformed.replace(
           `      if (!shouldFallbackToLegacyEncryptedInsert(error)) {`,
           `      if (encryptionWasRequired || !shouldFallbackToLegacyEncryptedInsert(error)) {`,
         );
-
         transformed = transformed.replace(
           `      await onMessageSent?.(localId);
       await deleteOutboxPayload(localId).catch(() => {});
@@ -349,7 +498,6 @@ function messagingStabilityGuard(): Plugin {
       void Promise.resolve(onMessageSent?.(localId)).catch(() => {});
       void deleteOutboxPayload(localId).catch(() => {});`,
         );
-
         return transformed === code ? null : { code: transformed, map: null };
       }
 
@@ -362,9 +510,7 @@ function messagingStabilityGuard(): Plugin {
         }
         const registrationAnchor = "      try {\n        console.log('[useDeviceRegistration] publishing current device', { reason, attempt });";
         const guardedAnchor = "      try {\n        await requireAuthenticatedDeviceSession(user.id);\n        console.log('[useDeviceRegistration] publishing current device', { reason, attempt });";
-        if (!transformed.includes(guardedAnchor)) {
-          transformed = transformed.replace(registrationAnchor, guardedAnchor);
-        }
+        if (!transformed.includes(guardedAnchor)) transformed = transformed.replace(registrationAnchor, guardedAnchor);
         return transformed === code ? null : { code: transformed, map: null };
       }
 
@@ -374,11 +520,7 @@ function messagingStabilityGuard(): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
-  server: {
-    host: "::",
-    port: 8080,
-    hmr: { overlay: false },
-  },
+  server: { host: "::", port: 8080, hmr: { overlay: false } },
   build: {
     sourcemap: false,
     modulePreload: { polyfill: false },
@@ -398,7 +540,7 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "favicon.ico", "og-image.png"],
       workbox: {
-        cacheId: "forsure-e2ee-final-v4",
+        cacheId: "forsure-e2ee-final-v5",
         maximumFileSizeToCacheInBytes: 5242880,
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
@@ -410,7 +552,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/storage\/.*/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "supabase-storage-e2ee-final-v4",
+              cacheName: "supabase-storage-e2ee-final-v5",
               expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -419,7 +561,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /\.(png|jpg|jpeg|gif|webp|avif|svg)$/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "images-e2ee-final-v4",
+              cacheName: "images-e2ee-final-v5",
               expiration: { maxEntries: 150, maxAgeSeconds: 30 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -428,7 +570,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /\.(woff2?|ttf|otf|eot)$/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "fonts-e2ee-final-v4",
+              cacheName: "fonts-e2ee-final-v5",
               expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -444,7 +586,7 @@ export default defineConfig(({ mode }) => ({
         display: "standalone",
         orientation: "portrait",
         scope: "/",
-        start_url: "/?v=e2ee-final-v4",
+        start_url: "/?v=e2ee-final-v5",
         icons: [
           { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
           { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },
@@ -455,22 +597,10 @@ export default defineConfig(({ mode }) => ({
   ].filter(Boolean),
   resolve: {
     alias: [
-      {
-        find: /^@\/hooks\/useMessages$/,
-        replacement: path.resolve(__dirname, "./src/hooks/useMessagesStable.ts"),
-      },
-      {
-        find: /^@\/lib\/messaging\/currentDevice$/,
-        replacement: path.resolve(__dirname, "./src/lib/device-manager/currentDevice.ts"),
-      },
-      {
-        find: /^@\/lib\/crypto\/resyncE2EE$/,
-        replacement: path.resolve(__dirname, "./src/lib/device-manager/resync.ts"),
-      },
-      {
-        find: /^@\/lib\/crypto\/devicePrekeyRepair$/,
-        replacement: path.resolve(__dirname, "./src/lib/device-manager/prekeyRepair.ts"),
-      },
+      { find: /^@\/hooks\/useMessages$/, replacement: path.resolve(__dirname, "./src/hooks/useMessagesStable.ts") },
+      { find: /^@\/lib\/messaging\/currentDevice$/, replacement: path.resolve(__dirname, "./src/lib/device-manager/currentDevice.ts") },
+      { find: /^@\/lib\/crypto\/resyncE2EE$/, replacement: path.resolve(__dirname, "./src/lib/device-manager/resync.ts") },
+      { find: /^@\/lib\/crypto\/devicePrekeyRepair$/, replacement: path.resolve(__dirname, "./src/lib/device-manager/prekeyRepair.ts") },
       { find: "@", replacement: path.resolve(__dirname, "./src") },
     ],
   },
