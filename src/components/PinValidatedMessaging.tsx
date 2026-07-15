@@ -31,23 +31,31 @@ type ValidationState =
       rejections: Record<string, number>;
     };
 
-// Survives React remounts during auth/session refreshes. The PIN gate has already
-// restored the local account key; do not repeat a full device repair every time
-// the messaging tree remounts.
-const locallyReadyDevices = new Set<string>();
-
-function readyKey(userId: string, deviceId: string): string {
-  return `${userId}:${deviceId}`;
-}
-
 function reasonForLocalHealth(report: Awaited<ReturnType<typeof inspectDeviceHealth>>): string {
   if (report.lifecycle !== 'approved') {
     return `Cycle de vie de l’appareil : ${report.lifecycle}.`;
   }
   if (!report.hasSignedPrekey) {
-    return 'La préclé signée de cet appareil est absente ou expirée.';
+    return 'La préclé signée de ce nouvel appareil est absente ou expirée.';
   }
   return 'Les clés locales ne sont pas encore prêtes.';
+}
+
+function friendlyError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('DEVICE_REVOKED_PIN_UNLOCK_REQUIRED')) {
+    return 'Cet appareil a été révoqué. Ressaisissez le PIN pour le réinscrire comme nouvel appareil.';
+  }
+  if (message.includes('DEVICE_REVOKED_REENROLLMENT_BLOCKED')) {
+    return 'La création du nouvel identifiant d’appareil a été bloquée.';
+  }
+  if (message.includes('DEVICE_REAPPROVAL_FAILED:pending')) {
+    return 'Le nouvel appareil est enregistré mais son approbation a été refusée.';
+  }
+  if (message.includes('DEVICE_REGISTRATION')) {
+    return 'L’enregistrement du nouvel appareil a échoué.';
+  }
+  return message;
 }
 
 function dispatchMessagingRecovery(deviceId: string): void {
@@ -62,12 +70,12 @@ function dispatchMessagingRecovery(deviceId: string): void {
 }
 
 /**
- * Signal/Sesame-compatible boundary:
+ * PIN boundary for the local installation.
  *
- * The PIN unlocks this physical device's local identity material. Messaging may
- * open as soon as this stable DeviceID is approved and owns a valid Signed
- * PreKey. Old companion signatures are repaired asynchronously; they must never
- * hold the entire local inbox hostage.
+ * A revoked DeviceID is never reactivated. Possession of the PIN-restored
+ * account identity authorizes a one-time reenrollment with a fresh DeviceID,
+ * fresh X25519 transport key and fresh SPK/OPKs. Old companions are repaired in
+ * the background and never block opening the local inbox.
  */
 export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) {
   const { user } = useAuth();
@@ -94,35 +102,31 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
       const local = await runDeviceOperation(`pin-local-ready:${user.id}`, async () => {
         await requireAuthenticatedDeviceSession(user.id);
         await hydrateDeviceId();
-        const deviceId = getCurrentDeviceId();
-        if (!deviceId || isDeviceIdTemporary()) {
+
+        const initialDeviceId = getCurrentDeviceId();
+        currentDeviceId = initialDeviceId;
+        if (!initialDeviceId || isDeviceIdTemporary()) {
           throw new Error('Identifiant d’appareil encore temporaire.');
         }
 
-        const cachedKey = readyKey(user.id, deviceId);
-        if (locallyReadyDevices.has(cachedKey)) {
-          return { deviceId, health: await inspectDeviceHealth(user.id, deviceId), cached: true };
-        }
+        const lifecycle = await recoverStableDeviceLifecycle(user.id, initialDeviceId);
+        const activeDeviceId = lifecycle.deviceId;
+        currentDeviceId = activeDeviceId;
 
-        const lifecycle = await recoverStableDeviceLifecycle(user.id, deviceId);
-        if (lifecycle.state !== 'approved') {
-          throw new Error(`DEVICE_LIFECYCLE_NOT_APPROVED:${lifecycle.state}`);
-        }
-
-        let health = await inspectDeviceHealth(user.id, deviceId);
+        let health = await inspectDeviceHealth(user.id, activeDeviceId);
         if (!health.hasSignedPrekey) {
-          // One bounded repair only. Do not perform account-wide companion
-          // resigning before the user can enter the inbox.
+          // One bounded provisioning pass for the active replacement device.
           await resyncE2EE(user.id);
-          health = await inspectDeviceHealth(user.id, deviceId);
+          const resyncedDeviceId = getCurrentDeviceId();
+          currentDeviceId = resyncedDeviceId;
+          health = await inspectDeviceHealth(user.id, resyncedDeviceId);
         }
 
-        if (health.lifecycle !== 'approved' || !health.hasSignedPrekey) {
-          return { deviceId, health, cached: false };
-        }
-
-        locallyReadyDevices.add(cachedKey);
-        return { deviceId, health, cached: false };
+        return {
+          deviceId: currentDeviceId,
+          previousDeviceId: lifecycle.replacedDeviceId,
+          health,
+        };
       }, { coalesce: true });
 
       currentDeviceId = local.deviceId;
@@ -130,14 +134,15 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
 
       console.info('[PIN-DEVTRUST] local device gate', {
         userId: user.id.slice(0, 8),
+        previousDeviceId: local.previousDeviceId?.slice(0, 8) ?? null,
         currentDeviceId: currentDeviceId.slice(0, 8),
+        reenrolled: Boolean(local.previousDeviceId),
         lifecycle: local.health.lifecycle,
         hasSignedPrekey: local.health.hasSignedPrekey,
         currentTrusted: local.health.trusted,
         trusted: local.health.trustedCount,
         total: local.health.totalCount,
         degraded: !local.health.trusted,
-        cached: local.cached,
         reasons: local.health.rejectionReasons,
       });
 
@@ -153,9 +158,6 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
         return;
       }
 
-      // Open messaging immediately. Companion repair is intentionally detached
-      // from the rendering gate, just like linked-device maintenance in mature
-      // Signal-protocol clients.
       setState({
         status: 'ready',
         trustedCount: local.health.trustedCount,
@@ -167,10 +169,11 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
         try {
           const repaired = await repairApprovedDeviceTrust(user.id);
           const published = await publishOwnSignedDeviceList();
-          const health = await inspectDeviceHealth(user.id, currentDeviceId);
+          const activeDeviceId = getCurrentDeviceId();
+          const health = await inspectDeviceHealth(user.id, activeDeviceId);
           console.info('[PIN-DEVTRUST] background companion repair', {
             userId: user.id.slice(0, 8),
-            currentDeviceId: currentDeviceId.slice(0, 8),
+            currentDeviceId: activeDeviceId.slice(0, 8),
             repaired,
             published: published.ok,
             lifecycle: health.lifecycle,
@@ -180,7 +183,7 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
             total: health.totalCount,
             reasons: health.rejectionReasons,
           });
-          dispatchMessagingRecovery(currentDeviceId);
+          dispatchMessagingRecovery(activeDeviceId);
         } catch (error) {
           console.warn('[PIN-DEVTRUST] background repair deferred', {
             error: error instanceof Error ? error.message : String(error),
@@ -190,8 +193,8 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
     } catch (error) {
       setState({
         status: 'failed',
-        reason: error instanceof Error ? error.message : String(error),
-        currentDeviceId,
+        reason: friendlyError(error),
+        currentDeviceId: currentDeviceId || getCurrentDeviceId(),
         trustedCount: 0,
         totalCount: 0,
         rejections: {},
@@ -216,7 +219,7 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
           <div>
             <p className="font-semibold">Ouverture de la messagerie…</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Vérification de cet appareil uniquement. Les anciens appareils seront réparés ensuite.
+              Vérification ou réinscription sécurisée de cet appareil.
             </p>
           </div>
         </div>
@@ -243,11 +246,11 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
         </div>
         <p className="mt-3 flex items-center justify-center gap-1 text-xs text-muted-foreground">
           <KeyRound className="h-3.5 w-3.5" />
-          Seuls le DeviceID local, son approbation et sa préclé peuvent bloquer l’ouverture.
+          Un appareil révoqué est recréé avec un nouvel identifiant après le PIN.
         </p>
         <Button className="mt-4 gap-2" onClick={() => setRunId((value) => value + 1)}>
           <RefreshCw className="h-4 w-4" />
-          Réessayer l’appareil local
+          Réinscrire cet appareil
         </Button>
       </div>
     </div>
