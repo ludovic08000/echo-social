@@ -51,12 +51,24 @@ function isAuthoritativeOverloadMissing(error: RpcError): boolean {
     text.includes('42883') ||
     text.includes('p_sender_device_id') ||
     text.includes('could not find the function') ||
-    text.includes('function public.send_message_with_device_copies') && text.includes('does not exist')
+    (text.includes('function public.send_message_with_device_copies') && text.includes('does not exist'))
+  );
+}
+
+function isExplicitProtocolFailure(error: RpcError): boolean {
+  const text = errorText(error);
+  return (
+    text.includes('e2ee_') ||
+    text.includes('not_authenticated') ||
+    text.includes('sender_not_conversation_participant') ||
+    text.includes('message_id_conflict') ||
+    text.includes('permission denied') ||
+    text.includes('row-level security')
   );
 }
 
 function isAmbiguousTransportFailure(error: RpcError): boolean {
-  if (!error) return false;
+  if (!error || isExplicitProtocolFailure(error)) return false;
   const text = errorText(error);
   return (
     !error.code ||
@@ -125,6 +137,24 @@ export async function sendMessageWithSesameRetry(
       };
     }
 
+    // A stale-list rejection is explicit even when a proxy strips the SQLSTATE.
+    if (isSesameDeviceListStale(response.error)) {
+      await rollbackFanoutSessionTransaction(args.messageId);
+      if (staleAttempt === 0) {
+        retriedStaleRoute = true;
+        invalidateFanoutRoute(args.conversationId, args.senderUserId);
+        copies = await args.rebuildCopies();
+        continue;
+      }
+      return {
+        data: null,
+        error: response.error,
+        copies,
+        retriedStaleRoute: true,
+        usedCompatibilitySignature,
+      };
+    }
+
     if (isAmbiguousTransportFailure(response.error)) {
       // Confirm the same UUID once. The server RPC is idempotent, so this does
       // not duplicate a message if the first response was merely lost.
@@ -153,14 +183,6 @@ export async function sendMessageWithSesameRetry(
     }
 
     await rollbackFanoutSessionTransaction(args.messageId);
-
-    if (isSesameDeviceListStale(response.error) && staleAttempt === 0) {
-      retriedStaleRoute = true;
-      invalidateFanoutRoute(args.conversationId, args.senderUserId);
-      copies = await args.rebuildCopies();
-      continue;
-    }
-
     return {
       data: null,
       error: response.error,
