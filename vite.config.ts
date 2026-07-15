@@ -52,6 +52,31 @@ function messagingStabilityGuard(): Plugin {
         return transformed === code ? null : { code: transformed, map: null };
       }
 
+      if (cleanId.endsWith("/src/hooks/useChatPin.ts")) {
+        let transformed = code;
+
+        // While the PIN session is unlocked, the local identity and ratchet
+        // material must remain readable by bubble decryptors. The crypto blob is
+        // already encrypted and persisted here; deletion belongs exclusively to
+        // lockWithoutWiping(), not setup/verify success.
+        transformed = transformed.replace(
+          `        await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
+        await deleteRawIdentityBlob(user.id);
+        console.log('[PIN] Full crypto blob wrapped (v2)');`,
+          `        await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
+        console.log('[PIN] Full crypto blob wrapped and kept active for this unlocked session (v2)');`,
+        );
+        transformed = transformed.replace(
+          `            await encryptAndSaveWrappedCrypto(user.id, wrapKey, verifyResult.salt, fullBlob);
+            await deleteRawIdentityBlob(user.id);
+            console.log('[PIN] Full crypto blob wrapped on first verify (v2)');`,
+          `            await encryptAndSaveWrappedCrypto(user.id, wrapKey, verifyResult.salt, fullBlob);
+            console.log('[PIN] Full crypto blob wrapped on first verify and kept active (v2)');`,
+        );
+
+        return transformed === code ? null : { code: transformed, map: null };
+      }
+
       if (cleanId.endsWith("/src/hooks/useDeviceRegistration.ts")) {
         let transformed = code;
         const sessionImport = "import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';";
