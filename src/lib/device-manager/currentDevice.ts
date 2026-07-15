@@ -15,12 +15,16 @@ const EXPLICIT_ROTATION_REASONS = new Set([
   'explicit-user-reset',
   'blocked-recovery-device',
   'fresh-install-without-stable-id',
+  // A revoked DeviceID is permanently retired. After the account identity has
+  // been unlocked with the PIN, the same physical installation must enroll as
+  // a new device instead of clearing revoked_at on the old row.
+  'revoked-reenrollment-after-pin',
 ]);
 
 /**
- * Device IDs are immutable routing identities. A revoked server row is an
- * approval/lifecycle problem, not permission to silently invent a new device.
- * Automatic rotation created orphan rows, invalid SPKs and empty bubbles.
+ * Device IDs are immutable routing identities. Automatic rotation is forbidden.
+ * A revoked row is the one exception that requires a NEW routing identity, but
+ * only from the explicit post-PIN reenrollment flow.
  */
 export function rotateCurrentDeviceId(reason = 'automatic-request'): string {
   const current = legacy.getCurrentDeviceId();
