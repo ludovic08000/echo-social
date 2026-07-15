@@ -21,7 +21,7 @@ interface PinValidatedMessagingProps {
 
 type ValidationState =
   | { status: 'checking' }
-  | { status: 'ready'; trustedCount: number }
+  | { status: 'ready'; trustedCount: number; degraded: boolean }
   | {
       status: 'failed';
       reason: string;
@@ -31,19 +31,44 @@ type ValidationState =
       rejections: Record<string, number>;
     };
 
-function reasonForHealth(report: Awaited<ReturnType<typeof inspectDeviceHealth>>): string {
+// Survives React remounts during auth/session refreshes. The PIN gate has already
+// restored the local account key; do not repeat a full device repair every time
+// the messaging tree remounts.
+const locallyReadyDevices = new Set<string>();
+
+function readyKey(userId: string, deviceId: string): string {
+  return `${userId}:${deviceId}`;
+}
+
+function reasonForLocalHealth(report: Awaited<ReturnType<typeof inspectDeviceHealth>>): string {
   if (report.lifecycle !== 'approved') {
     return `Cycle de vie de l’appareil : ${report.lifecycle}.`;
-  }
-  if (!report.trusted) {
-    return 'L’appareil courant n’est pas signé par la clé restaurée avec le PIN.';
   }
   if (!report.hasSignedPrekey) {
     return 'La préclé signée de cet appareil est absente ou expirée.';
   }
-  return 'Appareil non validé après restauration du PIN.';
+  return 'Les clés locales ne sont pas encore prêtes.';
 }
 
+function dispatchMessagingRecovery(deviceId: string): void {
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-request-refanout-scan', {
+      detail: { reason: 'pin_local_device_ready', deviceId },
+    }));
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+      detail: { reason: 'pin_local_device_ready' },
+    }));
+  } catch {}
+}
+
+/**
+ * Signal/Sesame-compatible boundary:
+ *
+ * The PIN unlocks this physical device's local identity material. Messaging may
+ * open as soon as this stable DeviceID is approved and owns a valid Signed
+ * PreKey. Old companion signatures are repaired asynchronously; they must never
+ * hold the entire local inbox hostage.
+ */
 export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) {
   const { user } = useAuth();
   const [runId, setRunId] = useState(0);
@@ -66,7 +91,7 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
     let currentDeviceId = '';
 
     try {
-      const result = await runDeviceOperation(`pin-validation:${user.id}`, async () => {
+      const local = await runDeviceOperation(`pin-local-ready:${user.id}`, async () => {
         await requireAuthenticatedDeviceSession(user.id);
         await hydrateDeviceId();
         const deviceId = getCurrentDeviceId();
@@ -74,60 +99,94 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
           throw new Error('Identifiant d’appareil encore temporaire.');
         }
 
+        const cachedKey = readyKey(user.id, deviceId);
+        if (locallyReadyDevices.has(cachedKey)) {
+          return { deviceId, health: await inspectDeviceHealth(user.id, deviceId), cached: true };
+        }
+
         const lifecycle = await recoverStableDeviceLifecycle(user.id, deviceId);
         if (lifecycle.state !== 'approved') {
           throw new Error(`DEVICE_LIFECYCLE_NOT_APPROVED:${lifecycle.state}`);
         }
 
-        await resyncE2EE(user.id);
-        const repaired = await repairApprovedDeviceTrust(user.id);
-        const published = await publishOwnSignedDeviceList({
-          signerDeviceId: lifecycle.isPrimary ? deviceId : undefined,
-        });
-        if (!published.ok) {
-          throw new Error(`Publication de la liste signée refusée : ${published.error ?? 'erreur inconnue'}`);
+        let health = await inspectDeviceHealth(user.id, deviceId);
+        if (!health.hasSignedPrekey) {
+          // One bounded repair only. Do not perform account-wide companion
+          // resigning before the user can enter the inbox.
+          await resyncE2EE(user.id);
+          health = await inspectDeviceHealth(user.id, deviceId);
         }
 
-        const health = await inspectDeviceHealth(user.id, deviceId);
-        return { deviceId, repaired, published, health };
+        if (health.lifecycle !== 'approved' || !health.hasSignedPrekey) {
+          return { deviceId, health, cached: false };
+        }
+
+        locallyReadyDevices.add(cachedKey);
+        return { deviceId, health, cached: false };
       }, { coalesce: true });
 
-      currentDeviceId = result.deviceId;
-      console.info('[PIN-DEVTRUST] single-pass validation after PIN unlock', {
+      currentDeviceId = local.deviceId;
+      const localReady = local.health.lifecycle === 'approved' && local.health.hasSignedPrekey;
+
+      console.info('[PIN-DEVTRUST] local device gate', {
         userId: user.id.slice(0, 8),
         currentDeviceId: currentDeviceId.slice(0, 8),
-        repaired: result.repaired,
-        published: result.published.ok,
-        lifecycle: result.health.lifecycle,
-        total: result.health.totalCount,
-        trusted: result.health.trustedCount,
-        currentTrusted: result.health.trusted,
-        hasSignedPrekey: result.health.hasSignedPrekey,
-        reasons: result.health.rejectionReasons,
+        lifecycle: local.health.lifecycle,
+        hasSignedPrekey: local.health.hasSignedPrekey,
+        currentTrusted: local.health.trusted,
+        trusted: local.health.trustedCount,
+        total: local.health.totalCount,
+        degraded: !local.health.trusted,
+        cached: local.cached,
+        reasons: local.health.rejectionReasons,
       });
 
-      if (!result.health.ready) {
+      if (!localReady) {
         setState({
           status: 'failed',
-          reason: reasonForHealth(result.health),
+          reason: reasonForLocalHealth(local.health),
           currentDeviceId,
-          trustedCount: result.health.trustedCount,
-          totalCount: result.health.totalCount,
-          rejections: result.health.rejectionReasons,
+          trustedCount: local.health.trustedCount,
+          totalCount: local.health.totalCount,
+          rejections: local.health.rejectionReasons,
         });
         return;
       }
 
-      try {
-        window.dispatchEvent(new CustomEvent('forsure:e2ee-request-refanout-scan', {
-          detail: { reason: 'pin_device_trust_validated', deviceId: currentDeviceId },
-        }));
-        window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
-          detail: { reason: 'pin_device_trust_validated' },
-        }));
-      } catch {}
+      // Open messaging immediately. Companion repair is intentionally detached
+      // from the rendering gate, just like linked-device maintenance in mature
+      // Signal-protocol clients.
+      setState({
+        status: 'ready',
+        trustedCount: local.health.trustedCount,
+        degraded: !local.health.trusted,
+      });
+      dispatchMessagingRecovery(currentDeviceId);
 
-      setState({ status: 'ready', trustedCount: result.health.trustedCount });
+      void runDeviceOperation(`pin-background-repair:${user.id}`, async () => {
+        try {
+          const repaired = await repairApprovedDeviceTrust(user.id);
+          const published = await publishOwnSignedDeviceList();
+          const health = await inspectDeviceHealth(user.id, currentDeviceId);
+          console.info('[PIN-DEVTRUST] background companion repair', {
+            userId: user.id.slice(0, 8),
+            currentDeviceId: currentDeviceId.slice(0, 8),
+            repaired,
+            published: published.ok,
+            lifecycle: health.lifecycle,
+            hasSignedPrekey: health.hasSignedPrekey,
+            currentTrusted: health.trusted,
+            trusted: health.trustedCount,
+            total: health.totalCount,
+            reasons: health.rejectionReasons,
+          });
+          dispatchMessagingRecovery(currentDeviceId);
+        } catch (error) {
+          console.warn('[PIN-DEVTRUST] background repair deferred', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }, { coalesce: true }).catch(() => {});
     } catch (error) {
       setState({
         status: 'failed',
@@ -155,9 +214,9 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
             <div className="absolute inset-0 animate-spin rounded-2xl border-2 border-primary border-t-transparent" />
           </div>
           <div>
-            <p className="font-semibold">Validation des clés et des appareils…</p>
+            <p className="font-semibold">Ouverture de la messagerie…</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Vérification unique avec la clé restaurée par le PIN.
+              Vérification de cet appareil uniquement. Les anciens appareils seront réparés ensuite.
             </p>
           </div>
         </div>
@@ -175,20 +234,20 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-destructive/10">
           <AlertTriangle className="h-6 w-6 text-destructive" />
         </div>
-        <h2 className="mt-3 font-semibold">Appareil non validé</h2>
+        <h2 className="mt-3 font-semibold">Appareil local indisponible</h2>
         <p className="mt-2 text-sm text-muted-foreground">{state.reason}</p>
         <div className="mt-3 rounded-xl bg-muted/50 p-3 text-left text-xs text-muted-foreground">
           <p><strong>Appareil :</strong> {state.currentDeviceId ? state.currentDeviceId.slice(0, 12) : 'indisponible'}</p>
           <p><strong>Appareils fiables :</strong> {state.trustedCount}/{state.totalCount}</p>
-          {rejectionText && <p className="mt-1"><strong>Rejets :</strong> {rejectionText}</p>}
+          {rejectionText && <p className="mt-1"><strong>Diagnostic secondaire :</strong> {rejectionText}</p>}
         </div>
         <p className="mt-3 flex items-center justify-center gap-1 text-xs text-muted-foreground">
           <KeyRound className="h-3.5 w-3.5" />
-          La messagerie reste verrouillée pour éviter d’envoyer à un appareil non certifié.
+          Seuls le DeviceID local, son approbation et sa préclé peuvent bloquer l’ouverture.
         </p>
         <Button className="mt-4 gap-2" onClick={() => setRunId((value) => value + 1)}>
           <RefreshCw className="h-4 w-4" />
-          Réparer et vérifier
+          Réessayer l’appareil local
         </Button>
       </div>
     </div>
