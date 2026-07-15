@@ -1,11 +1,16 @@
 import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 
-const STORE = 'sessions';
+const SESSION_STORE = 'sessions';
+const INITIATING_STORE = 'initiating-sessions';
 
-type StoredSessionRecord = Record<string, unknown> & { id: string };
-type SessionSnapshot = { key: string; value: StoredSessionRecord | null };
+type StoredRecord = Record<string, unknown> & { id: string };
+type PairSnapshot = {
+  key: string;
+  session: StoredRecord | null;
+  initiating: StoredRecord | null;
+};
 
-const attempts = new Map<string, Map<string, SessionSnapshot>>();
+const attempts = new Map<string, Map<string, PairSnapshot>>();
 
 function compositeKey(
   myUserId: string,
@@ -17,13 +22,12 @@ function compositeKey(
 }
 
 /**
- * Captures the exact persisted state before a target ratchet is advanced or a
- * new X3DH session is installed. Multiple captures for the same target and
- * message keep the first snapshot only.
+ * Captures the complete pair state before a ratchet advance or X3DH bootstrap:
+ * both the Double Ratchet record and the repeatable initiating-envelope record.
+ * Multiple captures for the same target and message keep the first snapshot.
  *
- * A storage read failure is not equivalent to an absent session. It is allowed
- * to abort this target/send, but never to manufacture a null snapshot that
- * could delete a real ratchet during rollback.
+ * A storage read failure aborts the send. It is never converted into a null
+ * snapshot because rollback could otherwise delete a real session.
  */
 export async function captureFanoutSessionBeforeMutation(args: {
   messageId: string;
@@ -47,33 +51,48 @@ export async function captureFanoutSessionBeforeMutation(args: {
   }
   if (transaction.has(key)) return;
 
-  const existing = await runTxOn('device-sessions', [STORE], 'readonly', (tx) =>
-    reqToPromise(tx.objectStore(STORE).get(key) as IDBRequest<StoredSessionRecord | undefined>),
+  const snapshot = await runTxOn(
+    'device-sessions',
+    [SESSION_STORE, INITIATING_STORE],
+    'readonly',
+    (tx) => Promise.all([
+      reqToPromise(tx.objectStore(SESSION_STORE).get(key) as IDBRequest<StoredRecord | undefined>),
+      reqToPromise(tx.objectStore(INITIATING_STORE).get(key) as IDBRequest<StoredRecord | undefined>),
+    ]),
   );
 
   transaction.set(key, {
     key,
-    value: existing ? structuredClone(existing) : null,
+    session: snapshot[0] ? structuredClone(snapshot[0]) : null,
+    initiating: snapshot[1] ? structuredClone(snapshot[1]) : null,
   });
 }
 
 /**
- * Restores every target session to its pre-attempt state after an explicit
- * server rejection. A target that had no session before the attempt is deleted,
- * which also rolls back a newly-created X3DH initiator session.
+ * Restores every target pair to its exact pre-attempt state after an explicit
+ * server rejection. Newly-created ratchets and initiation headers are deleted;
+ * pre-existing records and counters are restored.
  */
 export async function rollbackFanoutSessionTransaction(messageId: string): Promise<number> {
   const transaction = attempts.get(messageId);
   if (!transaction || transaction.size === 0) return 0;
 
   const snapshots = [...transaction.values()];
-  await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
-    const store = tx.objectStore(STORE);
-    for (const snapshot of snapshots) {
-      if (snapshot.value) store.put(structuredClone(snapshot.value));
-      else store.delete(snapshot.key);
-    }
-  });
+  await runTxOn(
+    'device-sessions',
+    [SESSION_STORE, INITIATING_STORE],
+    'readwrite',
+    (tx) => {
+      const sessions = tx.objectStore(SESSION_STORE);
+      const initiating = tx.objectStore(INITIATING_STORE);
+      for (const snapshot of snapshots) {
+        if (snapshot.session) sessions.put(structuredClone(snapshot.session));
+        else sessions.delete(snapshot.key);
+        if (snapshot.initiating) initiating.put(structuredClone(snapshot.initiating));
+        else initiating.delete(snapshot.key);
+      }
+    },
+  );
   attempts.delete(messageId);
   return snapshots.length;
 }
