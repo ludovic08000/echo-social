@@ -18,6 +18,8 @@ type DeviceRow = {
   revoked_at: string | null;
 };
 
+type SignatureRow = Awaited<ReturnType<typeof signCompanionDevice>>;
+
 function delay(ms: number): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,6 +50,23 @@ async function isDeviceCryptographicallyReady(
   );
 }
 
+async function buildCompanionSignature(args: {
+  userId: string;
+  primary: DeviceRow;
+  companion: DeviceRow;
+  signingPrivateKey: CryptoKey;
+  primarySigningPublic: string;
+}): Promise<SignatureRow> {
+  return signCompanionDevice({
+    userId: args.userId,
+    primaryDeviceId: args.primary.device_id,
+    primaryEdPrivate: args.signingPrivateKey,
+    primaryEdPublicB64: args.primarySigningPublic,
+    companionDeviceId: args.companion.device_id,
+    companionPublicKeyB64: args.companion.device_public_key,
+  });
+}
+
 async function signOneCompanion(args: {
   userId: string;
   primary: DeviceRow;
@@ -58,55 +77,69 @@ async function signOneCompanion(args: {
   const primarySigningPublic = bufferToBase64(
     await exportPublicKeyRaw(args.signingPublicKey),
   );
-  const signatureRow = await signCompanionDevice({
+  const signatureRow = await buildCompanionSignature({
     userId: args.userId,
-    primaryDeviceId: args.primary.device_id,
-    primaryEdPrivate: args.signingPrivateKey,
-    primaryEdPublicB64: primarySigningPublic,
-    companionDeviceId: args.companion.device_id,
-    companionPublicKeyB64: args.companion.device_public_key,
+    primary: args.primary,
+    companion: args.companion,
+    signingPrivateKey: args.signingPrivateKey,
+    primarySigningPublic,
   });
   await publishCompanionSignature(signatureRow);
 }
 
+/**
+ * Re-sign every approved companion under one PIN-restored account root, then
+ * publish all rows in a single database request. This avoids the transient
+ * PRIMARY_PUB_MISMATCH state produced when six rows were updated one by one and
+ * the signed-list RPC was refreshed after each individual row.
+ */
 export async function repairApprovedDeviceTrust(userId: string): Promise<number> {
   if (!userId) return 0;
+
   const devices = await listApprovedDevices(userId);
   const primary = devices.find((device) => device.is_primary);
-  if (!primary) return 0;
+  if (!primary) throw new Error('DEVICE_TRUST_PRIMARY_MISSING');
 
   const identity = await loadIdentityKeys(userId);
-  if (!identity?.signingPrivateKey || !identity.signingPublicKey) return 0;
-
-  const verified = await fetchVerifiedDeviceList(userId).catch(() => ({
-    trusted: [] as Array<{ deviceId: string }>,
-    signedListPresent: false,
-    verifications: [],
-  }));
-  const trusted = new Set(verified.trusted.map((entry) => entry.deviceId));
-  let repaired = 0;
-
-  for (const companion of devices) {
-    if (companion.is_primary || trusted.has(companion.device_id) || !companion.device_public_key) continue;
-    try {
-      await signOneCompanion({
-        userId,
-        primary,
-        companion,
-        signingPrivateKey: identity.signingPrivateKey,
-        signingPublicKey: identity.signingPublicKey,
-      });
-      repaired += 1;
-    } catch (error) {
-      console.warn('[DeviceLinkTrust] companion trust repair failed', {
-        deviceId: companion.device_id.slice(0, 8),
-        error,
-      });
-    }
+  if (!identity?.signingPrivateKey || !identity.signingPublicKey) {
+    throw new Error('DEVICE_TRUST_ACCOUNT_KEY_LOCKED');
   }
 
-  await publishOwnSignedDeviceList({ signerDeviceId: primary.device_id }).catch(() => ({ ok: false }));
-  return repaired;
+  const companions = devices.filter(
+    (device) => !device.is_primary && Boolean(device.device_public_key),
+  );
+  const primarySigningPublic = bufferToBase64(
+    await exportPublicKeyRaw(identity.signingPublicKey),
+  );
+
+  const rows = await Promise.all(companions.map((companion) =>
+    buildCompanionSignature({
+      userId,
+      primary,
+      companion,
+      signingPrivateKey: identity.signingPrivateKey,
+      primarySigningPublic,
+    }),
+  ));
+
+  if (rows.length > 0) {
+    const { error } = await supabase
+      .from('user_device_signatures')
+      .upsert(rows, { onConflict: 'user_id,device_id,primary_device_id' });
+    if (error) throw new Error(`DEVICE_TRUST_BATCH_PUBLISH_FAILED:${error.message}`);
+  }
+
+  // One list publication after every companion row carries exactly the same
+  // root. No intermediate mixed-root list is observable by other clients.
+  const published = await publishOwnSignedDeviceList({
+    signerDeviceId: primary.device_id,
+    repairCompanions: false,
+  });
+  if (!published.ok) {
+    throw new Error(`DEVICE_TRUST_LIST_PUBLISH_FAILED:${published.error ?? 'UNKNOWN'}`);
+  }
+
+  return rows.length;
 }
 
 export async function finalizeLinkedDeviceAfterRestore(
@@ -147,7 +180,7 @@ export async function finalizeLinkedDeviceAfterRestore(
         });
       }
 
-      await repairApprovedDeviceTrust(userId).catch(() => 0);
+      await repairApprovedDeviceTrust(userId);
       if (!(await isDeviceCryptographicallyReady(userId, companionDeviceId))) continue;
 
       try {
