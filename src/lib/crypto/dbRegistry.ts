@@ -46,8 +46,18 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   },
   'device-sessions': {
     name: 'forsure-device-sessions',
-    version: 2,
-    stores: [{ name: 'sessions', keyPath: 'id' }],
+    version: 3,
+    stores: [
+      { name: 'sessions', keyPath: 'id' },
+      {
+        name: 'initiating-sessions',
+        keyPath: 'id',
+        indexes: [
+          { name: 'by-session-id', keyPath: 'sessionId', options: { unique: false } },
+          { name: 'by-expiry', keyPath: 'expiresAt', options: { unique: false } },
+        ],
+      },
+    ],
   },
   spk: {
     name: 'forsure-spk',
