@@ -22,9 +22,9 @@ export type {
 };
 
 /**
- * Single managed entry point for every auth-mount/resume/PIN resync request.
- * It blocks until Supabase auth is usable, preserves the physical DeviceID and
- * coalesces concurrent callers onto one publication/prekey pass.
+ * Managed resync for one active DeviceID. A revoked ID may be replaced exactly
+ * once by recoverStableDeviceLifecycle(); the remainder of this pass must then
+ * use the returned replacement ID, not the retired one.
  */
 export async function resyncE2EE(
   userId: string,
@@ -32,24 +32,26 @@ export async function resyncE2EE(
 ): Promise<ResyncReport> {
   return runDeviceOperation(`resync:${userId}`, async () => {
     await requireAuthenticatedDeviceSession(userId);
-    const stableDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+    const initialDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+    const lifecycle = await recoverStableDeviceLifecycle(userId, initialDeviceId);
+    const activeDeviceId = lifecycle.deviceId;
 
-    await recoverStableDeviceLifecycle(userId, stableDeviceId).catch((error) => {
-      console.warn('[DeviceManager] lifecycle recovery deferred to registration', {
-        deviceId: stableDeviceId.slice(0, 8),
-        error: error instanceof Error ? error.message : String(error),
+    if (activeDeviceId !== initialDeviceId) {
+      console.info('[DeviceManager] resync continuing with reenrolled DeviceID', {
+        previous: initialDeviceId.slice(0, 8),
+        current: activeDeviceId.slice(0, 8),
       });
-    });
+    }
 
     const report = await legacyResyncE2EE(userId, options);
     const afterDeviceId = getCurrentDeviceId();
-    if (afterDeviceId !== stableDeviceId) {
-      console.error('[DeviceManager] DeviceID mutation detected during resync', {
-        before: stableDeviceId.slice(0, 8),
+    if (afterDeviceId !== activeDeviceId) {
+      console.error('[DeviceManager] unexpected DeviceID mutation during resync', {
+        expected: activeDeviceId.slice(0, 8),
         after: afterDeviceId.slice(0, 8),
       });
       report.ok = false;
-      report.errors.push('device id changed during managed resync');
+      report.errors.push('device id changed unexpectedly during managed resync');
     }
     return report;
   }, { coalesce: true });
