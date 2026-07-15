@@ -8,7 +8,7 @@
 import { hardCrypto } from './cryptoIntegrity';
 import { encodeString } from './utils';
 import { supabase } from '@/integrations/supabase/client';
-import { runTxOn, reqToPromise } from './indexedDbTx';
+import { runTxOn } from './indexedDbTx';
 
 const STORE = 'consumed-initials';
 const FINALIZED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -59,49 +59,99 @@ function isMissingRpc(error: any, name: string): boolean {
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-  return text.includes('42883') || text.includes(name.toLowerCase()) && text.includes('does not exist');
+  return text.includes('42883') || (text.includes(name.toLowerCase()) && text.includes('does not exist'));
+}
+
+/**
+ * Every read/check/write stays inside one active IndexedDB transaction. This is
+ * intentionally event-driven rather than `async` inside the callback because
+ * Safari may auto-close a transaction between unrelated microtasks.
+ */
+async function reserveLocally(id: string, localToken: string): Promise<void> {
+  const now = Date.now();
+  await runTxOn('x3dh-replay', [STORE], 'readwrite', (tx) =>
+    new Promise<void>((resolve, reject) => {
+      const store = tx.objectStore(STORE);
+      const get = store.get(id) as IDBRequest<ReplayRecord | undefined>;
+      get.onerror = () => reject(get.error);
+      get.onsuccess = () => {
+        const existing = get.result;
+        const finalizedAt = existing?.consumedAt ?? 0;
+        if (
+          existing &&
+          (existing.status === 'finalized' || (!existing.status && finalizedAt > 0)) &&
+          now - finalizedAt < FINALIZED_TTL_MS
+        ) {
+          reject(new Error('X3DH_REPLAY_DETECTED'));
+          return;
+        }
+        if (existing?.status === 'reserved' && (existing.expiresAt ?? 0) > now) {
+          reject(new Error('X3DH_REPLAY_IN_FLIGHT'));
+          return;
+        }
+
+        const put = store.put({
+          id,
+          status: 'reserved',
+          reservationToken: localToken,
+          expiresAt: now + RESERVATION_TTL_MS,
+        } satisfies ReplayRecord);
+        put.onerror = () => reject(put.error);
+        put.onsuccess = () => resolve();
+      };
+    }),
+  );
 }
 
 async function deleteLocalReservation(id: string, localToken: string): Promise<void> {
-  await runTxOn('x3dh-replay', [STORE], 'readwrite', async (tx) => {
-    const store = tx.objectStore(STORE);
-    const existing = await reqToPromise(store.get(id) as IDBRequest<ReplayRecord | undefined>);
-    if (existing?.status === 'reserved' && existing.reservationToken === localToken) {
-      store.delete(id);
-    }
-  }).catch(() => {});
+  await runTxOn('x3dh-replay', [STORE], 'readwrite', (tx) =>
+    new Promise<void>((resolve, reject) => {
+      const store = tx.objectStore(STORE);
+      const get = store.get(id) as IDBRequest<ReplayRecord | undefined>;
+      get.onerror = () => reject(get.error);
+      get.onsuccess = () => {
+        const existing = get.result;
+        if (existing?.status !== 'reserved' || existing.reservationToken !== localToken) {
+          resolve();
+          return;
+        }
+        const del = store.delete(id);
+        del.onerror = () => reject(del.error);
+        del.onsuccess = () => resolve();
+      };
+    }),
+  );
 }
 
-async function reserveLocally(id: string, localToken: string): Promise<void> {
+async function finalizeLocally(reservation: X3DHReplayReservation): Promise<void> {
   const now = Date.now();
-  await runTxOn('x3dh-replay', [STORE], 'readwrite', async (tx) => {
-    const store = tx.objectStore(STORE);
-    const existing = await reqToPromise(store.get(id) as IDBRequest<ReplayRecord | undefined>);
-
-    // Records written by the previous one-phase implementation have consumedAt
-    // but no status; treat them as finalized for compatibility.
-    const finalizedAt = existing?.consumedAt ?? 0;
-    if (
-      existing &&
-      (existing.status === 'finalized' || (!existing.status && finalizedAt > 0)) &&
-      now - finalizedAt < FINALIZED_TTL_MS
-    ) {
-      throw new Error('X3DH_REPLAY_DETECTED');
-    }
-    if (
-      existing?.status === 'reserved' &&
-      (existing.expiresAt ?? 0) > now
-    ) {
-      throw new Error('X3DH_REPLAY_IN_FLIGHT');
-    }
-
-    store.put({
-      id,
-      status: 'reserved',
-      reservationToken: localToken,
-      expiresAt: now + RESERVATION_TTL_MS,
-    } satisfies ReplayRecord);
-  });
+  await runTxOn('x3dh-replay', [STORE], 'readwrite', (tx) =>
+    new Promise<void>((resolve, reject) => {
+      const store = tx.objectStore(STORE);
+      const get = store.get(reservation.fingerprint) as IDBRequest<ReplayRecord | undefined>;
+      get.onerror = () => reject(get.error);
+      get.onsuccess = () => {
+        const existing = get.result;
+        if (
+          !existing ||
+          existing.status !== 'reserved' ||
+          existing.reservationToken !== reservation.localToken ||
+          (existing.expiresAt ?? 0) <= now
+        ) {
+          reject(new Error('X3DH_REPLAY_RESERVATION_LOST'));
+          return;
+        }
+        const put = store.put({
+          id: reservation.fingerprint,
+          status: 'finalized',
+          consumedAt: now,
+          expiresAt: now + FINALIZED_TTL_MS,
+        } satisfies ReplayRecord);
+        put.onerror = () => reject(put.error);
+        put.onsuccess = () => resolve();
+      };
+    }),
+  );
 }
 
 export async function reserveX3dhInitial(params: {
@@ -174,35 +224,21 @@ export async function finalizeX3dhInitial(
     if (!error && claimed === false) throw new Error('X3DH_REPLAY_DETECTED');
   }
 
-  const now = Date.now();
-  await runTxOn('x3dh-replay', [STORE], 'readwrite', async (tx) => {
-    const store = tx.objectStore(STORE);
-    const existing = await reqToPromise(store.get(reservation.fingerprint) as IDBRequest<ReplayRecord | undefined>);
-    if (
-      !existing ||
-      existing.status !== 'reserved' ||
-      existing.reservationToken !== reservation.localToken ||
-      (existing.expiresAt ?? 0) <= now
-    ) {
-      throw new Error('X3DH_REPLAY_RESERVATION_LOST');
-    }
-    store.put({
-      id: reservation.fingerprint,
-      status: 'finalized',
-      consumedAt: now,
-      expiresAt: now + FINALIZED_TTL_MS,
-    } satisfies ReplayRecord);
-  });
+  await finalizeLocally(reservation);
 }
 
 export async function cancelX3dhInitial(
   reservation: X3DHReplayReservation,
 ): Promise<void> {
   if (reservation.serverMode === 'two_phase' && reservation.serverToken) {
-    await (supabase as any).rpc('cancel_x3dh_initial', {
-      p_fingerprint: reservation.fingerprint,
-      p_reservation_token: reservation.serverToken,
-    }).catch(() => undefined);
+    try {
+      await (supabase as any).rpc('cancel_x3dh_initial', {
+        p_fingerprint: reservation.fingerprint,
+        p_reservation_token: reservation.serverToken,
+      });
+    } catch {
+      // Local release still matters. The server reservation has a short TTL.
+    }
   }
   await deleteLocalReservation(reservation.fingerprint, reservation.localToken);
 }
