@@ -143,6 +143,18 @@ export default defineConfig(({ mode }) => ({
         find: /^@\/hooks\/useMessages$/,
         replacement: path.resolve(__dirname, "./src/hooks/useMessagesStable.ts"),
       },
+      {
+        find: /^@\/lib\/messaging\/currentDevice$/,
+        replacement: path.resolve(__dirname, "./src/lib/device-manager/currentDevice.ts"),
+      },
+      {
+        find: /^@\/lib\/crypto\/resyncE2EE$/,
+        replacement: path.resolve(__dirname, "./src/lib/device-manager/resync.ts"),
+      },
+      {
+        find: /^@\/lib\/crypto\/devicePrekeyRepair$/,
+        replacement: path.resolve(__dirname, "./src/lib/device-manager/prekeyRepair.ts"),
+      },
       { find: "@", replacement: path.resolve(__dirname, "./src") },
     ],
   },
