@@ -20,6 +20,10 @@ function compositeKey(
  * Captures the exact persisted state before a target ratchet is advanced or a
  * new X3DH session is installed. Multiple captures for the same target and
  * message keep the first snapshot only.
+ *
+ * A storage read failure is not equivalent to an absent session. It is allowed
+ * to abort this target/send, but never to manufacture a null snapshot that
+ * could delete a real ratchet during rollback.
  */
 export async function captureFanoutSessionBeforeMutation(args: {
   messageId: string;
@@ -45,7 +49,7 @@ export async function captureFanoutSessionBeforeMutation(args: {
 
   const existing = await runTxOn('device-sessions', [STORE], 'readonly', (tx) =>
     reqToPromise(tx.objectStore(STORE).get(key) as IDBRequest<StoredSessionRecord | undefined>),
-  ).catch(() => undefined);
+  );
 
   transaction.set(key, {
     key,
