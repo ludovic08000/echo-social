@@ -67,6 +67,25 @@ async function buildCompanionSignature(args: {
   });
 }
 
+async function publishCanonicalIdentityRoot(
+  primaryDeviceId: string,
+  primarySigningPublic: string,
+): Promise<void> {
+  const { data, error } = await (supabase as any).rpc('publish_user_identity_root', {
+    p_primary_device_id: primaryDeviceId,
+    p_identity_pub_b64: primarySigningPublic,
+  });
+
+  if (error) {
+    const text = `${error.code ?? ''} ${error.message ?? ''}`;
+    if (text.includes('42883') || text.toLowerCase().includes('does not exist')) {
+      throw new Error('DEVICE_TRUST_ROOT_MIGRATION_REQUIRED');
+    }
+    throw new Error(`DEVICE_TRUST_ROOT_PUBLISH_FAILED:${error.message ?? 'UNKNOWN'}`);
+  }
+  if (data?.ok !== true) throw new Error('DEVICE_TRUST_ROOT_PUBLISH_REJECTED');
+}
+
 async function signOneCompanion(args: {
   userId: string;
   primary: DeviceRow;
@@ -77,6 +96,7 @@ async function signOneCompanion(args: {
   const primarySigningPublic = bufferToBase64(
     await exportPublicKeyRaw(args.signingPublicKey),
   );
+  await publishCanonicalIdentityRoot(args.primary.device_id, primarySigningPublic);
   const signatureRow = await buildCompanionSignature({
     userId: args.userId,
     primary: args.primary,
@@ -88,17 +108,19 @@ async function signOneCompanion(args: {
 }
 
 /**
- * Re-sign every approved companion under one PIN-restored account root, then
- * publish all rows in a single database request. This avoids the transient
- * PRIMARY_PUB_MISMATCH state produced when six rows were updated one by one and
- * the signed-list RPC was refreshed after each individual row.
+ * Publish one canonical PIN-restored root, re-sign every approved companion in
+ * memory, write every row in one request, then expose the list once. Remote
+ * clients never observe a mixed-root list.
  */
 export async function repairApprovedDeviceTrust(userId: string): Promise<number> {
   if (!userId) return 0;
 
   const devices = await listApprovedDevices(userId);
-  const primary = devices.find((device) => device.is_primary);
-  if (!primary) throw new Error('DEVICE_TRUST_PRIMARY_MISSING');
+  const primaries = devices.filter((device) => device.is_primary);
+  if (primaries.length !== 1) {
+    throw new Error(`DEVICE_TRUST_PRIMARY_COUNT_INVALID:${primaries.length}`);
+  }
+  const primary = primaries[0];
 
   const identity = await loadIdentityKeys(userId);
   if (!identity?.signingPrivateKey || !identity.signingPublicKey) {
@@ -111,6 +133,10 @@ export async function repairApprovedDeviceTrust(userId: string): Promise<number>
   const primarySigningPublic = bufferToBase64(
     await exportPublicKeyRaw(identity.signingPublicKey),
   );
+
+  // The root is authoritative and stable. A mismatch is an explicit security
+  // error, never a reason to spin another repair loop.
+  await publishCanonicalIdentityRoot(primary.device_id, primarySigningPublic);
 
   const rows = await Promise.all(companions.map((companion) =>
     buildCompanionSignature({
@@ -129,8 +155,6 @@ export async function repairApprovedDeviceTrust(userId: string): Promise<number>
     if (error) throw new Error(`DEVICE_TRUST_BATCH_PUBLISH_FAILED:${error.message}`);
   }
 
-  // One list publication after every companion row carries exactly the same
-  // root. No intermediate mixed-root list is observable by other clients.
   const published = await publishOwnSignedDeviceList({
     signerDeviceId: primary.device_id,
     repairCompanions: false,
@@ -166,6 +190,10 @@ export async function finalizeLinkedDeviceAfterRestore(
       if (!companion?.device_public_key || !primary) continue;
 
       if (companion.is_primary) {
+        const identity = await loadIdentityKeys(userId);
+        if (!identity?.signingPublicKey) continue;
+        const root = bufferToBase64(await exportPublicKeyRaw(identity.signingPublicKey));
+        await publishCanonicalIdentityRoot(companion.device_id, root);
         const result = await publishOwnSignedDeviceList({ signerDeviceId: companion.device_id });
         if (!result.ok) continue;
       } else {
