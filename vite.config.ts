@@ -132,6 +132,168 @@ function messagingStabilityGuard(): Plugin {
         return transformed === code ? null : { code: transformed, map: null };
       }
 
+      if (cleanId.endsWith("/src/lib/messaging/multiDeviceFanout.ts")) {
+        let transformed = code;
+        const routeImport = "import { resolveFanoutRoute } from '@/lib/messaging/fanoutRouteCache';";
+        if (!transformed.includes(routeImport)) {
+          const importAnchor = "import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';";
+          transformed = transformed.replace(importAnchor, `${importAnchor}\n${routeImport}`);
+        }
+
+        transformed = transformed.replace(
+          "const FANOUT_ENCRYPT_CONCURRENCY = 4;",
+          "const FANOUT_ENCRYPT_CONCURRENCY = 8;",
+        );
+
+        const routeAnchor = `  const { data: participants } = await supabase.from('conversation_participants').select('user_id').eq('conversation_id', input.conversationId);
+  if (!participants?.length) return { rows: [], hasTargets: false };
+  const userIds = participants.map(p => p.user_id);
+
+  const targets = (await listFanoutTargets(input.senderUserId, userIds, { verifyPrekeys: false }))
+    .filter(d =>
+      !(d.userId === input.senderUserId && d.deviceId === senderDeviceId) &&
+      !isKnownInvalidDeviceId(d.deviceId),
+    );`;
+        const routeFast = `  const targets = (await resolveFanoutRoute(input.conversationId, input.senderUserId))
+    .filter((device) => !isKnownInvalidDeviceId(device.deviceId));`;
+        transformed = transformed.replace(routeAnchor, routeFast);
+
+        return transformed === code ? null : { code: transformed, map: null };
+      }
+
+      if (cleanId.endsWith("/src/hooks/useMessageQueueSignal.ts")) {
+        let transformed = code;
+        const warmImport = "import { warmFanoutRoute } from '@/lib/messaging/fanoutRouteCache';";
+        if (!transformed.includes(warmImport)) {
+          const importAnchor = "import { buildFanoutCopies, insertFanoutCopyRows, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';";
+          transformed = transformed.replace(importAnchor, `${importAnchor}\n${warmImport}`);
+        }
+
+        transformed = transformed.replace(
+          "const INLINE_ARCHIVE_BUDGET_MS = 180;",
+          "const INLINE_ARCHIVE_BUDGET_MS = 40;",
+        );
+
+        const stateAnchor = `  const queryClient = useQueryClient();
+  const [pendingMessages, setPendingMessages] = useState<OutboundMessage[]>([]);`;
+        const stateFast = `  const queryClient = useQueryClient();
+  const [pendingMessages, setPendingMessages] = useState<OutboundMessage[]>([]);
+
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    console.info('[MSG_TRACE]', {
+      stage: 'route_warm_started',
+      elapsedMs: 0,
+      conversationId,
+      userId: user.id,
+    });
+    void warmFanoutRoute(conversationId, user.id)
+      .then(() => {
+        console.info('[MSG_TRACE]', {
+          stage: 'route_warm_ready',
+          elapsedMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt),
+          conversationId,
+          userId: user.id,
+        });
+      })
+      .catch((error) => {
+        console.warn('[MSG_TRACE] route_warm_deferred', {
+          conversationId,
+          userId: user.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }, [conversationId, user?.id]);`;
+        transformed = transformed.replace(stateAnchor, stateFast);
+
+        transformed = transformed.replace(
+          "    const traceId = safeUUID();",
+          "    const traceId = safeUUID();\n    const serverMessageId = safeUUID();",
+        );
+        transformed = transformed.replace(
+          `      createdAt: now,
+      updatedAt: now,
+      serverId: null,
+    };
+    let outboxSnapshot: OutboxPayload = {
+      ...optimistic,
+      extra,
+      reservedServerId: null,`,
+          `      createdAt: now,
+      updatedAt: now,
+      serverId: serverMessageId,
+    };
+    let outboxSnapshot: OutboxPayload = {
+      ...optimistic,
+      extra,
+      reservedServerId: serverMessageId,`,
+        );
+
+        transformed = transformed.replace(
+          "      new Promise<{ kind: 'slow' }>((resolve) => setTimeout(() => resolve({ kind: 'slow' }), 800)),",
+          "      new Promise<{ kind: 'slow' }>((resolve) => setTimeout(() => resolve({ kind: 'slow' }), 100)),",
+        );
+
+        transformed = transformed.replace(
+          `    updatePending({ status: 'sending' });
+    const serverMessageId = safeUUID();
+    outboxSnapshot = { ...outboxSnapshot, reservedServerId: serverMessageId, updatedAt: Date.now() };
+    void putOutboxPayload(user.id, outboxSnapshot).catch(() => {});`,
+          `    updatePending({ status: 'sending', serverId: serverMessageId });`,
+        );
+
+        transformed = transformed.replace(
+          `    if (encryptedSuccessfully) {
+      fanoutPromise = buildFanoutCopies(fanoutInput);`,
+          `    if (encryptedSuccessfully) {
+      trace('fanout_started');
+      fanoutPromise = buildFanoutCopies(fanoutInput);`,
+        );
+        transformed = transformed.replace(
+          `      if (inlineFanout) {
+        fanoutRows = inlineFanout.rows;
+        fanoutHasTargets = inlineFanout.hasTargets;
+        fanoutTimedOut = fanoutNeedsRepair(inlineFanout);
+      } else {
+        fanoutTimedOut = true;
+      }`,
+          `      if (inlineFanout) {
+        fanoutRows = inlineFanout.rows;
+        fanoutHasTargets = inlineFanout.hasTargets;
+        fanoutTimedOut = fanoutNeedsRepair(inlineFanout);
+      } else {
+        trace('fanout_slow_waiting_for_security');
+        const completedFanout = await fanoutPromise;
+        fanoutRows = completedFanout.rows;
+        fanoutHasTargets = completedFanout.hasTargets;
+        fanoutTimedOut = fanoutNeedsRepair(completedFanout);
+      }
+      trace('fanout_ready', { rows: fanoutRows.length, hasTargets: fanoutHasTargets, needsRepair: fanoutTimedOut });`,
+        );
+
+        const rpcAnchor = `    const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {`;
+        const rpcFast = `    trace('rpc_start', { copies: fanoutRows.length });
+    const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {`;
+        transformed = transformed.replace(rpcAnchor, rpcFast);
+        transformed = transformed.replace(
+          `    let data = { id: (rpcMessageId as unknown as string) || serverMessageId };`,
+          `    trace('rpc_done', { ok: !error });
+    let data = { id: (rpcMessageId as unknown as string) || serverMessageId };`,
+        );
+
+        transformed = transformed.replace(
+          `      await onMessageSent?.(localId);
+      await deleteOutboxPayload(localId).catch(() => {});
+      setPendingMessages(prev => prev.filter(message => message.localId !== localId));`,
+          `      setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+      void Promise.resolve(onMessageSent?.(localId)).catch(() => {});
+      void deleteOutboxPayload(localId).catch(() => {});`,
+        );
+
+        return transformed === code ? null : { code: transformed, map: null };
+      }
+
       if (cleanId.endsWith("/src/hooks/useDeviceRegistration.ts")) {
         let transformed = code;
         const sessionImport = "import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';";
@@ -177,7 +339,7 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "favicon.ico", "og-image.png"],
       workbox: {
-        cacheId: "forsure-e2ee-final-v2",
+        cacheId: "forsure-e2ee-final-v3",
         maximumFileSizeToCacheInBytes: 5242880,
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
@@ -189,7 +351,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/storage\/.*/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "supabase-storage-e2ee-final-v2",
+              cacheName: "supabase-storage-e2ee-final-v3",
               expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -198,7 +360,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /\.(png|jpg|jpeg|gif|webp|avif|svg)$/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "images-e2ee-final-v2",
+              cacheName: "images-e2ee-final-v3",
               expiration: { maxEntries: 150, maxAgeSeconds: 30 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -207,7 +369,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /\.(woff2?|ttf|otf|eot)$/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "fonts-e2ee-final-v2",
+              cacheName: "fonts-e2ee-final-v3",
               expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -223,7 +385,7 @@ export default defineConfig(({ mode }) => ({
         display: "standalone",
         orientation: "portrait",
         scope: "/",
-        start_url: "/?v=e2ee-final-v2",
+        start_url: "/?v=e2ee-final-v3",
         icons: [
           { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
           { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },
