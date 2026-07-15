@@ -19,6 +19,10 @@ function routeKey(conversationId: string, senderUserId: string, senderDeviceId: 
   return `${conversationId}:${senderUserId}:${senderDeviceId}`;
 }
 
+function routePrefix(conversationId: string, senderUserId: string): string {
+  return `${conversationId}:${senderUserId}:`;
+}
+
 async function resolveCachedRoute(
   key: string,
   loader: RouteLoader,
@@ -33,8 +37,8 @@ async function resolveCachedRoute(
 
   const promise = loader()
     .then((targets) => {
-      // A resolved empty route is valid (for example a single-device account).
-      // Network failures throw and therefore never poison the cache as empty.
+      // The cache is a latency optimisation only. The send RPC remains the
+      // authoritative Sesame device-list validator and may force one refresh.
       routeCache.set(key, {
         expiresAt: now + ROUTE_TTL_MS,
         targets,
@@ -87,6 +91,23 @@ export async function resolveFanoutRoute(
 }
 
 /**
+ * Discards every cached/in-flight route for a conversation and sender. Sesame
+ * stale-list retries call this before rebuilding copies exactly once.
+ */
+export function invalidateFanoutRoute(
+  conversationId: string,
+  senderUserId: string,
+): void {
+  const prefix = routePrefix(conversationId, senderUserId);
+  for (const key of routeCache.keys()) {
+    if (key.startsWith(prefix)) routeCache.delete(key);
+  }
+  for (const key of inflightRoutes.keys()) {
+    if (key.startsWith(prefix)) inflightRoutes.delete(key);
+  }
+}
+
+/**
  * Preloads participants and verified device descriptors only. It never fetches
  * prekeys, claims an OPK, creates X3DH state or advances a ratchet.
  */
@@ -107,4 +128,12 @@ export const __test__ = {
     return routeCache.size;
   },
   resolveCachedRoute,
+  invalidatePrefix(prefix: string): void {
+    for (const key of routeCache.keys()) {
+      if (key.startsWith(prefix)) routeCache.delete(key);
+    }
+    for (const key of inflightRoutes.keys()) {
+      if (key.startsWith(prefix)) inflightRoutes.delete(key);
+    }
+  },
 };
