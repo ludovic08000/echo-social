@@ -135,9 +135,13 @@ function messagingStabilityGuard(): Plugin {
       if (cleanId.endsWith("/src/lib/messaging/multiDeviceFanout.ts")) {
         let transformed = code;
         const routeImport = "import { resolveFanoutRoute } from '@/lib/messaging/fanoutRouteCache';";
+        const transactionImport = "import { captureFanoutSessionBeforeMutation } from '@/lib/messaging/fanoutSessionTransaction';";
         if (!transformed.includes(routeImport)) {
           const importAnchor = "import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';";
           transformed = transformed.replace(importAnchor, `${importAnchor}\n${routeImport}`);
+        }
+        if (!transformed.includes(transactionImport)) {
+          transformed = transformed.replace(routeImport, `${routeImport}\n${transactionImport}`);
         }
 
         transformed = transformed.replace(
@@ -158,15 +162,38 @@ function messagingStabilityGuard(): Plugin {
     .filter((device) => !isKnownInvalidDeviceId(device.deviceId));`;
         transformed = transformed.replace(routeAnchor, routeFast);
 
+        const encryptAnchor = `    try {
+      const encrypted = await encryptPlaintextForDeviceTarget({`;
+        const transactionalEncrypt = `    try {
+      await captureFanoutSessionBeforeMutation({
+        messageId: input.messageId,
+        myUserId: input.senderUserId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.userId,
+        peerDeviceId: dev.deviceId,
+      });
+      const encrypted = await encryptPlaintextForDeviceTarget({`;
+        if (!transformed.includes("captureFanoutSessionBeforeMutation({")) {
+          transformed = transformed.replace(encryptAnchor, transactionalEncrypt);
+        }
+
         return transformed === code ? null : { code: transformed, map: null };
       }
 
       if (cleanId.endsWith("/src/hooks/useMessageQueueSignal.ts")) {
         let transformed = code;
         const warmImport = "import { warmFanoutRoute } from '@/lib/messaging/fanoutRouteCache';";
+        const sesameImport = "import { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';";
+        const rollbackImport = "import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';";
+        const deviceImport = "import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';";
         if (!transformed.includes(warmImport)) {
           const importAnchor = "import { buildFanoutCopies, insertFanoutCopyRows, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';";
           transformed = transformed.replace(importAnchor, `${importAnchor}\n${warmImport}`);
+        }
+        for (const extraImport of [sesameImport, rollbackImport, deviceImport]) {
+          if (!transformed.includes(extraImport)) {
+            transformed = transformed.replace(warmImport, `${warmImport}\n${extraImport}`);
+          }
         }
 
         transformed = transformed.replace(
@@ -248,7 +275,10 @@ function messagingStabilityGuard(): Plugin {
       fanoutPromise = buildFanoutCopies(fanoutInput);`,
           `    if (encryptedSuccessfully) {
       trace('fanout_started');
-      fanoutPromise = buildFanoutCopies(fanoutInput);`,
+      fanoutPromise = buildFanoutCopies(fanoutInput).catch(async (error) => {
+        await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
+        throw error;
+      });`,
         );
         transformed = transformed.replace(
           `      if (inlineFanout) {
@@ -272,14 +302,43 @@ function messagingStabilityGuard(): Plugin {
       trace('fanout_ready', { rows: fanoutRows.length, hasTargets: fanoutHasTargets, needsRepair: fanoutTimedOut });`,
         );
 
-        const rpcAnchor = `    const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {`;
-        const rpcFast = `    trace('rpc_start', { copies: fanoutRows.length });
-    const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {`;
-        transformed = transformed.replace(rpcAnchor, rpcFast);
+        const rpcBlock = `    const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {
+      p_message_id: serverMessageId,
+      p_conversation_id: conversationId,
+      p_body: bodyToStore,
+      p_image_url: imageUrl || null,
+      p_extra: rpcExtra as never,
+      p_copies: fanoutRows as never,
+    });`;
+        const sesameRpc = `    trace('rpc_start', { copies: fanoutRows.length });
+    const sesameResult = await sendMessageWithSesameRetry({
+      messageId: serverMessageId,
+      conversationId,
+      body: bodyToStore,
+      imageUrl: imageUrl || null,
+      extra: rpcExtra,
+      senderUserId: user.id,
+      senderDeviceId: getCurrentDeviceId(),
+      initialCopies: fanoutRows,
+      rebuildCopies: async () => {
+        const rebuilt = await buildFanoutCopies(fanoutInput);
+        return rebuilt.rows;
+      },
+    });
+    fanoutRows = sesameResult.copies;
+    const rpcMessageId = sesameResult.data;
+    const error = sesameResult.error;
+    trace('rpc_done', {
+      ok: !error,
+      staleRouteRetried: sesameResult.retriedStaleRoute,
+      compatibilitySignature: sesameResult.usedCompatibilitySignature,
+      copies: fanoutRows.length,
+    });`;
+        transformed = transformed.replace(rpcBlock, sesameRpc);
+
         transformed = transformed.replace(
-          `    let data = { id: (rpcMessageId as unknown as string) || serverMessageId };`,
-          `    trace('rpc_done', { ok: !error });
-    let data = { id: (rpcMessageId as unknown as string) || serverMessageId };`,
+          `      if (!shouldFallbackToLegacyEncryptedInsert(error)) {`,
+          `      if (encryptionWasRequired || !shouldFallbackToLegacyEncryptedInsert(error)) {`,
         );
 
         transformed = transformed.replace(
@@ -339,7 +398,7 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "favicon.ico", "og-image.png"],
       workbox: {
-        cacheId: "forsure-e2ee-final-v3",
+        cacheId: "forsure-e2ee-final-v4",
         maximumFileSizeToCacheInBytes: 5242880,
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
@@ -351,7 +410,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/storage\/.*/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "supabase-storage-e2ee-final-v3",
+              cacheName: "supabase-storage-e2ee-final-v4",
               expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -360,7 +419,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /\.(png|jpg|jpeg|gif|webp|avif|svg)$/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "images-e2ee-final-v3",
+              cacheName: "images-e2ee-final-v4",
               expiration: { maxEntries: 150, maxAgeSeconds: 30 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -369,7 +428,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /\.(woff2?|ttf|otf|eot)$/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "fonts-e2ee-final-v3",
+              cacheName: "fonts-e2ee-final-v4",
               expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -385,7 +444,7 @@ export default defineConfig(({ mode }) => ({
         display: "standalone",
         orientation: "portrait",
         scope: "/",
-        start_url: "/?v=e2ee-final-v3",
+        start_url: "/?v=e2ee-final-v4",
         icons: [
           { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
           { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },
