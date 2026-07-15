@@ -64,8 +64,7 @@ function isMissingRpc(error: any, name: string): boolean {
 
 /**
  * Every read/check/write stays inside one active IndexedDB transaction. This is
- * intentionally event-driven rather than `async` inside the callback because
- * Safari may auto-close a transaction between unrelated microtasks.
+ * event-driven because Safari may auto-close a transaction between microtasks.
  */
 async function reserveLocally(id: string, localToken: string): Promise<void> {
   const now = Date.now();
@@ -204,27 +203,55 @@ export async function reserveX3dhInitial(params: {
 export async function finalizeX3dhInitial(
   reservation: X3DHReplayReservation,
 ): Promise<void> {
+  let serverFinalized = false;
+
   if (reservation.serverMode === 'two_phase' && reservation.serverToken) {
-    const { data, error } = await (supabase as any).rpc('finalize_x3dh_initial', {
-      p_fingerprint: reservation.fingerprint,
-      p_reservation_token: reservation.serverToken,
-    });
-    if (error || data !== true) {
-      throw new Error(`X3DH_REPLAY_FINALIZE_FAILED:${error?.message ?? 'REJECTED'}`);
+    try {
+      const { data, error } = await (supabase as any).rpc('finalize_x3dh_initial', {
+        p_fingerprint: reservation.fingerprint,
+        p_reservation_token: reservation.serverToken,
+      });
+      if (!error && data === true) {
+        serverFinalized = true;
+      } else if (!error && data === false) {
+        throw new Error('X3DH_REPLAY_FINALIZE_REJECTED');
+      } else {
+        disableServerLedgerTemporarily();
+        console.warn('[X3DH][REPLAY][SERVER] finalize unavailable — local finalized guard remains authoritative', error?.message);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'X3DH_REPLAY_FINALIZE_REJECTED') throw error;
+      disableServerLedgerTemporarily();
+      console.warn('[X3DH][REPLAY][SERVER] finalize transport failure — local guard only', error);
     }
   } else if (reservation.serverMode === 'legacy_finalize') {
-    // Compatibility with databases that have not applied the two-phase
-    // migration yet. Crucially this claim occurs after AEAD authentication.
-    const { data: claimed, error } = await supabase.rpc('claim_x3dh_initial', {
-      p_fingerprint: reservation.fingerprint,
-    });
-    if (error && !isMissingRpc(error, 'claim_x3dh_initial')) {
-      throw new Error(`X3DH_REPLAY_FINALIZE_FAILED:${error.message}`);
+    try {
+      const { data: claimed, error } = await supabase.rpc('claim_x3dh_initial', {
+        p_fingerprint: reservation.fingerprint,
+      });
+      if (!error && claimed === false) throw new Error('X3DH_REPLAY_DETECTED');
+      if (!error && claimed === true) serverFinalized = true;
+      if (error && !isMissingRpc(error, 'claim_x3dh_initial')) {
+        disableServerLedgerTemporarily();
+        console.warn('[X3DH][REPLAY][SERVER] legacy finalize unavailable — local guard only', error.message);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'X3DH_REPLAY_DETECTED') throw error;
+      disableServerLedgerTemporarily();
     }
-    if (!error && claimed === false) throw new Error('X3DH_REPLAY_DETECTED');
   }
 
-  await finalizeLocally(reservation);
+  try {
+    await finalizeLocally(reservation);
+  } catch (error) {
+    // If the authoritative server already finalized the tuple, replay safety is
+    // preserved across reloads even if local storage was concurrently wiped.
+    if (serverFinalized) {
+      console.warn('[X3DH][REPLAY] local finalize failed after authoritative server success', error);
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function cancelX3dhInitial(
