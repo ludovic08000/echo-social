@@ -52,6 +52,21 @@ function messagingStabilityGuard(): Plugin {
         return transformed === code ? null : { code: transformed, map: null };
       }
 
+      if (cleanId.endsWith("/src/hooks/useDeviceRegistration.ts")) {
+        let transformed = code;
+        const sessionImport = "import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';";
+        if (!transformed.includes(sessionImport)) {
+          const importAnchor = "import { useEffect, useRef } from 'react';";
+          transformed = transformed.replace(importAnchor, `${importAnchor}\n${sessionImport}`);
+        }
+        const registrationAnchor = "      try {\n        console.log('[useDeviceRegistration] publishing current device', { reason, attempt });";
+        const guardedAnchor = "      try {\n        await requireAuthenticatedDeviceSession(user.id);\n        console.log('[useDeviceRegistration] publishing current device', { reason, attempt });";
+        if (!transformed.includes(guardedAnchor)) {
+          transformed = transformed.replace(registrationAnchor, guardedAnchor);
+        }
+        return transformed === code ? null : { code: transformed, map: null };
+      }
+
       return null;
     },
   };
