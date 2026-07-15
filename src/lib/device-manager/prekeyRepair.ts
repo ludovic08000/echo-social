@@ -4,9 +4,9 @@ import { requireAuthenticatedDeviceSession } from './sessionGate';
 import { recoverStableDeviceLifecycle } from './lifecycle';
 
 /**
- * One SPK repair at a time per device. The previous flow allowed auth mount,
- * resume and PIN unlock to purge/generate SPKs concurrently (#2, #3, #4 in the
- * same second), then one caller immediately declared the new bundle invalid.
+ * One SPK repair at a time. If the supplied DeviceID was revoked, lifecycle
+ * recovery returns its fresh replacement and all new SPK/OPK material is bound
+ * to that replacement only.
  */
 export async function repairCurrentDevicePrekeys(
   userId: string,
@@ -18,9 +18,9 @@ export async function repairCurrentDevicePrekeys(
   return runDeviceOperation(key, async () => {
     await requireAuthenticatedDeviceSession(userId);
     const lifecycle = await recoverStableDeviceLifecycle(userId, deviceId);
-    if (lifecycle.state !== 'approved' && lifecycle.state !== 'missing') {
+    if (lifecycle.state !== 'approved') {
       return { repaired: false, reason: `device-${lifecycle.state}` };
     }
-    return legacyRepair(userId, deviceId, signingPrivateKey, reason);
+    return legacyRepair(userId, lifecycle.deviceId, signingPrivateKey, reason);
   }, { coalesce: true });
 }
