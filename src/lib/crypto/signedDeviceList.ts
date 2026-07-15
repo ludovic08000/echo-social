@@ -23,7 +23,15 @@ export interface SignedDeviceEntry {
 export interface DeviceVerificationResult {
   deviceId: string;
   ok: boolean;
-  reason?: 'PRIMARY' | 'VALID' | 'NO_SIGNATURE' | 'BAD_SIGNATURE' | 'PRIMARY_PUB_MISMATCH' | 'IMPORT_FAILED';
+  reason?:
+    | 'PRIMARY'
+    | 'VALID'
+    | 'NO_SIGNATURE'
+    | 'BAD_SIGNATURE'
+    | 'PRIMARY_PUB_MISMATCH'
+    | 'PRIMARY_COUNT_INVALID'
+    | 'PRIMARY_ROOT_MISSING'
+    | 'IMPORT_FAILED';
 }
 
 function canonicalPayload(args: {
@@ -95,8 +103,11 @@ async function repairApprovedCompanionSignatures(
   userId: string,
   rows: Array<{ device_id: string; device_public_key: string; is_primary: boolean }>,
 ): Promise<void> {
-  const primary = rows.find((row) => row.is_primary);
-  if (!primary) return;
+  const primaries = rows.filter((row) => row.is_primary);
+  if (primaries.length !== 1) {
+    throw new Error(`SIGNED_DEVICE_PRIMARY_COUNT_INVALID:${primaries.length}`);
+  }
+  const primary = primaries[0];
 
   const companions = rows.filter((row) => !row.is_primary && row.device_public_key);
   if (companions.length === 0) return;
@@ -151,7 +162,8 @@ export async function publishOwnSignedDeviceList(args?: {
     .eq('user_id', userId)
     .eq('is_active', true)
     .eq('approval_status', 'approved')
-    .is('revoked_at', null);
+    .is('revoked_at', null)
+    .is('stale_at', null);
   if (listError) return { ok: false, error: listError.message };
 
   const approvedRows = (rows ?? []) as Array<{
@@ -159,6 +171,11 @@ export async function publishOwnSignedDeviceList(args?: {
     device_public_key: string;
     is_primary: boolean;
   }>;
+  const primaryCount = approvedRows.filter((row) => row.is_primary).length;
+  if (primaryCount !== 1) {
+    return { ok: false, error: `PRIMARY_COUNT_INVALID:${primaryCount}` };
+  }
+
   if (args?.repairCompanions !== false) {
     await repairApprovedCompanionSignatures(userId, approvedRows).catch((error) => {
       console.warn('[signedDeviceList] companion auto-repair failed', error);
@@ -198,25 +215,77 @@ export async function fetchSignedDeviceList(userId: string): Promise<SignedDevic
   }));
 }
 
-/** The Ed25519 root must be advertised by the primary row itself. */
+/** The canonical Ed25519 root is advertised on the unique primary row. */
 function resolvePrimarySigningRoot(primary: SignedDeviceEntry | undefined): string | null {
-  if (!primary?.primaryPubB64) return null;
+  if (!primary?.primaryPubB64 || primary.primaryPubB64.trim().length === 0) return null;
   return primary.primaryPubB64;
+}
+
+function rejectWholeList(
+  list: SignedDeviceEntry[],
+  reason: DeviceVerificationResult['reason'],
+): DeviceVerificationResult[] {
+  return list.map((entry) => ({ deviceId: entry.deviceId, ok: false, reason }));
+}
+
+async function loadCanonicalRoot(userId: string): Promise<{
+  primaryDeviceId: string;
+  identityPubB64: string;
+} | null> {
+  const { data, error } = await (supabase as any)
+    .from('user_identity_roots')
+    .select('primary_device_id, identity_pub_b64')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error || !data?.primary_device_id || !data?.identity_pub_b64) return null;
+  return {
+    primaryDeviceId: String(data.primary_device_id),
+    identityPubB64: String(data.identity_pub_b64),
+  };
 }
 
 export async function verifySignedDeviceList(
   userId: string,
   list: SignedDeviceEntry[],
 ): Promise<DeviceVerificationResult[]> {
-  const primary = list.find((entry) => entry.isPrimary);
+  const primaries = list.filter((entry) => entry.isPrimary);
+  if (primaries.length !== 1) {
+    return rejectWholeList(list, 'PRIMARY_COUNT_INVALID');
+  }
+
+  const primary = primaries[0];
   const primarySigningRoot = resolvePrimarySigningRoot(primary);
-  const results: DeviceVerificationResult[] = [];
+  const canonicalRoot = await loadCanonicalRoot(userId);
+  if (!primarySigningRoot || !canonicalRoot) {
+    return rejectWholeList(list, 'PRIMARY_ROOT_MISSING');
+  }
+  if (
+    canonicalRoot.primaryDeviceId !== primary.deviceId ||
+    canonicalRoot.identityPubB64 !== primarySigningRoot ||
+    primary.primaryDeviceId !== null
+  ) {
+    return rejectWholeList(list, 'PRIMARY_PUB_MISMATCH');
+  }
+
+  let publicKey: CryptoKey;
+  try {
+    publicKey = await hardCrypto.importKey(
+      'raw',
+      base64ToBuffer(primarySigningRoot),
+      { name: 'Ed25519' } as any,
+      false,
+      ['verify'],
+    );
+  } catch {
+    return rejectWholeList(list, 'IMPORT_FAILED');
+  }
+
+  const results: DeviceVerificationResult[] = [
+    { deviceId: primary.deviceId, ok: true, reason: 'PRIMARY' },
+  ];
 
   for (const entry of list) {
-    if (entry.isPrimary) {
-      results.push({ deviceId: entry.deviceId, ok: true, reason: 'PRIMARY' });
-      continue;
-    }
+    if (entry.isPrimary) continue;
 
     if (!entry.signatureB64 || !entry.primaryPubB64 || !entry.signedAt) {
       results.push({ deviceId: entry.deviceId, ok: false, reason: 'NO_SIGNATURE' });
@@ -224,26 +293,10 @@ export async function verifySignedDeviceList(
     }
 
     if (
-      !primary ||
       entry.primaryDeviceId !== primary.deviceId ||
-      !primarySigningRoot ||
       entry.primaryPubB64 !== primarySigningRoot
     ) {
       results.push({ deviceId: entry.deviceId, ok: false, reason: 'PRIMARY_PUB_MISMATCH' });
-      continue;
-    }
-
-    let publicKey: CryptoKey;
-    try {
-      publicKey = await hardCrypto.importKey(
-        'raw',
-        base64ToBuffer(primarySigningRoot),
-        { name: 'Ed25519' } as any,
-        false,
-        ['verify'],
-      );
-    } catch {
-      results.push({ deviceId: entry.deviceId, ok: false, reason: 'IMPORT_FAILED' });
       continue;
     }
 
@@ -253,12 +306,18 @@ export async function verifySignedDeviceList(
       devicePub: entry.devicePublicKey,
       signedAt: entry.signedAt,
     });
-    const ok = await hardCrypto.verify(
-      'Ed25519' as any,
-      publicKey,
-      base64ToBuffer(entry.signatureB64),
-      encodeString(payload),
-    );
+
+    let ok = false;
+    try {
+      ok = await hardCrypto.verify(
+        'Ed25519' as any,
+        publicKey,
+        base64ToBuffer(entry.signatureB64),
+        encodeString(payload),
+      );
+    } catch {
+      ok = false;
+    }
 
     results.push({
       deviceId: entry.deviceId,
@@ -305,4 +364,4 @@ export async function revokeCompanionSignature(args: {
   if (error) throw new Error(`UDS_REVOKE_FAILED: ${error.message}`);
 }
 
-export const __test__ = { canonicalPayload, resolvePrimarySigningRoot };
+export const __test__ = { canonicalPayload, resolvePrimarySigningRoot, rejectWholeList };
