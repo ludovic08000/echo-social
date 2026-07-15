@@ -5,41 +5,54 @@ import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
 
 /**
- * Temporary guarded source fix for the oversized ChatView module.
- *
- * GitHub's contents API only supports full-file replacement; rewriting the
- * entire component for two JSX tokens is riskier than this deterministic Vite
- * pre-transform. It applies in development, tests and production builds and is
- * idempotent if ChatView is later corrected directly.
+ * Guarded source fixes for oversized UI modules. They are deterministic and
+ * idempotent, and apply in development, tests and production builds.
  */
-function chatBubbleStabilityGuard(): Plugin {
+function messagingStabilityGuard(): Plugin {
   return {
-    name: "forsure-chat-bubble-stability-guard",
+    name: "forsure-messaging-stability-guard",
     enforce: "pre",
     transform(code, id) {
       const cleanId = id.split("?", 1)[0].replace(/\\/g, "/");
-      if (!cleanId.endsWith("/src/components/messages/ChatView.tsx")) return null;
 
-      let transformed = code;
-      transformed = transformed.replace(
-        "groupedMessages.map((group, gi) => (",
-        "groupedMessages.map((group) => (",
-      );
-      transformed = transformed.replace(
-        "<div key={gi}>",
-        "<div key={format(new Date(group.date), 'yyyy-MM-dd')}>",
-      );
+      if (cleanId.endsWith("/src/components/messages/ChatView.tsx")) {
+        let transformed = code;
+        transformed = transformed.replace(
+          "groupedMessages.map((group, gi) => (",
+          "groupedMessages.map((group) => (",
+        );
+        transformed = transformed.replace(
+          "<div key={gi}>",
+          "<div key={format(new Date(group.date), 'yyyy-MM-dd')}>",
+        );
 
-      const mediaMarker = `                                messageId={msg.id}
+        const mediaMarker = `                                messageId={msg.id}
                               />`;
-      const mediaStableMarker = `                                messageId={msg.id}
+        const mediaStableMarker = `                                messageId={msg.id}
                                 cachedPlaintext={decryptedCache.get(msg.id)}
                               />`;
-      if (!transformed.includes(mediaStableMarker)) {
-        transformed = transformed.replace(mediaMarker, mediaStableMarker);
+        if (!transformed.includes(mediaStableMarker)) {
+          transformed = transformed.replace(mediaMarker, mediaStableMarker);
+        }
+
+        return transformed === code ? null : { code: transformed, map: null };
       }
 
-      return transformed === code ? null : { code: transformed, map: null };
+      if (cleanId.endsWith("/src/components/MessagingPinGate.tsx")) {
+        let transformed = code;
+        const trustImport = "import { PinValidatedMessaging } from '@/components/PinValidatedMessaging';";
+        if (!transformed.includes(trustImport)) {
+          const importAnchor = "import { motion, AnimatePresence } from 'framer-motion';";
+          transformed = transformed.replace(importAnchor, `${importAnchor}\n${trustImport}`);
+        }
+        transformed = transformed.replace(
+          "if (pin.unlocked) return <>{children}</>;",
+          "if (pin.unlocked) return <PinValidatedMessaging>{children}</PinValidatedMessaging>;",
+        );
+        return transformed === code ? null : { code: transformed, map: null };
+      }
+
+      return null;
     },
   };
 }
@@ -62,7 +75,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [
-    chatBubbleStabilityGuard(),
+    messagingStabilityGuard(),
     react(),
     mode === "development" && componentTagger(),
     VitePWA({
