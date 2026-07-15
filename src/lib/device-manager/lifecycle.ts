@@ -1,10 +1,11 @@
 import { supabase } from '@/integrations/supabase/client';
 import { loadIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
-import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { deleteDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
   getDeviceFingerprint,
+  rotateCurrentDeviceId,
 } from './currentDevice';
 import { requireAuthenticatedDeviceSession } from './sessionGate';
 
@@ -21,6 +22,7 @@ export interface ManagedDeviceLifecycle {
   state: ManagedDeviceState;
   isPrimary: boolean;
   devicePublicKey: string | null;
+  replacedDeviceId?: string;
 }
 
 export async function readManagedDeviceLifecycle(
@@ -64,7 +66,7 @@ async function registerMissingStableDevice(
 
   const [bundle, deviceKx, fingerprint] = await Promise.all([
     exportPublicKeyBundle(identity),
-    getOrCreateDeviceKxKey(deviceId),
+    getOrCreateDeviceKxKey(deviceId, userId),
     getDeviceFingerprint().catch(() => null),
   ]);
   const devicePublicKey = deviceKx?.publicB64 || bundle.identityKey;
@@ -93,8 +95,6 @@ async function registerMissingStableDevice(
     throw new Error('DEVICE_REJECTED_REQUIRES_EXPLICIT_USER_ACTION');
   }
 
-  // Compatibility path for databases where the safe RPC has not yet been
-  // deployed. RLS still restricts this row to the authenticated account.
   const { error: upsertError } = await supabase.from('user_devices').upsert({
     user_id: userId,
     device_id: deviceId,
@@ -112,48 +112,77 @@ async function registerMissingStableDevice(
 }
 
 /**
- * Restore the SAME physical DeviceID after PIN/key recovery. Missing rows are
- * created with the already-restored per-device X25519 key; pending/inactive/
- * revoked rows are re-approved. The function never invents a replacement ID.
+ * Recover the current installation after PIN unlock.
+ *
+ * - missing: register the same stable ID;
+ * - pending/inactive: approve the existing ID;
+ * - revoked: NEVER clear revoked_at. Retire that ID, mint one fresh ID exactly
+ *   once, generate a fresh per-device X25519 key and enroll it normally.
  */
 export async function recoverStableDeviceLifecycle(
   userId: string,
   deviceId: string,
 ): Promise<ManagedDeviceLifecycle> {
   await requireAuthenticatedDeviceSession(userId);
-  let lifecycle = await readManagedDeviceLifecycle(userId, deviceId);
+  let activeDeviceId = deviceId;
+  let replacedDeviceId: string | undefined;
+  let lifecycle = await readManagedDeviceLifecycle(userId, activeDeviceId);
 
   if (lifecycle.state === 'rejected') {
     throw new Error('DEVICE_REJECTED_REQUIRES_EXPLICIT_USER_ACTION');
   }
 
-  if (lifecycle.state === 'missing') {
-    await registerMissingStableDevice(userId, deviceId);
-    lifecycle = await readManagedDeviceLifecycle(userId, deviceId);
+  if (lifecycle.state === 'revoked') {
+    // Do not rotate before the PIN/account identity is actually available.
+    const identity = await loadIdentityKeys(userId);
+    if (!identity?.privateKey || !identity.signingPrivateKey) {
+      throw new Error('DEVICE_REVOKED_PIN_UNLOCK_REQUIRED');
+    }
+
+    replacedDeviceId = activeDeviceId;
+    const replacement = rotateCurrentDeviceId('revoked-reenrollment-after-pin');
+    if (!replacement || replacement === replacedDeviceId) {
+      throw new Error('DEVICE_REVOKED_REENROLLMENT_BLOCKED');
+    }
+
+    // The revoked transport key must never be reused locally.
+    await deleteDeviceKxKey(replacedDeviceId, userId);
+    activeDeviceId = replacement;
+    lifecycle = await readManagedDeviceLifecycle(userId, activeDeviceId);
+
+    console.warn('[DeviceManager] revoked device reenrollment started', {
+      previous: replacedDeviceId.slice(0, 8),
+      next: activeDeviceId.slice(0, 8),
+    });
   }
 
-  if (
-    lifecycle.state === 'pending' ||
-    lifecycle.state === 'inactive' ||
-    lifecycle.state === 'revoked'
-  ) {
+  if (lifecycle.state === 'missing') {
+    await registerMissingStableDevice(userId, activeDeviceId);
+    lifecycle = await readManagedDeviceLifecycle(userId, activeDeviceId);
+  }
+
+  if (lifecycle.state === 'pending' || lifecycle.state === 'inactive') {
     const { data, error } = await (supabase as any).rpc('approve_user_device', {
-      p_device_id: deviceId,
+      p_device_id: activeDeviceId,
     });
     if (error || data?.ok !== true) {
-      console.warn('[DeviceManager] stable device reapproval failed', {
-        deviceId: deviceId.slice(0, 8),
+      console.warn('[DeviceManager] device approval failed', {
+        deviceId: activeDeviceId.slice(0, 8),
         state: lifecycle.state,
         error: error?.message ?? data?.code ?? 'unknown',
       });
       throw new Error(`DEVICE_REAPPROVAL_FAILED:${lifecycle.state}`);
     }
-    lifecycle = await readManagedDeviceLifecycle(userId, deviceId);
+    lifecycle = await readManagedDeviceLifecycle(userId, activeDeviceId);
   }
 
-  if (lifecycle.state === 'missing') {
-    throw new Error('DEVICE_REGISTRATION_NOT_VISIBLE_AFTER_WRITE');
+  if (lifecycle.state !== 'approved') {
+    throw new Error(`DEVICE_LIFECYCLE_NOT_APPROVED:${lifecycle.state}`);
   }
 
-  return lifecycle;
+  return {
+    ...lifecycle,
+    deviceId: activeDeviceId,
+    replacedDeviceId,
+  };
 }
