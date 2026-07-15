@@ -36,7 +36,7 @@ async function resolveCachedRoute(
       // A resolved empty route is valid (for example a single-device account).
       // Network failures throw and therefore never poison the cache as empty.
       routeCache.set(key, {
-        expiresAt: Date.now() + ROUTE_TTL_MS,
+        expiresAt: now + ROUTE_TTL_MS,
         targets,
       });
       return targets;
