@@ -1,25 +1,18 @@
 /**
- * L3 — Server-side X3DH replay ledger integration test
- *
- * Verifies that when the server `claim_x3dh_initial` RPC reports a replay
- * (returns `false`), the client guard refuses the message even if the local
- * IDB has never seen it. This protects against device wipes / private mode
- * bypassing the client-only cache.
+ * Server/local X3DH replay reservation tests.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Hoisted mock store — must be defined inside vi.mock factory to avoid TDZ
-vi.mock('@/integrations/supabase/client', () => {
-  return {
-    supabase: {
-      rpc: vi.fn(),
-    },
-  };
-});
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: { rpc: vi.fn() },
+}));
 
 import { supabase } from '@/integrations/supabase/client';
 import {
   assertNotReplayedAndRecord,
+  cancelX3dhInitial,
+  finalizeX3dhInitial,
+  reserveX3dhInitial,
   __resetReplayLedgerServerBackoffForTests,
 } from '../x3dhReplayGuard';
 
@@ -27,9 +20,9 @@ const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
 
 let n = 0;
 function fresh() {
-  n++;
+  n += 1;
   return {
-    myUserId: `00000000-0000-4000-8000-${`srv${n}`.padStart(12, '0')}`,
+    myUserId: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
     ik: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
     ek: `SRVR${n.toString().padStart(40, '0')}=`,
     spkId: 1,
@@ -42,47 +35,76 @@ beforeEach(() => {
   __resetReplayLedgerServerBackoffForTests();
 });
 
-describe('L3 — server replay ledger', () => {
-  it('rejects when the server reports a duplicate (claimed=false)', async () => {
-    rpc.mockResolvedValueOnce({ data: false, error: null });
-    await expect(assertNotReplayedAndRecord(fresh())).rejects.toThrow('X3DH_REPLAY_DETECTED');
-    expect(rpc).toHaveBeenCalledWith('claim_x3dh_initial', expect.objectContaining({
-      p_fingerprint: expect.any(String),
+describe('X3DH two-phase replay ledger', () => {
+  it('rejects a tuple already finalized by the authoritative server', async () => {
+    rpc.mockResolvedValueOnce({ data: { ok: false, state: 'replay' }, error: null });
+    await expect(reserveX3dhInitial(fresh())).rejects.toThrow('X3DH_REPLAY_DETECTED');
+    expect(rpc).toHaveBeenCalledWith('reserve_x3dh_initial', expect.objectContaining({
+      p_fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
     }));
   });
 
-  it('passes through when the server confirms first claim (claimed=true)', async () => {
-    rpc.mockResolvedValueOnce({ data: true, error: null });
-    await expect(assertNotReplayedAndRecord(fresh())).resolves.toBeUndefined();
+  it('reserves then finalizes only after the caller confirms authentication', async () => {
+    rpc
+      .mockResolvedValueOnce({
+        data: { ok: true, state: 'reserved', reservation_token: '11111111-1111-4111-8111-111111111111' },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: true, error: null });
+
+    const params = fresh();
+    const reservation = await reserveX3dhInitial(params);
+    expect(reservation.serverMode).toBe('two_phase');
+    await expect(finalizeX3dhInitial(reservation)).resolves.toBeUndefined();
+    await expect(reserveX3dhInitial(params)).rejects.toThrow('X3DH_REPLAY_DETECTED');
   });
 
-  it('falls back to local IDB guard when the RPC errors (network down)', async () => {
-    // RPC returns an error → must not throw, local IDB takes over
-    rpc.mockResolvedValue({ data: null, error: { message: 'network down' } });
-    const p = fresh();
-    await expect(assertNotReplayedAndRecord(p)).resolves.toBeUndefined();
-    // Same message replayed — local IDB must now reject
-    await expect(assertNotReplayedAndRecord(p)).rejects.toThrow('X3DH_REPLAY_DETECTED');
+  it('cancels a failed authentication and permits a legitimate retransmission', async () => {
+    rpc
+      .mockResolvedValueOnce({
+        data: { ok: true, state: 'reserved', reservation_token: '22222222-2222-4222-8222-222222222222' },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: true, error: null })
+      .mockResolvedValueOnce({
+        data: { ok: true, state: 'reserved', reservation_token: '33333333-3333-4333-8333-333333333333' },
+        error: null,
+      });
+
+    const params = fresh();
+    const first = await reserveX3dhInitial(params);
+    await cancelX3dhInitial(first);
+    await expect(reserveX3dhInitial(params)).resolves.toMatchObject({ serverMode: 'two_phase' });
   });
 
-  it('sends a stable fingerprint (same input → same hash)', async () => {
-    rpc.mockResolvedValue({ data: true, error: null });
-    const p = fresh();
-    await assertNotReplayedAndRecord(p);
-    const fp1 = rpc.mock.calls[0][1].p_fingerprint;
-    rpc.mockClear();
-    rpc.mockResolvedValue({ data: true, error: null });
-    // Different myUserId but same IK/EK/spkId/opkId → MUST produce a different fp
-    await assertNotReplayedAndRecord({ ...p, myUserId: '00000000-0000-4000-8000-zzzzzzzzzzzz' });
-    const fp2 = rpc.mock.calls[0][1].p_fingerprint;
-    expect(fp1).not.toBe(fp2);
-    expect(fp1).toMatch(/^[0-9a-f]{64}$/);
-  });
+  it('claims the legacy server ledger during finalize, never during reserve', async () => {
+    rpc
+      .mockResolvedValueOnce({ data: null, error: { code: '42883', message: 'reserve_x3dh_initial does not exist' } })
+      .mockResolvedValueOnce({ data: true, error: null });
 
-  it('backs off the server ledger after an RPC error to avoid repeated 400s', async () => {
-    rpc.mockResolvedValue({ data: null, error: { message: 'bad request' } });
-    await expect(assertNotReplayedAndRecord(fresh())).resolves.toBeUndefined();
-    await expect(assertNotReplayedAndRecord(fresh())).resolves.toBeUndefined();
+    const reservation = await reserveX3dhInitial(fresh());
+    expect(reservation.serverMode).toBe('legacy_finalize');
     expect(rpc).toHaveBeenCalledTimes(1);
+    await finalizeX3dhInitial(reservation);
+    expect(rpc.mock.calls[1][0]).toBe('claim_x3dh_initial');
+  });
+
+  it('keeps a local finalized guard when the server is temporarily unavailable', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'network down' } });
+    const params = fresh();
+    await expect(assertNotReplayedAndRecord(params)).resolves.toBeUndefined();
+    await expect(assertNotReplayedAndRecord(params)).rejects.toThrow('X3DH_REPLAY_DETECTED');
+  });
+
+  it('uses a stable user-bound fingerprint', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: '42883', message: 'reserve_x3dh_initial does not exist' } });
+    const first = fresh();
+    const reservation = await reserveX3dhInitial(first);
+    expect(reservation.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    await cancelX3dhInitial(reservation);
+
+    const otherUser = await reserveX3dhInitial({ ...first, myUserId: '00000000-0000-4000-8000-999999999999' });
+    expect(otherUser.fingerprint).not.toBe(reservation.fingerprint);
+    await cancelX3dhInitial(otherUser);
   });
 });
