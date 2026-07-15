@@ -9,6 +9,7 @@ import {
   hydrateDeviceId,
   inspectDeviceHealth,
   isDeviceIdTemporary,
+  recoverStableDeviceLifecycle,
   requireAuthenticatedDeviceSession,
   resyncE2EE,
   runDeviceOperation,
@@ -90,15 +91,24 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
             throw new Error('Identifiant d’appareil encore temporaire.');
           }
 
+          // Registration is now a hard prerequisite. Previously resync swallowed
+          // a missing-row failure, then health inevitably reported `missing`.
+          const lifecycle = await recoverStableDeviceLifecycle(user.id, deviceId);
+          if (lifecycle.state !== 'approved') {
+            throw new Error(`DEVICE_LIFECYCLE_NOT_APPROVED:${lifecycle.state}`);
+          }
+
           await resyncE2EE(user.id);
           const repaired = await repairApprovedDeviceTrust(user.id);
-          const published = await publishOwnSignedDeviceList();
+          const published = await publishOwnSignedDeviceList({
+            signerDeviceId: lifecycle.isPrimary ? deviceId : undefined,
+          });
           if (!published.ok) {
             throw new Error(`Publication de la liste signée refusée : ${published.error ?? 'erreur inconnue'}`);
           }
 
           const health = await inspectDeviceHealth(user.id, deviceId);
-          return { deviceId, repaired, published, health };
+          return { deviceId, lifecycle, repaired, published, health };
         }, { coalesce: true });
 
         currentDeviceId = result.deviceId;
