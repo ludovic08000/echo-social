@@ -108,9 +108,10 @@ async function signOneCompanion(args: {
 }
 
 /**
- * Publish one canonical PIN-restored root, re-sign every approved companion in
- * memory, write every row in one request, then expose the list once. Remote
- * clients never observe a mixed-root list.
+ * Fast path: when every approved DeviceID already verifies, return without any
+ * signing or database write. Otherwise publish one canonical PIN-restored root,
+ * re-sign only rejected companions in memory, write them in one request, then
+ * expose the signed list once.
  */
 export async function repairApprovedDeviceTrust(userId: string): Promise<number> {
   if (!userId) return 0;
@@ -122,20 +123,33 @@ export async function repairApprovedDeviceTrust(userId: string): Promise<number>
   }
   const primary = primaries[0];
 
+  const verified = await fetchVerifiedDeviceList(userId).catch(() => null);
+  const trustedIds = new Set(
+    verified?.trusted.map((entry) => entry.deviceId) ?? [],
+  );
+  if (
+    devices.length > 0 &&
+    trustedIds.size === devices.length &&
+    devices.every((device) => trustedIds.has(device.device_id))
+  ) {
+    return 0;
+  }
+
   const identity = await loadIdentityKeys(userId);
   if (!identity?.signingPrivateKey || !identity.signingPublicKey) {
     throw new Error('DEVICE_TRUST_ACCOUNT_KEY_LOCKED');
   }
 
   const companions = devices.filter(
-    (device) => !device.is_primary && Boolean(device.device_public_key),
+    (device) =>
+      !device.is_primary &&
+      Boolean(device.device_public_key) &&
+      !trustedIds.has(device.device_id),
   );
   const primarySigningPublic = bufferToBase64(
     await exportPublicKeyRaw(identity.signingPublicKey),
   );
 
-  // The root is authoritative and stable. A mismatch is an explicit security
-  // error, never a reason to spin another repair loop.
   await publishCanonicalIdentityRoot(primary.device_id, primarySigningPublic);
 
   const rows = await Promise.all(companions.map((companion) =>
