@@ -3,14 +3,16 @@ import { AlertTriangle, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
 import { repairApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
+import { publishOwnSignedDeviceList } from '@/lib/crypto/signedDeviceList';
 import {
-  fetchVerifiedDeviceList,
-  publishOwnSignedDeviceList,
-  type DeviceVerificationResult,
-} from '@/lib/crypto/signedDeviceList';
-import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
-import { getCurrentDeviceId, hydrateDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
-import { resyncE2EE } from '@/lib/crypto/resyncE2EE';
+  getCurrentDeviceId,
+  hydrateDeviceId,
+  inspectDeviceHealth,
+  isDeviceIdTemporary,
+  requireAuthenticatedDeviceSession,
+  resyncE2EE,
+  runDeviceOperation,
+} from '@/lib/device-manager';
 
 interface PinValidatedMessagingProps {
   children: ReactNode;
@@ -28,27 +30,29 @@ type ValidationState =
       rejections: Record<string, number>;
     };
 
-const RETRY_DELAYS_MS = [0, 500, 1_500, 3_000, 5_000] as const;
+const RETRY_DELAYS_MS = [0, 750, 2_000] as const;
 
 function sleep(ms: number): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function rejectionCounts(results: DeviceVerificationResult[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const result of results) {
-    if (result.ok) continue;
-    const reason = result.reason ?? 'UNKNOWN';
-    counts[reason] = (counts[reason] ?? 0) + 1;
+function reasonForHealth(report: Awaited<ReturnType<typeof inspectDeviceHealth>>): string {
+  if (report.lifecycle !== 'approved') {
+    return `Cycle de vie de l’appareil : ${report.lifecycle}.`;
   }
-  return counts;
+  if (!report.trusted) {
+    return 'L’appareil courant n’est pas signé par la clé restaurée avec le PIN.';
+  }
+  if (!report.hasSignedPrekey) {
+    return 'La préclé signée de cet appareil est absente ou expirée.';
+  }
+  return 'Appareil non validé après restauration du PIN.';
 }
 
 /**
- * PIN is the account-key unlock boundary. Messaging is exposed only after the
- * restored Ed25519 account identity has repaired/published the signed device
- * list and the current installation has a valid Signed PreKey.
+ * PIN is the account-key unlock boundary. The whole repair/publish/health pass
+ * is serialized by Device Manager, so auth mount, resume and PIN unlock can no
+ * longer generate competing DeviceIDs or SPKs.
  */
 export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) {
   const { user } = useAuth();
@@ -69,54 +73,51 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
     }
 
     setState({ status: 'checking', attempt: 0 });
-    let lastVerified: Awaited<ReturnType<typeof fetchVerifiedDeviceList>> | null = null;
     let currentDeviceId = '';
     let lastReason = 'Appareil non validé après restauration du PIN.';
+    let lastHealth: Awaited<ReturnType<typeof inspectDeviceHealth>> | null = null;
 
     for (let index = 0; index < RETRY_DELAYS_MS.length; index += 1) {
       await sleep(RETRY_DELAYS_MS[index]);
       setState({ status: 'checking', attempt: index + 1 });
 
       try {
-        await hydrateDeviceId();
-        currentDeviceId = getCurrentDeviceId();
-        if (!currentDeviceId || isDeviceIdTemporary()) {
-          lastReason = 'Identifiant d’appareil encore temporaire.';
-          continue;
-        }
+        const result = await runDeviceOperation(`pin-validation:${user.id}`, async () => {
+          await requireAuthenticatedDeviceSession(user.id);
+          await hydrateDeviceId();
+          const deviceId = getCurrentDeviceId();
+          if (!deviceId || isDeviceIdTemporary()) {
+            throw new Error('Identifiant d’appareil encore temporaire.');
+          }
 
-        await resyncE2EE(user.id);
-        const repaired = await repairApprovedDeviceTrust(user.id);
-        const published = await publishOwnSignedDeviceList();
-        if (!published.ok) {
-          lastReason = `Publication de la liste signée refusée : ${published.error ?? 'erreur inconnue'}`;
-          continue;
-        }
+          await resyncE2EE(user.id);
+          const repaired = await repairApprovedDeviceTrust(user.id);
+          const published = await publishOwnSignedDeviceList();
+          if (!published.ok) {
+            throw new Error(`Publication de la liste signée refusée : ${published.error ?? 'erreur inconnue'}`);
+          }
 
-        lastVerified = await fetchVerifiedDeviceList(user.id);
-        const currentTrusted = lastVerified.trusted.some(
-          (device) => device.deviceId === currentDeviceId,
-        );
-        const signedPrekey = await peekDeviceSignedPrekey(user.id, currentDeviceId).catch(() => null);
+          const health = await inspectDeviceHealth(user.id, deviceId);
+          return { deviceId, repaired, published, health };
+        }, { coalesce: true });
 
-        console.info('[PIN-DEVTRUST] validation after PIN unlock', {
+        currentDeviceId = result.deviceId;
+        lastHealth = result.health;
+        console.info('[PIN-DEVTRUST] managed validation after PIN unlock', {
           userId: user.id.slice(0, 8),
           currentDeviceId: currentDeviceId.slice(0, 8),
-          repaired,
-          published: published.ok,
-          total: lastVerified.verifications.length,
-          trusted: lastVerified.trusted.length,
-          currentTrusted,
-          hasSignedPrekey: Boolean(signedPrekey),
-          reasons: rejectionCounts(lastVerified.verifications),
+          repaired: result.repaired,
+          published: result.published.ok,
+          lifecycle: result.health.lifecycle,
+          total: result.health.totalCount,
+          trusted: result.health.trustedCount,
+          currentTrusted: result.health.trusted,
+          hasSignedPrekey: result.health.hasSignedPrekey,
+          reasons: result.health.rejectionReasons,
         });
 
-        if (!currentTrusted) {
-          lastReason = 'L’appareil courant n’est pas signé par la clé restaurée avec le PIN.';
-          continue;
-        }
-        if (!signedPrekey) {
-          lastReason = 'La préclé signée de cet appareil est absente ou expirée.';
+        if (!result.health.ready) {
+          lastReason = reasonForHealth(result.health);
           continue;
         }
 
@@ -127,11 +128,9 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
           window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
             detail: { reason: 'pin_device_trust_validated' },
           }));
-        } catch {
-          // UI wakeups are best-effort after cryptographic validation succeeds.
-        }
+        } catch {}
 
-        setState({ status: 'ready', trustedCount: lastVerified.trusted.length });
+        setState({ status: 'ready', trustedCount: result.health.trustedCount });
         return;
       } catch (error) {
         lastReason = error instanceof Error ? error.message : String(error);
@@ -142,9 +141,9 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
       status: 'failed',
       reason: lastReason,
       currentDeviceId,
-      trustedCount: lastVerified?.trusted.length ?? 0,
-      totalCount: lastVerified?.verifications.length ?? 0,
-      rejections: rejectionCounts(lastVerified?.verifications ?? []),
+      trustedCount: lastHealth?.trustedCount ?? 0,
+      totalCount: lastHealth?.totalCount ?? 0,
+      rejections: lastHealth?.rejectionReasons ?? {},
     });
   }, [user?.id, runId]);
 
