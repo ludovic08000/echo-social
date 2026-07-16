@@ -17,9 +17,9 @@
  *
  * SAFETY:
  *   - All failures degrade silently to `null`; the caller falls back to the
- *     legacy pairwise ratchet path so messages are never lost.
- *   - The flag check is cached for 30s to avoid hammering the DB on every
- *     keystroke encrypt.
+ *     pairwise ratchet path so messages are never lost.
+ *   - The flag check is cached and can be prewarmed when the chat opens, so a
+ *     database read is never part of the common click-to-encrypt path.
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
@@ -39,8 +39,10 @@ interface ActiveDevice {
   devicePublicKey: string;
 }
 
-const FLAG_TTL_MS = 30_000;
+const FLAG_ENABLED_TTL_MS = 30_000;
+const FLAG_DISABLED_TTL_MS = 10 * 60_000;
 const flagCache = new Map<string, { enabled: boolean; ts: number }>();
+const flagPromises = new Map<string, Promise<boolean>>();
 
 /** Versions of (conversationId, deviceId) for which we already fanned out the
  *  current chain snapshot. Lets us skip the SKDM fanout on every send while
@@ -58,10 +60,7 @@ function snapshotFingerprint(s: OwnerState): string {
   return s.signingPubB64;
 }
 
-async function isSenderKeysEnabled(conversationId: string): Promise<boolean> {
-  const cached = flagCache.get(conversationId);
-  const now = Date.now();
-  if (cached && now - cached.ts < FLAG_TTL_MS) return cached.enabled;
+async function fetchSenderKeysFlag(conversationId: string): Promise<boolean> {
   try {
     const { data } = await supabase
       .from('conversations')
@@ -69,16 +68,43 @@ async function isSenderKeysEnabled(conversationId: string): Promise<boolean> {
       .eq('id', conversationId)
       .maybeSingle();
     const enabled = !!(data as any)?.enable_sender_keys;
-    flagCache.set(conversationId, { enabled, ts: now });
+    flagCache.set(conversationId, { enabled, ts: Date.now() });
     return enabled;
   } catch {
+    flagCache.set(conversationId, { enabled: false, ts: Date.now() });
     return false;
   }
+}
+
+async function isSenderKeysEnabled(conversationId: string): Promise<boolean> {
+  const cached = flagCache.get(conversationId);
+  const now = Date.now();
+  if (cached) {
+    const ttl = cached.enabled ? FLAG_ENABLED_TTL_MS : FLAG_DISABLED_TTL_MS;
+    if (now - cached.ts < ttl) return cached.enabled;
+  }
+
+  const existing = flagPromises.get(conversationId);
+  if (existing) return existing;
+
+  const promise = fetchSenderKeysFlag(conversationId)
+    .finally(() => {
+      if (flagPromises.get(conversationId) === promise) flagPromises.delete(conversationId);
+    });
+  flagPromises.set(conversationId, promise);
+  return promise;
+}
+
+/** Warm the opt-in flag while the conversation is opening. */
+export async function prewarmSenderKeysFlag(conversationId: string): Promise<void> {
+  if (!conversationId) return;
+  await isSenderKeysEnabled(conversationId);
 }
 
 /** Manually invalidate the cached flag (used when the UI toggles it). */
 export function invalidateSenderKeysFlag(conversationId: string): void {
   flagCache.delete(conversationId);
+  flagPromises.delete(conversationId);
   // Force re-fanout of SKDM after a manual rotation/toggle.
   for (const k of Array.from(lastDistributedSnapshot.keys())) {
     if (k.startsWith(`${conversationId}::`)) lastDistributedSnapshot.delete(k);
