@@ -15,11 +15,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { useMessageEdit } from '@/hooks/useMessageEdit';
 import { isEditableTextContent } from '@/lib/messaging/messageEdits';
 import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
-import {
-  getDecryptRecoveryAttempt,
-  registerDecryptRecovery,
-  wakeDecryptRecovery,
-} from '@/lib/messaging/decryptRecoveryQueue';
 import { setMediaKey } from './mediaKeyCache';
 import {
   resolvePlaintext,
@@ -59,6 +54,7 @@ interface DecryptedMessageBodyProps {
   hasMedia?: boolean;
 }
 
+const SILENT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000];
 const RECOVERY_UNAVAILABLE_AFTER_MS = 15_000;
 
 function initialOutcomeFor(
@@ -97,7 +93,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const [draft, setDraft] = useState('');
   const [localEditedText, setLocalEditedText] = useState<string | null>(null);
 
-  const recoveryKey = messageId ?? `body:${body}`;
   const messageEdit = useMessageEdit(
     messageId,
     Boolean(isEncryptionActive && messageId),
@@ -105,6 +100,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
+  const silentRetryAttemptRef = useRef(0);
   const identityRef = useRef(messageId ?? body);
   const mountedAtRef = useRef(Date.now());
   const lastGoodOutcomeRef = useRef<DecryptionOutcome | null>(
@@ -167,7 +163,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       reason,
       details: {
         retryTick,
-        attempt: getDecryptRecoveryAttempt(recoveryKey),
+        attempt: silentRetryAttemptRef.current,
       },
     });
   };
@@ -184,6 +180,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     setPending(next.pending);
     setRecoveryExpired(false);
     setLocalEditedText(null);
+    silentRetryAttemptRef.current = 0;
     bubbleDiagnostic('UNKNOWN', {
       messageId,
       reason: 'bubble_identity_changed_without_unmount',
@@ -207,13 +204,13 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         reason: 'recovery_timeout_15s',
         details: {
           retryTick,
-          attempts: getDecryptRecoveryAttempt(recoveryKey),
+          attempts: silentRetryAttemptRef.current,
           hasLastGood: Boolean(lastGoodOutcomeRef.current),
         },
       });
     }, RECOVERY_UNAVAILABLE_AFTER_MS);
     return () => window.clearTimeout(timer);
-  }, [body, messageId, outcome, pending, recoveryKey, retryTick]);
+  }, [body, messageId, outcome, pending, retryTick]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -229,33 +226,38 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         },
       });
       clearNegativeCache(messageId, body);
-      wakeDecryptRecovery(recoveryKey, false);
       setRecoveryExpired(false);
       setRetryTick((tick) => tick + 1);
     };
     window.addEventListener('forsure-decrypt-retry', handler);
     return () => window.removeEventListener('forsure-decrypt-retry', handler);
-  }, [messageId, body, pending, recoveryKey]);
+  }, [messageId, body, pending]);
 
   useEffect(() => {
-    if (!looksEncrypted(body) || !pending || outcome !== null) return;
+    if (!looksEncrypted(body) || !pending || outcome !== null) {
+      silentRetryAttemptRef.current = 0;
+      return;
+    }
 
-    return registerDecryptRecovery(
-      recoveryKey,
-      () => {
-        clearNegativeCache(messageId, body);
-        bubbleDiagnostic('DECRYPT_START', {
-          messageId,
-          reason: 'coordinated_recovery_retry',
-          details: {
-            attempt: getDecryptRecoveryAttempt(recoveryKey) + 1,
-          },
-        });
-        setRetryTick((tick) => tick + 1);
-      },
-      { priority: hasMedia ? 10 : 1 },
-    );
-  }, [body, hasMedia, messageId, outcome, pending, recoveryKey]);
+    const attempt = silentRetryAttemptRef.current;
+    if (attempt >= SILENT_RETRY_DELAYS_MS.length) return;
+
+    const timer = window.setTimeout(() => {
+      silentRetryAttemptRef.current = attempt + 1;
+      clearNegativeCache(messageId, body);
+      bubbleDiagnostic('DECRYPT_START', {
+        messageId,
+        reason: 'scheduled_silent_retry',
+        details: {
+          attempt: attempt + 1,
+          delayMs: SILENT_RETRY_DELAYS_MS[attempt],
+        },
+      });
+      setRetryTick((tick) => tick + 1);
+    }, SILENT_RETRY_DELAYS_MS[attempt]);
+
+    return () => window.clearTimeout(timer);
+  }, [body, messageId, outcome, pending, retryTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -362,7 +364,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const retryNow = () => {
     clearNegativeCache(messageId, body);
     setRecoveryExpired(false);
-    wakeDecryptRecovery(recoveryKey, true);
+    silentRetryAttemptRef.current = 0;
     bubbleDiagnostic('DECRYPT_START', {
       messageId,
       reason: 'manual_retry_clicked',
