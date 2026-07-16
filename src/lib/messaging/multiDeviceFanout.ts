@@ -28,6 +28,7 @@ import {
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
+import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 
 interface FanoutInput {
   messageId: string;
@@ -54,7 +55,7 @@ const X3DH_BOOTSTRAP_PREFIX_V5 = 'x3dh5.init.';
 const X3DH_BOOTSTRAP_ENVELOPE_V2 = 'v2';
 const X3DH_BOOTSTRAP_AAD_CONTEXT_V2 = 'ForSure-X3DH-v5-Sesame-bootstrap';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
-const FANOUT_ENCRYPT_CONCURRENCY = 4;
+const FANOUT_ENCRYPT_CONCURRENCY = 2;
 const DEVICE_COPY_ASYNC_FANOUT_GRACE_MS = 3000;
 const DEVICE_COPY_SELF_SENT_GRACE_MS = 3000;
 
@@ -711,8 +712,8 @@ interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 
 export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string, options: TryReadDeviceCopyOptions = {}): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = await getCachedAuthUserId();
+  if (!userId) return null;
   const shouldRequestRetry = options.requestRetry !== false;
 
   try {
@@ -723,7 +724,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
     } else {
       const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', { p_message_id: messageId });
       if (!allCopies || allCopies.length === 0) {
-        const gate = await getDeviceCopyGate(messageId, user.id, expectedSenderUserId);
+        const gate = await getDeviceCopyGate(messageId, userId, expectedSenderUserId);
         if (gate.defer) {
           logCryptoError({
             severity: 'info',
@@ -769,7 +770,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
       }
       const fallbackRows = filterCopyRowsByExpectedSender(allCopies as CopyRow[], expectedSenderUserId);
       const firstSender = fallbackRows[0] ?? (allCopies as CopyRow[])[0];
-      const gate = await getDeviceCopyGate(messageId, user.id, expectedSenderUserId ?? firstSender?.sender_user_id);
+      const gate = await getDeviceCopyGate(messageId, userId, expectedSenderUserId ?? firstSender?.sender_user_id);
       if (gate.defer) {
         logCryptoError({
           severity: 'info',
@@ -835,7 +836,7 @@ export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?
     const failedAttempts: Array<Record<string, string>> = [];
     for (const row of rows) {
       const targetDeviceId = row.recipient_device_id || myDeviceId;
-      const attempt = await tryDecryptCopy(row, user.id, targetDeviceId);
+      const attempt = await tryDecryptCopy(row, userId, targetDeviceId);
       if (attempt.plaintext !== null) return attempt.plaintext;
       if (!attempt.attemptedSupportedEnvelope) continue;
 

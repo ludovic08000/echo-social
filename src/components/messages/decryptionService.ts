@@ -36,6 +36,7 @@ import { routeIncoming } from '@/e2ee-session';
 import { supabase } from '@/integrations/supabase/client';
 import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiveKey';
 import type { DecryptResult } from '@/hooks/useE2EE';
+import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 
 export interface DecryptionOutcome {
   text: string;
@@ -305,6 +306,11 @@ export async function resolvePlaintext(opts: {
   if (!promise) {
     promise = (async (): Promise<DecryptionOutcome | null> => {
       let senderId: string | null = opts.senderId ?? null;
+      let authUserId: string | null | undefined;
+      const resolveAuthUserId = async (): Promise<string | null> => {
+        if (authUserId === undefined) authUserId = await getCachedAuthUserId();
+        return authUserId;
+      };
 
       if (!isMultiDeviceEnvelopeBody(body)) {
         try {
@@ -348,11 +354,11 @@ export async function resolvePlaintext(opts: {
 
       if (messageId) {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user && senderId) {
+          const userId = await resolveAuthUserId();
+          if (userId && senderId) {
             const routed = await routeIncoming({
               encryptedBody: body,
-              recipientUserId: user.id,
+              recipientUserId: userId,
               senderUserId: senderId,
               messageId,
             });
@@ -370,8 +376,8 @@ export async function resolvePlaintext(opts: {
       let archiveDecrypted = false;
       if (messageId) {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
+          const userId = await resolveAuthUserId();
+          if (userId) {
             const { data: row } = await supabase
               .from('messages')
               .select('archive_body, conversation_id')
@@ -393,7 +399,7 @@ export async function resolvePlaintext(opts: {
               }
               if (archiveBody && isArchivePayload(archiveBody)) {
                 archiveFound = true;
-                const plaintext = await decryptArchive(archiveBody, conversationId, user.id);
+                const plaintext = await decryptArchive(archiveBody, conversationId, userId);
                 if (plaintext !== null) {
                   archiveDecrypted = true;
                   const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);

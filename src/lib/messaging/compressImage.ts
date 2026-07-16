@@ -58,6 +58,8 @@ export async function compressImageForChat(file: File): Promise<File> {
     const blob: Blob | null = await new Promise(resolve =>
       canvas.toBlob(resolve, outMime, QUALITY)
     );
+    canvas.width = 1;
+    canvas.height = 1;
     if (!blob || blob.size >= file.size) return file;
 
     const newName = file.name.replace(/\.(heic|heif|png|webp|jpe?g)$/i, '') + outExt;

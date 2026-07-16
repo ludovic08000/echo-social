@@ -132,8 +132,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const e2ee = useE2EE(conversationId, peerUserId);
   const { data: recoveryState } = useQuery({
     queryKey: ['conversation-recovery-state', conversationId, user?.id ?? 'anon'],
-    enabled: !!conversationId && !!user && !isZeusConversation,
-    refetchOnMount: 'always',
+    enabled: !!conversationId && !!user && !isZeusConversation && !isLoading && (messages?.length ?? 0) === 0,
+    staleTime: 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: 'always',
     queryFn: async () => {
       if (!conversationId || !user) return null;
@@ -155,16 +157,18 @@ export function ChatView({ conversationId }: ChatViewProps) {
       const needsPinUnlock = !rawIdentityPresent && wrappedKeysPresent;
       const needsExplicitRestore = !rawIdentityPresent && !wrappedKeysPresent && hasServerBackup;
 
-      console.log('[messaging] conversation restore state', {
-        conversationId,
-        userId: user.id,
-        serverMessageCount,
-        rawIdentityPresent,
-        wrappedKeysPresent,
-        hasServerBackup,
-        needsPinUnlock,
-        needsExplicitRestore,
-      });
+      if (import.meta.env.DEV) {
+        console.debug('[messaging] conversation restore state', {
+          conversationId,
+          userId: user.id,
+          serverMessageCount,
+          rawIdentityPresent,
+          wrappedKeysPresent,
+          hasServerBackup,
+          needsPinUnlock,
+          needsExplicitRestore,
+        });
+      }
 
       return {
         serverMessageCount,
@@ -230,22 +234,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
     window.addEventListener('forsure-keys-restored', handler);
     return () => window.removeEventListener('forsure-keys-restored', handler);
   }, [bumpCache]);
-
-  // Warm-up: prefetch the ffmpeg.wasm chunk (~25 MB) lazily when the chat
-  // opens, so the first video the user picks doesn't have to wait for the
-  // CDN round-trip + wasm compile. Uses requestIdleCallback to avoid stealing
-  // CPU from the chat mount. Safe: pure module prefetch, no side effects.
-  useEffect(() => {
-    const idle = (cb: () => void) => {
-      const ric = (window as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
-      if (typeof ric === 'function') ric(cb);
-      else setTimeout(cb, 1500);
-    };
-    idle(() => {
-      void import('@/lib/messaging/compressVideo').catch(() => {});
-    });
-  }, []);
-
 
   // Message queue for encrypted sending.
   // STRICT: plaintext is allowed ONLY for the Zeus bot conversation.

@@ -15,7 +15,7 @@ const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 // A send may need the sender and recipient device lists. Re-verifying both over
 // the network before every message dominated warm-message latency. Keep only a
 // very short RAM cache; verification remains fail-closed and is refreshed often.
-const VERIFIED_DEVICE_CACHE_TTL_MS = 10_000;
+const VERIFIED_DEVICE_CACHE_TTL_MS = 30_000;
 
 interface DeviceListOptions {
   /**
@@ -107,7 +107,7 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
   // Trusted (signed) list only.
   try {
     const verified = await fetchVerifiedDeviceList(userId);
-    if (typeof console !== 'undefined') {
+    if (import.meta.env.DEV && typeof console !== 'undefined') {
       const reasons: Record<string, number> = {};
       for (const v of verified.verifications) {
         const k = `${v.reason ?? '?'}${v.ok ? '' : '!'}`;
