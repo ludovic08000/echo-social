@@ -1,0 +1,1047 @@
+name: PR30 production hardening
+
+on:
+  push:
+    branches:
+      - fix/encrypted-media-black-bubble
+    paths:
+      - .github/workflows/pr30-production-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/encrypted-media-black-bubble
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply production hardening
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one anchor, found {count}")
+              return text.replace(old, new, 1)
+
+          def replace_between(text: str, start: str, end: str, new: str, label: str) -> str:
+              start_index = text.find(start)
+              if start_index < 0:
+                  raise SystemExit(f"{label}: start anchor missing")
+              end_index = text.find(end, start_index + len(start))
+              if end_index < 0:
+                  raise SystemExit(f"{label}: end anchor missing")
+              return text[:start_index] + new + text[end_index:]
+
+          def remove_braced_if(text: str, marker: str, label: str) -> str:
+              start = text.find(marker)
+              if start < 0:
+                  raise SystemExit(f"{label}: marker missing")
+              brace = text.find('{', start)
+              if brace < 0:
+                  raise SystemExit(f"{label}: opening brace missing")
+              depth = 0
+              quote = None
+              escaped = False
+              i = brace
+              while i < len(text):
+                  ch = text[i]
+                  if quote is not None:
+                      if escaped:
+                          escaped = False
+                      elif ch == '\\':
+                          escaped = True
+                      elif ch == quote:
+                          quote = None
+                  else:
+                      if ch in ('"', "'", '`'):
+                          quote = ch
+                      elif ch == '{':
+                          depth += 1
+                      elif ch == '}':
+                          depth -= 1
+                          if depth == 0:
+                              end = i + 1
+                              while end < len(text) and text[end] in ' \t':
+                                  end += 1
+                              if end < len(text) and text[end] == '\n':
+                                  end += 1
+                              return text[:start] + text[end:]
+                  i += 1
+              raise SystemExit(f"{label}: closing brace missing")
+
+          # Durable outbox: persist exact transport material and device envelopes.
+          path = Path('src/lib/messaging/outboxVault.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "export interface OutboxPayload {\n  localId: string;\n  traceId: string;\n  conversationId: string;\n  senderId: string;\n  plaintext: string;\n  encryptedBody: string | null;",
+              "export interface OutboxPreparedCopy {\n  message_id: string;\n  recipient_user_id: string;\n  recipient_device_id: string;\n  sender_user_id: string;\n  sender_device_id: string;\n  encrypted_body: string;\n}\n\nexport interface OutboxPayload {\n  localId: string;\n  traceId: string;\n  conversationId: string;\n  senderId: string;\n  /** Human-readable text used by the optimistic bubble. */\n  plaintext: string;\n  /** Exact plaintext transported inside per-device envelopes (long-message pointer when applicable). */\n  transportPlaintext?: string | null;\n  /** Stable encrypted-only parent body sent to the server. */\n  encryptedBody: string | null;\n  /** Exact per-device envelopes, persisted before the RPC for crash-safe idempotent replay. */\n  preparedCopies?: OutboxPreparedCopy[];\n  /** Optional account-wrapped archive prepared before transport. */\n  archiveBody?: string | null;",
+              'outbox transport fields',
+          )
+          path.write_text(text)
+
+          # Move the authoritative send path into source code rather than Vite string injection.
+          path = Path('src/hooks/useMessageQueueSignal.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "import { buildFanoutCopies, insertFanoutCopyRows, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';\nimport { repairFanoutWithRetry } from '@/lib/messaging/fanoutRepair';",
+              "import { buildFanoutCopies, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';\nimport { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';\nimport { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';\nimport { getCurrentDeviceId } from '@/lib/messaging/currentDevice';",
+              'signal imports',
+          )
+          text = replace_between(
+              text,
+              "// Signal prepares recipient-device envelopes before transport.",
+              "function waitForInlineArchive",
+              "const INLINE_ARCHIVE_BUDGET_MS = 2_000;\n\n",
+              'remove abandoned fanout timeout',
+          )
+          text = replace_between(
+              text,
+              "function isMissingDeviceCopiesError",
+              "function encryptedPayloadKind",
+              "function isAmbiguousTransportError(error: unknown): boolean {\n  const text = normalizedErrorText(error);\n  if (text.includes('e2ee_') || text.includes('not_authenticated') || text.includes('permission denied')) return false;\n  return (\n    !asSupabaseErrorLike(error).code ||\n    text.includes('failed to fetch') ||\n    text.includes('networkerror') ||\n    text.includes('load failed') ||\n    text.includes('timeout') ||\n    text.includes('connection')\n  );\n}\n\nfunction isMultiDeviceParentBody(value: string | null | undefined): value is string {\n  if (!value) return false;\n  try {\n    const parsed = JSON.parse(value);\n    return parsed?.encryptionMode === 'multi_device' && parsed?.ct === 'device_copies';\n  } catch {\n    return false;\n  }\n}\n\nfunction encryptedPayloadKind",
+              'replace legacy fallback helpers',
+          )
+          old_restore = """        if (payload.reservedServerId && delivered.has(payload.reservedServerId)) {
+          try {
+            await repairFanoutWithRetry({
+              messageId: payload.reservedServerId,
+              conversationId: payload.conversationId,
+              senderUserId: payload.senderId,
+              plaintext: payload.plaintext,
+            });
+            await deleteOutboxPayload(payload.localId).catch(() => {});
+            dispatchDecryptRetry(payload.reservedServerId);
+            continue;
+          } catch (error) {
+            restored.push(toOutboundMessage({
+              ...payload,
+              status: 'retry_pending',
+              lastError: error instanceof Error ? error.message : 'Copies chiffrées à réparer.',
+            }));
+            continue;
+          }
+        }
+"""
+          new_restore = """        if (payload.reservedServerId && delivered.has(payload.reservedServerId)) {
+          // The authoritative RPC commits the parent and every expected device
+          // copy in one transaction. A visible parent therefore proves delivery;
+          // rebuilding copies here would advance the local ratchet a second time.
+          await deleteOutboxPayload(payload.localId).catch(() => {});
+          dispatchDecryptRetry(payload.reservedServerId);
+          continue;
+        }
+"""
+          text = replace_once(text, old_restore, new_restore, 'atomic outbox restore')
+
+          send_impl = r'''  const sendMessage = useCallback(async (
+    body: string,
+    imageUrl?: string | null,
+    extra?: SendExtra,
+    resumePayload?: OutboxPayload,
+  ) => {
+    const effectiveBody = inferMediaBody(body, imageUrl);
+    if (!user || (!effectiveBody.trim() && !imageUrl)) return;
+    if (resumePayload && resumePayload.conversationId !== conversationId) {
+      throw new Error('Outbox conversation mismatch.');
+    }
+
+    const isSpecial = isSpecialMessage(effectiveBody, imageUrl);
+    if (!isSpecial) {
+      const validation = validateMessage(effectiveBody);
+      if (!validation.valid) throw new Error(validation.error);
+    }
+
+    const sanitized = isSpecial ? effectiveBody : sanitizeMessageBody(effectiveBody);
+    const now = resumePayload?.createdAt ?? Date.now();
+    const traceStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const localId = resumePayload?.localId ?? `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
+    const traceId = resumePayload?.traceId ?? safeUUID();
+    const serverMessageId = resumePayload?.reservedServerId ?? safeUUID();
+    const trace = (stage: string, traceExtra: Record<string, unknown> = {}) => {
+      const elapsedMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceStartedAt);
+      console.info('[MSG_TRACE]', {
+        stage,
+        elapsedMs,
+        localId,
+        traceId,
+        conversationId,
+        userId: user.id,
+        encryptionWasRequested: isEncryptionActive && !allowPlaintext,
+        isEncryptionReady,
+        hasMedia: !!imageUrl,
+        resumed: Boolean(resumePayload),
+        ...traceExtra,
+      });
+    };
+
+    const optimistic: OutboundMessage = {
+      localId,
+      traceId,
+      conversationId,
+      senderId: user.id,
+      plaintext: sanitized,
+      encryptedBody: resumePayload?.encryptedBody ?? null,
+      imageUrl: imageUrl || null,
+      status: resumePayload ? 'retry_pending' : 'encrypting',
+      retryCount: resumePayload ? resumePayload.retryCount + 1 : 0,
+      maxRetries: resumePayload?.maxRetries ?? 3,
+      lastError: null,
+      createdAt: now,
+      updatedAt: Date.now(),
+      serverId: serverMessageId,
+    };
+    let outboxSnapshot: OutboxPayload = {
+      ...(resumePayload ?? {}),
+      ...optimistic,
+      extra: extra ?? resumePayload?.extra,
+      reservedServerId: serverMessageId,
+      transportPlaintext: resumePayload?.transportPlaintext ?? null,
+      preparedCopies: resumePayload?.preparedCopies ?? [],
+      archiveBody: resumePayload?.archiveBody ?? null,
+    };
+    setPendingMessages(prev => [...prev.filter(message => message.localId !== localId), optimistic]);
+
+    const persistOutbox = async (patch: Partial<OutboxPayload> = {}) => {
+      outboxSnapshot = { ...outboxSnapshot, ...patch, updatedAt: Date.now() };
+      await putOutboxPayload(user.id, outboxSnapshot);
+    };
+    const updatePending = (
+      patch: Partial<OutboundMessage>,
+      outboxPatch: Partial<OutboxPayload> = {},
+    ) => {
+      const updatedAt = Date.now();
+      outboxSnapshot = {
+        ...outboxSnapshot,
+        ...patch,
+        ...outboxPatch,
+        updatedAt,
+        reservedServerId: patch.serverId ?? outboxSnapshot.reservedServerId,
+      };
+      setPendingMessages(prev => prev.map(message =>
+        message.localId === localId ? { ...message, ...patch, updatedAt } : message,
+      ));
+      void putOutboxPayload(user.id, outboxSnapshot).catch(() => {});
+    };
+
+    trace('created', {
+      bodyLength: sanitized.length,
+      bodyBytes: utf8ByteLength(sanitized),
+      isSpecial,
+    });
+
+    try {
+      await Promise.all([
+        persistOutbox(),
+        savePlaintext(serverMessageId, sanitized),
+      ]);
+      onPlaintextCached?.(serverMessageId, sanitized);
+      trace('local_durable');
+    } catch (error) {
+      const message = 'Stockage local indisponible — message non envoyé.';
+      updatePending({ status: 'failed_visible', lastError: message });
+      throw error instanceof Error ? error : new Error(message);
+    }
+
+    const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
+    const resumedParent = isMultiDeviceParentBody(resumePayload?.encryptedBody)
+      ? resumePayload.encryptedBody
+      : null;
+    let transportPlaintext = resumePayload?.transportPlaintext ?? sanitized;
+    let bodyToStore = resumedParent ?? sanitized;
+    let encryptedSuccessfully = encryptionWasRequired && Boolean(resumedParent);
+    const requiresLongAttachment = !isSpecial && utf8ByteLength(sanitized) > MAX_INLINE_MESSAGE_BODY_BYTES;
+
+    if (requiresLongAttachment && !encryptionWasRequired) {
+      const error = new Error('Les messages de plus de 2 Kio nécessitent une conversation chiffrée.');
+      updatePending({ status: 'failed_visible', lastError: error.message });
+      throw error;
+    }
+
+    if (encryptionWasRequired) {
+      if (!isEncryptionReady) {
+        try {
+          trace('identity_cold_start');
+          await ensureUserE2EEIdentity(user.id, { waitForMaintenance: false });
+          trace('identity_cold_start_ready');
+        } catch (error) {
+          trace('identity_cold_start_failed_non_fatal', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (!encryptedSuccessfully) {
+        if (!encrypt) {
+          updatePending({ status: 'failed_visible', lastError: 'Chiffrement indisponible.' });
+          throw new Error('Chiffrement indisponible.');
+        }
+
+        if (requiresLongAttachment && !resumePayload?.transportPlaintext) {
+          try {
+            trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
+            const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
+            transportPlaintext = prepared.transportBody;
+            await persistOutbox({ transportPlaintext });
+            trace('long_message_upload_ready', {
+              previewBytes: utf8ByteLength(prepared.preview),
+              transportBytes: utf8ByteLength(transportPlaintext),
+            });
+          } catch (longMessageError) {
+            const message = longMessageError instanceof Error
+              ? longMessageError.message
+              : 'Préparation du message long impossible.';
+            updatePending({ status: 'failed_visible', lastError: message });
+            throw longMessageError instanceof Error ? longMessageError : new Error(message);
+          }
+        }
+
+        try {
+          trace('encrypt_start');
+          const encryptedPayload = await encrypt(transportPlaintext, localId);
+          if (!encryptedPayload || encryptedPayload === transportPlaintext) {
+            throw new Error('Chiffrement v5 indisponible.');
+          }
+
+          let verifiedEnvelope = encryptedPayload;
+          try {
+            const identityKeys = await getOrCreateIdentityKeys(user.id);
+            const publicBundle = await exportPublicKeyBundle(identityKeys);
+            verifiedEnvelope = await wrapOutboundSecureMessage({
+              userId: user.id,
+              fingerprint: publicBundle.fingerprint,
+              encryptedBody: encryptedPayload,
+              conversationId,
+              localId,
+            });
+          } catch {
+            // The authoritative per-device envelopes remain the delivery path.
+          }
+
+          bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
+          encryptedSuccessfully = true;
+          await persistOutbox({
+            encryptedBody: bodyToStore,
+            transportPlaintext,
+            preparedCopies: [],
+          });
+          updatePending({ encryptedBody: bodyToStore });
+          await savePlaintextForCiphertext(bodyToStore, sanitized);
+          trace('encrypted_ready_for_rpc', {
+            verifiedEnvelopeKind: encryptedPayloadKind(verifiedEnvelope),
+            parentBodyLength: bodyToStore.length,
+            longMessage: requiresLongAttachment,
+          });
+        } catch (encryptError) {
+          const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
+          const normalized = errMsg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const isSafetyMismatch = normalized.includes('cle de securite du contact modifiee') ||
+            normalized.includes('safety number changed') ||
+            normalized.includes('security key changed') ||
+            normalized.includes('verification obligatoire avant envoi') ||
+            normalized.includes('fingerprint changed');
+          if (isSafetyMismatch) {
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', {
+                detail: { conversationId, localId, reason: errMsg },
+              }));
+            } catch {}
+            updatePending({ status: 'failed_visible', lastError: errMsg });
+          } else {
+            updatePending({ encryptedBody: null, status: 'waiting_secure_channel', lastError: errMsg }, {
+              encryptedBody: null,
+              preparedCopies: [],
+            });
+          }
+          throw encryptError instanceof Error ? encryptError : new Error(errMsg);
+        }
+      } else {
+        await savePlaintextForCiphertext(bodyToStore, sanitized);
+      }
+    }
+
+    const fanoutInput = {
+      messageId: serverMessageId,
+      conversationId,
+      senderUserId: user.id,
+      plaintext: transportPlaintext,
+    };
+    let fanoutRows: FanoutCopyRow[] = encryptedSuccessfully
+      ? (resumePayload?.preparedCopies ?? []).filter(row => row.message_id === serverMessageId)
+      : [];
+
+    const archiveAllowed = isArchiveBackupEnabled() && shouldArchiveMessageBody({
+      sanitized,
+      isSpecial,
+      viewOnce: extra?.view_once,
+      encryptedSuccessfully,
+      encryptionWasRequired,
+    });
+    let inlineArchiveBody = resumePayload?.archiveBody ?? null;
+    const archivePromise = archiveAllowed && !inlineArchiveBody
+      ? encryptArchive(sanitized, conversationId, user.id).catch(() => null)
+      : Promise.resolve(inlineArchiveBody);
+
+    if (encryptedSuccessfully) {
+      updatePending({
+        status: 'waiting_secure_channel',
+        serverId: serverMessageId,
+        lastError: fanoutRows.length > 0
+          ? 'Confirmation sécurisée de l’envoi…'
+          : 'Préparation des copies chiffrées du destinataire…',
+      });
+
+      if (fanoutRows.length === 0) {
+        try {
+          const fanout = await buildFanoutCopies(fanoutInput);
+          if (!fanout.hasTargets || fanout.rows.length === 0) {
+            throw new Error('Canal sécurisé du destinataire en cours de préparation.');
+          }
+          fanoutRows = fanout.rows;
+        } catch (error) {
+          await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
+          await persistOutbox({ preparedCopies: [] });
+          const message = error instanceof Error
+            ? error.message
+            : 'Canal sécurisé du destinataire en cours de préparation.';
+          updatePending({ status: 'waiting_secure_channel', lastError: message }, { preparedCopies: [] });
+          throw error instanceof Error ? error : new Error(message);
+        }
+      }
+
+      inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
+      await persistOutbox({
+        transportPlaintext,
+        encryptedBody: bodyToStore,
+        preparedCopies: fanoutRows,
+        archiveBody: inlineArchiveBody,
+      });
+    } else if (archiveAllowed) {
+      inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
+      await persistOutbox({ archiveBody: inlineArchiveBody });
+    }
+
+    updatePending({ status: 'sending', serverId: serverMessageId, lastError: null });
+
+    const rpcExtra = { ...(extra || {}) } as Record<string, unknown>;
+    if (encryptedSuccessfully) rpcExtra.body_kind = 'multi_device';
+    if (inlineArchiveBody) rpcExtra.archive_body = inlineArchiveBody;
+
+    let sendResult: Awaited<ReturnType<typeof sendMessageWithSesameRetry>>;
+    try {
+      sendResult = await sendMessageWithSesameRetry({
+        messageId: serverMessageId,
+        conversationId,
+        body: bodyToStore,
+        imageUrl: imageUrl || null,
+        extra: rpcExtra,
+        senderUserId: user.id,
+        senderDeviceId: getCurrentDeviceId(),
+        initialCopies: fanoutRows,
+        rebuildCopies: async () => {
+          const rebuilt = await buildFanoutCopies(fanoutInput);
+          if (!rebuilt.hasTargets || rebuilt.rows.length === 0) {
+            throw new Error('E2EE_DEVICE_LIST_UNAVAILABLE');
+          }
+          fanoutRows = rebuilt.rows;
+          await persistOutbox({ preparedCopies: fanoutRows });
+          return fanoutRows;
+        },
+      });
+    } catch (error) {
+      await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
+      await persistOutbox({ preparedCopies: [] });
+      const visibleMessage = isAuthenticationError(error)
+        ? 'Session expirée — reconnectez-vous pour envoyer.'
+        : error instanceof Error ? error.message : 'Échec du transport chiffré.';
+      updatePending({
+        status: isAuthenticationError(error) ? 'failed_visible' : 'retry_pending',
+        lastError: visibleMessage,
+      }, { preparedCopies: [] });
+      throw error instanceof Error ? error : new Error(visibleMessage);
+    }
+
+    fanoutRows = sendResult.copies;
+    if (sendResult.error) {
+      const ambiguous = isAmbiguousTransportError(sendResult.error);
+      const normalizedError = normalizeSupabaseError(sendResult.error);
+      const visibleMessage = isAuthenticationError(sendResult.error)
+        ? 'Session expirée — reconnectez-vous pour envoyer.'
+        : ambiguous
+          ? 'Confirmation réseau en attente — nouvel essai automatique.'
+          : normalizedError.message;
+      const retainedCopies = ambiguous ? fanoutRows : [];
+      await persistOutbox({ preparedCopies: retainedCopies });
+      updatePending({
+        status: isAuthenticationError(sendResult.error) ? 'failed_visible' : 'retry_pending',
+        lastError: visibleMessage,
+      }, { preparedCopies: retainedCopies });
+      throw new Error(visibleMessage);
+    }
+
+    const data = { id: sendResult.data || serverMessageId };
+    trace('message_inserted', {
+      serverId: data.id,
+      method: sendResult.usedCompatibilitySignature
+        ? 'sesame_compatibility_rpc'
+        : 'sesame_authoritative_rpc',
+      retriedStaleRoute: sendResult.retriedStaleRoute,
+      copyCount: fanoutRows.length,
+      longMessage: requiresLongAttachment,
+    });
+
+    if (!isSpecial) recordSentMessage(sanitized);
+    onPlaintextCached?.(data.id, sanitized);
+    if (encryptedSuccessfully) {
+      await Promise.all([
+        savePlaintext(data.id, sanitized),
+        savePlaintextForCiphertext(bodyToStore, sanitized),
+      ]);
+      dispatchDecryptRetry(data.id);
+    }
+
+    if (archiveAllowed && !inlineArchiveBody) {
+      void archivePromise
+        .then(async archived => {
+          if (!archived) return;
+          const stored = await setMessageArchiveBody(data.id, archived);
+          if (stored) dispatchDecryptRetry(data.id);
+        })
+        .catch(() => {});
+    }
+
+    const sentMessage: SentMessageSnapshot = {
+      id: data.id,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      body: bodyToStore,
+      image_url: imageUrl || null,
+      created_at: new Date().toISOString(),
+      status: 'delivered',
+      profile: {
+        name: user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'Moi',
+        avatar_url: user.user_metadata?.avatar_url || null,
+      },
+    };
+    const upsertSentMessage = (old: SentMessageSnapshot[] | undefined) => {
+      if (!Array.isArray(old)) return [sentMessage];
+      if (old.some(message => message?.id === data.id)) return old;
+      return [...old, sentMessage];
+    };
+    queryClient.setQueryData<SentMessageSnapshot[]>(['messages', conversationId, user.id], upsertSentMessage);
+    queryClient.setQueriesData<SentMessageSnapshot[]>({ queryKey: ['messages', conversationId] }, upsertSentMessage);
+
+    await deleteOutboxPayload(localId).catch(() => {});
+    setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+    void Promise.resolve(onMessageSent?.(localId)).catch(callbackError => {
+      console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
+    });
+    scheduleLightConversationRefresh(queryClient);
+  }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
+
+'''
+          text = replace_between(
+              text,
+              "  const sendMessage = useCallback",
+              "  const retryMessage = useCallback",
+              send_impl,
+              'replace production send coordinator',
+          )
+
+          retry_impl = r'''  const retryMessage = useCallback(async (localId: string) => {
+    if (!user) return;
+    const payload = await getOutboxPayload(user.id, localId);
+    if (!payload) return;
+
+    if (payload.reservedServerId) {
+      const { data } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('id', payload.reservedServerId)
+        .maybeSingle();
+      if (data?.id) {
+        // Parent + copies are atomic in the authoritative RPC. Do not rebuild or
+        // re-encrypt a message that the server has already committed.
+        await deleteOutboxPayload(localId).catch(() => {});
+        setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+        dispatchDecryptRetry(data.id);
+        return;
+      }
+    }
+
+    await sendMessage(payload.plaintext, payload.imageUrl, payload.extra, payload);
+  }, [sendMessage, user]);
+
+'''
+          text = replace_between(
+              text,
+              "  const retryMessage = useCallback",
+              "  const removeMessage = useCallback",
+              retry_impl,
+              'replace idempotent retry',
+          )
+          path.write_text(text)
+
+          # The source now owns the send protocol; remove the corresponding Vite code generator.
+          path = Path('vite.config.ts')
+          text = path.read_text()
+          text = remove_braced_if(
+              text,
+              '      if (cleanId.endsWith("/src/hooks/useMessageQueueSignal.ts")) {',
+              'remove Vite send-code injection',
+          )
+          path.write_text(text)
+
+          # Media MIME and size hardening.
+          path = Path('src/lib/crypto/mediaEncrypt.ts')
+          text = path.read_text()
+          old_ftyp = """  if (ascii(bytes, 4, 4) === 'ftyp') {
+    const brand = ascii(bytes, 8, 4).toLowerCase();
+    if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(brand)) return 'image/heic';
+    if (['avif', 'avis'].includes(brand)) return 'image/avif';
+    if (brand === 'qt  ') return 'video/quicktime';
+    return 'video/mp4';
+  }
+"""
+          new_ftyp = """  if (ascii(bytes, 4, 4) === 'ftyp') {
+    const brands = new Set<string>();
+    for (let offset = 8; offset + 4 <= Math.min(bytes.byteLength, 64); offset += 4) {
+      brands.add(ascii(bytes, offset, 4).toLowerCase());
+    }
+    if (brands.has('avif') || brands.has('avis')) return 'image/avif';
+    if ([...brands].some(brand => ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(brand))) {
+      return 'image/heic';
+    }
+    if (brands.has('qt  ')) return 'video/quicktime';
+    return 'video/mp4';
+  }
+"""
+          text = replace_once(text, old_ftyp, new_ftyp, 'ISO BMFF compatible brands')
+          old_unpack = """  const mime = normalizeMimeType(textDecoder.decode(decrypted.slice(PAYLOAD_HEADER_BYTES, dataOffset)));
+  const fileBytes = decrypted.slice(dataOffset);
+  const sniffed = detectMediaMimeType(fileBytes);
+  return {
+    data: copyToArrayBuffer(fileBytes),
+    mimeType: mime === 'application/octet-stream' ? sniffed : mime,
+  };
+"""
+          new_unpack = """  const declaredMime = normalizeMimeType(textDecoder.decode(decrypted.slice(PAYLOAD_HEADER_BYTES, dataOffset)));
+  const fileBytes = decrypted.slice(dataOffset);
+  const sniffedMime = detectMediaMimeType(fileBytes);
+  // The authenticated manifest is useful metadata, but byte signatures are the
+  // final rendering authority. This prevents a mislabeled video from entering
+  // an <img> loop and handles iOS files whose Blob.type is generic or wrong.
+  const resolvedMime = sniffedMime || (declaredMime === 'application/octet-stream' ? null : declaredMime);
+  return {
+    data: copyToArrayBuffer(fileBytes),
+    mimeType: resolvedMime,
+  };
+"""
+          text = replace_once(text, old_unpack, new_unpack, 'MIME signature authority')
+          old_import = """export async function importMediaKey(keyB64: string): Promise<CryptoKey> {
+  const raw = base64ToBuffer(keyB64);
+  return hardCrypto.importKey(
+"""
+          new_import = """export async function importMediaKey(keyB64: string): Promise<CryptoKey> {
+  const raw = base64ToBuffer(keyB64);
+  if (raw.byteLength !== KEY_BITS / 8) throw new Error('Clé de média AES-256 invalide.');
+  return hardCrypto.importKey(
+"""
+          text = replace_once(text, old_import, new_import, 'media key length')
+          old_encrypt = """export async function encryptMedia(
+  file: File | Blob,
+  key: CryptoKey,
+): Promise<Blob> {
+  const fileBytes = new Uint8Array(await file.arrayBuffer());
+  const plaintext = packMediaPayload(file, fileBytes);
+
+  if (isOutgoingAttachmentTooLarge(plaintext.byteLength)) {
+"""
+          new_encrypt = """export async function encryptMedia(
+  file: File | Blob,
+  key: CryptoKey,
+): Promise<Blob> {
+  const mimeBytes = textEncoder.encode(normalizeMimeType(file.type));
+  const estimatedPlaintextBytes = PAYLOAD_HEADER_BYTES + mimeBytes.byteLength + file.size;
+  // Reject before arrayBuffer(): Safari/iOS must never allocate an oversized
+  // clear file only to discover the limit after the allocation.
+  if (isOutgoingAttachmentTooLarge(estimatedPlaintextBytes)) {
+    throw new Error(
+      `Média trop volumineux : le fichier chiffré ne doit pas dépasser ${formatAttachmentLimit(MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES)}.`,
+    );
+  }
+
+  const fileBytes = new Uint8Array(await file.arrayBuffer());
+  const plaintext = packMediaPayload(file, fileBytes);
+
+  if (isOutgoingAttachmentTooLarge(plaintext.byteLength)) {
+"""
+          text = replace_once(text, old_encrypt, new_encrypt, 'pre-allocation media size gate')
+          path.write_text(text)
+
+          # Reference-counted decrypted-media cache. Retired URLs remain valid
+          # until the last mounted bubble releases them.
+          Path('src/components/messages/decryptedMediaCache.ts').write_text(r'''/**
+ * LRU cache of decrypted media object URLs, keyed by encrypted URL + media key.
+ * Mounted media retain their exact entry. Retiring a cache entry never revokes
+ * an object URL until its final mounted consumer releases it.
+ */
+
+const MAX_ENTRIES = 80;
+
+export interface DecryptedMediaEntry {
+  objectUrl: string;
+  isVideo: boolean;
+  refs: number;
+  retired?: boolean;
+  revoked?: boolean;
+}
+
+type Listener = (entry: DecryptedMediaEntry) => void;
+
+const store = new Map<string, DecryptedMediaEntry>();
+const listeners = new Map<string, Set<Listener>>();
+const cloneInflight = new Map<string, Promise<void>>();
+
+function revokeEntry(entry: DecryptedMediaEntry): void {
+  if (entry.revoked) return;
+  entry.revoked = true;
+  try { URL.revokeObjectURL(entry.objectUrl); } catch { /* noop */ }
+}
+
+function touch(cacheKey: string, entry: DecryptedMediaEntry): void {
+  store.delete(cacheKey);
+  store.set(cacheKey, entry);
+}
+
+function notify(cacheKey: string, entry: DecryptedMediaEntry): void {
+  listeners.get(cacheKey)?.forEach(listener => {
+    try { listener(entry); } catch { /* noop */ }
+  });
+}
+
+function retireEntry(entry: DecryptedMediaEntry): void {
+  entry.retired = true;
+  if (entry.refs === 0) revokeEntry(entry);
+}
+
+function trim(): void {
+  if (store.size <= MAX_ENTRIES) return;
+  for (const [key, entry] of store) {
+    if (store.size <= MAX_ENTRIES) break;
+    if (entry.refs > 0) continue;
+    store.delete(key);
+    cloneInflight.delete(key);
+    retireEntry(entry);
+  }
+}
+
+async function cloneTransientObjectUrl(
+  cacheKey: string,
+  sourceUrl: string,
+  isVideo: boolean,
+): Promise<void> {
+  try {
+    const response = await fetch(sourceUrl);
+    if (!response.ok) return;
+    const blob = await response.blob();
+    const clonedUrl = URL.createObjectURL(blob);
+    const current = store.get(cacheKey);
+    if (!current || current.objectUrl !== sourceUrl) {
+      try { URL.revokeObjectURL(clonedUrl); } catch { /* noop */ }
+      return;
+    }
+
+    const replacement: DecryptedMediaEntry = {
+      objectUrl: clonedUrl,
+      isVideo,
+      refs: current.refs,
+    };
+    current.retired = true;
+    // The transient source URL belongs to the upload placeholder and is revoked
+    // by its owner, so the cache must not revoke it here.
+    touch(cacheKey, replacement);
+    notify(cacheKey, replacement);
+  } catch {
+    // EncryptedMedia falls back to downloading/decrypting the encrypted object.
+  } finally {
+    cloneInflight.delete(cacheKey);
+  }
+}
+
+export function getDecryptedMedia(cacheKey: string): DecryptedMediaEntry | undefined {
+  const entry = store.get(cacheKey);
+  if (!entry || entry.revoked) return undefined;
+  touch(cacheKey, entry);
+  return entry;
+}
+
+export function rememberDecryptedMedia(
+  cacheKey: string,
+  objectUrl: string,
+  isVideo: boolean,
+  transient = true,
+): void {
+  const existing = store.get(cacheKey);
+  if (existing && !existing.revoked) {
+    touch(cacheKey, existing);
+    if (existing.objectUrl !== objectUrl && !transient) {
+      try { URL.revokeObjectURL(objectUrl); } catch { /* noop */ }
+    }
+    return;
+  }
+
+  const entry: DecryptedMediaEntry = { objectUrl, isVideo, refs: 0 };
+  store.set(cacheKey, entry);
+  trim();
+
+  if (transient && objectUrl.startsWith('blob:') && !cloneInflight.has(cacheKey)) {
+    const task = cloneTransientObjectUrl(cacheKey, objectUrl, isVideo);
+    cloneInflight.set(cacheKey, task);
+  }
+}
+
+export function subscribeDecryptedMedia(
+  cacheKey: string,
+  listener: Listener,
+): () => void {
+  let set = listeners.get(cacheKey);
+  if (!set) {
+    set = new Set();
+    listeners.set(cacheKey, set);
+  }
+  set.add(listener);
+  return () => {
+    const current = listeners.get(cacheKey);
+    if (!current) return;
+    current.delete(listener);
+    if (current.size === 0) listeners.delete(cacheKey);
+  };
+}
+
+/** Retain the exact entry and return a release closure bound to that entry. */
+export function retainDecryptedMedia(cacheKey: string): (() => void) | undefined {
+  const entry = store.get(cacheKey);
+  if (!entry || entry.revoked) return undefined;
+  entry.refs += 1;
+  touch(cacheKey, entry);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    entry.refs = Math.max(0, entry.refs - 1);
+    if (entry.retired && entry.refs === 0) revokeEntry(entry);
+    trim();
+  };
+}
+
+/** Backward-compatible release for call sites that do not retain closures. */
+export function releaseDecryptedMedia(cacheKey: string): void {
+  const entry = store.get(cacheKey);
+  if (!entry) return;
+  entry.refs = Math.max(0, entry.refs - 1);
+  if (entry.retired && entry.refs === 0) revokeEntry(entry);
+  trim();
+}
+
+/** Retire one stale/dead URL without breaking another mounted consumer. */
+export function forgetDecryptedMedia(cacheKey: string): void {
+  const entry = store.get(cacheKey);
+  if (!entry) return;
+  store.delete(cacheKey);
+  cloneInflight.delete(cacheKey);
+  retireEntry(entry);
+}
+
+export function clearDecryptedMediaCache(): void {
+  for (const entry of store.values()) retireEntry(entry);
+  store.clear();
+  cloneInflight.clear();
+}
+
+export const __test__ = { trim, cloneTransientObjectUrl };
+''')
+
+          # Bind media cache/download identity to both encrypted object and key.
+          path = Path('src/components/messages/EncryptedMedia.tsx')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "  retainDecryptedMedia,\n  releaseDecryptedMedia,\n  subscribeDecryptedMedia,",
+              "  retainDecryptedMedia,\n  subscribeDecryptedMedia,",
+              'remove unbound media release',
+          )
+          text = replace_once(
+              text,
+              "  const cached = getDecryptedMedia(encryptedUrl);",
+              "  const mediaCacheKey = `${encryptedUrl}\\x00${mediaKeyB64}`;\n  const cached = getDecryptedMedia(mediaCacheKey);",
+              'media key-bound cache identity',
+          )
+          text = text.replace('forgetDecryptedMedia(encryptedUrl)', 'forgetDecryptedMedia(mediaCacheKey)')
+          text = text.replace('getDecryptedMedia(encryptedUrl)', 'getDecryptedMedia(mediaCacheKey)')
+          text = text.replace('rememberDecryptedMedia(encryptedUrl,', 'rememberDecryptedMedia(mediaCacheKey,')
+          text = text.replace('subscribeDecryptedMedia(encryptedUrl,', 'subscribeDecryptedMedia(mediaCacheKey,')
+          text = text.replace('queueMediaDownload(encryptedUrl,', 'queueMediaDownload(mediaCacheKey,')
+          old_retain = """  useEffect(() => {
+    if (!objectUrl) return;
+    const hit = getDecryptedMedia(mediaCacheKey);
+    if (!hit || hit.objectUrl !== objectUrl) return;
+    retainDecryptedMedia(encryptedUrl);
+    return () => releaseDecryptedMedia(encryptedUrl);
+  }, [encryptedUrl, objectUrl]);
+"""
+          new_retain = """  useEffect(() => {
+    if (!objectUrl) return;
+    const hit = getDecryptedMedia(mediaCacheKey);
+    if (!hit || hit.objectUrl !== objectUrl) return;
+    return retainDecryptedMedia(mediaCacheKey);
+  }, [mediaCacheKey, objectUrl]);
+"""
+          text = replace_once(text, old_retain, new_retain, 'entry-bound media retain')
+          text = text.replace('  }), [encryptedUrl]);', '  }), [mediaCacheKey]);')
+          text = text.replace('  }, [encryptedUrl, mediaKeyB64, isVideo, retryTick]);', '  }, [encryptedUrl, mediaKeyB64, mediaCacheKey, isVideo, retryTick]);')
+          text = text.replace('  }, [encryptedUrl, isVideo]);', '  }, [mediaCacheKey, isVideo]);')
+          text = text.replace('  }, [encryptedUrl, resolvedIsVideo]);', '  }, [encryptedUrl, mediaCacheKey, resolvedIsVideo]);')
+          path.write_text(text)
+
+          # Focused tests for MIME authority, early rejection and key validation.
+          Path('src/lib/crypto/mediaEncrypt.test.ts').write_text(r'''import { describe, expect, it, vi } from 'vitest';
+import {
+  decryptMediaWithMetadata,
+  detectMediaMimeType,
+  encryptMedia,
+  generateMediaKey,
+  importMediaKey,
+} from './mediaEncrypt';
+import { bufferToBase64 } from './utils';
+import { MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES } from '@/lib/messaging/attachmentLimits';
+
+function asciiBytes(value: string, prefix: number[] = []): Uint8Array {
+  return new Uint8Array([...prefix, ...Array.from(value, char => char.charCodeAt(0))]);
+}
+
+describe('encrypted media format', () => {
+  it('detects common image signatures', () => {
+    expect(detectMediaMimeType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    expect(detectMediaMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe('image/png');
+    expect(detectMediaMimeType(asciiBytes('GIF89a'))).toBe('image/gif');
+    expect(detectMediaMimeType(asciiBytes('WEBP', [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0]))).toBe('image/webp');
+  });
+
+  it('uses compatible brands to distinguish AVIF, HEIC and MP4', () => {
+    expect(detectMediaMimeType(asciiBytes('ftypmif1\0\0\0\0avif', [0, 0, 0, 0]))).toBe('image/avif');
+    expect(detectMediaMimeType(asciiBytes('ftypheic', [0, 0, 0, 0]))).toBe('image/heic');
+    expect(detectMediaMimeType(asciiBytes('ftypisom', [0, 0, 0, 0]))).toBe('video/mp4');
+  });
+
+  it('prefers the decrypted byte signature over a wrong declared MIME', async () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+    const source = new Blob([jpeg], { type: 'video/mp4' });
+    const { key } = await generateMediaKey();
+    const encrypted = await encryptMedia(source, key);
+    const decrypted = await decryptMediaWithMetadata(await encrypted.arrayBuffer(), key);
+    expect(decrypted.mimeType).toBe('image/jpeg');
+    expect(new Uint8Array(decrypted.data)).toEqual(jpeg);
+  });
+
+  it('rejects an oversized file before reading it into memory', async () => {
+    const arrayBuffer = vi.fn(async () => new ArrayBuffer(0));
+    const oversized = {
+      size: MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
+      type: 'image/jpeg',
+      arrayBuffer,
+    } as unknown as Blob;
+    const { key } = await generateMediaKey();
+    await expect(encryptMedia(oversized, key)).rejects.toThrow('Média trop volumineux');
+    expect(arrayBuffer).not.toHaveBeenCalled();
+  });
+
+  it('rejects media keys that are not exactly 256 bits', async () => {
+    const invalid = bufferToBase64(new Uint8Array(31).buffer);
+    await expect(importMediaKey(invalid)).rejects.toThrow('AES-256 invalide');
+  });
+
+  it('returns null for unknown legacy bytes', () => {
+    expect(detectMediaMimeType(new Uint8Array([1, 2, 3, 4]))).toBeNull();
+  });
+});
+''')
+
+          Path('src/components/messages/__tests__/decryptedMediaCache.test.ts').write_text(r'''import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  clearDecryptedMediaCache,
+  forgetDecryptedMedia,
+  getDecryptedMedia,
+  rememberDecryptedMedia,
+  retainDecryptedMedia,
+} from '../decryptedMediaCache';
+
+describe('decryptedMediaCache lifecycle', () => {
+  beforeEach(() => {
+    clearDecryptedMediaCache();
+    vi.restoreAllMocks();
+  });
+
+  it('does not revoke a retired URL while a mounted bubble still retains it', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    rememberDecryptedMedia('url\\x00key-a', 'blob:one', false, false);
+    const release = retainDecryptedMedia('url\\x00key-a');
+    expect(release).toBeTypeOf('function');
+
+    forgetDecryptedMedia('url\\x00key-a');
+    expect(getDecryptedMedia('url\\x00key-a')).toBeUndefined();
+    expect(revoke).not.toHaveBeenCalled();
+
+    release?.();
+    expect(revoke).toHaveBeenCalledWith('blob:one');
+  });
+
+  it('keeps identical encrypted URLs isolated when media keys differ', () => {
+    rememberDecryptedMedia('same-url\\x00key-a', 'blob:a', false, false);
+    rememberDecryptedMedia('same-url\\x00key-b', 'blob:b', true, false);
+    expect(getDecryptedMedia('same-url\\x00key-a')?.objectUrl).toBe('blob:a');
+    expect(getDecryptedMedia('same-url\\x00key-b')?.objectUrl).toBe('blob:b');
+  });
+});
+''')
+
+          # Remove this one-shot workflow from the production commit.
+          Path('.github/workflows/pr30-production-hardening.yml').unlink()
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit hardened implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(messages): harden atomic E2EE media delivery"
+          git push origin HEAD:fix/encrypted-media-black-bubble
