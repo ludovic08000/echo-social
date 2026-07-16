@@ -1,0 +1,393 @@
+name: Apply Signal resource optimization
+
+on:
+  push:
+    branches:
+      - perf/signal-resource-optimization
+
+permissions:
+  contents: write
+
+jobs:
+  optimize-test-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: perf/signal-resource-optimization
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply resource patch
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 anchor, found {count}')
+              return text.replace(old, new, 1)
+
+          # Chat UI: do not preload the 25 MB ffmpeg WASM bundle on every chat,
+          # and avoid four recovery probes when messages are already present.
+          path = Path('src/components/messages/ChatView.tsx')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "    enabled: !!conversationId && !!user && !isZeusConversation,\n    refetchOnMount: 'always',\n    refetchOnReconnect: 'always',\n",
+              "    enabled: !!conversationId && !!user && !isZeusConversation && !isLoading && (messages?.length ?? 0) === 0,\n    staleTime: 60_000,\n    refetchOnMount: false,\n    refetchOnWindowFocus: false,\n    refetchOnReconnect: 'always',\n",
+              'recovery query gating',
+          )
+          text = replace_once(
+              text,
+              "      console.log('[messaging] conversation restore state', {\n        conversationId,\n        userId: user.id,\n        serverMessageCount,\n        rawIdentityPresent,\n        wrappedKeysPresent,\n        hasServerBackup,\n        needsPinUnlock,\n        needsExplicitRestore,\n      });\n",
+              "      if (import.meta.env.DEV) {\n        console.debug('[messaging] conversation restore state', {\n          conversationId,\n          userId: user.id,\n          serverMessageCount,\n          rawIdentityPresent,\n          wrappedKeysPresent,\n          hasServerBackup,\n          needsPinUnlock,\n          needsExplicitRestore,\n        });\n      }\n",
+              'recovery debug log',
+          )
+          ffmpeg_block = """  // Warm-up: prefetch the ffmpeg.wasm chunk (~25 MB) lazily when the chat
+  // opens, so the first video the user picks doesn't have to wait for the
+  // CDN round-trip + wasm compile. Uses requestIdleCallback to avoid stealing
+  // CPU from the chat mount. Safe: pure module prefetch, no side effects.
+  useEffect(() => {
+    const idle = (cb: () => void) => {
+      const ric = (window as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+      if (typeof ric === 'function') ric(cb);
+      else setTimeout(cb, 1500);
+    };
+    idle(() => {
+      void import('@/lib/messaging/compressVideo').catch(() => {});
+    });
+  }, []);
+
+
+"""
+          text = replace_once(text, ffmpeg_block, "", 'remove ffmpeg prefetch')
+          path.write_text(text)
+
+          # Durable queue: one shared prewarm per conversation/minute. Signal
+          # serializes sends per conversation and does not redo route discovery
+          # on every pointer interaction.
+          path = Path('src/hooks/useMessageQueue.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "function perfNow(): number {\n  return typeof performance !== 'undefined' ? performance.now() : Date.now();\n}\n",
+              "function perfNow(): number {\n  return typeof performance !== 'undefined' ? performance.now() : Date.now();\n}\n\nconst PREWARM_TTL_MS = 60_000;\nconst prewarmCompletedAt = new Map<string, number>();\nconst prewarmInflight = new Map<string, Promise<void>>();\n",
+              'prewarm globals',
+          )
+          old = """    let cancelled = false;
+    let lastStartedAt = 0;
+    const cooldownMs = 8_000;
+
+    const prewarm = () => {
+      const now = Date.now();
+      if (now - lastStartedAt < cooldownMs) return;
+      lastStartedAt = now;
+
+      void Promise.allSettled([
+        supabase.auth.getSession(),
+        ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
+        prewarmSenderKeysFlag(conversationId),
+        (async () => {
+          const { data, error } = await supabase
+            .from('conversation_participants')
+            .select('user_id')
+            .eq('conversation_id', conversationId);
+          if (error || cancelled) return;
+
+          const recipientUserIds = Array.from(new Set(
+            (data ?? [])
+              .map((row) => row.user_id)
+              .filter((id): id is string => typeof id === 'string' && id.length > 0),
+          ));
+
+          // listFanoutTargets only returns routes from the canonical signed
+          // device list. verifyPrekeys=false skips unnecessary SPK network work;
+          // X3DH verifies a signed prekey if a fresh session is actually needed.
+          await listFanoutTargets(user.id, recipientUserIds, { verifyPrekeys: false });
+        })(),
+      ]).catch(() => undefined);
+    };
+
+    prewarm();
+    window.addEventListener('focus', prewarm);
+    window.addEventListener('online', prewarm);
+    window.addEventListener('pointerdown', prewarm, { passive: true });
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', prewarm);
+      window.removeEventListener('online', prewarm);
+      window.removeEventListener('pointerdown', prewarm);
+    };
+"""
+          new = """    let cancelled = false;
+    const prewarmKey = `${user.id}:${conversationId}`;
+
+    const prewarm = () => {
+      if (cancelled || document.visibilityState === 'hidden') return;
+      const lastCompletedAt = prewarmCompletedAt.get(prewarmKey) ?? 0;
+      if (Date.now() - lastCompletedAt < PREWARM_TTL_MS) return;
+      if (prewarmInflight.has(prewarmKey)) return;
+
+      const task = (async () => {
+        await Promise.allSettled([
+          supabase.auth.getSession(),
+          ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
+          prewarmSenderKeysFlag(conversationId),
+          (async () => {
+            const { data, error } = await supabase
+              .from('conversation_participants')
+              .select('user_id')
+              .eq('conversation_id', conversationId);
+            if (error || cancelled) return;
+
+            const recipientUserIds = Array.from(new Set(
+              (data ?? [])
+                .map((row) => row.user_id)
+                .filter((id): id is string => typeof id === 'string' && id.length > 0),
+            ));
+
+            await listFanoutTargets(user.id, recipientUserIds, { verifyPrekeys: false });
+          })(),
+        ]);
+        if (!cancelled) prewarmCompletedAt.set(prewarmKey, Date.now());
+      })().finally(() => {
+        if (prewarmInflight.get(prewarmKey) === task) prewarmInflight.delete(prewarmKey);
+      });
+
+      prewarmInflight.set(prewarmKey, task);
+    };
+
+    prewarm();
+    window.addEventListener('focus', prewarm);
+    window.addEventListener('online', prewarm);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', prewarm);
+      window.removeEventListener('online', prewarm);
+    };
+"""
+          text = replace_once(text, old, new, 'shared prewarm effect')
+          path.write_text(text)
+
+          # Sesame device-copy decryption: reuse the existing five-minute auth
+          # cache instead of asking Supabase Auth once for every message bubble.
+          path = Path('src/lib/messaging/multiDeviceFanout.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';\n",
+              "import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';\nimport { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';\n",
+              'fanout auth cache import',
+          )
+          text = replace_once(text, "const FANOUT_ENCRYPT_CONCURRENCY = 4;\n", "const FANOUT_ENCRYPT_CONCURRENCY = 2;\n", 'bounded fanout concurrency')
+          text = replace_once(
+              text,
+              "  const { data: { user } } = await supabase.auth.getUser();\n  if (!user) return null;\n",
+              "  const userId = await getCachedAuthUserId();\n  if (!userId) return null;\n",
+              'device copy cached auth',
+          )
+          text = text.replace("getDeviceCopyGate(messageId, user.id,", "getDeviceCopyGate(messageId, userId,")
+          text = replace_once(text, "tryDecryptCopy(row, user.id, targetDeviceId)", "tryDecryptCopy(row, userId, targetDeviceId)", 'device copy decrypt auth id')
+          path.write_text(text)
+
+          # Decryption UI: resolve auth once and reuse it for router + archive.
+          path = Path('src/components/messages/decryptionService.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "import type { DecryptResult } from '@/hooks/useE2EE';\n",
+              "import type { DecryptResult } from '@/hooks/useE2EE';\nimport { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';\n",
+              'decryption auth cache import',
+          )
+          text = replace_once(
+              text,
+              "      let senderId: string | null = opts.senderId ?? null;\n",
+              "      let senderId: string | null = opts.senderId ?? null;\n      let authUserId: string | null | undefined;\n      const resolveAuthUserId = async (): Promise<string | null> => {\n        if (authUserId === undefined) authUserId = await getCachedAuthUserId();\n        return authUserId;\n      };\n",
+              'per-message auth resolver',
+          )
+          old = """          const { data: { user } } = await supabase.auth.getUser();
+          if (user && senderId) {
+            const routed = await routeIncoming({
+              encryptedBody: body,
+              recipientUserId: user.id,
+              senderUserId: senderId,
+              messageId,
+            });
+"""
+          new = """          const userId = await resolveAuthUserId();
+          if (userId && senderId) {
+            const routed = await routeIncoming({
+              encryptedBody: body,
+              recipientUserId: userId,
+              senderUserId: senderId,
+              messageId,
+            });
+"""
+          text = replace_once(text, old, new, 'router cached auth')
+          old = """          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: row } = await supabase
+"""
+          new = """          const userId = await resolveAuthUserId();
+          if (userId) {
+            const { data: row } = await supabase
+"""
+          text = replace_once(text, old, new, 'archive cached auth')
+          text = replace_once(text, "decryptArchive(archiveBody, conversationId, user.id)", "decryptArchive(archiveBody, conversationId, userId)", 'archive auth id')
+          path.write_text(text)
+
+          # Background copy coverage: cache participants, bound crypto workers,
+          # bound retries, and reuse cached auth. This follows Sesame's active
+          # record + bounded-loop model without touching the direct send path.
+          path = Path('src/lib/messaging/fanoutRepair.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "import { loadPlaintext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';\n",
+              "import { loadPlaintext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';\nimport { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';\n",
+              'repair auth cache import',
+          )
+          text = replace_once(
+              text,
+              "export const DEFAULT_FANOUT_REPAIR_DELAYS_MS = [0, 500, 1_500, 4_000] as const;\n",
+              "export const DEFAULT_FANOUT_REPAIR_DELAYS_MS = [0, 1_000, 4_000] as const;\nconst PARTICIPANT_CACHE_TTL_MS = 30_000;\nconst FANOUT_REPAIR_CONCURRENCY = 2;\nconst participantCache = new Map<string, { expiresAt: number; userIds: string[] }>();\nconst participantInflight = new Map<string, Promise<string[]>>();\n",
+              'repair limits and caches',
+          )
+          helper_anchor = """function targetKey(target: Pick<ExpectedTarget, 'userId' | 'deviceId'>): string {
+  return `${target.userId}:${target.deviceId}`;
+}
+
+"""
+          helper_new = helper_anchor + """async function listConversationUserIds(conversationId: string): Promise<string[]> {
+  const cached = participantCache.get(conversationId);
+  if (cached && cached.expiresAt > Date.now()) return [...cached.userIds];
+  if (cached) participantCache.delete(conversationId);
+
+  const pending = participantInflight.get(conversationId);
+  if (pending) return [...await pending];
+
+  const request = (async () => {
+    const { data, error } = await supabase
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', conversationId);
+    if (error) throw error;
+    const userIds = [...new Set((data ?? []).map((row) => row.user_id))];
+    participantCache.set(conversationId, {
+      expiresAt: Date.now() + PARTICIPANT_CACHE_TTL_MS,
+      userIds,
+    });
+    return userIds;
+  })().finally(() => participantInflight.delete(conversationId));
+
+  participantInflight.set(conversationId, request);
+  return [...await request];
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+"""
+          text = replace_once(text, helper_anchor, helper_new, 'repair helpers')
+          old = """  const { data: participants, error } = await supabase
+    .from('conversation_participants')
+    .select('user_id')
+    .eq('conversation_id', input.conversationId);
+  if (error) throw error;
+
+  const userIds = [...new Set((participants ?? []).map((row) => row.user_id))];
+"""
+          text = replace_once(text, old, "  const userIds = await listConversationUserIds(input.conversationId);\n", 'cached participants')
+          text = replace_once(
+              text,
+              "  const results = await Promise.all(targets.map(async (target) => {\n",
+              "  const results = await mapWithConcurrency(targets, FANOUT_REPAIR_CONCURRENCY, async (target) => {\n",
+              'bounded repair map start',
+          )
+          text = replace_once(text, "  }));\n\n  const valid = results.filter", "  });\n\n  const valid = results.filter", 'bounded repair map end')
+          text = replace_once(
+              text,
+              "  const { data: { user } } = await supabase.auth.getUser();\n  if (!user) return null;\n",
+              "  const userId = await getCachedAuthUserId();\n  if (!userId) return null;\n",
+              'repair cached auth',
+          )
+          text = replace_once(text, "message.sender_id !== user.id", "message.sender_id !== userId", 'repair sender auth id')
+          text = replace_once(text, "senderUserId: user.id,", "senderUserId: userId,", 'repair seed auth id')
+          path.write_text(text)
+
+          # Device registry: keep a short verified active-record cache, matching
+          # Sesame's session reuse model, and remove verbose production logging.
+          path = Path('src/e2ee-session/deviceRegistry.ts')
+          text = path.read_text()
+          text = replace_once(text, "const VERIFIED_DEVICE_CACHE_TTL_MS = 10_000;\n", "const VERIFIED_DEVICE_CACHE_TTL_MS = 30_000;\n", 'verified device cache ttl')
+          text = replace_once(
+              text,
+              "    if (typeof console !== 'undefined') {\n      const reasons: Record<string, number> = {};\n",
+              "    if (import.meta.env.DEV && typeof console !== 'undefined') {\n      const reasons: Record<string, number> = {};\n",
+              'device registry debug logging',
+          )
+          path.write_text(text)
+
+          # Release large canvas backing stores immediately after encoding.
+          path = Path('src/lib/messaging/compressImage.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "    const blob: Blob | null = await new Promise(resolve =>\n      canvas.toBlob(resolve, outMime, QUALITY)\n    );\n    if (!blob || blob.size >= file.size) return file;\n",
+              "    const blob: Blob | null = await new Promise(resolve =>\n      canvas.toBlob(resolve, outMime, QUALITY)\n    );\n    canvas.width = 1;\n    canvas.height = 1;\n    if (!blob || blob.size >= file.size) return file;\n",
+              'canvas release',
+          )
+          path.write_text(text)
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Messaging regression tests
+        run: npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts src/components/messages/__tests__/decryptionServiceMultiDevice.test.ts src/components/messages/__tests__/decryptionNegativeCache.test.ts
+
+      - name: Production build
+        run: npm run build
+
+      - name: Commit optimized source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/messages/ChatView.tsx \
+            src/hooks/useMessageQueue.ts \
+            src/lib/messaging/multiDeviceFanout.ts \
+            src/components/messages/decryptionService.ts \
+            src/lib/messaging/fanoutRepair.ts \
+            src/e2ee-session/deviceRegistry.ts \
+            src/lib/messaging/compressImage.ts
+          git commit -m "perf(messaging): apply Signal-style resource optimizations"
+          git push origin HEAD:perf/signal-resource-optimization
