@@ -1073,7 +1073,7 @@ export function useE2EE(conversationId: string | undefined, peerUserId: string |
           /* non-fatal — first send will establish lazily */
         }
       })();
-    }, 500);
+    }, 0);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [conversationId, peerUserId, isZeus, user, state.fingerprintChanged, ensureKeysAndPeerSync, initRatchetIfNeeded]);
 

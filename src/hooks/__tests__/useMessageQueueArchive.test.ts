@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { buildMultiDeviceParentEnvelope, shouldArchiveMessageBody } from '../useMessageQueue';
+import { buildMultiDeviceParentEnvelope, selectInitialDeliveryMode, shouldArchiveMessageBody } from '../useMessageQueue';
 
 const MEDIA_KEY =
   'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
@@ -63,6 +63,36 @@ describe('useMessageQueue archive gating', () => {
       }),
     ).toBe(false);
   });
+  it('uses direct E2EE immediately for a fresh encrypted send', () => {
+    expect(selectInitialDeliveryMode({
+      encryptionWasRequired: true,
+      resumedEncryptedBody: null,
+      preparedCopyCount: 0,
+    })).toBe('direct');
+  });
+
+  it('resumes Sesame only when exact prepared copies are already durable', () => {
+    const parent = buildMultiDeviceParentEnvelope('local-resume', 'trace-resume');
+    expect(selectInitialDeliveryMode({
+      encryptionWasRequired: true,
+      resumedEncryptedBody: parent,
+      preparedCopyCount: 2,
+    })).toBe('multi_device');
+    expect(selectInitialDeliveryMode({
+      encryptionWasRequired: true,
+      resumedEncryptedBody: parent,
+      preparedCopyCount: 0,
+    })).toBe('direct');
+  });
+
+  it('keeps Zeus plaintext mode explicit', () => {
+    expect(selectInitialDeliveryMode({
+      encryptionWasRequired: false,
+      resumedEncryptedBody: null,
+      preparedCopyCount: 0,
+    })).toBe('plaintext');
+  });
+
   it('builds a valid encrypted-only multi-device parent envelope', () => {
     const envelope = buildMultiDeviceParentEnvelope('local-1', 'trace-1');
     const parsed = JSON.parse(envelope);

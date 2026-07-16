@@ -696,7 +696,8 @@ export async function insertFanoutCopyRows(
     return { inserted: 0, multiDevice: true };
   }
 
-  await supabase.from('messages').update({ body_kind: 'multi_device' } as any).eq('id', input.messageId);
+  // Device copies are auxiliary to the encrypted parent. Do not rewrite the
+  // parent's routing kind after a direct E2EE fast-path send.
   return { inserted: rows.length, multiDevice: true };
 }
 
