@@ -65,10 +65,10 @@ jobs:
           lines = workflow_path.read_text().splitlines()
           start = next(i for i, line in enumerate(lines) if line.strip() == "python3 <<'PY'")
           end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'PY')
-          payload_lines = lines[start + 1:end]
-          non_empty = [line for line in payload_lines if line.strip()]
-          indent = min(len(line) - len(line.lstrip()) for line in non_empty)
-          payload = '\n'.join(line[indent:] if line.strip() else '' for line in payload_lines)
+          payload = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in lines[start + 1:end]
+          )
           exec(compile(payload, 'instant-e2ee-send-patch.py', 'exec'))
           PY
 
