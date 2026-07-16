@@ -15,16 +15,14 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { OutboundMessageStatus } from '@/lib/messaging/messageQueue';
+import {
+  SesameSendStatus,
+  toSesameSendStatus,
+  type SesameUiMessageStatus,
+} from '@/lib/messaging/sesameSendState';
 import { SesameDeliveryIssueNotice } from './SesameDeliveryIssueNotice';
 
-export type SesameMessageStatus =
-  | OutboundMessageStatus
-  | 'pending'
-  | 'delivered'
-  | 'read'
-  | 'viewed'
-  | 'blocked'
-  | 'partial-sent';
+export type SesameMessageStatus = SesameUiMessageStatus;
 
 export interface SesameMessageMetadataProps {
   direction: 'incoming' | 'outgoing';
@@ -46,7 +44,10 @@ type StatusPresentation = {
   icon: ReactNode;
 };
 
-function statusPresentation(status: SesameMessageStatus | undefined, compact: boolean): StatusPresentation | null {
+function pendingPresentation(
+  status: OutboundMessageStatus | 'pending' | undefined,
+  compact: boolean,
+): StatusPresentation {
   const iconClass = compact ? 'h-2.5 w-2.5' : 'h-3 w-3';
 
   switch (status) {
@@ -63,24 +64,36 @@ function statusPresentation(status: SesameMessageStatus | undefined, compact: bo
         label: 'Canal sécurisé…',
         icon: <LockKeyhole className={iconClass} aria-hidden="true" />,
       };
-    case 'sending':
-    case 'pending':
-      return {
-        label: 'Envoi…',
-        icon: <Loader2 className={cn(iconClass, 'animate-spin')} aria-hidden="true" />,
-      };
     case 'retry_pending':
       return {
         label: 'Nouvelle tentative…',
         icon: <Loader2 className={cn(iconClass, 'animate-spin')} aria-hidden="true" />,
       };
-    case 'sent':
+    default:
+      return {
+        label: 'Envoi…',
+        icon: <Loader2 className={cn(iconClass, 'animate-spin')} aria-hidden="true" />,
+      };
+  }
+}
+
+function statusPresentation(
+  status: SesameMessageStatus | undefined,
+  compact: boolean,
+): StatusPresentation | null {
+  const semantic = toSesameSendStatus(status);
+  const iconClass = compact ? 'h-2.5 w-2.5' : 'h-3 w-3';
+
+  switch (semantic) {
+    case SesameSendStatus.Pending:
+      return pendingPresentation(status as OutboundMessageStatus | 'pending' | undefined, compact);
+    case SesameSendStatus.Sent:
       return { label: 'Envoyé', icon: <Check className={iconClass} aria-hidden="true" /> };
-    case 'delivered':
+    case SesameSendStatus.Delivered:
       return { label: 'Délivré', icon: <CheckCheck className={iconClass} aria-hidden="true" /> };
-    case 'read':
+    case SesameSendStatus.Read:
       return { label: 'Lu', icon: <CheckCheck className={iconClass} aria-hidden="true" /> };
-    case 'viewed':
+    case SesameSendStatus.Viewed:
       return { label: 'Vu', icon: <Eye className={iconClass} aria-hidden="true" /> };
     default:
       return null;
@@ -122,11 +135,8 @@ export function SesameMessageMetadata({
   className,
 }: SesameMessageMetadataProps) {
   const outgoing = direction === 'outgoing';
-  const isFailure = outgoing && (
-    status === 'failed_visible' ||
-    status === 'blocked' ||
-    status === 'partial-sent'
-  );
+  const semanticStatus = toSesameSendStatus(status);
+  const isFailure = outgoing && semanticStatus === SesameSendStatus.Failed;
 
   if (isFailure) {
     return (
@@ -154,6 +164,7 @@ export function SesameMessageMetadata({
         textClass,
         className,
       )}
+      data-send-status={semanticStatus ?? undefined}
       aria-live="off"
     >
       {pinned && <Pin className={iconClass} aria-label="Épinglé" />}
@@ -176,7 +187,7 @@ export function SesameMessageMetadata({
         <span
           className={cn(
             'inline-flex items-center gap-0.5',
-            (status === 'read' || status === 'viewed') && 'text-primary',
+            (semanticStatus === SesameSendStatus.Read || semanticStatus === SesameSendStatus.Viewed) && 'text-primary',
           )}
           title={presentation.label}
         >
