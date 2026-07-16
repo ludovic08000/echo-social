@@ -76,7 +76,22 @@ jobs:
         run: npm ci
 
       - name: Lint changed files
-        run: npx eslint src/hooks/useMessageQueueSignal.ts src/hooks/useMessageQueue.ts src/hooks/useE2EE.ts src/lib/messaging/fanoutRepair.ts src/lib/messaging/multiDeviceFanout.ts src/hooks/__tests__/useMessageQueueArchive.test.ts
+        shell: bash
+        run: |
+          set +e
+          npx eslint src/hooks/useMessageQueueSignal.ts src/hooks/useMessageQueue.ts src/hooks/useE2EE.ts src/lib/messaging/fanoutRepair.ts src/lib/messaging/multiDeviceFanout.ts src/hooks/__tests__/useMessageQueueArchive.test.ts > /tmp/instant-e2ee-lint.txt 2>&1
+          status=$?
+          cat /tmp/instant-e2ee-lint.txt
+          if [ "$status" -ne 0 ]; then
+            git reset --hard HEAD
+            cp /tmp/instant-e2ee-lint.txt INSTANT_E2EE_LINT.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add INSTANT_E2EE_LINT.txt
+            git commit -m "ci: capture instant E2EE lint failure"
+            git push origin HEAD:perf/instant-e2ee-send-v2
+            exit "$status"
+          fi
 
       - name: Messaging regression tests
         run: npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts src/lib/messaging/__tests__/outboxVault.test.ts src/lib/messaging/__tests__/sesameSendRpc.test.ts src/lib/crypto/mediaEncrypt.test.ts src/components/messages/__tests__/decryptedMediaCache.test.ts
@@ -88,8 +103,9 @@ jobs:
         shell: bash
         run: |
           rm .github/workflows/instant-e2ee-send-patch.yml
+          rm -f INSTANT_E2EE_LINT.txt INSTANT_E2EE_TRIGGER.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/hooks/useMessageQueueSignal.ts src/hooks/useMessageQueue.ts src/hooks/useE2EE.ts src/lib/messaging/fanoutRepair.ts src/lib/messaging/multiDeviceFanout.ts src/hooks/__tests__/useMessageQueueArchive.test.ts .github/workflows/instant-e2ee-send-patch.yml
+          git add src/hooks/useMessageQueueSignal.ts src/hooks/useMessageQueue.ts src/hooks/useE2EE.ts src/lib/messaging/fanoutRepair.ts src/lib/messaging/multiDeviceFanout.ts src/hooks/__tests__/useMessageQueueArchive.test.ts .github/workflows/instant-e2ee-send-patch.yml INSTANT_E2EE_LINT.txt INSTANT_E2EE_TRIGGER.txt
           git commit -m "perf(messages): make direct E2EE send immediate"
           git push origin HEAD:perf/instant-e2ee-send-v2
