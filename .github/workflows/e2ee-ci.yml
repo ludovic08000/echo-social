@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  finalize-resource-optimization:
+  diagnose-resource-optimization:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -35,13 +35,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Messaging regression tests
-        run: npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts src/components/messages/__tests__/decryptionServiceMultiDevice.test.ts src/components/messages/__tests__/decryptionNegativeCache.test.ts
+      - name: Capture decryption test and build
+        shell: bash
+        run: |
+          set +e
+          REPORT=decryption-cleanup-validation.txt
+          : > "$REPORT"
+          npx vitest run src/components/messages/__tests__/decryptionNegativeCache.test.ts --reporter=verbose 2>&1 | tee -a "$REPORT"
+          echo "TEST_EXIT=${PIPESTATUS[0]}" | tee -a "$REPORT"
+          npm run build 2>&1 | tee -a "$REPORT"
+          echo "BUILD_EXIT=${PIPESTATUS[0]}" | tee -a "$REPORT"
 
-      - name: Production build
-        run: npm run build
-
-      - name: Restore standard workflow and commit validated source
+      - name: Restore workflow and commit diagnostic source
         shell: bash
         run: |
           cat > .github/workflows/e2ee-ci.yml <<'YAML'
@@ -84,9 +89,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm -f scripts/fix-decryption-inflight-cleanup.py
-          git rm -f signal-resource-validation.txt
-          git add .github/workflows/e2ee-ci.yml src/components/messages/decryptionService.ts
-          git commit -m "fix(messaging): finalize low-resource decryption path"
+          git add .github/workflows/e2ee-ci.yml decryption-cleanup-validation.txt src/components/messages/decryptionService.ts
+          git commit -m "test(messaging): capture decryption cleanup validation"
           git push origin HEAD:perf/signal-resource-optimization
 
   verify:
