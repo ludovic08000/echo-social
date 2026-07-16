@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -6,6 +7,13 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     if count != 1:
         raise SystemExit(f"{label}: expected 1 anchor, found {count}")
     return text.replace(old, new, 1)
+
+
+def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+    if count != 1:
+        raise SystemExit(f"{label}: expected 1 regex anchor, found {count}")
+    return updated
 
 
 # Batch sender metadata in the same microtask instead of keeping a 50 ms timer
@@ -64,23 +72,16 @@ text = replace_once(
 path.write_text(text)
 
 
-path = Path('src/components/messages/ChatView.tsx')
-text = path.read_text()
-text = replace_once(
-    text,
-    "                              messageId={msg.id}\n                              hasMedia={!!msg.image_url}\n",
-    "                              messageId={msg.id}\n                              senderId={msg.sender_id}\n                              hasMedia={!!msg.image_url}\n",
-    'chat view sender id',
-)
-path.write_text(text)
-
-
-path = Path('src/components/ChatWidget.tsx')
-text = path.read_text()
-text = replace_once(
-    text,
-    "                               messageId={msg.id}\n                               hasMedia={!!msg.image_url}\n",
-    "                               messageId={msg.id}\n                               senderId={msg.sender_id}\n                               hasMedia={!!msg.image_url}\n",
-    'chat widget sender id',
-)
-path.write_text(text)
+for file_path, label in [
+    ('src/components/messages/ChatView.tsx', 'chat view sender id'),
+    ('src/components/ChatWidget.tsx', 'chat widget sender id'),
+]:
+    path = Path(file_path)
+    text = path.read_text()
+    text = regex_once(
+        text,
+        r'(?P<indent>^[ \t]+)messageId=\{msg\.id\}\n(?P=indent)hasMedia=\{!!msg\.image_url\}',
+        r'\g<indent>messageId={msg.id}\n\g<indent>senderId={msg.sender_id}\n\g<indent>hasMedia={!!msg.image_url}',
+        label,
+    )
+    path.write_text(text)
