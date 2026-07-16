@@ -10,8 +10,10 @@ import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
-import { buildFanoutCopies, insertFanoutCopyRows, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
-import { repairFanoutWithRetry } from '@/lib/messaging/fanoutRepair';
+import { buildFanoutCopies, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
+import { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';
+import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
+import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import {
@@ -116,19 +118,7 @@ export function shouldArchiveMessageBody({
   return hasMediaKey(sanitized);
 }
 
-// Signal prepares recipient-device envelopes before transport. Five seconds is
-// a bounded UI budget, not permission to insert a parent without copies.
-const INLINE_FANOUT_BUDGET_MS = 5_000;
 const INLINE_ARCHIVE_BUDGET_MS = 2_000;
-
-type FanoutBuildResult = Awaited<ReturnType<typeof buildFanoutCopies>>;
-
-function waitForInlineFanout(fanoutPromise: Promise<FanoutBuildResult>): Promise<FanoutBuildResult | null> {
-  return Promise.race([
-    fanoutPromise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), INLINE_FANOUT_BUDGET_MS)),
-  ]);
-}
 
 function waitForInlineArchive(archivePromise: Promise<string | null>): Promise<string | null> {
   return Promise.race([
@@ -188,28 +178,27 @@ function isAuthenticationError(error: unknown): boolean {
   );
 }
 
-function isMissingDeviceCopiesError(error: unknown): boolean {
+function isAmbiguousTransportError(error: unknown): boolean {
   const text = normalizedErrorText(error);
+  if (text.includes('e2ee_') || text.includes('not_authenticated') || text.includes('permission denied')) return false;
   return (
-    text.includes('e2ee_missing_device_copies') ||
-    text.includes('e2ee_invalid_device_copy') ||
-    text.includes('empty_device_copies')
+    !asSupabaseErrorLike(error).code ||
+    text.includes('failed to fetch') ||
+    text.includes('networkerror') ||
+    text.includes('load failed') ||
+    text.includes('timeout') ||
+    text.includes('connection')
   );
 }
 
-function shouldFallbackToLegacyEncryptedInsert(error: unknown): boolean {
-  const text = normalizedErrorText(error);
-  return !(
-    text.includes('401') ||
-    text.includes('jwt') ||
-    text.includes('not_authenticated') ||
-    text.includes('unauthorized') ||
-    text.includes('sender_not_conversation_participant') ||
-    text.includes('e2ee_plaintext_message_rejected') ||
-    text.includes('e2ee_missing_device_copies') ||
-    text.includes('e2ee_invalid_device_copy') ||
-    text.includes('empty_device_copies')
-  );
+function isMultiDeviceParentBody(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed?.encryptionMode === 'multi_device' && parsed?.ct === 'device_copies';
+  } catch {
+    return false;
+  }
 }
 
 function encryptedPayloadKind(payload: string): string {
@@ -277,24 +266,12 @@ export function useMessageQueue(
       const restored: OutboundMessage[] = [];
       for (const payload of payloads) {
         if (payload.reservedServerId && delivered.has(payload.reservedServerId)) {
-          try {
-            await repairFanoutWithRetry({
-              messageId: payload.reservedServerId,
-              conversationId: payload.conversationId,
-              senderUserId: payload.senderId,
-              plaintext: payload.plaintext,
-            });
-            await deleteOutboxPayload(payload.localId).catch(() => {});
-            dispatchDecryptRetry(payload.reservedServerId);
-            continue;
-          } catch (error) {
-            restored.push(toOutboundMessage({
-              ...payload,
-              status: 'retry_pending',
-              lastError: error instanceof Error ? error.message : 'Copies chiffrées à réparer.',
-            }));
-            continue;
-          }
+          // The authoritative RPC commits the parent and every expected device
+          // copy in one transaction. A visible parent therefore proves delivery;
+          // rebuilding copies here would advance the local ratchet a second time.
+          await deleteOutboxPayload(payload.localId).catch(() => {});
+          dispatchDecryptRetry(payload.reservedServerId);
+          continue;
         }
         restored.push(toOutboundMessage({
           ...payload,
@@ -319,9 +296,17 @@ export function useMessageQueue(
     return () => { cancelled = true; };
   }, [conversationId, user?.id]);
 
-  const sendMessage = useCallback(async (body: string, imageUrl?: string | null, extra?: SendExtra) => {
+  const sendMessage = useCallback(async (
+    body: string,
+    imageUrl?: string | null,
+    extra?: SendExtra,
+    resumePayload?: OutboxPayload,
+  ) => {
     const effectiveBody = inferMediaBody(body, imageUrl);
     if (!user || (!effectiveBody.trim() && !imageUrl)) return;
+    if (resumePayload && resumePayload.conversationId !== conversationId) {
+      throw new Error('Outbox conversation mismatch.');
+    }
 
     const isSpecial = isSpecialMessage(effectiveBody, imageUrl);
     if (!isSpecial) {
@@ -330,11 +315,11 @@ export function useMessageQueue(
     }
 
     const sanitized = isSpecial ? effectiveBody : sanitizeMessageBody(effectiveBody);
-    const now = Date.now();
+    const now = resumePayload?.createdAt ?? Date.now();
     const traceStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
-    const traceId: string = safeUUID();
-    const serverMessageId = safeUUID();
+    const localId = resumePayload?.localId ?? `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
+    const traceId = resumePayload?.traceId ?? safeUUID();
+    const serverMessageId = resumePayload?.reservedServerId ?? safeUUID();
     const trace = (stage: string, traceExtra: Record<string, unknown> = {}) => {
       const elapsedMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceStartedAt);
       console.info('[MSG_TRACE]', {
@@ -347,14 +332,10 @@ export function useMessageQueue(
         encryptionWasRequested: isEncryptionActive && !allowPlaintext,
         isEncryptionReady,
         hasMedia: !!imageUrl,
+        resumed: Boolean(resumePayload),
         ...traceExtra,
       });
     };
-    trace('created', {
-      bodyLength: sanitized.length,
-      bodyBytes: utf8ByteLength(sanitized),
-      isSpecial,
-    });
 
     const optimistic: OutboundMessage = {
       localId,
@@ -362,28 +343,40 @@ export function useMessageQueue(
       conversationId,
       senderId: user.id,
       plaintext: sanitized,
-      encryptedBody: null,
+      encryptedBody: resumePayload?.encryptedBody ?? null,
       imageUrl: imageUrl || null,
-      status: 'encrypting',
-      retryCount: 0,
-      maxRetries: 3,
+      status: resumePayload ? 'retry_pending' : 'encrypting',
+      retryCount: resumePayload ? resumePayload.retryCount + 1 : 0,
+      maxRetries: resumePayload?.maxRetries ?? 3,
       lastError: null,
       createdAt: now,
-      updatedAt: now,
-      serverId: null,
+      updatedAt: Date.now(),
+      serverId: serverMessageId,
     };
     let outboxSnapshot: OutboxPayload = {
+      ...(resumePayload ?? {}),
       ...optimistic,
-      extra,
+      extra: extra ?? resumePayload?.extra,
       reservedServerId: serverMessageId,
+      transportPlaintext: resumePayload?.transportPlaintext ?? null,
+      preparedCopies: resumePayload?.preparedCopies ?? [],
+      archiveBody: resumePayload?.archiveBody ?? null,
     };
-    setPendingMessages(prev => [...prev.filter((message) => message.localId !== localId), optimistic]);
+    setPendingMessages(prev => [...prev.filter(message => message.localId !== localId), optimistic]);
 
-    const updatePending = (patch: Partial<OutboundMessage>) => {
+    const persistOutbox = async (patch: Partial<OutboxPayload> = {}) => {
+      outboxSnapshot = { ...outboxSnapshot, ...patch, updatedAt: Date.now() };
+      await putOutboxPayload(user.id, outboxSnapshot);
+    };
+    const updatePending = (
+      patch: Partial<OutboundMessage>,
+      outboxPatch: Partial<OutboxPayload> = {},
+    ) => {
       const updatedAt = Date.now();
       outboxSnapshot = {
         ...outboxSnapshot,
         ...patch,
+        ...outboxPatch,
         updatedAt,
         reservedServerId: patch.serverId ?? outboxSnapshot.reservedServerId,
       };
@@ -393,13 +386,15 @@ export function useMessageQueue(
       void putOutboxPayload(user.id, outboxSnapshot).catch(() => {});
     };
 
-    // Signal's local-first invariant: the durable local record exists before
-    // encryption/network transport. The UI is already optimistic, so this does
-    // not delay the click; it only prevents our own bubbles becoming ciphertext
-    // placeholders after a reload or webview suspension.
+    trace('created', {
+      bodyLength: sanitized.length,
+      bodyBytes: utf8ByteLength(sanitized),
+      isSpecial,
+    });
+
     try {
       await Promise.all([
-        putOutboxPayload(user.id, outboxSnapshot),
+        persistOutbox(),
         savePlaintext(serverMessageId, sanitized),
       ]);
       onPlaintextCached?.(serverMessageId, sanitized);
@@ -410,10 +405,13 @@ export function useMessageQueue(
       throw error instanceof Error ? error : new Error(message);
     }
 
-    let transportPlaintext = sanitized;
-    let bodyToStore = sanitized;
-    let encryptedSuccessfully = false;
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
+    const resumedParent = isMultiDeviceParentBody(resumePayload?.encryptedBody)
+      ? resumePayload.encryptedBody
+      : null;
+    let transportPlaintext = resumePayload?.transportPlaintext ?? sanitized;
+    let bodyToStore = resumedParent ?? sanitized;
+    let encryptedSuccessfully = encryptionWasRequired && Boolean(resumedParent);
     const requiresLongAttachment = !isSpecial && utf8ByteLength(sanitized) > MAX_INLINE_MESSAGE_BODY_BYTES;
 
     if (requiresLongAttachment && !encryptionWasRequired) {
@@ -429,74 +427,98 @@ export function useMessageQueue(
           await ensureUserE2EEIdentity(user.id, { waitForMaintenance: false });
           trace('identity_cold_start_ready');
         } catch (error) {
-          trace('identity_cold_start_failed_non_fatal', { error: error instanceof Error ? error.message : String(error) });
-        }
-      }
-
-      if (!encrypt) {
-        updatePending({ status: 'failed_visible', lastError: 'Chiffrement indisponible.' });
-        throw new Error('Chiffrement indisponible.');
-      }
-
-      if (requiresLongAttachment) {
-        try {
-          trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
-          const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
-          transportPlaintext = prepared.transportBody;
-          bodyToStore = transportPlaintext;
-          trace('long_message_upload_ready', {
-            previewBytes: utf8ByteLength(prepared.preview),
-            transportBytes: utf8ByteLength(transportPlaintext),
+          trace('identity_cold_start_failed_non_fatal', {
+            error: error instanceof Error ? error.message : String(error),
           });
-        } catch (longMessageError) {
-          const message = longMessageError instanceof Error
-            ? longMessageError.message
-            : 'Préparation du message long impossible.';
-          updatePending({ status: 'failed_visible', lastError: message });
-          throw longMessageError instanceof Error ? longMessageError : new Error(message);
         }
       }
 
-      try {
-        trace('encrypt_start');
-        const encryptedPayload = await encrypt(transportPlaintext, localId);
-        if (!encryptedPayload || encryptedPayload === transportPlaintext) throw new Error('Chiffrement v5 indisponible.');
-        try {
-          const identityKeys = await getOrCreateIdentityKeys(user.id);
-          const publicBundle = await exportPublicKeyBundle(identityKeys);
-          bodyToStore = await wrapOutboundSecureMessage({
-            userId: user.id,
-            fingerprint: publicBundle.fingerprint,
-            encryptedBody: encryptedPayload,
-            conversationId,
-            localId,
-          });
-        } catch {
-          bodyToStore = encryptedPayload;
+      if (!encryptedSuccessfully) {
+        if (!encrypt) {
+          updatePending({ status: 'failed_visible', lastError: 'Chiffrement indisponible.' });
+          throw new Error('Chiffrement indisponible.');
         }
-        encryptedSuccessfully = true;
-        updatePending({ encryptedBody: bodyToStore });
-        await savePlaintextForCiphertext(bodyToStore, sanitized);
-        trace('encrypted_ready_for_rpc', {
-          bodyKind: encryptedPayloadKind(bodyToStore),
-          bodyLength: bodyToStore.length,
-          longMessage: requiresLongAttachment,
-        });
-      } catch (encryptError) {
-        const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
-        const normalized = errMsg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        const isSafetyMismatch = normalized.includes('cle de securite du contact modifiee') || normalized.includes('safety number changed') || normalized.includes('security key changed') || normalized.includes('verification obligatoire avant envoi') || normalized.includes('fingerprint changed');
-        if (isSafetyMismatch) {
+
+        if (requiresLongAttachment && !resumePayload?.transportPlaintext) {
           try {
-            window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', { detail: { conversationId, localId, reason: errMsg } }));
-          } catch {
-            /* best-effort browser notification */
+            trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
+            const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
+            transportPlaintext = prepared.transportBody;
+            await persistOutbox({ transportPlaintext });
+            trace('long_message_upload_ready', {
+              previewBytes: utf8ByteLength(prepared.preview),
+              transportBytes: utf8ByteLength(transportPlaintext),
+            });
+          } catch (longMessageError) {
+            const message = longMessageError instanceof Error
+              ? longMessageError.message
+              : 'Préparation du message long impossible.';
+            updatePending({ status: 'failed_visible', lastError: message });
+            throw longMessageError instanceof Error ? longMessageError : new Error(message);
           }
-          updatePending({ status: 'failed_visible', lastError: errMsg });
-        } else {
-          updatePending({ encryptedBody: null, status: 'waiting_secure_channel', lastError: errMsg });
         }
-        throw encryptError instanceof Error ? encryptError : new Error(errMsg);
+
+        try {
+          trace('encrypt_start');
+          const encryptedPayload = await encrypt(transportPlaintext, localId);
+          if (!encryptedPayload || encryptedPayload === transportPlaintext) {
+            throw new Error('Chiffrement v5 indisponible.');
+          }
+
+          let verifiedEnvelope = encryptedPayload;
+          try {
+            const identityKeys = await getOrCreateIdentityKeys(user.id);
+            const publicBundle = await exportPublicKeyBundle(identityKeys);
+            verifiedEnvelope = await wrapOutboundSecureMessage({
+              userId: user.id,
+              fingerprint: publicBundle.fingerprint,
+              encryptedBody: encryptedPayload,
+              conversationId,
+              localId,
+            });
+          } catch {
+            // The authoritative per-device envelopes remain the delivery path.
+          }
+
+          bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
+          encryptedSuccessfully = true;
+          await persistOutbox({
+            encryptedBody: bodyToStore,
+            transportPlaintext,
+            preparedCopies: [],
+          });
+          updatePending({ encryptedBody: bodyToStore });
+          await savePlaintextForCiphertext(bodyToStore, sanitized);
+          trace('encrypted_ready_for_rpc', {
+            verifiedEnvelopeKind: encryptedPayloadKind(verifiedEnvelope),
+            parentBodyLength: bodyToStore.length,
+            longMessage: requiresLongAttachment,
+          });
+        } catch (encryptError) {
+          const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
+          const normalized = errMsg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const isSafetyMismatch = normalized.includes('cle de securite du contact modifiee') ||
+            normalized.includes('safety number changed') ||
+            normalized.includes('security key changed') ||
+            normalized.includes('verification obligatoire avant envoi') ||
+            normalized.includes('fingerprint changed');
+          if (isSafetyMismatch) {
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', {
+                detail: { conversationId, localId, reason: errMsg },
+              }));
+            } catch {}
+            updatePending({ status: 'failed_visible', lastError: errMsg });
+          } else {
+            updatePending({ encryptedBody: null, status: 'waiting_secure_channel', lastError: errMsg }, {
+              encryptedBody: null,
+              preparedCopies: [],
+            });
+          }
+          throw encryptError instanceof Error ? encryptError : new Error(errMsg);
+        }
+      } else {
+        await savePlaintextForCiphertext(bodyToStore, sanitized);
       }
     }
 
@@ -506,7 +528,10 @@ export function useMessageQueue(
       senderUserId: user.id,
       plaintext: transportPlaintext,
     };
-    let fanoutRows: FanoutCopyRow[] = [];
+    let fanoutRows: FanoutCopyRow[] = encryptedSuccessfully
+      ? (resumePayload?.preparedCopies ?? []).filter(row => row.message_id === serverMessageId)
+      : [];
+
     const archiveAllowed = isArchiveBackupEnabled() && shouldArchiveMessageBody({
       sanitized,
       isSpecial,
@@ -514,165 +539,165 @@ export function useMessageQueue(
       encryptedSuccessfully,
       encryptionWasRequired,
     });
-    const archivePromise = archiveAllowed
+    let inlineArchiveBody = resumePayload?.archiveBody ?? null;
+    const archivePromise = archiveAllowed && !inlineArchiveBody
       ? encryptArchive(sanitized, conversationId, user.id).catch(() => null)
-      : Promise.resolve(null);
-    let inlineArchiveBody: string | null = null;
+      : Promise.resolve(inlineArchiveBody);
 
     if (encryptedSuccessfully) {
       updatePending({
         status: 'waiting_secure_channel',
         serverId: serverMessageId,
-        lastError: 'Préparation des copies chiffrées du destinataire…',
+        lastError: fanoutRows.length > 0
+          ? 'Confirmation sécurisée de l’envoi…'
+          : 'Préparation des copies chiffrées du destinataire…',
       });
 
-      const fanoutPromise = buildFanoutCopies(fanoutInput);
-      const [inlineFanout, archiveBody] = await Promise.all([
-        waitForInlineFanout(fanoutPromise).catch(() => null),
-        waitForInlineArchive(archivePromise).catch(() => null),
-      ]);
-      inlineArchiveBody = archiveBody;
-
-      // Never create the parent row first. If no trusted destination device can
-      // receive a copy yet, the durable outbox keeps the job and retries later.
-      if (!inlineFanout || !inlineFanout.hasTargets || inlineFanout.rows.length === 0) {
-        const message = 'Canal sécurisé du destinataire en cours de préparation.';
-        updatePending({ status: 'waiting_secure_channel', lastError: message });
-        throw new Error(message);
+      if (fanoutRows.length === 0) {
+        try {
+          const fanout = await buildFanoutCopies(fanoutInput);
+          if (!fanout.hasTargets || fanout.rows.length === 0) {
+            throw new Error('Canal sécurisé du destinataire en cours de préparation.');
+          }
+          fanoutRows = fanout.rows;
+        } catch (error) {
+          await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
+          await persistOutbox({ preparedCopies: [] });
+          const message = error instanceof Error
+            ? error.message
+            : 'Canal sécurisé du destinataire en cours de préparation.';
+          updatePending({ status: 'waiting_secure_channel', lastError: message }, { preparedCopies: [] });
+          throw error instanceof Error ? error : new Error(message);
+        }
       }
-      fanoutRows = inlineFanout.rows;
+
+      inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
+      await persistOutbox({
+        transportPlaintext,
+        encryptedBody: bodyToStore,
+        preparedCopies: fanoutRows,
+        archiveBody: inlineArchiveBody,
+      });
     } else if (archiveAllowed) {
       inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
+      await persistOutbox({ archiveBody: inlineArchiveBody });
     }
 
     updatePending({ status: 'sending', serverId: serverMessageId, lastError: null });
-    outboxSnapshot = { ...outboxSnapshot, reservedServerId: serverMessageId, updatedAt: Date.now() };
-    await putOutboxPayload(user.id, outboxSnapshot);
 
     const rpcExtra = { ...(extra || {}) } as Record<string, unknown>;
     if (encryptedSuccessfully) rpcExtra.body_kind = 'multi_device';
     if (inlineArchiveBody) rpcExtra.archive_body = inlineArchiveBody;
 
-    const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {
-      p_message_id: serverMessageId,
-      p_conversation_id: conversationId,
-      p_body: bodyToStore,
-      p_image_url: imageUrl || null,
-      p_extra: rpcExtra as never,
-      p_copies: fanoutRows as never,
-    });
-
-    let data = { id: (rpcMessageId as unknown as string) || serverMessageId };
-    let usedLegacyEncryptedFallback = false;
-
-    if (error) {
-      const normalizedError = normalizeSupabaseError(error);
-      if (isMissingDeviceCopiesError(error)) {
-        const visibleMessage = 'Copies chiffrées incomplètes — nouvel essai automatique.';
-        updatePending({ status: 'waiting_secure_channel', lastError: visibleMessage });
-        throw new Error(visibleMessage);
-      }
-      if (!shouldFallbackToLegacyEncryptedInsert(error)) {
-        const visibleMessage = isAuthenticationError(error)
-          ? 'Session expirée — reconnectez-vous pour envoyer.'
-          : normalizedError.message;
-        updatePending({ status: 'failed_visible', lastError: visibleMessage });
-        throw error;
-      }
-      usedLegacyEncryptedFallback = true;
-      const { data: legacyData, error: legacyError } = await supabase
-        .from('messages')
-        .insert({
-          id: serverMessageId,
-          conversation_id: conversationId,
-          sender_id: user.id,
-          body: bodyToStore,
-          image_url: imageUrl || null,
-          body_kind: String(rpcExtra.body_kind || 'legacy'),
-          status: 'delivered',
-          view_once: Boolean(extra?.view_once),
-          document_url: extra?.document_url ?? null,
-          document_name: extra?.document_name ?? null,
-          document_mime: extra?.document_mime ?? null,
-          document_size_bytes: extra?.document_size_bytes ?? null,
-          archive_body: inlineArchiveBody,
-        } as never)
-        .select('id')
-        .single();
-      if (legacyError) {
-        const visibleMessage = isAuthenticationError(legacyError)
-          ? 'Session expirée — reconnectez-vous pour envoyer.'
-          : normalizeSupabaseError(legacyError).message;
-        updatePending({ status: 'failed_visible', lastError: visibleMessage });
-        throw legacyError;
-      }
-      data = { id: legacyData?.id || serverMessageId };
-
-      if (encryptedSuccessfully) {
-        const inserted = await insertFanoutCopyRows(fanoutInput, fanoutRows);
-        if (inserted.inserted === 0) {
-          await supabase.from('messages').delete().eq('id', serverMessageId).eq('sender_id', user.id).catch(() => {});
-          const visibleMessage = 'Copies chiffrées non enregistrées — nouvel essai automatique.';
-          updatePending({ status: 'waiting_secure_channel', lastError: visibleMessage });
-          throw new Error(visibleMessage);
-        }
-      }
+    let sendResult: Awaited<ReturnType<typeof sendMessageWithSesameRetry>>;
+    try {
+      sendResult = await sendMessageWithSesameRetry({
+        messageId: serverMessageId,
+        conversationId,
+        body: bodyToStore,
+        imageUrl: imageUrl || null,
+        extra: rpcExtra,
+        senderUserId: user.id,
+        senderDeviceId: getCurrentDeviceId(),
+        initialCopies: fanoutRows,
+        rebuildCopies: async () => {
+          const rebuilt = await buildFanoutCopies(fanoutInput);
+          if (!rebuilt.hasTargets || rebuilt.rows.length === 0) {
+            throw new Error('E2EE_DEVICE_LIST_UNAVAILABLE');
+          }
+          fanoutRows = rebuilt.rows;
+          await persistOutbox({ preparedCopies: fanoutRows });
+          return fanoutRows;
+        },
+      });
+    } catch (error) {
+      await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
+      await persistOutbox({ preparedCopies: [] });
+      const visibleMessage = isAuthenticationError(error)
+        ? 'Session expirée — reconnectez-vous pour envoyer.'
+        : error instanceof Error ? error.message : 'Échec du transport chiffré.';
+      updatePending({
+        status: isAuthenticationError(error) ? 'failed_visible' : 'retry_pending',
+        lastError: visibleMessage,
+      }, { preparedCopies: [] });
+      throw error instanceof Error ? error : new Error(visibleMessage);
     }
 
+    fanoutRows = sendResult.copies;
+    if (sendResult.error) {
+      const ambiguous = isAmbiguousTransportError(sendResult.error);
+      const normalizedError = normalizeSupabaseError(sendResult.error);
+      const visibleMessage = isAuthenticationError(sendResult.error)
+        ? 'Session expirée — reconnectez-vous pour envoyer.'
+        : ambiguous
+          ? 'Confirmation réseau en attente — nouvel essai automatique.'
+          : normalizedError.message;
+      const retainedCopies = ambiguous ? fanoutRows : [];
+      await persistOutbox({ preparedCopies: retainedCopies });
+      updatePending({
+        status: isAuthenticationError(sendResult.error) ? 'failed_visible' : 'retry_pending',
+        lastError: visibleMessage,
+      }, { preparedCopies: retainedCopies });
+      throw new Error(visibleMessage);
+    }
+
+    const data = { id: sendResult.data || serverMessageId };
     trace('message_inserted', {
       serverId: data.id,
-      method: usedLegacyEncryptedFallback ? 'encrypted_legacy_fallback' : 'transactional_rpc',
+      method: sendResult.usedCompatibilitySignature
+        ? 'sesame_compatibility_rpc'
+        : 'sesame_authoritative_rpc',
+      retriedStaleRoute: sendResult.retriedStaleRoute,
+      copyCount: fanoutRows.length,
       longMessage: requiresLongAttachment,
     });
 
     if (!isSpecial) recordSentMessage(sanitized);
-    if (data?.id) {
-      onPlaintextCached?.(data.id, sanitized);
-      if (encryptedSuccessfully) {
-        void savePlaintext(data.id, sanitized);
-        void savePlaintextForCiphertext(bodyToStore, sanitized);
-        dispatchDecryptRetry(data.id);
-      }
-
-      if (archiveAllowed && !inlineArchiveBody) {
-        const archiveMsgId = data.id;
-        void archivePromise
-          .then(async (archived) => {
-            if (!archived) return;
-            const stored = await setMessageArchiveBody(archiveMsgId, archived);
-            if (stored) dispatchDecryptRetry(archiveMsgId);
-          })
-          .catch(() => {});
-      }
-
-      const sentMessage: SentMessageSnapshot = {
-        id: data.id,
-        conversation_id: conversationId,
-        sender_id: user.id,
-        body: bodyToStore,
-        image_url: imageUrl || null,
-        created_at: new Date().toISOString(),
-        status: 'delivered',
-        profile: {
-          name: user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'Moi',
-          avatar_url: user.user_metadata?.avatar_url || null,
-        },
-      };
-      const upsertSentMessage = (old: SentMessageSnapshot[] | undefined) => {
-        if (!Array.isArray(old)) return [sentMessage];
-        if (old.some((message) => message?.id === data.id)) return old;
-        return [...old, sentMessage];
-      };
-      queryClient.setQueryData<SentMessageSnapshot[]>(['messages', conversationId, user.id], upsertSentMessage);
-      queryClient.setQueriesData<SentMessageSnapshot[]>({ queryKey: ['messages', conversationId] }, upsertSentMessage);
-
-      setPendingMessages(prev => prev.filter(message => message.localId !== localId));
-      void deleteOutboxPayload(localId).catch(() => {});
-      void Promise.resolve(onMessageSent?.(localId)).catch((callbackError) => {
-        console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
-      });
+    onPlaintextCached?.(data.id, sanitized);
+    if (encryptedSuccessfully) {
+      await Promise.all([
+        savePlaintext(data.id, sanitized),
+        savePlaintextForCiphertext(bodyToStore, sanitized),
+      ]);
+      dispatchDecryptRetry(data.id);
     }
 
+    if (archiveAllowed && !inlineArchiveBody) {
+      void archivePromise
+        .then(async archived => {
+          if (!archived) return;
+          const stored = await setMessageArchiveBody(data.id, archived);
+          if (stored) dispatchDecryptRetry(data.id);
+        })
+        .catch(() => {});
+    }
+
+    const sentMessage: SentMessageSnapshot = {
+      id: data.id,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      body: bodyToStore,
+      image_url: imageUrl || null,
+      created_at: new Date().toISOString(),
+      status: 'delivered',
+      profile: {
+        name: user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'Moi',
+        avatar_url: user.user_metadata?.avatar_url || null,
+      },
+    };
+    const upsertSentMessage = (old: SentMessageSnapshot[] | undefined) => {
+      if (!Array.isArray(old)) return [sentMessage];
+      if (old.some(message => message?.id === data.id)) return old;
+      return [...old, sentMessage];
+    };
+    queryClient.setQueryData<SentMessageSnapshot[]>(['messages', conversationId, user.id], upsertSentMessage);
+    queryClient.setQueriesData<SentMessageSnapshot[]>({ queryKey: ['messages', conversationId] }, upsertSentMessage);
+
+    await deleteOutboxPayload(localId).catch(() => {});
+    setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+    void Promise.resolve(onMessageSent?.(localId)).catch(callbackError => {
+      console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
+    });
     scheduleLightConversationRefresh(queryClient);
   }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
@@ -682,37 +707,22 @@ export function useMessageQueue(
     if (!payload) return;
 
     if (payload.reservedServerId) {
-      const { data } = await supabase.from('messages').select('id').eq('id', payload.reservedServerId).maybeSingle();
+      const { data } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('id', payload.reservedServerId)
+        .maybeSingle();
       if (data?.id) {
-        try {
-          await repairFanoutWithRetry({
-            messageId: payload.reservedServerId,
-            conversationId: payload.conversationId,
-            senderUserId: payload.senderId,
-            plaintext: payload.plaintext,
-          });
-          await deleteOutboxPayload(localId).catch(() => {});
-          setPendingMessages(prev => prev.filter(message => message.localId !== localId));
-          dispatchDecryptRetry(data.id);
-          return;
-        } catch (error) {
-          setPendingMessages(prev => prev.map(message =>
-            message.localId === localId
-              ? {
-                  ...message,
-                  status: 'retry_pending',
-                  lastError: error instanceof Error ? error.message : 'Réparation des copies chiffrées en attente.',
-                }
-              : message,
-          ));
-          throw error;
-        }
+        // Parent + copies are atomic in the authoritative RPC. Do not rebuild or
+        // re-encrypt a message that the server has already committed.
+        await deleteOutboxPayload(localId).catch(() => {});
+        setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+        dispatchDecryptRetry(data.id);
+        return;
       }
     }
 
-    await deleteOutboxPayload(localId).catch(() => {});
-    setPendingMessages(prev => prev.filter(message => message.localId !== localId));
-    await sendMessage(payload.plaintext, payload.imageUrl, payload.extra);
+    await sendMessage(payload.plaintext, payload.imageUrl, payload.extra, payload);
   }, [sendMessage, user]);
 
   const removeMessage = useCallback(async (localId: string) => {

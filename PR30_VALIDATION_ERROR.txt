@@ -1,0 +1,2218 @@
+
+> sesame@0.0.0 lint
+> eslint .
+
+
+/home/runner/work/echo-social/echo-social/src/App.tsx
+   57:13  error  Empty block statement                     no-empty
+   61:74  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  279:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/AgeFlaggedScreen.tsx
+   53:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  126:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/ChatWidget.tsx
+   166:9   warning  The 'friends' logical expression could make the dependencies of useMemo Hook (at line 171) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'friends' in its own useMemo() Hook  react-hooks/exhaustive-deps
+   419:6   warning  React Hook useMemo has an unnecessary dependency: 'conversationId'. Either exclude it or remove the dependency array                                                                                                                   react-hooks/exhaustive-deps
+   487:41  error    Unexpected any. Specify a different type                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+   542:54  error    Unexpected any. Specify a different type                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+   555:22  error    Unexpected any. Specify a different type                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+   562:17  error    Unexpected any. Specify a different type                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+   586:8   warning  React Hook useCallback has a missing dependency: 'sendMessage'. Either include it or remove the dependency array                                                                                                                       react-hooks/exhaustive-deps
+   605:42  error    Unexpected any. Specify a different type                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+   616:6   warning  React Hook useEffect has a missing dependency: 'call'. Either include it or remove the dependency array                                                                                                                                react-hooks/exhaustive-deps
+   631:6   warning  React Hook useEffect has missing dependencies: 'messages', 'playSound', and 'user?.id'. Either include them or remove the dependency array                                                                                             react-hooks/exhaustive-deps
+   808:6   warning  React Hook useEffect has a missing dependency: 'markRead'. Either include it or remove the dependency array                                                                                                                            react-hooks/exhaustive-deps
+  2025:13  error    Empty block statement                                                                                                                                                                                                                  no-empty
+  2035:13  error    Empty block statement                                                                                                                                                                                                                  no-empty
+  2091:88  error    Empty block statement                                                                                                                                                                                                                  no-empty
+  2130:84  error    Empty block statement                                                                                                                                                                                                                  no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/ChatWidgetContext.tsx
+  74:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/components/CommentsList.tsx
+  368:13  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/CrashDetails.tsx
+  21:13  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/CreatePost.tsx
+  109:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  275:15  error  Empty block statement                     no-empty
+  282:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  356:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/DevicePrimaryRepairDialog.tsx
+  39:153  error  Unnecessary escape character: \'  no-useless-escape
+  51:17   error  Empty block statement             no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/FeedAutoplayVideo.tsx
+  110:9  error  Use "@ts-expect-error" instead of "@ts-ignore", as "@ts-ignore" will do nothing if the following line is error-free  @typescript-eslint/ban-ts-comment
+
+/home/runner/work/echo-social/echo-social/src/components/FriendshipButton.tsx
+  48:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/InviteContacts.tsx
+   40:9   error  'name' is never reassigned. Use 'const' instead                        prefer-const
+  170:7   error  Expected an assignment or function call and instead saw an expression  @typescript-eslint/no-unused-expressions
+  222:17  error  Expected an assignment or function call and instead saw an expression  @typescript-eslint/no-unused-expressions
+  299:72  error  Unexpected any. Specify a different type                               @typescript-eslint/no-explicit-any
+  303:61  error  Unexpected any. Specify a different type                               @typescript-eslint/no-explicit-any
+  317:44  error  Unexpected any. Specify a different type                               @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/KeyBackupPanel.tsx
+  39:6  warning  React Hook useEffect has a missing dependency: 'backup'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/MessagingPinGate.tsx
+  425:6  warning  React Hook useEffect has a missing dependency: 'handleConfirmReset'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/MoodPicker.tsx
+  45:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  60:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  68:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  79:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/Navigation.tsx
+   65:78  error  Unexpected any. Specify a different type                                                                                                                                                         @typescript-eslint/no-explicit-any
+  129:34  error  Unexpected any. Specify a different type                                                                                                                                                         @typescript-eslint/no-explicit-any
+  131:37  error  Unexpected any. Specify a different type                                                                                                                                                         @typescript-eslint/no-explicit-any
+  131:70  error  Unexpected any. Specify a different type                                                                                                                                                         @typescript-eslint/no-explicit-any
+  200:24  error  React Hook "useChatWidget" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?  react-hooks/rules-of-hooks
+  238:24  error  Unexpected any. Specify a different type                                                                                                                                                         @typescript-eslint/no-explicit-any
+  258:24  error  Unexpected any. Specify a different type                                                                                                                                                         @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/NotificationSettingsPanel.tsx
+   64:11  error  Empty block statement  no-empty
+  124:90  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/ParentalGate.tsx
+  25:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  60:19  error    Unexpected any. Specify a different type                                                                                        @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/PinValidatedMessaging.tsx
+  29:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/PostCard.tsx
+  116:6   warning  React Hook useEffect has missing dependencies: 'endDwell', 'isVideoPost', 'post.image_url', 'quality', 'startDwell', 'trackView', and 'user'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  145:24  error    Unexpected any. Specify a different type                                                                                                                                                          @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/ReactionButton.tsx
+   70:11  error    Empty block statement                                                                                          no-empty
+  151:6   warning  React Hook useCallback has a missing dependency: 'navigate'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/StoriesBar.tsx
+  70:6  warning  React Hook useCallback has a missing dependency: 'nextStory'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  93:6  warning  React Hook useCallback has a missing dependency: 'nextStory'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/TipButton.tsx
+  80:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/VideoCard.tsx
+   35:25  error    Unexpected any. Specify a different type                                                                                                                                @typescript-eslint/no-explicit-any
+  115:6   warning  React Hook useEffect has missing dependencies: 'recordView', 'video.duration_seconds', 'video.id', and 'watchTime'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  177:9   error    Use "@ts-expect-error" instead of "@ts-ignore", as "@ts-ignore" will do nothing if the following line is error-free                                                     @typescript-eslint/ban-ts-comment
+
+/home/runner/work/echo-social/echo-social/src/components/VideoThumbnailCard.tsx
+  52:9  error  Use "@ts-expect-error" instead of "@ts-ignore", as "@ts-ignore" will do nothing if the following line is error-free  @typescript-eslint/ban-ts-comment
+
+/home/runner/work/echo-social/echo-social/src/components/WellbeingScoreCard.tsx
+  105:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/ZeusCompanion.tsx
+   244:56  error    Unexpected any. Specify a different type                                                                                                     @typescript-eslint/no-explicit-any
+   248:13  error    Empty block statement                                                                                                                        no-empty
+   249:52  error    Unexpected any. Specify a different type                                                                                                     @typescript-eslint/no-explicit-any
+   471:41  error    Unexpected any. Specify a different type                                                                                                     @typescript-eslint/no-explicit-any
+   476:99  error    Empty block statement                                                                                                                        no-empty
+   486:15  error    Empty block statement                                                                                                                        no-empty
+   499:6   warning  React Hook useEffect has missing dependencies: 'open', 'unacknowledged', and 'zeusName'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+   580:19  error    Unexpected any. Specify a different type                                                                                                     @typescript-eslint/no-explicit-any
+   613:11  error    'headers' is never reassigned. Use 'const' instead                                                                                           prefer-const
+   675:21  error    Empty block statement                                                                                                                        no-empty
+   689:17  error    Empty block statement                                                                                                                        no-empty
+   705:19  error    Unexpected any. Specify a different type                                                                                                     @typescript-eslint/no-explicit-any
+   838:44  error    Unexpected any. Specify a different type                                                                                                     @typescript-eslint/no-explicit-any
+  1000:47  error    Unexpected any. Specify a different type                                                                                                     @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/ArchivesSection.tsx
+  26:79  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  33:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/CommentModerationAlertsSection.tsx
+   42:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   84:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   92:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  173:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/FeedIntelligenceSection.tsx
+   25:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   27:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   35:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   36:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   83:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  127:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  141:82  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/MLFeedSection.tsx
+   21:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:90  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   97:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  111:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/PlatformHealthDashboard.tsx
+  16:69  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  52:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/PostsSection.tsx
+  18:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  51:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/QualityMetricsSection.tsx
+  128:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/SecurityAIModulePanel.tsx
+   17:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   30:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   96:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  107:58  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  111:60  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  129:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  212:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/SecurityMonitoringSection.tsx
+   65:56  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  146:45  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  151:22  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  161:49  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  163:31  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  185:6   warning  React Hook useEffect has a missing dependency: 'prevIncidentCount'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  190:45  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  195:31  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  209:6   warning  React Hook useEffect has a missing dependency: 'zeusAlerts'. Either include it or remove the dependency array         react-hooks/exhaustive-deps
+  228:18  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  233:47  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  234:51  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  235:48  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  238:46  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  242:43  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  245:54  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  251:51  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  258:43  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  422:42  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  493:35  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  546:56  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  616:63  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  679:33  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/SecuritySection.tsx
+   81:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   91:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  191:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  206:81  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/ThreatShieldWidget.tsx
+  47:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  48:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/UsersSection.tsx
+  48:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  72:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  81:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  97:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/VerificationsSection.tsx
+  17:73   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  37:22   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:36   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  61:60   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  72:172  error  Empty block statement                     no-empty
+  76:17   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  88:17   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/admin/ZeusSection.tsx
+   35:112  error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+   78:78   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+   80:113  error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+  154:17   error    Empty block statement                                                                                                            no-empty
+  170:17   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+  171:6    warning  React Hook useCallback has a missing dependency: 'ZEUS_URL'. Either include it or remove the dependency array                    react-hooks/exhaustive-deps
+  187:22   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+  188:106  error    Empty block statement                                                                                                            no-empty
+  216:347  error    Empty block statement                                                                                                            no-empty
+  232:17   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+  234:6    warning  React Hook useCallback has missing dependencies: 'ZEUS_URL' and 'streamSSE'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/agents/AIAgentChat.tsx
+   28:158  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   54:12   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  170:17   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  269:19   error  Empty block statement                     no-empty
+  274:17   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/calls/AddParticipantSheet.tsx
+   86:6   warning  React Hook useEffect has a missing dependency: 'prefilled'. Either include it or remove the dependency array. If 'setSelected' needs the current value of 'prefilled', you can also switch to useReducer instead of useState and read 'prefilled' in the reducer  react-hooks/exhaustive-deps
+  123:17  error    Unexpected any. Specify a different type                                                                                                                                                                                                                          @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/calls/GroupCallGrid.tsx
+  41:49  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  42:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/chat/GifPicker.tsx
+  19:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  21:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/chat/VoiceRecorder.tsx
+  119:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  177:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  208:56  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/debug/E2EEDebugPanel.tsx
+  40:11  error  Empty block statement                     no-empty
+  46:11  error  Empty block statement                     no-empty
+  58:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  68:13  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/e2ee/E2EESecurityPanel.tsx
+  17:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  18:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/feed/FeedMarketplaceSection.tsx
+  15:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  40:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/feed/FeedRightSidebar.tsx
+  28:9  warning  The 'friends' logical expression could make the dependencies of useMemo Hook (at line 44) change on every render. To fix this, wrap the initialization of 'friends' in its own useMemo() Hook  react-hooks/exhaustive-deps
+  28:9  warning  The 'friends' logical expression could make the dependencies of useMemo Hook (at line 55) change on every render. To fix this, wrap the initialization of 'friends' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/live/HostLiveView.tsx
+  88:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/live/LivePlayerCard.tsx
+  54:6  warning  React Hook useEffect has missing dependencies: 'joinLive' and 'leaveLive'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/live/LiveRightActions.tsx
+  24:9  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/live/LiveStreamPlayer.tsx
+   49:45  error    Unexpected any. Specify a different type                                                                                                      @typescript-eslint/no-explicit-any
+  168:21  error    Unexpected any. Specify a different type                                                                                                      @typescript-eslint/no-explicit-any
+  240:36  error    Unexpected any. Specify a different type                                                                                                      @typescript-eslint/no-explicit-any
+  276:17  error    Empty block statement                                                                                                                         no-empty
+  294:8   warning  React Hook useEffect has a missing dependency: 'stopStream'. Either include it or remove the dependency array                                 react-hooks/exhaustive-deps
+  300:8   warning  React Hook useEffect has missing dependencies: 'error', 'isStreaming', and 'startStream'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/live/LiveViewerPlayer.tsx
+  139:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                         @typescript-eslint/no-explicit-any
+  158:18  warning  The ref value 'videoRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'videoRef.current' to a variable inside the effect, and use that variable in the cleanup function  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/AIProductHelper.tsx
+  73:19  error  Empty block statement                     no-empty
+  76:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/AISalesCoach.tsx
+  145:19  error  Empty block statement                     no-empty
+  148:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/CartSheet.tsx
+   47:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   94:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  290:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/CreateProductDialog.tsx
+  135:19  error  Empty block statement                     no-empty
+  138:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/NegotiationChat.tsx
+   54:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  113:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  203:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  347:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/OrderTracking.tsx
+  34:17  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+  43:6   warning  React Hook useEffect has a missing dependency: 'fetchTracking'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/OrdersTable.tsx
+  11:11  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  28:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  70:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  94:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/ProductCard.tsx
+  18:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/ProductReviews.tsx
+  118:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/RelayPointPicker.tsx
+  92:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/SalesAnalytics.tsx
+   9:11  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  62:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/marketplace/SellerDashboard.tsx
+   49:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   59:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   93:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   99:42  error  Unnecessary escape character: \/          no-useless-escape
+  138:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  146:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  151:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  155:63  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  166:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  173:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  192:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  233:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  235:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  356:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  389:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  525:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  526:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/messages/ChatView.tsx
+  149:41  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+  208:6   warning  React Hook useMemo has an unnecessary dependency: 'conversationId'. Either exclude it or remove the dependency array               react-hooks/exhaustive-deps
+  278:87  error    Empty block statement                                                                                                              no-empty
+  339:85  error    Empty block statement                                                                                                              no-empty
+  451:6   warning  React Hook useCallback has an unnecessary dependency: 'e2ee.fingerprintChanged'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+  514:6   warning  React Hook useEffect has a missing dependency: 'markRead'. Either include it or remove the dependency array                        react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/messages/ContactVerificationDialog.tsx
+   36:11  error    Empty block statement                                                                                                           no-empty
+  100:13  error    Empty block statement                                                                                                           no-empty
+  158:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/components/messages/ConversationList.tsx
+  43:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/messages/DisappearingMessagesDialog.tsx
+  37:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  49:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/messages/E2EERestorePromptDialog.tsx
+  52:15  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/messages/EncryptedMedia.tsx
+  62:6  warning  React Hook useCallback has an unnecessary dependency: 'encryptedUrl'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/messages/NewConversationDialog.tsx
+   40:9   warning  The 'friends' logical expression could make the dependencies of useMemo Hook (at line 49) change on every render. To fix this, wrap the initialization of 'friends' in its own useMemo() Hook    react-hooks/exhaustive-deps
+   40:9   warning  The 'friends' logical expression could make the dependencies of useEffect Hook (at line 86) change on every render. To fix this, wrap the initialization of 'friends' in its own useMemo() Hook  react-hooks/exhaustive-deps
+  111:17  error    Unexpected any. Specify a different type                                                                                                                                                         @typescript-eslint/no-explicit-any
+  126:17  error    Unexpected any. Specify a different type                                                                                                                                                         @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/messages/SafetyNumberDialog.tsx
+  219:13  error  Empty block statement  no-empty
+  248:13  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/messages/SenderKeysDialog.tsx
+  46:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  79:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/messages/ShareContentPicker.tsx
+  15:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  23:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  26:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  29:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/messages/decryptionService.ts
+  380:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  382:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  384:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  389:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/profile/ProfileAboutSection.tsx
+  106:9   warning  The 'visibility' logical expression could make the dependencies of useCallback Hook (at line 121) change on every render. To fix this, wrap the initialization of 'visibility' in its own useMemo() Hook  react-hooks/exhaustive-deps
+  146:14  error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+  153:67  error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+  157:87  error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+  159:99  error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/profile/ProfileOverview.tsx
+  93:9  warning  The 'visibility' logical expression could make the dependencies of useCallback Hook (at line 108) change on every render. To fix this, wrap the initialization of 'visibility' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/settings/AccountManagementSections.tsx
+  37:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  45:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/settings/AppearanceSettingsPanel.tsx
+   60:6  warning  React Hook useEffect has a missing dependency: 'modeKey'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+   65:6  warning  React Hook useEffect has a missing dependency: 'modeKey'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+   70:6  warning  React Hook useEffect has a missing dependency: 'modeKey'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+   75:6  warning  React Hook useEffect has a missing dependency: 'modeKey'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+   80:6  warning  React Hook useEffect has a missing dependency: 'modeKey'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+  139:6  warning  React Hook useCallback has a missing dependency: 'modeKey'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/components/settings/ContentPreferencesPanel.tsx
+  81:15  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/components/settings/DetoxSchedulePanel.tsx
+  43:72  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  50:69  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/settings/DevicesPanel.tsx
+   69:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  120:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  135:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/settings/ParentalControlPanel.tsx
+  40:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/settings/PrivacySettingsPanel.tsx
+  250:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  393:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/settings/RestrictedFriendsPanel.tsx
+  217:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/settings/SettingsProfileTab.tsx
+  113:6    warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  144:128  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  167:14   error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  178:21   error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/components/ui/badge.tsx
+  29:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/components/ui/button.tsx
+  48:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/components/ui/command.tsx
+  24:11  error  An interface declaring no members is equivalent to its supertype  @typescript-eslint/no-empty-object-type
+
+/home/runner/work/echo-social/echo-social/src/components/ui/form.tsx
+  129:10  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/components/ui/navigation-menu.tsx
+  111:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/components/ui/sidebar.tsx
+  636:3  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/components/ui/sonner.tsx
+  27:19  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/components/ui/textarea.tsx
+  5:18  error  An interface declaring no members is equivalent to its supertype  @typescript-eslint/no-empty-object-type
+
+/home/runner/work/echo-social/echo-social/src/components/ui/toggle.tsx
+  37:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/contexts/E2EEProvider.tsx
+  24:36  warning  React Hook useMemo has a missing dependency: 'value'. Either include it or remove the dependency array                          react-hooks/exhaustive-deps
+  54:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  66:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  72:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  81:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  88:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/e2ee-session/__tests__/deviceRegistryTrust.test.ts
+   47:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   77:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/e2ee-session/__tests__/fallbackDecrypt.test.ts
+   55:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   56:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   57:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   58:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   60:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   61:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   62:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   63:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   72:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   82:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   83:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   86:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  103:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  104:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  108:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  119:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  120:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  121:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  122:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  131:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  133:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  136:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  148:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  149:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  150:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/e2ee-session/refanoutQueue.ts
+  89:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useABTests.ts
+  47:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  59:75  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useAIContent.ts
+  21:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useAIEngine.ts
+  230:6  warning  React Hook useCallback has a missing dependency: 'loadFeedbackHistory'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/hooks/useAccountKeySync.ts
+   55:15   error    Empty block statement                                                                                    no-empty
+   67:88   error    Empty block statement                                                                                    no-empty
+  139:39   error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  187:15   error    Empty block statement                                                                                    no-empty
+  193:6    warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  212:19   error    Empty block statement                                                                                    no-empty
+  216:21   error    Empty block statement                                                                                    no-empty
+  221:21   error    Empty block statement                                                                                    no-empty
+  231:15   error    Empty block statement                                                                                    no-empty
+  259:15   error    Empty block statement                                                                                    no-empty
+  269:15   error    Empty block statement                                                                                    no-empty
+  279:15   error    Empty block statement                                                                                    no-empty
+  306:44   error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  344:48   error    Empty block statement                                                                                    no-empty
+  351:17   error    Empty block statement                                                                                    no-empty
+  361:109  error    Empty block statement                                                                                    no-empty
+  375:15   error    Empty block statement                                                                                    no-empty
+  400:44   error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  433:6    warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/hooks/useAdCampaigns.ts
+   15:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  140:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  192:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  214:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  278:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useAdsMeta.ts
+   43:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   81:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  100:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  111:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  120:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  140:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  159:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  170:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  179:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useCall.ts
+  393:42  error  Empty block statement                     no-empty
+  413:42  error  Empty block statement                     no-empty
+  530:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useCallHistory.ts
+  42:36   error  Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+  46:11   error  'profiles' is never reassigned. Use 'const' instead  prefer-const
+  52:53   error  Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+  52:83   error  Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+  52:112  error  Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useChatPin.ts
+  104:43  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  104:79  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  105:42  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  105:69  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  106:51  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  106:82  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  115:38  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  115:73  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  115:99  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  117:36  error    Unexpected any. Specify a different type                                                                              @typescript-eslint/no-explicit-any
+  471:6   warning  React Hook useEffect has a missing dependency: 'lockWithoutWiping'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  600:19  error    Empty block statement                                                                                                 no-empty
+  632:17  error    Empty block statement                                                                                                 no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useComments.ts
+   68:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  134:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  204:97  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  214:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useContactSync.ts
+   98:72  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  125:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useCryptoMaintenance.ts
+  46:13  error  Empty block statement  no-empty
+  89:17  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useDeviceLink.ts
+   93:82  error  Empty block statement                     no-empty
+  114:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  122:71  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  126:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  133:11  error  Empty block statement                     no-empty
+  142:11  error  Empty block statement                     no-empty
+  155:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  177:13  error  Empty block statement                     no-empty
+  215:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  218:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  224:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  243:63  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  267:74  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  276:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  297:64  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  312:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  327:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  377:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  414:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useDevicePrimaryRepair.ts
+  44:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  88:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  98:19  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useDeviceRegistration.ts
+   68:15   error  Empty block statement                     no-empty
+   78:15   error  Empty block statement                     no-empty
+   88:52   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  100:19   error  Empty block statement                     no-empty
+  168:47   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  219:23   error  Empty block statement                     no-empty
+  229:21   error  Empty block statement                     no-empty
+  239:21   error  Empty block statement                     no-empty
+  261:23   error  Empty block statement                     no-empty
+  271:23   error  Empty block statement                     no-empty
+  331:73   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  406:47   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  436:149  error  Empty block statement                     no-empty
+  437:91   error  Empty block statement                     no-empty
+  443:151  error  Empty block statement                     no-empty
+  444:93   error  Empty block statement                     no-empty
+  489:52   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  489:89   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  490:59   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  490:112  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  505:34   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  509:93   error  Empty block statement                     no-empty
+  521:19   error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useDeviceSecurity.ts
+  15:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  16:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useE2EE.ts
+   127:47  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+   217:62  error    Empty block statement                                                                                                                    no-empty
+   220:11  error    Empty block statement                                                                                                                    no-empty
+   299:46  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+   317:35  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+   498:87  error    Empty block statement                                                                                                                    no-empty
+   631:90  error    Empty block statement                                                                                                                    no-empty
+   750:15  error    Empty block statement                                                                                                                    no-empty
+   812:21  error    Empty block statement                                                                                                                    no-empty
+   818:19  error    Empty block statement                                                                                                                    no-empty
+   828:19  error    Empty block statement                                                                                                                    no-empty
+   853:17  error    Empty block statement                                                                                                                    no-empty
+   863:17  error    Empty block statement                                                                                                                    no-empty
+   957:79  error    Empty block statement                                                                                                                    no-empty
+  1028:24  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+  1160:40  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+  1252:6   warning  React Hook useCallback has a missing dependency: 'decryptRatchetMessage'. Either include it or remove the dependency array               react-hooks/exhaustive-deps
+  1272:13  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+  1569:6   warning  React Hook useCallback has missing dependencies: 'maybeAbsorbSKDM' and 'peerUserId'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  1606:82  error    Empty block statement                                                                                                                    no-empty
+  1633:6   warning  React Hook useCallback has an unnecessary dependency: 'conversationId'. Either exclude it or remove the dependency array                 react-hooks/exhaustive-deps
+  1700:28  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+  1703:70  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useFeedPerformance.ts
+   40:16  error  Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+  102:9   error  'lastTime' is never reassigned. Use 'const' instead  prefer-const
+
+/home/runner/work/echo-social/echo-social/src/hooks/useIncomingCall.ts
+   15:69  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+   75:79  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  127:67  error    Empty block statement                                                                                                                                                                                                                                                  no-empty
+  128:67  error    Empty block statement                                                                                                                                                                                                                                                  no-empty
+  129:43  error    Empty block statement                                                                                                                                                                                                                                                  no-empty
+  181:45  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  279:30  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  280:36  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  317:43  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  332:42  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  343:43  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  364:19  warning  The ref value 'ringtoneRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'ringtoneRef.current' to a variable inside the effect, and use that variable in the cleanup function  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/hooks/useLiveStreams.ts
+   45:9   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   88:77  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   98:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  102:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  108:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  108:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  115:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMLFeed.ts
+  20:78  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  24:77  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  26:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  44:77  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMLTracker.ts
+   95:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   95:85  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  117:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMarketplace.ts
+  130:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  171:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  188:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  224:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  276:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  320:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMessageEdit.ts
+  16:6  warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMessageQueue.ts
+  228:6  warning  React Hook useCallback has a missing dependency: 'queue'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMessageQueueSignal.ts
+  510:21  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMessageReactions.ts
+   34:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   96:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  115:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMessages.ts
+   16:77  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  214:6   warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  240:36  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  333:30  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  334:26  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  335:32  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  337:34  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  372:41  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  379:50  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  483:50  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  504:45  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  522:45  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  684:46  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+  817:48  error    Unexpected any. Specify a different type                                                                 @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMessagesStable.ts
+  141:48  error    Unexpected any. Specify a different type                                                                                                                                                              @typescript-eslint/no-explicit-any
+  180:9   warning  The 'recent' logical expression could make the dependencies of useMemo Hook (at line 226) change on every render. To fix this, wrap the initialization of 'recent' in its own useMemo() Hook          react-hooks/exhaustive-deps
+  199:9   warning  The 'hiddenIds' logical expression could make the dependencies of useEffect Hook (at line 290) change on every render. To fix this, wrap the initialization of 'hiddenIds' in its own useMemo() Hook  react-hooks/exhaustive-deps
+  315:6   warning  React Hook useEffect has a missing dependency: 'olderQuery'. Either include it or remove the dependency array                                                                                         react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/hooks/useNegotiations.ts
+   90:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  153:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  170:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  190:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  216:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useNeuralMetrics.ts
+   54:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   60:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  119:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  125:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  125:49  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  131:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  159:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  175:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  175:80  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useOAuthContactsImport.ts
+   50:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   75:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  147:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  150:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useOnlinePresence.ts
+  31:6  warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/hooks/useParentalControl.ts
+  94:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/usePosts.ts
+   48:43  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+   67:38  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+   80:43  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+   97:48  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+   99:46  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  109:11  error  'query' is never reassigned. Use 'const' instead  prefer-const
+  116:61  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  116:82  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  164:70  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  193:35  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  221:33  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  279:32  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  283:41  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  309:25  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  328:34  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  330:15  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  333:52  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  396:34  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  398:15  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  402:41  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  403:31  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  410:34  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  412:15  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  414:33  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  450:15  error  Empty block statement                             no-empty
+  479:81  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  483:39  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  484:26  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/usePrivacySettings.ts
+  19:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useProductReviews.ts
+  51:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useQualityTracker.ts
+   41:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   41:66  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  129:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  164:11  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useR2Upload.ts
+  42:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useReactions.ts
+   25:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   25:74  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   25:82  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   29:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   35:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   36:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   90:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  145:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  146:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useRealtimeNotifications.ts
+   41:15  error    Empty block statement                                                                                            no-empty
+   44:6   warning  React Hook useEffect has a missing dependency: 'enqueueSound'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+   77:38  error    Unexpected any. Specify a different type                                                                         @typescript-eslint/no-explicit-any
+  104:21  error    Empty block statement                                                                                            no-empty
+  141:6   warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array          react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/hooks/useRestrictedFriends.ts
+  24:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  42:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  43:79  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  60:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  61:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  79:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useSecureBackup.ts
+  32:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  68:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useSellerReviews.ts
+  59:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useStripeSubscription.ts
+  102:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  114:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useVersionWatcher.ts
+  32:11  error  Empty block statement  no-empty
+  38:43  error  Empty block statement  no-empty
+  40:76  error  Empty block statement  no-empty
+  44:11  error  Empty block statement  no-empty
+  59:69  error  Empty block statement  no-empty
+  79:73  error  Empty block statement  no-empty
+  84:77  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useVideoFeed.ts
+  29:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  77:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  88:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  88:93  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  90:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useVoiceSettings.ts
+  29:11  error  Empty block statement  no-empty
+  36:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/hooks/useWellbeingPreferences.ts
+   49:70  error  Empty block statement                     no-empty
+   52:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  120:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useWellbeingScore.ts
+  14:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useZeusCompanion.ts
+  57:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useZeusConversations.ts
+  37:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/integrations/supabase/client.ts
+  11:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  29:11  error  Empty block statement                     no-empty
+  89:11  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/aiEngine.ts
+  301:76  error  Unexpected any. Specify a different type                                    @typescript-eslint/no-explicit-any
+  308:22  error  Unexpected constant nullishness on the left-hand side of a `??` expression  no-constant-binary-expression
+
+/home/runner/work/echo-social/echo-social/src/lib/auth.tsx
+   49:17   error    Empty block statement                                                                                                           no-empty
+  172:106  error    Unexpected any. Specify a different type                                                                                        @typescript-eslint/no-explicit-any
+  173:13   error    Empty block statement                                                                                                           no-empty
+  190:106  error    Unexpected any. Specify a different type                                                                                        @typescript-eslint/no-explicit-any
+  191:13   error    Empty block statement                                                                                                           no-empty
+  219:19   error    Empty block statement                                                                                                           no-empty
+  243:39   error    Empty block statement                                                                                                           no-empty
+  271:13   error    Empty block statement                                                                                                           no-empty
+  281:17   warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/lib/consoleGuard.ts
+  25:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  56:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  56:56  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crashLogger.ts
+  105:11  error    Empty block statement                                                          no-empty
+  108:3   warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+  112:28  error    Empty block statement                                                          no-empty
+  129:57  error    Empty block statement                                                          no-empty
+  153:19  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/deviceRatchet.test.ts
+  39:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/e2ee.test.ts
+  24:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/interopV4V5.test.ts
+   46:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   57:66  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   70:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   74:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   76:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   86:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  101:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  102:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  155:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/iosExportKeyFallback.test.ts
+   50:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   52:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   61:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   62:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   63:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  109:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  145:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  212:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  219:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  235:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  238:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  247:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/keyRotation.test.ts
+  9:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/ktMerkle.test.ts
+  85:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/messageRetry.test.ts
+  17:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/multiDeviceFanoutOutOfOrder.test.ts
+  55:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  66:66  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  79:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  84:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  88:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  99:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/multiDeviceIntegration.test.ts
+  55:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  66:66  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  79:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  84:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  88:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  99:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/ratchet.test.ts
+  15:34  error  Unexpected any. Specify a different type                   @typescript-eslint/no-explicit-any
+  16:36  error  Unexpected any. Specify a different type                   @typescript-eslint/no-explicit-any
+  76:11  error  'aliceState' is never reassigned. Use 'const' instead      prefer-const
+  76:23  error  'bobState' is never reassigned. Use 'const' instead        prefer-const
+  76:33  error  'aliceSig' is never reassigned. Use 'const' instead        prefer-const
+  76:43  error  'bobSig' is never reassigned. Use 'const' instead          prefer-const
+  76:51  error  'aliceSigPubB64' is never reassigned. Use 'const' instead  prefer-const
+  76:67  error  'bobSigPubB64' is never reassigned. Use 'const' instead    prefer-const
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/senderKeyInbound.test.ts
+   57:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   71:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   94:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   95:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   96:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:72  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  108:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  122:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  135:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  136:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/senderKeyOutbound.test.ts
+   31:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   60:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   93:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  102:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  103:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  118:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  148:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  149:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  150:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  151:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  155:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  172:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  173:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  184:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  185:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  208:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  209:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  226:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  227:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  245:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  247:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  275:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  276:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/senderKeySession.test.ts
+  93:9  error  'owner' is never reassigned. Use 'const' instead  prefer-const
+  94:9  error  'bob' is never reassigned. Use 'const' instead    prefer-const
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/signalConformanceVectors.test.ts
+   89:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  108:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/signalProtocolHardening.test.ts
+  28:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/signedDeviceList.test.ts
+   57:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   75:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  198:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  233:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/v4EnvelopeOutboundAndLegacyRead.test.ts
+  36:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/__tests__/v4StrictOutbound.test.ts
+   21:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   22:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  107:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/accountKeyBackup.ts
+   170:77   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   174:26   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   188:75   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   225:77   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   228:22   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   236:75   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   247:30   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   255:11   error  Empty block statement                     no-empty
+   259:11   error  Empty block statement                     no-empty
+   263:11   error  Empty block statement                     no-empty
+   267:11   error  Empty block statement                     no-empty
+   271:11   error  Empty block statement                     no-empty
+   276:19   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   280:11   error  Empty block statement                     no-empty
+   287:11   error  Empty block statement                     no-empty
+   295:11   error  Empty block statement                     no-empty
+   388:53   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   392:74   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   477:11   error  Empty block statement                     no-empty
+   482:11   error  Empty block statement                     no-empty
+   487:11   error  Empty block statement                     no-empty
+   505:11   error  Empty block statement                     no-empty
+   516:13   error  Empty block statement                     no-empty
+   562:29   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   606:29   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   836:31   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1192:35   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1201:12   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1224:68   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1224:97   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1235:65   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1256:77   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1256:106  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1306:63   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1306:92   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1306:106  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/archiveMasterKey.ts
+  149:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  215:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/backupRotation.ts
+  35:11  error  Empty block statement  no-empty
+  41:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/callKeyEncrypt.ts
+  55:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/constants.ts
+  18:6  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  24:6  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/cryptoIntegrity.ts
+   29:109  error  Unexpected any. Specify a different type                                                                                 @typescript-eslint/no-explicit-any
+   94:31   error  Empty block statement                                                                                                    no-empty
+  119:34   error  The `Function` type accepts any function-like value.
+Prefer explicitly defining any function parameters and return type  @typescript-eslint/no-unsafe-function-type
+  119:44   error  The `Function` type accepts any function-like value.
+Prefer explicitly defining any function parameters and return type  @typescript-eslint/no-unsafe-function-type
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/dbRegistry.ts
+  172:15  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/deviceKx.ts
+   81:60  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   82:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  115:62  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:75  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/deviceLinkTrust.ts
+   74:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  233:15  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/deviceList.ts
+   37:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   90:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  101:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  129:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  130:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/deviceManifest.ts
+  20:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  42:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  58:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  63:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/devicePairing.ts
+  79:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/devicePrekeyRepair.ts
+  103:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/deviceRatchet.ts
+  193:10  error  Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  213:31  error  Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  213:50  error  Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  229:65  error  Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  236:54  error  Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  246:67  error  Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  327:7   error  's' is never reassigned. Use 'const' instead        prefer-const
+  403:7   error  'session' is never reassigned. Use 'const' instead  prefer-const
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/deviceTrust.ts
+  58:13  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/e2ee.ts
+   55:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  134:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  198:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  212:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/epochEnvelope.ts
+  27:87  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/errorLogger.ts
+  156:7  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/fingerprintTracker.ts
+   56:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   98:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  103:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  125:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  128:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  171:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  205:11  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/identityBootstrap.ts
+   68:11  error  Empty block statement  no-empty
+  108:13  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/identityChangeLedger.ts
+  33:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  42:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  45:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  47:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  52:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  66:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  73:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  86:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  93:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/identityRecovery.ts
+  25:17  error  Empty block statement                     no-empty
+  35:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  47:11  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/invalidDeviceCache.ts
+  34:9   error  Empty block statement  no-empty
+  45:11  error  Empty block statement  no-empty
+  60:11  error  Empty block statement  no-empty
+  66:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/kdfChain.ts
+   39:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   77:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  107:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/keyManager.ts
+  166:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  167:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  178:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  179:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  189:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  202:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  242:11  error  Empty block statement                     no-empty
+  267:11  error  Empty block statement                     no-empty
+  273:60  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  274:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  275:68  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  276:69  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  286:91  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  298:11  error  Empty block statement                     no-empty
+  339:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  474:55  error  Empty block statement                     no-empty
+  485:48  error  Empty block statement                     no-empty
+  496:11  error  Empty block statement                     no-empty
+  508:11  error  Empty block statement                     no-empty
+  514:11  error  Empty block statement                     no-empty
+  543:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  546:76  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  553:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  560:11  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/keyManagerSafe.ts
+  44:17  error  Empty block statement                     no-empty
+  81:13  error  Empty block statement                     no-empty
+  93:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/keySentinel.ts
+  66:51  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/pinWrap.ts
+  153:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/plaintextHotCache.ts
+  120:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/postRestoreLifecycle.ts
+   15:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   17:11  error  Empty block statement                     no-empty
+   20:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   27:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   33:11  error  Empty block statement                     no-empty
+   61:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   87:11  error  Empty block statement                     no-empty
+  115:13  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/postRestoreSync.ts
+  50:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/r2BackupVault.ts
+   35:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  117:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/ratchet.ts
+  161:22   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  166:55   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  171:52   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  204:55   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  321:50   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  362:42   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  389:50   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  404:24   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  408:50   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  537:22   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  595:77   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  596:79   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  597:85   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  599:105  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  600:105  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  614:47   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  614:74   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/ratchetStore.ts
+  40:54  error  Empty block statement                     no-empty
+  60:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  84:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/rateLimiter.ts
+  117:50  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/recoverRecentMessagesAfterUnlock.ts
+   65:11  error  Empty block statement                     no-empty
+  139:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  184:68  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  187:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/recoveryManager.ts
+  49:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  69:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  69:63  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  81:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  81:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  93:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  93:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/recoveryMarkers.ts
+  21:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  43:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/resyncE2EE.ts
+  160:37   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  165:41   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  212:71   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  317:111  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  327:11   error  Empty block statement                     no-empty
+  397:77   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  417:77   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  667:15   error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/rpcTyped.ts
+  20:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/sealedSenderTransport.ts
+   70:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   88:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  106:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  124:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/secureBackupVault.ts
+   70:27   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   95:70   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   96:71   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   97:78   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   98:79   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  108:111  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  130:29   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  148:29   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  159:23   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  177:29   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/secureMessagePipeline.ts
+   39:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  123:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  129:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  137:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/securityEpoch.ts
+  35:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  50:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  66:11  error  Empty block statement                     no-empty
+  80:82  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/senderCertificate.ts
+   36:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   44:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   96:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  106:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/senderKeyInbound.ts
+  78:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/senderKeyOutbound.ts
+   70:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  124:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  182:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/senderKeyRotationWatcher.ts
+   84:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  104:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  136:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  144:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/senderKeySession.ts
+  90:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/serverCryptoState.ts
+  15:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  51:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/signedDeviceList.ts
+   69:18  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  189:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  196:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  207:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  235:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  275:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  313:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/transparencyLog.ts
+  24:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  39:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/utils.ts
+  143:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  150:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/x3dh.ts
+  147:104  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  243:65   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  246:56   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  333:65   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  336:56   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  366:28   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  379:30   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  414:68   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  419:151  error  Empty block statement                     no-empty
+  434:11   error  Empty block statement                     no-empty
+  447:11   error  Empty block statement                     no-empty
+  463:66   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  469:93   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  478:36   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  479:26   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  499:56   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  550:71   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  553:82   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  554:81   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  555:82   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  559:78   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  574:87   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  576:82   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  577:82   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  578:82   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  604:89   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  606:84   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  607:84   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  608:84   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  613:80   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/x3dhBundleRouter.ts
+  51:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  71:11  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/crypto/x3dhReplayGuard.ts
+   57:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  172:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  210:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  262:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/debug/e2eeMobileDebug.ts
+   37:11  error  Empty block statement                     no-empty
+  114:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  124:13  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/device-manager/currentDevice.ts
+  45:13  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/device-manager/health.ts
+  70:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  81:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/device-manager/lifecycle.ts
+   85:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  165:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/device-manager/sessionGate.ts
+  28:19  error  'error' is never reassigned. Use 'const' instead  prefer-const
+
+/home/runner/work/echo-social/echo-social/src/lib/e2eeCleanStartup.ts
+  29:84  error  Empty block statement  no-empty
+  30:86  error  Empty block statement  no-empty
+  31:77  error  Empty block statement  no-empty
+  41:11  error  Empty block statement  no-empty
+  45:58  error  Empty block statement  no-empty
+  46:60  error  Empty block statement  no-empty
+  47:53  error  Empty block statement  no-empty
+  48:53  error  Empty block statement  no-empty
+  64:11  error  Empty block statement  no-empty
+  71:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/feedAlgorithm.ts
+  182:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/feedPreferences.ts
+   67:11  error  Empty block statement                     no-empty
+   78:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   99:13  error  Empty block statement                     no-empty
+  101:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  138:11  error  Empty block statement                     no-empty
+  144:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/i18n/index.tsx
+  43:11  error    Empty block statement                                                                                                           no-empty
+  61:13  error    Empty block statement                                                                                                           no-empty
+  83:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+  87:10  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/src/lib/loginRateLimit.ts
+  20:11  error  Empty block statement  no-empty
+  27:11  error  Empty block statement  no-empty
+  71:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/__tests__/iosColdStartFlow.test.ts
+  52:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/__tests__/iosKeyRotationQueueRebinding.test.ts
+  64:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/__tests__/messageQueue.test.ts
+   26:3   warning  Unused eslint-disable directive (no problems were reported from 'no-constant-condition')
+  161:35  error    Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/__tests__/multiDeviceFanoutSecurity.test.ts
+  5:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/__tests__/multiDeviceFanoutTrust.test.ts
+   80:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   98:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   99:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  113:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  134:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  136:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  153:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  178:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  180:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  192:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/__tests__/sendFlowPlaintextContainment.test.ts
+   63:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   74:66  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   85:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   90:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   94:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  176:58  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  208:67  error  Empty block statement                     no-empty
+  209:81  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/archive/__tests__/archiveKey.test.ts
+   4:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   5:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  15:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  22:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  22:49  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/archive/archiveKey.ts
+   62:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  125:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  145:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  151:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  152:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  168:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  182:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  189:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  191:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  273:68  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  314:80  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/archive/archivePrefs.ts
+  37:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/ciphertextBoundPlaintextCache.ts
+  87:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/compressVideo.ts
+  54:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/currentDevice.ts
+   93:68  error  Empty block statement                     no-empty
+   94:70  error  Empty block statement                     no-empty
+  102:13  error  Empty block statement                     no-empty
+  111:11  error  Empty block statement                     no-empty
+  152:73  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  172:64  error  Empty block statement                     no-empty
+  194:48  error  Empty block statement                     no-empty
+  195:50  error  Empty block statement                     no-empty
+  277:55  error  Empty block statement                     no-empty
+  321:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/deviceCopyRetryProcessor.ts
+   30:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   63:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   64:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   90:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  137:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  154:17  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/deviceCopyRetryRequest.ts
+  75:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/messageEditContext.ts
+  60:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/messageEditRealtime.ts
+  26:54  error  Empty block statement                     no-empty
+  34:49  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  66:54  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/messageEdits.ts
+  206:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  248:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  267:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  296:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/messageQueue.ts
+  275:15  error  Empty block statement  no-empty
+  423:21  error  Empty block statement  no-empty
+  490:59  error  Empty block statement  no-empty
+  525:17  error  Empty block statement  no-empty
+  726:13  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/multiDeviceFanout.ts
+  214:9   error  Empty block statement                     no-empty
+  222:11  error  Empty block statement                     no-empty
+  232:11  error  Empty block statement                     no-empty
+  267:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  268:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  397:3   error  Unnecessary try/catch wrapper             no-useless-catch
+  693:81  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  699:75  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  751:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/realtimeKeySync.ts
+   61:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   92:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  102:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  127:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  129:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  140:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  152:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/repeatablePreKeyEnvelope.ts
+  474:11  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  514:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  529:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  531:15  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/nativeStore.ts
+  72:11  error  Empty block statement  no-empty
+  75:11  error  Empty block statement  no-empty
+  83:13  error  Empty block statement  no-empty
+  87:11  error  Empty block statement  no-empty
+  90:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/platformPermissions.ts
+  25:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  49:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/lib/runtimeShield.ts
+   54:89  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   64:11  error  Empty block statement                     no-empty
+   83:9   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   92:11  error  Empty block statement                     no-empty
+  210:11  error  Empty block statement                     no-empty
+  215:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  217:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  224:11  error  Empty block statement                     no-empty
+  230:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  230:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  230:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  235:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  235:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  235:66  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  252:11  error  Empty block statement                     no-empty
+  262:11  error  Empty block statement                     no-empty
+  266:11  error  Empty block statement                     no-empty
+  274:11  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/secureStore.ts
+  158:11  error  Empty block statement  no-empty
+  171:50  error  Empty block statement  no-empty
+  249:65  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/lib/sessionGuard.ts
+  145:11  error  Empty block statement  no-empty
+
+/home/runner/work/echo-social/echo-social/src/main.tsx
+  104:11  error  Empty block statement                     no-empty
+  111:11  error  Empty block statement                     no-empty
+  118:11  error  Empty block statement                     no-empty
+  122:11  error  Empty block statement                     no-empty
+  144:13  error  Empty block statement                     no-empty
+  173:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/AIEngine.tsx
+    71:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   295:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   298:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   889:75  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   914:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   934:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   963:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   966:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   967:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1666:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1751:19  error  Empty block statement                     no-empty
+  1762:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1762:95  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1765:17  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/src/pages/Admin.tsx
+  116:124  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/AdsManager.tsx
+  141:68  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  414:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  420:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  426:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  455:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/AuthConfirm.tsx
+  50:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  66:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/CreatorUpgrade.tsx
+  75:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  81:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/Feed.tsx
+   86:6   warning  React Hook useEffect has a missing dependency: 'feedPerf'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+   93:6   warning  React Hook useEffect has a missing dependency: 'feedPerf'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  100:6   warning  React Hook useEffect has a missing dependency: 'feedPerf'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  124:15  error    Empty block statement                                                                                        no-empty
+
+/home/runner/work/echo-social/echo-social/src/pages/KeyTransparencyAudit.tsx
+  37:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  41:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/LiveScreen.tsx
+   58:9   error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+   86:80  error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+   97:17  error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+   98:18  error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+  137:40  error    Unexpected any. Specify a different type                                                                                                                                                                  @typescript-eslint/no-explicit-any
+  148:15  error    Empty block statement                                                                                                                                                                                     no-empty
+  338:9   warning  The 'allLives' logical expression could make the dependencies of useMemo Hook (at line 365) change on every render. To fix this, wrap the initialization of 'allLives' in its own useMemo() Hook          react-hooks/exhaustive-deps
+  338:9   warning  The 'allLives' logical expression could make the dependencies of useMemo Hook (at line 377) change on every render. To fix this, wrap the initialization of 'allLives' in its own useMemo() Hook          react-hooks/exhaustive-deps
+  339:9   warning  The 'followingIds' logical expression could make the dependencies of useMemo Hook (at line 365) change on every render. To fix this, wrap the initialization of 'followingIds' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/pages/LiveWatch.tsx
+   43:73  error    Unexpected any. Specify a different type                                                                                                   @typescript-eslint/no-explicit-any
+   50:17  error    Unexpected any. Specify a different type                                                                                                   @typescript-eslint/no-explicit-any
+   51:18  error    Unexpected any. Specify a different type                                                                                                   @typescript-eslint/no-explicit-any
+   58:37  error    Unexpected any. Specify a different type                                                                                                   @typescript-eslint/no-explicit-any
+   59:38  error    Unexpected any. Specify a different type                                                                                                   @typescript-eslint/no-explicit-any
+   89:15  error    Empty block statement                                                                                                                      no-empty
+  132:6   warning  React Hook useEffect has missing dependencies: 'joinLive', 'leaveLive', and 'quality'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  157:40  error    Unexpected any. Specify a different type                                                                                                   @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/Login.tsx
+  41:23  error  React Hook "useQueryClient" is called conditionally. React Hooks must be called in the exact same order in every component render  react-hooks/rules-of-hooks
+
+/home/runner/work/echo-social/echo-social/src/pages/Marketplace.tsx
+   30:49  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+   73:62  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+  106:6   warning  React Hook useEffect has a missing dependency: 'refetchOrders'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  273:53  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+  441:65  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+  459:64  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+  481:36  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+  482:90  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+  519:61  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+  618:69  error    Unexpected any. Specify a different type                                                                          @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/Notifications.tsx
+  24:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  33:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/Onboarding.tsx
+   70:69   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   71:26   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   73:33   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  107:62   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  123:44   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  132:13   error  Empty block statement                     no-empty
+  145:43   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  146:38   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  253:78   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  324:32   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  326:15   error  Empty block statement                     no-empty
+  338:32   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  340:15   error  Empty block statement                     no-empty
+  343:19   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  360:116  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  361:13   error  Empty block statement                     no-empty
+  370:13   error  Empty block statement                     no-empty
+  405:15   error  Empty block statement                     no-empty
+  416:14   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  423:21   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/PostDetail.tsx
+  38:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  38:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/ProductDetail.tsx
+  18:58  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  24:62  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  48:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  95:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/Profile.tsx
+   94:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  225:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  452:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  456:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  655:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  656:93  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  849:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/Search.tsx
+  77:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  93:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  94:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/pages/Signup.tsx
+  94:38  error  Unnecessary escape character: \-  no-useless-escape
+
+/home/runner/work/echo-social/echo-social/src/pages/Videos.tsx
+  22:6  warning  React Hook useEffect has a missing dependency: 'activeIndex'. Either include it or remove the dependency array                                     react-hooks/exhaustive-deps
+  42:6  warning  React Hook useEffect has missing dependencies: 'goToNext', 'goToPrevious', and 'isFullscreen'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  61:7  error    Expected an assignment or function call and instead saw an expression                                                                              @typescript-eslint/no-unused-expressions
+  69:5  error    Expected an assignment or function call and instead saw an expression                                                                              @typescript-eslint/no-unused-expressions
+
+/home/runner/work/echo-social/echo-social/src/pages/seo/SEOLanding.tsx
+  118:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/_shared/aiEngineLog.ts
+  20:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/_shared/transactional-email-templates/new-device-login.tsx
+  20:7  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/supabase/functions/_shared/transactional-email-templates/pin-reset-code.tsx
+  23:7  warning  Fast refresh only works when a file only exports components. Move your component(s) to a separate file  react-refresh/only-export-components
+
+/home/runner/work/echo-social/echo-social/supabase/functions/_shared/transactional-email-templates/registry.ts
+  5:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  6:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  9:32  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/agent-actions/index.ts
+  35:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/agent-chat/index.ts
+  134:42  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  158:41  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  231:15  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  270:46  error  Unexpected control character(s) in regular expression: \x00, \x08, \x0b, \x0c, \x0e, \x1f  no-control-regex
+  382:30  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  398:29  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  420:27  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  432:44  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  433:43  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  434:56  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  436:29  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  450:32  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  459:44  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  460:45  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  462:29  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  471:64  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  474:66  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  500:32  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  539:71  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  543:65  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  593:23  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  595:34  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  684:34  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  685:21  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  717:44  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  740:61  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  747:57  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+  797:45  error  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/ai-engine/index.ts
+  70:49  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/ai-threat-shield/index.ts
+  51:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/anti-abuse/index.ts
+   19:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   52:9   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   61:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  201:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  379:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/auth-email-hook/index.ts
+   27:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  140:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/contact-match/index.ts
+  60:23  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  69:9   error  'emailMatches' is never reassigned. Use 'const' instead  prefer-const
+  69:23  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  82:45  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/dynamic-sitemap/index.ts
+  41:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  64:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/feed-optimizer/index.ts
+   68:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   86:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   87:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  114:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  115:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  119:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  123:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  205:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  299:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  302:49  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  328:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  340:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  345:84  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  393:88  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  400:84  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/feed-scoring/index.ts
+   61:9   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  254:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  262:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  268:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  277:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  277:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  280:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  281:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  282:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/import-google-contacts/index.ts
+   89:23  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  101:9   error  'emailMatches' is never reassigned. Use 'const' instead  prefer-const
+  101:23  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  113:19  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  118:16  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  134:17  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  182:13  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  185:13  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  224:13  error  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/kt-publish-epoch/index.ts
+   53:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  104:48  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/marketplace-checkout/index.ts
+   69:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   82:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   99:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  117:98  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  164:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  289:68  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  375:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/ml-feed-train/index.ts
+  189:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  219:92  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  221:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  222:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  223:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  224:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  279:17  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/supabase/functions/ml-feed/index.ts
+   34:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   60:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   64:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   70:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   71:49  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  101:49  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  131:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  139:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  239:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  250:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  359:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  426:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  430:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  462:71  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  472:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  486:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/ml-fraud-detect/index.ts
+  169:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  172:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  173:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  176:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  189:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  193:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  257:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/ml-moderation/index.ts
+   81:70  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  192:25  error  Empty block statement                     no-empty
+  288:47  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  290:57  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  293:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/ml-twotower-train/index.ts
+   45:11  error  Empty block statement                     no-empty
+  114:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  118:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/mondial-relay/index.ts
+   72:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   73:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  213:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  425:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/photo-guard/index.ts
+  152:58  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  197:62  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  211:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/platform-health/index.ts
+   51:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   68:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/push-notify/index.ts
+  212:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/security-monitor/index.ts
+   77:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   78:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   79:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   80:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  166:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  314:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  388:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  497:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  589:65  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  695:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  713:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/seller-ai-coach/index.ts
+   22:36  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+   53:55  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  111:23  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  112:9   error  'model' is never reassigned. Use 'const' instead  prefer-const
+  151:18  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  160:47  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/send-transactional-email/index.ts
+  59:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/threat-shield-train/index.ts
+  94:14  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/verify-chat-pin/index.ts
+   73:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  100:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  119:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/verify-email-domain/index.ts
+  61:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  75:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/supabase/functions/verify-packing-video/index.ts
+   64:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  134:73  error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/supabase/functions/zeus/index.ts
+    34:48   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    77:36   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   100:52   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   127:58   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   156:11   error  Empty block statement                     no-empty
+   161:55   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   161:86   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   199:34   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   238:153  error  Empty block statement                     no-empty
+   269:48   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   351:51   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   351:82   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   374:51   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   393:55   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   393:86   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   413:38   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   421:54   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   431:54   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   431:85   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   464:41   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   472:46   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   474:42   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   483:213  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   512:130  error  Empty block statement                     no-empty
+   638:52   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   638:67   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   646:61   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   681:58   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   682:54   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   683:57   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   684:65   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   685:66   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   696:30   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   698:81   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   699:111  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   701:72   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   719:85   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   761:66   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   762:63   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   890:39   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   911:73   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   925:57   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   933:51   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   945:73   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   962:45   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   977:74   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   979:60   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1001:57   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1022:75   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1024:70   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1030:57   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1099:50   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1099:81   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1139:61   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1179:23   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1207:44   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1207:127  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1208:63   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1210:56   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1211:59   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1260:95   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1261:118  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1335:61   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1386:39   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1389:35   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1392:39   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1395:45   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1398:53   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1527:17   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1544:34   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1590:39   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1590:95   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1591:62   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1655:59   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1655:90   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1730:15   error  Empty block statement                     no-empty
+  1740:62   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1740:93   error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  1807:17   error  Empty block statement                     no-empty
+
+/home/runner/work/echo-social/echo-social/tailwind.config.ts
+  155:13  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+✖ 1560 problems (1468 errors, 92 warnings)
+  18 errors and 3 warnings potentially fixable with the `--fix` option.
+

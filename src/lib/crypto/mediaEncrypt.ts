@@ -118,10 +118,15 @@ export function detectMediaMimeType(bytes: Uint8Array): string | null {
   if (ascii(bytes, 0, 4) === '%PDF') return 'application/pdf';
 
   if (ascii(bytes, 4, 4) === 'ftyp') {
-    const brand = ascii(bytes, 8, 4).toLowerCase();
-    if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(brand)) return 'image/heic';
-    if (['avif', 'avis'].includes(brand)) return 'image/avif';
-    if (brand === 'qt  ') return 'video/quicktime';
+    const brands = new Set<string>();
+    for (let offset = 8; offset + 4 <= Math.min(bytes.byteLength, 64); offset += 4) {
+      brands.add(ascii(bytes, offset, 4).toLowerCase());
+    }
+    if (brands.has('avif') || brands.has('avis')) return 'image/avif';
+    if ([...brands].some(brand => ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(brand))) {
+      return 'image/heic';
+    }
+    if (brands.has('qt  ')) return 'video/quicktime';
     return 'video/mp4';
   }
 
@@ -162,12 +167,16 @@ function unpackMediaPayload(decrypted: Uint8Array): DecryptedMediaPayload {
     throw new Error('Manifest du média chiffré invalide.');
   }
 
-  const mime = normalizeMimeType(textDecoder.decode(decrypted.slice(PAYLOAD_HEADER_BYTES, dataOffset)));
+  const declaredMime = normalizeMimeType(textDecoder.decode(decrypted.slice(PAYLOAD_HEADER_BYTES, dataOffset)));
   const fileBytes = decrypted.slice(dataOffset);
-  const sniffed = detectMediaMimeType(fileBytes);
+  const sniffedMime = detectMediaMimeType(fileBytes);
+  // The authenticated manifest is useful metadata, but byte signatures are the
+  // final rendering authority. This prevents a mislabeled video from entering
+  // an <img> loop and handles iOS files whose Blob.type is generic or wrong.
+  const resolvedMime = sniffedMime || (declaredMime === 'application/octet-stream' ? null : declaredMime);
   return {
     data: copyToArrayBuffer(fileBytes),
-    mimeType: mime === 'application/octet-stream' ? sniffed : mime,
+    mimeType: resolvedMime,
   };
 }
 
@@ -188,6 +197,7 @@ export async function generateMediaKey(): Promise<{ key: CryptoKey; keyB64: stri
 /** Import a base64 media key back into a non-extractable CryptoKey */
 export async function importMediaKey(keyB64: string): Promise<CryptoKey> {
   const raw = base64ToBuffer(keyB64);
+  if (raw.byteLength !== KEY_BITS / 8) throw new Error('Clé de média AES-256 invalide.');
   return hardCrypto.importKey(
     'raw',
     raw,
@@ -205,6 +215,16 @@ export async function encryptMedia(
   file: File | Blob,
   key: CryptoKey,
 ): Promise<Blob> {
+  const mimeBytes = textEncoder.encode(normalizeMimeType(file.type));
+  const estimatedPlaintextBytes = PAYLOAD_HEADER_BYTES + mimeBytes.byteLength + file.size;
+  // Reject before arrayBuffer(): Safari/iOS must never allocate an oversized
+  // clear file only to discover the limit after the allocation.
+  if (isOutgoingAttachmentTooLarge(estimatedPlaintextBytes)) {
+    throw new Error(
+      `Média trop volumineux : le fichier chiffré ne doit pas dépasser ${formatAttachmentLimit(MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES)}.`,
+    );
+  }
+
   const fileBytes = new Uint8Array(await file.arrayBuffer());
   const plaintext = packMediaPayload(file, fileBytes);
 
