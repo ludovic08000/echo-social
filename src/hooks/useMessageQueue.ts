@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
 import { savePlaintext } from '@/lib/crypto/plaintextStore';
+import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
+import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
 import {
   recoverRecentMessagesAfterUnlock,
@@ -48,6 +51,68 @@ export function useMessageQueue(
       stop();
     };
   }, [user?.id, allowPlaintext, isEncryptionActive]);
+
+  /**
+   * Signal-style warm send path.
+   *
+   * Signal creates a local outgoing message and durable job immediately, while
+   * identities/device routes are normally already hot. Sesame keeps the same
+   * trust gates, but primes the authenticated session, local E2EE identity and
+   * canonical signed device lists before the user presses Send. No plaintext,
+   * ciphertext or ratchet step is produced here.
+   *
+   * A short cooldown matches the verified-device RAM cache. Pointer/focus and
+   * online events make the common "tap composer, type, send" path warm without
+   * polling Supabase continuously in the background.
+   */
+  useEffect(() => {
+    if (!user?.id || !conversationId || allowPlaintext || !isEncryptionActive) return;
+
+    let cancelled = false;
+    let lastStartedAt = 0;
+    const cooldownMs = 8_000;
+
+    const prewarm = () => {
+      const now = Date.now();
+      if (now - lastStartedAt < cooldownMs) return;
+      lastStartedAt = now;
+
+      void Promise.allSettled([
+        supabase.auth.getSession(),
+        ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
+        (async () => {
+          const { data, error } = await supabase
+            .from('conversation_participants')
+            .select('user_id')
+            .eq('conversation_id', conversationId);
+          if (error || cancelled) return;
+
+          const recipientUserIds = Array.from(new Set(
+            (data ?? [])
+              .map((row) => row.user_id)
+              .filter((id): id is string => typeof id === 'string' && id.length > 0),
+          ));
+
+          // listFanoutTargets only returns routes from the canonical signed
+          // device list. verifyPrekeys=false skips unnecessary SPK network work;
+          // X3DH verifies a signed prekey if a fresh session is actually needed.
+          await listFanoutTargets(user.id, recipientUserIds, { verifyPrekeys: false });
+        })(),
+      ]).catch(() => undefined);
+    };
+
+    prewarm();
+    window.addEventListener('focus', prewarm);
+    window.addEventListener('online', prewarm);
+    window.addEventListener('pointerdown', prewarm, { passive: true });
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', prewarm);
+      window.removeEventListener('online', prewarm);
+      window.removeEventListener('pointerdown', prewarm);
+    };
+  }, [user?.id, conversationId, allowPlaintext, isEncryptionActive]);
 
   const handleSent = useCallback(async (localId: string) => {
     const previous = previousPendingRef.current.get(localId);
@@ -164,7 +229,8 @@ export function useMessageQueue(
         },
       });
       await queue.sendMessage(body, imageUrl, extra);
-    }, [allowPlaintext, conversationId, isEncryptionActive, isEncryptionReady, queue]);
+    }, [allowPlaintext, conversationId, isEncryptionActive, isEncryptionReady, queue],
+  );
 
   return {
     ...queue,
