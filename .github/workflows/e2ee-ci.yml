@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  finalize-signal-resource-optimization:
+  capture-final-resource-validation:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -35,13 +35,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Messaging regression tests
-        run: npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts src/components/messages/__tests__/decryptionServiceMultiDevice.test.ts src/components/messages/__tests__/decryptionNegativeCache.test.ts
+      - name: Capture targeted tests and build
+        shell: bash
+        run: |
+          set +e
+          REPORT=final-signal-resource-validation.txt
+          : > "$REPORT"
+          run_check() {
+            label="$1"
+            shift
+            echo "===== $label =====" | tee -a "$REPORT"
+            "$@" 2>&1 | tee -a "$REPORT"
+            code=${PIPESTATUS[0]}
+            echo "EXIT_CODE=$code" | tee -a "$REPORT"
+            echo | tee -a "$REPORT"
+          }
+          run_check queue_archive npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts --reporter=verbose
+          run_check decrypt_multidevice npx vitest run src/components/messages/__tests__/decryptionServiceMultiDevice.test.ts --reporter=verbose
+          run_check decrypt_negative_cache npx vitest run src/components/messages/__tests__/decryptionNegativeCache.test.ts --reporter=verbose
+          run_check production_build npm run build
 
-      - name: Production build
-        run: npm run build
-
-      - name: Restore standard workflow and commit validated source
+      - name: Restore standard workflow and commit source with report
         shell: bash
         run: |
           cat > .github/workflows/e2ee-ci.yml <<'YAML'
@@ -85,7 +99,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm -f scripts/finalize-signal-resource-optimization.py
           git rm -f signal-resource-validation.txt decryption-cleanup-validation.txt sender-lookup-trace.txt sender-batch-trace.txt 2>/dev/null || true
-          git add .github/workflows/e2ee-ci.yml \
+          git add .github/workflows/e2ee-ci.yml final-signal-resource-validation.txt \
             src/components/messages/ChatView.tsx \
             src/components/ChatWidget.tsx \
             src/components/messages/DecryptedMessageBody.tsx \
