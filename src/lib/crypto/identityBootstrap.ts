@@ -42,7 +42,7 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair, options: {
       fingerprint: bundle.fingerprint,
       kem_type: 'X25519',
       is_active: true,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }, { onConflict: 'user_id,is_active' });
 
   if (error) throw error;
@@ -135,7 +135,13 @@ export async function ensureUserE2EEIdentity(userId: string, options: EnsureIden
 
   const waitForMaintenance = options.waitForMaintenance !== false;
   const last = lastSuccessAt.get(userId) || 0;
-  if (waitForMaintenance && Date.now() - last < BOOTSTRAP_TTL_MS) return;
+
+  // Once this tab has completed a successful bootstrap, both the normal path
+  // and the message-send fast path can reuse the hot identity for ten minutes.
+  // The previous implementation bypassed this TTL whenever
+  // waitForMaintenance=false, forcing an IndexedDB/recovery resolution before
+  // every encrypted message even though maintenance was already current.
+  if (Date.now() - last < BOOTSTRAP_TTL_MS) return;
 
   const { keys, mode } = await resolveLocalIdentityOnce(userId);
 
