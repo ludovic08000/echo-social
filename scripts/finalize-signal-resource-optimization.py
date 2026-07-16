@@ -10,39 +10,50 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
-    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE | re.DOTALL)
     if count != 1:
         raise SystemExit(f"{label}: expected 1 regex anchor, found {count}")
     return updated
 
 
-# Batch sender metadata in the same microtask instead of keeping a 50 ms timer
-# alive for every message wave. Known sender ids bypass the lookup entirely.
+# Every normal rendered message already carries sender_id. Thread it into the
+# decrypt service and keep one simple cached fallback for unusual callers. This
+# removes the per-wave timer, pending callback arrays and sender batch machinery.
 path = Path('src/components/messages/decryptionService.ts')
 text = path.read_text()
-text = replace_once(
+text = regex_once(
     text,
-    "const BATCH_WINDOW_MS = 50;\nconst senderBatchPending = new Map<string, Array<(value: string | null) => void>>();\n",
-    "const senderBatchPending = new Map<string, Array<(value: string | null) => void>>();\n",
-    'remove sender batch delay',
+    r"const BATCH_WINDOW_MS = 50;\nconst senderBatchPending = .*?\nfunction getSenderIdBatched\(messageId: string\): Promise<string \| null> \{.*?\n\}\n",
+    """const senderCache = new LruMap<string, string>(500);
+
+async function getSenderId(messageId: string): Promise<string | null> {
+  const cached = senderCache.get(messageId);
+  if (cached !== undefined) return cached;
+  try {
+    const { data } = await supabase
+      .from('messages')
+      .select('id,sender_id')
+      .in('id', [messageId]);
+    const senderId = ((data as Array<{ id: string; sender_id: string | null }> | null) ?? [])
+      .find((row) => row.id === messageId)?.sender_id ?? null;
+    if (senderId) senderCache.set(messageId, senderId);
+    return senderId;
+  } catch {
+    return null;
+  }
+}
+""",
+    'replace sender lookup machinery',
 )
 text = replace_once(
     text,
-    "let senderBatchTimer: ReturnType<typeof setTimeout> | null = null;\n\nasync function flushSenderBatch(): Promise<void> {\n  senderBatchTimer = null;\n",
-    "let senderBatchScheduled = false;\n\nasync function flushSenderBatch(): Promise<void> {\n  senderBatchScheduled = false;\n",
-    'sender batch scheduled flag',
-)
-text = replace_once(
-    text,
-    "    if (!senderBatchTimer) {\n      senderBatchTimer = setTimeout(() => void flushSenderBatch(), BATCH_WINDOW_MS);\n    }\n",
-    "    if (!senderBatchScheduled) {\n      senderBatchScheduled = true;\n      queueMicrotask(() => void flushSenderBatch());\n    }\n",
-    'sender batch microtask',
+    "        if (!senderId) senderId = await getSenderIdBatched(messageId);\n",
+    "        if (!senderId) senderId = await getSenderId(messageId);\n",
+    'use direct cached sender lookup',
 )
 path.write_text(text)
 
 
-# Thread the sender already present on each message row into the decrypt service.
-# This avoids a Supabase sender lookup for normal rendered messages.
 path = Path('src/components/messages/DecryptedMessageBody.tsx')
 text = path.read_text()
 text = replace_once(
