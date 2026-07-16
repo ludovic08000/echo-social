@@ -35,13 +35,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Messaging regression tests
-        run: npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts src/components/messages/__tests__/decryptionServiceMultiDevice.test.ts src/components/messages/__tests__/decryptionNegativeCache.test.ts
+      - name: Capture tests and production build
+        shell: bash
+        run: |
+          set +e
+          REPORT=signal-resource-validation.txt
+          : > "$REPORT"
+          run_check() {
+            label="$1"
+            shift
+            echo "===== $label =====" | tee -a "$REPORT"
+            "$@" 2>&1 | tee -a "$REPORT"
+            code=${PIPESTATUS[0]}
+            echo "EXIT_CODE=$code" | tee -a "$REPORT"
+            echo | tee -a "$REPORT"
+          }
+          run_check queue_archive npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts
+          run_check decrypt_multidevice npx vitest run src/components/messages/__tests__/decryptionServiceMultiDevice.test.ts
+          run_check decrypt_negative_cache npx vitest run src/components/messages/__tests__/decryptionNegativeCache.test.ts
+          run_check production_build npm run build
 
-      - name: Production build
-        run: npm run build
-
-      - name: Restore standard workflow and commit validated source
+      - name: Restore standard workflow and commit source with report
         shell: bash
         run: |
           cat > .github/workflows/e2ee-ci.yml <<'YAML'
@@ -86,7 +100,7 @@ jobs:
           git rm -f scripts/apply-signal-resource-optimization.py
           git rm -f .github/workflows/apply-signal-resource-optimization.yml || true
           git rm -f .github/workflows/signal-resource-optimizer.yml || true
-          git add .github/workflows/e2ee-ci.yml \
+          git add .github/workflows/e2ee-ci.yml signal-resource-validation.txt \
             src/components/messages/ChatView.tsx \
             src/hooks/useMessageQueue.ts \
             src/lib/messaging/multiDeviceFanout.ts \
