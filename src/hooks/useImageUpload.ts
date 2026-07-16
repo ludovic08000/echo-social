@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { uploadToR2 } from '@/lib/r2';
@@ -50,6 +50,11 @@ interface UseImageUploadOptions {
   maxSizeBytes?: number;
 }
 
+export interface UploadInvocationOptions {
+  /** Per-file progress. Useful when several chat attachments upload concurrently. */
+  onProgress?: (percent: number) => void;
+}
+
 export function useImageUpload({
   bucket,
   onSuccess,
@@ -57,10 +62,13 @@ export function useImageUpload({
   maxSizeBytes,
 }: UseImageUploadOptions) {
   const { user } = useAuth();
-  const [isUploading, setIsUploading] = useState(false);
+  const [activeUploads, setActiveUploads] = useState(0);
   const [progress, setProgress] = useState(0);
 
-  const upload = async (file: File): Promise<string | null> => {
+  const upload = useCallback(async (
+    file: File,
+    invocation: UploadInvocationOptions = {},
+  ): Promise<string | null> => {
     if (!user) {
       toast.error('Vous devez être connecté pour uploader un fichier');
       return null;
@@ -84,14 +92,20 @@ export function useImageUpload({
       return null;
     }
 
-    setIsUploading(true);
-    setProgress(10);
+    const reportProgress = (percent: number) => {
+      const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+      setProgress(safePercent);
+      invocation.onProgress?.(safePercent);
+    };
+
+    setActiveUploads(count => count + 1);
+    reportProgress(0);
 
     try {
-      setProgress(30);
-      const { url } = await uploadToR2(file, bucket);
-      setProgress(100);
-
+      const { url } = await uploadToR2(file, bucket, undefined, event => {
+        reportProgress(event.percent);
+      });
+      reportProgress(100);
       onSuccess?.(url);
       return url;
     } catch (error: unknown) {
@@ -99,10 +113,18 @@ export function useImageUpload({
       toast.error(error instanceof Error ? error.message : "Erreur lors de l'upload");
       return null;
     } finally {
-      setIsUploading(false);
-      setProgress(0);
+      setActiveUploads(count => Math.max(0, count - 1));
     }
-  };
+  }, [bucket, maxSizeBytes, maxSizeMB, onSuccess, user]);
 
-  return { upload, isUploading, progress };
+  const hasActiveUploads = activeUploads > 0;
+
+  return {
+    upload,
+    // Chat attachments already have optimistic bubbles. Keeping this false for
+    // post-images prevents the camera button from looking frozen during a PUT.
+    isUploading: bucket === 'post-images' ? false : hasActiveUploads,
+    hasActiveUploads,
+    progress,
+  };
 }
