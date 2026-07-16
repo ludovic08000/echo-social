@@ -7,6 +7,7 @@ import { useState, useEffect, memo, useCallback } from 'react';
 import { Lock, RotateCcw } from 'lucide-react';
 import { importMediaKey, decryptMediaWithMetadata } from '@/lib/crypto/mediaEncrypt';
 import { fetchR2Object } from '@/lib/r2';
+import { queueMediaDownload } from '@/lib/messaging/mediaDownloadQueue';
 import {
   forgetDecryptedMedia,
   getDecryptedMedia,
@@ -68,14 +69,6 @@ export const EncryptedMedia = memo(function EncryptedMedia({
   }), [encryptedUrl]);
 
   useEffect(() => {
-    const onOnline = () => {
-      if (errorMessage || !objectUrl) retry();
-    };
-    window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
-  }, [errorMessage, objectUrl, retry]);
-
-  useEffect(() => {
     if (!objectUrl) return;
     const hit = getDecryptedMedia(encryptedUrl);
     if (!hit || hit.objectUrl !== objectUrl) return;
@@ -97,17 +90,15 @@ export const EncryptedMedia = memo(function EncryptedMedia({
     setErrorMessage(null);
     setLoading(true);
 
-    (async () => {
+    const download = async () => {
       const t0 = performance.now();
       try {
         const response = await fetchR2Object(encryptedUrl);
         if (!response.ok) throw new Error(`media_fetch_${response.status}`);
         const encryptedData = await response.arrayBuffer();
-        if (cancelled) return;
 
         const key = await importMediaKey(mediaKeyB64);
         const decrypted = await decryptMediaWithMetadata(encryptedData, key);
-        if (cancelled) return;
 
         const fallbackMime = isVideo ? 'video/mp4' : 'image/jpeg';
         const mimeType = decrypted.mimeType || fallbackMime;
@@ -117,42 +108,57 @@ export const EncryptedMedia = memo(function EncryptedMedia({
         // This URL is owned by the decrypted-media cache; unlike an upload
         // preview it must not be cloned or revoked by another component.
         rememberDecryptedMedia(encryptedUrl, createdUrl, mediaIsVideo, false);
-        const canonicalEntry = getDecryptedMedia(encryptedUrl);
-        const canonical = canonicalEntry?.objectUrl ?? createdUrl;
-        const canonicalIsVideo = canonicalEntry?.isVideo ?? mediaIsVideo;
 
-        setObjectUrl(canonical);
-        setResolvedIsVideo(canonicalIsVideo);
-        setErrorMessage(null);
-        setLoading(false);
         logCryptoError({
           severity: 'info',
           context: 'media',
           errorCode: 'MEDIA_DECRYPT_OK',
           errorMessage: 'Encrypted media decrypted successfully',
           metadata: {
-            isVideo: canonicalIsVideo,
+            isVideo: mediaIsVideo,
             mimeType,
             sizeBytes: encryptedData.byteLength,
             durationMs: Math.round(performance.now() - t0),
           },
         });
       } catch (err) {
-        console.error('Media decryption failed:', err);
         logCryptoException('media', err, {
-          severity: 'error',
+          severity: 'warning',
           metadata: {
-            stage: 'decrypt',
+            stage: 'queued_download_attempt',
             isVideo,
             urlHost: (() => { try { return new URL(encryptedUrl).host; } catch { return 'unknown'; } })(),
             durationMs: Math.round(performance.now() - t0),
           },
         });
-        if (!cancelled) setErrorMessage('Impossible de déchiffrer ce média');
-      } finally {
-        if (!cancelled) setLoading(false);
+        throw err;
       }
-    })();
+    };
+
+    void queueMediaDownload(encryptedUrl, download, { priority: 10 })
+      .then(() => {
+        if (cancelled) return;
+        const entry = getDecryptedMedia(encryptedUrl);
+        if (!entry) throw new Error('media_cache_missing_after_download');
+        setObjectUrl(entry.objectUrl);
+        setResolvedIsVideo(entry.isVideo);
+        setErrorMessage(null);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Media recovery exhausted:', err);
+        logCryptoException('media', err, {
+          severity: 'error',
+          metadata: {
+            stage: 'queued_download_exhausted',
+            isVideo,
+            urlHost: (() => { try { return new URL(encryptedUrl).host; } catch { return 'unknown'; } })(),
+          },
+        });
+        setLoading(false);
+        setErrorMessage('Impossible de récupérer ce média');
+      });
 
     return () => { cancelled = true; };
   }, [encryptedUrl, mediaKeyB64, isVideo, retryTick]);
