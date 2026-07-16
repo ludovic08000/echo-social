@@ -13,6 +13,16 @@ function asciiBytes(value: string, prefix: number[] = []): Uint8Array {
   return new Uint8Array([...prefix, ...Array.from(value, char => char.charCodeAt(0))]);
 }
 
+function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('Blob read failed'));
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 describe('encrypted media format', () => {
   it('detects common image signatures', () => {
     expect(detectMediaMimeType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
@@ -29,10 +39,14 @@ describe('encrypted media format', () => {
 
   it('prefers the decrypted byte signature over a wrong declared MIME', async () => {
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
-    const source = new Blob([jpeg], { type: 'video/mp4' });
+    const source = {
+      size: jpeg.byteLength,
+      type: 'video/mp4',
+      arrayBuffer: async () => jpeg.slice().buffer,
+    } as unknown as Blob;
     const { key } = await generateMediaKey();
     const encrypted = await encryptMedia(source, key);
-    const decrypted = await decryptMediaWithMetadata(await encrypted.arrayBuffer(), key);
+    const decrypted = await decryptMediaWithMetadata(await blobToArrayBuffer(encrypted), key);
     expect(decrypted.mimeType).toBe('image/jpeg');
     expect(new Uint8Array(decrypted.data)).toEqual(jpeg);
   });
