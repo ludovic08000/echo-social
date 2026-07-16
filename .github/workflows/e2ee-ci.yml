@@ -7,9 +7,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -36,78 +33,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-  apply-e2ee-direct-fallback:
-    if: github.event_name == 'pull_request' && github.head_ref == 'hotfix/e2ee-direct-fallback'
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-
-    steps:
-      - name: Checkout hotfix branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Apply reviewed hotfix payload
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import subprocess
-          import traceback
-
-          workflow = Path('.github/workflows/e2ee-direct-fallback-hotfix.yml').read_text()
-          start = "          python3 <<'PY'\n"
-          end = "\n          PY\n      - run: npm ci"
-          try:
-              if start not in workflow or end not in workflow:
-                  raise SystemExit('hotfix payload markers missing')
-              raw_payload = workflow.split(start, 1)[1].split(end, 1)[0]
-              payload = '\n'.join(
-                  line[10:] if line.startswith('          ') else line
-                  for line in raw_payload.splitlines()
-              )
-              exec(compile(payload, 'e2ee-direct-fallback-hotfix.py', 'exec'))
-          except BaseException:
-              failure = traceback.format_exc()
-              subprocess.run(['git', 'reset', '--hard', 'HEAD'], check=True)
-              diagnostic = Path('HOTFIX_DIRECT_E2EE_ERROR.txt')
-              diagnostic.write_text(failure)
-              subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
-              subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
-              subprocess.run(['git', 'add', str(diagnostic)], check=True)
-              subprocess.run(['git', 'commit', '-m', 'ci: capture direct E2EE hotfix failure'], check=True)
-              subprocess.run(['git', 'push', 'origin', 'HEAD:hotfix/e2ee-direct-fallback'], check=True)
-              raise
-          PY
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint hotfix source
-        run: npx eslint src/hooks/useMessageQueueSignal.ts
-
-      - name: Regression tests
-        run: npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts src/lib/messaging/__tests__/outboxVault.test.ts src/lib/messaging/__tests__/sesameSendRpc.test.ts src/lib/crypto/mediaEncrypt.test.ts src/components/messages/__tests__/decryptedMediaCache.test.ts
-
-      - name: Production build
-        run: npm run build
-
-      - name: Commit validated hotfix
-        shell: bash
-        run: |
-          rm .github/workflows/e2ee-direct-fallback-hotfix.yml
-          rm -f HOTFIX_DIRECT_E2EE_ERROR.txt
-          rm -f HOTFIX_TRIGGER.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/hooks/useMessageQueueSignal.ts .github/workflows/e2ee-direct-fallback-hotfix.yml HOTFIX_DIRECT_E2EE_ERROR.txt HOTFIX_TRIGGER.txt
-          git commit -m "fix(messages): fall back to direct E2EE when device fanout is unavailable"
-          git push origin HEAD:hotfix/e2ee-direct-fallback
