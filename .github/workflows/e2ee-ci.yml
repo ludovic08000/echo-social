@@ -60,7 +60,14 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import subprocess
           import textwrap
+          import traceback
+
+          diagnostic = Path('PR30_HARDENING_ERROR.txt')
+          if diagnostic.exists():
+              print(diagnostic.read_text())
+              raise SystemExit('A captured hardening failure is awaiting correction')
 
           workflow = Path('.github/workflows/pr30-production-hardening.yml').read_text()
           start_marker = "          python3 <<'PY'\n"
@@ -68,7 +75,20 @@ jobs:
           if start_marker not in workflow or end_marker not in workflow:
               raise SystemExit('Production hardening payload markers are missing')
           payload = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
-          exec(compile(textwrap.dedent(payload), 'pr30-production-hardening.py', 'exec'))
+
+          try:
+              exec(compile(textwrap.dedent(payload), 'pr30-production-hardening.py', 'exec'))
+          except BaseException:
+              failure = traceback.format_exc()
+              subprocess.run(['git', 'reset', '--hard', 'HEAD'], check=True)
+              diagnostic.write_text(failure)
+              subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
+              subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+              subprocess.run(['git', 'add', str(diagnostic)], check=True)
+              subprocess.run(['git', 'commit', '-m', 'ci: capture PR30 hardening failure'], check=True)
+              subprocess.run(['git', 'push', 'origin', 'HEAD:fix/encrypted-media-black-bubble'], check=True)
+              print(failure)
+              raise
           PY
 
       - name: Install dependencies
