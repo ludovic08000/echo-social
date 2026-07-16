@@ -1,16 +1,19 @@
 /**
  * Client-side anti-spam utilities for messaging.
  * Protects against rapid-fire messages, duplicate spam, and link flooding.
- * 
- * v2 — Relaxed to avoid blocking legitimate usage:
- * - Cooldown reduced to 300ms (was 1s)
- * - Duplicate window reduced to 5s (was 30s) — only catches true rapid spam
- * - Rate limit raised to 30/min (was 15)
+ *
+ * Length follows Signal's long-message envelope: the logical UTF-8 body may be
+ * up to 64 KiB; transport decides whether it stays inline or becomes an
+ * encrypted text attachment.
  */
+
+import {
+  MAX_LONG_MESSAGE_BODY_BYTES,
+  utf8ByteLength,
+} from '@/lib/messaging/longMessageAttachment';
 
 const MESSAGE_COOLDOWN_MS = 300; // 300ms between messages (typing speed safe)
 const MAX_MESSAGES_PER_MINUTE = 30;
-const MAX_MESSAGE_LENGTH = 2000;
 const MAX_LINKS_PER_MESSAGE = 3;
 const DUPLICATE_WINDOW_MS = 5_000; // 5 seconds — only catches instant double-sends
 
@@ -37,9 +40,13 @@ export function validateMessage(body: string): { valid: boolean; error?: string 
     return { valid: false, error: 'Le message ne peut pas être vide.' };
   }
 
-  // Length
-  if (trimmed.length > MAX_MESSAGE_LENGTH) {
-    return { valid: false, error: `Le message est trop long (max ${MAX_MESSAGE_LENGTH} caractères).` };
+  // Signal-compatible long-body limit: bytes, not JavaScript characters.
+  const bodyBytes = utf8ByteLength(trimmed);
+  if (bodyBytes > MAX_LONG_MESSAGE_BODY_BYTES) {
+    return {
+      valid: false,
+      error: `Le message est trop long (maximum ${MAX_LONG_MESSAGE_BODY_BYTES / 1024} Kio en UTF-8).`,
+    };
   }
 
   // Cooldown
@@ -57,7 +64,7 @@ export function validateMessage(body: string): { valid: boolean; error?: string 
   // Duplicate detection (only within very short window to catch double-clicks)
   const duplicateCutoff = now - DUPLICATE_WINDOW_MS;
   const isDuplicate = recentMessages.some(
-    (r) => r.timestamp > duplicateCutoff && r.body === trimmed
+    (r) => r.timestamp > duplicateCutoff && r.body === trimmed,
   );
   if (isDuplicate) {
     return { valid: false, error: 'Message identique déjà envoyé.' };
@@ -87,5 +94,5 @@ export function recordSentMessage(body: string) {
 }
 
 export function sanitizeMessageBody(body: string): string {
-  return body.trim().slice(0, MAX_MESSAGE_LENGTH);
+  return body.trim();
 }
