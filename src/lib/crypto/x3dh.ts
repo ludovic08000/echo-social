@@ -581,9 +581,14 @@ export async function x3dhRespond(myKeys: IdentityKeyPair, myUserId: string, ini
   return { sharedSecret, spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate } };
 }
 
-export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: string, myDeviceId: string, initialMessage: X3DHInitialMessage): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
-  const { assertNotReplayedAndRecord } = await import('./x3dhReplayGuard');
-  await assertNotReplayedAndRecord({ myUserId: `${myUserId}::${myDeviceId}`, ik: initialMessage.ik, ek: initialMessage.ek, spkId: initialMessage.spkId, opkId: initialMessage.opkId });
+export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: string, myDeviceId: string, initialMessage: X3DHInitialMessage): Promise<{
+  sharedSecret: ArrayBuffer;
+  spkKeyPair: CryptoKeyPair;
+  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation;
+  usedOpkId?: number;
+}> {
+  const { reserveX3dhInitial } = await import('./x3dhReplayGuard');
+  const replayReservation = await reserveX3dhInitial({ myUserId: `${myUserId}::${myDeviceId}`, ik: initialMessage.ik, ek: initialMessage.ek, spkId: initialMessage.spkId, opkId: initialMessage.opkId });
   const aliceIK = await importX25519Public(initialMessage.ik);
   const aliceEK = await importX25519Public(initialMessage.ek);
   const spkRecord = await loadDeviceSPKRecord(myUserId, myDeviceId, initialMessage.spkId);
@@ -600,12 +605,38 @@ export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: st
       throw new Error('X3DH_OPK_PRIVATE_MISSING');
     }
     dh4 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as any, opkPriv, 256);
-    await deleteDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
+    // OPK deletion is deferred until the bootstrap ciphertext has been
+    // authenticated and the responder ratchet has been persisted.
   }
   const filler = new Uint8Array(32).fill(0xFF);
   const dhConcat = dh4 ? concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3, dh4) : concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3);
   const sharedSecret = await x3dhKDF(dhConcat);
-  return { sharedSecret, spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate } };
+  return {
+    sharedSecret,
+    spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate },
+    replayReservation,
+    usedOpkId: initialMessage.opkId,
+  };
+}
+
+export async function finalizeDeviceX3DHInitial(args: {
+  userId: string;
+  deviceId: string;
+  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation;
+  usedOpkId?: number;
+}): Promise<void> {
+  const { finalizeX3dhInitial } = await import('./x3dhReplayGuard');
+  await finalizeX3dhInitial(args.replayReservation);
+  if (args.usedOpkId !== undefined) {
+    await deleteDeviceOPKPrivate(args.userId, args.deviceId, args.usedOpkId);
+  }
+}
+
+export async function cancelDeviceX3DHInitial(
+  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation,
+): Promise<void> {
+  const { cancelX3dhInitial } = await import('./x3dhReplayGuard');
+  await cancelX3dhInitial(replayReservation);
 }
 
 export function isPQXDHAvailable(): boolean { return false; }

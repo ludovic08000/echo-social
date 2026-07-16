@@ -32,7 +32,9 @@ function extractTemplate(source, name) {
   const bodyStart = start + marker.length;
   const end = source.indexOf('`;', bodyStart);
   if (end < 0) throw new Error(`Unterminated template ${name}`);
-  return source.slice(bodyStart, end);
+  return source.slice(bodyStart, end)
+    .replace(/\$\{'(\$\{[^']+\})'\}/g, '$1')
+    .replace(/\\`/g, '`');
 }
 
 function removeBetween(content, startMarker, endMarker, label) {

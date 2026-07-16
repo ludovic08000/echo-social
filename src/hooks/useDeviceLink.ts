@@ -52,7 +52,6 @@ interface StoredLinkRequest {
 }
 
 interface CollectOptions {
-  includePlaintextCache?: boolean;
   includeLegacySessions?: boolean;
 }
 
@@ -175,12 +174,6 @@ async function collectLocalKeys(userId: string, options: CollectOptions = {}): P
   const archiveMasterKey = await exportArchiveMasterKeyForDeviceLink(userId);
   if (archiveMasterKey) data['archive:master-key'] = archiveMasterKey;
 
-  if (includePlaintextCache) {
-    try {
-      const plaintextCache = await exportPlaintextCache();
-      if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
-    } catch {}
-  }
 
   try {
     const fingerprints = localStorage.getItem('forsure-known-fps');
@@ -237,9 +230,6 @@ async function restoreLocalKeys(json: string, userId: string): Promise<void> {
     if (!imported) throw new Error('Cle archive du compte invalide');
   }
 
-  if (Array.isArray(data['plaintext:cache'])) {
-    await importPlaintextCache(data['plaintext:cache'] as PlaintextCacheExportEntry[]);
-  }
 
   if (typeof data.fingerprints === 'string') {
     localStorage.setItem('forsure-known-fps', data.fingerprints);
@@ -314,7 +304,7 @@ export function useDeviceLink() {
       let encryptedPayload = JSON.stringify(envelope);
 
       if (encryptedPayload.length > 1_900_000) {
-        keysJson = await collectLocalKeys(user.id, { includePlaintextCache: false });
+        keysJson = await collectLocalKeys(user.id);
         envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
         encryptedPayload = JSON.stringify(envelope);
       }
