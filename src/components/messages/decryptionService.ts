@@ -15,6 +15,11 @@
  */
 import { hasMediaKey, parseMediaMessage, buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import {
+  isLongMessageMarker,
+  previewLongMessage,
+  resolveLongMessageBody,
+} from '@/lib/messaging/longMessageAttachment';
+import {
   isCryptoJsonBody,
   isMultiDeviceEnvelopeBody,
   isSecurePipelineEnvelopeBody,
@@ -205,7 +210,21 @@ export function buildOutcomeFromText(text: string): DecryptionOutcome {
     const parsed = parseMediaMessage(text);
     if (parsed) return { text: parsed.label, mediaKeyB64: parsed.keyB64, hidden: false };
   }
+  if (isLongMessageMarker(text)) {
+    const preview = previewLongMessage(text);
+    if (preview !== null) return { text: preview, mediaKeyB64: null, hidden: false };
+  }
   return { text, mediaKeyB64: null, hidden: false };
+}
+
+async function buildAuthenticatedOutcomeFromText(
+  text: string,
+  messageId?: string,
+): Promise<DecryptionOutcome> {
+  if (!isLongMessageMarker(text)) return buildOutcomeFromText(text);
+  if (!messageId) throw new Error('Identifiant absent pour le message long chiffré.');
+  const fullBody = await resolveLongMessageBody(text, messageId);
+  return buildOutcomeFromText(fullBody);
 }
 
 export function persistOutcome(body: string, outcome: DecryptionOutcome, messageId?: string): string {
@@ -227,7 +246,7 @@ async function loadPersistedOutcome(
     : null;
   if (byMessageId) {
     if (looksEncrypted(body)) void savePlaintextForCiphertext(body, byMessageId);
-    const outcome = buildOutcomeFromText(byMessageId);
+    const outcome = await buildAuthenticatedOutcomeFromText(byMessageId, messageId);
     rememberLastGoodOutcome(messageId, outcome);
     return outcome;
   }
@@ -235,7 +254,7 @@ async function loadPersistedOutcome(
   const byCiphertext = await loadPlaintextForCiphertext(body).catch(() => null);
   if (!byCiphertext) return null;
   if (messageId) void savePlaintext(messageId, byCiphertext);
-  const outcome = buildOutcomeFromText(byCiphertext);
+  const outcome = await buildAuthenticatedOutcomeFromText(byCiphertext, messageId);
   rememberLastGoodOutcome(messageId, outcome);
   return outcome;
 }
@@ -274,7 +293,7 @@ export async function resolvePlaintext(opts: {
   const cached = cache.get(key);
   if (cached) return cached;
 
-  const persisted = await loadPersistedOutcome(messageId, body);
+  const persisted = await loadPersistedOutcome(messageId, body).catch(() => null);
   if (persisted) {
     cache.set(key, persisted);
     return persisted;
@@ -298,7 +317,8 @@ export async function resolvePlaintext(opts: {
               });
             }
             if (result.text !== '') {
-              return cacheAndPersist(key, body, buildOutcomeFromText(result.text), messageId);
+              const outcome = await buildAuthenticatedOutcomeFromText(result.text, messageId);
+              return cacheAndPersist(key, body, outcome, messageId);
             }
           }
         } catch {
@@ -309,9 +329,14 @@ export async function resolvePlaintext(opts: {
       if (messageId) {
         if (!senderId) senderId = await getSenderIdBatched(messageId);
         if (senderId) {
-          const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
-          if (copyText !== null) {
-            return cacheAndPersist(key, body, buildOutcomeFromText(copyText), messageId);
+          try {
+            const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
+            if (copyText !== null) {
+              const outcome = await buildAuthenticatedOutcomeFromText(copyText, messageId);
+              return cacheAndPersist(key, body, outcome, messageId);
+            }
+          } catch {
+            /* attachment download/decrypt remains retryable */
           }
         }
       }
@@ -332,7 +357,8 @@ export async function resolvePlaintext(opts: {
               messageId,
             });
             if (routed.ok && routed.plaintext !== null) {
-              return cacheAndPersist(key, body, buildOutcomeFromText(routed.plaintext), messageId);
+              const outcome = await buildAuthenticatedOutcomeFromText(routed.plaintext, messageId);
+              return cacheAndPersist(key, body, outcome, messageId);
             }
           }
         } catch {
@@ -370,7 +396,8 @@ export async function resolvePlaintext(opts: {
                 const plaintext = await decryptArchive(archiveBody, conversationId, user.id);
                 if (plaintext !== null) {
                   archiveDecrypted = true;
-                  return cacheAndPersist(key, body, buildOutcomeFromText(plaintext), messageId);
+                  const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);
+                  return cacheAndPersist(key, body, outcome, messageId);
                 }
               }
             }
