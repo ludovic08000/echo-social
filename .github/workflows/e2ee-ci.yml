@@ -29,27 +29,26 @@ jobs:
           cache: npm
 
       - name: Apply audited hardening once
+        id: hardening
         if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
         run: |
-          set +e
           node scripts/apply-signal-hardening.mjs > hardening-error.log 2>&1
-          PATCH_STATUS=$?
-          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ "$PATCH_STATUS" -ne 0 ]; then
-            git add hardening-error.log
-            git commit -m "chore(e2ee): capture hardening patch failure"
-            git push origin HEAD:${{ github.head_ref }}
-            cat hardening-error.log
-            exit "$PATCH_STATUS"
-          fi
           rm -f hardening-error.log
           git add -A
           if ! git diff --cached --quiet; then
             git commit -m "fix(e2ee): align storage and ratchets with Signal invariants"
             git push origin HEAD:${{ github.head_ref }}
           fi
+
+      - name: Upload hardening diagnostics
+        if: failure() && steps.hardening.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardening-error
+          path: hardening-error.log
+          retention-days: 1
 
       - name: Install dependencies
         run: npm ci
