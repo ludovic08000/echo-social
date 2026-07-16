@@ -12,6 +12,10 @@ import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
 const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+// A send may need the sender and recipient device lists. Re-verifying both over
+// the network before every message dominated warm-message latency. Keep only a
+// very short RAM cache; verification remains fail-closed and is refreshed often.
+const VERIFIED_DEVICE_CACHE_TTL_MS = 10_000;
 
 interface DeviceListOptions {
   /**
@@ -20,6 +24,22 @@ interface DeviceListOptions {
    * active Double Ratchet sessions do not need a fresh prekey fetch per send.
    */
   verifyPrekeys?: boolean;
+}
+
+interface CachedDeviceList {
+  expiresAt: number;
+  devices: DeviceDescriptor[];
+}
+
+const verifiedDeviceCache = new Map<string, CachedDeviceList>();
+const verifiedDeviceInflight = new Map<string, Promise<DeviceDescriptor[]>>();
+
+function cacheKey(userId: UserId, options: DeviceListOptions): string {
+  return `${userId}:${options.verifyPrekeys === false ? 'no-spk' : 'spk'}`;
+}
+
+function cloneDevices(devices: DeviceDescriptor[]): DeviceDescriptor[] {
+  return devices.map(device => ({ ...device }));
 }
 
 /** Stable device id of the current installation. Persisted in Keychain on iOS. */
@@ -83,31 +103,11 @@ async function hygieneFilterDevices(devices: DeviceDescriptor[], options: Device
   return verified.filter(Boolean) as DeviceDescriptor[];
 }
 
-/**
- * Lot A1 — Trust gate.
- * Returns the set of devices we are willing to encrypt to.
- *
- * Priority:
- *  1) **Signed device list (L4)** — if `user_device_signatures` has any active
- *     entry for `userId`, ONLY signed/verified devices are accepted. This
- *     blocks the "server adds a rogue device" attack class.
- *  2) **Legacy fallback** — if no signature exists yet (pre-L4 users), fall
- *     back to the raw `list_active_devices_for_user` RPC. We log a single
- *     warning so the migration window remains visible. Once the user pairs
- *     their next companion (or rotates), the signed list becomes the source
- *     of truth and the fallback disappears for them.
- *
- * Never throws — returns [] on any error so the caller can fall back to the
- * single-device path.
- */
-export async function listDevicesForUser(userId: UserId, options: DeviceListOptions = {}): Promise<DeviceDescriptor[]> {
-  // 1) Trusted (signed) list first.
+async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions): Promise<DeviceDescriptor[]> {
+  // Trusted (signed) list only.
   try {
     const verified = await fetchVerifiedDeviceList(userId);
     if (typeof console !== 'undefined') {
-      // [DIAG] Full visibility on the trust gate: which devices are accepted and
-      // WHY the others are rejected. A second device rejected as NO_SIGNATURE is
-      // the signature of the broken multi-device path (companion never signed).
       const reasons: Record<string, number> = {};
       for (const v of verified.verifications) {
         const k = `${v.reason ?? '?'}${v.ok ? '' : '!'}`;
@@ -149,8 +149,7 @@ export async function listDevicesForUser(userId: UserId, options: DeviceListOpti
   }
 
   // Signal-style trust is fail-closed: an unsigned server device list is not
-  // sufficient authority to add a recipient device. Registration must publish
-  // the canonical primary root and signed companions before messaging starts.
+  // sufficient authority to add a recipient device.
   if (typeof console !== 'undefined') {
     console.warn('[A1] no canonical signed device list; refusing unsigned device routing', { userId });
   }
@@ -158,12 +157,59 @@ export async function listDevicesForUser(userId: UserId, options: DeviceListOpti
 }
 
 /**
+ * Lot A1 — Trust gate. Returns only signed and verified device routes.
+ *
+ * Results are cached in RAM for ten seconds. This does not weaken the trust
+ * gate: cached entries already passed canonical-root and signature checks, and
+ * no unsigned fallback is introduced. The short TTL bounds device-revocation
+ * staleness while removing repeated Supabase + Ed25519 work from every message.
+ */
+export async function listDevicesForUser(userId: UserId, options: DeviceListOptions = {}): Promise<DeviceDescriptor[]> {
+  const key = cacheKey(userId, options);
+  const cached = verifiedDeviceCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cloneDevices(cached.devices);
+  if (cached) verifiedDeviceCache.delete(key);
+
+  const pending = verifiedDeviceInflight.get(key);
+  if (pending) return cloneDevices(await pending);
+
+  const request = resolveDevicesForUser(userId, options)
+    .then(devices => {
+      verifiedDeviceCache.set(key, {
+        expiresAt: Date.now() + VERIFIED_DEVICE_CACHE_TTL_MS,
+        devices: cloneDevices(devices),
+      });
+      return devices;
+    })
+    .finally(() => {
+      verifiedDeviceInflight.delete(key);
+    });
+
+  verifiedDeviceInflight.set(key, request);
+  return cloneDevices(await request);
+}
+
+/** Explicit invalidation for registration, pairing or revocation flows. */
+export function invalidateVerifiedDeviceCache(userId?: UserId): void {
+  if (!userId) {
+    verifiedDeviceCache.clear();
+    verifiedDeviceInflight.clear();
+    return;
+  }
+  const prefix = `${userId}:`;
+  for (const key of verifiedDeviceCache.keys()) {
+    if (key.startsWith(prefix)) verifiedDeviceCache.delete(key);
+  }
+  for (const key of verifiedDeviceInflight.keys()) {
+    if (key.startsWith(prefix)) verifiedDeviceInflight.delete(key);
+  }
+}
+
+/**
  * List every device that should receive a copy of a message sent by
  * `senderUserId` to `recipientUserIds`. Includes ALL of the sender's own
  * devices — even the current one — so that after an iOS Safari ITP storage
- * purge (which wipes the local plaintext mirror) the sender can still
- * recover their own outgoing messages from the encrypted device-copy
- * fan-out once their identity keys are restored.
+ * purge the sender can recover outgoing messages from encrypted device copies.
  */
 export async function listFanoutTargets(
   senderUserId: UserId,
