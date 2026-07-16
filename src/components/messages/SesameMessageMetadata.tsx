@@ -87,9 +87,14 @@ function statusPresentation(status: SesameMessageStatus | undefined, compact: bo
   }
 }
 
-function formatTimestamp(value: string | number | Date): string {
+function normalizeTimestamp(value: string | number | Date): Date | null {
   const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatTimestamp(value: string | number | Date): string {
+  const date = normalizeTimestamp(value);
+  if (!date) return '';
   return new Intl.DateTimeFormat('fr-FR', {
     hour: '2-digit',
     minute: '2-digit',
@@ -137,7 +142,8 @@ export function SesameMessageMetadata({
   }
 
   const presentation = outgoing ? statusPresentation(status, compact) : null;
-  const timeLabel = timestamp !== undefined ? formatTimestamp(timestamp) : '';
+  const timestampDate = timestamp !== undefined ? normalizeTimestamp(timestamp) : null;
+  const timeLabel = timestampDate ? formatTimestamp(timestampDate) : '';
   const textClass = compact ? 'text-[8px]' : 'text-[10px]';
   const iconClass = compact ? 'h-2.5 w-2.5' : 'h-3 w-3';
 
@@ -157,7 +163,9 @@ export function SesameMessageMetadata({
           modifié
         </span>
       )}
-      {timeLabel && <time dateTime={new Date(timestamp!).toISOString()}>{timeLabel}</time>}
+      {timeLabel && timestampDate && (
+        <time dateTime={timestampDate.toISOString()}>{timeLabel}</time>
+      )}
       {encrypted && (
         <LockKeyhole
           className={cn(iconClass, verified ? 'opacity-90' : 'opacity-55')}
