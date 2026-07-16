@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "<stdin>", line 19, in <module>
-  File "pr30-production-hardening.py", line 1
-    from pathlib import Path
-IndentationError: unexpected indent
