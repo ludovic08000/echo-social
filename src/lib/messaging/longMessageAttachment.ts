@@ -56,7 +56,7 @@ export function trimUtf8ToBytes(value: string, maxBytes = MAX_INLINE_MESSAGE_BOD
     result += codePoint;
     bytes += codePointBytes;
   }
-  return result || '\uFFFE';
+  return result;
 }
 
 export function isInlineMessageBody(value: string): boolean {
@@ -71,8 +71,20 @@ function aadFor(messageId: string, size: number): Uint8Array {
   return encoder.encode(`${LONG_MESSAGE_AAD_PREFIX}${messageId}|${LONG_MESSAGE_MIME}|${size}`);
 }
 
+function hasAsciiControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) <= 0x1f) return true;
+  }
+  return false;
+}
+
 function isSafeMessageId(value: unknown): value is string {
-  return typeof value === 'string' && value.length >= 8 && value.length <= 128 && !/[\u0000-\u001f]/.test(value);
+  return (
+    typeof value === 'string' &&
+    value.length >= 8 &&
+    value.length <= 128 &&
+    !hasAsciiControlCharacter(value)
+  );
 }
 
 function parseManifestJson(value: string): LongMessageManifest | null {
@@ -162,12 +174,15 @@ export async function prepareLongMessageForSend(
   encrypted.set(iv, 0);
   encrypted.set(new Uint8Array(ciphertext), IV_BYTES);
 
-  const file = new File(
-    [encrypted],
-    `${messageId}.long-message.enc`,
+  const encryptedBlob = new Blob(
+    [encrypted.buffer as ArrayBuffer],
     { type: 'application/octet-stream' },
   );
-  const uploaded = await uploadToR2(file, 'uploads');
+  const uploaded = await uploadToR2(
+    encryptedBlob,
+    'uploads',
+    `${messageId}.long-message.enc`,
+  );
   const preview = trimUtf8ToBytes(body);
   const manifest: LongMessageManifest = {
     v: 1,
