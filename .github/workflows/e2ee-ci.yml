@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -15,12 +18,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
+      - name: Apply audited hardening once
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          node scripts/apply-signal-hardening.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "fix(e2ee): align storage and ratchets with Signal invariants"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
 
       - name: Install dependencies
         run: npm ci
