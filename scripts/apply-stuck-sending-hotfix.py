@@ -96,8 +96,8 @@ text = replace_once(
 )
 text = replace_once(
     text,
-    "    await deleteOutboxPayload(localId).catch(() => {});\n    setPendingMessages(prev => prev.filter(message => message.localId !== localId));\n",
-    "    setPendingMessages(prev => prev.filter(message => message.localId !== localId));\n    // Remove the visible pending state immediately after server acknowledgement.\n    // A slow IndexedDB delete is harmless: restore reconciliation checks the same\n    // stable server UUID and removes an already-delivered row idempotently.\n    void deleteOutboxPayload(localId).catch(() => {});\n",
+    "    await deleteOutboxPayload(localId).catch(() => {});\n    setPendingMessages(prev => prev.filter(message => message.localId !== localId));\n    void Promise.resolve(onMessageSent?.(localId)).catch(callbackError => {\n",
+    "    setPendingMessages(prev => prev.filter(message => message.localId !== localId));\n    // Remove the visible pending state immediately after server acknowledgement.\n    // A slow IndexedDB delete is harmless: restore reconciliation checks the same\n    // stable server UUID and removes an already-delivered row idempotently.\n    void deleteOutboxPayload(localId).catch(() => {});\n    void Promise.resolve(onMessageSent?.(localId)).catch(callbackError => {\n",
     'nonblocking outbox cleanup',
 )
 path.write_text(text)
