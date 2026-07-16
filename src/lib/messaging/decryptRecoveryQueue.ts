@@ -8,7 +8,7 @@
  */
 
 const MAX_CONCURRENT_RECOVERIES = 3;
-const RETRY_DELAYS_MS = [0, 500, 1_500, 4_000, 8_000, 15_000, 30_000] as const;
+const RETRY_DELAYS_MS = [500, 1_500, 4_000, 8_000, 15_000, 30_000] as const;
 
 type RecoveryCallback = () => void;
 
@@ -119,7 +119,7 @@ export function registerDecryptRecovery(
       callbacks: new Set(),
       priority: options.priority ?? 0,
       attempt: 0,
-      nextAttemptAt: Date.now(),
+      nextAttemptAt: Date.now() + nextDelay(0),
       running: false,
       createdAt: Date.now(),
     };
@@ -128,7 +128,6 @@ export function registerDecryptRecovery(
 
   job.callbacks.add(callback);
   job.priority = Math.max(job.priority, options.priority ?? 0);
-  job.nextAttemptAt = Math.min(job.nextAttemptAt, Date.now());
   void pump();
 
   return () => {
