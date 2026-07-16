@@ -17,6 +17,16 @@ const retryAttempts = new Map<string, number>();
 
 const RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000] as const;
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length;
+const LOCK_ACQUIRE_TIMEOUT_MS = 12_000;
+
+export class SignalConversationLockTimeoutError extends Error {
+  readonly code = 'E2EE_ENCRYPT_LOCK_TIMEOUT';
+
+  constructor() {
+    super('E2EE encryption lock timeout — automatic retry scheduled');
+    this.name = 'SignalConversationLockTimeoutError';
+  }
+}
 
 function lockName(conversationKey: string): string {
   return `sesame:message-send:${conversationKey}`;
@@ -51,7 +61,20 @@ export async function runSignalConversationJob<T>(
   task: () => Promise<T>,
 ): Promise<T> {
   if (hasWebLocks()) {
-    return navigator.locks.request(lockName(conversationKey), { mode: 'exclusive' }, task);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LOCK_ACQUIRE_TIMEOUT_MS);
+    try {
+      return await navigator.locks.request(
+        lockName(conversationKey),
+        { mode: 'exclusive', signal: controller.signal },
+        task,
+      );
+    } catch (error) {
+      if (controller.signal.aborted) throw new SignalConversationLockTimeoutError();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
   return runWithMemoryLock(conversationKey, task);
 }
