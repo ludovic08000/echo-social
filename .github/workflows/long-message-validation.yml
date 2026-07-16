@@ -1,0 +1,40 @@
+name: Long Message Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Targeted lint
+        run: >-
+          bunx eslint
+          src/components/messages/decryptionService.ts
+          src/hooks/useMessageQueueSignal.ts
+          src/lib/messageAntiSpam.ts
+          src/lib/messaging/longMessageAttachment.ts
+          src/lib/messaging/__tests__/longMessageAttachment.test.ts
+          src/lib/messaging/__tests__/longMessageAntiSpam.test.ts
+
+      - name: Targeted tests
+        run: >-
+          bun run vitest run
+          src/lib/messaging/__tests__/longMessageAttachment.test.ts
+          src/lib/messaging/__tests__/longMessageAntiSpam.test.ts
+
+      - name: Production build
+        run: bun run build
