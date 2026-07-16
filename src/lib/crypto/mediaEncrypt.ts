@@ -1,7 +1,7 @@
 /**
  * Client-side media encryption for private messages.
  *
- * Each file gets a unique AES-256-GCM key.  The encrypted blob is uploaded
+ * Each file gets a unique AES-256-GCM key. The encrypted blob is uploaded
  * to R2; the per-file key is embedded inside the E2EE message body so the
  * server never sees it.
  *
@@ -14,6 +14,14 @@
 
 import { hardCrypto } from './cryptoIntegrity';
 import { randomBytes, bufferToBase64, base64ToBuffer } from './utils';
+import {
+  MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES,
+  MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
+  MEDIA_AES_GCM_OVERHEAD_BYTES,
+  formatAttachmentLimit,
+  isIncomingAttachmentTooLarge,
+  isOutgoingAttachmentTooLarge,
+} from '@/lib/messaging/attachmentLimits';
 
 const IV_LEN = 12;
 const KEY_BITS = 256;
@@ -73,7 +81,7 @@ export function buildMediaMessageBody(label: string, keyB64: string): string {
 export async function generateMediaKey(): Promise<{ key: CryptoKey; keyB64: string }> {
   const key = await hardCrypto.generateKey(
     { name: 'AES-GCM', length: KEY_BITS },
-    true, // extractable so we can export
+    true, // extractable so we can export it inside the E2EE-protected manifest
     ['encrypt', 'decrypt'],
   ) as CryptoKey;
 
@@ -81,7 +89,7 @@ export async function generateMediaKey(): Promise<{ key: CryptoKey; keyB64: stri
   return { key, keyB64: bufferToBase64(raw) };
 }
 
-/** Import a base64 media key back into a CryptoKey */
+/** Import a base64 media key back into a non-extractable CryptoKey */
 export async function importMediaKey(keyB64: string): Promise<CryptoKey> {
   const raw = base64ToBuffer(keyB64);
   return hardCrypto.importKey(
@@ -96,11 +104,21 @@ export async function importMediaKey(keyB64: string): Promise<CryptoKey> {
 /**
  * Encrypt a file (Blob/File) with AES-256-GCM.
  * Returns a new Blob containing IV || ciphertext.
+ *
+ * Signal's attachment limit applies to the padded/encrypted object. Sesame's
+ * GCM format has a fixed 28-byte overhead, so the clear input is rejected
+ * before it is loaded into memory when the final blob would exceed 100 MiB.
  */
 export async function encryptMedia(
   file: File | Blob,
   key: CryptoKey,
 ): Promise<Blob> {
+  if (isOutgoingAttachmentTooLarge(file.size)) {
+    throw new Error(
+      `Média trop volumineux : le fichier chiffré ne doit pas dépasser ${formatAttachmentLimit(MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES)}.`,
+    );
+  }
+
   const iv = randomBytes(IV_LEN);
   const plaintext = await file.arrayBuffer();
 
@@ -110,10 +128,14 @@ export async function encryptMedia(
     plaintext,
   );
 
-  // IV || ciphertext (includes auth tag)
+  // IV || ciphertext (the ciphertext already includes the 16-byte GCM tag)
   const combined = new Uint8Array(IV_LEN + (ciphertext as ArrayBuffer).byteLength);
   combined.set(iv, 0);
   combined.set(new Uint8Array(ciphertext as ArrayBuffer), IV_LEN);
+
+  if (combined.byteLength !== file.size + MEDIA_AES_GCM_OVERHEAD_BYTES) {
+    throw new Error('Taille du média chiffré incohérente.');
+  }
 
   return new Blob([combined], { type: 'application/octet-stream' });
 }
@@ -125,6 +147,15 @@ export async function decryptMedia(
   encryptedData: ArrayBuffer,
   key: CryptoKey,
 ): Promise<ArrayBuffer> {
+  if (isIncomingAttachmentTooLarge(encryptedData.byteLength)) {
+    throw new Error(
+      `Média reçu trop volumineux : maximum ${formatAttachmentLimit(MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES)}.`,
+    );
+  }
+  if (encryptedData.byteLength < MEDIA_AES_GCM_OVERHEAD_BYTES) {
+    throw new Error('Média chiffré tronqué.');
+  }
+
   const data = new Uint8Array(encryptedData);
   const iv = data.slice(0, IV_LEN);
   const ciphertext = data.slice(IV_LEN);
