@@ -151,51 +151,23 @@ if (typeof window !== 'undefined') {
   }
 }
 
-const BATCH_WINDOW_MS = 50;
-const senderBatchPending = new Map<string, Array<(value: string | null) => void>>();
-// Only positive immutable sender ids are cached. A missing row can be caused by
-// realtime/RLS/replication timing and must remain retryable.
 const senderCache = new LruMap<string, string>(500);
-let senderBatchTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function flushSenderBatch(): Promise<void> {
-  senderBatchTimer = null;
-  const localWaiters = new Map(senderBatchPending);
-  senderBatchPending.clear();
-  const ids = Array.from(localWaiters.keys());
-  if (ids.length === 0) return;
+async function getSenderId(messageId: string): Promise<string | null> {
+  const cached = senderCache.get(messageId);
+  if (cached !== undefined) return cached;
   try {
     const { data } = await supabase
       .from('messages')
       .select('id,sender_id')
-      .in('id', ids);
-    const map = new Map<string, string>();
-    for (const row of (data as Array<{ id: string; sender_id: string | null }> | null) ?? []) {
-      if (row.sender_id) map.set(row.id, row.sender_id);
-    }
-    for (const id of ids) {
-      const value = map.get(id) ?? null;
-      if (value) senderCache.set(id, value);
-      (localWaiters.get(id) ?? []).forEach((resolve) => resolve(value));
-    }
+      .in('id', [messageId]);
+    const senderId = ((data as Array<{ id: string; sender_id: string | null }> | null) ?? [])
+      .find((row) => row.id === messageId)?.sender_id ?? null;
+    if (senderId) senderCache.set(messageId, senderId);
+    return senderId;
   } catch {
-    for (const id of ids) {
-      (localWaiters.get(id) ?? []).forEach((resolve) => resolve(null));
-    }
+    return null;
   }
-}
-
-function getSenderIdBatched(messageId: string): Promise<string | null> {
-  const cached = senderCache.get(messageId);
-  if (cached !== undefined) return Promise.resolve(cached);
-  return new Promise<string | null>((resolve) => {
-    const pending = senderBatchPending.get(messageId) ?? [];
-    pending.push(resolve);
-    senderBatchPending.set(messageId, pending);
-    if (!senderBatchTimer) {
-      senderBatchTimer = setTimeout(() => void flushSenderBatch(), BATCH_WINDOW_MS);
-    }
-  });
 }
 
 export function readCache(messageId: string | undefined, body: string): DecryptionOutcome | undefined {
@@ -333,7 +305,7 @@ export async function resolvePlaintext(opts: {
       }
 
       if (messageId) {
-        if (!senderId) senderId = await getSenderIdBatched(messageId);
+        if (!senderId) senderId = await getSenderId(messageId);
         if (senderId) {
           try {
             const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);

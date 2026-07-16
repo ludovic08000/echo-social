@@ -51,6 +51,7 @@ interface DecryptedMessageBodyProps {
   cachedPlaintext?: string;
   refreshKey?: string | number;
   messageId?: string;
+  senderId?: string | null;
   hasMedia?: boolean;
 }
 
@@ -82,6 +83,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   cachedPlaintext,
   refreshKey,
   messageId,
+  senderId,
   hasMedia,
 }: DecryptedMessageBodyProps) {
   const initial = initialOutcomeFor(body, messageId, cachedPlaintext);
@@ -319,7 +321,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       },
     });
 
-    void resolvePlaintext({ body, messageId, isMe, decrypt })
+    void resolvePlaintext({ body, messageId, senderId, isMe, decrypt })
       .then((next) => {
         if (cancelled) return;
         if (!next) {
@@ -344,7 +346,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, messageId, cachedPlaintext, retryTick, refreshKey]);
+  }, [body, messageId, senderId, cachedPlaintext, retryTick, refreshKey]);
 
   useEffect(() => {
     const editedText = messageEdit.resolved?.text;

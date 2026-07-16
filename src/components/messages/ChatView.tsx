@@ -1172,6 +1172,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               cachedPlaintext={decryptedCache.get(msg.id)}
                               refreshKey={decryptRefreshKey}
                               messageId={msg.id}
+                              senderId={msg.sender_id}
                               hasMedia={!!msg.image_url}
                             />
                           </div>
