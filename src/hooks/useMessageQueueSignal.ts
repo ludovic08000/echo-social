@@ -9,6 +9,7 @@ import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { buildFanoutCopies, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
+import { scheduleBackgroundFanoutCoverage } from '@/lib/messaging/fanoutRepair';
 import { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';
 import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
@@ -116,15 +117,6 @@ export function shouldArchiveMessageBody({
   return hasMediaKey(sanitized);
 }
 
-const INLINE_ARCHIVE_BUDGET_MS = 2_000;
-
-function waitForInlineArchive(archivePromise: Promise<string | null>): Promise<string | null> {
-  return Promise.race([
-    archivePromise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), INLINE_ARCHIVE_BUDGET_MS)),
-  ]);
-}
-
 function dispatchDecryptRetry(messageId?: string): void {
   try {
     const event = messageId
@@ -199,6 +191,21 @@ function isMultiDeviceParentBody(value: string | null | undefined): value is str
   }
 }
 
+export function selectInitialDeliveryMode({
+  encryptionWasRequired,
+  resumedEncryptedBody,
+  preparedCopyCount,
+}: {
+  encryptionWasRequired: boolean;
+  resumedEncryptedBody?: string | null;
+  preparedCopyCount: number;
+}): 'multi_device' | 'direct' | 'plaintext' {
+  if (!encryptionWasRequired) return 'plaintext';
+  return isMultiDeviceParentBody(resumedEncryptedBody) && preparedCopyCount > 0
+    ? 'multi_device'
+    : 'direct';
+}
+
 function toOutboundMessage(payload: OutboxPayload): OutboundMessage {
   return {
     localId: payload.localId,
@@ -254,6 +261,7 @@ export function useMessageQueue(
           // The authoritative RPC commits the parent and every expected device
           // copy in one transaction. A visible parent therefore proves delivery;
           // rebuilding copies here would advance the local ratchet a second time.
+          scheduleBackgroundFanoutCoverage(payload.reservedServerId);
           await deleteOutboxPayload(payload.localId).catch(() => {});
           dispatchDecryptRetry(payload.reservedServerId);
           continue;
@@ -330,7 +338,7 @@ export function useMessageQueue(
       plaintext: sanitized,
       encryptedBody: resumePayload?.encryptedBody ?? null,
       imageUrl: imageUrl || null,
-      status: resumePayload ? 'retry_pending' : 'encrypting',
+      status: resumePayload ? 'retry_pending' : 'sending',
       retryCount: resumePayload ? resumePayload.retryCount + 1 : 0,
       maxRetries: resumePayload?.maxRetries ?? 3,
       lastError: null,
@@ -392,13 +400,19 @@ export function useMessageQueue(
 
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
     const resumedEncryptedBody = resumePayload?.encryptedBody ?? null;
-    const resumedParent = isMultiDeviceParentBody(resumedEncryptedBody) ? resumedEncryptedBody : null;
-    const resumedDirectBody = resumedEncryptedBody && !resumedParent ? resumedEncryptedBody : null;
+    const resumedPreparedCopies = (resumePayload?.preparedCopies ?? [])
+      .filter(row => row.message_id === serverMessageId);
+    const deliveryMode = selectInitialDeliveryMode({
+      encryptionWasRequired,
+      resumedEncryptedBody,
+      preparedCopyCount: resumedPreparedCopies.length,
+    });
+    const resumedParent = deliveryMode === 'multi_device' ? resumedEncryptedBody : null;
+    const resumedDirectBody = deliveryMode === 'direct' && resumedEncryptedBody && !isMultiDeviceParentBody(resumedEncryptedBody)
+      ? resumedEncryptedBody
+      : null;
     let transportPlaintext = resumePayload?.transportPlaintext ?? sanitized;
     let bodyToStore = resumedParent ?? resumedDirectBody ?? sanitized;
-    let deliveryMode: 'multi_device' | 'direct' | 'plaintext' = encryptionWasRequired
-      ? (resumedDirectBody ? 'direct' : 'multi_device')
-      : 'plaintext';
     let encryptedSuccessfully = encryptionWasRequired && Boolean(resumedParent || resumedDirectBody);
     const requiresLongAttachment = !isSpecial && utf8ByteLength(sanitized) > MAX_INLINE_MESSAGE_BODY_BYTES;
 
@@ -411,55 +425,68 @@ export function useMessageQueue(
     if (encryptionWasRequired) {
       if (!isEncryptionReady) {
         try {
-          trace('identity_cold_start');
-          await ensureUserE2EEIdentity(user.id, { waitForMaintenance: false });
-          trace('identity_cold_start_ready');
+trace('identity_cold_start');
+await ensureUserE2EEIdentity(user.id, { waitForMaintenance: false });
+trace('identity_cold_start_ready');
         } catch (error) {
-          trace('identity_cold_start_failed_non_fatal', {
-            error: error instanceof Error ? error.message : String(error),
-          });
+trace('identity_cold_start_failed_non_fatal', {
+  error: error instanceof Error ? error.message : String(error),
+});
         }
       }
 
       if (requiresLongAttachment && !resumePayload?.transportPlaintext) {
         try {
-          trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
-          const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
-          transportPlaintext = prepared.transportBody;
-          await persistOutbox({ transportPlaintext });
-          trace('long_message_upload_ready', {
-            previewBytes: utf8ByteLength(prepared.preview),
-            transportBytes: utf8ByteLength(transportPlaintext),
-          });
+trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
+const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
+transportPlaintext = prepared.transportBody;
+await persistOutbox({ transportPlaintext });
+trace('long_message_upload_ready', {
+  previewBytes: utf8ByteLength(prepared.preview),
+  transportBytes: utf8ByteLength(transportPlaintext),
+});
         } catch (longMessageError) {
-          const message = longMessageError instanceof Error
-            ? longMessageError.message
-            : 'Préparation du message long impossible.';
-          updatePending({ status: 'failed_visible', lastError: message });
-          throw longMessageError instanceof Error ? longMessageError : new Error(message);
+const message = longMessageError instanceof Error
+  ? longMessageError.message
+  : 'Préparation du message long impossible.';
+updatePending({ status: 'failed_visible', lastError: message });
+throw longMessageError instanceof Error ? longMessageError : new Error(message);
         }
       }
 
       if (deliveryMode === 'multi_device') {
-        // The parent is only an encrypted index. Actual content is encrypted for
-        // every trusted device by buildFanoutCopies().
-        bodyToStore = resumedParent ?? buildMultiDeviceParentEnvelope(localId, traceId);
+        bodyToStore = resumedParent!;
         encryptedSuccessfully = true;
         await persistOutbox({
 encryptedBody: bodyToStore,
 transportPlaintext,
-preparedCopies: resumePayload?.preparedCopies ?? [],
+preparedCopies: resumedPreparedCopies,
         });
-        updatePending({ encryptedBody: bodyToStore });
+        updatePending({ encryptedBody: bodyToStore, status: 'sending', lastError: null });
         await savePlaintextForCiphertext(bodyToStore, sanitized);
-        trace('encrypted_parent_ready', {
-parentBodyLength: bodyToStore.length,
+        trace('multidevice_resume_ready', {
+copyCount: resumedPreparedCopies.length,
 longMessage: requiresLongAttachment,
         });
       } else {
+        if (!resumedDirectBody) {
+if (!encrypt) throw new Error('Chiffrement direct indisponible.');
+const directBody = await encrypt(transportPlaintext, localId);
+if (!directBody || directBody === transportPlaintext || isMultiDeviceParentBody(directBody)) {
+  throw new Error('Enveloppe E2EE directe invalide.');
+}
+bodyToStore = directBody;
+        }
+
         encryptedSuccessfully = true;
+        await persistOutbox({
+encryptedBody: bodyToStore,
+transportPlaintext,
+preparedCopies: [],
+        });
+        updatePending({ encryptedBody: bodyToStore, status: 'sending', lastError: null });
         await savePlaintextForCiphertext(bodyToStore, sanitized);
-        trace('direct_e2ee_resume_ready', {
+        trace('direct_e2ee_ready', {
 bodyLength: bodyToStore.length,
 longMessage: requiresLongAttachment,
         });
@@ -472,8 +499,8 @@ longMessage: requiresLongAttachment,
       senderUserId: user.id,
       plaintext: transportPlaintext,
     };
-    let fanoutRows: FanoutCopyRow[] = encryptedSuccessfully && deliveryMode === 'multi_device'
-      ? (resumePayload?.preparedCopies ?? []).filter(row => row.message_id === serverMessageId)
+    let fanoutRows: FanoutCopyRow[] = deliveryMode === 'multi_device'
+      ? resumedPreparedCopies
       : [];
 
     const archiveAllowed = isArchiveBackupEnabled() && shouldArchiveMessageBody({
@@ -483,84 +510,19 @@ longMessage: requiresLongAttachment,
       encryptedSuccessfully,
       encryptionWasRequired,
     });
-    let inlineArchiveBody = resumePayload?.archiveBody ?? null;
+    const inlineArchiveBody = resumePayload?.archiveBody ?? null;
     const archivePromise = archiveAllowed && !inlineArchiveBody
       ? encryptArchive(sanitized, conversationId, user.id).catch(() => null)
       : Promise.resolve(inlineArchiveBody);
 
-    if (encryptedSuccessfully && deliveryMode === 'multi_device') {
-      updatePending({
-        status: 'waiting_secure_channel',
-        serverId: serverMessageId,
-        lastError: fanoutRows.length > 0
-? 'Confirmation sécurisée de l’envoi…'
-: 'Préparation des copies chiffrées du destinataire…',
-      });
-
-      try {
-        if (fanoutRows.length === 0) {
-const fanout = await buildFanoutCopies(fanoutInput);
-if (!fanout.hasTargets || fanout.rows.length === 0) {
-  throw new Error('E2EE_DEVICE_LIST_UNAVAILABLE');
-}
-fanoutRows = fanout.rows;
-        }
-
-        inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
-        await persistOutbox({
-transportPlaintext,
-encryptedBody: bodyToStore,
-preparedCopies: fanoutRows,
-archiveBody: inlineArchiveBody,
-        });
-      } catch (fanoutError) {
-        await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
-        await persistOutbox({ preparedCopies: [] }).catch(() => undefined);
-
-        try {
-if (!encrypt) throw new Error('Chiffrement direct indisponible.');
-const directBody = resumedDirectBody ?? await encrypt(transportPlaintext, localId);
-if (!directBody || directBody === transportPlaintext || isMultiDeviceParentBody(directBody)) {
-  throw new Error('Enveloppe E2EE directe invalide.');
-}
-
-bodyToStore = directBody;
-deliveryMode = 'direct';
-fanoutRows = [];
-encryptedSuccessfully = true;
-inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
-await persistOutbox({
-  transportPlaintext,
-  encryptedBody: bodyToStore,
-  preparedCopies: [],
-  archiveBody: inlineArchiveBody,
-});
-updatePending(
-  { encryptedBody: bodyToStore, status: 'sending', lastError: null },
-  { encryptedBody: bodyToStore, preparedCopies: [], archiveBody: inlineArchiveBody },
-);
-await savePlaintextForCiphertext(bodyToStore, sanitized);
-trace('direct_e2ee_fallback_ready', {
-  reason: fanoutError instanceof Error ? fanoutError.message : String(fanoutError),
-  bodyLength: bodyToStore.length,
-});
-        } catch (directError) {
-const message = directError instanceof Error
-  ? directError.message
-  : 'Canal chiffré indisponible.';
-updatePending({ status: 'waiting_secure_channel', lastError: message }, { preparedCopies: [] });
-throw directError instanceof Error ? directError : new Error(message);
-        }
-      }
-    } else if (archiveAllowed) {
-      inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
-      await persistOutbox({ archiveBody: inlineArchiveBody });
+    if (deliveryMode === 'multi_device' && fanoutRows.length === 0) {
+      throw new Error('E2EE_PREPARED_COPIES_MISSING');
     }
 
     updatePending({ status: 'sending', serverId: serverMessageId, lastError: null });
 
     const rpcExtra = { ...(extra || {}) } as Record<string, unknown>;
-    if (encryptedSuccessfully) rpcExtra.body_kind = 'multi_device';
+    if (deliveryMode === 'multi_device') rpcExtra.body_kind = 'multi_device';
     if (inlineArchiveBody) rpcExtra.archive_body = inlineArchiveBody;
 
     let data = { id: serverMessageId };
@@ -698,6 +660,7 @@ lastError: visibleMessage,
         savePlaintextForCiphertext(bodyToStore, sanitized),
       ]);
       dispatchDecryptRetry(data.id);
+      scheduleBackgroundFanoutCoverage(data.id);
     }
 
     if (archiveAllowed && !inlineArchiveBody) {
@@ -753,6 +716,7 @@ lastError: visibleMessage,
       if (data?.id) {
         // Parent + copies are atomic in the authoritative RPC. Do not rebuild or
         // re-encrypt a message that the server has already committed.
+        scheduleBackgroundFanoutCoverage(data.id);
         await deleteOutboxPayload(localId).catch(() => {});
         setPendingMessages(prev => prev.filter(message => message.localId !== localId));
         dispatchDecryptRetry(data.id);
@@ -773,6 +737,6 @@ lastError: visibleMessage,
     sendMessage,
     retryMessage,
     removeMessage,
-    isInstant: !isEncryptionActive || allowPlaintext || isEncryptionReady,
+    isInstant: true,
   };
 }

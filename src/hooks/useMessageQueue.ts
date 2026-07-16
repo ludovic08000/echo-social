@@ -20,9 +20,10 @@ import {
   useMessageQueue as useSignalMessageQueue,
   shouldArchiveMessageBody,
   buildMultiDeviceParentEnvelope,
+  selectInitialDeliveryMode,
 } from './useMessageQueueSignal';
 
-export { shouldArchiveMessageBody, buildMultiDeviceParentEnvelope };
+export { shouldArchiveMessageBody, buildMultiDeviceParentEnvelope, selectInitialDeliveryMode };
 export type { OutboundMessage } from './useMessageQueueSignal';
 
 type SendExtra = {

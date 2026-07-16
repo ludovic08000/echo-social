@@ -263,11 +263,11 @@ async function loadSentMessageForCoverage(messageId: string): Promise<CoverageSe
  * caching plaintext. The listener performs a final all-device coverage pass,
  * including messages whose initial fan-out succeeded for only some devices.
  */
-function scheduleBackgroundCoverage(messageId: string): void {
+export function scheduleBackgroundFanoutCoverage(messageId: string): void {
   if (!messageId || backgroundCoverage.has(messageId)) return;
 
   const task = (async () => {
-    const readinessDelays = [500, 1_500, 3_000];
+    const readinessDelays = [0, 250, 750];
     let seed: CoverageSeed | null = null;
     for (const delay of readinessDelays) {
       await sleep(delay);
@@ -295,13 +295,13 @@ function scheduleBackgroundCoverage(messageId: string): void {
 }
 
 if (typeof window !== 'undefined') {
-  const marker = '__forsureFanoutCoverageListenerV1';
+  const marker = '__forsureFanoutCoverageListenerV2';
   const globalWindow = window as typeof window & Record<string, unknown>;
   if (!globalWindow[marker]) {
     globalWindow[marker] = true;
     window.addEventListener('forsure-decrypt-retry', (event: Event) => {
       const messageId = (event as CustomEvent<{ messageId?: string }>).detail?.messageId;
-      if (messageId) scheduleBackgroundCoverage(messageId);
+      if (messageId) scheduleBackgroundFanoutCoverage(messageId);
     });
   }
 }
