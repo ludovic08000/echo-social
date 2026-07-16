@@ -3,6 +3,8 @@ import { ShieldCheck, Lock, Zap, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SafetyNumberDialog } from './SafetyNumberDialog';
 
+const SESAME_SOURCE_URL = 'https://github.com/ludovic08000/echo-social';
+
 interface EncryptionBadgeProps {
   encrypted: boolean;
   verified?: boolean;
@@ -37,12 +39,19 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
         <Lock className={iconSize} aria-hidden="true" />
       )}
       {showLabel && (
-        <span className={cn(
-          'text-[9px] font-medium',
-          verified ? 'text-emerald-500' : 'text-muted-foreground'
-        )}>
+        <a
+          href={SESAME_SOURCE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          className={cn(
+            'text-[9px] font-medium hover:underline underline-offset-2',
+            verified ? 'text-emerald-500' : 'text-muted-foreground'
+          )}
+          title="Sesame est publié sous licence AGPL-3.0 — consulter le code source"
+        >
           {label}
-        </span>
+        </a>
       )}
     </span>
   );
@@ -97,11 +106,19 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
         )}>
           {statusText}
         </span>
+        <a
+          href={SESAME_SOURCE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto text-[9px] underline underline-offset-2"
+        >
+          Code source
+        </a>
         {hasKeys && !fingerprintChanged && (
           <button
             type="button"
             onClick={() => setShowSafety(true)}
-            className="ml-auto text-[9px] text-emerald-600 dark:text-emerald-400 underline underline-offset-2"
+            className="text-[9px] text-emerald-600 dark:text-emerald-400 underline underline-offset-2"
           >
             Vérifier
           </button>
