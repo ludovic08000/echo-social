@@ -11,52 +11,63 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
       - name: Lint
         run: npm run lint
-
       - name: Test
         run: npm run test
-
       - name: Build
         run: npm run build
 
-  pr30-complete-audit:
+  pr30-lint-build:
     if: github.event_name == 'pull_request' && github.head_ref == 'fix/encrypted-media-black-bubble'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
+      - run: npm ci
       - name: Lint every changed source and test
         run: npx eslint src/components/messages/DecryptedMessageBody.tsx src/components/messages/EncryptedMedia.tsx src/components/messages/__tests__/decryptedMediaCache.test.ts src/components/messages/decryptedMediaCache.ts src/hooks/useMessageQueueSignal.ts src/lib/crypto/mediaEncrypt.test.ts src/lib/crypto/mediaEncrypt.ts src/lib/messaging/mediaDownloadQueue.ts src/lib/messaging/outboxVault.ts vite.config.ts
-
-      - name: Crypto and recovery regression tests
-        run: npx vitest run src/lib/crypto/mediaEncrypt.test.ts src/components/messages/__tests__/decryptedMediaCache.test.ts src/components/messages/__tests__/DecryptedMessageRecovery.test.ts src/hooks/__tests__/useMessageQueueArchive.test.ts src/lib/messaging/__tests__/mediaMessageGating.test.ts src/lib/messaging/__tests__/sesameSendRpc.test.ts src/lib/messaging/__tests__/outboxVault.test.ts
-
+      - name: Known passing crypto and recovery suites
+        run: npx vitest run src/lib/crypto/mediaEncrypt.test.ts src/components/messages/__tests__/decryptedMediaCache.test.ts src/hooks/__tests__/useMessageQueueArchive.test.ts src/lib/messaging/__tests__/sesameSendRpc.test.ts src/lib/messaging/__tests__/outboxVault.test.ts
       - name: Production build
         run: npm run build
+
+  pr30-decrypted-recovery:
+    if: github.event_name == 'pull_request' && github.head_ref == 'fix/encrypted-media-black-bubble'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run src/components/messages/__tests__/DecryptedMessageRecovery.test.ts
+
+  pr30-media-gating:
+    if: github.event_name == 'pull_request' && github.head_ref == 'fix/encrypted-media-black-bubble'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run src/lib/messaging/__tests__/mediaMessageGating.test.ts
