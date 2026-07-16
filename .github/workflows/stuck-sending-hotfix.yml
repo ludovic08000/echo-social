@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - hotfix-unblock-stuck-sending
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
