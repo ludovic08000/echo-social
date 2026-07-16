@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
+import { repeatablePreKeyEnvelopeGuard } from "./vite.repeatable-prekey-plugin";
 
 /**
  * Guarded source fixes for oversized UI modules. They are deterministic and
@@ -534,6 +535,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     messagingStabilityGuard(),
+    repeatablePreKeyEnvelopeGuard(),
     react(),
     mode === "development" && componentTagger(),
     VitePWA({
