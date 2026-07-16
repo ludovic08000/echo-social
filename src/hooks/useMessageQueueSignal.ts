@@ -15,6 +15,11 @@ import { fanoutNeedsRepair, repairFanoutWithRetry } from '@/lib/messaging/fanout
 import { hasMediaKey } from '@/lib/crypto/mediaEncrypt';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import {
+  MAX_INLINE_MESSAGE_BODY_BYTES,
+  prepareLongMessageForSend,
+  utf8ByteLength,
+} from '@/lib/messaging/longMessageAttachment';
+import {
   deleteOutboxPayload,
   getOutboxPayload,
   listOutboxPayloads,
@@ -287,6 +292,7 @@ export function useMessageQueue(
     const traceStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
     const traceId = safeUUID();
+    const serverMessageId = safeUUID();
     const trace = (stage: string, traceExtra: Record<string, unknown> = {}) => {
       const elapsedMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceStartedAt);
       console.info('[MSG_TRACE]', {
@@ -302,7 +308,11 @@ export function useMessageQueue(
         ...traceExtra,
       });
     };
-    trace('created', { bodyLength: sanitized.length, isSpecial });
+    trace('created', {
+      bodyLength: sanitized.length,
+      bodyBytes: utf8ByteLength(sanitized),
+      isSpecial,
+    });
 
     const optimistic: OutboundMessage = {
       localId,
@@ -323,7 +333,7 @@ export function useMessageQueue(
     let outboxSnapshot: OutboxPayload = {
       ...optimistic,
       extra,
-      reservedServerId: null,
+      reservedServerId: serverMessageId,
     };
     setPendingMessages(prev => [...prev.filter((message) => message.localId !== localId), optimistic]);
     void putOutboxPayload(user.id, outboxSnapshot).catch((error) => {
@@ -361,9 +371,17 @@ export function useMessageQueue(
     }
     trace('session_ok');
 
+    let transportPlaintext = sanitized;
     let bodyToStore = sanitized;
     let encryptedSuccessfully = false;
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
+    const requiresLongAttachment = !isSpecial && utf8ByteLength(sanitized) > MAX_INLINE_MESSAGE_BODY_BYTES;
+
+    if (requiresLongAttachment && !encryptionWasRequired) {
+      const error = new Error('Les messages de plus de 2 Kio nécessitent une conversation chiffrée.');
+      updatePending({ status: 'failed_visible', lastError: error.message });
+      throw error;
+    }
 
     if (encryptionWasRequired) {
       try {
@@ -379,10 +397,29 @@ export function useMessageQueue(
         throw new Error('Chiffrement indisponible.');
       }
 
+      if (requiresLongAttachment) {
+        try {
+          trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
+          const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
+          transportPlaintext = prepared.transportBody;
+          bodyToStore = transportPlaintext;
+          trace('long_message_upload_ready', {
+            previewBytes: utf8ByteLength(prepared.preview),
+            transportBytes: utf8ByteLength(transportPlaintext),
+          });
+        } catch (longMessageError) {
+          const message = longMessageError instanceof Error
+            ? longMessageError.message
+            : 'Préparation du message long impossible.';
+          updatePending({ status: 'failed_visible', lastError: message });
+          throw longMessageError instanceof Error ? longMessageError : new Error(message);
+        }
+      }
+
       try {
         trace('encrypt_start');
-        const encryptedPayload = await encrypt(sanitized, localId);
-        if (!encryptedPayload || encryptedPayload === sanitized) throw new Error('Chiffrement v5 indisponible.');
+        const encryptedPayload = await encrypt(transportPlaintext, localId);
+        if (!encryptedPayload || encryptedPayload === transportPlaintext) throw new Error('Chiffrement v5 indisponible.');
         try {
           const identityKeys = await getOrCreateIdentityKeys(user.id);
           const publicBundle = await exportPublicKeyBundle(identityKeys);
@@ -398,7 +435,11 @@ export function useMessageQueue(
         }
         encryptedSuccessfully = true;
         updatePending({ encryptedBody: bodyToStore });
-        trace('encrypted_ready_for_rpc', { bodyKind: encryptedPayloadKind(bodyToStore), bodyLength: bodyToStore.length });
+        trace('encrypted_ready_for_rpc', {
+          bodyKind: encryptedPayloadKind(bodyToStore),
+          bodyLength: bodyToStore.length,
+          longMessage: requiresLongAttachment,
+        });
       } catch (encryptError) {
         const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
         const normalized = errMsg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -415,12 +456,16 @@ export function useMessageQueue(
       }
     }
 
-    updatePending({ status: 'sending' });
-    const serverMessageId = safeUUID();
+    updatePending({ status: 'sending', serverId: serverMessageId });
     outboxSnapshot = { ...outboxSnapshot, reservedServerId: serverMessageId, updatedAt: Date.now() };
     void putOutboxPayload(user.id, outboxSnapshot).catch(() => {});
 
-    const fanoutInput = { messageId: serverMessageId, conversationId, senderUserId: user.id, plaintext: sanitized };
+    const fanoutInput = {
+      messageId: serverMessageId,
+      conversationId,
+      senderUserId: user.id,
+      plaintext: transportPlaintext,
+    };
     let fanoutRows: FanoutCopyRow[] = [];
     let fanoutHasTargets = false;
     let fanoutTimedOut = false;
@@ -511,6 +556,7 @@ export function useMessageQueue(
     trace('message_inserted', {
       serverId: data.id,
       method: usedLegacyEncryptedFallback ? 'encrypted_legacy_fallback' : 'transactional_rpc',
+      longMessage: requiresLongAttachment,
     });
 
     if (!isSpecial) recordSentMessage(sanitized);
