@@ -2,67 +2,13 @@ name: E2EE CI
 
 on:
   push:
-    branches:
-      - main
-      - hotfix-unblock-stuck-sending
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  validate-stuck-sending-hotfix:
-    if: github.ref == 'refs/heads/hotfix-unblock-stuck-sending' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout hotfix branch
-        uses: actions/checkout@v4
-        with:
-          ref: hotfix-unblock-stuck-sending
-          fetch-depth: 0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Apply reviewed hotfix
-        run: python3 scripts/apply-stuck-sending-hotfix.py
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Targeted lint
-        run: npx eslint src/hooks/useMessageQueueSignal.ts src/lib/messaging/signalWebConversationQueue.ts src/hooks/__tests__/useMessageQueueArchive.test.ts
-
-      - name: Messaging regression tests
-        run: npx vitest run src/hooks/__tests__/useMessageQueueArchive.test.ts src/lib/messaging/__tests__/signalWebConversationQueue.test.ts
-
-      - name: Production build
-        run: npm run build
-
-      - name: Restore workflow and commit validated source
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git show origin/main:.github/workflows/e2ee-ci.yml > .github/workflows/e2ee-ci.yml
-          git rm -f scripts/apply-stuck-sending-hotfix.py
-          git rm -f .github/workflows/stuck-sending-hotfix.yml
-          git add .github/workflows/e2ee-ci.yml \
-            src/hooks/useMessageQueueSignal.ts \
-            src/lib/messaging/signalWebConversationQueue.ts \
-            src/hooks/__tests__/useMessageQueueArchive.test.ts
-          git commit -m "fix(messaging): recover stalled encrypted sends"
-          git push origin HEAD:hotfix-unblock-stuck-sending
-
   verify:
-    if: github.ref != 'refs/heads/hotfix-unblock-stuck-sending'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
