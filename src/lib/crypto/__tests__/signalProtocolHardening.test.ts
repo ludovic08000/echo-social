@@ -44,10 +44,12 @@ describe('Signal protocol hardening', () => {
 
     const encrypted = await ratchetEncrypt(ALICE, ALICE_DEVICE, BOB, BOB_DEVICE, 'bonjour');
     expect(encrypted).toMatch(/^x3dh5\.s6/);
-    expect(await ratchetDecryptWithSession(BOB, BOB_DEVICE, ALICE, ALICE_DEVICE, encrypted!)).toBe('bonjour');
 
     const parts = encrypted!.split('.');
     parts[4] = String(Number(parts[4]) + 1); // PN is header metadata, not ciphertext.
     expect(await ratchetDecryptWithSession(BOB, BOB_DEVICE, ALICE, ALICE_DEVICE, parts.join('.'))).toBeNull();
+
+    // Authentication failure must not advance the receiving ratchet state.
+    expect(await ratchetDecryptWithSession(BOB, BOB_DEVICE, ALICE, ALICE_DEVICE, encrypted!)).toBe('bonjour');
   });
 });

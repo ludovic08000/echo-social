@@ -248,11 +248,7 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
 
 export async function removePlaintext(messageId: string): Promise<void> {
   try {
-    const map = readSessionMirror();
-    if (map[messageId]) {
-      delete map[messageId];
-      writeSessionMirror(map);
-    }
+    volatileMirror.delete(messageId);
 
     await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', (tx) => {
       tx.objectStore(STORE_MESSAGES).delete(messageId);

@@ -35,11 +35,6 @@ import {
   getCurrentPlatform,
   hydrateDeviceId,
 } from '@/lib/messaging/currentDevice';
-import {
-  exportPlaintextCache,
-  importPlaintextCache,
-  type PlaintextCacheExportEntry,
-} from '@/lib/crypto/plaintextStore';
 
 const PBKDF2_ITERATIONS = 600_000;
 const LINK_PRIVATE_KEY_PREFIX = 'forsure:device-link:private:';
@@ -142,7 +137,6 @@ async function writeSideStore(dbKey: 'ratchet', storeName: string, records: any[
  * installation-specific and are deliberately excluded.
  */
 async function collectLocalKeys(userId: string, options: CollectOptions = {}): Promise<string> {
-  const includePlaintextCache = options.includePlaintextCache ?? true;
   const includeLegacySessions = options.includeLegacySessions ?? false;
   const data: Record<string, any> = {};
 
