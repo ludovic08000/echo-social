@@ -116,17 +116,9 @@ export function shouldArchiveMessageBody({
   return hasMediaKey(sanitized);
 }
 
-const INLINE_ARCHIVE_BUDGET_MS = 180;
-const INLINE_FANOUT_BUDGET_MS = 1_200;
+const INLINE_FANOUT_BUDGET_MS = 250;
 
 type FanoutBuildResult = Awaited<ReturnType<typeof buildFanoutCopies>>;
-
-function waitForInlineArchive(archivePromise: Promise<string | null>): Promise<string | null> {
-  return Promise.race([
-    archivePromise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), INLINE_ARCHIVE_BUDGET_MS)),
-  ]);
-}
 
 function waitForInlineFanout(fanoutPromise: Promise<FanoutBuildResult>): Promise<FanoutBuildResult | null> {
   return Promise.race([
@@ -170,6 +162,16 @@ function normalizeSupabaseError(error: unknown) {
     status: err.status ?? null,
     name: err.name ?? null,
   };
+}
+
+function isAuthenticationError(error: unknown): boolean {
+  const text = Object.values(normalizeSupabaseError(error)).filter(Boolean).join(' ').toLowerCase();
+  return (
+    text.includes('401') ||
+    text.includes('jwt') ||
+    text.includes('not_authenticated') ||
+    text.includes('unauthorized')
+  );
 }
 
 function shouldFallbackToLegacyEncryptedInsert(error: unknown): boolean {
@@ -356,23 +358,6 @@ export function useMessageQueue(
       void putOutboxPayload(user.id, outboxSnapshot).catch(() => {});
     };
 
-    trace('session_check_start');
-    const sessProbe = await Promise.race([
-      supabase.auth.getSession().then((result) => ({ kind: 'ok' as const, data: result.data })),
-      new Promise<{ kind: 'slow' }>((resolve) => setTimeout(() => resolve({ kind: 'slow' }), 800)),
-    ]);
-    if (sessProbe.kind === 'ok') {
-      const session = sessProbe.data;
-      if (!session.session?.user?.id || session.session.user.id !== user.id) {
-        trace('session_invalid', { liveUserId: session.session?.user?.id ?? null });
-        updatePending({ status: 'failed_visible', lastError: 'Session expirée — reconnectez-vous pour envoyer.' });
-        throw new Error('Session expirée — reconnectez-vous pour envoyer.');
-      }
-    } else {
-      trace('session_check_slow_trusting_context');
-    }
-    trace('session_ok');
-
     let transportPlaintext = sanitized;
     let bodyToStore = sanitized;
     let encryptedSuccessfully = false;
@@ -386,12 +371,14 @@ export function useMessageQueue(
     }
 
     if (encryptionWasRequired) {
-      try {
-        trace('identity_bootstrap_start');
-        await ensureUserE2EEIdentity(user.id, { waitForMaintenance: false });
-        trace('identity_bootstrap_ok');
-      } catch (error) {
-        trace('identity_bootstrap_failed_non_fatal', { error: error instanceof Error ? error.message : String(error) });
+      if (!isEncryptionReady) {
+        try {
+          trace('identity_cold_start');
+          await ensureUserE2EEIdentity(user.id, { waitForMaintenance: false });
+          trace('identity_cold_start_ready');
+        } catch (error) {
+          trace('identity_cold_start_failed_non_fatal', { error: error instanceof Error ? error.message : String(error) });
+        }
       }
 
       if (!encrypt) {
@@ -471,8 +458,7 @@ export function useMessageQueue(
       plaintext: transportPlaintext,
     };
     let fanoutRows: FanoutCopyRow[] = [];
-    let fanoutHasTargets = false;
-    let fanoutTimedOut = false;
+    let fanoutNeedsAsyncRepair = false;
     let fanoutPromise: ReturnType<typeof buildFanoutCopies> | null = null;
     const archiveAllowed = isArchiveBackupEnabled() && shouldArchiveMessageBody({
       sanitized,
@@ -481,9 +467,6 @@ export function useMessageQueue(
       encryptedSuccessfully,
       encryptionWasRequired,
     });
-    const archivePromise: Promise<string | null> = archiveAllowed
-      ? encryptArchive(sanitized, conversationId, user.id).catch(() => null)
-      : Promise.resolve(null);
 
     if (encryptedSuccessfully) {
       fanoutPromise = buildFanoutCopies(fanoutInput);
@@ -491,17 +474,14 @@ export function useMessageQueue(
       const inlineFanout = await waitForInlineFanout(fanoutPromise).catch(() => null);
       if (inlineFanout) {
         fanoutRows = inlineFanout.rows;
-        fanoutHasTargets = inlineFanout.hasTargets;
-        fanoutTimedOut = fanoutNeedsRepair(inlineFanout);
+        fanoutNeedsAsyncRepair = fanoutNeedsRepair(inlineFanout);
       } else {
-        fanoutTimedOut = true;
+        fanoutNeedsAsyncRepair = true;
       }
     }
 
-    const inlineArchiveBody = archiveAllowed ? await waitForInlineArchive(archivePromise) : null;
     const rpcExtra = { ...(extra || {}) } as Record<string, unknown>;
-    if (inlineArchiveBody) rpcExtra.archive_body = inlineArchiveBody;
-    if (fanoutRows.length > 0 || fanoutTimedOut) rpcExtra.body_kind = 'multi_device';
+    if (fanoutRows.length > 0) rpcExtra.body_kind = 'multi_device';
 
     const { data: rpcMessageId, error } = await supabase.rpc('send_message_with_device_copies', {
       p_message_id: serverMessageId,
@@ -518,7 +498,10 @@ export function useMessageQueue(
     if (error) {
       const normalizedError = normalizeSupabaseError(error);
       if (!shouldFallbackToLegacyEncryptedInsert(error)) {
-        updatePending({ status: 'failed_visible', lastError: normalizedError.message });
+        const visibleMessage = isAuthenticationError(error)
+          ? 'Session expirée — reconnectez-vous pour envoyer.'
+          : normalizedError.message;
+        updatePending({ status: 'failed_visible', lastError: visibleMessage });
         throw error;
       }
       usedLegacyEncryptedFallback = true;
@@ -537,24 +520,17 @@ export function useMessageQueue(
           document_name: extra?.document_name ?? null,
           document_mime: extra?.document_mime ?? null,
           document_size_bytes: extra?.document_size_bytes ?? null,
-          archive_body: inlineArchiveBody,
         } as never)
         .select('id')
         .single();
       if (legacyError) {
-        updatePending({ status: 'failed_visible', lastError: normalizeSupabaseError(legacyError).message });
+        const visibleMessage = isAuthenticationError(legacyError)
+          ? 'Session expirée — reconnectez-vous pour envoyer.'
+          : normalizeSupabaseError(legacyError).message;
+        updatePending({ status: 'failed_visible', lastError: visibleMessage });
         throw legacyError;
       }
       data = { id: legacyData?.id || serverMessageId };
-      if (fanoutRows.length > 0) {
-        try {
-          const inserted = await insertFanoutCopyRows(fanoutInput, fanoutRows);
-          if (inserted.inserted > 0) dispatchDecryptRetry(data.id);
-          else if (fanoutHasTargets) fanoutTimedOut = true;
-        } catch {
-          fanoutTimedOut = true;
-        }
-      }
     }
 
     trace('message_inserted', {
@@ -572,13 +548,15 @@ export function useMessageQueue(
         dispatchDecryptRetry(data.id);
       }
 
-      if (archiveAllowed && !inlineArchiveBody) {
+      if (archiveAllowed) {
         const archiveMsgId = data.id;
-        void archivePromise.then(async (archived) => {
-          if (!archived) return;
-          const stored = await setMessageArchiveBody(archiveMsgId, archived);
-          if (stored) dispatchDecryptRetry(archiveMsgId);
-        }).catch(() => {});
+        void encryptArchive(sanitized, conversationId, user.id)
+          .then(async (archived) => {
+            if (!archived) return;
+            const stored = await setMessageArchiveBody(archiveMsgId, archived);
+            if (stored) dispatchDecryptRetry(archiveMsgId);
+          })
+          .catch(() => {});
       }
 
       const sentMessage: SentMessageSnapshot = {
@@ -602,16 +580,18 @@ export function useMessageQueue(
       queryClient.setQueryData<SentMessageSnapshot[]>(['messages', conversationId, user.id], upsertSentMessage);
       queryClient.setQueriesData<SentMessageSnapshot[]>({ queryKey: ['messages', conversationId] }, upsertSentMessage);
 
-      if (encryptedSuccessfully && fanoutTimedOut) {
+      if (encryptedSuccessfully && (fanoutNeedsAsyncRepair || usedLegacyEncryptedFallback)) {
         const pendingFanout = fanoutPromise ?? buildFanoutCopies(fanoutInput);
         void pendingFanout.then(async (fanout) => {
+          if (!fanout.hasTargets) return;
+
+          const needsRepair = fanoutNeedsRepair(fanout);
           if (fanout.rows.length > 0) {
             const inserted = await insertFanoutCopyRows(fanoutInput, fanout.rows);
-            if (inserted.inserted > 0) {
-              dispatchDecryptRetry(data.id);
-              return;
-            }
+            if (inserted.inserted > 0) dispatchDecryptRetry(data.id);
+            if (inserted.inserted > 0 && !needsRepair) return;
           }
+
           const repaired = await repairFanoutWithRetry(fanoutInput);
           if (repaired.inserted > 0) dispatchDecryptRetry(data.id);
         }).catch(() => {
@@ -623,9 +603,11 @@ export function useMessageQueue(
         });
       }
 
-      await onMessageSent?.(localId);
-      await deleteOutboxPayload(localId).catch(() => {});
       setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+      void deleteOutboxPayload(localId).catch(() => {});
+      void Promise.resolve(onMessageSent?.(localId)).catch((callbackError) => {
+        console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
+      });
     }
 
     scheduleLightConversationRefresh(queryClient);
