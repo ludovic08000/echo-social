@@ -168,6 +168,48 @@ function isAuthenticationError(error: unknown): boolean {
   );
 }
 
+const SEND_TRANSPORT_TIMEOUT_MS = 15_000;
+const SEND_CONFIRM_TIMEOUT_MS = 6_000;
+const IDENTITY_PREWARM_TIMEOUT_MS = 5_000;
+
+async function withSendStageTimeout<T>(
+  operation: PromiseLike<T>,
+  timeoutMs: number,
+  stage: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${stage} timeout`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([Promise.resolve(operation), timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+export function classifyOutboundFailure(error: unknown): {
+  status: 'retry_pending' | 'failed_visible';
+  message: string;
+} {
+  const raw = error instanceof Error ? error.message : String(error ?? 'Échec de l’envoi chiffré.');
+  const text = normalizedErrorText(error);
+  const permanent = isAuthenticationError(error) || [
+    'verification obligatoire',
+    'fingerprint changed',
+    'safety number',
+    'cle de securite du contact modifiee',
+    'pin unlock required',
+    'identity_lost_backup_available',
+  ].some(marker => text.includes(marker));
+  return {
+    status: permanent ? 'failed_visible' : 'retry_pending',
+    message: isAuthenticationError(error)
+      ? 'Session expirée — reconnectez-vous pour envoyer.'
+      : raw || 'Échec de l’envoi chiffré.',
+  };
+}
+
 function isAmbiguousTransportError(error: unknown): boolean {
   const text = normalizedErrorText(error);
   if (text.includes('e2ee_') || text.includes('not_authenticated') || text.includes('permission denied')) return false;
@@ -338,7 +380,7 @@ export function useMessageQueue(
       plaintext: sanitized,
       encryptedBody: resumePayload?.encryptedBody ?? null,
       imageUrl: imageUrl || null,
-      status: resumePayload ? 'retry_pending' : 'sending',
+      status: resumePayload ? 'retry_pending' : 'pending_local',
       retryCount: resumePayload ? resumePayload.retryCount + 1 : 0,
       maxRetries: resumePayload?.maxRetries ?? 3,
       lastError: null,
@@ -399,6 +441,10 @@ export function useMessageQueue(
     }
 
     const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
+    updatePending({
+      status: encryptionWasRequired ? 'encrypting' : 'sending',
+      lastError: null,
+    });
     const resumedEncryptedBody = resumePayload?.encryptedBody ?? null;
     const resumedPreparedCopies = (resumePayload?.preparedCopies ?? [])
       .filter(row => row.message_id === serverMessageId);
@@ -426,7 +472,11 @@ export function useMessageQueue(
       if (!isEncryptionReady) {
         try {
 trace('identity_cold_start');
-await ensureUserE2EEIdentity(user.id, { waitForMaintenance: false });
+await withSendStageTimeout(
+  ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
+  IDENTITY_PREWARM_TIMEOUT_MS,
+  'identity prewarm',
+);
 trace('identity_cold_start_ready');
         } catch (error) {
 trace('identity_cold_start_failed_non_fatal', {
@@ -463,19 +513,33 @@ transportPlaintext,
 preparedCopies: resumedPreparedCopies,
         });
         updatePending({ encryptedBody: bodyToStore, status: 'sending', lastError: null });
-        await savePlaintextForCiphertext(bodyToStore, sanitized);
+        void savePlaintextForCiphertext(bodyToStore, sanitized).catch(() => {});
         trace('multidevice_resume_ready', {
 copyCount: resumedPreparedCopies.length,
 longMessage: requiresLongAttachment,
         });
       } else {
         if (!resumedDirectBody) {
-if (!encrypt) throw new Error('Chiffrement direct indisponible.');
-const directBody = await encrypt(transportPlaintext, localId);
-if (!directBody || directBody === transportPlaintext || isMultiDeviceParentBody(directBody)) {
-  throw new Error('Enveloppe E2EE directe invalide.');
-}
-bodyToStore = directBody;
+          updatePending({ status: 'encrypting', lastError: null });
+          try {
+            if (!encrypt) throw new Error('Chiffrement direct indisponible.');
+            const directBody = await encrypt(transportPlaintext, localId);
+            if (!directBody || directBody === transportPlaintext || isMultiDeviceParentBody(directBody)) {
+              throw new Error('Enveloppe E2EE directe invalide.');
+            }
+            bodyToStore = directBody;
+          } catch (error) {
+            const failure = classifyOutboundFailure(error);
+            updatePending({
+              status: failure.status,
+              lastError: failure.message,
+            }, { preparedCopies: [] });
+            trace('direct_e2ee_failed', {
+              error: failure.message,
+              retryable: failure.status === 'retry_pending',
+            });
+            throw error instanceof Error ? error : new Error(failure.message);
+          }
         }
 
         encryptedSuccessfully = true;
@@ -485,7 +549,7 @@ transportPlaintext,
 preparedCopies: [],
         });
         updatePending({ encryptedBody: bodyToStore, status: 'sending', lastError: null });
-        await savePlaintextForCiphertext(bodyToStore, sanitized);
+        void savePlaintextForCiphertext(bodyToStore, sanitized).catch(() => {});
         trace('direct_e2ee_ready', {
 bodyLength: bodyToStore.length,
 longMessage: requiresLongAttachment,
@@ -530,9 +594,12 @@ longMessage: requiresLongAttachment,
     let retriedStaleRoute = false;
 
     if (deliveryMode === 'direct') {
-      const { data: inserted, error: insertError } = await supabase
-        .from('messages')
-        .insert({
+      let insertResponse: { data: unknown; error: unknown };
+      try {
+        insertResponse = await withSendStageTimeout(
+          Promise.resolve(supabase
+            .from('messages')
+            .insert({
 id: serverMessageId,
 conversation_id: conversationId,
 sender_id: user.id,
@@ -545,17 +612,46 @@ document_url: extra?.document_url ?? null,
 document_name: extra?.document_name ?? null,
 document_mime: extra?.document_mime ?? null,
 document_size_bytes: extra?.document_size_bytes ?? null,
-        } as never)
-        .select('id')
-        .single();
+            } as never)
+            .select('id')
+            .single()),
+          SEND_TRANSPORT_TIMEOUT_MS,
+          'message transport',
+        ) as { data: unknown; error: unknown };
+      } catch (error) {
+        const failure = classifyOutboundFailure(error);
+        updatePending({ status: failure.status, lastError: failure.message }, {
+          encryptedBody: bodyToStore,
+          preparedCopies: [],
+        });
+        throw error instanceof Error ? error : new Error(failure.message);
+      }
 
+      const { data: inserted, error: insertError } = insertResponse;
       const insertedRow = inserted as { id?: string } | null;
       if (insertError) {
-        const { data: existing } = await supabase
-.from('messages')
-.select('id,sender_id,conversation_id')
-.eq('id', serverMessageId)
-.maybeSingle();
+        let existing: unknown = null;
+        try {
+          const confirmation = await withSendStageTimeout(
+            Promise.resolve(supabase
+              .from('messages')
+              .select('id,sender_id,conversation_id')
+              .eq('id', serverMessageId)
+              .maybeSingle()),
+            SEND_CONFIRM_TIMEOUT_MS,
+            'message confirmation',
+          ) as { data: unknown };
+          existing = confirmation.data;
+        } catch (confirmationError) {
+          const failure = classifyOutboundFailure(confirmationError);
+          updatePending({ status: 'retry_pending', lastError: failure.message }, {
+            encryptedBody: bodyToStore,
+            preparedCopies: [],
+          });
+          throw confirmationError instanceof Error
+            ? confirmationError
+            : new Error(failure.message);
+        }
         const existingRow = existing as {
 id: string;
 sender_id: string;
@@ -655,10 +751,12 @@ lastError: visibleMessage,
     if (!isSpecial) recordSentMessage(sanitized);
     onPlaintextCached?.(data.id, sanitized);
     if (encryptedSuccessfully) {
-      await Promise.all([
+      // Delivery is already committed. Local readability caches are best-effort
+      // and must never keep the UI in `sending` if IndexedDB is slow on iOS.
+      void Promise.all([
         savePlaintext(data.id, sanitized),
         savePlaintextForCiphertext(bodyToStore, sanitized),
-      ]);
+      ]).catch(() => {});
       dispatchDecryptRetry(data.id);
       scheduleBackgroundFanoutCoverage(data.id);
     }
@@ -694,8 +792,11 @@ lastError: visibleMessage,
     queryClient.setQueryData<SentMessageSnapshot[]>(['messages', conversationId, user.id], upsertSentMessage);
     queryClient.setQueriesData<SentMessageSnapshot[]>({ queryKey: ['messages', conversationId] }, upsertSentMessage);
 
-    await deleteOutboxPayload(localId).catch(() => {});
     setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+    // Remove the visible pending state immediately after server acknowledgement.
+    // A slow IndexedDB delete is harmless: restore reconciliation checks the same
+    // stable server UUID and removes an already-delivered row idempotently.
+    void deleteOutboxPayload(localId).catch(() => {});
     void Promise.resolve(onMessageSent?.(localId)).catch(callbackError => {
       console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
     });
