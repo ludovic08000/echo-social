@@ -95,7 +95,7 @@ describe('targeted decryption cache and Bubble Hold', () => {
       if (table !== 'messages') throw new Error(`Unexpected table: ${table}`);
       return {
         select: () => ({
-          in: async (ids: string[]) => ({
+          in: async (_column: string, ids: string[]) => ({
             data: ids.map((id) => ({ id, sender_id: null })),
             error: null,
           }),
@@ -186,7 +186,7 @@ describe('targeted decryption cache and Bubble Hold', () => {
         select: (columns: string) => {
           if (columns === 'id,sender_id') {
             return {
-              in: async (ids: string[]) => {
+              in: async (_column: string, ids: string[]) => {
                 senderLookupCount += 1;
                 return {
                   data: ids.map((id) => ({

@@ -38,6 +38,10 @@ function perfNow(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
+const PREWARM_TTL_MS = 60_000;
+const prewarmCompletedAt = new Map<string, number>();
+const prewarmInflight = new Map<string, Promise<void>>();
+
 export function useMessageQueue(
   conversationId: string,
   encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
@@ -79,49 +83,51 @@ export function useMessageQueue(
     if (!user?.id || !conversationId || allowPlaintext || !isEncryptionActive) return;
 
     let cancelled = false;
-    let lastStartedAt = 0;
-    const cooldownMs = 8_000;
+    const prewarmKey = `${user.id}:${conversationId}`;
 
     const prewarm = () => {
-      const now = Date.now();
-      if (now - lastStartedAt < cooldownMs) return;
-      lastStartedAt = now;
+      if (cancelled || document.visibilityState === 'hidden') return;
+      const lastCompletedAt = prewarmCompletedAt.get(prewarmKey) ?? 0;
+      if (Date.now() - lastCompletedAt < PREWARM_TTL_MS) return;
+      if (prewarmInflight.has(prewarmKey)) return;
 
-      void Promise.allSettled([
-        supabase.auth.getSession(),
-        ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
-        prewarmSenderKeysFlag(conversationId),
-        (async () => {
-          const { data, error } = await supabase
-            .from('conversation_participants')
-            .select('user_id')
-            .eq('conversation_id', conversationId);
-          if (error || cancelled) return;
+      const task = (async () => {
+        await Promise.allSettled([
+          supabase.auth.getSession(),
+          ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
+          prewarmSenderKeysFlag(conversationId),
+          (async () => {
+            const { data, error } = await supabase
+              .from('conversation_participants')
+              .select('user_id')
+              .eq('conversation_id', conversationId);
+            if (error || cancelled) return;
 
-          const recipientUserIds = Array.from(new Set(
-            (data ?? [])
-              .map((row) => row.user_id)
-              .filter((id): id is string => typeof id === 'string' && id.length > 0),
-          ));
+            const recipientUserIds = Array.from(new Set(
+              (data ?? [])
+                .map((row) => row.user_id)
+                .filter((id): id is string => typeof id === 'string' && id.length > 0),
+            ));
 
-          // listFanoutTargets only returns routes from the canonical signed
-          // device list. verifyPrekeys=false skips unnecessary SPK network work;
-          // X3DH verifies a signed prekey if a fresh session is actually needed.
-          await listFanoutTargets(user.id, recipientUserIds, { verifyPrekeys: false });
-        })(),
-      ]).catch(() => undefined);
+            await listFanoutTargets(user.id, recipientUserIds, { verifyPrekeys: false });
+          })(),
+        ]);
+        if (!cancelled) prewarmCompletedAt.set(prewarmKey, Date.now());
+      })().finally(() => {
+        if (prewarmInflight.get(prewarmKey) === task) prewarmInflight.delete(prewarmKey);
+      });
+
+      prewarmInflight.set(prewarmKey, task);
     };
 
     prewarm();
     window.addEventListener('focus', prewarm);
     window.addEventListener('online', prewarm);
-    window.addEventListener('pointerdown', prewarm, { passive: true });
 
     return () => {
       cancelled = true;
       window.removeEventListener('focus', prewarm);
       window.removeEventListener('online', prewarm);
-      window.removeEventListener('pointerdown', prewarm);
     };
   }, [user?.id, conversationId, allowPlaintext, isEncryptionActive]);
 

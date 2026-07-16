@@ -36,6 +36,7 @@ import { routeIncoming } from '@/e2ee-session';
 import { supabase } from '@/integrations/supabase/client';
 import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiveKey';
 import type { DecryptResult } from '@/hooks/useE2EE';
+import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 
 export interface DecryptionOutcome {
   text: string;
@@ -150,51 +151,23 @@ if (typeof window !== 'undefined') {
   }
 }
 
-const BATCH_WINDOW_MS = 50;
-const senderBatchPending = new Map<string, Array<(value: string | null) => void>>();
-// Only positive immutable sender ids are cached. A missing row can be caused by
-// realtime/RLS/replication timing and must remain retryable.
 const senderCache = new LruMap<string, string>(500);
-let senderBatchTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function flushSenderBatch(): Promise<void> {
-  senderBatchTimer = null;
-  const localWaiters = new Map(senderBatchPending);
-  senderBatchPending.clear();
-  const ids = Array.from(localWaiters.keys());
-  if (ids.length === 0) return;
+async function getSenderId(messageId: string): Promise<string | null> {
+  const cached = senderCache.get(messageId);
+  if (cached !== undefined) return cached;
   try {
     const { data } = await supabase
       .from('messages')
       .select('id,sender_id')
-      .in('id', ids);
-    const map = new Map<string, string>();
-    for (const row of (data as Array<{ id: string; sender_id: string | null }> | null) ?? []) {
-      if (row.sender_id) map.set(row.id, row.sender_id);
-    }
-    for (const id of ids) {
-      const value = map.get(id) ?? null;
-      if (value) senderCache.set(id, value);
-      (localWaiters.get(id) ?? []).forEach((resolve) => resolve(value));
-    }
+      .in('id', [messageId]);
+    const senderId = ((data as Array<{ id: string; sender_id: string | null }> | null) ?? [])
+      .find((row) => row.id === messageId)?.sender_id ?? null;
+    if (senderId) senderCache.set(messageId, senderId);
+    return senderId;
   } catch {
-    for (const id of ids) {
-      (localWaiters.get(id) ?? []).forEach((resolve) => resolve(null));
-    }
+    return null;
   }
-}
-
-function getSenderIdBatched(messageId: string): Promise<string | null> {
-  const cached = senderCache.get(messageId);
-  if (cached !== undefined) return Promise.resolve(cached);
-  return new Promise<string | null>((resolve) => {
-    const pending = senderBatchPending.get(messageId) ?? [];
-    pending.push(resolve);
-    senderBatchPending.set(messageId, pending);
-    if (!senderBatchTimer) {
-      senderBatchTimer = setTimeout(() => void flushSenderBatch(), BATCH_WINDOW_MS);
-    }
-  });
 }
 
 export function readCache(messageId: string | undefined, body: string): DecryptionOutcome | undefined {
@@ -305,6 +278,11 @@ export async function resolvePlaintext(opts: {
   if (!promise) {
     promise = (async (): Promise<DecryptionOutcome | null> => {
       let senderId: string | null = opts.senderId ?? null;
+      let authUserId: string | null | undefined;
+      const resolveAuthUserId = async (): Promise<string | null> => {
+        if (authUserId === undefined) authUserId = await getCachedAuthUserId();
+        return authUserId;
+      };
 
       if (!isMultiDeviceEnvelopeBody(body)) {
         try {
@@ -327,7 +305,7 @@ export async function resolvePlaintext(opts: {
       }
 
       if (messageId) {
-        if (!senderId) senderId = await getSenderIdBatched(messageId);
+        if (!senderId) senderId = await getSenderId(messageId);
         if (senderId) {
           try {
             const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
@@ -348,11 +326,11 @@ export async function resolvePlaintext(opts: {
 
       if (messageId) {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user && senderId) {
+          const userId = await resolveAuthUserId();
+          if (userId && senderId) {
             const routed = await routeIncoming({
               encryptedBody: body,
-              recipientUserId: user.id,
+              recipientUserId: userId,
               senderUserId: senderId,
               messageId,
             });
@@ -370,8 +348,8 @@ export async function resolvePlaintext(opts: {
       let archiveDecrypted = false;
       if (messageId) {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
+          const userId = await resolveAuthUserId();
+          if (userId) {
             const { data: row } = await supabase
               .from('messages')
               .select('archive_body, conversation_id')
@@ -393,7 +371,7 @@ export async function resolvePlaintext(opts: {
               }
               if (archiveBody && isArchivePayload(archiveBody)) {
                 archiveFound = true;
-                const plaintext = await decryptArchive(archiveBody, conversationId, user.id);
+                const plaintext = await decryptArchive(archiveBody, conversationId, userId);
                 if (plaintext !== null) {
                   archiveDecrypted = true;
                   const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);
@@ -425,8 +403,11 @@ export async function resolvePlaintext(opts: {
       negCache.set(key, Date.now());
       return stickyOrNull(messageId);
     })();
-    inflight.set(key, promise);
-    promise.finally(() => inflight.delete(key));
+    const tracked = promise.finally(() => {
+      if (inflight.get(key) === tracked) inflight.delete(key);
+    });
+    inflight.set(key, tracked);
+    promise = tracked;
   }
 
   return promise;

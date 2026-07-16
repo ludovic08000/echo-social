@@ -8,6 +8,7 @@ import {
 } from '@/lib/messaging/multiDeviceFanout';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { loadPlaintext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 
 export type FanoutInput = Parameters<typeof fanoutMessageCopies>[0];
 type FanoutResult = Awaited<ReturnType<typeof fanoutMessageCopies>>;
@@ -30,7 +31,11 @@ export interface FanoutCoverageResult extends FanoutResult {
   missingDeviceIds: string[];
 }
 
-export const DEFAULT_FANOUT_REPAIR_DELAYS_MS = [0, 500, 1_500, 4_000] as const;
+export const DEFAULT_FANOUT_REPAIR_DELAYS_MS = [0, 1_000, 4_000] as const;
+const PARTICIPANT_CACHE_TTL_MS = 30_000;
+const FANOUT_REPAIR_CONCURRENCY = 2;
+const participantCache = new Map<string, { expiresAt: number; userIds: string[] }>();
+const participantInflight = new Map<string, Promise<string[]>>();
 
 export function fanoutNeedsRepair(
   result: { rows: unknown[]; hasTargets: boolean } | null,
@@ -47,17 +52,56 @@ function targetKey(target: Pick<ExpectedTarget, 'userId' | 'deviceId'>): string 
   return `${target.userId}:${target.deviceId}`;
 }
 
+async function listConversationUserIds(conversationId: string): Promise<string[]> {
+  const cached = participantCache.get(conversationId);
+  if (cached && cached.expiresAt > Date.now()) return [...cached.userIds];
+  if (cached) participantCache.delete(conversationId);
+
+  const pending = participantInflight.get(conversationId);
+  if (pending) return [...await pending];
+
+  const request = (async () => {
+    const { data, error } = await supabase
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', conversationId);
+    if (error) throw error;
+    const userIds = [...new Set((data ?? []).map((row) => row.user_id))];
+    participantCache.set(conversationId, {
+      expiresAt: Date.now() + PARTICIPANT_CACHE_TTL_MS,
+      userIds,
+    });
+    return userIds;
+  })().finally(() => participantInflight.delete(conversationId));
+
+  participantInflight.set(conversationId, request);
+  return [...await request];
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 async function listExpectedTargets(input: FanoutInput): Promise<ExpectedTarget[]> {
   if (isDeviceIdTemporary()) return [];
   const senderDeviceId = getCurrentDeviceId();
 
-  const { data: participants, error } = await supabase
-    .from('conversation_participants')
-    .select('user_id')
-    .eq('conversation_id', input.conversationId);
-  if (error) throw error;
-
-  const userIds = [...new Set((participants ?? []).map((row) => row.user_id))];
+  const userIds = await listConversationUserIds(input.conversationId);
   if (userIds.length === 0) return [];
 
   const targets = await listFanoutTargets(input.senderUserId, userIds, { verifyPrekeys: false });
@@ -80,7 +124,7 @@ async function buildMissingRows(
   forceFreshSession: boolean,
 ): Promise<{ rows: FanoutCopyRow[]; successfulKeys: string[] }> {
   const senderDeviceId = getCurrentDeviceId();
-  const results = await Promise.all(targets.map(async (target) => {
+  const results = await mapWithConcurrency(targets, FANOUT_REPAIR_CONCURRENCY, async (target) => {
     try {
       const encrypted = await encryptPlaintextForDeviceTarget({
         conversationId: input.conversationId,
@@ -107,7 +151,7 @@ async function buildMissingRows(
     } catch {
       return null;
     }
-  }));
+  });
 
   const valid = results.filter((result): result is NonNullable<typeof result> => result !== null);
   return {
@@ -218,15 +262,15 @@ export async function repairFanoutWithRetry(
 const backgroundCoverage = new Map<string, Promise<void>>();
 
 async function loadSentMessageForCoverage(messageId: string): Promise<CoverageSeed | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = await getCachedAuthUserId();
+  if (!userId) return null;
 
   const { data: message } = await supabase
     .from('messages')
     .select('id, conversation_id, sender_id, body')
     .eq('id', messageId)
     .maybeSingle();
-  if (!message || message.sender_id !== user.id) return null;
+  if (!message || message.sender_id !== userId) return null;
 
   const plaintext =
     await loadPlaintext(messageId).catch(() => null) ??
@@ -251,7 +295,7 @@ async function loadSentMessageForCoverage(messageId: string): Promise<CoverageSe
     input: {
       messageId,
       conversationId: message.conversation_id,
-      senderUserId: user.id,
+      senderUserId: userId,
       plaintext,
     },
     coveredTargetKeys,
