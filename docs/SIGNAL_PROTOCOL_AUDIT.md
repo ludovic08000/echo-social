@@ -9,6 +9,7 @@ Sesame is not wire-compatible with the official Signal clients and does not clai
 - Ratchet state persistence is fail-closed; a message is not emitted after an unpersisted chain-key advance.
 - The IndexedDB plaintext cache binds ciphertext to its row identifier with AES-GCM AAD. Its hot mirror is RAM-only, never sessionStorage.
 - Linked-device transfer no longer exports a decrypted plaintext cache.
+- Legacy PIN linking no longer clones Double Ratchet sessions; every physical device establishes fresh sessions.
 - Unsigned raw device lists are no longer accepted as a recipient-routing authority.
 - X3DH and device-ratchet security changes now live in checked-in source rather than Vite string transforms.
 
