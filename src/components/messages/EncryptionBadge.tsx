@@ -18,10 +18,10 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
   if (!encrypted) return null;
 
   const label = verified
-    ? (ratchetActive ? 'X3DH · Vérifié' : 'Chiffré · Vérifié')
+    ? 'Sesame · Vérifié'
     : ratchetActive
-      ? 'X3DH · Double Ratchet'
-      : 'Chiffré';
+      ? 'Sesame · Ratchet'
+      : 'Sesame · Chiffré';
 
   return (
     <span className={cn(
@@ -30,11 +30,11 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
       className
     )}>
       {verified ? (
-        <ShieldCheck className={cn(iconSize, 'text-emerald-500')} />
+        <ShieldCheck className={cn(iconSize, 'text-emerald-500')} aria-hidden="true" />
       ) : ratchetActive ? (
-        <Zap className={cn(iconSize, 'text-primary')} />
+        <Zap className={cn(iconSize, 'text-primary')} aria-hidden="true" />
       ) : (
-        <Lock className={iconSize} />
+        <Lock className={iconSize} aria-hidden="true" />
       )}
       {showLabel && (
         <span className={cn(
@@ -69,13 +69,13 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
   let StatusIcon = ShieldCheck;
 
   if (fingerprintChanged) {
-    statusText = '⚠️ Clé de sécurité modifiée — vérification obligatoire avant envoi';
+    statusText = '⚠️ Sesame : clé de sécurité modifiée — vérification obligatoire';
     StatusIcon = AlertTriangle;
   } else if (ratchetActive) {
-    statusText = 'X3DH + Double Ratchet — forward secrecy par message';
+    statusText = 'Sesame — X3DH + Double Ratchet, confidentialité persistante par message';
     StatusIcon = Zap;
   } else {
-    statusText = 'Chiffrement de bout en bout activé';
+    statusText = 'Sesame — chiffrement de bout en bout activé';
     StatusIcon = ShieldCheck;
   }
 
@@ -90,7 +90,7 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
         <StatusIcon className={cn(
           'w-3.5 h-3.5 flex-shrink-0',
           fingerprintChanged ? 'text-amber-600' : 'text-emerald-500'
-        )} />
+        )} aria-hidden="true" />
         <span className={cn(
           'text-[10px] font-medium',
           fingerprintChanged ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'
@@ -99,6 +99,7 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
         </span>
         {hasKeys && !fingerprintChanged && (
           <button
+            type="button"
             onClick={() => setShowSafety(true)}
             className="ml-auto text-[9px] text-emerald-600 dark:text-emerald-400 underline underline-offset-2"
           >
