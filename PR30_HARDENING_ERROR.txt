@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "<stdin>", line 22, in <module>
-  File "pr30-production-hardening.py", line 119, in <module>
-  File "pr30-production-hardening.py", line 6, in replace_once
-SystemExit: atomic outbox restore: expected exactly one anchor, found 0
