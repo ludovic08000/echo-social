@@ -5,7 +5,7 @@
 
 import { useState, useEffect, memo, useCallback } from 'react';
 import { Lock, RotateCcw } from 'lucide-react';
-import { importMediaKey, decryptMedia } from '@/lib/crypto/mediaEncrypt';
+import { importMediaKey, decryptMediaWithMetadata } from '@/lib/crypto/mediaEncrypt';
 import { fetchR2Object } from '@/lib/r2';
 import {
   forgetDecryptedMedia,
@@ -30,31 +30,50 @@ export const EncryptedMedia = memo(function EncryptedMedia({
 }: EncryptedMediaProps) {
   const cached = getDecryptedMedia(encryptedUrl);
   const [objectUrl, setObjectUrl] = useState<string | null>(cached?.objectUrl ?? null);
-  const [error, setError] = useState(false);
+  const [resolvedIsVideo, setResolvedIsVideo] = useState(cached?.isVideo ?? isVideo);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(!cached);
   const [retryTick, setRetryTick] = useState(0);
 
   const retry = useCallback(() => {
     forgetDecryptedMedia(encryptedUrl);
     setObjectUrl(null);
-    setError(false);
+    setResolvedIsVideo(isVideo);
+    setErrorMessage(null);
     setLoading(true);
     setRetryTick((tick) => tick + 1);
-  }, [encryptedUrl]);
+  }, [encryptedUrl, isVideo]);
+
+  const handleRenderError = useCallback(() => {
+    // Do not auto-loop forever. A wrong media kind/MIME used to alternate
+    // between the loading skeleton and a failed <img>/<video> indefinitely.
+    forgetDecryptedMedia(encryptedUrl);
+    setObjectUrl(null);
+    setLoading(false);
+    setErrorMessage('Format du média non pris en charge');
+    logCryptoError({
+      severity: 'error',
+      context: 'media',
+      errorCode: 'MEDIA_RENDER_FAILED',
+      errorMessage: 'Browser failed to decode decrypted media',
+      metadata: { isVideo: resolvedIsVideo },
+    });
+  }, [encryptedUrl, resolvedIsVideo]);
 
   useEffect(() => subscribeDecryptedMedia(encryptedUrl, (entry) => {
     setObjectUrl(entry.objectUrl);
-    setError(false);
+    setResolvedIsVideo(entry.isVideo);
+    setErrorMessage(null);
     setLoading(false);
   }), [encryptedUrl]);
 
   useEffect(() => {
     const onOnline = () => {
-      if (error || !objectUrl) retry();
+      if (errorMessage || !objectUrl) retry();
     };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
-  }, [error, objectUrl, retry]);
+  }, [errorMessage, objectUrl, retry]);
 
   useEffect(() => {
     if (!objectUrl) return;
@@ -68,13 +87,14 @@ export const EncryptedMedia = memo(function EncryptedMedia({
     const hit = getDecryptedMedia(encryptedUrl);
     if (hit) {
       setObjectUrl(hit.objectUrl);
-      setError(false);
+      setResolvedIsVideo(hit.isVideo);
+      setErrorMessage(null);
       setLoading(false);
       return;
     }
 
     let cancelled = false;
-    setError(false);
+    setErrorMessage(null);
     setLoading(true);
 
     (async () => {
@@ -86,19 +106,24 @@ export const EncryptedMedia = memo(function EncryptedMedia({
         if (cancelled) return;
 
         const key = await importMediaKey(mediaKeyB64);
-        const decrypted = await decryptMedia(encryptedData, key);
+        const decrypted = await decryptMediaWithMetadata(encryptedData, key);
         if (cancelled) return;
 
-        const mimeType = isVideo ? 'video/mp4' : 'image/jpeg';
-        const blob = new Blob([decrypted], { type: mimeType });
+        const fallbackMime = isVideo ? 'video/mp4' : 'image/jpeg';
+        const mimeType = decrypted.mimeType || fallbackMime;
+        const mediaIsVideo = mimeType.startsWith('video/') || (!mimeType.startsWith('image/') && isVideo);
+        const blob = new Blob([decrypted.data], { type: mimeType });
         const createdUrl = URL.createObjectURL(blob);
         // This URL is owned by the decrypted-media cache; unlike an upload
         // preview it must not be cloned or revoked by another component.
-        rememberDecryptedMedia(encryptedUrl, createdUrl, isVideo, false);
-        const canonical = getDecryptedMedia(encryptedUrl)?.objectUrl ?? createdUrl;
+        rememberDecryptedMedia(encryptedUrl, createdUrl, mediaIsVideo, false);
+        const canonicalEntry = getDecryptedMedia(encryptedUrl);
+        const canonical = canonicalEntry?.objectUrl ?? createdUrl;
+        const canonicalIsVideo = canonicalEntry?.isVideo ?? mediaIsVideo;
 
         setObjectUrl(canonical);
-        setError(false);
+        setResolvedIsVideo(canonicalIsVideo);
+        setErrorMessage(null);
         setLoading(false);
         logCryptoError({
           severity: 'info',
@@ -106,7 +131,8 @@ export const EncryptedMedia = memo(function EncryptedMedia({
           errorCode: 'MEDIA_DECRYPT_OK',
           errorMessage: 'Encrypted media decrypted successfully',
           metadata: {
-            isVideo,
+            isVideo: canonicalIsVideo,
+            mimeType,
             sizeBytes: encryptedData.byteLength,
             durationMs: Math.round(performance.now() - t0),
           },
@@ -122,7 +148,7 @@ export const EncryptedMedia = memo(function EncryptedMedia({
             durationMs: Math.round(performance.now() - t0),
           },
         });
-        if (!cancelled) setError(true);
+        if (!cancelled) setErrorMessage('Impossible de déchiffrer ce média');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -135,7 +161,7 @@ export const EncryptedMedia = memo(function EncryptedMedia({
     return (
       <div
         className="rounded-lg bg-muted/40 animate-pulse max-w-full"
-        style={{ width: 240, height: isVideo ? 180 : 200 }}
+        style={{ width: 240, height: resolvedIsVideo ? 180 : 200 }}
         aria-label="Chargement du média"
       />
     );
@@ -147,10 +173,10 @@ export const EncryptedMedia = memo(function EncryptedMedia({
         <div className="flex items-center gap-2">
           <Lock className="w-4 h-4 text-destructive" />
           <span className="text-xs text-destructive">
-            {error ? 'Impossible de déchiffrer ce média' : 'Média en cours de récupération'}
+            {errorMessage || 'Média en cours de récupération'}
           </span>
         </div>
-        {error && (
+        {errorMessage && (
           <button
             type="button"
             onClick={retry}
@@ -164,13 +190,13 @@ export const EncryptedMedia = memo(function EncryptedMedia({
     );
   }
 
-  if (isVideo) {
+  if (resolvedIsVideo) {
     return (
       <video
         src={objectUrl}
         controls
         playsInline
-        onError={retry}
+        onError={handleRenderError}
         className="max-w-full max-h-[300px] rounded-lg"
       />
     );
@@ -180,7 +206,7 @@ export const EncryptedMedia = memo(function EncryptedMedia({
     <img
       src={objectUrl}
       alt="Photo chiffrée"
-      onError={retry}
+      onError={handleRenderError}
       className="max-w-full max-h-[300px] object-cover rounded-lg"
     />
   );
