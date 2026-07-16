@@ -1,0 +1,36 @@
+name: Apply Signal protocol hardening
+
+on:
+  push:
+    branches:
+      - agent/signal-protocol-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/signal-protocol-hardening
+          fetch-depth: 0
+
+      - name: Apply audited source changes
+        run: node scripts/apply-signal-hardening.mjs
+
+      - name: Commit patched sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes were needed."
+            exit 0
+          fi
+          git commit -m "fix(e2ee): align storage and ratchets with Signal invariants"
+          git push origin HEAD:agent/signal-protocol-hardening
