@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "<stdin>", line 13, in <module>
-  File "e2ee-direct-fallback-hotfix.py", line 1
-    from pathlib import Path
-IndentationError: unexpected indent
