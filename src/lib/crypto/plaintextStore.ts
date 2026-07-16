@@ -106,48 +106,18 @@ async function toCiphertextLookupKey(ciphertextBody: string): Promise<string> {
   return `cipher:${bufferToHex(digest)}`;
 }
 
-const SESSION_MIRROR_KEY = 'forsure-pt-mirror-v1';
-const SESSION_MIRROR_TTL_MS = 24 * 60 * 60 * 1000;
-const SESSION_MIRROR_CAP = 200;
-const DEFAULT_BACKUP_EXPORT_CAP = 500;
-
-interface SessionMirrorEntry { p: string; t: number }
-
-function readSessionMirror(): Record<string, SessionMirrorEntry> {
-  try {
-    if (typeof sessionStorage === 'undefined') return {};
-    const raw = sessionStorage.getItem(SESSION_MIRROR_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Record<string, SessionMirrorEntry>;
-  } catch {
-    return {};
-  }
-}
-
-function writeSessionMirror(map: Record<string, SessionMirrorEntry>) {
-  try {
-    if (typeof sessionStorage === 'undefined') return;
-    const cutoff = Date.now() - SESSION_MIRROR_TTL_MS;
-    const entries = Object.entries(map)
-      .filter(([, value]) => value.t > cutoff)
-      .sort(([, a], [, b]) => b.t - a.t)
-      .slice(0, SESSION_MIRROR_CAP);
-    sessionStorage.setItem(SESSION_MIRROR_KEY, JSON.stringify(Object.fromEntries(entries)));
-  } catch {}
-}
+const volatileMirror = new Map<string, string>();
 
 function mirrorSet(id: string, plaintext: string) {
-  const map = readSessionMirror();
-  map[id] = { p: plaintext, t: Date.now() };
-  writeSessionMirror(map);
+  volatileMirror.set(id, plaintext);
 }
 
 function mirrorGet(id: string): string | null {
-  const map = readSessionMirror();
-  const entry = map[id];
-  if (!entry) return null;
-  if (Date.now() - entry.t > SESSION_MIRROR_TTL_MS) return null;
-  return entry.p;
+  return volatileMirror.get(id) ?? null;
+}
+
+function entryAAD(id: string): Uint8Array {
+  return new TextEncoder().encode(`sesame-plaintext-cache-v2|${id}`);
 }
 
 async function saveEntry(id: string, plaintext: string): Promise<void> {
@@ -155,7 +125,7 @@ async function saveEntry(id: string, plaintext: string): Promise<void> {
   const key = await getOrCreateDeviceKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv, additionalData: entryAAD(id) },
     key,
     new TextEncoder().encode(plaintext),
   );
@@ -174,12 +144,25 @@ async function loadEntry(id: string): Promise<string | null> {
 
   if (!entry) return null;
 
+  const key = await getOrCreateDeviceKey();
   try {
-    const key = await getOrCreateDeviceKey();
-    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: entry.iv }, key, entry.ct);
+    const pt = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: entry.iv, additionalData: entryAAD(id) },
+      key,
+      entry.ct,
+    );
     return new TextDecoder().decode(pt);
   } catch {
-    return null;
+    // One-time compatibility read for pre-v2 cache entries. Re-encrypt with
+    // ID-bound AAD immediately so ciphertext cannot be swapped between rows.
+    try {
+      const legacy = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: entry.iv }, key, entry.ct);
+      const plaintext = new TextDecoder().decode(legacy);
+      await saveEntry(id, plaintext);
+      return plaintext;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -265,11 +248,7 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
 
 export async function removePlaintext(messageId: string): Promise<void> {
   try {
-    const map = readSessionMirror();
-    if (map[messageId]) {
-      delete map[messageId];
-      writeSessionMirror(map);
-    }
+    volatileMirror.delete(messageId);
 
     await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', (tx) => {
       tx.objectStore(STORE_MESSAGES).delete(messageId);
@@ -280,9 +259,7 @@ export async function removePlaintext(messageId: string): Promise<void> {
 }
 
 export async function wipePlaintextStore(): Promise<void> {
-  try {
-    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(SESSION_MIRROR_KEY);
-  } catch {}
+  volatileMirror.clear();
 
   try {
     await runTxOn('plaintext-cache', [STORE_MESSAGES, STORE_KEYS], 'readwrite', (tx) => {

@@ -6,7 +6,6 @@
  * No new tables are created. The Supabase RPC `list_active_devices_for_user`
  * already returns the canonical device list with `device_public_key`.
  */
-import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { fetchVerifiedDeviceList } from '@/lib/crypto/signedDeviceList';
 import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
@@ -149,29 +148,13 @@ export async function listDevicesForUser(userId: UserId, options: DeviceListOpti
     return [];
   }
 
-  // 2) Legacy fallback for users who haven't published any signature yet.
-  try {
-    const { data, error } = await supabase.rpc('list_active_devices_for_user', {
-      p_user_id: userId,
-    });
-    if (error || !data) return [];
-    if (typeof console !== 'undefined') {
-      console.warn(`[A1] using LEGACY device list for ${userId} (no signed entries) — pair a device or rotate to migrate`);
-    }
-
-    const mapped = (data as Array<{ device_id: string; device_public_key: string; last_seen_at?: string; last_seen?: string }>)
-      .filter(d => !!d.device_public_key)
-      .map(d => ({
-        userId,
-        deviceId: d.device_id,
-        devicePublicKey: d.device_public_key,
-        lastSeen: normalizeLastSeen(d.last_seen_at ?? d.last_seen),
-      }));
-
-    return hygieneFilterDevices(mapped, options);
-  } catch {
-    return [];
+  // Signal-style trust is fail-closed: an unsigned server device list is not
+  // sufficient authority to add a recipient device. Registration must publish
+  // the canonical primary root and signed companions before messaging starts.
+  if (typeof console !== 'undefined') {
+    console.warn('[A1] no canonical signed device list; refusing unsigned device routing', { userId });
   }
+  return [];
 }
 
 /**

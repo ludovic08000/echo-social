@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
-import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
+import { runTx, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import {
   buildDeviceLinkQrData,
   decryptDeviceLinkPayload,
@@ -35,11 +35,6 @@ import {
   getCurrentPlatform,
   hydrateDeviceId,
 } from '@/lib/messaging/currentDevice';
-import {
-  exportPlaintextCache,
-  importPlaintextCache,
-  type PlaintextCacheExportEntry,
-} from '@/lib/crypto/plaintextStore';
 
 const PBKDF2_ITERATIONS = 600_000;
 const LINK_PRIVATE_KEY_PREFIX = 'forsure:device-link:private:';
@@ -49,11 +44,6 @@ interface StoredLinkRequest {
   privateJwk: JsonWebKey;
   requesterDeviceId: string;
   createdAt: number;
-}
-
-interface CollectOptions {
-  includePlaintextCache?: boolean;
-  includeLegacySessions?: boolean;
 }
 
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
@@ -115,42 +105,18 @@ function notifyKeysRestored(status: string): void {
   }
 }
 
-async function readSideStore(dbKey: 'ratchet', storeName: string): Promise<any[]> {
-  try {
-    return await runTxOn(dbKey, [storeName], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore(storeName).getAll()),
-    ) as any[];
-  } catch {
-    return [];
-  }
-}
-
-async function writeSideStore(dbKey: 'ratchet', storeName: string, records: any[]): Promise<void> {
-  if (!Array.isArray(records) || records.length === 0) return;
-  try {
-    await runTxOn(dbKey, [storeName], 'readwrite', (tx) => {
-      const store = tx.objectStore(storeName);
-      for (const record of records) store.put(record);
-    });
-  } catch {
-    // Legacy session restore is best-effort only.
-  }
-}
-
 /**
  * Collect account-scoped E2EE material. In the approved Sesame flow only the
  * account identity store is transferred. Session and prekey stores are
  * installation-specific and are deliberately excluded.
  */
-async function collectLocalKeys(userId: string, options: CollectOptions = {}): Promise<string> {
-  const includePlaintextCache = options.includePlaintextCache ?? true;
-  const includeLegacySessions = options.includeLegacySessions ?? false;
+async function collectLocalKeys(userId: string): Promise<string> {
   const data: Record<string, any> = {};
 
   try {
     const db = await openE2EEDB();
     for (const storeName of Array.from(db.objectStoreNames)) {
-      if (!includeLegacySessions && storeName !== IDENTITY_STORE) continue;
+      if (storeName !== IDENTITY_STORE) continue;
 
       let records = await runTx([storeName], 'readonly', (tx) =>
         reqToPromise(tx.objectStore(storeName).getAll() as IDBRequest<any[]>),
@@ -166,21 +132,9 @@ async function collectLocalKeys(userId: string, options: CollectOptions = {}): P
     }
   } catch {}
 
-  // Only the explicitly legacy PIN payload keeps old ratchet state.
-  if (includeLegacySessions) {
-    const ratchets = await readSideStore('ratchet', 'ratchet-states');
-    if (ratchets.length > 0) data['ratchet:states'] = ratchets;
-  }
-
   const archiveMasterKey = await exportArchiveMasterKeyForDeviceLink(userId);
   if (archiveMasterKey) data['archive:master-key'] = archiveMasterKey;
 
-  if (includePlaintextCache) {
-    try {
-      const plaintextCache = await exportPlaintextCache();
-      if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
-    } catch {}
-  }
 
   try {
     const fingerprints = localStorage.getItem('forsure-known-fps');
@@ -189,7 +143,7 @@ async function collectLocalKeys(userId: string, options: CollectOptions = {}): P
 
   data._meta = {
     v: 3,
-    mode: includeLegacySessions ? 'legacy' : 'sesame-fresh-device',
+    mode: 'sesame-fresh-device',
     createdAt: new Date().toISOString(),
   };
 
@@ -199,12 +153,10 @@ async function collectLocalKeys(userId: string, options: CollectOptions = {}): P
 /** Restore account material without adopting the source device's sessions. */
 async function restoreLocalKeys(json: string, userId: string): Promise<void> {
   const data = JSON.parse(json) as Record<string, any>;
-  const restoreLegacyDeviceState = data?._meta?.mode === 'legacy';
-
   for (const [key, records] of Object.entries(data)) {
     if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
     const storeName = key.replace('e2ee:', '');
-    if (!restoreLegacyDeviceState && storeName !== IDENTITY_STORE) continue;
+    if (storeName !== IDENTITY_STORE) continue;
 
     try {
       const db = await openE2EEDB();
@@ -225,10 +177,6 @@ async function restoreLocalKeys(json: string, userId: string): Promise<void> {
     } catch {}
   }
 
-  if (restoreLegacyDeviceState && Array.isArray(data['ratchet:states'])) {
-    await writeSideStore('ratchet', 'ratchet-states', data['ratchet:states']);
-  }
-
   if (typeof data['archive:master-key'] === 'string') {
     const imported = await importArchiveMasterKeyFromDeviceLink(
       data['archive:master-key'],
@@ -237,9 +185,6 @@ async function restoreLocalKeys(json: string, userId: string): Promise<void> {
     if (!imported) throw new Error('Cle archive du compte invalide');
   }
 
-  if (Array.isArray(data['plaintext:cache'])) {
-    await importPlaintextCache(data['plaintext:cache'] as PlaintextCacheExportEntry[]);
-  }
 
   if (typeof data.fingerprints === 'string') {
     localStorage.setItem('forsure-known-fps', data.fingerprints);
@@ -314,7 +259,7 @@ export function useDeviceLink() {
       let encryptedPayload = JSON.stringify(envelope);
 
       if (encryptedPayload.length > 1_900_000) {
-        keysJson = await collectLocalKeys(user.id, { includePlaintextCache: false });
+        keysJson = await collectLocalKeys(user.id);
         envelope = await encryptDeviceLinkPayload(keysJson, request.requester_public_key as JsonWebKey);
         encryptedPayload = JSON.stringify(envelope);
       }
@@ -406,7 +351,7 @@ export function useDeviceLink() {
 
       const token = tokenData.token as string;
       const pin = generatePin();
-      const keysJson = await collectLocalKeys(user.id, { includeLegacySessions: true });
+      const keysJson = await collectLocalKeys(user.id);
       const salt = crypto.getRandomValues(new Uint8Array(32));
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const key = await deriveKey(pin, salt);

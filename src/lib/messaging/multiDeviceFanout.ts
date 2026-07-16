@@ -11,6 +11,8 @@ import {
   peekDeviceSignedPrekey,
   x3dhInitiate,
   x3dhRespondForDevice,
+  finalizeDeviceX3DHInitial,
+  cancelDeviceX3DHInitial,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateIdentityKeys, PinUnlockRequiredError, exportPublicKeyRaw } from '@/lib/crypto/keyManager';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
@@ -348,19 +350,17 @@ async function x3dhWrapForDevice(
       bundle.identityKey,
     ];
 
-    try {
-      await establishDeviceSession(
-        senderUserId, senderDeviceId,
-        recipientUserId, recipientDeviceId,
-        result.sharedSecret,
-        undefined,
-        {
-          peerInitialDhPubB64: bundle.signedPrekey,
-          isInitiator: true,
-          peerSpkId: bundle.signedPrekeyId,
-        },
-      );
-    } catch {}
+    await establishDeviceSession(
+      senderUserId, senderDeviceId,
+      recipientUserId, recipientDeviceId,
+      result.sharedSecret,
+      undefined,
+      {
+        peerInitialDhPubB64: bundle.signedPrekey,
+        isInitiator: true,
+        peerSpkId: bundle.signedPrekeyId,
+      },
+    );
 
     return parts.join('.');
   } catch (e) {
@@ -434,42 +434,42 @@ async function x3dhUnwrapForDevice(
       }
     }
 
-    const { sharedSecret, spkKeyPair } = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
+    const response = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
       ik: senderIdentityForDH,
       ek: parsed.ekB64,
       spkId: parsed.spkId,
       opkId: parsed.opkId,
     });
-    const aes = await aesFromSecret(sharedSecret);
-    const aad = parsed.version === 'v2'
-      ? buildX3DHBootstrapAAD({
-          senderUserId,
-          senderDeviceId,
-          recipientUserId,
-          recipientDeviceId: myDeviceId,
-          senderIdentityKeyB64: senderIdentityForDH,
-          recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
-          ekB64: parsed.ekB64,
-          spkId: parsed.spkId,
-          opkId: parsed.opkId,
-        })
-      : null;
-    const pt = await hardCrypto.decrypt(
-      aad
-        ? { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> }
-        : { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128 },
-      aes,
-      base64ToBuffer(parsed.ctB64),
-    );
-
     try {
-      const spkPrivJwk = await hardCrypto.exportKey('jwk', spkKeyPair.privateKey);
-      const spkPubRaw = await hardCrypto.exportKey('raw', spkKeyPair.publicKey);
+      const aes = await aesFromSecret(response.sharedSecret);
+      const aad = parsed.version === 'v2'
+        ? buildX3DHBootstrapAAD({
+            senderUserId,
+            senderDeviceId,
+            recipientUserId,
+            recipientDeviceId: myDeviceId,
+            senderIdentityKeyB64: senderIdentityForDH,
+            recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
+            ekB64: parsed.ekB64,
+            spkId: parsed.spkId,
+            opkId: parsed.opkId,
+          })
+        : null;
+      const pt = await hardCrypto.decrypt(
+        aad
+          ? { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> }
+          : { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128 },
+        aes,
+        base64ToBuffer(parsed.ctB64),
+      );
+
+      const spkPrivJwk = await hardCrypto.exportKey('jwk', response.spkKeyPair.privateKey);
+      const spkPubRaw = await hardCrypto.exportKey('raw', response.spkKeyPair.publicKey);
       const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
       await establishDeviceSession(
         recipientUserId, myDeviceId,
         senderUserId, senderDeviceId,
-        sharedSecret,
+        response.sharedSecret,
         undefined,
         {
           isInitiator: false,
@@ -478,9 +478,17 @@ async function x3dhUnwrapForDevice(
           selfInitialDhPubB64: spkPubB64,
         },
       );
-    } catch {}
-
-    return new hardGlobals.TextDecoder().decode(pt);
+      await finalizeDeviceX3DHInitial({
+        userId: recipientUserId,
+        deviceId: myDeviceId,
+        replayReservation: response.replayReservation,
+        usedOpkId: response.usedOpkId,
+      });
+      return new hardGlobals.TextDecoder().decode(pt);
+    } catch (error) {
+      await cancelDeviceX3DHInitial(response.replayReservation).catch(() => undefined);
+      throw error;
+    }
   } catch (e) {
     throw e;
   }

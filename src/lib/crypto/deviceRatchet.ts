@@ -38,6 +38,8 @@ export const RATCHET_PREFIX_V4 = 'x3dh4.'; // Double Ratchet w/ DH (no AAD)
 export const RATCHET_PREFIX_V5 = 'x3dh5.'; // Double Ratchet w/ DH + AAD (X3DH §3.3)
 
 const AD_PREFIX_DEV_V5 = 'FORSURE-DEV-AD-v5|';
+const AD_HEADER_PREFIX_DEV_V6 = 'FORSURE-DEV-HDR-v6|';
+const HEADER_BOUND_SESSION_PREFIX = 's6';
 
 // Unified with the pairwise ratchet (ratchet.ts) so a burst of reordered
 // messages (e.g. iOS APNs batch delivery after wake) does not throw on the
@@ -114,6 +116,28 @@ function buildDevAAD(
   return new hardGlobals.TextEncoder().encode(`${AD_PREFIX_DEV_V5}${sessionId}|${a}|${b}`);
 }
 
+function isHeaderBoundSession(sessionId: string): boolean {
+  return sessionId.startsWith(HEADER_BOUND_SESSION_PREFIX);
+}
+
+function buildDevAADWithHeader(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+  sessionId: string,
+  header: { dh: string; pn: number; n: number },
+): Uint8Array {
+  const identityAd = buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, sessionId);
+  const headerAd = new hardGlobals.TextEncoder().encode(
+    `${AD_HEADER_PREFIX_DEV_V6}${header.dh}|${header.pn}|${header.n}`,
+  );
+  const out = new Uint8Array(identityAd.byteLength + headerAd.byteLength);
+  out.set(identityAd, 0);
+  out.set(headerAd, identityAd.byteLength);
+  return out;
+}
+
 function parseCompositeKey(key: string): { myUserId: string; myDeviceId: string; peerUserId: string; peerDeviceId: string } | null {
   const parts = key.split('::');
   if (parts.length !== 4) return null;
@@ -132,13 +156,9 @@ async function loadSession(key: string): Promise<StoredSession | null> {
 }
 
 async function saveSession(key: string, session: StoredSession): Promise<void> {
-  try {
-    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
-      tx.objectStore(STORE).put({ ...session, id: key });
-    });
-  } catch {
-    // non-fatal
-  }
+  await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
+    tx.objectStore(STORE).put({ ...session, id: key });
+  });
 }
 
 async function lookupSessionById(
@@ -334,7 +354,7 @@ export async function establishDeviceSession(
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const finalSessionId =
-    sessionId ?? bufferToBase64(randomBytes(8).buffer as ArrayBuffer).replace(/[+/=]/g, '').slice(0, 12);
+    sessionId ?? `${HEADER_BOUND_SESSION_PREFIX}${bufferToBase64(randomBytes(8).buffer as ArrayBuffer).replace(/[+/=]/g, '').slice(0, 10)}`;
   const ss32 = sharedSecret.byteLength >= 32 ? sharedSecret.slice(0, 32) : sharedSecret;
   const rootKeyB64 = bufferToBase64(ss32);
 
@@ -417,14 +437,16 @@ export async function ratchetEncrypt(
   const { ck, mk } = await kdfCK(session.ckSendB64);
   const aes = await importMessageKey(mk);
   const iv = randomBytes(12);
-  const aad = buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, session.sessionId);
+  const Ns = session.Ns;
+  const header = { dh: session.dhsPubB64, pn: session.PN, n: Ns };
+  const aad = isHeaderBoundSession(session.sessionId)
+    ? buildDevAADWithHeader(myUserId, myDeviceId, peerUserId, peerDeviceId, session.sessionId, header)
+    : buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, session.sessionId);
   const ct = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> },
     aes,
     new hardGlobals.TextEncoder().encode(plaintext),
   );
-
-  const Ns = session.Ns;
   await saveSession(key, { ...session, ckSendB64: ck, Ns: Ns + 1 });
 
   return [
@@ -465,8 +487,13 @@ async function decryptV4or5(
   const peer = parseCompositeKey(found.key);
   const isV5 = prefix === RATCHET_PREFIX_V5;
   if (isV5 && !peer) return null;
+  const headerBound = isV5 && isHeaderBoundSession(sessionId);
+  const header = { dh: parts[1], n: Number(parts[2]), pn: Number(parts[3]) };
+  if (headerBound && (!Number.isSafeInteger(header.n) || !Number.isSafeInteger(header.pn))) return null;
   const aad = isV5 && peer
-    ? buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId)
+    ? (headerBound
+      ? buildDevAADWithHeader(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId, header)
+      : buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId))
     : null;
   return decryptV4WithStored(found.key, found.session, parts, aad, isV5, peer ?? undefined);
 }
@@ -489,8 +516,13 @@ export async function ratchetDecryptWithSession(
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const session = await loadSession(key);
   if (!session) return null;
+  const headerBound = isV5 && isHeaderBoundSession(parts[0]);
+  const header = { dh: parts[1], n: Number(parts[2]), pn: Number(parts[3]) };
+  if (headerBound && (!Number.isSafeInteger(header.n) || !Number.isSafeInteger(header.pn))) return null;
   const aad = isV5
-    ? buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0])
+    ? (headerBound
+      ? buildDevAADWithHeader(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0], header)
+      : buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0]))
     : null;
   return decryptV4WithStored(key, session, parts, aad, isV5, { peerUserId, peerDeviceId });
 }
