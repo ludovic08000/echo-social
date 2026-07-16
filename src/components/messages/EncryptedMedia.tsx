@@ -59,7 +59,7 @@ export const EncryptedMedia = memo(function EncryptedMedia({
       errorMessage: 'Browser failed to decode decrypted media',
       metadata: { isVideo: resolvedIsVideo },
     });
-  }, [encryptedUrl, mediaCacheKey, resolvedIsVideo]);
+  }, [mediaCacheKey, resolvedIsVideo]);
 
   useEffect(() => subscribeDecryptedMedia(mediaCacheKey, (entry) => {
     setObjectUrl(entry.objectUrl);

@@ -7,9 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
-import { getOrCreateIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
-import { wrapOutboundSecureMessage } from '@/lib/crypto/secureMessagePipeline';
 import { buildFanoutCopies, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
 import { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';
 import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
@@ -201,19 +199,6 @@ function isMultiDeviceParentBody(value: string | null | undefined): value is str
   }
 }
 
-function encryptedPayloadKind(payload: string): string {
-  try {
-    const parsed = JSON.parse(payload);
-    return parsed?.encryptionMode || parsed?.fs_secure_pipeline
-      ? String(parsed.encryptionMode || 'secure_pipeline')
-      : 'json_unknown';
-  } catch {
-    if (payload.startsWith('sk1.')) return 'sender_key';
-    if (payload.startsWith('x3dh') || payload.startsWith('x3dh5')) return 'x3dh_wire';
-    return 'opaque';
-  }
-}
-
 function toOutboundMessage(payload: OutboxPayload): OutboundMessage {
   return {
     localId: payload.localId,
@@ -235,7 +220,7 @@ function toOutboundMessage(payload: OutboxPayload): OutboundMessage {
 
 export function useMessageQueue(
   conversationId: string,
-  encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
+  _encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
   isEncryptionReady: boolean,
   isEncryptionActive: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
@@ -433,93 +418,41 @@ export function useMessageQueue(
         }
       }
 
-      if (!encryptedSuccessfully) {
-        if (!encrypt) {
-          updatePending({ status: 'failed_visible', lastError: 'Chiffrement indisponible.' });
-          throw new Error('Chiffrement indisponible.');
-        }
-
-        if (requiresLongAttachment && !resumePayload?.transportPlaintext) {
-          try {
-            trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
-            const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
-            transportPlaintext = prepared.transportBody;
-            await persistOutbox({ transportPlaintext });
-            trace('long_message_upload_ready', {
-              previewBytes: utf8ByteLength(prepared.preview),
-              transportBytes: utf8ByteLength(transportPlaintext),
-            });
-          } catch (longMessageError) {
-            const message = longMessageError instanceof Error
-              ? longMessageError.message
-              : 'Préparation du message long impossible.';
-            updatePending({ status: 'failed_visible', lastError: message });
-            throw longMessageError instanceof Error ? longMessageError : new Error(message);
-          }
-        }
-
+      if (requiresLongAttachment && !resumePayload?.transportPlaintext) {
         try {
-          trace('encrypt_start');
-          const encryptedPayload = await encrypt(transportPlaintext, localId);
-          if (!encryptedPayload || encryptedPayload === transportPlaintext) {
-            throw new Error('Chiffrement v5 indisponible.');
-          }
-
-          let verifiedEnvelope = encryptedPayload;
-          try {
-            const identityKeys = await getOrCreateIdentityKeys(user.id);
-            const publicBundle = await exportPublicKeyBundle(identityKeys);
-            verifiedEnvelope = await wrapOutboundSecureMessage({
-              userId: user.id,
-              fingerprint: publicBundle.fingerprint,
-              encryptedBody: encryptedPayload,
-              conversationId,
-              localId,
-            });
-          } catch {
-            // The authoritative per-device envelopes remain the delivery path.
-          }
-
-          bodyToStore = buildMultiDeviceParentEnvelope(localId, traceId);
-          encryptedSuccessfully = true;
-          await persistOutbox({
-            encryptedBody: bodyToStore,
-            transportPlaintext,
-            preparedCopies: [],
+          trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
+          const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
+          transportPlaintext = prepared.transportBody;
+          await persistOutbox({ transportPlaintext });
+          trace('long_message_upload_ready', {
+            previewBytes: utf8ByteLength(prepared.preview),
+            transportBytes: utf8ByteLength(transportPlaintext),
           });
-          updatePending({ encryptedBody: bodyToStore });
-          await savePlaintextForCiphertext(bodyToStore, sanitized);
-          trace('encrypted_ready_for_rpc', {
-            verifiedEnvelopeKind: encryptedPayloadKind(verifiedEnvelope),
-            parentBodyLength: bodyToStore.length,
-            longMessage: requiresLongAttachment,
-          });
-        } catch (encryptError) {
-          const errMsg = encryptError instanceof Error ? encryptError.message : String(encryptError);
-          const normalized = errMsg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-          const isSafetyMismatch = normalized.includes('cle de securite du contact modifiee') ||
-            normalized.includes('safety number changed') ||
-            normalized.includes('security key changed') ||
-            normalized.includes('verification obligatoire avant envoi') ||
-            normalized.includes('fingerprint changed');
-          if (isSafetyMismatch) {
-            try {
-              window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', {
-                detail: { conversationId, localId, reason: errMsg },
-              }));
-            } catch {}
-            updatePending({ status: 'failed_visible', lastError: errMsg });
-          } else {
-            updatePending({ encryptedBody: null, status: 'waiting_secure_channel', lastError: errMsg }, {
-              encryptedBody: null,
-              preparedCopies: [],
-            });
-          }
-          throw encryptError instanceof Error ? encryptError : new Error(errMsg);
+        } catch (longMessageError) {
+          const message = longMessageError instanceof Error
+            ? longMessageError.message
+            : 'Préparation du message long impossible.';
+          updatePending({ status: 'failed_visible', lastError: message });
+          throw longMessageError instanceof Error ? longMessageError : new Error(message);
         }
-      } else {
-        await savePlaintextForCiphertext(bodyToStore, sanitized);
       }
+
+      // The parent is only an encrypted index. Actual content is encrypted for
+      // every trusted device by buildFanoutCopies(). Never advance and discard a
+      // second conversation ratchet ciphertext before that authoritative path.
+      bodyToStore = resumedParent ?? buildMultiDeviceParentEnvelope(localId, traceId);
+      encryptedSuccessfully = true;
+      await persistOutbox({
+        encryptedBody: bodyToStore,
+        transportPlaintext,
+        preparedCopies: resumePayload?.preparedCopies ?? [],
+      });
+      updatePending({ encryptedBody: bodyToStore });
+      await savePlaintextForCiphertext(bodyToStore, sanitized);
+      trace('encrypted_parent_ready', {
+        parentBodyLength: bodyToStore.length,
+        longMessage: requiresLongAttachment,
+      });
     }
 
     const fanoutInput = {
@@ -553,31 +486,33 @@ export function useMessageQueue(
           : 'Préparation des copies chiffrées du destinataire…',
       });
 
-      if (fanoutRows.length === 0) {
-        try {
+      try {
+        if (fanoutRows.length === 0) {
           const fanout = await buildFanoutCopies(fanoutInput);
           if (!fanout.hasTargets || fanout.rows.length === 0) {
             throw new Error('Canal sécurisé du destinataire en cours de préparation.');
           }
           fanoutRows = fanout.rows;
-        } catch (error) {
-          await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
-          await persistOutbox({ preparedCopies: [] });
-          const message = error instanceof Error
-            ? error.message
-            : 'Canal sécurisé du destinataire en cours de préparation.';
-          updatePending({ status: 'waiting_secure_channel', lastError: message }, { preparedCopies: [] });
-          throw error instanceof Error ? error : new Error(message);
         }
-      }
 
-      inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
-      await persistOutbox({
-        transportPlaintext,
-        encryptedBody: bodyToStore,
-        preparedCopies: fanoutRows,
-        archiveBody: inlineArchiveBody,
-      });
+        inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
+        // Persist exact advanced envelopes before transport. Retry reuses these
+        // bytes and the same UUID instead of advancing the ratchet again.
+        await persistOutbox({
+          transportPlaintext,
+          encryptedBody: bodyToStore,
+          preparedCopies: fanoutRows,
+          archiveBody: inlineArchiveBody,
+        });
+      } catch (error) {
+        await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
+        await persistOutbox({ preparedCopies: [] }).catch(() => undefined);
+        const message = error instanceof Error
+          ? error.message
+          : 'Canal sécurisé du destinataire en cours de préparation.';
+        updatePending({ status: 'waiting_secure_channel', lastError: message }, { preparedCopies: [] });
+        throw error instanceof Error ? error : new Error(message);
+      }
     } else if (archiveAllowed) {
       inlineArchiveBody = await waitForInlineArchive(archivePromise).catch(() => null);
       await persistOutbox({ archiveBody: inlineArchiveBody });
@@ -699,7 +634,7 @@ export function useMessageQueue(
       console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
     });
     scheduleLightConversationRefresh(queryClient);
-  }, [user, conversationId, encrypt, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
+  }, [user, conversationId, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {
     if (!user) return;

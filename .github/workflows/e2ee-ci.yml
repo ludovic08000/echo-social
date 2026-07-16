@@ -7,76 +7,29 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - name: Install dependencies
         run: npm ci
+
       - name: Lint
         run: npm run lint
+
       - name: Test
         run: npm run test
+
       - name: Build
         run: npm run build
-
-  finalize-pr30:
-    if: github.event_name == 'pull_request' && github.head_ref == 'fix/encrypted-media-black-bubble'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Finalize crypto source
-        run: python3 scripts/pr30_finalize.py
-      - name: Install dependencies
-        run: npm ci
-      - name: Validate and save
-        shell: bash
-        run: |
-          set +e
-          log=/tmp/pr30-final-validation.log
-          : > "$log"
-
-          npx eslint src/hooks/useMessageQueueSignal.ts src/lib/messaging/outboxVault.ts src/lib/crypto/mediaEncrypt.ts src/lib/crypto/mediaEncrypt.test.ts src/components/messages/EncryptedMedia.tsx src/components/messages/decryptedMediaCache.ts src/components/messages/__tests__/decryptedMediaCache.test.ts vite.config.ts 2>&1 | tee -a "$log"
-          lint_status=${PIPESTATUS[0]}
-
-          npx vitest run src/lib/crypto/mediaEncrypt.test.ts src/components/messages/__tests__/decryptedMediaCache.test.ts src/hooks/__tests__/useMessageQueueArchive.test.ts src/lib/messaging/__tests__/sesameSendRpc.test.ts src/lib/messaging/__tests__/outboxVault.test.ts 2>&1 | tee -a "$log"
-          test_status=${PIPESTATUS[0]}
-
-          npm run build 2>&1 | tee -a "$log"
-          build_status=${PIPESTATUS[0]}
-
-          status=0
-          if [ "$lint_status" -ne 0 ] || [ "$test_status" -ne 0 ] || [ "$build_status" -ne 0 ]; then status=1; fi
-
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/e2ee-ci.yml
-          rm -f scripts/pr30_finalize.py PR30_VALIDATION_ERROR.txt
-          if [ "$status" -ne 0 ]; then cp "$log" PR30_VALIDATION_ERROR.txt; fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "fix(messages): finalize crash-safe E2EE media transport"
-          git push origin HEAD:fix/encrypted-media-black-bubble
-          exit "$status"

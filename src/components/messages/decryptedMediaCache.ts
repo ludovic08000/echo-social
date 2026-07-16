@@ -1,7 +1,7 @@
 /**
- * LRU cache of decrypted media object URLs, keyed by encrypted URL + media key.
- * Mounted media retain their exact entry. Retiring a cache entry never revokes
- * an object URL until its final mounted consumer releases it.
+ * Reference-counted LRU cache for decrypted media object URLs.
+ * The cache owns URLs created after decryption, but never owns upload-preview
+ * URLs supplied by another component.
  */
 
 const MAX_ENTRIES = 80;
@@ -10,20 +10,20 @@ export interface DecryptedMediaEntry {
   objectUrl: string;
   isVideo: boolean;
   refs: number;
+  owned: boolean;
   retired?: boolean;
   revoked?: boolean;
 }
 
 type Listener = (entry: DecryptedMediaEntry) => void;
-
 const store = new Map<string, DecryptedMediaEntry>();
 const listeners = new Map<string, Set<Listener>>();
 const cloneInflight = new Map<string, Promise<void>>();
 
 function revokeEntry(entry: DecryptedMediaEntry): void {
-  if (entry.revoked) return;
+  if (entry.revoked || !entry.owned) return;
   entry.revoked = true;
-  try { URL.revokeObjectURL(entry.objectUrl); } catch { /* noop */ }
+  try { URL.revokeObjectURL(entry.objectUrl); } catch { /* browser cleanup is best-effort */ }
 }
 
 function touch(cacheKey: string, entry: DecryptedMediaEntry): void {
@@ -33,7 +33,7 @@ function touch(cacheKey: string, entry: DecryptedMediaEntry): void {
 
 function notify(cacheKey: string, entry: DecryptedMediaEntry): void {
   listeners.get(cacheKey)?.forEach(listener => {
-    try { listener(entry); } catch { /* noop */ }
+    try { listener(entry); } catch { /* stale subscribers must not break cache state */ }
   });
 }
 
@@ -53,11 +53,7 @@ function trim(): void {
   }
 }
 
-async function cloneTransientObjectUrl(
-  cacheKey: string,
-  sourceUrl: string,
-  isVideo: boolean,
-): Promise<void> {
+async function cloneTransientObjectUrl(cacheKey: string, sourceUrl: string, isVideo: boolean): Promise<void> {
   try {
     const response = await fetch(sourceUrl);
     if (!response.ok) return;
@@ -65,22 +61,22 @@ async function cloneTransientObjectUrl(
     const clonedUrl = URL.createObjectURL(blob);
     const current = store.get(cacheKey);
     if (!current || current.objectUrl !== sourceUrl) {
-      try { URL.revokeObjectURL(clonedUrl); } catch { /* noop */ }
+      try { URL.revokeObjectURL(clonedUrl); } catch { /* best-effort */ }
       return;
     }
 
     const replacement: DecryptedMediaEntry = {
       objectUrl: clonedUrl,
       isVideo,
-      refs: current.refs,
+      refs: 0,
+      owned: true,
     };
-    current.retired = true;
-    // The transient source URL belongs to the upload placeholder and is revoked
-    // by its owner, so the cache must not revoke it here.
-    touch(cacheKey, replacement);
+    store.set(cacheKey, replacement);
+    retireEntry(current);
     notify(cacheKey, replacement);
+    trim();
   } catch {
-    // EncryptedMedia falls back to downloading/decrypting the encrypted object.
+    // EncryptedMedia downloads and decrypts the durable R2 object instead.
   } finally {
     cloneInflight.delete(cacheKey);
   }
@@ -103,12 +99,17 @@ export function rememberDecryptedMedia(
   if (existing && !existing.revoked) {
     touch(cacheKey, existing);
     if (existing.objectUrl !== objectUrl && !transient) {
-      try { URL.revokeObjectURL(objectUrl); } catch { /* noop */ }
+      try { URL.revokeObjectURL(objectUrl); } catch { /* best-effort */ }
     }
     return;
   }
 
-  const entry: DecryptedMediaEntry = { objectUrl, isVideo, refs: 0 };
+  const entry: DecryptedMediaEntry = {
+    objectUrl,
+    isVideo,
+    refs: 0,
+    owned: !transient,
+  };
   store.set(cacheKey, entry);
   trim();
 
@@ -118,10 +119,7 @@ export function rememberDecryptedMedia(
   }
 }
 
-export function subscribeDecryptedMedia(
-  cacheKey: string,
-  listener: Listener,
-): () => void {
+export function subscribeDecryptedMedia(cacheKey: string, listener: Listener): () => void {
   let set = listeners.get(cacheKey);
   if (!set) {
     set = new Set();
@@ -136,7 +134,6 @@ export function subscribeDecryptedMedia(
   };
 }
 
-/** Retain the exact entry and return a release closure bound to that entry. */
 export function retainDecryptedMedia(cacheKey: string): (() => void) | undefined {
   const entry = store.get(cacheKey);
   if (!entry || entry.revoked) return undefined;
@@ -152,7 +149,6 @@ export function retainDecryptedMedia(cacheKey: string): (() => void) | undefined
   };
 }
 
-/** Backward-compatible release for call sites that do not retain closures. */
 export function releaseDecryptedMedia(cacheKey: string): void {
   const entry = store.get(cacheKey);
   if (!entry) return;
@@ -161,7 +157,6 @@ export function releaseDecryptedMedia(cacheKey: string): void {
   trim();
 }
 
-/** Retire one stale/dead URL without breaking another mounted consumer. */
 export function forgetDecryptedMedia(cacheKey: string): void {
   const entry = store.get(cacheKey);
   if (!entry) return;
