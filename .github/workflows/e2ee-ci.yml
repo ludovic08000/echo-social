@@ -32,6 +32,7 @@ jobs:
         id: hardening
         if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
         run: |
+          node scripts/prepare-signal-hardening-patcher.mjs
           node scripts/apply-signal-hardening.mjs > hardening-error.log 2>&1
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
