@@ -2,15 +2,15 @@
  * Client-side video compression for chat attachments.
  *
  * Strategy:
- *   - Lazy-load `@ffmpeg/ffmpeg` (only when user picks a video) — the wasm
- *     core (~25 MB) never reaches users who never send videos.
- *   - Target: H.264 720p (or original if smaller), AAC 64 kbps, ~1.5 Mbps.
- *     Roughly matches WhatsApp output and stays under our 16 MB R2 cap.
- *   - Falls back to the original blob if SharedArrayBuffer is unavailable
- *     (e.g. iframe contexts without COOP/COEP headers) or any wasm error.
+ *   - Small already-compatible MP4 clips use a zero-copy fast path. Re-encoding
+ *     them usually costs more time than uploading them.
+ *   - Larger clips lazy-load ffmpeg.wasm and target H.264 720p / AAC.
+ *   - Falls back to the original blob if browser-side transcoding is unavailable.
  *
  * IMPORTANT: this module is browser-only. Never import it from edge code.
  */
+import { MAX_OUTGOING_ATTACHMENT_PLAINTEXT_BYTES } from './attachmentLimits';
+
 // Default targets (good Wi-Fi / 4G+).
 const DEFAULT_VIDEO_BITRATE = '1500k';
 const DEFAULT_AUDIO_BITRATE = '64k';
@@ -19,7 +19,10 @@ const DEFAULT_HEIGHT = 720;
 const LOW_VIDEO_BITRATE = '600k';
 const LOW_AUDIO_BITRATE = '48k';
 const LOW_HEIGHT = 480;
-const MAX_INPUT_BYTES = 200 * 1024 * 1024; // refuse > 200 MB inputs outright
+
+/** Re-encoding a short compatible clip generally takes longer than its upload. */
+export const SMALL_MP4_FAST_PATH_BYTES = 12 * 1024 * 1024;
+const MAX_INPUT_BYTES = MAX_OUTGOING_ATTACHMENT_PLAINTEXT_BYTES;
 
 interface EncodeTargets {
   videoBitrate: string;
@@ -39,6 +42,13 @@ function pickEncodeTargets(): EncodeTargets {
     }
   } catch { /* ignore — fall through to defaults */ }
   return { videoBitrate: DEFAULT_VIDEO_BITRATE, audioBitrate: DEFAULT_AUDIO_BITRATE, height: DEFAULT_HEIGHT };
+}
+
+function isSmallCompatibleMp4(input: File | Blob): boolean {
+  if (input.size > SMALL_MP4_FAST_PATH_BYTES) return false;
+  const baseType = input.type?.split(';')[0].trim().toLowerCase();
+  if (baseType === 'video/mp4') return true;
+  return input instanceof File && /\.mp4$/i.test(input.name);
 }
 
 let ffmpegSingleton: { ffmpeg: any; loaded: Promise<void> } | null = null;
@@ -75,8 +85,8 @@ export type CompressResult = {
 };
 
 /**
- * Compress a video file to H.264 720p MP4. Returns the original blob if
- * compression isn't possible (no SAB) or if the output would be larger.
+ * Compress a video file to H.264 720p MP4. Small compatible MP4 clips bypass
+ * ffmpeg entirely, preserving instant-send UX and avoiding a 25 MiB WASM load.
  */
 export async function compressVideoForChat(
   input: File | Blob,
@@ -84,6 +94,10 @@ export async function compressVideoForChat(
 ): Promise<CompressResult> {
   if (input.size > MAX_INPUT_BYTES) {
     return { blob: input, compressed: false, reason: 'input-too-large' };
+  }
+  if (isSmallCompatibleMp4(input)) {
+    onProgress?.(1);
+    return { blob: input, compressed: false, reason: 'small-compatible-fast-path' };
   }
   if (!canRunFfmpegWasm()) {
     return { blob: input, compressed: false, reason: 'no-shared-array-buffer' };
@@ -100,7 +114,6 @@ export async function compressVideoForChat(
     }
 
     const { videoBitrate, audioBitrate, height } = pickEncodeTargets();
-
     const inName = 'in.mp4';
     const outName = 'out.mp4';
     const buf = new Uint8Array(await input.arrayBuffer());
@@ -122,7 +135,7 @@ export async function compressVideoForChat(
     ]);
 
     const out = await ffmpeg.readFile(outName);
-    const outBytes = (out instanceof Uint8Array ? new Uint8Array(out) : new Uint8Array(out as ArrayBuffer));
+    const outBytes = out instanceof Uint8Array ? new Uint8Array(out) : new Uint8Array(out as ArrayBuffer);
     const outBlob = new Blob([outBytes.buffer as ArrayBuffer], { type: 'video/mp4' });
     await ffmpeg.deleteFile(inName).catch(() => {});
     await ffmpeg.deleteFile(outName).catch(() => {});
