@@ -61,7 +61,6 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
           import subprocess
-          import textwrap
           import traceback
 
           workflow = Path('.github/workflows/e2ee-direct-fallback-hotfix.yml').read_text()
@@ -70,13 +69,17 @@ jobs:
           try:
               if start not in workflow or end not in workflow:
                   raise SystemExit('hotfix payload markers missing')
-              payload = workflow.split(start, 1)[1].split(end, 1)[0]
-              exec(compile(textwrap.dedent(payload), 'e2ee-direct-fallback-hotfix.py', 'exec'))
+              raw_payload = workflow.split(start, 1)[1].split(end, 1)[0]
+              payload = '\n'.join(
+                  line[10:] if line.startswith('          ') else line
+                  for line in raw_payload.splitlines()
+              )
+              exec(compile(payload, 'e2ee-direct-fallback-hotfix.py', 'exec'))
           except BaseException:
-              diagnostic = Path('HOTFIX_DIRECT_E2EE_ERROR.txt')
-              diagnostic.write_text(traceback.format_exc())
+              failure = traceback.format_exc()
               subprocess.run(['git', 'reset', '--hard', 'HEAD'], check=True)
-              diagnostic.write_text(traceback.format_exc())
+              diagnostic = Path('HOTFIX_DIRECT_E2EE_ERROR.txt')
+              diagnostic.write_text(failure)
               subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
               subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
               subprocess.run(['git', 'add', str(diagnostic)], check=True)
@@ -102,8 +105,9 @@ jobs:
         run: |
           rm .github/workflows/e2ee-direct-fallback-hotfix.yml
           rm -f HOTFIX_DIRECT_E2EE_ERROR.txt
+          rm -f HOTFIX_TRIGGER.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/hooks/useMessageQueueSignal.ts .github/workflows/e2ee-direct-fallback-hotfix.yml HOTFIX_DIRECT_E2EE_ERROR.txt
+          git add src/hooks/useMessageQueueSignal.ts .github/workflows/e2ee-direct-fallback-hotfix.yml HOTFIX_DIRECT_E2EE_ERROR.txt HOTFIX_TRIGGER.txt
           git commit -m "fix(messages): fall back to direct E2EE when device fanout is unavailable"
           git push origin HEAD:hotfix/e2ee-direct-fallback
