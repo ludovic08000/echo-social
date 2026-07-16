@@ -431,8 +431,11 @@ export async function resolvePlaintext(opts: {
       negCache.set(key, Date.now());
       return stickyOrNull(messageId);
     })();
-    inflight.set(key, promise);
-    promise.finally(() => inflight.delete(key));
+    const tracked = promise.finally(() => {
+      if (inflight.get(key) === tracked) inflight.delete(key);
+    });
+    inflight.set(key, tracked);
+    promise = tracked;
   }
 
   return promise;
