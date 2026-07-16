@@ -5,12 +5,21 @@ const r2State = vi.hoisted(() => ({
   uploadCalls: 0,
 }));
 
+function readBlob(blob: Blob): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 vi.mock('@/lib/r2', () => ({
   uploadToR2: vi.fn(async (file: File | Blob, _category: string, customFileName?: string) => {
     r2State.uploadCalls += 1;
-    const path = `uploads/${customFileName || (file instanceof File ? file.name : 'body.enc')}`;
+    const path = `uploads/${customFileName || 'body.enc'}`;
     const url = `https://r2.example.test/${encodeURIComponent(path)}`;
-    r2State.objects.set(url, new Uint8Array(await file.arrayBuffer()));
+    r2State.objects.set(url, new Uint8Array(await readBlob(file)));
     return { url, path };
   }),
   fetchR2Object: vi.fn(async (url: string) => {
