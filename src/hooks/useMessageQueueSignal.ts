@@ -141,7 +141,9 @@ function dispatchDecryptRetry(messageId?: string): void {
       ? new CustomEvent('forsure-decrypt-retry', { detail: { messageId } })
       : new CustomEvent('forsure-decrypt-retry');
     window.dispatchEvent(event);
-  } catch {}
+  } catch {
+    /* best-effort browser notification */
+  }
 }
 
 function scheduleLightConversationRefresh(queryClient: ReturnType<typeof useQueryClient>): void {
@@ -291,7 +293,7 @@ export function useMessageQueue(
     const now = Date.now();
     const traceStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const localId = `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
-    const traceId = safeUUID();
+    const traceId: string = safeUUID();
     const serverMessageId = safeUUID();
     const trace = (stage: string, traceExtra: Record<string, unknown> = {}) => {
       const elapsedMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceStartedAt);
@@ -447,7 +449,9 @@ export function useMessageQueue(
         if (isSafetyMismatch) {
           try {
             window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verification-required', { detail: { conversationId, localId, reason: errMsg } }));
-          } catch {}
+          } catch {
+            /* best-effort browser notification */
+          }
           updatePending({ status: 'failed_visible', lastError: errMsg });
         } else {
           updatePending({ encryptedBody: null, status: 'waiting_secure_channel', lastError: errMsg });
