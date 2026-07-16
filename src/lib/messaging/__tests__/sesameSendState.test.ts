@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aggregateSesameUiMessageStatus,
+  getHighestSuccessfulRecipientStatus,
+  isSesameMessageJustForMe,
+  maxSesameSendStatus,
   SesameSendActionType,
   SesameSendStatus,
-  maxSesameSendStatus,
   sesameSendStateReducer,
+  someRecipientSesameSendStatus,
+  summarizeSesameSendStates,
   toSesameSendStatus,
 } from '../sesameSendState';
 
@@ -44,6 +49,14 @@ describe('Sesame Signal-derived send state', () => {
     ).status).toBe(SesameSendStatus.Delivered);
   });
 
+  it('allows manual retry to recover a failed recipient', () => {
+    const result = sesameSendStateReducer(
+      { status: SesameSendStatus.Failed, updatedAt: 10 },
+      { type: SesameSendActionType.ManuallyRetried, updatedAt: 20 },
+    );
+    expect(result).toEqual({ status: SesameSendStatus.Pending, updatedAt: 20 });
+  });
+
   it('maps detailed Sesame queue phases to stable delivery semantics', () => {
     expect(toSesameSendStatus('encrypting')).toBe(SesameSendStatus.Pending);
     expect(toSesameSendStatus('sent')).toBe(SesameSendStatus.Sent);
@@ -55,5 +68,46 @@ describe('Sesame Signal-derived send state', () => {
   it('selects the highest status', () => {
     expect(maxSesameSendStatus(SesameSendStatus.Read, SesameSendStatus.Sent))
       .toBe(SesameSendStatus.Read);
+  });
+
+  it('excludes the current user from recipient predicates', () => {
+    const states = {
+      me: { status: SesameSendStatus.Read },
+      contact: { status: SesameSendStatus.Delivered },
+    } as const;
+    expect(someRecipientSesameSendStatus(states, 'me', status => status === SesameSendStatus.Read)).toBe(false);
+    expect(someRecipientSesameSendStatus(states, 'me', status => status === SesameSendStatus.Delivered)).toBe(true);
+  });
+
+  it('detects note-to-self messages', () => {
+    expect(isSesameMessageJustForMe({ me: { status: SesameSendStatus.Sent } }, 'me')).toBe(true);
+    expect(isSesameMessageJustForMe({ me: { status: SesameSendStatus.Sent }, other: { status: SesameSendStatus.Sent } }, 'me')).toBe(false);
+  });
+
+  it('returns the highest successful external recipient state', () => {
+    const states = {
+      me: { status: SesameSendStatus.Viewed },
+      a: { status: SesameSendStatus.Sent },
+      b: { status: SesameSendStatus.Delivered },
+      c: { status: SesameSendStatus.Failed },
+    } as const;
+    expect(getHighestSuccessfulRecipientStatus(states, 'me')).toBe(SesameSendStatus.Delivered);
+  });
+
+  it('surfaces partial group failures instead of hiding them', () => {
+    const states = {
+      a: { status: SesameSendStatus.Delivered },
+      b: { status: SesameSendStatus.Failed },
+    } as const;
+    expect(aggregateSesameUiMessageStatus(states)).toBe('partial-sent');
+  });
+
+  it('aggregates a fully read group message', () => {
+    const states = {
+      a: { status: SesameSendStatus.Read },
+      b: { status: SesameSendStatus.Viewed },
+    } as const;
+    expect(aggregateSesameUiMessageStatus(states)).toBe('viewed');
+    expect(summarizeSesameSendStates(states)).toMatchObject({ total: 2, read: 1, viewed: 1 });
   });
 });

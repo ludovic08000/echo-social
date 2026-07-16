@@ -16,8 +16,11 @@ import {
 import { cn } from '@/lib/utils';
 import type { OutboundMessageStatus } from '@/lib/messaging/messageQueue';
 import {
+  aggregateSesameUiMessageStatus,
   SesameSendStatus,
+  summarizeSesameSendStates,
   toSesameSendStatus,
+  type SesameSendStateByRecipientId,
   type SesameUiMessageStatus,
 } from '@/lib/messaging/sesameSendState';
 import { SesameDeliveryIssueNotice } from './SesameDeliveryIssueNotice';
@@ -27,6 +30,8 @@ export type SesameMessageStatus = SesameUiMessageStatus;
 export interface SesameMessageMetadataProps {
   direction: 'incoming' | 'outgoing';
   status?: SesameMessageStatus;
+  sendStateByRecipientId?: SesameSendStateByRecipientId;
+  ourRecipientId?: string;
   timestamp?: string | number | Date;
   encrypted?: boolean;
   verified?: boolean;
@@ -36,6 +41,7 @@ export interface SesameMessageMetadataProps {
   lastError?: string | null;
   onRetry?: () => void;
   onRemove?: () => void;
+  onVerifyIdentity?: () => void;
   className?: string;
 }
 
@@ -114,15 +120,37 @@ function formatTimestamp(value: string | number | Date): string {
   }).format(date);
 }
 
+function buildRecipientSummary(
+  sendStateByRecipientId: SesameSendStateByRecipientId | undefined,
+  ourRecipientId: string | undefined,
+): string | undefined {
+  if (!sendStateByRecipientId) return undefined;
+  const summary = summarizeSesameSendStates(sendStateByRecipientId, ourRecipientId);
+  if (summary.total === 0) return undefined;
+
+  const successful = summary.sent + summary.delivered + summary.read + summary.viewed;
+  const parts = [`${successful}/${summary.total} envoyé${summary.total > 1 ? 's' : ''}`];
+  if (summary.delivered) parts.push(`${summary.delivered} délivré${summary.delivered > 1 ? 's' : ''}`);
+  if (summary.read) parts.push(`${summary.read} lu${summary.read > 1 ? 's' : ''}`);
+  if (summary.viewed) parts.push(`${summary.viewed} vu${summary.viewed > 1 ? 's' : ''}`);
+  if (summary.failed) parts.push(`${summary.failed} en échec`);
+  if (summary.pending) parts.push(`${summary.pending} en attente`);
+  return parts.join(' · ');
+}
+
 /**
  * Adapted from Signal Desktop's MessageMetadata.dom.tsx.
  *
  * Message content and delivery metadata remain separate. A transport failure
  * changes only this metadata row; it never replaces authenticated plaintext.
+ * Group messages can now derive one bubble-level state from monotonic
+ * per-recipient send states.
  */
 export function SesameMessageMetadata({
   direction,
   status,
+  sendStateByRecipientId,
+  ourRecipientId,
   timestamp,
   encrypted = false,
   verified = false,
@@ -132,26 +160,34 @@ export function SesameMessageMetadata({
   lastError,
   onRetry,
   onRemove,
+  onVerifyIdentity,
   className,
 }: SesameMessageMetadataProps) {
   const outgoing = direction === 'outgoing';
-  const semanticStatus = toSesameSendStatus(status);
+  const aggregateStatus = outgoing && sendStateByRecipientId
+    ? aggregateSesameUiMessageStatus(sendStateByRecipientId, ourRecipientId)
+    : undefined;
+  const effectiveStatus = status ?? aggregateStatus;
+  const semanticStatus = toSesameSendStatus(effectiveStatus);
   const isFailure = outgoing && semanticStatus === SesameSendStatus.Failed;
+  const recipientSummary = buildRecipientSummary(sendStateByRecipientId, ourRecipientId);
 
   if (isFailure) {
     return (
       <SesameDeliveryIssueNotice
-        label={status === 'partial-sent' ? 'Envoi partiel' : "Échec d'envoi"}
+        label={effectiveStatus === 'partial-sent' ? 'Envoi partiel' : undefined}
         detail={lastError}
+        failure={lastError}
         onRetry={onRetry}
         onRemove={onRemove}
+        onVerifyIdentity={onVerifyIdentity}
         compact={compact}
         className={className}
       />
     );
   }
 
-  const presentation = outgoing ? statusPresentation(status, compact) : null;
+  const presentation = outgoing ? statusPresentation(effectiveStatus, compact) : null;
   const timestampDate = timestamp !== undefined ? normalizeTimestamp(timestamp) : null;
   const timeLabel = timestampDate ? formatTimestamp(timestampDate) : '';
   const textClass = compact ? 'text-[8px]' : 'text-[10px]';
@@ -165,6 +201,8 @@ export function SesameMessageMetadata({
         className,
       )}
       data-send-status={semanticStatus ?? undefined}
+      aria-label={recipientSummary}
+      title={recipientSummary}
       aria-live="off"
     >
       {pinned && <Pin className={iconClass} aria-label="Épinglé" />}
@@ -189,7 +227,7 @@ export function SesameMessageMetadata({
             'inline-flex items-center gap-0.5',
             (semanticStatus === SesameSendStatus.Read || semanticStatus === SesameSendStatus.Viewed) && 'text-primary',
           )}
-          title={presentation.label}
+          title={recipientSummary || presentation.label}
         >
           {presentation.icon}
           <span>{presentation.label}</span>
