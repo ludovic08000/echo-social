@@ -2,6 +2,11 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { uploadToR2 } from '@/lib/r2';
+import {
+  MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
+  MEBIBYTE,
+  formatAttachmentLimit,
+} from '@/lib/messaging/attachmentLimits';
 
 type MediaFolder = 'avatars' | 'images' | 'videos' | 'products' | 'stories' | 'backgrounds' | 'documents' | 'voice' | 'lives' | 'feed' | 'post-images' | 'uploads';
 
@@ -14,34 +19,43 @@ const FOLDER_ALLOWED_TYPES: Record<string, string[]> = {
   stories: ['image/', 'video/', 'application/octet-stream'],
   backgrounds: ['image/'],
   documents: ['image/', 'application/pdf'],
-  voice: ['audio/'],
+  voice: ['audio/', 'application/octet-stream'],
   lives: ['image/'],
   feed: ['image/', 'video/', 'application/octet-stream'],
   uploads: ['image/', 'video/', 'application/octet-stream'],
 };
 
-const FOLDER_MAX_SIZE_MB: Record<string, number> = {
-  avatars: 5,
-  images: 10,
-  'post-images': 50,
-  videos: 50,
-  products: 5,
-  stories: 10,
-  backgrounds: 5,
-  documents: 10,
-  voice: 5,
-  lives: 5,
-  feed: 50,
-  uploads: 50,
+const FOLDER_MAX_SIZE_BYTES: Record<string, number> = {
+  avatars: 5 * MEBIBYTE,
+  images: 10 * MEBIBYTE,
+  // Private chat photos, videos and documents are encrypted before upload.
+  'post-images': MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
+  videos: 50 * MEBIBYTE,
+  products: 5 * MEBIBYTE,
+  stories: 10 * MEBIBYTE,
+  backgrounds: 5 * MEBIBYTE,
+  documents: 10 * MEBIBYTE,
+  voice: MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
+  lives: 5 * MEBIBYTE,
+  feed: 50 * MEBIBYTE,
+  uploads: 50 * MEBIBYTE,
 };
 
 interface UseImageUploadOptions {
   bucket: MediaFolder;
   onSuccess?: (url: string) => void;
+  /** Legacy override kept for existing callers. */
   maxSizeMB?: number;
+  /** Exact byte override for encrypted formats where cryptographic overhead matters. */
+  maxSizeBytes?: number;
 }
 
-export function useImageUpload({ bucket, onSuccess, maxSizeMB }: UseImageUploadOptions) {
+export function useImageUpload({
+  bucket,
+  onSuccess,
+  maxSizeMB,
+  maxSizeBytes,
+}: UseImageUploadOptions) {
   const { user } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -52,10 +66,8 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB }: UseImageUploadO
       return null;
     }
 
-    // Validate file type against folder
     const allowedPrefixes = FOLDER_ALLOWED_TYPES[bucket] || ['image/', 'video/'];
-    // Allow encrypted media (E2EE) by file extension when MIME is octet-stream
-    const isEncryptedMedia = file.type === 'application/octet-stream' && /\.enc$/i.test(file.name);
+    const isEncryptedMedia = file.type === 'application/octet-stream' && /\.enc(?:\.|$)/i.test(file.name);
     const isAllowed = isEncryptedMedia || allowedPrefixes.some(prefix => file.type.startsWith(prefix) || file.type === prefix);
     if (!isAllowed) {
       const label = allowedPrefixes.map(p => p.replace('/', '')).join(', ');
@@ -63,10 +75,12 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB }: UseImageUploadO
       return null;
     }
 
-    const effectiveMaxMB = maxSizeMB ?? FOLDER_MAX_SIZE_MB[bucket] ?? 10;
-    const maxSizeBytes = effectiveMaxMB * 1024 * 1024;
-    if (file.size > maxSizeBytes) {
-      toast.error(`Le fichier ne doit pas dépasser ${effectiveMaxMB} Mo`);
+    const effectiveMaxBytes = maxSizeBytes
+      ?? (maxSizeMB !== undefined ? maxSizeMB * MEBIBYTE : undefined)
+      ?? FOLDER_MAX_SIZE_BYTES[bucket]
+      ?? 10 * MEBIBYTE;
+    if (file.size > effectiveMaxBytes) {
+      toast.error(`Le fichier ne doit pas dépasser ${formatAttachmentLimit(effectiveMaxBytes)}`);
       return null;
     }
 
@@ -78,12 +92,11 @@ export function useImageUpload({ bucket, onSuccess, maxSizeMB }: UseImageUploadO
       const { url } = await uploadToR2(file, bucket);
       setProgress(100);
 
-      // Silent success — no toast needed
       onSuccess?.(url);
       return url;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload failed:', error);
-      toast.error(error.message || "Erreur lors de l'upload");
+      toast.error(error instanceof Error ? error.message : "Erreur lors de l'upload");
       return null;
     } finally {
       setIsUploading(false);
