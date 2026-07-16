@@ -26,8 +26,6 @@ jobs:
         run: npm ci
 
       - name: Lint
-        id: lint
-        continue-on-error: true
         run: npm run lint
 
       - name: Test
@@ -35,7 +33,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Fail when lint failed
-        if: steps.lint.outcome == 'failure'
-        run: exit 1
