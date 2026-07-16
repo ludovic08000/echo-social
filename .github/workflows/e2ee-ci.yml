@@ -25,22 +25,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint linked-device code (diagnostic)
-        continue-on-error: true
-        run: >-
-          npx eslint src/hooks/useDeviceLink.ts
-          --format json --output-file eslint-device-link.json
+      - name: Lint
+        run: npm run lint
 
-      - name: Upload lint report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: eslint-device-link
-          path: eslint-device-link.json
-          retention-days: 1
-
-      - name: Test hardened ratchet
-        run: npm run test -- src/lib/crypto/__tests__/signalProtocolHardening.test.ts
+      - name: Test
+        run: npm run test
 
       - name: Build
         run: npm run build
