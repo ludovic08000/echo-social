@@ -6,6 +6,12 @@ import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
 import {
+  cancelSignalRetry,
+  isRetryableOutboundStatus,
+  runSignalConversationJob,
+  scheduleSignalRetry,
+} from '@/lib/messaging/signalWebConversationQueue';
+import {
   recoverRecentMessagesAfterUnlock,
   installRecoverRecentMessagesListeners,
 } from '@/lib/crypto/recoverRecentMessagesAfterUnlock';
@@ -37,6 +43,8 @@ export function useMessageQueue(
 ) {
   const { user } = useAuth();
   const previousPendingRef = useRef(new Map<string, { status: string; serverId: string | null }>());
+  const scheduledRetryKeysRef = useRef(new Set<string>());
+  const conversationQueueKey = `${user?.id ?? 'anonymous'}:${conversationId}`;
 
   useEffect(() => {
     if (!user?.id || allowPlaintext || !isEncryptionActive) return;
@@ -149,6 +157,69 @@ export function useMessageQueue(
     },
   );
 
+  const scheduleRetryForMessage = useCallback((message: (typeof queue.pendingMessages)[number], immediate = false) => {
+    if (!user?.id) return;
+
+    const retryKey = `${user.id}:${message.localId}`;
+    if (!isRetryableOutboundStatus(message.status, message.lastError)) {
+      cancelSignalRetry(retryKey);
+      scheduledRetryKeysRef.current.delete(retryKey);
+      return;
+    }
+
+    if (immediate) cancelSignalRetry(retryKey);
+    scheduledRetryKeysRef.current.add(retryKey);
+    scheduleSignalRetry(
+      retryKey,
+      async () => {
+        await runSignalConversationJob(conversationQueueKey, async () => {
+          await queue.retryMessage(message.localId);
+        });
+      },
+      { immediate },
+    );
+  }, [conversationQueueKey, queue.pendingMessages, queue.retryMessage, user?.id]);
+
+  // Signal-style durable resume: rows restored from the encrypted IndexedDB
+  // outbox are retried automatically instead of waiting for a manual tap.
+  useEffect(() => {
+    const activeRetryKeys = new Set<string>();
+    for (const message of queue.pendingMessages) {
+      if (!user?.id || !isRetryableOutboundStatus(message.status, message.lastError)) continue;
+      const retryKey = `${user.id}:${message.localId}`;
+      activeRetryKeys.add(retryKey);
+      scheduleRetryForMessage(message);
+    }
+
+    for (const retryKey of scheduledRetryKeysRef.current) {
+      if (!activeRetryKeys.has(retryKey)) cancelSignalRetry(retryKey);
+    }
+    scheduledRetryKeysRef.current = activeRetryKeys;
+  }, [queue.pendingMessages, scheduleRetryForMessage, user?.id]);
+
+  // A reconnect or foreground event should not wait for an existing backoff.
+  useEffect(() => {
+    const retryNow = () => {
+      for (const message of queue.pendingMessages) {
+        if (isRetryableOutboundStatus(message.status, message.lastError)) {
+          scheduleRetryForMessage(message, true);
+        }
+      }
+    };
+
+    window.addEventListener('online', retryNow);
+    window.addEventListener('focus', retryNow);
+    return () => {
+      window.removeEventListener('online', retryNow);
+      window.removeEventListener('focus', retryNow);
+    };
+  }, [queue.pendingMessages, scheduleRetryForMessage]);
+
+  useEffect(() => () => {
+    for (const retryKey of scheduledRetryKeysRef.current) cancelSignalRetry(retryKey);
+    scheduledRetryKeysRef.current.clear();
+  }, [conversationId, user?.id]);
+
   useEffect(() => {
     const previous = previousPendingRef.current;
     const current = new Map<string, { status: string; serverId: string | null }>();
@@ -228,8 +299,14 @@ export function useMessageQueue(
           allowPlaintext,
         },
       });
-      await queue.sendMessage(body, imageUrl, extra);
-    }, [allowPlaintext, conversationId, isEncryptionActive, isEncryptionReady, queue],
+
+      // Signal Desktop processes normal messages through a per-conversation job
+      // queue. Web Locks extends that guarantee across multiple browser tabs;
+      // the in-memory fallback preserves it in browsers without Web Locks.
+      await runSignalConversationJob(conversationQueueKey, async () => {
+        await queue.sendMessage(body, imageUrl, extra);
+      });
+    }, [allowPlaintext, conversationId, conversationQueueKey, isEncryptionActive, isEncryptionReady, queue],
   );
 
   return {
