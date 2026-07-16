@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
+import { MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES } from "../_shared/attachment-limits.ts";
 
 /**
  * r2-presign: Returns a presigned PUT URL so the client can upload
@@ -17,8 +18,8 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   products:      ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
   stories:       ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
   backgrounds:   ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
-  documents:     ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"],
-  voice:         ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg"],
+  documents:     ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf", "application/octet-stream"],
+  voice:         ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac", "audio/wav", "application/octet-stream"],
   lives:         ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "video/webm", "video/mp4"],
   feed:          ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "video/mp4", "video/webm", "video/quicktime", "application/octet-stream"],
   thumbnails:    ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
@@ -28,24 +29,23 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
 const FOLDER_MAX_SIZES: Record<string, number> = {
   avatars: 5 * 1024 * 1024,
   images: 10 * 1024 * 1024,
-  "post-images": 200 * 1024 * 1024,
-  videos: 200 * 1024 * 1024, // Supports up to 200 MB via direct upload
+  // Messaging attachment categories follow Signal Desktop's 100 MiB fallback.
+  "post-images": MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
+  videos: MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
   products: 5 * 1024 * 1024,
   stories: 10 * 1024 * 1024,
   backgrounds: 5 * 1024 * 1024,
-  documents: 10 * 1024 * 1024,
-  voice: 5 * 1024 * 1024,
+  documents: MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
+  voice: MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
   lives: 200 * 1024 * 1024,
   feed: 200 * 1024 * 1024,
   thumbnails: 2 * 1024 * 1024,
-  uploads: 10 * 1024 * 1024,
+  uploads: MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES,
 };
 
-// Rate limiting now DB-backed via shared helper (persistent across instances)
 const RATE_LIMIT = 20;
 const RATE_WINDOW_S = 60;
 
-// CORS — restricted to actual app domains + Lovable preview
 const ALLOWED_ORIGINS = [
   "https://calm-connect-05.lovable.app",
   "https://forsure.fans",
@@ -74,7 +74,6 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...h, "Content-Type": "application/json" } });
 
   try {
-    // Auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) throw new Error("Non authentifié");
 
@@ -90,16 +89,16 @@ Deno.serve(async (req) => {
 
     const { folder, filename, contentType, fileSize } = await req.json();
     if (!folder || !filename || !contentType || !fileSize) throw new Error("Paramètres manquants");
+    if (!Number.isSafeInteger(fileSize) || fileSize <= 0) throw new Error("Taille de fichier invalide");
 
     const cleanFolder = folder.replace(/[^a-zA-Z0-9\-_]/g, "");
     const baseMime = contentType.split(";")[0].trim();
     const allowed = ALLOWED_MIME_TYPES[cleanFolder] || ALLOWED_MIME_TYPES["uploads"];
     if (!allowed.includes(baseMime)) throw new Error(`Type non autorisé: ${baseMime}`);
 
-    const maxSize = FOLDER_MAX_SIZES[cleanFolder] || 10 * 1024 * 1024;
-    if (fileSize > maxSize) throw new Error(`Fichier trop volumineux (max ${Math.round(maxSize / 1024 / 1024)} Mo)`);
+    const maxSize = FOLDER_MAX_SIZES[cleanFolder] || MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES;
+    if (fileSize > maxSize) throw new Error(`Fichier trop volumineux (max ${Math.round(maxSize / 1024 / 1024)} Mio)`);
 
-    // User folder
     const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { data: profile } = await serviceClient.from("profiles").select("name").eq("user_id", userId).single();
     const rawName = profile?.name || "user";
@@ -109,7 +108,6 @@ Deno.serve(async (req) => {
     const ext = filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 5) || "bin";
     const filePath = `${userFolder}/${cleanFolder}/${Date.now()}.${ext}`;
 
-    // R2 config
     const accountId = Deno.env.get("R2_ACCOUNT_ID")?.trim() ?? "";
     let accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID")?.trim() ?? "";
     let secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY")?.trim() ?? "";
@@ -125,7 +123,6 @@ Deno.serve(async (req) => {
     const host = `${accountId}.${regionPrefix}r2.cloudflarestorage.com`;
     const endpoint = `https://${host}`;
 
-    // Generate presigned PUT URL (valid 15 min)
     const expiresSec = 900;
     const now = new Date();
     const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
@@ -155,15 +152,15 @@ Deno.serve(async (req) => {
     const stringToSign = [
       "AWS4-HMAC-SHA256",
       dateStamp,
-      credentialScope,
       await sha256Hex(new TextEncoder().encode(canonicalRequest)),
-    ].join("\n");
+    ];
+    stringToSign.splice(2, 0, credentialScope);
 
     const kDate = await hmacSha256(new TextEncoder().encode(`AWS4${secretAccessKey}`), shortDate);
     const kRegion = await hmacSha256(kDate, "auto");
     const kService = await hmacSha256(kRegion, "s3");
     const signingKey = await hmacSha256(kService, "aws4_request");
-    const signature = toHex(await hmacSha256(signingKey, stringToSign));
+    const signature = toHex(await hmacSha256(signingKey, stringToSign.join("\n")));
 
     const uploadUrl = `${endpoint}/${bucketName}/${filePath}?${queryString}&X-Amz-Signature=${signature}`;
     const fileUrl = `${publicUrl.replace(/\/$/, "")}/${filePath}`;
@@ -180,7 +177,6 @@ Deno.serve(async (req) => {
   }
 });
 
-// ─── Crypto helpers ───
 async function sha256Hex(data: Uint8Array): Promise<string> {
   return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", data)));
 }
