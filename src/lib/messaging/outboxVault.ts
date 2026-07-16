@@ -32,13 +32,30 @@ export interface OutboxExtra {
   document_size_bytes?: number | null;
 }
 
+export interface OutboxPreparedCopy {
+  message_id: string;
+  recipient_user_id: string;
+  recipient_device_id: string;
+  sender_user_id: string;
+  sender_device_id: string;
+  encrypted_body: string;
+}
+
 export interface OutboxPayload {
   localId: string;
   traceId: string;
   conversationId: string;
   senderId: string;
+  /** Human-readable text used by the optimistic bubble. */
   plaintext: string;
+  /** Exact plaintext transported inside per-device envelopes (long-message pointer when applicable). */
+  transportPlaintext?: string | null;
+  /** Stable encrypted-only parent body sent to the server. */
   encryptedBody: string | null;
+  /** Exact per-device envelopes, persisted before the RPC for crash-safe idempotent replay. */
+  preparedCopies?: OutboxPreparedCopy[];
+  /** Optional account-wrapped archive prepared before transport. */
+  archiveBody?: string | null;
   imageUrl: string | null;
   extra?: OutboxExtra;
   status: OutboxStatus;
