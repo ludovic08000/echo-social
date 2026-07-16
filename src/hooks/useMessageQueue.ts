@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { savePlaintext } from '@/lib/crypto/plaintextStore';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
+import { prewarmSenderKeysFlag } from '@/lib/crypto/senderKeyOutbound';
 import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
 import {
@@ -31,6 +32,10 @@ type SendExtra = {
   document_mime?: string | null;
   document_size_bytes?: number | null;
 };
+
+function perfNow(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
 
 export function useMessageQueue(
   conversationId: string,
@@ -65,13 +70,9 @@ export function useMessageQueue(
    *
    * Signal creates a local outgoing message and durable job immediately, while
    * identities/device routes are normally already hot. Sesame keeps the same
-   * trust gates, but primes the authenticated session, local E2EE identity and
-   * canonical signed device lists before the user presses Send. No plaintext,
-   * ciphertext or ratchet step is produced here.
-   *
-   * A short cooldown matches the verified-device RAM cache. Pointer/focus and
-   * online events make the common "tap composer, type, send" path warm without
-   * polling Supabase continuously in the background.
+   * trust gates, but primes the authenticated session, local E2EE identity,
+   * Sender Keys flag and canonical signed device lists before Send. No
+   * plaintext, ciphertext or ratchet step is produced here.
    */
   useEffect(() => {
     if (!user?.id || !conversationId || allowPlaintext || !isEncryptionActive) return;
@@ -88,6 +89,7 @@ export function useMessageQueue(
       void Promise.allSettled([
         supabase.auth.getSession(),
         ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
+        prewarmSenderKeysFlag(conversationId),
         (async () => {
           const { data, error } = await supabase
             .from('conversation_participants')
@@ -136,9 +138,54 @@ export function useMessageQueue(
     await onMessageSent?.(localId);
   }, [conversationId, onMessageSent]);
 
+  /**
+   * Only the stateful encryption step is serialized. useMessageQueueSignal
+   * creates and persists the optimistic local bubble before it calls this
+   * function, so queue/network delays are no longer displayed as a slow click.
+   * This also protects the Double Ratchet from concurrent chain advancement.
+   */
+  const queuedEncrypt = useCallback(async (plaintext: string, localId?: string): Promise<string> => {
+    if (!encrypt) throw new Error('Encryption not available');
+    const queuedAt = perfNow();
+
+    return runSignalConversationJob(`${conversationQueueKey}:encrypt`, async () => {
+      const startedAt = perfNow();
+      const waitMs = Math.round(startedAt - queuedAt);
+      console.info('[E2EE_PERF]', {
+        stage: 'encrypt_queue_acquired',
+        conversationId,
+        localId: localId ?? null,
+        waitMs,
+      });
+
+      try {
+        const result = await encrypt(plaintext, localId);
+        console.info('[E2EE_PERF]', {
+          stage: 'encrypt_complete',
+          conversationId,
+          localId: localId ?? null,
+          waitMs,
+          encryptMs: Math.round(perfNow() - startedAt),
+          totalMs: Math.round(perfNow() - queuedAt),
+        });
+        return result;
+      } catch (error) {
+        console.warn('[E2EE_PERF]', {
+          stage: 'encrypt_failed',
+          conversationId,
+          localId: localId ?? null,
+          waitMs,
+          encryptMs: Math.round(perfNow() - startedAt),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    });
+  }, [conversationId, conversationQueueKey, encrypt]);
+
   const queue = useSignalMessageQueue(
     conversationId,
-    encrypt,
+    encrypt ? queuedEncrypt : null,
     isEncryptionReady,
     isEncryptionActive,
     handleSent,
@@ -172,13 +219,13 @@ export function useMessageQueue(
     scheduleSignalRetry(
       retryKey,
       async () => {
-        await runSignalConversationJob(conversationQueueKey, async () => {
-          await queue.retryMessage(message.localId);
-        });
+        // retryMessage calls queuedEncrypt internally. Do not take the same lock
+        // here or Web Locks would become non-reentrant and deadlock.
+        await queue.retryMessage(message.localId);
       },
       { immediate },
     );
-  }, [conversationQueueKey, queue.pendingMessages, queue.retryMessage, user?.id]);
+  }, [queue.pendingMessages, queue.retryMessage, user?.id]);
 
   // Signal-style durable resume: rows restored from the encrypted IndexedDB
   // outbox are retried automatically instead of waiting for a manual tap.
@@ -300,13 +347,11 @@ export function useMessageQueue(
         },
       });
 
-      // Signal Desktop processes normal messages through a per-conversation job
-      // queue. Web Locks extends that guarantee across multiple browser tabs;
-      // the in-memory fallback preserves it in browsers without Web Locks.
-      await runSignalConversationJob(conversationQueueKey, async () => {
-        await queue.sendMessage(body, imageUrl, extra);
-      });
-    }, [allowPlaintext, conversationId, conversationQueueKey, isEncryptionActive, isEncryptionReady, queue],
+      // Do not lock the whole send. The underlying hook immediately creates the
+      // optimistic bubble and persists the durable job, then queuedEncrypt
+      // serializes only the ratchet state transition.
+      await queue.sendMessage(body, imageUrl, extra);
+    }, [allowPlaintext, conversationId, isEncryptionActive, isEncryptionReady, queue],
   );
 
   return {
