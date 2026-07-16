@@ -1,0 +1,41 @@
+
+/home/runner/work/echo-social/echo-social/src/hooks/useE2EE.ts
+   127:47  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+   217:62  error    Empty block statement                                                                                                                    no-empty
+   220:11  error    Empty block statement                                                                                                                    no-empty
+   299:46  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+   317:35  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+   498:87  error    Empty block statement                                                                                                                    no-empty
+   631:90  error    Empty block statement                                                                                                                    no-empty
+   750:15  error    Empty block statement                                                                                                                    no-empty
+   812:21  error    Empty block statement                                                                                                                    no-empty
+   818:19  error    Empty block statement                                                                                                                    no-empty
+   828:19  error    Empty block statement                                                                                                                    no-empty
+   853:17  error    Empty block statement                                                                                                                    no-empty
+   863:17  error    Empty block statement                                                                                                                    no-empty
+   957:79  error    Empty block statement                                                                                                                    no-empty
+  1028:24  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+  1160:40  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+  1252:6   warning  React Hook useCallback has a missing dependency: 'decryptRatchetMessage'. Either include it or remove the dependency array               react-hooks/exhaustive-deps
+  1272:13  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+  1569:6   warning  React Hook useCallback has missing dependencies: 'maybeAbsorbSKDM' and 'peerUserId'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  1606:82  error    Empty block statement                                                                                                                    no-empty
+  1633:6   warning  React Hook useCallback has an unnecessary dependency: 'conversationId'. Either exclude it or remove the dependency array                 react-hooks/exhaustive-deps
+  1700:28  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+  1703:70  error    Unexpected any. Specify a different type                                                                                                 @typescript-eslint/no-explicit-any
+
+/home/runner/work/echo-social/echo-social/src/hooks/useMessageQueue.ts
+  229:6  warning  React Hook useCallback has a missing dependency: 'queue'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/runner/work/echo-social/echo-social/src/lib/messaging/multiDeviceFanout.ts
+  214:9   error  Empty block statement                     no-empty
+  222:11  error  Empty block statement                     no-empty
+  232:11  error  Empty block statement                     no-empty
+  267:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  268:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  397:3   error  Unnecessary try/catch wrapper             no-useless-catch
+  693:81  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  752:31  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 32 problems (28 errors, 4 warnings)
+
