@@ -53,7 +53,7 @@ export async function runDeviceSessionJob<T>(
 
   try {
     return await navigator.locks.request(
-      `sesame:device-session:${key}`,
+      `aegis:device-session:${key}`,
       { mode: 'exclusive', signal: controller.signal },
       async () => {
         acquired = true;

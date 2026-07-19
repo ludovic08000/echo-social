@@ -1079,7 +1079,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
       {/* Fingerprint change banner removed per user request — silent re-keying */}
 
-      {/* Identity and route preparation stay silent. Sesame-lite retries its
+      {/* Identity and route preparation stay silent. Aegis retries its
           encrypted device-copy outbox when peer keys become available. */}
 
       {/* Pending message request banner */}

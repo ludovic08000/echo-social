@@ -3,7 +3,7 @@
  *
  * Stable per-account/per-installation identifier. The same physical browser can
  * log into multiple accounts, but E2EE device state must remain scoped to the
- * account. Signal/Sesame address devices as (UserID, DeviceID); sharing a single
+ * account. Signal/Aegis address devices as (UserID, DeviceID); sharing a single
  * browser-global device id across accounts lets device KX/SPK/ratchet state get
  * confused during account switching.
  *

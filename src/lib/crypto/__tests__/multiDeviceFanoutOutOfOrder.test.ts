@@ -1,7 +1,7 @@
 /**
  * Fan-out multi-session integration tests — out-of-order arrival.
  *
- * Scenario modeled (Sesame/Signal):
+ * Scenario modeled (Aegis/Signal):
  *   - Sender Alice has 2 devices (A1, A2).
  *   - Recipient Bob has 3 devices (B1, B2, B3).
  *   - For each logical message Alice sends from A1, the client produces ONE
@@ -35,7 +35,7 @@ import { bufferToBase64, randomBytes } from '../utils';
 
 // ─── Session seeding (copy of helpers from multiDeviceIntegration) ─────────
 const DB_NAME = 'forsure-device-sessions';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE = 'sessions';
 
 function openDB(): Promise<IDBDatabase> {

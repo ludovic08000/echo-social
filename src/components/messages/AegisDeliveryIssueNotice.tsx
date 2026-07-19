@@ -1,16 +1,16 @@
 // Copyright 2021 Signal Messenger, LLC
 // SPDX-License-Identifier: AGPL-3.0-only
-// Modified by the Sesame project on 2026-07-16.
+// Modified by the Aegis project on 2026-07-16.
 
 import { AlertTriangle, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  classifySesameDeliveryFailure,
-  shouldOfferSesameRetry,
-  type SesameDeliveryFailure,
-} from '@/lib/messaging/sesameDeliveryPolicy';
+  classifyAegisDeliveryFailure,
+  shouldOfferAegisRetry,
+  type AegisDeliveryFailure,
+} from '@/lib/messaging/aegisDeliveryPolicy';
 
-export interface SesameDeliveryIssueNoticeProps {
+export interface AegisDeliveryIssueNoticeProps {
   label?: string;
   detail?: string | null;
   failure?: unknown;
@@ -29,7 +29,7 @@ export interface SesameDeliveryIssueNoticeProps {
  * error placeholder. Raw transport errors are classified into stable,
  * user-safe recovery instructions before being displayed.
  */
-export function SesameDeliveryIssueNotice({
+export function AegisDeliveryIssueNotice({
   label,
   detail,
   failure,
@@ -38,10 +38,10 @@ export function SesameDeliveryIssueNotice({
   onVerifyIdentity,
   compact = false,
   className,
-}: SesameDeliveryIssueNoticeProps) {
-  const classified: SesameDeliveryFailure = classifySesameDeliveryFailure(failure ?? detail ?? label);
+}: AegisDeliveryIssueNoticeProps) {
+  const classified: AegisDeliveryFailure = classifyAegisDeliveryFailure(failure ?? detail ?? label);
   const displayLabel = label || classified.title;
-  const canRetry = Boolean(onRetry && shouldOfferSesameRetry(classified));
+  const canRetry = Boolean(onRetry && shouldOfferAegisRetry(classified));
   const canVerify = Boolean(onVerifyIdentity && classified.kind === 'identity-changed');
 
   return (

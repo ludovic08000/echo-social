@@ -46,7 +46,7 @@ import {
 const MESSAGE_ID = '11111111-1111-4111-8111-111111111111';
 
 function variedBody(minBytes: number): string {
-  const unit = 'Sesame protège ce message long 🔐 — ligne utile.\n';
+  const unit = 'Aegis protège ce message long 🔐 — ligne utile.\n';
   let value = '';
   while (utf8ByteLength(value) <= minBytes) value += unit;
   return value;
@@ -94,7 +94,7 @@ describe('Signal-style long message attachments', () => {
 
     const encryptedBlob = r2State.objects.get(manifest!.url);
     expect(encryptedBlob).toBeTruthy();
-    expect(new TextDecoder().decode(encryptedBlob)).not.toContain('Sesame protège');
+    expect(new TextDecoder().decode(encryptedBlob)).not.toContain('Aegis protège');
 
     await expect(resolveLongMessageBody(prepared.transportBody, MESSAGE_ID)).resolves.toBe(body);
   });

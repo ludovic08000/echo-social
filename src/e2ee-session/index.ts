@@ -1,5 +1,5 @@
 /**
- * Small public façade shared by Sesame-lite routing and identifiers.
+ * Small public façade shared by Aegis routing and identifiers.
  */
 export * from './types';
 export { safeUUID, shortId } from './safeUuid';

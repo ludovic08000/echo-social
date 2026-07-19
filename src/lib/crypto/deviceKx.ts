@@ -7,12 +7,7 @@
  * accounts sharing the same browser routing id can reuse/corrupt each other's
  * device KX material.
  *
- * Storage model — strictly additive:
- *   IndexedDB store `identity-keys`
- *   - v2 scoped key: `device-kx::<userId>::<deviceId>`
- *   - legacy key:    `device-kx::<deviceId>` (read only for migration when no
- *     userId is supplied; new account-aware code should pass userId)
- */
+ * Storage model:\n *   IndexedDB store `identity-keys`\n *   - scoped key: `device-kx::<userId>::<deviceId>`\n */
 
 import { KX_KEY_PARAMS, STORE_KEYS } from './constants';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64 } from './utils';
@@ -34,8 +29,8 @@ interface StoredDeviceKx {
   deviceId?: string;
 }
 
-function storageKey(deviceId: string, userId?: string | null): string {
-  return userId ? `device-kx::${userId}::${deviceId}` : `device-kx::${deviceId}`;
+function storageKey(deviceId: string, userId: string): string {
+  return `device-kx::${userId}::${deviceId}`;
 }
 
 /**
@@ -87,23 +82,11 @@ async function importStoredDeviceKx(stored: StoredDeviceKx): Promise<DeviceKxKey
 }
 
 /**
- * Load the per-account/per-device kx keypair if present. Returns null if none
- * stored yet. New code MUST pass userId. The unscoped legacy path is kept only
- * for backwards-compatible callers.
+ * Load the per-account/per-device kx keypair if present. Returns null if none\n * is stored. Both IDs are mandatory, preventing cross-account key reuse.
  */
-export async function loadDeviceKxKey(deviceId: string, userId?: string | null): Promise<DeviceKxKey | null> {
-  const scoped = await dbGet<StoredDeviceKx>(storageKey(deviceId, userId));
-  if (scoped) return importStoredDeviceKx(scoped);
-
-  // Deliberately do not fall back to the legacy unscoped key when userId is
-  // provided: that would reintroduce cross-account key reuse on the same
-  // browser. Existing approved devices will generate/publish a user-scoped KX
-  // on their next valid registration cycle.
-  if (userId) return null;
-
-  const legacy = await dbGet<StoredDeviceKx>(storageKey(deviceId));
-  if (!legacy) return null;
-  return importStoredDeviceKx(legacy);
+export async function loadDeviceKxKey(deviceId: string, userId: string): Promise<DeviceKxKey | null> {
+  const stored = await dbGet<StoredDeviceKx>(storageKey(deviceId, userId));
+  return stored ? importStoredDeviceKx(stored) : null;
 }
 
 /**
@@ -111,7 +94,7 @@ export async function loadDeviceKxKey(deviceId: string, userId?: string | null):
  * the import. Private key persisted as JWK for reload, then re-imported as
  * non-extractable at runtime.
  */
-export async function generateDeviceKxKey(deviceId: string, userId?: string | null): Promise<DeviceKxKey> {
+export async function generateDeviceKxKey(deviceId: string, userId: string): Promise<DeviceKxKey> {
   const pair = await hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']);
   const { publicKey, privateKey } = pair as CryptoKeyPair;
 
@@ -122,7 +105,7 @@ export async function generateDeviceKxKey(deviceId: string, userId?: string | nu
 
   await dbPut<StoredDeviceKx>({
     id: storageKey(deviceId, userId),
-    userId: userId ?? undefined,
+    userId,
     deviceId,
     publicKeyJWK,
     privateKeyJWK,
@@ -138,19 +121,16 @@ export async function generateDeviceKxKey(deviceId: string, userId?: string | nu
  * Get the per-account/per-device kx key, generating one on first call.
  * Idempotent and safe to call on every app boot.
  */
-export async function getOrCreateDeviceKxKey(deviceId: string, userId?: string | null): Promise<DeviceKxKey> {
+export async function getOrCreateDeviceKxKey(deviceId: string, userId: string): Promise<DeviceKxKey> {
   const existing = await loadDeviceKxKey(deviceId, userId);
   if (existing) return existing;
   return generateDeviceKxKey(deviceId, userId);
 }
 
 /** Used when a device is unlinked / revoked. */
-export async function deleteDeviceKxKey(deviceId: string, userId?: string | null): Promise<void> {
+export async function deleteDeviceKxKey(deviceId: string, userId: string): Promise<void> {
   try {
     await dbDelete(storageKey(deviceId, userId));
-    if (!userId) return;
-    // Do not delete the legacy unscoped key from a user-scoped delete; another
-    // still-migrating account may depend on it until it receives its own scoped key.
   } catch {
     /* non-fatal */
   }

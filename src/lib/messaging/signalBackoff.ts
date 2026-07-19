@@ -1,7 +1,7 @@
 // Copyright 2021 Signal Messenger, LLC
 // SPDX-License-Identifier: AGPL-3.0-only
 //
-// Adapted for Sesame on 2026-07-16 from Signal Desktop's
+// Adapted for Aegis on 2026-07-16 from Signal Desktop's
 // ts/util/exponentialBackoff.std.ts. Signal-specific assertion and duration
 // helpers were replaced with dependency-free TypeScript equivalents.
 
@@ -106,7 +106,7 @@ export function applyFullJitter(
   return Math.floor(delayMs * sample);
 }
 
-export type SesameRetryDelayOptions = Readonly<{
+export type AegisRetryDelayOptions = Readonly<{
   attempt: number;
   retryAfterMs?: number;
   jitter?: boolean;
@@ -118,13 +118,13 @@ export type SesameRetryDelayOptions = Readonly<{
  * Computes a retry delay while respecting an authoritative server Retry-After.
  * Retry-After is never jittered or shortened.
  */
-export function computeSesameRetryDelay({
+export function computeAegisRetryDelay({
   attempt,
   retryAfterMs,
   jitter = true,
   random = Math.random,
   backoff = SIGNAL_BACKOFF_DEFAULTS,
-}: SesameRetryDelayOptions): number {
+}: AegisRetryDelayOptions): number {
   if (retryAfterMs !== undefined) {
     if (!Number.isFinite(retryAfterMs) || retryAfterMs < 0) {
       throw new RangeError('retryAfterMs must be a finite non-negative number');

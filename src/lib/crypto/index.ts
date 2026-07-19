@@ -5,14 +5,6 @@
  * Double Ratchet + Hybrid Post-Quantum Ready (Kyber768)
  */
 
-export {
-  encryptMessage,
-  decryptMessage,
-  isEncryptedMessage,
-  establishSession,
-  type EncryptedEnvelope,
-} from './e2ee';
-
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
 export { getOrCreateIdentityKeys } from './keyManagerSafe';
@@ -44,21 +36,6 @@ export {
   attachEpochToEnvelope,
   isEnvelopeEpochStale,
 } from './securityEpoch';
-
-export {
-  createEpochBoundEnvelope,
-  assertEnvelopeEpochValid,
-} from './epochEnvelope';
-
-export {
-  createSealedSenderEnvelope,
-} from './sealedSender';
-
-export {
-  issueSenderCertificate,
-  fetchSenderCertificate,
-  isSenderCertificateExpired,
-} from './senderCertificate';
 
 export {
   publishCurrentDevice,
@@ -99,12 +76,6 @@ export {
 } from './keyManager';
 
 export {
-  PROTOCOL_VERSION,
-  CLASSICAL_KEM_ID,
-  PQ_KEM_ID,
-} from './constants';
-
-export {
   cryptoRateCheck,
   isCryptoLocked,
   onCryptoViolation,
@@ -136,9 +107,6 @@ export { fetchPrekeyBundle } from './x3dhBundleRouter';
 
 export {
   x3dhInitiate,
-  x3dhRespond,
-  generateAndUploadSignedPrekey,
-  refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
   isPQXDHAvailable,

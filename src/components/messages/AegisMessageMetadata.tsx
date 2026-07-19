@@ -1,6 +1,6 @@
 // Copyright 2018 Signal Messenger, LLC
 // SPDX-License-Identifier: AGPL-3.0-only
-// Modified by the Sesame project on 2026-07-16.
+// Modified by the Aegis project on 2026-07-16.
 
 import type { ReactNode } from 'react';
 import {
@@ -16,21 +16,21 @@ import {
 import { cn } from '@/lib/utils';
 import type { OutboxStatus as OutboundMessageStatus } from '@/lib/messaging/outboxVault';
 import {
-  aggregateSesameUiMessageStatus,
-  SesameSendStatus,
-  summarizeSesameSendStates,
-  toSesameSendStatus,
-  type SesameSendStateByRecipientId,
-  type SesameUiMessageStatus,
-} from '@/lib/messaging/sesameSendState';
-import { SesameDeliveryIssueNotice } from './SesameDeliveryIssueNotice';
+  aggregateAegisUiMessageStatus,
+  AegisSendStatus,
+  summarizeAegisSendStates,
+  toAegisSendStatus,
+  type AegisSendStateByRecipientId,
+  type AegisUiMessageStatus,
+} from '@/lib/messaging/aegisSendState';
+import { AegisDeliveryIssueNotice } from './AegisDeliveryIssueNotice';
 
-export type SesameMessageStatus = SesameUiMessageStatus;
+export type AegisMessageStatus = AegisUiMessageStatus;
 
-export interface SesameMessageMetadataProps {
+export interface AegisMessageMetadataProps {
   direction: 'incoming' | 'outgoing';
-  status?: SesameMessageStatus;
-  sendStateByRecipientId?: SesameSendStateByRecipientId;
+  status?: AegisMessageStatus;
+  sendStateByRecipientId?: AegisSendStateByRecipientId;
   ourRecipientId?: string;
   timestamp?: string | number | Date;
   encrypted?: boolean;
@@ -84,22 +84,22 @@ function pendingPresentation(
 }
 
 function statusPresentation(
-  status: SesameMessageStatus | undefined,
+  status: AegisMessageStatus | undefined,
   compact: boolean,
 ): StatusPresentation | null {
-  const semantic = toSesameSendStatus(status);
+  const semantic = toAegisSendStatus(status);
   const iconClass = compact ? 'h-2.5 w-2.5' : 'h-3 w-3';
 
   switch (semantic) {
-    case SesameSendStatus.Pending:
+    case AegisSendStatus.Pending:
       return pendingPresentation(status as OutboundMessageStatus | 'pending' | undefined, compact);
-    case SesameSendStatus.Sent:
+    case AegisSendStatus.Sent:
       return { label: 'Envoyé', icon: <Check className={iconClass} aria-hidden="true" /> };
-    case SesameSendStatus.Delivered:
+    case AegisSendStatus.Delivered:
       return { label: 'Délivré', icon: <CheckCheck className={iconClass} aria-hidden="true" /> };
-    case SesameSendStatus.Read:
+    case AegisSendStatus.Read:
       return { label: 'Lu', icon: <CheckCheck className={iconClass} aria-hidden="true" /> };
-    case SesameSendStatus.Viewed:
+    case AegisSendStatus.Viewed:
       return { label: 'Vu', icon: <Eye className={iconClass} aria-hidden="true" /> };
     default:
       return null;
@@ -121,11 +121,11 @@ function formatTimestamp(value: string | number | Date): string {
 }
 
 function buildRecipientSummary(
-  sendStateByRecipientId: SesameSendStateByRecipientId | undefined,
+  sendStateByRecipientId: AegisSendStateByRecipientId | undefined,
   ourRecipientId: string | undefined,
 ): string | undefined {
   if (!sendStateByRecipientId) return undefined;
-  const summary = summarizeSesameSendStates(sendStateByRecipientId, ourRecipientId);
+  const summary = summarizeAegisSendStates(sendStateByRecipientId, ourRecipientId);
   if (summary.total === 0) return undefined;
 
   const successful = summary.sent + summary.delivered + summary.read + summary.viewed;
@@ -146,7 +146,7 @@ function buildRecipientSummary(
  * Group messages can now derive one bubble-level state from monotonic
  * per-recipient send states.
  */
-export function SesameMessageMetadata({
+export function AegisMessageMetadata({
   direction,
   status,
   sendStateByRecipientId,
@@ -162,19 +162,19 @@ export function SesameMessageMetadata({
   onRemove,
   onVerifyIdentity,
   className,
-}: SesameMessageMetadataProps) {
+}: AegisMessageMetadataProps) {
   const outgoing = direction === 'outgoing';
   const aggregateStatus = outgoing && sendStateByRecipientId
-    ? aggregateSesameUiMessageStatus(sendStateByRecipientId, ourRecipientId)
+    ? aggregateAegisUiMessageStatus(sendStateByRecipientId, ourRecipientId)
     : undefined;
   const effectiveStatus = status ?? aggregateStatus;
-  const semanticStatus = toSesameSendStatus(effectiveStatus);
-  const isFailure = outgoing && semanticStatus === SesameSendStatus.Failed;
+  const semanticStatus = toAegisSendStatus(effectiveStatus);
+  const isFailure = outgoing && semanticStatus === AegisSendStatus.Failed;
   const recipientSummary = buildRecipientSummary(sendStateByRecipientId, ourRecipientId);
 
   if (isFailure) {
     return (
-      <SesameDeliveryIssueNotice
+      <AegisDeliveryIssueNotice
         label={effectiveStatus === 'partial-sent' ? 'Envoi partiel' : undefined}
         detail={lastError}
         failure={lastError}
@@ -225,7 +225,7 @@ export function SesameMessageMetadata({
         <span
           className={cn(
             'inline-flex items-center gap-0.5',
-            (semanticStatus === SesameSendStatus.Read || semanticStatus === SesameSendStatus.Viewed) && 'text-primary',
+            (semanticStatus === AegisSendStatus.Read || semanticStatus === AegisSendStatus.Viewed) && 'text-primary',
           )}
           title={recipientSummary || presentation.label}
         >

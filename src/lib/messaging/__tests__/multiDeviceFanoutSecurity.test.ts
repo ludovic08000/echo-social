@@ -52,9 +52,7 @@ vi.mock('@/lib/crypto/deviceRatchet', () => ({
   establishDeviceSession: vi.fn(),
   getSessionPeerSpkId: mocks.getSessionPeerSpkId,
   invalidateDeviceSession: mocks.invalidateDeviceSession,
-  RATCHET_PREFIX_V3: 'x3dh3.',
-  RATCHET_PREFIX_V4: 'x3dh4.',
-  RATCHET_PREFIX_V5: 'x3dh5.',
+  AEGIS_RATCHET_PREFIX: 'aegis1.ratchet.',
 }));
 
 vi.mock('@/lib/crypto/errorLogger', () => ({

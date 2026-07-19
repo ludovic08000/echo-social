@@ -33,12 +33,11 @@ type SendArguments = {
   rebuildCopies: () => Promise<FanoutCopyRow[]>;
 };
 
-export type SesameSendResult = {
+export type AegisSendResult = {
   data: string | null;
   error: RpcError;
   copies: FanoutCopyRow[];
   retriedStaleRoute: boolean;
-  usedCompatibilitySignature: boolean;
 };
 
 function errorText(error: RpcError): string {
@@ -49,7 +48,7 @@ function errorText(error: RpcError): string {
     .toLowerCase();
 }
 
-export function isSesameDeviceListStale(error: RpcError): boolean {
+export function isAegisDeviceListStale(error: RpcError): boolean {
   return errorText(error).includes('e2ee_device_list_stale');
 }
 
@@ -98,7 +97,7 @@ async function callAuthoritative(
   });
 
   try {
-    const request = Promise.resolve(supabase.rpc('send_message_with_device_copies', {
+    const request = Promise.resolve(supabase.rpc('aegis_send_message', {
       p_message_id: args.messageId,
       p_conversation_id: args.conversationId,
       p_body: args.body,
@@ -116,19 +115,18 @@ async function callAuthoritative(
 }
 
 /**
- * Sesame §4.1 style send:
+ * Aegis atomic send:
  * - the server is authoritative for the current device set;
  * - a stale route is rebuilt and retried exactly once with the same message id;
  * - explicit rejection restores every ratchet snapshot from this attempt;
  * - ambiguous network failures are confirmed once idempotently before returning
  *   and never trigger a blind rollback that could desynchronise a committed send.
  */
-export async function sendMessageWithSesameRetry(
+export async function sendMessageWithAegisRetry(
   args: SendArguments,
-): Promise<SesameSendResult> {
+): Promise<AegisSendResult> {
   let copies = args.initialCopies;
   let retriedStaleRoute = false;
-  const usedCompatibilitySignature = false;
 
   for (let staleAttempt = 0; staleAttempt < 2; staleAttempt += 1) {
     const response = await callAuthoritative(args, copies, SEND_TRANSPORT_TIMEOUT_MS);
@@ -140,12 +138,11 @@ export async function sendMessageWithSesameRetry(
         error: null,
         copies,
         retriedStaleRoute,
-        usedCompatibilitySignature,
       };
     }
 
     // A stale-list rejection is explicit even when a proxy strips the SQLSTATE.
-    if (isSesameDeviceListStale(response.error)) {
+    if (isAegisDeviceListStale(response.error)) {
       await rollbackFanoutSessionTransaction(args.messageId);
       if (staleAttempt === 0) {
         retriedStaleRoute = true;
@@ -158,7 +155,6 @@ export async function sendMessageWithSesameRetry(
         error: response.error,
         copies,
         retriedStaleRoute: true,
-        usedCompatibilitySignature,
       };
     }
 
@@ -173,7 +169,6 @@ export async function sendMessageWithSesameRetry(
           error: null,
           copies,
           retriedStaleRoute,
-          usedCompatibilitySignature,
         };
       }
       // Delivery is now ambiguous. Keep the advanced local state and outbox so
@@ -183,7 +178,6 @@ export async function sendMessageWithSesameRetry(
         error: confirmation.error,
         copies,
         retriedStaleRoute,
-        usedCompatibilitySignature,
       };
     }
 
@@ -193,7 +187,6 @@ export async function sendMessageWithSesameRetry(
       error: response.error,
       copies,
       retriedStaleRoute,
-      usedCompatibilitySignature,
     };
   }
 
@@ -205,6 +198,5 @@ export async function sendMessageWithSesameRetry(
     },
     copies,
     retriedStaleRoute: true,
-    usedCompatibilitySignature,
   };
 }

@@ -1,7 +1,7 @@
 /**
  * Realtime E2EE readiness sync.
  *
- * Key/prekey changes invalidate stale routes and wake durable Sesame-lite
+ * Key/prekey changes invalidate stale routes and wake durable Aegis
  * outboxes. Message delivery itself is handled by the atomic parent+copies RPC.
  */
 import { supabase } from '@/integrations/supabase/client';
@@ -47,7 +47,7 @@ function scheduleResume(reason: string): void {
     }
     lastResumeAt = now;
     try {
-      window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', { detail: { reason } }));
+      window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', { detail: { reason } }));
     } catch { /* browser wakeup is best-effort */ }
   }, RESUME_DEBOUNCE_MS);
 }

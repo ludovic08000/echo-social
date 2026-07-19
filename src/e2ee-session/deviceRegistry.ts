@@ -1,7 +1,7 @@
 /**
  * Device registry façade — wraps the existing per-device key publishing
  * (`useDeviceRegistration` + `list_active_devices_for_user` RPC) into a
- * Sesame-style API: "give me all devices of user X".
+ * Aegis-style API: "give me all devices of user X".
  *
  * No new tables are created. The Supabase RPC `list_active_devices_for_user`
  * already returns the canonical device list with `device_public_key`.

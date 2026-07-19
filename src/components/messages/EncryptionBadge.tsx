@@ -3,7 +3,7 @@ import { ShieldCheck, Lock, Zap, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SafetyNumberDialog } from './SafetyNumberDialog';
 
-const SESAME_SOURCE_URL = 'https://github.com/ludovic08000/echo-social';
+const AEGIS_SOURCE_URL = 'https://github.com/ludovic08000/echo-social';
 
 interface EncryptionBadgeProps {
   encrypted: boolean;
@@ -20,10 +20,10 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
   if (!encrypted) return null;
 
   const label = verified
-    ? 'Sesame · Vérifié'
+    ? 'Aegis · Vérifié'
     : ratchetActive
-      ? 'Sesame · Ratchet'
-      : 'Sesame · Chiffré';
+      ? 'Aegis · Ratchet'
+      : 'Aegis · Chiffré';
 
   return (
     <span className={cn(
@@ -40,7 +40,7 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
       )}
       {showLabel && (
         <a
-          href={SESAME_SOURCE_URL}
+          href={AEGIS_SOURCE_URL}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(event) => event.stopPropagation()}
@@ -48,7 +48,7 @@ export function EncryptionBadge({ encrypted, verified, ratchetActive, size = 'xs
             'text-[9px] font-medium hover:underline underline-offset-2',
             verified ? 'text-emerald-500' : 'text-muted-foreground'
           )}
-          title="Sesame est publié sous licence AGPL-3.0 — consulter le code source"
+          title="Aegis est publié sous licence AGPL-3.0 — consulter le code source"
         >
           {label}
         </a>
@@ -78,13 +78,13 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
   let StatusIcon = ShieldCheck;
 
   if (fingerprintChanged) {
-    statusText = '⚠️ Sesame : clé de sécurité modifiée — vérification obligatoire';
+    statusText = '⚠️ Aegis : clé de sécurité modifiée — vérification obligatoire';
     StatusIcon = AlertTriangle;
   } else if (ratchetActive) {
-    statusText = 'Sesame — X3DH + Double Ratchet, confidentialité persistante par message';
+    statusText = 'Aegis — X3DH + Double Ratchet, confidentialité persistante par message';
     StatusIcon = Zap;
   } else {
-    statusText = 'Sesame — chiffrement de bout en bout activé';
+    statusText = 'Aegis — chiffrement de bout en bout activé';
     StatusIcon = ShieldCheck;
   }
 
@@ -107,7 +107,7 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
           {statusText}
         </span>
         <a
-          href={SESAME_SOURCE_URL}
+          href={AEGIS_SOURCE_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="ml-auto text-[9px] underline underline-offset-2"

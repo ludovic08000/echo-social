@@ -20,7 +20,7 @@ vi.mock('@/lib/messaging/fanoutSessionTransaction', () => ({
   rollbackFanoutSessionTransaction: mocks.rollback,
 }));
 
-import { sendMessageWithSesameRetry } from '../sesameSendRpc';
+import { sendMessageWithAegisRetry } from '../aegisSendRpc';
 import type { FanoutCopyRow } from '../multiDeviceFanout';
 
 const INITIAL: FanoutCopyRow[] = [{
@@ -29,13 +29,13 @@ const INITIAL: FanoutCopyRow[] = [{
   recipient_device_id: 'device-old-12345678',
   sender_user_id: '33333333-3333-4333-8333-333333333333',
   sender_device_id: 'sender-device-12345678',
-  encrypted_body: 'x3dh5.session.dh.0.0.iv.ct',
+  encrypted_body: 'aegis1.ratchet.session.dh.0.0.iv.ct',
 }];
 
 const REBUILT: FanoutCopyRow[] = [{
   ...INITIAL[0],
   recipient_device_id: 'device-new-12345678',
-  encrypted_body: 'x3dh5.init.v3.payload',
+  encrypted_body: 'aegis1.init.v1.payload',
 }];
 
 function args(rebuildCopies = vi.fn(async () => REBUILT)) {
@@ -57,14 +57,14 @@ beforeEach(() => {
   mocks.rollback.mockResolvedValue(1);
 });
 
-describe('sendMessageWithSesameRetry', () => {
+describe('sendMessageWithAegisRetry', () => {
   it('rebuilds a stale route exactly once and commits the same message id', async () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'E2EE_DEVICE_LIST_STALE' } })
       .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
     const rebuild = vi.fn(async () => REBUILT);
 
-    const result = await sendMessageWithSesameRetry(args(rebuild));
+    const result = await sendMessageWithAegisRetry(args(rebuild));
 
     expect(result.error).toBeNull();
     expect(result.retriedStaleRoute).toBe(true);
@@ -82,7 +82,7 @@ describe('sendMessageWithSesameRetry', () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'E2EE_DEVICE_LIST_STALE' } });
     const rebuild = vi.fn(async () => REBUILT);
 
-    const result = await sendMessageWithSesameRetry(args(rebuild));
+    const result = await sendMessageWithAegisRetry(args(rebuild));
 
     expect(result.error?.message).toContain('E2EE_DEVICE_LIST_STALE');
     expect(rebuild).toHaveBeenCalledTimes(1);
@@ -98,7 +98,7 @@ describe('sendMessageWithSesameRetry', () => {
       error: { code: '23514', message: 'E2EE_INVALID_DEVICE_COPY' },
     });
 
-    const result = await sendMessageWithSesameRetry(args());
+    const result = await sendMessageWithAegisRetry(args());
 
     expect(result.error?.message).toBe('E2EE_INVALID_DEVICE_COPY');
     expect(mocks.rollback).toHaveBeenCalledTimes(1);
@@ -111,7 +111,7 @@ describe('sendMessageWithSesameRetry', () => {
       .mockResolvedValueOnce({ data: null, error: { message: 'Failed to fetch' } })
       .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
 
-    const result = await sendMessageWithSesameRetry(args());
+    const result = await sendMessageWithAegisRetry(args());
 
     expect(result.error).toBeNull();
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
@@ -122,7 +122,7 @@ describe('sendMessageWithSesameRetry', () => {
   it('leaves state pending when both ambiguous confirmations fail', async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: 'network connection timeout' } });
 
-    const result = await sendMessageWithSesameRetry(args());
+    const result = await sendMessageWithAegisRetry(args());
 
     expect(result.error?.message).toContain('timeout');
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
@@ -133,7 +133,7 @@ describe('sendMessageWithSesameRetry', () => {
   it('keeps ratchet state pending when the transport promise throws', async () => {
     mocks.rpc.mockRejectedValue(new Error('Failed to fetch'));
 
-    const result = await sendMessageWithSesameRetry(args());
+    const result = await sendMessageWithAegisRetry(args());
 
     expect(result.error?.message).toContain('Failed to fetch');
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
@@ -146,7 +146,7 @@ describe('sendMessageWithSesameRetry', () => {
     try {
       mocks.rpc.mockImplementation(() => new Promise(() => {}));
 
-      const pending = sendMessageWithSesameRetry(args());
+      const pending = sendMessageWithAegisRetry(args());
       await vi.advanceTimersByTimeAsync(15_000);
       await vi.advanceTimersByTimeAsync(6_000);
       const result = await pending;
@@ -161,16 +161,15 @@ describe('sendMessageWithSesameRetry', () => {
     }
   });
 
-  it('rejects a server that does not expose the authoritative device-bound RPC', async () => {
+  it('rejects a server that does not expose the Aegis device-bound RPC', async () => {
     mocks.rpc.mockResolvedValue({
       data: null,
       error: { code: '42883', message: 'p_sender_device_id overload does not exist' },
     });
 
-    const result = await sendMessageWithSesameRetry(args());
+    const result = await sendMessageWithAegisRetry(args());
 
     expect(result.error?.code).toBe('42883');
-    expect(result.usedCompatibilitySignature).toBe(false);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.rpc.mock.calls[0][1]).toHaveProperty('p_sender_device_id');
   });

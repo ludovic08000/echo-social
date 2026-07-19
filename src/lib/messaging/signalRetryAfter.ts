@@ -1,7 +1,7 @@
 // Copyright 2021 Signal Messenger, LLC
 // SPDX-License-Identifier: AGPL-3.0-only
 //
-// Adapted for Sesame on 2026-07-16 from Signal Desktop's
+// Adapted for Aegis on 2026-07-16 from Signal Desktop's
 // ts/util/parseRetryAfter.std.ts. This version accepts both delta-seconds and
 // an RFC 7231 IMF-fixdate because browser fetch responses can expose either.
 

@@ -1,7 +1,7 @@
 /**
- * Account identity and trust gate for Sesame-lite.
+ * Account identity and trust gate for Aegis.
  *
- * Message encryption does not live in this hook. Sesame-lite owns exactly one
+ * Message encryption does not live in this hook. Aegis owns exactly one
  * Double Ratchet session per local-device/remote-device pair and sends only
  * device-targeted copies through the atomic message RPC.
  */
@@ -12,7 +12,6 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   exportPublicKeyBundle,
   getOrCreateIdentityKeys,
-  refreshSignedPrekeyIfNeeded,
   type IdentityKeyPair,
 } from '@/lib/crypto';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
@@ -87,9 +86,6 @@ async function initializeIdentity(userId: string): Promise<ReadyIdentity> {
 
     if (publishError) throw publishError;
 
-    void refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey).catch(error => {
-      console.warn('[SESAME_LITE] signed prekey refresh failed', error);
-    });
     void supabase.rpc('push_my_fingerprint_to_peers');
 
     return { keys, fingerprint: bundle.fingerprint };
@@ -270,13 +266,13 @@ export function useE2EE(_conversationId: string | undefined, peerUserId: string 
     window.addEventListener('forsure-keys-unlocked', onUnlockedOrRestored);
     window.addEventListener('forsure-keys-restored', onUnlockedOrRestored);
     window.addEventListener('forsure-keys-locked', onLocked);
-    window.addEventListener('forsure:sesame-route-ready', onRouteReady);
+    window.addEventListener('forsure:aegis-route-ready', onRouteReady);
     window.addEventListener('online', onOnline);
     return () => {
       window.removeEventListener('forsure-keys-unlocked', onUnlockedOrRestored);
       window.removeEventListener('forsure-keys-restored', onUnlockedOrRestored);
       window.removeEventListener('forsure-keys-locked', onLocked);
-      window.removeEventListener('forsure:sesame-route-ready', onRouteReady);
+      window.removeEventListener('forsure:aegis-route-ready', onRouteReady);
       window.removeEventListener('online', onOnline);
     };
   }, [requestRefresh, user]);
@@ -295,7 +291,7 @@ export function useE2EE(_conversationId: string | undefined, peerUserId: string 
       peerKeyMissing: false,
       initError: null,
     }));
-    window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', {
+    window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
       detail: { peerUserId },
     }));
   }, [peerUserId, state.peerFingerprint]);
@@ -304,7 +300,7 @@ export function useE2EE(_conversationId: string | undefined, peerUserId: string 
     _plaintext: string,
     _localId?: string,
   ): Promise<string> => {
-    throw new EncryptionError('Le chiffrement direct est désactivé : utilisez Sesame-lite.');
+    throw new EncryptionError('Le chiffrement direct est désactivé : utilisez Aegis.');
   }, []);
 
   const decrypt = useCallback(async (body: string): Promise<DecryptResult> => {

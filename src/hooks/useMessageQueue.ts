@@ -48,7 +48,7 @@ export function useMessageQueue(
    * Signal-style warm send path.
    *
    * Signal creates a local outgoing message and durable job immediately, while
-   * identities/device routes are normally already hot. Sesame keeps the same
+   * identities/device routes are normally already hot. Aegis keeps the same
    * trust gates, but primes the authenticated session, local E2EE identity,
    * canonical signed device lists before Send. No
    * plaintext, ciphertext or ratchet step is produced here.
@@ -190,11 +190,11 @@ export function useMessageQueue(
 
     window.addEventListener('online', retryNow);
     window.addEventListener('focus', retryNow);
-    window.addEventListener('forsure:sesame-route-ready', retryNow);
+    window.addEventListener('forsure:aegis-route-ready', retryNow);
     return () => {
       window.removeEventListener('online', retryNow);
       window.removeEventListener('focus', retryNow);
-      window.removeEventListener('forsure:sesame-route-ready', retryNow);
+      window.removeEventListener('forsure:aegis-route-ready', retryNow);
     };
   }, [queue.pendingMessages, scheduleRetryForMessage]);
 

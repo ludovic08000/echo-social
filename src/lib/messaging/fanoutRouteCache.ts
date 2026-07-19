@@ -43,7 +43,7 @@ async function resolveCachedRoute(
   const promise = loader()
     .then((targets) => {
       // The cache is a latency optimisation only. The send RPC remains the
-      // authoritative Sesame device-list validator and may force one refresh.
+      // authoritative Aegis device-list validator and may force one refresh.
       if (generation === routeGeneration) {
         routeCache.set(key, {
           expiresAt: now + ROUTE_TTL_MS,
@@ -98,7 +98,7 @@ export async function resolveFanoutRoute(
 }
 
 /**
- * Discards every cached/in-flight route for a conversation and sender. Sesame
+ * Discards every cached/in-flight route for a conversation and sender. Aegis
  * stale-list retries call this before rebuilding copies exactly once.
  */
 export function invalidateFanoutRoute(

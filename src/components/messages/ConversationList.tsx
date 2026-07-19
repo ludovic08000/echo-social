@@ -128,7 +128,7 @@ export function ConversationList() {
           </div>
         </header>
 
-        {/* Sesame-lite prepares device routes silently; no recovery CTA here. */}
+        {/* Aegis prepares device routes silently; no recovery CTA here. */}
 
         {!search && conversations && conversations.length > 0 && (
           <div className="flex gap-4 px-4 py-3 overflow-x-auto scrollbar-none">

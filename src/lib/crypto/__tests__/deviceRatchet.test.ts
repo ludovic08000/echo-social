@@ -2,7 +2,7 @@
  * Device-pair Double Ratchet — unit tests.
  *
  * Validates the senior-engineer fixes:
- *  - Sesame priming: initiator AND responder can encrypt without a fresh X3DH burst.
+ *  - Aegis priming: initiator AND responder can encrypt without a fresh X3DH burst.
  *  - Defensive IV/CT copy in `trySkippedKeys` survives WebCrypto buffer detachment.
  *  - Out-of-order delivery via skipped-key cache.
  *  - `listKnownSessionIds` enumerates only the current self-device.
@@ -15,7 +15,7 @@ import {
   listKnownSessionIds,
   invalidateDeviceSession,
   clearAllDeviceSessions,
-  RATCHET_PREFIX_V5,
+  AEGIS_RATCHET_PREFIX,
 } from '@/lib/crypto/deviceRatchet';
 
 const A_USER = 'user-alice';
@@ -46,7 +46,7 @@ async function generateX25519(): Promise<{ pubB64: string; privJwk: JsonWebKey }
   };
 }
 
-describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
+describe('deviceRatchet — Aegis priming + Double Ratchet', () => {
   beforeEach(async () => {
     await clearAllDeviceSessions();
   });
@@ -64,19 +64,19 @@ describe('deviceRatchet — Sesame priming + Double Ratchet', () => {
 
     const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'hello bob');
     expect(ct).not.toBeNull();
-    expect(ct!.startsWith(RATCHET_PREFIX_V5)).toBe(true);
+    expect(ct!.startsWith(AEGIS_RATCHET_PREFIX)).toBe(true);
     // Header carries: sessionId.dhPub.Ns.PN.iv.ct
-    const parts = ct!.slice(RATCHET_PREFIX_V5.length).split('.');
+    const parts = ct!.slice(AEGIS_RATCHET_PREFIX.length).split('.');
     expect(parts).toHaveLength(6);
     expect(parts[0]).toBe(sessionId);
     expect(parts[2]).toBe('0'); // Ns
   });
 
-  // TODO(crypto): Sesame priming round-trip — symmetric KDF derivation needs
+  // TODO(crypto): Aegis priming round-trip — symmetric KDF derivation needs
   // deeper investigation. The fix #3 establishes the session correctly, but
   // first-message decryption still returns null in jsdom WebCrypto. Real-device
   // traces show the path works in production; tracking separately.
-  it.skip('responder primed with SPK keypair can decrypt initiator’s first v4 message', async () => {
+  it.skip('responder primed with an SPK keypair can decrypt the first Aegis message', async () => {
     const ss = makeSharedSecret(2);
     const spk = await generateX25519();
 

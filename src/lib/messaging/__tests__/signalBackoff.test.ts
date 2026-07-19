@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyFullJitter,
-  computeSesameRetryDelay,
+  computeAegisRetryDelay,
   exponentialBackoffMaxAttempts,
   exponentialBackoffSleepTime,
 } from '../signalBackoff';
@@ -48,7 +48,7 @@ describe('Signal-derived exponential backoff', () => {
   });
 
   it('never shortens an authoritative Retry-After delay', () => {
-    expect(computeSesameRetryDelay({ attempt: 9, retryAfterMs: 12_345, random: () => 0 })).toBe(12_345);
+    expect(computeAegisRetryDelay({ attempt: 9, retryAfterMs: 12_345, random: () => 0 })).toBe(12_345);
   });
 
   it('rejects invalid attempts', () => {

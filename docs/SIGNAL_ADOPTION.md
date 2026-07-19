@@ -1,6 +1,6 @@
-# Adoption sélective de Signal Desktop dans Sesame
+# Adoption sélective de Signal Desktop dans Aegis
 
-Sesame réutilise uniquement des éléments de Signal Desktop qui peuvent être adaptés proprement à une application React/PWA. Le but n’est pas de présenter Sesame comme Signal ni de recopier son architecture Electron entière.
+Aegis réutilise uniquement des éléments de Signal Desktop qui peuvent être adaptés proprement à une application React/PWA. Le but n’est pas de présenter Aegis comme Signal ni de recopier son architecture Electron entière.
 
 ## Éléments adaptés
 
@@ -20,7 +20,7 @@ Sesame réutilise uniquement des éléments de Signal Desktop qui peuvent être 
 - Les mécanismes de groupes, appels, sauvegardes et pièces jointes qui supposent l’infrastructure Signal.
 - Les marques, logos, assets et textes laissant croire à une affiliation avec Signal.
 
-Copier ces éléments sans leurs dépendances et invariants de sécurité créerait une fausse impression de compatibilité et pourrait affaiblir le chiffrement de Sesame.
+Copier ces éléments sans leurs dépendances et invariants de sécurité créerait une fausse impression de compatibilité et pourrait affaiblir le chiffrement de Aegis.
 
 ## Règles de sécurité pour la suite
 
@@ -33,6 +33,6 @@ Copier ces éléments sans leurs dépendances et invariants de sécurité créer
 
 ## Sources et licence
 
-Les fichiers adaptés portent leur copyright et leur identifiant SPDX. La source amont est `signalapp/Signal-Desktop`, distribuée sous `AGPL-3.0-only`. Sesame est également publié sous `AGPL-3.0-only`.
+Les fichiers adaptés portent leur copyright et leur identifiant SPDX. La source amont est `signalapp/Signal-Desktop`, distribuée sous `AGPL-3.0-only`. Aegis est également publié sous `AGPL-3.0-only`.
 
-Sesame est un projet indépendant, sans affiliation ni approbation de Signal Messenger, LLC.
+Aegis est un projet indépendant, sans affiliation ni approbation de Signal Messenger, LLC.

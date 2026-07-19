@@ -26,7 +26,6 @@ import {
   PinUnlockRequiredError,
 } from '@/lib/crypto/keyManager';
 import {
-  refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto/x3dh';
@@ -293,16 +292,19 @@ async function republishDeviceIdentity(
     throw new Error('identity bundle incomplete (identityKey/signingKey missing)');
   }
 
-  let devicePublicKeyB64: string = bundle.identityKey;
+  let devicePublicKeyB64: string;
   try {
     diag?.push('identity', 'info', 'stage device_kx');
-    const kx = await getOrCreateDeviceKxKey(deviceId);
-    if (kx?.publicB64 && isNonEmptyB64(kx.publicB64)) devicePublicKeyB64 = kx.publicB64;
+    const kx = await getOrCreateDeviceKxKey(deviceId, userId);
+    if (!kx?.publicB64 || !isNonEmptyB64(kx.publicB64)) {
+      throw new Error('device kx public key missing');
+    }
+    devicePublicKeyB64 = kx.publicB64;
   } catch (e) {
-    diag?.push('identity', 'warn', 'device kx unavailable, fallback to identity key', {
+    diag?.push('identity', 'error', 'device kx unavailable', {
       error: describeError(e),
     });
-    console.warn('[resync] device kx unavailable, fallback to identity key:', e);
+    throw new Error(`device_kx_unavailable: ${describeError(e)}`);
   }
 
   // Hard validation BEFORE the upsert — these are the most common causes of
@@ -431,12 +433,6 @@ async function republishDeviceIdentity(
       payload: sanitizePayloadForLog(payload),
     });
     throw e;
-  }
-
-  try {
-    await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
-  } catch (e) {
-    console.warn('[resync] shared SPK refresh failed:', e);
   }
 
   try {

@@ -1,5 +1,5 @@
 ﻿/**
- * Device-pair Double Ratchet (Signal-style) — bidirectional with DH-ratchet.
+ * Aegis device-pair Double Ratchet — bidirectional with DH-ratchet.
  *
  * Provides:
  *   - Forward Secrecy (FS): each message key is derived once via KDF chain
@@ -11,13 +11,13 @@
  *   - Out-of-order delivery: skipped message keys are cached (bounded) so
  *     reordered messages still decrypt.
  *
- * Wire format:
- *   "x3dh5." sessionId "." dhPubB64 "." Ns "." PN "." ivB64 "." ctB64
+ * Aegis device-capsule wire format:
+ *   "aegis1.ratchet." sessionId "." dhPubB64 "." Ns "." PN "." ivB64 "." ctB64
  *     - dhPubB64 : sender's current ratchet public key (X25519)
  *     - Ns       : message number in current sending chain
  *     - PN       : length of previous sending chain (lets receiver skip keys)
  *
- * Sesame-lite accepts this authenticated v5 format only.
+ * No earlier device-copy prefix is accepted.
  *
  * Storage: IndexedDB `forsure-device-sessions` / `sessions`
  *   key   = `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`
@@ -34,10 +34,10 @@ import { runDeviceSessionJob } from './deviceSessionQueue';
 
 const STORE = 'sessions';
 
-export const RATCHET_PREFIX_V5 = 'x3dh5.'; // Double Ratchet w/ DH + AAD (X3DH §3.3)
+export const AEGIS_RATCHET_PREFIX = 'aegis1.ratchet.';
 
-const AD_PREFIX_DEV_V5 = 'FORSURE-DEV-AD-v5|';
-const AD_HEADER_PREFIX_DEV_V6 = 'FORSURE-DEV-HDR-v6|';
+const AEGIS_DEVICE_AAD = 'FORSURE-AEGIS-DEVICE-v1|';
+const AEGIS_HEADER_AAD = 'FORSURE-AEGIS-HEADER-v1|';
 const HEADER_BOUND_SESSION_PREFIX = 's6';
 const X25519_ALGORITHM: Algorithm = { name: 'X25519' };
 
@@ -107,7 +107,7 @@ function buildDevAAD(
   const me = `${myUserId}::${myDeviceId}`;
   const peer = `${peerUserId}::${peerDeviceId}`;
   const [a, b] = me < peer ? [me, peer] : [peer, me];
-  return new hardGlobals.TextEncoder().encode(`${AD_PREFIX_DEV_V5}${sessionId}|${a}|${b}`);
+  return new hardGlobals.TextEncoder().encode(`${AEGIS_DEVICE_AAD}${sessionId}|${a}|${b}`);
 }
 
 function isHeaderBoundSession(sessionId: string): boolean {
@@ -124,7 +124,7 @@ function buildDevAADWithHeader(
 ): Uint8Array {
   const identityAd = buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, sessionId);
   const headerAd = new hardGlobals.TextEncoder().encode(
-    `${AD_HEADER_PREFIX_DEV_V6}${header.dh}|${header.pn}|${header.n}`,
+    `${AEGIS_HEADER_AAD}${header.dh}|${header.pn}|${header.n}`,
   );
   const out = new Uint8Array(identityAd.byteLength + headerAd.byteLength);
   out.set(identityAd, 0);
@@ -444,7 +444,7 @@ async function ratchetEncryptUnlocked(
   await saveSession(key, { ...session, ckSendB64: ck, Ns: Ns + 1 });
 
   return [
-    RATCHET_PREFIX_V5 + session.sessionId,
+    AEGIS_RATCHET_PREFIX + session.sessionId,
     session.dhsPubB64,
     String(Ns),
     String(session.PN),
@@ -475,20 +475,20 @@ export async function ratchetDecrypt(
   myDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  if (!payload.startsWith(RATCHET_PREFIX_V5)) return null;
-  const parts = payload.slice(RATCHET_PREFIX_V5.length).split('.');
+  if (!payload.startsWith(AEGIS_RATCHET_PREFIX)) return null;
+  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
   if (parts.length !== 6 || !parts[0]) return null;
   const found = await lookupSessionById(myUserId, myDeviceId, parts[0]);
   if (!found) return null;
-  return runDeviceSessionJob('ratchet', found.key, () => decryptV5(myUserId, myDeviceId, payload));
+  return runDeviceSessionJob('ratchet', found.key, () => decryptAegis(myUserId, myDeviceId, payload));
 }
 
-async function decryptV5(
+async function decryptAegis(
   myUserId: string,
   myDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  const parts = payload.slice(RATCHET_PREFIX_V5.length).split('.');
+  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
   if (parts.length !== 6) return null;
   const [sessionId] = parts;
   const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
@@ -501,7 +501,7 @@ async function decryptV5(
   const aad = headerBound
     ? buildDevAADWithHeader(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId, header)
     : buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId);
-  return decryptV5WithStored(found.key, found.session, parts, aad, peer);
+  return decryptAegisWithStored(found.key, found.session, parts, aad, peer);
 }
 
 async function ratchetDecryptWithSessionUnlocked(
@@ -511,8 +511,8 @@ async function ratchetDecryptWithSessionUnlocked(
   peerDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  if (!payload.startsWith(RATCHET_PREFIX_V5)) return null;
-  const parts = payload.slice(RATCHET_PREFIX_V5.length).split('.');
+  if (!payload.startsWith(AEGIS_RATCHET_PREFIX)) return null;
+  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
   if (parts.length !== 6) return null;
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const session = await loadSession(key);
@@ -523,7 +523,7 @@ async function ratchetDecryptWithSessionUnlocked(
   const aad = headerBound
     ? buildDevAADWithHeader(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0], header)
     : buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0]);
-  return decryptV5WithStored(key, session, parts, aad, { peerUserId, peerDeviceId });
+  return decryptAegisWithStored(key, session, parts, aad, { peerUserId, peerDeviceId });
 }
 
 export async function ratchetDecryptWithSession(
@@ -543,7 +543,7 @@ export async function ratchetDecryptWithSession(
   ));
 }
 
-async function decryptV5WithStored(
+async function decryptAegisWithStored(
   key: string,
   initialSession: StoredSession,
   parts: string[],
@@ -586,7 +586,7 @@ async function decryptV5WithStored(
     void logCryptoError({
       severity: 'error',
       context: 'decrypt',
-      errorCode: 'E_DECRYPT_V5',
+      errorCode: 'AEGIS_DEVICE_DECRYPT_FAILED',
       errorMessage: err instanceof Error ? err.message : String(err),
       myDeviceId: key.split('::')[1] ?? 'unknown',
       peerUserId: logContext.peerUserId,

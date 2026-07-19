@@ -7,6 +7,7 @@ import {
   importMediaKey,
 } from './mediaEncrypt';
 import { bufferToBase64 } from './utils';
+import { hardCrypto } from './cryptoIntegrity';
 import { MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES } from '@/lib/messaging/attachmentLimits';
 
 function asciiBytes(value: string, prefix: number[] = []): Uint8Array {
@@ -68,7 +69,23 @@ describe('encrypted media format', () => {
     await expect(importMediaKey(invalid)).rejects.toThrow('AES-256 invalide');
   });
 
-  it('returns null for unknown legacy bytes', () => {
+  it('returns null for an unknown byte signature', () => {
     expect(detectMediaMimeType(new Uint8Array([1, 2, 3, 4]))).toBeNull();
+  });
+
+  it('rejects encrypted bytes that do not contain the Aegis manifest', async () => {
+    const { key } = await generateMediaKey();
+    const iv = new Uint8Array(12);
+    const ciphertext = await hardCrypto.encrypt(
+      { name: 'AES-GCM', iv, tagLength: 128 },
+      key,
+      new Uint8Array([0xff, 0xd8, 0xff, 0xe0]),
+    );
+    const wire = new Uint8Array(iv.byteLength + ciphertext.byteLength);
+    wire.set(iv);
+    wire.set(new Uint8Array(ciphertext), iv.byteLength);
+    await expect(decryptMediaWithMetadata(wire.buffer, key)).rejects.toThrow(
+      'AEGIS_MEDIA_FORMAT_UNSUPPORTED',
+    );
   });
 });

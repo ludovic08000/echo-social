@@ -14,7 +14,7 @@ function envelope(overrides: Partial<{
 }> = {}): string {
   const sessionId = overrides.sessionId ?? 'sessionABC123';
   const innerSessionId = overrides.innerSessionId ?? sessionId;
-  const inner = `x3dh5.${innerSessionId}.dh-public.0.0.iv.ct`;
+  const inner = `aegis1.ratchet.${innerSessionId}.dh-public.0.0.iv.ct`;
   return [
     `${__test__.prefix}${sessionId}`,
     'ephemeral-key',
@@ -39,7 +39,7 @@ describe('repeatable pre-key envelope v3', () => {
       opkId: 23,
       senderIdentityKeyB64: 'sender-identity',
       recipientIdentityKeyB64: 'recipient-identity',
-      innerRatchet: 'x3dh5.sessionABC123.dh-public.0.0.iv.ct',
+      innerRatchet: 'aegis1.ratchet.sessionABC123.dh-public.0.0.iv.ct',
     });
   });
 

@@ -6,7 +6,7 @@ import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/m
 import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { buildFanoutCopies, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
-import { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';
+import { sendMessageWithAegisRetry } from '@/lib/messaging/aegisSendRpc';
 import { runSignalConversationJob } from '@/lib/messaging/signalWebConversationQueue';
 import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
@@ -665,9 +665,9 @@ throw new Error(visibleMessage);
 
       data = { id: insertedRow?.id || serverMessageId };
     } else {
-      let sendResult: Awaited<ReturnType<typeof sendMessageWithSesameRetry>>;
+      let sendResult: Awaited<ReturnType<typeof sendMessageWithAegisRetry>>;
       try {
-        sendResult = await sendMessageWithSesameRetry({
+        sendResult = await sendMessageWithAegisRetry({
 messageId: serverMessageId,
 conversationId,
 body: bodyToStore,

@@ -1,6 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
 import { exportPublicKeyBundle, type IdentityKeyPair } from './keyManager';
-import { refreshSignedPrekeyIfNeeded } from './x3dh';
 import { resolveUserIdentity } from './identityRecovery';
 import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoState';
 import { appendTransparencyLog } from './transparencyLog';
@@ -30,7 +29,7 @@ async function resolveLocalIdentityOnce(userId: string): Promise<{ keys: Identit
   return attempt;
 }
 
-async function publishIdentity(userId: string, keys: IdentityKeyPair, options: { refreshSignedPrekey?: boolean } = {}): Promise<void> {
+async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<void> {
   const bundle = await exportPublicKeyBundle(keys);
 
   const { error } = await supabase
@@ -51,14 +50,6 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair, options: {
     await markServerCryptoReady(bundle.fingerprint);
   } catch (error) {
     console.warn('[E2EE][SERVER_STATE] ready update skipped', error);
-  }
-
-  if (options.refreshSignedPrekey !== false) {
-    try {
-      await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey);
-    } catch (error) {
-      console.warn('[E2EE][IDENTITY] signed-prekey refresh skipped', error);
-    }
   }
 
   try {

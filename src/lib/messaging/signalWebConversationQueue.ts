@@ -3,7 +3,7 @@
 /**
  * Browser send scheduler modelled after Signal Desktop's conversation job queue.
  *
- * The transport and cryptography stay owned by Sesame. This module only gives
+ * The transport and cryptography stay owned by Aegis. This module only gives
  * the web client the queue guarantees that matter for stable delivery:
  *   - one active send/retry per conversation;
  *   - cross-tab exclusion through the Web Locks API when available;
@@ -29,7 +29,7 @@ export class SignalConversationLockTimeoutError extends Error {
 }
 
 function lockName(conversationKey: string): string {
-  return `sesame:message-send:${conversationKey}`;
+  return `aegis:message-send:${conversationKey}`;
 }
 
 function hasWebLocks(): boolean {

@@ -2,7 +2,7 @@
  * Signed device list integration tests.
  *
  * The primary advertises two distinct public keys:
- * - X25519 devicePublicKey for Sesame transport
+ * - X25519 devicePublicKey for Aegis transport
  * - Ed25519 primaryPubB64 as the companion-signature root
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

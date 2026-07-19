@@ -14,7 +14,7 @@ import {
   ratchetDecryptWithSession,
   getSessionPeerSpkId,
   invalidateDeviceSession,
-  RATCHET_PREFIX_V5,
+  AEGIS_RATCHET_PREFIX,
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
@@ -48,15 +48,13 @@ interface DeviceEncryptTargetInput {
   recipientDevicePublicKey: string;
   plaintext: string;
   forceFreshSession?: boolean;
-  /** @deprecated Kept for type-compat; ignored. v5-only outbound. */
-  forceX3DH?: boolean;
   useOneTimePrekey?: boolean;
 }
 
 const FANOUT_ENCRYPT_CONCURRENCY = 2;
 const INVALID_DEVICE_QUARANTINE_MS = 2_000;
 
-type DeviceCopyPrefix = 'x3dh5.init.v3' | 'x3dh5' | 'unsupported';
+type DeviceCopyPrefix = 'aegis1.init.v1' | 'aegis1.ratchet' | 'unsupported';
 
 interface DeviceCopyDecryptAttempt {
   plaintext: string | null;
@@ -143,8 +141,8 @@ export async function preloadDeviceCopies(messageIds: string[]): Promise<void> {
 }
 
 function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
-  if (isRepeatablePreKeyEnvelope(body)) return 'x3dh5.init.v3';
-  if (body.startsWith(RATCHET_PREFIX_V5)) return 'x3dh5';
+  if (isRepeatablePreKeyEnvelope(body)) return 'aegis1.init.v1';
+  if (body.startsWith(AEGIS_RATCHET_PREFIX)) return 'aegis1.ratchet';
   return 'unsupported';
 }
 
@@ -227,14 +225,14 @@ async function x3dhWrapForDevice(
         severity: 'error',
         peerUserId: recipientUserId,
         peerDeviceId: recipientDeviceId,
-        metadata: { stage: 'x3dh5_init_v3', action: 'device_quarantined' },
+        metadata: { stage: 'aegis_device_init_v1', action: 'device_quarantined' },
       });
     } else {
       logCryptoException('fanout', error, {
         severity: 'warning',
         peerUserId: recipientUserId,
         peerDeviceId: recipientDeviceId,
-        metadata: { stage: 'x3dh5_init_v3' },
+        metadata: { stage: 'aegis_device_init_v1' },
       });
     }
     return null;
@@ -323,7 +321,7 @@ async function encryptPlaintextForDeviceTargetUnlocked(
       input.recipientDeviceId,
       input.plaintext,
     );
-    if (encrypted && encrypted.startsWith(RATCHET_PREFIX_V5)) {
+    if (encrypted && encrypted.startsWith(AEGIS_RATCHET_PREFIX)) {
       encrypted = await wrapRatchetForInitiatingSession({
         myUserId: input.senderUserId,
         myDeviceId: senderDeviceId,
@@ -362,7 +360,7 @@ async function encryptPlaintextForDeviceTargetUnlocked(
           severity: 'warning',
           context: 'fanout',
           errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
-          errorMessage: 'Skipping SPK freshness check because peer v5 bundle is unavailable',
+          errorMessage: 'Skipping SPK freshness check because the peer Aegis bundle is unavailable',
           conversationId: input.conversationId,
           myDeviceId: senderDeviceId,
           peerUserId: input.recipientUserId,
@@ -407,8 +405,8 @@ async function encryptPlaintextForDeviceTargetUnlocked(
     logCryptoError({
       severity: 'warning',
       context: 'fanout',
-      errorCode: 'E_FANOUT_NO_V5_PATH',
-      errorMessage: 'No v5 ratchet/bootstrap path for recipient device',
+      errorCode: 'AEGIS_DEVICE_ROUTE_UNAVAILABLE',
+      errorMessage: 'No Aegis ratchet/bootstrap path for recipient device',
       conversationId: input.conversationId,
       myDeviceId: senderDeviceId,
       peerUserId: input.recipientUserId,
@@ -431,10 +429,9 @@ export interface FanoutCopyRow {
 }
 
 /**
- * Encrypts the plaintext for every recipient device WITHOUT inserting into the
- * database. Returns the rows ready to be persisted (either via direct insert or
- * via the transactional `send_message_with_device_copies` RPC alongside the
- * parent message row).
+ * Encrypts the key capsule for every recipient device without writing a
+ * partial message. The rows can only be committed with their parent by the
+ * atomic `aegis_send_message` RPC.
  *
  * The current sender device is deliberately excluded because it already owns
  * the local plaintext. Other signed devices belonging to the sender remain
@@ -571,7 +568,7 @@ async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: str
 async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<DeviceCopyDecryptAttempt> {
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
-    if (prefix === 'x3dh5.init.v3') {
+    if (prefix === 'aegis1.init.v1') {
       const { data: senderPub } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
       if (!senderPub?.identity_key) {
         return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };
@@ -581,11 +578,11 @@ async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user
         plaintext,
         attemptedSupportedEnvelope: true,
         retryable: plaintext === null,
-        reason: plaintext === null ? 'x3dh5_init_decrypt_returned_null' : undefined,
+        reason: plaintext === null ? 'aegis_init_decrypt_returned_null' : undefined,
       };
     }
 
-    if (prefix === 'x3dh5') {
+    if (prefix === 'aegis1.ratchet') {
       const pt = await ratchetDecryptWithSession(userId, myDeviceId, row.sender_user_id, row.sender_device_id, row.encrypted_body);
       if (pt !== null) {
         await acknowledgeInitiatingSessionFromRatchetPayload({

@@ -13,7 +13,7 @@ const recoveryIdentities = new Map<string, Promise<RecoveredIdentity>>();
 const restoreAttempts = new Map<string, Promise<IdentityKeyPair | null>>();
 
 function normalizeIdentity(keys: IdentityKeyPair, recoveredAfterLoss = false): RecoveredIdentity {
-  // Identity recovery is handled here before the Sesame-lite trust gate runs,
+  // Identity recovery is handled here before the Aegis trust gate runs,
   // so runtime consumers receive one already-resolved account identity.
   return {
     ...keys,

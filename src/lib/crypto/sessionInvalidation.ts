@@ -3,7 +3,7 @@ import { clearAllDeviceSessions } from './deviceRatchet';
 let watcherStarted = false;
 
 /**
- * Security-epoch changes invalidate only Sesame-lite device-pair sessions.
+ * Security-epoch changes invalidate only Aegis device-pair sessions.
  * The next send establishes fresh X3DH v3 sessions for every target device.
  */
 export function startSessionInvalidationWatcher(): void {
@@ -13,7 +13,7 @@ export function startSessionInvalidationWatcher(): void {
   const invalidate = (event: Event) => {
     const detail = (event as CustomEvent<{ reason?: string }>).detail;
     void clearAllDeviceSessions().catch(error => {
-      console.warn('[SESAME_LITE] device-session invalidation failed', {
+      console.warn('[AEGIS] device-session invalidation failed', {
         reason: detail?.reason ?? 'security_state_changed',
         error,
       });

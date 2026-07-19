@@ -4,7 +4,7 @@ export const MEBIBYTE = 1024 * 1024;
 /**
  * Signal Desktop reads these values from remote configuration. Its fallback is
  * 100 MiB for outgoing attachments, 125 MiB for incoming attachments and
- * 200 MiB for automatic downloads. Sesame keeps the same deterministic
+ * 200 MiB for automatic downloads. Aegis keeps the same deterministic
  * fallback until it has an equivalent signed remote-config channel.
  */
 export const MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES = 100 * MEBIBYTE;

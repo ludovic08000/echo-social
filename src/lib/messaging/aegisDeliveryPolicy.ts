@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 // Inspired by Signal Desktop's ts/textsecure/Errors.std.ts and adapted for the
-// Sesame browser transport. Signal's libsignal, Electron and HTTPError classes
+// Aegis browser transport. Signal's libsignal, Electron and HTTPError classes
 // are deliberately not copied; this module classifies unknown web errors into
 // stable, user-safe recovery decisions.
 
-import { computeSesameRetryDelay } from './signalBackoff';
+import { computeAegisRetryDelay } from './signalBackoff';
 import { parseRetryAfter } from './signalRetryAfter';
 
-export type SesameDeliveryFailureKind =
+export type AegisDeliveryFailureKind =
   | 'identity-changed'
   | 'device-mismatch'
   | 'unregistered-recipient'
@@ -21,11 +21,11 @@ export type SesameDeliveryFailureKind =
   | 'invalid-payload'
   | 'unknown';
 
-export type SesameRetryMode = 'automatic' | 'manual' | 'after-user-action' | 'never';
+export type AegisRetryMode = 'automatic' | 'manual' | 'after-user-action' | 'never';
 
-export type SesameDeliveryFailure = Readonly<{
-  kind: SesameDeliveryFailureKind;
-  retryMode: SesameRetryMode;
+export type AegisDeliveryFailure = Readonly<{
+  kind: AegisDeliveryFailureKind;
+  retryMode: AegisRetryMode;
   title: string;
   userMessage: string;
   technicalMessage?: string;
@@ -119,8 +119,8 @@ function containsAny(value: string, needles: ReadonlyArray<string>): boolean {
 
 function result(
   snapshot: ErrorSnapshot,
-  values: Omit<SesameDeliveryFailure, 'technicalMessage' | 'httpStatus' | 'retryAt'>,
-): SesameDeliveryFailure {
+  values: Omit<AegisDeliveryFailure, 'technicalMessage' | 'httpStatus' | 'retryAt'>,
+): AegisDeliveryFailure {
   return {
     ...values,
     technicalMessage: snapshot.message,
@@ -130,10 +130,10 @@ function result(
 }
 
 /** Converts transport/crypto errors into stable recovery behavior and safe UI text. */
-export function classifySesameDeliveryFailure(
+export function classifyAegisDeliveryFailure(
   error: unknown,
   now: number = Date.now(),
-): SesameDeliveryFailure {
+): AegisDeliveryFailure {
   const snapshot = snapshotError(error, now);
   const name = normalize(snapshot.name);
   const message = normalize(snapshot.message);
@@ -165,7 +165,7 @@ export function classifySesameDeliveryFailure(
       kind: 'device-mismatch',
       retryMode: 'automatic',
       title: 'Appareils à resynchroniser',
-      userMessage: 'Sesame doit actualiser les appareils du contact avant de réessayer.',
+      userMessage: 'Aegis doit actualiser les appareils du contact avant de réessayer.',
       shouldRefreshDevices: true,
     });
   }
@@ -206,7 +206,7 @@ export function classifySesameDeliveryFailure(
       kind: 'rate-limited',
       retryMode: 'automatic',
       title: 'Envoi temporairement limité',
-      userMessage: 'Sesame réessaiera après le délai imposé par le serveur.',
+      userMessage: 'Aegis réessaiera après le délai imposé par le serveur.',
     });
   }
 
@@ -236,7 +236,7 @@ export function classifySesameDeliveryFailure(
       kind: 'server',
       retryMode: 'automatic',
       title: 'Service temporairement indisponible',
-      userMessage: 'Le serveur a refusé temporairement l’envoi. Sesame réessaiera.',
+      userMessage: 'Le serveur a refusé temporairement l’envoi. Aegis réessaiera.',
     });
   }
 
@@ -260,17 +260,17 @@ export function classifySesameDeliveryFailure(
   });
 }
 
-export function shouldOfferSesameRetry(failure: SesameDeliveryFailure): boolean {
+export function shouldOfferAegisRetry(failure: AegisDeliveryFailure): boolean {
   return failure.retryMode === 'automatic' || failure.retryMode === 'manual';
 }
 
 export function computeRetryDelayForFailure(
-  failure: SesameDeliveryFailure,
+  failure: AegisDeliveryFailure,
   attempt: number,
   now: number = Date.now(),
   random: () => number = Math.random,
 ): number | null {
   if (failure.retryMode !== 'automatic') return null;
   const retryAfterMs = failure.retryAt === undefined ? undefined : Math.max(0, failure.retryAt - now);
-  return computeSesameRetryDelay({ attempt, retryAfterMs, random });
+  return computeAegisRetryDelay({ attempt, retryAfterMs, random });
 }

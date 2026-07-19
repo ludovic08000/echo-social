@@ -35,7 +35,7 @@ import { bufferToBase64, randomBytes } from '../utils';
 // pre-key PRIVATE so its first inbound dhRatchet step can derive ckRecv.
 
 const DB_NAME = 'forsure-device-sessions';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE = 'sessions';
 
 function openDB(): Promise<IDBDatabase> {
@@ -112,7 +112,7 @@ interface Device { user: string; device: string }
 /**
  * Seed a complete bidirectional DR session between `from` and `to`.
  * Both sides end up with matching root key + sending/receiving chains so
- * either side can immediately encrypt a v5 envelope the other can decrypt.
+ * either side can immediately encrypt an Aegis envelope the other can decrypt.
  */
 async function seedSession(
   from: Device,
@@ -190,12 +190,12 @@ beforeEach(async () => {
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 describe('multi-device E2EE — single pair round-trip', () => {
-  it('encrypts on A1 and decrypts on B1 (v5 envelope)', async () => {
+  it('encrypts on A1 and decrypts on B1 (Aegis envelope)', async () => {
     await seedSession(A, B);
 
     const env = await ratchetEncrypt(A.user, A.device, B.user, B.device, 'hello bob');
     expect(env).not.toBeNull();
-    expect(env!.startsWith('x3dh5.')).toBe(true);
+    expect(env!.startsWith('aegis1.ratchet.')).toBe(true);
 
     const pt = await ratchetDecrypt(B.user, B.device, env!);
     expect(pt).toBe('hello bob');

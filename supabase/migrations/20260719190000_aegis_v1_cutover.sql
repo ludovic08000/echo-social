@@ -101,6 +101,31 @@ truncate table public.messages cascade;
 -- opaque email-recovery tickets and contain no material derived from the PIN.
 truncate table public.user_chat_pins;
 
+-- Destructive development cleanup. These unused message transports and group
+-- key stores predate Aegis and must not remain callable after the cutover.
+drop function if exists public.send_sealed_sender_message(
+  uuid, uuid, text, text, jsonb
+);
+drop function if exists public.mark_sealed_sender_delivered(uuid);
+drop table if exists public.sealed_sender_messages cascade;
+drop table if exists public.sealed_sender_events cascade;
+
+drop trigger if exists trg_auto_enable_sender_keys_on_participants
+  on public.conversation_participants;
+drop function if exists public.maybe_enable_sender_keys_for_group();
+drop table if exists public.sender_key_distribution cascade;
+drop table if exists public.sender_key_state cascade;
+alter table public.conversations drop column if exists enable_sender_keys;
+drop table if exists public.e2ee_session_sync cascade;
+
+-- Aegis authenticates and bootstraps each physical device independently.
+-- The old account-wide signed prekey is therefore both unused and unsafe as a
+-- fallback: it cannot prove which device owns the corresponding private key.
+drop function if exists public.get_signed_prekey(uuid);
+drop function if exists public.get_signed_prekey_with_fallback(uuid);
+drop table if exists public.user_signed_prekeys cascade;
+drop function if exists public.claim_x3dh_initial(text);
+
 alter table public.messages
   drop constraint if exists messages_sesame_lite_body_check;
 
@@ -232,11 +257,8 @@ alter table public.message_device_copies
 alter table public.message_device_copies
   add constraint message_device_copies_aegis_v1_wire_check
   check (
-    encrypted_body like 'x3dh5.%'
-    and (
-      encrypted_body not like 'x3dh5.init.%'
-      or encrypted_body like 'x3dh5.init.v3.%'
-    )
+    encrypted_body like 'aegis1.ratchet.%'
+    or encrypted_body like 'aegis1.init.v1.%'
   );
 
 -- Remove the sender-device inference wrapper. Aegis always identifies the
@@ -250,7 +272,11 @@ drop function if exists public.send_message_with_device_copies(
   uuid, uuid, text, text, jsonb, jsonb, text
 );
 
-create function public.send_message_with_device_copies(
+drop function if exists public.aegis_send_message(
+  uuid, uuid, text, text, jsonb, jsonb, text
+);
+
+create function public.aegis_send_message(
   p_message_id uuid,
   p_conversation_id uuid,
   p_body text,
@@ -449,10 +475,9 @@ begin
      or c.sender_device_id is null
      or c.sender_device_id <> p_sender_device_id
      or c.encrypted_body is null
-     or c.encrypted_body not like 'x3dh5.%'
-     or (
-       c.encrypted_body like 'x3dh5.init.%'
-       and c.encrypted_body not like 'x3dh5.init.v3.%'
+     or not (
+       c.encrypted_body like 'aegis1.ratchet.%'
+       or c.encrypted_body like 'aegis1.init.v1.%'
      );
 
   if v_bad_copy_count > 0 then
@@ -520,10 +545,10 @@ begin
 end;
 $$;
 
-revoke all on function public.send_message_with_device_copies(
+revoke all on function public.aegis_send_message(
   uuid, uuid, text, text, jsonb, jsonb, text
 ) from public;
-grant execute on function public.send_message_with_device_copies(
+grant execute on function public.aegis_send_message(
   uuid, uuid, text, text, jsonb, jsonb, text
 ) to authenticated;
 
@@ -561,7 +586,7 @@ with check (
   )
 );
 
-comment on function public.send_message_with_device_copies(
+comment on function public.aegis_send_message(
   uuid, uuid, text, text, jsonb, jsonb, text
 ) is 'Aegis Coordinator: atomically validates the signed device route and commits one stable ciphertext plus every device key capsule.';
 

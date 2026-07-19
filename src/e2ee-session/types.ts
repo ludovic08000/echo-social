@@ -1,4 +1,4 @@
-/** Minimal Sesame-lite device-routing types. */
+/** Minimal Aegis device-routing types. */
 
 export type DeviceId = string;
 export type UserId = string;

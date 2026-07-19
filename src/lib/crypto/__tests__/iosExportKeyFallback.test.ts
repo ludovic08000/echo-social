@@ -250,10 +250,11 @@ describe('iOS WebKit exportKey raw → jwk fallback', () => {
   });
 
   it('getOrCreateDeviceKxKey() falls back to JWK and persists publicB64', async () => {
+    const userId = 'user-abc-ios';
     const deviceId = 'device-abc-ios';
-    await deleteDeviceKxKey(deviceId);
+    await deleteDeviceKxKey(deviceId, userId);
 
-    const kx = await getOrCreateDeviceKxKey(deviceId);
+    const kx = await getOrCreateDeviceKxKey(deviceId, userId);
     expect(kx.publicB64).toMatch(/^[A-Za-z0-9+/]+=*$/);
     expect(kx.publicB64).toHaveLength(44);
 
@@ -262,7 +263,7 @@ describe('iOS WebKit exportKey raw → jwk fallback', () => {
     expect(kx.publicB64).toBe(await trueRawB64(jwk, 'X25519'));
 
     // Reload from IndexedDB → same publicB64 (deterministic, no regeneration).
-    const reloaded = await loadDeviceKxKey(deviceId);
+    const reloaded = await loadDeviceKxKey(deviceId, userId);
     expect(reloaded).not.toBeNull();
     expect(reloaded!.publicB64).toBe(kx.publicB64);
   });
@@ -280,7 +281,7 @@ describe('iOS WebKit exportKey raw → jwk fallback', () => {
     await saveIdentityKeys(userId, keys);
 
     const bundle = await exportPublicKeyBundle(keys);
-    const kx = await getOrCreateDeviceKxKey(deviceId);
+    const kx = await getOrCreateDeviceKxKey(deviceId, userId);
 
     const devicePublicKeyB64 = kx.publicB64 || bundle.identityKey;
 
@@ -294,7 +295,7 @@ describe('iOS WebKit exportKey raw → jwk fallback', () => {
 
     // Republish must be IDEMPOTENT — running it again yields the same bytes.
     const bundle2 = await exportPublicKeyBundle(keys);
-    const kx2 = await getOrCreateDeviceKxKey(deviceId);
+    const kx2 = await getOrCreateDeviceKxKey(deviceId, userId);
     expect(bundle2.identityKey).toBe(bundle.identityKey);
     expect(bundle2.signingKey).toBe(bundle.signingKey);
     expect(kx2.publicB64).toBe(kx.publicB64);

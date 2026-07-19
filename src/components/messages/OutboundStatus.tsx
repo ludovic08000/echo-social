@@ -1,4 +1,4 @@
-import { SesameMessageMetadata } from './SesameMessageMetadata';
+import { AegisMessageMetadata } from './AegisMessageMetadata';
 import type { OutboxStatus as OutboundMessageStatus } from '@/lib/messaging/outboxVault';
 
 interface OutboundStatusProps {
@@ -11,7 +11,7 @@ interface OutboundStatusProps {
 
 /**
  * Compatibility wrapper for the existing queue UI.
- * The actual rendering is provided by SesameMessageMetadata, adapted from
+ * The actual rendering is provided by AegisMessageMetadata, adapted from
  * Signal Desktop's AGPL-licensed MessageMetadata component.
  */
 export function OutboundStatusIndicator({
@@ -22,7 +22,7 @@ export function OutboundStatusIndicator({
   className,
 }: OutboundStatusProps) {
   return (
-    <SesameMessageMetadata
+    <AegisMessageMetadata
       direction="outgoing"
       status={status}
       encrypted

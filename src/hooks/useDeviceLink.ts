@@ -1,7 +1,7 @@
 /**
  * Approved linked-device E2EE transfer.
  *
- * Sesame rule: a newly linked physical device receives account identity and
+ * Aegis rule: a newly linked physical device receives account identity and
  * recoverable history, but keeps a unique DeviceID and creates fresh sessions,
  * device KX keys and prekeys. Old Double-Ratchet state must not be cloned from
  * iOS to Windows (or between two phones).
@@ -9,7 +9,6 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { openE2EEDB } from '@/lib/crypto/indexedDb';
 import { runTx, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import {
@@ -36,37 +35,13 @@ import {
   hydrateDeviceId,
 } from '@/lib/messaging/currentDevice';
 
-const PBKDF2_ITERATIONS = 600_000;
-const LINK_PRIVATE_KEY_PREFIX = 'forsure:device-link:private:';
+const LINK_PRIVATE_KEY_PREFIX = 'forsure:aegis-device-link:private:';
 const IDENTITY_STORE = 'identity-keys';
 
 interface StoredLinkRequest {
   privateJwk: JsonWebKey;
   requesterDeviceId: string;
   createdAt: number;
-}
-
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(password),
-    'PBKDF2',
-    false,
-    ['deriveKey'],
-  );
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
-}
-
-function generatePin(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
-  return Array.from(bytes).map((byte) => chars[byte % chars.length]).join('');
 }
 
 function persistPendingLink(token: string, request: StoredLinkRequest): void {
@@ -99,14 +74,14 @@ function notifyKeysRestored(status: string): void {
       detail: { status, source: 'device_link' },
     }));
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
-    window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready'));
+    window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready'));
   } catch {
     // SSR/tests
   }
 }
 
 /**
- * Collect account-scoped E2EE material. In the approved Sesame flow only the
+ * Collect account-scoped E2EE material. In the approved Aegis flow only the
  * account identity store is transferred. Session and prekey stores are
  * installation-specific and are deliberately excluded.
  */
@@ -143,7 +118,7 @@ async function collectLocalKeys(userId: string): Promise<string> {
 
   data._meta = {
     v: 3,
-    mode: 'sesame-fresh-device',
+    mode: 'aegis-fresh-device',
     createdAt: new Date().toISOString(),
   };
 
@@ -322,7 +297,7 @@ export function useDeviceLink() {
 
       clearPendingLink(token);
       notifyKeysRestored('restored_from_linked_device');
-      console.log('[DeviceLink] fresh Sesame device restored successfully');
+      console.log('[DeviceLink] fresh Aegis device restored successfully');
       return true;
     } catch (err: any) {
       if (err.name === 'OperationError') {
@@ -336,99 +311,10 @@ export function useDeviceLink() {
     }
   }, [user]);
 
-  /** Legacy source-device flow kept for old QR/PIN links. */
-  const createLink = useCallback(async (): Promise<{ qrData: string; pin: string } | null> => {
-    if (!user) { setError('Non authentifie'); return null; }
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const { data: tokenData, error: fnError } = await supabase.functions.invoke(
-        'device-link',
-        { body: { action: 'create' } },
-      );
-      if (fnError) throw fnError;
-
-      const token = tokenData.token as string;
-      const pin = generatePin();
-      const keysJson = await collectLocalKeys(user.id);
-      const salt = crypto.getRandomValues(new Uint8Array(32));
-      const iv = crypto.getRandomValues(new Uint8Array(12));
-      const key = await deriveKey(pin, salt);
-      const ciphertext = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv },
-        key,
-        new TextEncoder().encode(keysJson),
-      );
-
-      const payload = JSON.stringify({
-        ct: bufferToBase64(ciphertext),
-        salt: bufferToBase64(salt.buffer),
-        iv: bufferToBase64(iv.buffer),
-      });
-
-      const { error: uploadError } = await supabase.functions.invoke(
-        'device-link',
-        { body: { action: 'upload', encrypted_payload: payload } },
-      );
-      if (uploadError) throw uploadError;
-
-      return { qrData: JSON.stringify({ t: token }), pin };
-    } catch (err: any) {
-      setError(err.message || 'Erreur de liaison');
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user]);
-
-  /** Legacy new-device claim for old QR/PIN links. */
-  const claimLink = useCallback(async (qrData: string, pin: string): Promise<boolean> => {
-    if (!user) { setError('Non authentifie'); return false; }
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const { t: token } = JSON.parse(qrData);
-      const { data: claimData, error: claimError } = await supabase.functions.invoke(
-        'device-link',
-        { body: { action: 'claim', token } },
-      );
-      if (claimError) throw claimError;
-
-      const envelope = JSON.parse(claimData.encrypted_payload);
-      const salt = new Uint8Array(base64ToBuffer(envelope.salt));
-      const iv = new Uint8Array(base64ToBuffer(envelope.iv));
-      const ct = base64ToBuffer(envelope.ct);
-      const key = await deriveKey(pin, salt);
-      const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-      const keysJson = new TextDecoder().decode(plainBuf);
-      await restoreLocalKeys(keysJson, user.id);
-
-      const currentDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
-      void finalizeLinkedDeviceAfterRestore(user.id, currentDeviceId).catch(() => {});
-
-      notifyKeysRestored('restored_from_legacy_device_link');
-      console.log('[DeviceLink] legacy keys restored successfully');
-      return true;
-    } catch (err: any) {
-      if (err.name === 'OperationError') {
-        setError('Code PIN incorrect ou token expire');
-      } else {
-        setError(err.message || 'Erreur de recuperation');
-      }
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user]);
-
   return {
     createLinkRequest,
     approveLinkRequest,
     claimApprovedLink,
-    createLink,
-    claimLink,
     isLoading,
     error,
     clearError: () => setError(null),

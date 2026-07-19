@@ -197,7 +197,7 @@ describe('targeted decryption cache and Bubble Hold', () => {
     expect(senderLookupCount).toBe(1);
 
     clearNegativeCacheForMessage('message-sender-retry');
-    mocks.tryReadDeviceCopy.mockResolvedValueOnce('copie Sesame récupérée');
+    mocks.tryReadDeviceCopy.mockResolvedValueOnce('copie Aegis récupérée');
 
     const second = await resolvePlaintext({
       body,
@@ -207,7 +207,7 @@ describe('targeted decryption cache and Bubble Hold', () => {
 
     expect(senderLookupCount).toBe(2);
     expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('message-sender-retry', 'sender-user');
-    expect(second?.text).toBe('copie Sesame récupérée');
+    expect(second?.text).toBe('copie Aegis récupérée');
   });
 
   it('uses a known sender id without waiting for a sender lookup query', async () => {

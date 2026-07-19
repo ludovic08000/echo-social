@@ -801,7 +801,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       )}
 
       {/* Silent restore policy: no "Restaurer mes clés" banner inside the chat.
-          Sesame-lite refreshes device routes and retries its encrypted outbox.
+          Aegis refreshes device routes and retries its encrypted outbox.
 
           We keep ONLY the fingerprint-change banner: that's a real MITM
           security signal that REQUIRES explicit user action — it must stay

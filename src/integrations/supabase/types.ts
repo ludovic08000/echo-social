@@ -1557,7 +1557,6 @@ export type Database = {
           created_at: string
           created_by: string | null
           disappearing_seconds: number | null
-          enable_sender_keys: boolean
           id: string
           is_group: boolean
           name: string | null
@@ -1567,7 +1566,6 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           disappearing_seconds?: number | null
-          enable_sender_keys?: boolean
           id?: string
           is_group?: boolean
           name?: string | null
@@ -1577,7 +1575,6 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           disappearing_seconds?: number | null
-          enable_sender_keys?: boolean
           id?: string
           is_group?: boolean
           name?: string | null
@@ -2201,42 +2198,6 @@ export type Database = {
             referencedColumns: ["epoch"]
           },
         ]
-      }
-      e2ee_session_sync: {
-        Row: {
-          conversation_id: string
-          created_at: string
-          device_id: string
-          encrypted_blob: string
-          id: string
-          iv: string
-          kind: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          conversation_id: string
-          created_at?: string
-          device_id: string
-          encrypted_blob: string
-          id?: string
-          iv: string
-          kind?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          conversation_id?: string
-          created_at?: string
-          device_id?: string
-          encrypted_blob?: string
-          id?: string
-          iv?: string
-          kind?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
       }
       e2ee_transparency_log: {
         Row: {
@@ -5388,72 +5349,6 @@ export type Database = {
         }
         Relationships: []
       }
-      sealed_sender_events: {
-        Row: {
-          anonymous_sender_tag: string
-          conversation_id: string
-          created_at: string
-          id: number
-          recipient_user_id: string | null
-          sender_hint_hash: string | null
-        }
-        Insert: {
-          anonymous_sender_tag: string
-          conversation_id: string
-          created_at?: string
-          id?: number
-          recipient_user_id?: string | null
-          sender_hint_hash?: string | null
-        }
-        Update: {
-          anonymous_sender_tag?: string
-          conversation_id?: string
-          created_at?: string
-          id?: number
-          recipient_user_id?: string | null
-          sender_hint_hash?: string | null
-        }
-        Relationships: []
-      }
-      sealed_sender_messages: {
-        Row: {
-          anonymous_sender_tag: string
-          conversation_id: string
-          created_at: string
-          delivered_at: string | null
-          delivery_state: string
-          id: string
-          read_at: string | null
-          recipient_user_id: string
-          sealed_header: Json
-          sealed_payload: string
-        }
-        Insert: {
-          anonymous_sender_tag: string
-          conversation_id: string
-          created_at?: string
-          delivered_at?: string | null
-          delivery_state?: string
-          id?: string
-          read_at?: string | null
-          recipient_user_id: string
-          sealed_header?: Json
-          sealed_payload: string
-        }
-        Update: {
-          anonymous_sender_tag?: string
-          conversation_id?: string
-          created_at?: string
-          delivered_at?: string | null
-          delivery_state?: string
-          id?: string
-          read_at?: string | null
-          recipient_user_id?: string
-          sealed_header?: Json
-          sealed_payload?: string
-        }
-        Relationships: []
-      }
       security_ai_patterns: {
         Row: {
           autonomy_level: number | null
@@ -5879,100 +5774,6 @@ export type Database = {
             columns: ["seller_id"]
             isOneToOne: false
             referencedRelation: "seller_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sender_key_distribution: {
-        Row: {
-          conversation_id: string
-          created_at: string
-          delivered: boolean
-          encrypted_skdm: string
-          id: string
-          recipient_device_id: string
-          recipient_user_id: string
-          sender_device_id: string
-          sender_user_id: string
-        }
-        Insert: {
-          conversation_id: string
-          created_at?: string
-          delivered?: boolean
-          encrypted_skdm: string
-          id?: string
-          recipient_device_id: string
-          recipient_user_id: string
-          sender_device_id: string
-          sender_user_id: string
-        }
-        Update: {
-          conversation_id?: string
-          created_at?: string
-          delivered?: boolean
-          encrypted_skdm?: string
-          id?: string
-          recipient_device_id?: string
-          recipient_user_id?: string
-          sender_device_id?: string
-          sender_user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sender_key_distribution_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sender_key_state: {
-        Row: {
-          chain_key_b64: string | null
-          conversation_id: string
-          created_at: string
-          id: string
-          is_owner: boolean
-          iteration: number
-          sender_device_id: string
-          sender_user_id: string
-          signing_priv_jwk: Json | null
-          signing_pub_b64: string
-          updated_at: string
-        }
-        Insert: {
-          chain_key_b64?: string | null
-          conversation_id: string
-          created_at?: string
-          id?: string
-          is_owner?: boolean
-          iteration?: number
-          sender_device_id: string
-          sender_user_id: string
-          signing_priv_jwk?: Json | null
-          signing_pub_b64: string
-          updated_at?: string
-        }
-        Update: {
-          chain_key_b64?: string | null
-          conversation_id?: string
-          created_at?: string
-          id?: string
-          is_owner?: boolean
-          iteration?: number
-          sender_device_id?: string
-          sender_user_id?: string
-          signing_priv_jwk?: Json | null
-          signing_pub_b64?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sender_key_state_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
         ]
@@ -7082,45 +6883,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_signed_prekeys: {
-        Row: {
-          created_at: string
-          expires_at: string
-          id: string
-          is_active: boolean
-          is_last_resort: boolean
-          public_key: string
-          signature: string
-          signature_version: number
-          spk_id: number
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          expires_at?: string
-          id?: string
-          is_active?: boolean
-          is_last_resort?: boolean
-          public_key: string
-          signature: string
-          signature_version?: number
-          spk_id: number
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          expires_at?: string
-          id?: string
-          is_active?: boolean
-          is_last_resort?: boolean
-          public_key?: string
-          signature?: string
-          signature_version?: number
-          spk_id?: number
-          user_id?: string
-        }
-        Relationships: []
-      }
       video_comments: {
         Row: {
           body: string
@@ -7779,6 +7541,10 @@ export type Database = {
         Args: { _order_id: string; _seller_id: string }
         Returns: boolean
       }
+      cancel_x3dh_initial: {
+        Args: { p_fingerprint: string; p_reservation_token: string }
+        Returns: boolean
+      }
       check_login_rate_limit: {
         Args: { p_email_hash: string; p_ip: string }
         Returns: Json
@@ -7805,7 +7571,6 @@ export type Database = {
           public_key: string
         }[]
       }
-      claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {
         Args: { p_current_device_id: string; p_stale_after?: string }
@@ -7933,6 +7698,10 @@ export type Database = {
         }[]
       }
       generate_order_number: { Args: never; Returns: string }
+      finalize_x3dh_initial: {
+        Args: { p_fingerprint: string; p_reservation_token: string }
+        Returns: boolean
+      }
       get_active_device_public_key: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: {
@@ -8148,23 +7917,6 @@ export type Database = {
           primary_pub_b64: string
           signature_b64: string
           signed_at: string
-        }[]
-      }
-      get_signed_prekey: {
-        Args: { p_user_id: string }
-        Returns: {
-          public_key: string
-          signature: string
-          spk_id: number
-        }[]
-      }
-      get_signed_prekey_with_fallback: {
-        Args: { p_user_id: string }
-        Returns: {
-          is_last_resort: boolean
-          public_key: string
-          signature: string
-          spk_id: number
         }[]
       }
       get_user_archive_keys: {
@@ -8511,6 +8263,10 @@ export type Database = {
         }
         Returns: Json
       }
+      reserve_x3dh_initial: {
+        Args: { p_fingerprint: string; p_ttl_seconds?: number }
+        Returns: Json
+      }
       reset_backup_pin_attempts: {
         Args: { _user_id: string }
         Returns: undefined
@@ -8528,7 +8284,7 @@ export type Database = {
         Returns: boolean
       }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
-      send_message_with_device_copies: {
+      aegis_send_message: {
         Args: {
           p_body: string
           p_conversation_id: string
@@ -8536,6 +8292,7 @@ export type Database = {
           p_extra?: Json
           p_image_url?: string
           p_message_id: string
+          p_sender_device_id?: string
         }
         Returns: string
       }

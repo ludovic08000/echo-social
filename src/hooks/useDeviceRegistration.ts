@@ -201,7 +201,7 @@ export function useDeviceRegistration() {
           // ONLY load the local one — never auto-generate / overwrite.
           try {
             const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
-            localKx = await loadDeviceKxKey(deviceId);
+            localKx = await loadDeviceKxKey(deviceId, user.id);
           } catch (loadErr) {
             console.warn('[useDeviceRegistration] loadDeviceKxKey failed:', loadErr);
           }
@@ -214,7 +214,7 @@ export function useDeviceRegistration() {
             if (restored) {
               try {
                 const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
-                localKx = await loadDeviceKxKey(deviceId);
+                localKx = await loadDeviceKxKey(deviceId, user.id);
               } catch {}
             }
           }
@@ -253,7 +253,7 @@ export function useDeviceRegistration() {
         } else {
           // First-time publish for this device_id → generation allowed.
           try {
-            const kx = await getOrCreateDeviceKxKey(deviceId);
+            const kx = await getOrCreateDeviceKxKey(deviceId, user.id);
             if (kx?.publicB64) {
               devicePublicKeyB64 = kx.publicB64;
               localKx = kx;
@@ -467,7 +467,7 @@ export function useDeviceRegistration() {
           window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
             detail: { source: `authenticated-registration:${reason}`, deviceId },
           }));
-          window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', {
+          window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
             detail: { reason: 'authenticated_device_ready', deviceId },
           }));
         } catch {}

@@ -1,12 +1,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
-  fetchPrekeyBundle as fetchLegacyPrekeyBundle,
   fetchPrekeyBundleForDevice,
   type X3DHPrekeyBundle,
 } from './x3dh';
 
 const DEVICE_BUNDLE_TIMEOUT_MS = 12_000;
-const LEGACY_BUNDLE_TIMEOUT_MS = 25_000;
 const MAX_DEVICE_BUNDLE_CANDIDATES = 5;
 const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -102,25 +100,13 @@ export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyB
       }
     }
 
-    console.warn('[X3DH][ROUTE] active devices exist but no device bundle is usable; legacy fallback refused', {
+    console.warn('[X3DH][ROUTE] active devices exist but no device bundle is usable', {
       peerUserId,
       activeDeviceCount: activeDeviceIds.length,
     });
     return null;
   }
 
-  const legacyBundle = await withTimeout(
-    fetchLegacyPrekeyBundle(peerUserId),
-    LEGACY_BUNDLE_TIMEOUT_MS,
-    'legacy_prekey_bundle',
-  );
-
-  if (legacyBundle) {
-    console.info('[X3DH][ROUTE] legacy bundle selected because no active devices exist', {
-      peerUserId,
-      spkId: legacyBundle.signedPrekeyId,
-    });
-  }
-
-  return legacyBundle;
+  console.warn('[X3DH][ROUTE] no authenticated Aegis device is available', { peerUserId });
+  return null;
 }

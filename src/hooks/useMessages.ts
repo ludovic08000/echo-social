@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
-import { sendSesameLiteMessage } from '@/lib/messaging/sendSesameLiteMessage';
+import { sendAegisMessage } from '@/lib/messaging/sendAegisMessage';
 import {
   clearDeviceCopyCacheForMessage,
   preloadDeviceCopies,
@@ -417,7 +417,7 @@ export function useMessages(conversationId: string) {
           // Update conversation last_updated (lightweight)
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
 
-          // Sesame-lite has one receive path: resolve the copy addressed to
+          // Aegis has one receive path: resolve the capsule addressed to
           // this device. The sibling realtime subscription below wakes the
           // bubble if websocket events from the same transaction arrive out
           // of order, so no polling loop or legacy router is needed here.
@@ -571,7 +571,7 @@ export function useMessages(conversationId: string) {
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
       const compatibleMessages = visibleMessages.filter(m => !isUnsupportedEncryptedBody(m.body));
 
-      // Warm only recent Sesame-lite device copies after a cold reload. Older
+      // Warm only recent Aegis device capsules after a cold reload. Older
       // messages resolve lazily when mounted during scroll.
       if (user) {
         const recentEncrypted = compatibleMessages
@@ -634,7 +634,7 @@ export function useMessages(conversationId: string) {
 
 /**
  * Shared send hook for features outside the main composer. Zeus remains the
- * only plaintext path; every peer message uses the same Sesame-lite transport
+ * only plaintext path; every peer message uses the same Aegis transport
  * as ChatView and ChatWidget.
  */
 export function useSendMessage() {
@@ -670,9 +670,9 @@ export function useSendMessage() {
 
       const sanitizedBody = isSpecialMessage ? body : sanitizeMessageBody(body);
 
-      let sent: Awaited<ReturnType<typeof sendSesameLiteMessage>>;
+      let sent: Awaited<ReturnType<typeof sendAegisMessage>>;
       try {
-        sent = await sendSesameLiteMessage({
+        sent = await sendAegisMessage({
           conversationId,
           senderUserId: user.id,
           plaintext: sanitizedBody,

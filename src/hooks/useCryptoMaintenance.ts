@@ -17,7 +17,6 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
   getOrCreateIdentityKeys,
-  refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto';
@@ -61,14 +60,7 @@ export function useCryptoMaintenance() {
           return;
         }
 
-        // 2. Rotate SPK if expired or out-of-sync
-        try {
-          await refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey);
-        } catch (spkErr) {
-          console.warn('[CRYPTO-MAINT] SPK refresh failed:', spkErr);
-        }
-
-        // 3. Per-device SPK + OPK pool (WhatsApp-style: keep peers always able
+        // 2. Per-device SPK + OPK pool: keep peers always able
         //    to initiate a fresh X3DH session against THIS device).
         try {
           const did = await hydrateDeviceId().catch(() => getCurrentDeviceId());

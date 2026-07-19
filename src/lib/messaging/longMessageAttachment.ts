@@ -8,10 +8,10 @@ const KIBIBYTE = 1024;
 export const MAX_INLINE_MESSAGE_BODY_BYTES = 2 * KIBIBYTE;
 /** Signal Desktop caps its encrypted long-body attachment at 64 KiB. */
 export const MAX_LONG_MESSAGE_BODY_BYTES = 64 * KIBIBYTE;
-export const LONG_MESSAGE_MIME = 'text/x-signal-plain';
+export const LONG_MESSAGE_MIME = 'text/x-aegis-plain';
 
-const LONG_MESSAGE_PREFIX = '\u0000SESAME-LONG-v1:';
-const LONG_MESSAGE_AAD_PREFIX = 'SESAME-LONG-BODY-v1|';
+const LONG_MESSAGE_PREFIX = '\u0000AEGIS-LONG-v1:';
+const LONG_MESSAGE_AAD_PREFIX = 'AEGIS-LONG-BODY-v1|';
 const IV_BYTES = 12;
 const AUTH_TAG_BYTES = 16;
 const MAX_MARKER_BYTES = MAX_INLINE_MESSAGE_BODY_BYTES + 8 * KIBIBYTE;

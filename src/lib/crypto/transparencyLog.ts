@@ -9,7 +9,6 @@ export type TransparencyEventType =
   | 'backup_created'
   | 'backup_rotated'
   | 'sender_certificate_issued'
-  | 'sealed_sender_event'
   | 'security_warning';
 
 export async function appendTransparencyLog(params: {

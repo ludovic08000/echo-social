@@ -37,8 +37,8 @@ vi.mock('@/lib/messaging/outboxVault', () => ({
   putOutboxPayload: mocks.putOutbox,
   deleteOutboxPayload: mocks.deleteOutbox,
 }));
-vi.mock('@/lib/messaging/sesameSendRpc', () => ({
-  sendMessageWithSesameRetry: mocks.sendRpc,
+vi.mock('@/lib/messaging/aegisSendRpc', () => ({
+  sendMessageWithAegisRetry: mocks.sendRpc,
 }));
 vi.mock('@/lib/messaging/signalWebConversationQueue', () => ({
   runSignalConversationJob: vi.fn((_key: string, job: () => Promise<unknown>) => job()),
@@ -47,7 +47,7 @@ vi.mock('@/lib/messaging/archive/archiveKey', () => ({
   archiveBubbleForUser: vi.fn().mockResolvedValue(true),
 }));
 
-import { sendSesameLiteMessage } from '@/lib/messaging/sendSesameLiteMessage';
+import { sendAegisMessage } from '@/lib/messaging/sendAegisMessage';
 import { AEGIS_MESSAGE_PROTOCOL, parseAegisKeyCapsule } from '@/lib/messaging/aegisEnvelope';
 import {
   isMultiDeviceEnvelopeBody,
@@ -59,7 +59,7 @@ const COPY = {
   recipient_device_id: 'recipient-device',
   sender_user_id: '33333333-3333-4333-8333-333333333333',
   sender_device_id: 'sender-device',
-  encrypted_body: 'x3dh5.session.dh.0.0.iv.ct',
+  encrypted_body: 'aegis1.ratchet.session.dh.0.0.iv.ct',
 };
 
 beforeEach(() => {
@@ -81,7 +81,7 @@ beforeEach(() => {
 
 describe('Aegis multi-device send', () => {
   it('persists the stable ciphertext and exact key copies before the atomic RPC', async () => {
-    const result = await sendSesameLiteMessage({
+    const result = await sendAegisMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
       senderUserId: COPY.sender_user_id,
       plaintext: 'message secret',
@@ -120,7 +120,7 @@ describe('Aegis multi-device send', () => {
   it('never calls the server without a recipient-device copy', async () => {
     mocks.buildCopies.mockResolvedValue({ rows: [], hasTargets: false });
 
-    await expect(sendSesameLiteMessage({
+    await expect(sendAegisMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
       senderUserId: COPY.sender_user_id,
       plaintext: 'message secret',
@@ -143,7 +143,7 @@ describe('Aegis multi-device send', () => {
 
   it('keeps the same Aegis ciphertext when device routing is unavailable', async () => {
     mocks.buildCopies.mockResolvedValue({ rows: [], hasTargets: false });
-    await expect(sendSesameLiteMessage({
+    await expect(sendAegisMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
       senderUserId: COPY.sender_user_id,
       plaintext: 'message secret',

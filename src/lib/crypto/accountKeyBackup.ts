@@ -265,20 +265,10 @@ async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<strin
 
   if (includeDeviceSecrets) {
     try {
-      data['ratchet:states'] = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
-    } catch {}
-    try {
       data['prekeys:private'] = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
     } catch {}
     try {
       data['spk:private'] = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
-    } catch {}
-    try {
-      data['device:sessions'] = await getAllFromSideDB('forsure-device-sessions', 'sessions');
-      data['device:initiating-sessions'] = await getAllFromSideDB(
-        'forsure-device-sessions',
-        'initiating-sessions',
-      );
     } catch {}
   }
 
@@ -413,16 +403,7 @@ async function restoreAllKeys(json: string): Promise<void> {
       }
     }
 
-    // Phase 2: Ratchet states
-    if (isDeviceKeychain && Array.isArray(data['ratchet:states'])) {
-      const existing = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
-      await putAllInSideDB('forsure-ratchet', 'ratchet-states', data['ratchet:states']);
-      rollbackOps.push(async () => {
-        await putAllInSideDB('forsure-ratchet', 'ratchet-states', existing);
-      });
-    }
-
-    // Phase 3: PIN-wrapped keys
+    // Phase 2: PIN-wrapped keys
     if (isDeviceKeychain && Array.isArray(data['pinwrap:keys'])) {
       const existing = await getAllFromSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
       await putAllInSideDB('forsure-pin-wrap', 'pin-wrapped-keys', data['pinwrap:keys']);
@@ -446,26 +427,6 @@ async function restoreAllKeys(json: string): Promise<void> {
       await putAllInSideDB('forsure-spk', 'signed-prekeys', data['spk:private']);
       rollbackOps.push(async () => {
         await putAllInSideDB('forsure-spk', 'signed-prekeys', existing);
-      });
-    }
-
-    if (isDeviceKeychain && Array.isArray(data['device:sessions'])) {
-      const existing = await getAllFromSideDB('forsure-device-sessions', 'sessions');
-      await putAllInSideDB('forsure-device-sessions', 'sessions', data['device:sessions']);
-      rollbackOps.push(async () => {
-        await putAllInSideDB('forsure-device-sessions', 'sessions', existing);
-      });
-    }
-
-    if (isDeviceKeychain && Array.isArray(data['device:initiating-sessions'])) {
-      const existing = await getAllFromSideDB('forsure-device-sessions', 'initiating-sessions');
-      await putAllInSideDB(
-        'forsure-device-sessions',
-        'initiating-sessions',
-        data['device:initiating-sessions'],
-      );
-      rollbackOps.push(async () => {
-        await putAllInSideDB('forsure-device-sessions', 'initiating-sessions', existing);
       });
     }
 

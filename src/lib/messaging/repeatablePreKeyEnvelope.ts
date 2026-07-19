@@ -6,7 +6,7 @@ import {
   invalidateDeviceSession,
   ratchetDecryptWithSession,
   ratchetEncrypt,
-  RATCHET_PREFIX_V5,
+  AEGIS_RATCHET_PREFIX,
 } from '@/lib/crypto/deviceRatchet';
 import {
   fetchPrekeyBundleForDevice,
@@ -16,8 +16,8 @@ import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 
 const SESSION_STORE = 'sessions';
 const INITIATING_STORE = 'initiating-sessions';
-const PREFIX = 'x3dh5.init.v3.';
-const MAC_INFO = 'ForSure-X3DH-v5-repeatable-prekey-mac-v1';
+const PREFIX = 'aegis1.init.v1.';
+const MAC_INFO = 'ForSure-Aegis-device-init-v1';
 const INITIATING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_INITIATING_MESSAGES = 100;
 
@@ -70,8 +70,8 @@ function pairKey(
 }
 
 function parseRatchetSessionId(payload: string): string | null {
-  if (!payload.startsWith(RATCHET_PREFIX_V5)) return null;
-  const parts = payload.slice(RATCHET_PREFIX_V5.length).split('.');
+  if (!payload.startsWith(AEGIS_RATCHET_PREFIX)) return null;
+  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
   if (parts.length !== 6 || !parts[0]) return null;
   return parts[0];
 }

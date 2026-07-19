@@ -21,33 +21,6 @@ async function callRpc<T>(fn: string, args?: object): Promise<RpcResult<T>> {
   return { data: (data ?? null) as T | null, error: (error ?? null) as Error | null };
 }
 
-// ---------- Sealed Sender transport ----------
-
-export interface SendSealedSenderArgs {
-  p_conversation_id: string;
-  p_recipient_user_id: string;
-  p_anonymous_sender_tag: string;
-  p_sealed_payload: string;
-  p_sealed_header: {
-    epoch: number;
-    hasCert: boolean;
-    [k: string]: unknown;
-  };
-}
-
-/** Returns the inserted sealed-sender message id. */
-export function rpcSendSealedSenderMessage(args: SendSealedSenderArgs) {
-  return callRpc<string>('send_sealed_sender_message', args);
-}
-
-export interface MarkSealedSenderDeliveredArgs {
-  p_message_id: string;
-}
-
-export function rpcMarkSealedSenderDelivered(args: MarkSealedSenderDeliveredArgs) {
-  return callRpc<void>('mark_sealed_sender_delivered', args);
-}
-
 // ---------- Server crypto state ----------
 
 export interface ServerCryptoStateRow {

@@ -248,7 +248,7 @@ export async function finalizeLinkedDeviceAfterRestore(
       if (!(await isDeviceCryptographicallyReady(userId, companionDeviceId))) continue;
 
       try {
-        window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', {
+        window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
           detail: { reason: 'linked_device_trusted', deviceId: companion.device_id },
         }));
         window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));

@@ -8,9 +8,8 @@
  * Wire format of the encrypted blob:
  *   IV (12 bytes) || AES-GCM ciphertext+tag
  *
- * New plaintext payloads include an encrypted MIME manifest before the file
- * bytes. Legacy payloads (raw file bytes only) remain readable and are MIME-
- * sniffed after decryption.
+ * Plaintext payloads always include an authenticated MIME manifest before the
+ * file bytes. Payloads without the Aegis manifest are rejected.
  *
  * The per-file key is exported as raw base64 and transmitted inside the
  * message body with a `MKEY:` prefix.
@@ -108,7 +107,7 @@ function ascii(bytes: Uint8Array, offset: number, length: number): string {
   return String.fromCharCode(...bytes.slice(offset, offset + length));
 }
 
-/** Best-effort MIME detection for legacy encrypted media without a manifest. */
+/** Byte-signature MIME verification for authenticated Aegis media. */
 export function detectMediaMimeType(bytes: Uint8Array): string | null {
   if (startsWithBytes(bytes, [0xff, 0xd8, 0xff])) return 'image/jpeg';
   if (startsWithBytes(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
@@ -155,10 +154,7 @@ function packMediaPayload(file: File | Blob, fileBytes: Uint8Array): Uint8Array 
 function unpackMediaPayload(decrypted: Uint8Array): DecryptedMediaPayload {
   const hasManifest = startsWithBytes(decrypted, Array.from(PAYLOAD_MAGIC));
   if (!hasManifest || decrypted.byteLength < PAYLOAD_HEADER_BYTES) {
-    return {
-      data: copyToArrayBuffer(decrypted),
-      mimeType: detectMediaMimeType(decrypted),
-    };
+    throw new Error('AEGIS_MEDIA_FORMAT_UNSUPPORTED');
   }
 
   const mimeLength = (decrypted[PAYLOAD_MAGIC.byteLength] << 8) | decrypted[PAYLOAD_MAGIC.byteLength + 1];
@@ -280,8 +276,7 @@ export async function decryptMediaWithMetadata(
 }
 
 /**
- * Backward-compatible byte-only decrypt helper used by documents and older
- * call sites. New media renderers should use decryptMediaWithMetadata().
+ * Byte-only decrypt helper used by document and voice-note renderers.
  */
 export async function decryptMedia(
   encryptedData: ArrayBuffer,

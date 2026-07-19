@@ -2,7 +2,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { getOrCreateIdentityKeys } from './keyManager';
 import {
-  refreshSignedPrekeyIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
 } from './x3dh';
@@ -38,10 +37,6 @@ async function bumpKeysEpochBestEffort(userId: string): Promise<number | null> {
 async function revalidateCurrentDevicePrekeys(userId: string, deviceId: string): Promise<void> {
   const keys = await getOrCreateIdentityKeys(userId);
   if (!keys?.signingPrivateKey) return;
-
-  await refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey).catch((err) => {
-    console.warn('[POST_RESTORE] shared SPK refresh failed', err);
-  });
 
   await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, keys.signingPrivateKey).catch(async (err) => {
     console.warn('[POST_RESTORE] device SPK refresh failed; attempting repair', err);
@@ -99,7 +94,7 @@ export async function runPostRestoreLifecycle(
       window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
         detail: { source: `post_restore_${source}`, keysEpoch },
       }));
-      window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', {
+      window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
         detail: { userId, deviceId, source: `post_restore_${source}` },
       }));
     } catch {}

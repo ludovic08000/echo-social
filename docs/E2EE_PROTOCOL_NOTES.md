@@ -1,55 +1,52 @@
-# E2EE protocol notes
+# Aegis v1 E2EE protocol notes
 
-Crypto and messaging changes must be checked against the current protocol references before editing source code.
+Aegis uses standard cryptographic building blocks but owns one small,
+application-specific wire contract. It is not wire-compatible with Signal.
 
-References:
+References used for security invariants:
 
 - Signal X3DH: https://signal.org/docs/specifications/x3dh/
 - Signal Double Ratchet: https://signal.org/docs/specifications/doubleratchet/
-- Signal Sesame: https://signal.org/docs/specifications/sesame/
-- WhatsApp Encryption Overview / Security Whitepaper: official WhatsApp security documentation
 
-Project rules:
+## Hard-cutover rules
 
-1. Device-copy bootstrap messages are X3DH/Sesame initiation messages.
-2. New outbound initiation traffic uses the repeatable `x3dh5.init.v3` pre-key envelope.
-3. Every v3 initiation envelope contains a fresh Double Ratchet ciphertext. It never reuses an old message key and never claims a new OPK for each message.
-4. The repeatable header binds sender and recipient user/device ids, both identity keys, session id, ephemeral key, SPK id, optional OPK id, and the complete inner ratchet ciphertext through an HMAC key derived from the X3DH secret.
-5. All outbound messages remain initiation messages until the initiating device successfully decrypts a ratchet message from the peer on that device pair.
-6. Initiation is bounded to 100 outbound messages or seven days. An unacknowledged session beyond either limit is replaced with a fresh X3DH session.
-7. A recipient without the session derives it from the repeated X3DH header, verifies the header authenticator, persists the responder session, and then decrypts the inner Double Ratchet message.
-8. A recipient that already has the matching session ignores bootstrap reinitialization and decrypts only the inner Double Ratchet message, preserving out-of-order and skipped-message-key handling.
-9. Old `x3dh5.init.v2` and legacy `x3dh5.init` messages remain readable but are not emitted for new traffic.
-10. Failed authentication must abort the decrypt path, cancel the replay reservation, and restore the previous pair state.
-11. X3DH replay handling is two-phase: reserve before DH, finalize only after authenticated inner-ratchet decryption and durable responder-session persistence, cancel on failure.
-12. A device OPK private key is deleted only after replay finalization succeeds.
-13. Session state stays scoped to self user/device and peer user/device.
-14. The client fan-out route cache is never authoritative. The server compares the supplied route against the current canonical signed device list.
-15. `E2EE_DEVICE_LIST_STALE` causes one bounded rebuild/retry with the same message UUID. A second change remains visible in the outbox; it never loops.
-16. Every target session and initiating-envelope record is snapshotted before outbound encryption. Explicit server rejection restores both; successful commit discards the snapshot.
-17. An ambiguous network failure is confirmed idempotently with the same message UUID before any rollback decision.
-18. A canonical device list has exactly one active, approved, non-stale primary linked to the canonical Ed25519 account root. Zero or multiple primaries fail closed.
+1. A peer message has one stable UUID shared by the parent ciphertext, every
+   device capsule, the local outbox and delivery receipts.
+2. The plaintext is encrypted once with a random AES-256-GCM content key.
+3. The content key, never the message plaintext, is wrapped independently for
+   every authenticated recipient device and every other authenticated sender
+   device.
+4. Each device pair owns one X25519/X3DH bootstrap and one Double Ratchet
+   session. Ratchet operations are serialized per device pair.
+5. The parent and the complete canonical set of device capsules are committed
+   atomically by `aegis_send_message`.
+6. The server derives the expected route from signed, approved, active devices;
+   it never trusts a client-supplied device list.
+7. `E2EE_DEVICE_LIST_STALE` permits one rebuild with the same UUID, ciphertext
+   and content key. It never causes the parent plaintext to be re-encrypted.
+8. An explicit server rejection restores all ratchet snapshots. An ambiguous
+   network failure is confirmed idempotently with the same UUID.
+9. Unknown parent or device-copy formats fail closed. There is no compatibility
+   reader and no downgrade to direct message encryption.
+10. Device identities, device KX keys, signed prekeys and one-time prekeys are
+    durable. Message queues, plaintext cache and ratchet sessions from before
+    Aegis v1 are purged and are not restored from backup.
 
-Current outbound repeatable format:
+## Wire formats
 
-```text
-x3dh5.init.v3.<sessionId>.<ekB64>.<spkId>.<opkIdOr0>.<senderIdentityKeyB64>.<recipientIdentityKeyB64>.<innerRatchetB64>.<tagB64>
-```
+Parent messages are JSON envelopes with protocol `forsure-aegis-message`,
+version `1`, AES-256-GCM ciphertext, UUID bindings and a SHA-256 digest.
 
-The decoded `innerRatchetB64` value is a normal v5 Double Ratchet message:
-
-```text
-x3dh5.<sessionId>.<dhPubB64>.<Ns>.<PN>.<ivB64>.<ctB64>
-```
-
-Previous AAD-protected read-only format:
+An established device session emits:
 
 ```text
-x3dh5.init.v2.<ivB64>.<ctB64>.<ekB64>.<spkId>.<opkIdOr0>.<senderIdentityKeyB64>.<recipientIdentityKeyB64>
+aegis1.ratchet.<sessionId>.<dhPubB64>.<Ns>.<PN>.<ivB64>.<ciphertextB64>
 ```
 
-Legacy read-only format:
+A new device session emits an authenticated bootstrap envelope:
 
 ```text
-x3dh5.init.<ivB64>.<ctB64>.<ekB64>.<spkId>[.<opkId>]
+aegis1.init.v1.<sessionId>.<ephemeralKeyB64>.<signedPrekeyId>.<oneTimePrekeyIdOr0>.<senderIdentityKeyB64>.<recipientIdentityKeyB64>.<innerRatchetB64>.<tagB64>
 ```
+
+No other peer-message or device-capsule prefix is accepted.

@@ -16,10 +16,10 @@ import {
   type OutboxExtra,
   type OutboxPayload,
 } from '@/lib/messaging/outboxVault';
-import { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';
+import { sendMessageWithAegisRetry } from '@/lib/messaging/aegisSendRpc';
 import { runSignalConversationJob } from '@/lib/messaging/signalWebConversationQueue';
 
-export interface SendSesameLiteInput {
+export interface SendAegisInput {
   conversationId: string;
   senderUserId: string;
   plaintext: string;
@@ -30,7 +30,7 @@ export interface SendSesameLiteInput {
   messageId?: string;
 }
 
-export interface SendSesameLiteResult {
+export interface SendAegisResult {
   id: string;
   parentBody: string;
 }
@@ -61,9 +61,9 @@ function isAmbiguousTransportError(error: unknown): boolean {
  * Ratchet fan-out transports only the small content-key capsule to each
  * authenticated device.
  */
-export async function sendSesameLiteMessage(
-  input: SendSesameLiteInput,
-): Promise<SendSesameLiteResult> {
+export async function sendAegisMessage(
+  input: SendAegisInput,
+): Promise<SendAegisResult> {
   const now = Date.now();
   const localId = input.localId ?? `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
   const traceId = input.traceId ?? safeUUID();
@@ -168,7 +168,7 @@ export async function sendSesameLiteMessage(
     }
     await persistCopies(built.rows);
 
-    const result = await sendMessageWithSesameRetry({
+    const result = await sendMessageWithAegisRetry({
       messageId,
       conversationId: input.conversationId,
       body: parentBody,

@@ -118,7 +118,7 @@ function mirrorGet(id: string): string | null {
 }
 
 function entryAAD(id: string): Uint8Array {
-  return new TextEncoder().encode(`sesame-plaintext-cache-v2|${id}`);
+  return new TextEncoder().encode(`aegis-plaintext-cache-v1|${id}`);
 }
 
 async function saveEntry(id: string, plaintext: string): Promise<void> {
@@ -154,16 +154,7 @@ async function loadEntry(id: string): Promise<string | null> {
     );
     return new TextDecoder().decode(pt);
   } catch {
-    // One-time compatibility read for pre-v2 cache entries. Re-encrypt with
-    // ID-bound AAD immediately so ciphertext cannot be swapped between rows.
-    try {
-      const legacy = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: entry.iv }, key, entry.ct);
-      const plaintext = new TextDecoder().decode(legacy);
-      await saveEntry(id, plaintext);
-      return plaintext;
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 

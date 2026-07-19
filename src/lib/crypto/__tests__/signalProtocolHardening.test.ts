@@ -43,7 +43,7 @@ describe('Signal protocol hardening', () => {
     });
 
     const encrypted = await ratchetEncrypt(ALICE, ALICE_DEVICE, BOB, BOB_DEVICE, 'bonjour');
-    expect(encrypted).toMatch(/^x3dh5\.s6/);
+    expect(encrypted).toMatch(/^aegis1\.ratchet\.s6/);
 
     const parts = encrypted!.split('.');
     parts[4] = String(Number(parts[4]) + 1); // PN is header metadata, not ciphertext.

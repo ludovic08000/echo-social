@@ -41,12 +41,12 @@ interface DBSpec {
 const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   ratchet: {
     name: 'forsure-ratchet',
-    version: 1,
+    version: 2,
     stores: [{ name: 'ratchet-states', keyPath: 'convId' }],
   },
   'device-sessions': {
     name: 'forsure-device-sessions',
-    version: 4,
+    version: 5,
     stores: [
       { name: 'sessions', keyPath: 'id' },
       {
@@ -71,7 +71,7 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   },
   'x3dh-replay': {
     name: 'forsure-x3dh-replay',
-    version: 1,
+    version: 2,
     stores: [{ name: 'consumed-initials', keyPath: 'id' }],
   },
   'skipped-wrap': {
@@ -89,7 +89,7 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   },
   'plaintext-cache': {
     name: 'forsure-plaintext-cache',
-    version: 1,
+    version: 2,
     stores: [
       { name: 'messages', keyPath: 'id' },
       { name: 'device-keys', keyPath: 'id' },
@@ -97,7 +97,7 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   },
   'msg-queue': {
     name: 'forsure-msg-queue',
-    version: 2,
+    version: 3,
     stores: [
       {
         name: 'outbound',
@@ -162,9 +162,25 @@ export function openDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
     };
     request.onupgradeneeded = (event) => {
       ensureStores(request.result, spec, request.transaction);
-      if (key === 'device-sessions' && event.oldVersion > 0 && event.oldVersion < 4) {
+      // Aegis v1 is a hard development cutover: identities, device KX and
+      // prekeys survive, but no earlier message/session state is reusable.
+      if (key === 'device-sessions' && event.oldVersion > 0 && event.oldVersion < 5) {
         request.transaction?.objectStore('sessions').clear();
         request.transaction?.objectStore('initiating-sessions').clear();
+      }
+      if (key === 'ratchet' && event.oldVersion > 0 && event.oldVersion < 2) {
+        request.transaction?.objectStore('ratchet-states').clear();
+      }
+      if (key === 'x3dh-replay' && event.oldVersion > 0 && event.oldVersion < 2) {
+        request.transaction?.objectStore('consumed-initials').clear();
+      }
+      if (key === 'plaintext-cache' && event.oldVersion > 0 && event.oldVersion < 2) {
+        request.transaction?.objectStore('messages').clear();
+        request.transaction?.objectStore('device-keys').clear();
+      }
+      if (key === 'msg-queue' && event.oldVersion > 0 && event.oldVersion < 3) {
+        request.transaction?.objectStore('outbound').clear();
+        request.transaction?.objectStore('device-keys').clear();
       }
     };
     request.onsuccess = () => {

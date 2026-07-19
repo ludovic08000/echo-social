@@ -17,7 +17,7 @@ import {
 } from './utils';
 import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS, HKDF_HASH,
-  AES_ALGO, AES_KEY_LENGTH, PROTOCOL_VERSION,
+  AES_ALGO, AES_KEY_LENGTH,
 } from './constants';
 import { supabase } from '@/integrations/supabase/client';
 import { type IdentityKeyPair, exportPublicKeyRaw } from './keyManager';
@@ -107,10 +107,8 @@ function sanitizeDBPayload(payload: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(payload).map(([field, value]) => [field, describeDBValue(field, value)]));
 }
 
-function validatePayloadForDB(payload: Record<string, unknown>, tableName: 'device_signed_prekeys' | 'user_signed_prekeys'): void {
-  const required = tableName === 'device_signed_prekeys'
-    ? ['user_id', 'device_id', 'spk_id', 'public_key', 'signature', 'is_active']
-    : ['user_id', 'spk_id', 'public_key', 'signature', 'is_active'];
+function validatePayloadForDB(payload: Record<string, unknown>, tableName: 'device_signed_prekeys'): void {
+  const required = ['user_id', 'device_id', 'spk_id', 'public_key', 'signature', 'is_active'];
 
   for (const [field, value] of Object.entries(payload)) {
     if (value === undefined) throw new Error(`[X3DH][DB][VALIDATION] ${tableName}.${field}: undefined interdit`);
@@ -136,7 +134,7 @@ function validatePayloadForDB(payload: Record<string, unknown>, tableName: 'devi
   }
 }
 
-function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys' | 'user_signed_prekeys', payload: Record<string, unknown>) {
+function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys', payload: Record<string, unknown>) {
   console.log('[X3DH][DB][UPSERT_PAYLOAD]', {
     table,
     payload_keys: Object.keys(payload),
@@ -144,7 +142,7 @@ function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys' | 'user_signed_
   });
 }
 
-function logDBUpsertError(table: 'device_signed_prekeys' | 'user_signed_prekeys', step: string, error: any, payload: Record<string, unknown>) {
+function logDBUpsertError(table: 'device_signed_prekeys', step: string, error: any, payload: Record<string, unknown>) {
   const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
   const rejectedColumn = Object.keys(payload).find((key) => new RegExp(`\b${key}\b`, 'i').test(haystack));
   const violatedConstraint = haystack.match(/constraint "([^"]+)"/i)?.[1]
@@ -173,126 +171,6 @@ interface StoredSPK {
   privateKeyJWK: JsonWebKey;
   publicKeyBase64: string;
   createdAt: number;
-}
-
-async function saveSPKPrivate(userId: string, spkId: number, privateKey: CryptoKey, publicBase64: string): Promise<void> {
-  const jwk = await hardCrypto.exportKey('jwk', privateKey);
-  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
-    tx.objectStore(SPK_STORE).put({ id: `${userId}:${spkId}`, spkId, privateKeyJWK: jwk, publicKeyBase64: publicBase64, createdAt: Date.now() } as StoredSPK);
-  });
-}
-
-async function loadSPKRecord(userId: string, spkId: number): Promise<StoredSPK | null> {
-  try {
-    const result = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
-      reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(`${userId}:${spkId}`)),
-    );
-    return result ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function getNextSPKId(userId: string): Promise<number> {
-  try {
-    const allKeys = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) => reqToPromise<IDBValidKey[]>(tx.objectStore(SPK_STORE).getAllKeys()));
-    const prefix = `${userId}:`;
-    let maxId = 0;
-    for (const key of allKeys) {
-      const k = String(key);
-      if (k.startsWith(prefix)) {
-        const id = parseInt(k.slice(prefix.length), 10);
-        if (id > maxId) maxId = id;
-      }
-    }
-    return maxId + 1;
-  } catch {
-    return 1;
-  }
-}
-
-async function gcExpiredSPKPrivates(userId: string, maxAgeMs = 30 * 24 * 60 * 60 * 1000): Promise<void> {
-  try {
-    const cutoff = Date.now() - maxAgeMs;
-    const userPrefix = `${userId}:`;
-    const purged = await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => new Promise<number>((resolve, reject) => {
-      const store = tx.objectStore(SPK_STORE);
-      const cursorReq = store.openCursor();
-      let count = 0;
-      cursorReq.onsuccess = () => {
-        const cursor = cursorReq.result;
-        if (!cursor) { resolve(count); return; }
-        const id = String(cursor.key);
-        const rec = cursor.value as StoredSPK;
-        if (id.startsWith(userPrefix) && typeof rec.createdAt === 'number' && rec.createdAt < cutoff) {
-          cursor.delete();
-          count++;
-        }
-        cursor.continue();
-      };
-      cursorReq.onerror = () => reject(cursorReq.error);
-    }));
-    if (purged > 0) console.log(`[X3DH][GC] purged ${purged} expired SPK private(s) for user ${userId.slice(0, 8)}…`);
-  } catch (e) {
-    console.warn('[X3DH][GC] SPK GC failed (non-fatal):', e);
-  }
-}
-
-export async function generateAndUploadSignedPrekey(userId: string, signingPrivateKey: CryptoKey): Promise<{ spkId: number; publicKey: string; signature: string }> {
-  const spkId = await getNextSPKId(userId);
-  const spkPair = await hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']) as CryptoKeyPair;
-  const publicRaw = await exportPublicKeyRaw(spkPair.publicKey);
-  const publicBase64 = bufferToBase64(publicRaw);
-  const signature = await hardCrypto.sign('Ed25519' as any, signingPrivateKey, publicRaw);
-  const signatureBase64 = bufferToBase64(signature);
-  await saveSPKPrivate(userId, spkId, spkPair.privateKey, publicBase64);
-
-  const payload = { user_id: userId, spk_id: spkId, public_key: publicBase64, signature: signatureBase64, is_active: true };
-  validatePayloadForDB(payload, 'user_signed_prekeys');
-  logDBPayloadBeforeUpsert('user_signed_prekeys', payload);
-
-  const { error } = await supabase.from('user_signed_prekeys').upsert(payload, { onConflict: 'user_id,spk_id' });
-  if (error) {
-    const dbDiag = logDBUpsertError('user_signed_prekeys', 'user_signed_prekeys_upsert', error, payload);
-    throw new Error(`X3DH_DB_UPSERT_FAILED table=user_signed_prekeys step=user_signed_prekeys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
-  }
-
-  await supabase.from('user_signed_prekeys').update({ is_last_resort: false }).eq('user_id', userId).eq('is_last_resort', true);
-  await supabase.from('user_signed_prekeys').update({ is_active: false, is_last_resort: true }).eq('user_id', userId).eq('is_active', true).neq('spk_id', spkId);
-  console.log(`[X3DH] ✅ Signed prekey #${spkId} generated & uploaded`);
-  return { spkId, publicKey: publicBase64, signature: signatureBase64 };
-}
-
-export async function refreshSignedPrekeyIfNeeded(userId: string, signingPrivateKey: CryptoKey): Promise<void> {
-  try {
-    void gcExpiredSPKPrivates(userId);
-    const { data } = await supabase.from('user_signed_prekeys').select('created_at, public_key, signature, spk_id').eq('user_id', userId).eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (!data) { await generateAndUploadSignedPrekey(userId, signingPrivateKey); return; }
-    let signatureValid = false;
-    try {
-      const { data: pubKeyData } = await supabase.from('user_public_keys').select('identity_key, signing_key').eq('user_id', userId).eq('is_active', true).maybeSingle();
-      if (pubKeyData) {
-        signatureValid = await verifySignedPrekey(pubKeyData.signing_key, data.public_key, data.signature, { source: 'refreshSignedPrekeyIfNeeded.current_user_spk', identityKeyB64: pubKeyData.identity_key, userId, spkId: data.spk_id });
-      }
-      if (!signatureValid) console.warn('[X3DH] SPK INVALID → regeneration required', { source: 'refreshSignedPrekeyIfNeeded', user_id: userId, spk_id: data.spk_id, valid: false });
-    } catch (verifyErr) {
-      console.warn('[X3DH] ⚠️ SPK signature verification error:', verifyErr);
-      signatureValid = false;
-    }
-    if (!signatureValid) {
-      // Legacy account-wide SPK has no device_id, so we just regenerate.
-      // (Device-scoped SPKs handle their own quarantine in
-      //  refreshDeviceSignedPrekeyIfNeeded below.)
-      await generateAndUploadSignedPrekey(userId, signingPrivateKey);
-      return;
-    }
-    const localRecord = await loadSPKRecord(userId, data.spk_id);
-    if (!localRecord) { await generateAndUploadSignedPrekey(userId, signingPrivateKey); return; }
-    const ageMs = Date.now() - new Date(data.created_at).getTime();
-    if (ageMs > SPK_ROTATION_DAYS * 24 * 60 * 60 * 1000) await generateAndUploadSignedPrekey(userId, signingPrivateKey);
-  } catch (e) {
-    console.error('[X3DH] SPK refresh check failed:', e);
-  }
 }
 
 function deviceSpkKey(userId: string, deviceId: string, spkId: number): string { return `${userId}::dev::${deviceId}::${spkId}`; }
@@ -531,17 +409,6 @@ export async function fetchPrekeyBundleForDevice(
   return { identityKey: material.identityKey, signingKey: material.signingKey, signedPrekey: material.publicKey, signedPrekeySignature: material.signature, signedPrekeyId: material.spkId, oneTimePrekey: opk?.publicKey, oneTimePrekeyId: opk?.opkId };
 }
 
-export async function fetchPrekeyBundle(peerUserId: string): Promise<X3DHPrekeyBundle | null> {
-  const { data: pubKeys } = await supabase.from('user_public_keys').select('identity_key, signing_key').eq('user_id', peerUserId).eq('is_active', true).maybeSingle();
-  if (!pubKeys) return null;
-  const { data: spkData } = await supabase.rpc('get_signed_prekey', { p_user_id: peerUserId });
-  if (!spkData || spkData.length === 0) return null;
-  const spk = spkData[0];
-  const sigValid = await verifySignedPrekey(pubKeys.signing_key, spk.public_key, spk.signature, { source: 'fetchPrekeyBundle.legacy_user_spk', identityKeyB64: pubKeys.identity_key, userId: peerUserId, spkId: spk.spk_id });
-  if (!sigValid) return null;
-  return { identityKey: pubKeys.identity_key, signingKey: pubKeys.signing_key, signedPrekey: spk.public_key, signedPrekeySignature: spk.signature, signedPrekeyId: spk.spk_id };
-}
-
 export async function x3dhInitiate(myKeys: IdentityKeyPair, bundle: X3DHPrekeyBundle): Promise<X3DHResult> {
   const sigValid = await verifySignedPrekey(bundle.signingKey, bundle.signedPrekey, bundle.signedPrekeySignature, { source: 'x3dhInitiate.bundle_double_check', identityKeyB64: bundle.identityKey, spkId: bundle.signedPrekeyId });
   if (!sigValid) throw new Error(`X3DH: Signed prekey signature verification FAILED`);
@@ -564,31 +431,14 @@ export async function x3dhInitiate(myKeys: IdentityKeyPair, bundle: X3DHPrekeyBu
   return { sharedSecret, ephemeralKey, usedOTPKId: bundle.oneTimePrekeyId, usedSPKId: bundle.signedPrekeyId };
 }
 
-export async function x3dhRespond(myKeys: IdentityKeyPair, myUserId: string, initialMessage: X3DHInitialMessage): Promise<{ sharedSecret: ArrayBuffer; spkKeyPair: CryptoKeyPair }> {
-  const { assertNotReplayedAndRecord } = await import('./x3dhReplayGuard');
-  await assertNotReplayedAndRecord({ myUserId, ik: initialMessage.ik, ek: initialMessage.ek, spkId: initialMessage.spkId, opkId: initialMessage.opkId });
-  const aliceIK = await importX25519Public(initialMessage.ik);
-  const aliceEK = await importX25519Public(initialMessage.ek);
-  const spkRecord = await loadSPKRecord(myUserId, initialMessage.spkId);
-  if (!spkRecord) throw new Error(`[X3DH] SPK #${initialMessage.spkId} NOT FOUND locally`);
-  const spkPrivate = await importKeyFromJWK(spkRecord.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], true);
-  const spkPublic = await importX25519Public(spkRecord.publicKeyBase64);
-  const dh1 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceIK } as any, spkPrivate, 256);
-  const dh2 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as any, myKeys.privateKey, 256);
-  const dh3 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as any, spkPrivate, 256);
-  const filler = new Uint8Array(32).fill(0xFF);
-  const sharedSecret = await x3dhKDF(concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3));
-  return { sharedSecret, spkKeyPair: { publicKey: spkPublic, privateKey: spkPrivate } };
-}
-
 export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: string, myDeviceId: string, initialMessage: X3DHInitialMessage): Promise<{
   sharedSecret: ArrayBuffer;
   spkKeyPair: CryptoKeyPair;
-  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation;
+  replayReservation: import('./aegisReplayGuard').AegisReplayReservation;
   usedOpkId?: number;
 }> {
-  const { reserveX3dhInitial, cancelX3dhInitial } = await import('./x3dhReplayGuard');
-  const replayReservation = await reserveX3dhInitial({
+  const { reserveAegisInitial, cancelAegisInitial } = await import('./aegisReplayGuard');
+  const replayReservation = await reserveAegisInitial({
     myUserId: `${myUserId}::${myDeviceId}`,
     ik: initialMessage.ik,
     ek: initialMessage.ek,
@@ -624,7 +474,7 @@ export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: st
       usedOpkId: initialMessage.opkId,
     };
   } catch (error) {
-    await cancelX3dhInitial(replayReservation).catch(() => undefined);
+    await cancelAegisInitial(replayReservation).catch(() => undefined);
     throw error;
   }
 }
@@ -632,21 +482,21 @@ export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: st
 export async function finalizeDeviceX3DHInitial(args: {
   userId: string;
   deviceId: string;
-  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation;
+  replayReservation: import('./aegisReplayGuard').AegisReplayReservation;
   usedOpkId?: number;
 }): Promise<void> {
-  const { finalizeX3dhInitial } = await import('./x3dhReplayGuard');
-  await finalizeX3dhInitial(args.replayReservation);
+  const { finalizeAegisInitial } = await import('./aegisReplayGuard');
+  await finalizeAegisInitial(args.replayReservation);
   if (args.usedOpkId !== undefined) {
     await deleteDeviceOPKPrivate(args.userId, args.deviceId, args.usedOpkId);
   }
 }
 
 export async function cancelDeviceX3DHInitial(
-  replayReservation: import('./x3dhReplayGuard').X3DHReplayReservation,
+  replayReservation: import('./aegisReplayGuard').AegisReplayReservation,
 ): Promise<void> {
-  const { cancelX3dhInitial } = await import('./x3dhReplayGuard');
-  await cancelX3dhInitial(replayReservation);
+  const { cancelAegisInitial } = await import('./aegisReplayGuard');
+  await cancelAegisInitial(replayReservation);
 }
 
 export function isPQXDHAvailable(): boolean { return false; }
