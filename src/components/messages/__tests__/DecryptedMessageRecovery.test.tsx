@@ -4,14 +4,13 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 const mocks = vi.hoisted(() => ({
   resolvePlaintext: vi.fn(),
   clearNegativeCache: vi.fn(),
-  dropCache: vi.fn(),
 }));
 
 vi.mock('@/components/messages/decryptionService', () => ({
   resolvePlaintext: mocks.resolvePlaintext,
   clearNegativeCache: mocks.clearNegativeCache,
-  dropCache: mocks.dropCache,
   readCache: vi.fn(() => undefined),
+  readLastGoodOutcome: vi.fn(() => undefined),
   persistOutcome: vi.fn((_body: string, outcome: { text: string }) => outcome.text),
   looksEncrypted: vi.fn(() => true),
   buildOutcomeFromText: vi.fn((text: string) => ({ text, mediaKeyB64: null, hidden: false })),
@@ -19,6 +18,15 @@ vi.mock('@/components/messages/decryptionService', () => ({
 
 vi.mock('@/components/chat/VoiceRecorder', () => ({ VoiceMessagePlayer: () => null }));
 vi.mock('@/components/messages/mediaKeyCache', () => ({ setMediaKey: vi.fn() }));
+vi.mock('@/hooks/useMessageEdit', () => ({
+  useMessageEdit: () => ({
+    resolved: null,
+    latest: null,
+    canEdit: false,
+    isSaving: false,
+    editMessage: vi.fn(),
+  }),
+}));
 
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 
@@ -65,10 +73,9 @@ describe('DecryptedMessageBody recovery state', () => {
       vi.advanceTimersByTime(15_000);
     });
 
-    expect(screen.getByText('Message chiffré indisponible sur cet appareil.')).toBeInTheDocument();
+    expect(screen.getByText('Message conservé, synchronisation en attente.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
     expect(mocks.clearNegativeCache).toHaveBeenCalledWith('message-b', 'encrypted');
-    expect(mocks.dropCache).toHaveBeenCalledWith('message-b', 'encrypted');
     expect(screen.getByText('Message en cours de récupération…')).toBeInTheDocument();
   });
 

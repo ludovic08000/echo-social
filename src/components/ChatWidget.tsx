@@ -422,6 +422,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const cachePlaintext = useCallback((msgId: string, text: string) => {
     const media = parseMediaMessage(text);
     if (media) setMediaKey(msgId, media.keyB64, isVideoMediaLabel(media.label));
+    if (decryptedCacheRef.current.get(msgId) === text) return;
     decryptedCacheRef.current.set(msgId, text);
     bumpCache();
     void savePlaintext(msgId, text);
@@ -1078,12 +1079,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
       {/* Fingerprint change banner removed per user request — silent re-keying */}
 
-      {/* Key recovery banners removed — restore happens silently in background
-          via useAccountKeySync (auto-restore from password-derived backup),
-          realtimeKeySync (peer key publish triggers messageQueue.resumeAll),
-          and messageQueue (idempotent retry). The user only sees plaintext
-          when keys arrive, never an instruction to "restore". The dedicated
-          backup/restore UI lives in Settings → Privacy → Key Backup. */}
+      {/* Identity and route preparation stay silent. Sesame-lite retries its
+          encrypted device-copy outbox when peer keys become available. */}
 
       {/* Pending message request banner */}
       {hasPending && (

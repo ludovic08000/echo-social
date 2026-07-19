@@ -17,7 +17,7 @@ function messagingStabilityGuard(): Plugin {
       const cleanId = id.split("?", 1)[0].replace(/\\/g, "/");
 
       if (cleanId.endsWith("/src/components/messages/ChatView.tsx")) {
-        let transformed = code;
+        let transformed = code.replace(/\r\n?/g, "\n");
         transformed = transformed.replace(
           "groupedMessages.map((group, gi) => (",
           "groupedMessages.map((group) => (",
@@ -40,7 +40,7 @@ function messagingStabilityGuard(): Plugin {
       }
 
       if (cleanId.endsWith("/src/components/MessagingPinGate.tsx")) {
-        let transformed = code;
+        let transformed = code.replace(/\r\n?/g, "\n");
         const trustImport = "import { PinValidatedMessaging } from '@/components/PinValidatedMessaging';";
         if (!transformed.includes(trustImport)) {
           const importAnchor = "import { motion, AnimatePresence } from 'framer-motion';";
@@ -54,7 +54,7 @@ function messagingStabilityGuard(): Plugin {
       }
 
       if (cleanId.endsWith("/src/hooks/useChatPin.ts")) {
-        let transformed = code;
+        let transformed = code.replace(/\r\n?/g, "\n");
         transformed = transformed.replace(
           `        await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
         await deleteRawIdentityBlob(user.id);
@@ -73,7 +73,7 @@ function messagingStabilityGuard(): Plugin {
       }
 
       if (cleanId.endsWith("/src/components/messages/decryptionService.ts")) {
-        let transformed = code;
+        let transformed = code.replace(/\r\n?/g, "\n");
         const hotImport = "import { readHotPlaintext, writeHotPlaintext } from '@/lib/crypto/plaintextHotCache';";
         if (!transformed.includes(hotImport)) {
           const importAnchor = "import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiveKey';";
@@ -125,164 +125,8 @@ function messagingStabilityGuard(): Plugin {
         return transformed === code ? null : { code: transformed, map: null };
       }
 
-      if (cleanId.endsWith("/src/lib/messaging/multiDeviceFanout.ts")) {
-        let transformed = code;
-        const routeImport = "import { resolveFanoutRoute } from '@/lib/messaging/fanoutRouteCache';";
-        const transactionImport = "import { captureFanoutSessionBeforeMutation } from '@/lib/messaging/fanoutSessionTransaction';";
-        if (!transformed.includes(routeImport)) {
-          const importAnchor = "import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';";
-          transformed = transformed.replace(importAnchor, `${importAnchor}\n${routeImport}`);
-        }
-        if (!transformed.includes(transactionImport)) {
-          transformed = transformed.replace(routeImport, `${routeImport}\n${transactionImport}`);
-        }
-        transformed = transformed.replace(
-          `  x3dhRespondForDevice,
-} from '@/lib/crypto/x3dh';`,
-          `  x3dhRespondForDevice,
-  finalizeDeviceX3DHInitial,
-  cancelDeviceX3DHInitial,
-} from '@/lib/crypto/x3dh';`,
-        );
-        transformed = transformed.replace("const FANOUT_ENCRYPT_CONCURRENCY = 4;", "const FANOUT_ENCRYPT_CONCURRENCY = 8;");
-
-        const routeAnchor = `  const { data: participants } = await supabase.from('conversation_participants').select('user_id').eq('conversation_id', input.conversationId);
-  if (!participants?.length) return { rows: [], hasTargets: false };
-  const userIds = participants.map(p => p.user_id);
-
-  const targets = (await listFanoutTargets(input.senderUserId, userIds, { verifyPrekeys: false }))
-    .filter(d =>
-      !(d.userId === input.senderUserId && d.deviceId === senderDeviceId) &&
-      !isKnownInvalidDeviceId(d.deviceId),
-    );`;
-        const routeFast = `  const targets = (await resolveFanoutRoute(input.conversationId, input.senderUserId))
-    .filter((device) => !isKnownInvalidDeviceId(device.deviceId));`;
-        transformed = transformed.replace(routeAnchor, routeFast);
-
-        const encryptAnchor = `    try {
-      const encrypted = await encryptPlaintextForDeviceTarget({`;
-        const transactionalEncrypt = `    try {
-      await captureFanoutSessionBeforeMutation({
-        messageId: input.messageId,
-        myUserId: input.senderUserId,
-        myDeviceId: senderDeviceId,
-        peerUserId: dev.userId,
-        peerDeviceId: dev.deviceId,
-      });
-      const encrypted = await encryptPlaintextForDeviceTarget({`;
-        if (!transformed.includes("captureFanoutSessionBeforeMutation({")) {
-          transformed = transformed.replace(encryptAnchor, transactionalEncrypt);
-        }
-
-        const unwrapAnchor = `    const { sharedSecret, spkKeyPair } = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
-      ik: senderIdentityForDH,
-      ek: parsed.ekB64,
-      spkId: parsed.spkId,
-      opkId: parsed.opkId,
-    });
-    const aes = await aesFromSecret(sharedSecret);
-    const aad = parsed.version === 'v2'
-      ? buildX3DHBootstrapAAD({
-          senderUserId,
-          senderDeviceId,
-          recipientUserId,
-          recipientDeviceId: myDeviceId,
-          senderIdentityKeyB64: senderIdentityForDH,
-          recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
-          ekB64: parsed.ekB64,
-          spkId: parsed.spkId,
-          opkId: parsed.opkId,
-        })
-      : null;
-    const pt = await hardCrypto.decrypt(
-      aad
-        ? { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> }
-        : { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128 },
-      aes,
-      base64ToBuffer(parsed.ctB64),
-    );
-
-    try {
-      const spkPrivJwk = await hardCrypto.exportKey('jwk', spkKeyPair.privateKey);
-      const spkPubRaw = await hardCrypto.exportKey('raw', spkKeyPair.publicKey);
-      const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
-      await establishDeviceSession(
-        recipientUserId, myDeviceId,
-        senderUserId, senderDeviceId,
-        sharedSecret,
-        undefined,
-        {
-          isInitiator: false,
-          peerSpkId: parsed.spkId,
-          selfInitialDhPrivJwk: spkPrivJwk,
-          selfInitialDhPubB64: spkPubB64,
-        },
-      );
-    } catch {}
-
-    return new hardGlobals.TextDecoder().decode(pt);`;
-        const unwrapTwoPhase = `    const response = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
-      ik: senderIdentityForDH,
-      ek: parsed.ekB64,
-      spkId: parsed.spkId,
-      opkId: parsed.opkId,
-    });
-    try {
-      const aes = await aesFromSecret(response.sharedSecret);
-      const aad = parsed.version === 'v2'
-        ? buildX3DHBootstrapAAD({
-            senderUserId,
-            senderDeviceId,
-            recipientUserId,
-            recipientDeviceId: myDeviceId,
-            senderIdentityKeyB64: senderIdentityForDH,
-            recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
-            ekB64: parsed.ekB64,
-            spkId: parsed.spkId,
-            opkId: parsed.opkId,
-          })
-        : null;
-      const pt = await hardCrypto.decrypt(
-        aad
-          ? { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> }
-          : { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128 },
-        aes,
-        base64ToBuffer(parsed.ctB64),
-      );
-
-      const spkPrivJwk = await hardCrypto.exportKey('jwk', response.spkKeyPair.privateKey);
-      const spkPubRaw = await hardCrypto.exportKey('raw', response.spkKeyPair.publicKey);
-      const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
-      await establishDeviceSession(
-        recipientUserId, myDeviceId,
-        senderUserId, senderDeviceId,
-        response.sharedSecret,
-        undefined,
-        {
-          isInitiator: false,
-          peerSpkId: parsed.spkId,
-          selfInitialDhPrivJwk: spkPrivJwk,
-          selfInitialDhPubB64: spkPubB64,
-        },
-      );
-      await finalizeDeviceX3DHInitial({
-        userId: recipientUserId,
-        deviceId: myDeviceId,
-        replayReservation: response.replayReservation,
-        usedOpkId: response.usedOpkId,
-      });
-      return new hardGlobals.TextDecoder().decode(pt);
-    } catch (error) {
-      await cancelDeviceX3DHInitial(response.replayReservation).catch(() => undefined);
-      throw error;
-    }`;
-        transformed = transformed.replace(unwrapAnchor, unwrapTwoPhase);
-        return transformed === code ? null : { code: transformed, map: null };
-      }
-
-
       if (cleanId.endsWith("/src/hooks/useDeviceRegistration.ts")) {
-        let transformed = code;
+        let transformed = code.replace(/\r\n?/g, "\n");
         const sessionImport = "import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';";
         if (!transformed.includes(sessionImport)) {
           const importAnchor = "import { useEffect, useRef } from 'react';";

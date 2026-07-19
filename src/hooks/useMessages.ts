@@ -3,17 +3,19 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
-import { messageQueue } from '@/lib/messaging/messageQueue';
-import { isCryptoJsonBody, isUnsupportedEncryptedBody, isStrictRatchetEnvelopeBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { pendingMessageQueue, routeIncoming } from '@/e2ee-session';
-import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
-import { encryptArchive } from '@/lib/messaging/archive/archiveKey';
+import { isCryptoJsonBody, isUnsupportedEncryptedBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
+import { sendSesameLiteMessage } from '@/lib/messaging/sendSesameLiteMessage';
+import type { Database } from '@/integrations/supabase/types';
+
+type MessageRow = Database['public']['Tables']['messages']['Row'];
+type MessageDeviceCopyRow = Database['public']['Tables']['message_device_copies']['Row'];
+type ProfileSummary = Pick<Database['public']['Tables']['profiles']['Row'], 'name' | 'avatar_url'>;
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
   const rows = messageIds.map((message_id) => ({ message_id, user_id: userId }));
-  const { error } = await supabase.from('message_deletions').insert(rows as any);
+  const { error } = await supabase.from('message_deletions').insert(rows);
   if (error && error.code !== '23505') throw error;
 }
 
@@ -68,10 +70,7 @@ const messagesKey = (conversationId: string, userId: string | undefined) =>
   ['messages', conversationId, userId ?? 'anon'] as const;
 
 function isMultiDeviceMessageRow(message: { body?: string | null; body_kind?: string | null }): boolean {
-  return Boolean(
-    message.body &&
-    (isMultiDeviceEnvelopeBody(message.body) || message.body_kind === 'multi_device')
-  );
+  return Boolean(message.body && isMultiDeviceEnvelopeBody(message.body));
 }
 
 let keysRestoredConversationRefetchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -111,6 +110,7 @@ async function sendToZeus(userId: string, messengerConvId: string, body: string)
       conversation_id: messengerConvId,
       sender_id: userId,
       body,
+      body_kind: 'system',
       status: 'delivered',
     })
     .select()
@@ -204,7 +204,7 @@ export function useConversations() {
   // Without this, a first run while user=null caches an empty list under the
   // shared key ['conversations'] and the UI stays empty forever.
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     const onRestored = () => {
       scheduleKeysRestoredConversationRefetch(queryClient);
     };
@@ -237,7 +237,7 @@ export function useConversations() {
         if (!rpcError && rpcData) {
           console.log('[messaging] conversations from RPC:', rpcData.length);
           if (rpcData.length === 0) return [];
-          return rpcData.map((row: any) => ({
+          return rpcData.map((row) => ({
             id: row.conv_id,
             created_at: row.conv_created_at,
             updated_at: row.conv_updated_at,
@@ -330,11 +330,11 @@ export function useConversations() {
           id: conv.id,
           created_at: conv.created_at,
           updated_at: conv.updated_at,
-          is_group: (conv as any).is_group || false,
-          name: (conv as any).name || null,
-          created_by: (conv as any).created_by || null,
+          is_group: conv.is_group || false,
+          name: conv.name || null,
+          created_by: conv.created_by || null,
           participant: convParts[0] || { user_id: '', name: 'Unknown', avatar_url: null },
-          participants: (conv as any).is_group ? convParts : undefined,
+          participants: conv.is_group ? convParts : undefined,
           last_message: lastMessageMap.get(conv.id),
           unread_count: unreadCounts[conv.id] || 0,
         } as Conversation;
@@ -369,14 +369,14 @@ export function useMessages(conversationId: string) {
           filter: `conversation_id=eq.${conversationId}`,
         },
         async (payload) => {
-          const newMsg = payload.new as any;
+          const newMsg = payload.new as MessageRow;
           if (isUnsupportedEncryptedBody(newMsg.body)) {
             console.warn('[messaging] ignoring unsupported encrypted message without hiding it', newMsg.id);
             return;
           }
 
           // Fetch profile for sender (use cache first)
-          let profile = queryClient.getQueryData<any>(['profile', newMsg.sender_id]);
+          let profile = queryClient.getQueryData<ProfileSummary>(['profile', newMsg.sender_id]);
           if (!profile) {
             const { data: p } = await supabase
               .from('profiles')
@@ -386,8 +386,9 @@ export function useMessages(conversationId: string) {
             profile = p;
           }
 
-          const enriched = {
+          const enriched: Message = {
             ...newMsg,
+            status: newMsg.status as Message['status'],
             profile: {
               name: newMsg.sender_id === ZEUS_BOT_ID ? (await getCompanionName(user?.id)) : (profile?.name || 'Unknown'),
               avatar_url: profile?.avatar_url || null,
@@ -412,83 +413,25 @@ export function useMessages(conversationId: string) {
           // Update conversation last_updated (lightweight)
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
 
-          // Reconcile local queue in case backend insert succeeded but local ACK was lost
-          messageQueue.reconcileDelivered(conversationId, [{
-            id: newMsg.id,
-            senderId: newMsg.sender_id,
-            body: newMsg.body,
-            createdAt: newMsg.created_at,
-          }]).catch(() => {});
-
-          // Proactively prime the e2ee-session router for incoming encrypted
-          // bodies. This catches out-of-order Double Ratchet deliveries before
-          // the user even mounts a `DecryptedMessageBody` for the row, so the
-          // retry budget starts ticking immediately on arrival.
-          if (user) {
-            if (isMultiDeviceMessageRow(newMsg)) {
-              // RACE GUARD: the `messages` realtime event can arrive BEFORE
-              // its sibling `message_device_copies` event (replication lag
-              // even for same-tx writes, or out-of-order delivery on WS
-              // reconnect). A naive immediate probe finds no copy → caches
-              // a 60s negative → the bubble stays "encrypted" until the
-              // device_copies event fires (or worse, if that event is
-              // dropped, until the 60s TTL expires — "ça décrypte quand
-              // ça veut"). We retry with a tiny backoff to let the copy
-              // replicate, and clear the negCache between attempts so the
-              // mounted bubble always re-resolves cleanly.
-              const probe = (attempt: number) => {
-                void resolvePlaintext({
-                  body: newMsg.body,
-                  messageId: newMsg.id,
-                  decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
-                }).then((outcome) => {
-                  if (outcome && !outcome.hidden) {
-                    persistOutcome(newMsg.body, outcome, newMsg.id);
-                    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId: newMsg.id } })); } catch { /* SSR */ }
-                    return;
-                  }
-                  if (attempt < 3) {
-                    // 250ms, 750ms, 1500ms — covers typical replication lag.
-                    const delay = 250 * Math.pow(2, attempt);
-                    setTimeout(() => {
-                      clearNegativeCache(newMsg.id, newMsg.body);
-                      probe(attempt + 1);
-                    }, delay);
-                  } else {
-                    // Final attempt failed — dispatch retry so the mounted
-                    // bubble re-tries when the device_copies realtime event
-                    // eventually fires (which also clears negCache).
-                    try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId: newMsg.id } })); } catch { /* SSR */ }
-                  }
-                }).catch(() => {});
-              };
-              probe(0);
-            } else if (newMsg.sender_id !== user.id && isStrictRatchetEnvelopeBody(newMsg.body)) {
-              void routeIncoming({
-                encryptedBody: newMsg.body,
-                recipientUserId: user.id,
-                senderUserId: newMsg.sender_id,
-                messageId: newMsg.id,
-              }).then(async (r) => {
-                if (r.ok && r.plaintext !== null) {
-                  // B (durability): await so the decrypted copy is persisted
-                  // before the ratchet advances / the user leaves the screen.
-                  await savePlaintext(newMsg.id, r.plaintext);
-                  await savePlaintextForCiphertext(newMsg.body, r.plaintext);
-                  // C: archive the RECEIVED message under my own archive key so
-                  // it survives cache purge / device rotation (per-recipient).
-                  if (newMsg.sender_id !== user.id) {
-                    try {
-                      const ab = await encryptArchive(r.plaintext, conversationId, user.id);
-                      if (ab) await (supabase as any).from('message_archives').upsert(
-                        { message_id: newMsg.id, user_id: user.id, archive_body: ab },
-                        { onConflict: 'message_id,user_id', ignoreDuplicates: true });
-                    } catch { /* best-effort */ }
-                  }
-                  try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId: newMsg.id } })); } catch { /* SSR */ }
-                }
-              }).catch(() => {});
-            }
+          // Sesame-lite has one receive path: resolve the copy addressed to
+          // this device. The sibling realtime subscription below wakes the
+          // bubble if websocket events from the same transaction arrive out
+          // of order, so no polling loop or legacy router is needed here.
+          if (user && isMultiDeviceMessageRow(newMsg)) {
+            void resolvePlaintext({
+              body: newMsg.body,
+              messageId: newMsg.id,
+              senderId: newMsg.sender_id,
+              decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
+            }).then((outcome) => {
+              if (!outcome || outcome.hidden) return;
+              persistOutcome(newMsg.body, outcome, newMsg.id);
+              try {
+                window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+                  detail: { messageId: newMsg.id },
+                }));
+              } catch { /* SSR */ }
+            }).catch(() => {});
           }
         }
       )
@@ -501,7 +444,7 @@ export function useMessages(conversationId: string) {
           filter: `recipient_user_id=eq.${user.id}`,
         },
         (payload) => {
-          const messageId = (payload.new as any)?.message_id as string | undefined;
+          const messageId = (payload.new as Partial<MessageDeviceCopyRow>).message_id;
           if (messageId) {
             try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId } })); } catch { /* SSR */ }
             return;
@@ -519,7 +462,7 @@ export function useMessages(conversationId: string) {
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          const deletedId = (payload.old as any)?.id;
+          const deletedId = (payload.old as Partial<MessageRow>).id;
           if (deletedId) {
             queryClient.setQueryData<Message[]>(
               messagesKey(conversationId, user?.id),
@@ -623,78 +566,26 @@ export function useMessages(conversationId: string) {
       const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
       const compatibleMessages = visibleMessages.filter(m => !isUnsupportedEncryptedBody(m.body));
 
-      // Reconcile local queue with already delivered backend messages
-      messageQueue.reconcileDelivered(
-        conversationId,
-        compatibleMessages.map(m => ({
-          id: m.id,
-          senderId: m.sender_id,
-          body: m.body,
-          createdAt: m.created_at,
-        })),
-      ).catch(() => {});
-
-      // After a refetch (cold reload, reconnect, focus), proactively run
-      // `routeIncoming` for each still-encrypted incoming row. This does
-      // ACTUAL decryption (not just enqueueing) — the router tries the
-      // ratchet, multi-session fallback, and per-message device-copy
-      // fan-out. Successful results are cached by `savePlaintextForCiphertext`
-      // inside the route, and we dispatch `forsure-decrypt-retry` so any
-      // mounted `DecryptedMessageBody` immediately re-renders with the
-      // plaintext. Messages that genuinely cannot decrypt yet (out-of-order)
-      // get a fresh 30 × 1.5s retry budget on the pending queue.
+      // Warm only recent Sesame-lite device copies after a cold reload. Older
+      // messages resolve lazily when mounted during scroll.
       if (user) {
-        // WhatsApp/Signal-style parallel fan-in for the visible/recent window.
-        // Older messages resolve when they mount during scroll; doing all 500
-        // on chat open steals CPU from iOS input/scroll for no visible benefit.
-        const decryptWarmupMessages = compatibleMessages.slice(-24);
-        const decryptTasks = decryptWarmupMessages
-          .filter((m) => isMultiDeviceMessageRow(m) || m.sender_id !== user.id)
+        const decryptTasks = compatibleMessages
+          .slice(-24)
+          .filter(isMultiDeviceMessageRow)
           .map(async (m) => {
-            if (isMultiDeviceMessageRow(m)) {
-              try {
-                const outcome = await resolvePlaintext({
-                  body: m.body,
-                  messageId: m.id,
-                  decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
-                });
-                if (outcome && !outcome.hidden) {
-                  persistOutcome(m.body, outcome, m.id);
-                  return true;
-                }
-              } catch { /* silent — UI will retry on its own */ }
+            try {
+              const outcome = await resolvePlaintext({
+                body: m.body,
+                messageId: m.id,
+                senderId: m.sender_id,
+                decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
+              });
+              if (!outcome || outcome.hidden) return false;
+              persistOutcome(m.body, outcome, m.id);
+              return true;
+            } catch {
               return false;
             }
-
-            if (!isStrictRatchetEnvelopeBody(m.body)) return false;
-            try {
-              const r = await routeIncoming({
-                encryptedBody: m.body,
-                recipientUserId: user.id,
-                senderUserId: m.sender_id,
-                messageId: m.id,
-              });
-              if (r.ok && r.plaintext !== null) {
-                // B (durability): await persistence of the decrypted copy.
-                await savePlaintext(m.id, r.plaintext);
-                await savePlaintextForCiphertext(m.body, r.plaintext);
-                // C: per-recipient durable archive of the received message.
-                try {
-                  const ab = await encryptArchive(r.plaintext, conversationId, user.id);
-                  if (ab) await (supabase as any).from('message_archives').upsert(
-                    { message_id: m.id, user_id: user.id, archive_body: ab },
-                    { onConflict: 'message_id,user_id', ignoreDuplicates: true });
-                } catch { /* best-effort */ }
-                return true;
-              }
-            } catch { /* fall through to refresh */ }
-            pendingMessageQueue.refresh(m.id, {
-              encryptedBody: m.body,
-              recipientUserId: user.id,
-              senderUserId: m.sender_id,
-              messageId: m.id,
-            });
-            return false;
           });
 
         const results = await Promise.all(decryptTasks);
@@ -734,16 +625,9 @@ export function useMessages(conversationId: string) {
 }
 
 /**
- * Legacy direct-send hook.
- *
- * SECURITY: only Zeus / bot conversations are allowed to receive plaintext
- * here. Any peer (user-to-user) conversation is rerouted through the E2EE
- * `messageQueue.enqueue()` path, which encrypts before insertion.
- *
- * If a caller passes a peer conversation, the hook DOES NOT block hard —
- * it transparently encrypts via the queue so existing UI buttons (share
- * link, marketplace negotiation, call notice...) keep working without
- * leaking plaintext to the server.
+ * Shared send hook for features outside the main composer. Zeus remains the
+ * only plaintext path; every peer message uses the same Sesame-lite transport
+ * as ChatView and ChatWidget.
  */
 export function useSendMessage() {
   const queryClient = useQueryClient();
@@ -778,19 +662,15 @@ export function useSendMessage() {
 
       const sanitizedBody = isSpecialMessage ? body : sanitizeMessageBody(body);
 
-      // SECURITY (E2EE_BLOCKED): no plaintext peer message ever leaves the
-      // device. Reroute through the encrypted queue, which produces a v4
-      // ciphertext (or per-device wrap) before any Supabase insert.
+      let sent: Awaited<ReturnType<typeof sendSesameLiteMessage>>;
       try {
-        await messageQueue.enqueue({
+        sent = await sendSesameLiteMessage({
           conversationId,
-          senderId: user.id,
+          senderUserId: user.id,
           plaintext: sanitizedBody,
           imageUrl: imageUrl ?? null,
         });
-      } catch (e) {
-        // If the queue refuses (e.g. E2EE not yet bootstrapped on this
-        // device), surface a friendly error. NEVER fall back to plaintext.
+      } catch {
         throw new Error('Message non envoyé — chiffrement non disponible.');
       }
 
@@ -803,7 +683,12 @@ export function useSendMessage() {
 
       queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      return { id: `queued-${Date.now()}`, conversation_id: conversationId, sender_id: user.id, body: sanitizedBody };
+      return {
+        id: sent.id,
+        conversation_id: conversationId,
+        sender_id: user.id,
+        body: sent.parentBody,
+      };
     },
     // Optimistic update: immediately show sent message in UI
     onMutate: async (variables) => {
@@ -814,7 +699,7 @@ export function useSendMessage() {
 
       const previousMessages = queryClient.getQueryData<Message[]>(key);
 
-      const profile = queryClient.getQueryData<any>(['profile', user.id]);
+      const profile = queryClient.getQueryData<ProfileSummary>(['profile', user.id]);
       const optimisticMessage: Message = {
         id: `optimistic-${Date.now()}`,
         conversation_id: variables.conversationId,

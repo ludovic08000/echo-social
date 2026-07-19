@@ -4,31 +4,32 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
-import { requestDeviceCopyRetry } from './deviceCopyRetryRequest';
 import {
-  fetchPrekeyBundleForDevice,
   isDevicePrekeyBundleError,
   peekDeviceSignedPrekey,
-  x3dhInitiate,
-  x3dhRespondForDevice,
-  finalizeDeviceX3DHInitial,
-  cancelDeviceX3DHInitial,
 } from '@/lib/crypto/x3dh';
-import { getOrCreateIdentityKeys, PinUnlockRequiredError, exportPublicKeyRaw } from '@/lib/crypto/keyManager';
-import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
-import { randomBytes, bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
+import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import {
   ratchetEncrypt,
   ratchetDecryptWithSession,
-  establishDeviceSession,
   getSessionPeerSpkId,
   invalidateDeviceSession,
-  RATCHET_PREFIX_V4,
   RATCHET_PREFIX_V5,
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
-import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
+import { resolveFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
+import { captureFanoutSessionBeforeMutation } from '@/lib/messaging/fanoutSessionTransaction';
+import {
+  acknowledgeInitiatingSessionFromRatchetPayload,
+  createRepeatablePreKeyEnvelope,
+  isRepeatablePreKeyEnvelope,
+  prepareInitiatingSessionForSend,
+  restartExpiredInitiatingSession,
+  unwrapRepeatablePreKeyEnvelope,
+  wrapRatchetForInitiatingSession,
+} from '@/lib/messaging/repeatablePreKeyEnvelope';
+import { runDeviceSessionJob } from '@/lib/crypto/deviceSessionQueue';
 
 interface FanoutInput {
   messageId: string;
@@ -38,6 +39,7 @@ interface FanoutInput {
 }
 
 interface DeviceEncryptTargetInput {
+  messageId?: string;
   conversationId?: string;
   senderUserId: string;
   senderDeviceId?: string;
@@ -51,15 +53,10 @@ interface DeviceEncryptTargetInput {
   useOneTimePrekey?: boolean;
 }
 
-const X3DH_BOOTSTRAP_PREFIX_V5 = 'x3dh5.init.';
-const X3DH_BOOTSTRAP_ENVELOPE_V2 = 'v2';
-const X3DH_BOOTSTRAP_AAD_CONTEXT_V2 = 'ForSure-X3DH-v5-Sesame-bootstrap';
 const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 const FANOUT_ENCRYPT_CONCURRENCY = 2;
-const DEVICE_COPY_ASYNC_FANOUT_GRACE_MS = 3000;
-const DEVICE_COPY_SELF_SENT_GRACE_MS = 3000;
 
-type DeviceCopyPrefix = 'x3dh5.init' | 'x3dh5' | 'x3dh4' | 'unsupported';
+type DeviceCopyPrefix = 'x3dh5.init.v3' | 'x3dh5' | 'unsupported';
 
 interface DeviceCopyDecryptAttempt {
   plaintext: string | null;
@@ -75,109 +72,10 @@ type CopyRow = {
   recipient_device_id?: string;
 };
 
-type ParentMessageContext = {
-  senderUserId?: string;
-  createdAtMs?: number;
-};
-
-type DeviceCopyGate = {
-  defer: boolean;
-  reason?: string;
-  senderUserId?: string;
-  ageMs?: number;
-};
-
 function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
-  if (body.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return 'x3dh5.init';
+  if (isRepeatablePreKeyEnvelope(body)) return 'x3dh5.init.v3';
   if (body.startsWith(RATCHET_PREFIX_V5)) return 'x3dh5';
-  if (body.startsWith(RATCHET_PREFIX_V4)) return 'x3dh4';
   return 'unsupported';
-}
-
-interface ParsedX3DHBootstrapV5 {
-  version: 'legacy' | 'v2';
-  ivB64: string;
-  ctB64: string;
-  ekB64: string;
-  spkId: number;
-  opkId?: number;
-  senderIdentityKeyB64?: string;
-  recipientIdentityKeyB64?: string;
-}
-
-interface X3DHBootstrapAADInput {
-  senderUserId: string;
-  senderDeviceId: string;
-  recipientUserId: string;
-  recipientDeviceId: string;
-  senderIdentityKeyB64: string;
-  recipientIdentityKeyB64: string;
-  ekB64: string;
-  spkId: number;
-  opkId?: number;
-}
-
-function buildX3DHBootstrapAAD(input: X3DHBootstrapAADInput): Uint8Array {
-  // Signal X3DH §3.3 binds AD to IK_A || IK_B; Sesame also binds sessions to
-  // UserID/DeviceID mailboxes. JSON keeps the tuple parseable and stable.
-  return new hardGlobals.TextEncoder().encode(JSON.stringify({
-    context: X3DH_BOOTSTRAP_AAD_CONTEXT_V2,
-    sender: {
-      userId: input.senderUserId,
-      deviceId: input.senderDeviceId,
-      identityKey: input.senderIdentityKeyB64,
-    },
-    recipient: {
-      userId: input.recipientUserId,
-      deviceId: input.recipientDeviceId,
-      identityKey: input.recipientIdentityKeyB64,
-    },
-    header: {
-      ek: input.ekB64,
-      spkId: input.spkId,
-      opkId: input.opkId ?? null,
-    },
-  }));
-}
-
-function parseX3DHBootstrapV5(payload: string): ParsedX3DHBootstrapV5 | null {
-  if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;
-  const parts = payload.slice(X3DH_BOOTSTRAP_PREFIX_V5.length).split('.');
-
-  if (parts[0] === X3DH_BOOTSTRAP_ENVELOPE_V2) {
-    if (parts.length !== 8) return null;
-    const [, ivB64, ctB64, ekB64, spkIdStr, opkIdStr, senderIdentityKeyB64, recipientIdentityKeyB64] = parts;
-    const spkId = parseInt(spkIdStr, 10);
-    if (Number.isNaN(spkId)) return null;
-    const opkId = opkIdStr === '0' ? undefined : parseInt(opkIdStr, 10);
-    if (opkIdStr !== '0' && Number.isNaN(opkId as number)) return null;
-    if (!senderIdentityKeyB64 || !recipientIdentityKeyB64) return null;
-    return {
-      version: 'v2',
-      ivB64,
-      ctB64,
-      ekB64,
-      spkId,
-      opkId,
-      senderIdentityKeyB64,
-      recipientIdentityKeyB64,
-    };
-  }
-
-  // Legacy reader for messages already emitted before the Signal/Sesame AAD
-  // hardening. Do not use this shape for new outbound traffic.
-  if (parts.length !== 4 && parts.length !== 5) return null;
-  const [ivB64, ctB64, ekB64, spkIdStr, opkIdStr] = parts;
-  const spkId = parseInt(spkIdStr, 10);
-  if (Number.isNaN(spkId)) return null;
-  const opkId = opkIdStr !== undefined ? parseInt(opkIdStr, 10) : undefined;
-  if (opkIdStr !== undefined && Number.isNaN(opkId as number)) return null;
-  return { version: 'legacy', ivB64, ctB64, ekB64, spkId, opkId };
-}
-
-async function exportIdentityKeyB64(publicKey: CryptoKey): Promise<string> {
-  const raw = await exportPublicKeyRaw(publicKey);
-  return bufferToBase64(raw);
 }
 
 const KNOWN_INVALID_DEVICE_IDS = new Set<string>([
@@ -212,7 +110,9 @@ try {
       }
     }
   }
-} catch {}
+} catch {
+  // localStorage can be unavailable in private/restricted browser contexts.
+}
 
 function loadInvalidDeviceCache(): Set<string> {
   const out = new Set(KNOWN_INVALID_DEVICE_IDS);
@@ -220,7 +120,9 @@ function loadInvalidDeviceCache(): Set<string> {
     const raw = localStorage.getItem(INVALID_DEVICE_STORE_KEY);
     const arr = raw ? JSON.parse(raw) : [];
     if (Array.isArray(arr)) arr.forEach((id) => typeof id === 'string' && out.add(id));
-  } catch {}
+  } catch {
+    // Treat an unreadable cache as empty; server-verified routes remain authoritative.
+  }
   return out;
 }
 
@@ -230,7 +132,9 @@ function markInvalidDeviceId(deviceId: string | null | undefined): void {
     const set = loadInvalidDeviceCache();
     set.add(deviceId);
     localStorage.setItem(INVALID_DEVICE_STORE_KEY, JSON.stringify([...set].slice(-200)));
-  } catch {}
+  } catch {
+    // Cache persistence is best-effort and must never block encrypted delivery.
+  }
 }
 
 function isKnownInvalidDeviceId(deviceId: string | null | undefined): boolean {
@@ -254,45 +158,6 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function aesFromSecret(secret: ArrayBuffer): Promise<CryptoKey> {
-  return hardCrypto.importKey('raw', secret.slice(0, 32), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-}
-
-async function getParentMessageContext(messageId: string): Promise<ParentMessageContext> {
-  try {
-    const { data } = await supabase
-      .from('messages')
-      .select('sender_id,created_at')
-      .eq('id', messageId)
-      .maybeSingle();
-    const senderUserId = (data as any)?.sender_id as string | undefined;
-    const createdAtRaw = (data as any)?.created_at as string | undefined;
-    const createdAtMs = createdAtRaw ? new Date(createdAtRaw).getTime() : undefined;
-    return {
-      senderUserId,
-      createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : undefined,
-    };
-  } catch {
-    return {};
-  }
-}
-
-async function getDeviceCopyGate(
-  messageId: string,
-  currentUserId: string,
-  expectedSenderUserId?: string,
-): Promise<DeviceCopyGate> {
-  const parent = await getParentMessageContext(messageId);
-  const senderUserId = expectedSenderUserId ?? parent.senderUserId;
-  const ageMs = parent.createdAtMs !== undefined ? Date.now() - parent.createdAtMs : undefined;
-  const isFresh = ageMs !== undefined && ageMs >= 0 && ageMs < DEVICE_COPY_ASYNC_FANOUT_GRACE_MS;
-  const isFreshOwnMessage = senderUserId === currentUserId && ageMs !== undefined && ageMs >= 0 && ageMs < DEVICE_COPY_SELF_SENT_GRACE_MS;
-
-  if (isFreshOwnMessage) return { defer: true, reason: 'fresh_own_message', senderUserId, ageMs };
-  if (isFresh) return { defer: true, reason: 'async_fanout_grace', senderUserId, ageMs };
-  return { defer: false, senderUserId, ageMs };
-}
-
 async function x3dhWrapForDevice(
   plaintext: string,
   senderUserId: string,
@@ -303,85 +168,32 @@ async function x3dhWrapForDevice(
 ): Promise<string | null> {
   if (isKnownInvalidDeviceId(recipientDeviceId)) return null;
   try {
-    const bundle = await fetchPrekeyBundleForDevice(recipientUserId, recipientDeviceId, {
-      claimOneTimePrekey: options.useOneTimePrekey !== false,
-    });
-    if (!bundle) {
-      logCryptoError({
-        severity: 'warning',
-        context: 'fanout',
-        errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
-        errorMessage: 'Recipient device has no usable v5 bootstrap bundle',
-        peerUserId: recipientUserId,
-        peerDeviceId: recipientDeviceId,
-      });
-      return null;
-    }
-
-    const myKeys = await getOrCreateIdentityKeys(senderUserId);
-    const senderIdentityKeyB64 = await exportIdentityKeyB64(myKeys.publicKey);
-    const result = await x3dhInitiate(myKeys, bundle);
-    const aes = await aesFromSecret(result.sharedSecret);
-    const iv = randomBytes(12);
-    const aad = buildX3DHBootstrapAAD({
+    return await createRepeatablePreKeyEnvelope({
+      plaintext,
       senderUserId,
       senderDeviceId,
       recipientUserId,
       recipientDeviceId,
-      senderIdentityKeyB64,
-      recipientIdentityKeyB64: bundle.identityKey,
-      ekB64: result.ephemeralKey,
-      spkId: result.usedSPKId,
-      opkId: result.usedOTPKId,
+      useOneTimePrekey: options.useOneTimePrekey,
     });
-    const ct = await hardCrypto.encrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> },
-      aes,
-      new hardGlobals.TextEncoder().encode(plaintext),
-    );
-
-    const parts = [
-      X3DH_BOOTSTRAP_PREFIX_V5 + X3DH_BOOTSTRAP_ENVELOPE_V2,
-      bufferToBase64(iv.buffer as ArrayBuffer),
-      bufferToBase64(ct as ArrayBuffer),
-      result.ephemeralKey,
-      String(result.usedSPKId),
-      result.usedOTPKId === undefined ? '0' : String(result.usedOTPKId),
-      senderIdentityKeyB64,
-      bundle.identityKey,
-    ];
-
-    await establishDeviceSession(
-      senderUserId, senderDeviceId,
-      recipientUserId, recipientDeviceId,
-      result.sharedSecret,
-      undefined,
-      {
-        peerInitialDhPubB64: bundle.signedPrekey,
-        isInitiator: true,
-        peerSpkId: bundle.signedPrekeyId,
-      },
-    );
-
-    return parts.join('.');
-  } catch (e) {
-    if (e instanceof PinUnlockRequiredError || String(e).toLowerCase().includes('pin unlock required')) {
-      throw e;
+  } catch (error) {
+    if (error instanceof PinUnlockRequiredError || String(error).toLowerCase().includes('pin unlock required')) {
+      throw error;
     }
-    if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID')) {
+    if (isDevicePrekeyBundleError(error, 'DEVICE_SPK_SIGNATURE_INVALID')) {
       markInvalidDeviceId(recipientDeviceId);
-      logCryptoException('fanout', e, {
+      logCryptoException('fanout', error, {
         severity: 'error',
         peerUserId: recipientUserId,
         peerDeviceId: recipientDeviceId,
-        metadata: { stage: 'x3dh5_bootstrap', action: 'device_quarantined' },
+        metadata: { stage: 'x3dh5_init_v3', action: 'device_quarantined' },
       });
     } else {
-      logCryptoException('fanout', e, {
+      logCryptoException('fanout', error, {
         severity: 'warning',
         peerUserId: recipientUserId,
         peerDeviceId: recipientDeviceId,
-        metadata: { stage: 'x3dh5_bootstrap' },
+        metadata: { stage: 'x3dh5_init_v3' },
       });
     }
     return null;
@@ -395,107 +207,40 @@ async function x3dhUnwrapForDevice(
   senderUserId: string,
   senderDeviceId: string,
 ): Promise<string | null> {
-  try {
-    if (!payload.startsWith(X3DH_BOOTSTRAP_PREFIX_V5)) return null;
-
-    const parsed = parseX3DHBootstrapV5(payload);
-    if (!parsed) return null;
-
-    const myKeys = await getOrCreateIdentityKeys(recipientUserId);
-    const myDeviceId = getCurrentDeviceId();
-    const senderIdentityForDH = parsed.senderIdentityKeyB64 ?? senderIdentityKeyB64;
-    if (!senderIdentityForDH) return null;
-
-    if (parsed.version === 'v2') {
-      if (senderIdentityKeyB64 && parsed.senderIdentityKeyB64 !== senderIdentityKeyB64) {
-        logCryptoError({
-          severity: 'error',
-          context: 'decrypt',
-          errorCode: 'X3DH_SENDER_IDENTITY_MISMATCH',
-          errorMessage: 'Rejected x3dh5.init.v2 envelope whose sender identity does not match the active sender identity',
-          myDeviceId,
-          peerUserId: senderUserId,
-          peerDeviceId: senderDeviceId,
-        });
-        return null;
-      }
-
-      const myIdentityKeyB64 = await exportIdentityKeyB64(myKeys.publicKey);
-      if (parsed.recipientIdentityKeyB64 !== myIdentityKeyB64) {
-        logCryptoError({
-          severity: 'error',
-          context: 'decrypt',
-          errorCode: 'X3DH_RECIPIENT_IDENTITY_MISMATCH',
-          errorMessage: 'Rejected x3dh5.init.v2 envelope targeted at another recipient identity',
-          myDeviceId,
-          peerUserId: senderUserId,
-          peerDeviceId: senderDeviceId,
-        });
-        return null;
-      }
-    }
-
-    const response = await x3dhRespondForDevice(myKeys, recipientUserId, myDeviceId, {
-      ik: senderIdentityForDH,
-      ek: parsed.ekB64,
-      spkId: parsed.spkId,
-      opkId: parsed.opkId,
-    });
-    try {
-      const aes = await aesFromSecret(response.sharedSecret);
-      const aad = parsed.version === 'v2'
-        ? buildX3DHBootstrapAAD({
-            senderUserId,
-            senderDeviceId,
-            recipientUserId,
-            recipientDeviceId: myDeviceId,
-            senderIdentityKeyB64: senderIdentityForDH,
-            recipientIdentityKeyB64: parsed.recipientIdentityKeyB64!,
-            ekB64: parsed.ekB64,
-            spkId: parsed.spkId,
-            opkId: parsed.opkId,
-          })
-        : null;
-      const pt = await hardCrypto.decrypt(
-        aad
-          ? { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> }
-          : { name: 'AES-GCM', iv: new Uint8Array(base64ToBuffer(parsed.ivB64)), tagLength: 128 },
-        aes,
-        base64ToBuffer(parsed.ctB64),
-      );
-
-      const spkPrivJwk = await hardCrypto.exportKey('jwk', response.spkKeyPair.privateKey);
-      const spkPubRaw = await hardCrypto.exportKey('raw', response.spkKeyPair.publicKey);
-      const spkPubB64 = bufferToBase64(spkPubRaw as ArrayBuffer);
-      await establishDeviceSession(
-        recipientUserId, myDeviceId,
-        senderUserId, senderDeviceId,
-        response.sharedSecret,
-        undefined,
-        {
-          isInitiator: false,
-          peerSpkId: parsed.spkId,
-          selfInitialDhPrivJwk: spkPrivJwk,
-          selfInitialDhPubB64: spkPubB64,
-        },
-      );
-      await finalizeDeviceX3DHInitial({
-        userId: recipientUserId,
-        deviceId: myDeviceId,
-        replayReservation: response.replayReservation,
-        usedOpkId: response.usedOpkId,
-      });
-      return new hardGlobals.TextDecoder().decode(pt);
-    } catch (error) {
-      await cancelDeviceX3DHInitial(response.replayReservation).catch(() => undefined);
-      throw error;
-    }
-  } catch (e) {
-    throw e;
-  }
+  if (!isRepeatablePreKeyEnvelope(payload)) return null;
+  return unwrapRepeatablePreKeyEnvelope({
+    payload,
+    recipientUserId,
+    recipientDeviceId: getCurrentDeviceId(),
+    senderUserId,
+    senderDeviceId,
+    expectedSenderIdentityKeyB64: senderIdentityKeyB64,
+  });
 }
 
 export async function encryptPlaintextForDeviceTarget(
+  input: DeviceEncryptTargetInput,
+): Promise<{ encryptedBody: string; senderDeviceId: string } | null> {
+  const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
+  const key = `${input.senderUserId}::${senderDeviceId}::${input.recipientUserId}::${input.recipientDeviceId}`;
+  return runDeviceSessionJob('route', key, async () => {
+    if (input.messageId) {
+      await captureFanoutSessionBeforeMutation({
+        messageId: input.messageId,
+        myUserId: input.senderUserId,
+        myDeviceId: senderDeviceId,
+        peerUserId: input.recipientUserId,
+        peerDeviceId: input.recipientDeviceId,
+      });
+    }
+    return encryptPlaintextForDeviceTargetUnlocked({
+      ...input,
+      senderDeviceId,
+    });
+  });
+}
+
+async function encryptPlaintextForDeviceTargetUnlocked(
   input: DeviceEncryptTargetInput,
 ): Promise<{ encryptedBody: string; senderDeviceId: string } | null> {
   if (!input.recipientDevicePublicKey) return null;
@@ -505,7 +250,27 @@ export async function encryptPlaintextForDeviceTarget(
   const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
 
   if (input.forceFreshSession) {
-    await invalidateDeviceSession(input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId).catch(() => {});
+    await restartExpiredInitiatingSession({
+      myUserId: input.senderUserId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+    }).catch(() => undefined);
+  } else {
+    const initiatingState = await prepareInitiatingSessionForSend({
+      myUserId: input.senderUserId,
+      myDeviceId: senderDeviceId,
+      peerUserId: input.recipientUserId,
+      peerDeviceId: input.recipientDeviceId,
+    });
+    if (initiatingState === 'restart') {
+      await restartExpiredInitiatingSession({
+        myUserId: input.senderUserId,
+        myDeviceId: senderDeviceId,
+        peerUserId: input.recipientUserId,
+        peerDeviceId: input.recipientDeviceId,
+      });
+    }
   }
 
   let encrypted: string | null = null;
@@ -518,6 +283,13 @@ export async function encryptPlaintextForDeviceTarget(
       input.plaintext,
     );
     if (encrypted && encrypted.startsWith(RATCHET_PREFIX_V5)) {
+      encrypted = await wrapRatchetForInitiatingSession({
+        myUserId: input.senderUserId,
+        myDeviceId: senderDeviceId,
+        peerUserId: input.recipientUserId,
+        peerDeviceId: input.recipientDeviceId,
+        ratchetPayload: encrypted,
+      });
       return { encryptedBody: encrypted, senderDeviceId };
     }
     encrypted = null;
@@ -623,10 +395,9 @@ export interface FanoutCopyRow {
  * via the transactional `send_message_with_device_copies` RPC alongside the
  * parent message row).
  *
- * The current sender device is deliberately excluded. Its durable recovery
- * path is the account-wrapped encrypted archive, which survives a complete
- * IndexedDB purge. Other devices belonging to the sender remain fan-out
- * targets so cross-device self history continues to work.
+ * The current sender device is deliberately excluded because it already owns
+ * the local plaintext. Other signed devices belonging to the sender remain
+ * fan-out targets so cross-device history continues to work.
  *
  * Pass a synthetic `messageId` (e.g. the to-be-assigned UUID) — the same id
  * must then be reused when persisting the `messages` row.
@@ -635,15 +406,8 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
   if (isDeviceIdTemporary()) return { rows: [], hasTargets: false };
   const senderDeviceId = getCurrentDeviceId();
 
-  const { data: participants } = await supabase.from('conversation_participants').select('user_id').eq('conversation_id', input.conversationId);
-  if (!participants?.length) return { rows: [], hasTargets: false };
-  const userIds = participants.map(p => p.user_id);
-
-  const targets = (await listFanoutTargets(input.senderUserId, userIds, { verifyPrekeys: false }))
-    .filter(d =>
-      !(d.userId === input.senderUserId && d.deviceId === senderDeviceId) &&
-      !isKnownInvalidDeviceId(d.deviceId),
-    );
+  const targets = (await resolveFanoutRoute(input.conversationId, input.senderUserId))
+    .filter(device => !isKnownInvalidDeviceId(device.deviceId));
   if (targets.length === 0) return { rows: [], hasTargets: false };
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
@@ -651,6 +415,7 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
 
     try {
       const encrypted = await encryptPlaintextForDeviceTarget({
+        messageId: input.messageId,
         conversationId: input.conversationId,
         senderUserId: input.senderUserId,
         senderDeviceId,
@@ -682,214 +447,45 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
   });
 
   const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
-  return { rows, hasTargets: true };
-}
-
-export async function insertFanoutCopyRows(
-  input: FanoutInput,
-  rows: FanoutCopyRow[],
-): Promise<{ inserted: number; multiDevice: boolean }> {
-  if (!rows.length) return { inserted: 0, multiDevice: true };
-
-  const { error } = await supabase.from('message_device_copies').upsert(rows as any, { onConflict: 'message_id,recipient_device_id', ignoreDuplicates: true });
-  if (error) {
-    logCryptoError({ severity: 'error', context: 'fanout', errorCode: 'E_FANOUT_INSERT', errorMessage: error.message, conversationId: input.conversationId, myDeviceId: getCurrentDeviceId(), metadata: { rows: rows.length } });
-    return { inserted: 0, multiDevice: true };
+  if (rows.length !== targets.length) {
+    throw new Error('E2EE_DEVICE_COPY_BUILD_INCOMPLETE');
   }
-
-  // Device copies are auxiliary to the encrypted parent. Do not rewrite the
-  // parent's routing kind after a direct E2EE fast-path send.
-  return { inserted: rows.length, multiDevice: true };
-}
-
-export async function fanoutMessageCopies(input: FanoutInput): Promise<{ inserted: number; multiDevice: boolean }> {
-  const { rows, hasTargets } = await buildFanoutCopies(input);
-  if (!hasTargets) return { inserted: 0, multiDevice: false };
-  return insertFanoutCopyRows(input, rows);
+  return { rows, hasTargets: true };
 }
 
 interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 
-export async function tryReadDeviceCopy(messageId: string, expectedSenderUserId?: string, options: TryReadDeviceCopyOptions = {}): Promise<string | null> {
+export async function tryReadDeviceCopy(
+  messageId: string,
+  expectedSenderUserId?: string,
+  _options: TryReadDeviceCopyOptions = {},
+): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
   const userId = await getCachedAuthUserId();
-  if (!userId) return null;
-  const shouldRequestRetry = options.requestRetry !== false;
+  if (!userId || isDeviceIdTemporary()) return null;
 
   try {
-    let rows: CopyRow[] = [];
-    const { data: targeted } = await supabase.rpc('get_device_copy_for_message', { p_message_id: messageId, p_device_id: myDeviceId });
-    if (targeted && targeted.length > 0) {
-      rows = (targeted as CopyRow[]).map(r => ({ ...r, recipient_device_id: r.recipient_device_id ?? myDeviceId }));
-    } else {
-      const { data: allCopies } = await supabase.rpc('get_device_copies_for_user', { p_message_id: messageId });
-      if (!allCopies || allCopies.length === 0) {
-        const gate = await getDeviceCopyGate(messageId, userId, expectedSenderUserId);
-        if (gate.defer) {
-          logCryptoError({
-            severity: 'info',
-            context: 'decrypt',
-            errorCode: 'DEVICE_COPY_ABSENT_GRACE',
-            errorMessage: 'Device copy absent but still inside async fanout grace window; deferring repair',
-            myDeviceId,
-            peerUserId: gate.senderUserId,
-            metadata: { messageId, reason: gate.reason, ageMs: gate.ageMs },
-          });
-          return null;
-        }
+    const { data } = await supabase.rpc('get_device_copy_for_message', {
+      p_message_id: messageId,
+      p_device_id: myDeviceId,
+    });
+    const rows = ((data ?? []) as CopyRow[])
+      .map(row => ({ ...row, recipient_device_id: row.recipient_device_id ?? myDeviceId }))
+      .filter(row => !expectedSenderUserId || row.sender_user_id === expectedSenderUserId);
 
-        // Missing copies are a message-delivery problem, not a device-validity
-        // problem. A valid local device must not re-publish itself just because
-        // an old message lacks a targeted copy. Ask the sender/refanout path to
-        // repair the message only.
-        if (shouldRequestRetry) {
-          const senderUserId = gate.senderUserId ?? (await (async () => {
-            try {
-              const { data } = await supabase
-                .from('messages')
-                .select('sender_id')
-                .eq('id', messageId)
-                .maybeSingle();
-              return (data as any)?.sender_id as string | undefined;
-            } catch { return undefined; }
-          })());
-          if (senderUserId) {
-            logCryptoError({
-              severity: 'warning',
-              context: 'decrypt',
-              errorCode: 'DEVICE_COPY_ABSENT_REQUESTING_REFANOUT',
-              errorMessage: 'No device copy exists for this user after grace window; requesting message refanout only',
-              myDeviceId,
-              peerUserId: senderUserId,
-              metadata: { messageId, ageMs: gate.ageMs },
-            });
-            await requestDeviceCopyRetry({ messageId, senderUserId });
-          }
-        }
-        return null;
-      }
-      const fallbackRows = filterCopyRowsByExpectedSender(allCopies as CopyRow[], expectedSenderUserId);
-      const firstSender = fallbackRows[0] ?? (allCopies as CopyRow[])[0];
-      const gate = await getDeviceCopyGate(messageId, userId, expectedSenderUserId ?? firstSender?.sender_user_id);
-      if (gate.defer) {
-        logCryptoError({
-          severity: 'info',
-          context: 'decrypt',
-          errorCode: 'DEVICE_COPY_TARGET_MISSING_GRACE',
-          errorMessage: 'Device copies exist but current target copy may still be async; deferring repair',
-          myDeviceId,
-          peerUserId: gate.senderUserId,
-          peerDeviceId: firstSender?.sender_device_id,
-          metadata: {
-            messageId,
-            candidates: (allCopies as CopyRow[]).length,
-            expectedSenderUserId,
-            reason: gate.reason,
-            ageMs: gate.ageMs,
-          },
-        });
-        return null;
-      }
-
-      logCryptoError({
-        severity: 'info',
-        context: 'decrypt',
-        errorCode: 'DEVICE_COPY_TARGET_MISSING',
-        errorMessage: 'No encrypted device copy targets the current device after grace window; requesting message refanout only',
-        myDeviceId,
-        peerUserId: firstSender?.sender_user_id,
-        peerDeviceId: firstSender?.sender_device_id,
-        metadata: {
-          messageId,
-          candidates: (allCopies as CopyRow[]).length,
-          expectedSenderUserId,
-          retryEnabled: shouldRequestRetry,
-          ageMs: gate.ageMs,
-        },
-      });
-      if (shouldRequestRetry) {
-        const retrySenders = new Map<string, string | null>();
-        for (const row of fallbackRows) {
-          if (!retrySenders.has(row.sender_user_id)) {
-            retrySenders.set(row.sender_user_id, row.sender_device_id);
-          }
-        }
-        await Promise.all(
-          [...retrySenders.entries()].map(([senderUserId, senderDeviceId]) =>
-            requestDeviceCopyRetry({ messageId, senderUserId, senderDeviceId }),
-          ),
-        );
-      }
-      return null;
-    }
-
-    if (expectedSenderUserId) {
-      const before = rows.length;
-      rows = filterCopyRowsByExpectedSender(rows, expectedSenderUserId);
-      if (before !== rows.length) logCryptoError({ severity: 'warning', context: 'decrypt', errorCode: 'DEVICE_COPY_SENDER_MISMATCH', errorMessage: 'Rejected device copies whose sender does not match parent message', myDeviceId, metadata: { messageId, expectedSenderUserId, rejected: before - rows.length } });
-      if (rows.length === 0) {
-        return null;
-      }
-    }
-
-    const retrySenders = new Map<string, string | null>();
-    const failedAttempts: Array<Record<string, string>> = [];
     for (const row of rows) {
-      const targetDeviceId = row.recipient_device_id || myDeviceId;
-      const attempt = await tryDecryptCopy(row, userId, targetDeviceId);
+      const attempt = await tryDecryptCopy(row, userId, myDeviceId);
       if (attempt.plaintext !== null) return attempt.plaintext;
-      if (!attempt.attemptedSupportedEnvelope) continue;
-
-      failedAttempts.push({
-        senderUserId: row.sender_user_id,
-        senderDeviceId: row.sender_device_id,
-        targetDeviceId,
-        prefix: classifyDeviceCopyPrefix(row.encrypted_body),
-        reason: attempt.reason ?? 'decrypt_returned_null',
-      });
-      if (attempt.retryable && !retrySenders.has(row.sender_user_id)) {
-        retrySenders.set(row.sender_user_id, row.sender_device_id);
-      }
     }
-
-    if (failedAttempts.length > 0) {
-      const firstFailure = failedAttempts[0];
-      logCryptoError({
-        severity: 'warning',
-        context: 'decrypt',
-        errorCode: 'DEVICE_COPY_DECRYPT_FAILED',
-        errorMessage: 'Supported device-copy envelopes were present but none decrypted',
-        myDeviceId,
-        peerUserId: firstFailure?.senderUserId,
-        peerDeviceId: firstFailure?.senderDeviceId,
-        metadata: {
-          messageId,
-          candidates: rows.length,
-          failed: failedAttempts.slice(0, 8),
-          retryEligibleSenders: [...retrySenders.keys()],
-          retryEnabled: shouldRequestRetry,
-        },
-      });
-    }
-
-    if (shouldRequestRetry && retrySenders.size > 0) {
-      await Promise.all(
-        [...retrySenders.entries()].map(([senderUserId, senderDeviceId]) =>
-          requestDeviceCopyRetry({ messageId, senderUserId, senderDeviceId }),
-        ),
-      );
-    }
-
     return null;
-  } catch (e) {
-    logCryptoException('decrypt', e, { severity: 'error', myDeviceId, metadata: { messageId, stage: 'tryReadDeviceCopy' } });
+  } catch (error) {
+    logCryptoException('decrypt', error, {
+      severity: 'error',
+      myDeviceId,
+      metadata: { messageId, stage: 'sesame_lite_device_copy' },
+    });
     return null;
   }
-}
-
-function filterCopyRowsByExpectedSender(rows: CopyRow[], expectedSenderUserId?: string): CopyRow[] {
-  if (!expectedSenderUserId) return rows;
-  return rows.filter(row => row.sender_user_id === expectedSenderUserId);
 }
 
 export async function tryDecryptDeviceTargetedBody(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<string | null> {
@@ -897,15 +493,19 @@ export async function tryDecryptDeviceTargetedBody(row: { encrypted_body: string
 }
 
 async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<DeviceCopyDecryptAttempt> {
+  const key = `${userId}::${myDeviceId}::${row.sender_user_id}::${row.sender_device_id}`;
+  return runDeviceSessionJob('route', key, () => tryDecryptCopyUnlocked(row, userId, myDeviceId));
+}
+
+async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<DeviceCopyDecryptAttempt> {
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
-    if (prefix === 'x3dh5.init') {
-      const parsed = parseX3DHBootstrapV5(row.encrypted_body);
+    if (prefix === 'x3dh5.init.v3') {
       const { data: senderPub } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
-      if (!senderPub?.identity_key && parsed?.version !== 'v2') {
+      if (!senderPub?.identity_key) {
         return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };
       }
-      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub?.identity_key, row.sender_user_id, row.sender_device_id);
+      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);
       return {
         plaintext,
         attemptedSupportedEnvelope: true,
@@ -914,10 +514,16 @@ async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: str
       };
     }
 
-    if (prefix === 'x3dh5' || prefix === 'x3dh4') {
+    if (prefix === 'x3dh5') {
       const pt = await ratchetDecryptWithSession(userId, myDeviceId, row.sender_user_id, row.sender_device_id, row.encrypted_body);
-      if (pt === null) {
-        await invalidateDeviceSession(userId, myDeviceId, row.sender_user_id, row.sender_device_id).catch(() => {});
+      if (pt !== null) {
+        await acknowledgeInitiatingSessionFromRatchetPayload({
+          myUserId: userId,
+          myDeviceId,
+          peerUserId: row.sender_user_id,
+          peerDeviceId: row.sender_device_id,
+          ratchetPayload: row.encrypted_body,
+        }).catch(() => undefined);
       }
       return {
         plaintext: pt ?? null,

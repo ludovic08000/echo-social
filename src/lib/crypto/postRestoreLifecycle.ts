@@ -79,14 +79,6 @@ async function refreshSignedDeviceListBestEffort(userId: string, deviceId: strin
   }
 }
 
-async function refreshSenderKeysBestEffort(userId: string, deviceId: string): Promise<void> {
-  try {
-    window.dispatchEvent(new CustomEvent('forsure:e2ee-skdm-refresh-needed', {
-      detail: { userId, deviceId, source: 'post-restore' },
-    }));
-  } catch {}
-}
-
 export async function runPostRestoreLifecycle(
   userId: string,
   source: PostRestoreSource = 'unknown',
@@ -97,8 +89,6 @@ export async function runPostRestoreLifecycle(
 
     await revalidateCurrentDevicePrekeys(userId, deviceId);
     await refreshSignedDeviceListBestEffort(userId, deviceId);
-    await refreshSenderKeysBestEffort(userId, deviceId);
-
     try {
       window.dispatchEvent(new CustomEvent('forsure:e2ee-post-restore-complete', {
         detail: { userId, deviceId, source, keysEpoch },
@@ -109,7 +99,7 @@ export async function runPostRestoreLifecycle(
       window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
         detail: { source: `post_restore_${source}`, keysEpoch },
       }));
-      window.dispatchEvent(new CustomEvent('forsure:e2ee-request-refanout-scan', {
+      window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', {
         detail: { userId, deviceId, source: `post_restore_${source}` },
       }));
     } catch {}

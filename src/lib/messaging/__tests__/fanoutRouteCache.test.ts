@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeviceDescriptor } from '@/e2ee-session/types';
-import { __test__ } from '../fanoutRouteCache';
+
+const mocks = vi.hoisted(() => ({
+  invalidateVerifiedDeviceCache: vi.fn(),
+}));
+
+vi.mock('@/e2ee-session/deviceRegistry', () => ({
+  listFanoutTargets: vi.fn(async () => []),
+  invalidateVerifiedDeviceCache: mocks.invalidateVerifiedDeviceCache,
+}));
+
+import { __test__, invalidateFanoutRoute } from '../fanoutRouteCache';
 
 const TARGETS: DeviceDescriptor[] = [{
   userId: 'user-b',
@@ -11,6 +21,7 @@ const TARGETS: DeviceDescriptor[] = [{
 describe('fanoutRouteCache', () => {
   beforeEach(() => {
     __test__.reset();
+    vi.clearAllMocks();
   });
 
   it('coalesces and reuses a route inside the ttl', async () => {
@@ -50,5 +61,11 @@ describe('fanoutRouteCache', () => {
     await expect(__test__.resolveCachedRoute('route-c', loader, 1)).resolves.toEqual(TARGETS);
 
     expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it('invalidates the signed device cache before a stale-route rebuild', () => {
+    invalidateFanoutRoute('conversation-a', 'sender-a');
+
+    expect(mocks.invalidateVerifiedDeviceCache).toHaveBeenCalledTimes(1);
   });
 });

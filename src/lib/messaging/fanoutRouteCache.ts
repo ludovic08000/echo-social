@@ -1,5 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
-import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
+import {
+  invalidateVerifiedDeviceCache,
+  listFanoutTargets,
+} from '@/e2ee-session/deviceRegistry';
 import type { DeviceDescriptor } from '@/e2ee-session/types';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 
@@ -98,6 +101,9 @@ export function invalidateFanoutRoute(
   conversationId: string,
   senderUserId: string,
 ): void {
+  // The route cache is built from the separately cached signed device lists.
+  // Clear both layers; otherwise a stale-route retry rebuilds the same route.
+  invalidateVerifiedDeviceCache();
   const prefix = routePrefix(conversationId, senderUserId);
   for (const key of routeCache.keys()) {
     if (key.startsWith(prefix)) routeCache.delete(key);

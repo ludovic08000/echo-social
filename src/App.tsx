@@ -25,8 +25,6 @@ import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
 import { supabase } from "@/integrations/supabase/client";
-import { catchUpSenderKeyDistribution, subscribeSenderKeyDistribution } from "@/lib/crypto/senderKeyInbound";
-import { subscribeSenderKeyRotation } from "@/lib/crypto/senderKeyRotationWatcher";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -194,79 +192,13 @@ function AccountKeySyncRunner() {
   useCryptoMaintenance();
   useDeviceRegistration();
 
+
   useEffect(() => {
     if (!user?.id) return;
     const stop = startRealtimeKeySync({ userId: user.id });
     return () => stop();
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    void import('@/lib/messaging/backfillMissingCopies').then(({ scheduleBackfillMissingDeviceCopies }) => {
-      scheduleBackfillMissingDeviceCopies(user.id);
-    });
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    let stopped = false;
-    let inFlight = false;
-    let timer: number | null = null;
-
-    const schedule = (reason: string) => {
-      if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        if (stopped || inFlight) return;
-        inFlight = true;
-        void import('@/lib/messaging/deviceCopyRetryProcessor')
-          .then(({ processDeviceCopyRetryRequests }) => processDeviceCopyRetryRequests(20))
-          .then((result) => {
-            if (result.completed > 0 || result.failed > 0) {
-              console.info('[device-copy-retry] processed pending requests', {
-                reason,
-                ...result,
-              });
-            }
-          })
-          .catch((err) => {
-            console.warn('[device-copy-retry] processor failed', err);
-          })
-          .finally(() => {
-            inFlight = false;
-          });
-      }, 700);
-    };
-
-    const initialTimer = window.setTimeout(() => schedule('mount'), 3000);
-    const onRefanoutScan = () => schedule('refanout-scan');
-    window.addEventListener('forsure:e2ee-request-refanout-scan', onRefanoutScan);
-    window.addEventListener('forsure-keys-restored', onRefanoutScan);
-    window.addEventListener('focus', onRefanoutScan);
-
-    const channel = supabase
-      .channel(`device-copy-retry:${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'device_copy_retry_requests',
-          filter: `sender_user_id=eq.${user.id}`,
-        },
-        () => schedule('retry-request-insert'),
-      )
-      .subscribe();
-
-    return () => {
-      stopped = true;
-      window.clearTimeout(initialTimer);
-      if (timer) window.clearTimeout(timer);
-      window.removeEventListener('forsure:e2ee-request-refanout-scan', onRefanoutScan);
-      window.removeEventListener('forsure-keys-restored', onRefanoutScan);
-      window.removeEventListener('focus', onRefanoutScan);
-      void supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -283,20 +215,6 @@ function AccountKeySyncRunner() {
       }).catch(() => {});
     }, 20_000);
     return () => window.clearTimeout(t);
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    void catchUpSenderKeyDistribution(user.id);
-    const unsub = subscribeSenderKeyDistribution(user.id);
-    const unsubRotate = subscribeSenderKeyRotation(user.id);
-    const onFocus = () => { void catchUpSenderKeyDistribution(user.id); };
-    window.addEventListener('focus', onFocus);
-    return () => {
-      unsub();
-      unsubRotate();
-      window.removeEventListener('focus', onFocus);
-    };
   }, [user?.id]);
 
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { isStrictRatchetEnvelopeBody, isCryptoJsonBody } from '@/lib/messaging/messageCompatibility';
+import { isCryptoJsonBody } from '@/lib/messaging/messageCompatibility';
 import { loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 
 interface ConversationPreviewTextProps {
@@ -8,18 +8,10 @@ interface ConversationPreviewTextProps {
   maxLength?: number;
 }
 
-// Detect any encrypted-looking payload that should NEVER be shown raw to the user.
-// Covers strict ratchet envelopes, legacy crypto JSON, and pipeline wrappers like
-// {"fs_secure_pipeline":1,"body":"..."} or anything containing crypto markers.
+// Fail closed for any encrypted-looking JSON so ciphertext is never shown raw.
+// This is display hardening only; it does not implement another wire format.
 function looksEncrypted(input: string | null | undefined): boolean {
-  if (!input || typeof input !== 'string') return false;
-  if (isStrictRatchetEnvelopeBody(input)) return true;
-  const s = input as string;
-  if (isCryptoJsonBody(s)) return true;
-  if (s.startsWith('{') && /"(fs_secure_pipeline|kem|hdr|ct|encryptionMode|iv|sig|fp)"/.test(s)) {
-    return true;
-  }
-  return false;
+  return isCryptoJsonBody(input);
 }
 
 function formatPreview(body: string, maxLength: number) {

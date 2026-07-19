@@ -109,11 +109,4 @@ export async function runPostRestoreSync(userId: string, reason: RestoreReason):
     // non-fatal
   }
 
-  // 3. Resume pending message queue (decrypt retries).
-  try {
-    const { messageQueue } = await import('@/lib/messaging/messageQueue');
-    void messageQueue.resumeAll().catch(() => {});
-  } catch {
-    // non-fatal — queue module unavailable in some test contexts
-  }
 }

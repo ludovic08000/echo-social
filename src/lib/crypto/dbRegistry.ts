@@ -46,7 +46,7 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   },
   'device-sessions': {
     name: 'forsure-device-sessions',
-    version: 3,
+    version: 4,
     stores: [
       { name: 'sessions', keyPath: 'id' },
       {
@@ -160,7 +160,13 @@ export function openDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
       reset(key);
       reject(new Error(`IndexedDB open blocked: ${spec.name}`));
     };
-    request.onupgradeneeded = () => ensureStores(request.result, spec, request.transaction);
+    request.onupgradeneeded = (event) => {
+      ensureStores(request.result, spec, request.transaction);
+      if (key === 'device-sessions' && event.oldVersion > 0 && event.oldVersion < 4) {
+        request.transaction?.objectStore('sessions').clear();
+        request.transaction?.objectStore('initiating-sessions').clear();
+      }
+    };
     request.onsuccess = () => {
       const db = request.result;
       const closeForUpgrade = db.close.bind(db);
@@ -169,7 +175,9 @@ export function openDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
           configurable: true,
           value: () => console.warn(`[E2EE][IDB:${spec.name}] ignored close()`),
         });
-      } catch {}
+      } catch {
+        // Some IndexedDB implementations expose a non-configurable close().
+      }
       db.onversionchange = () => {
         closeForUpgrade();
         reset(key);

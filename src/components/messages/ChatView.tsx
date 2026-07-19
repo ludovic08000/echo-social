@@ -6,7 +6,7 @@ import {
   ArrowLeft, Send, Plus, Smile, Phone, Video,
   Camera, X, CheckCheck, Pin, PinOff, ChevronDown,
   Forward, Users, UserPlus, LogOut, Crown, UserMinus, Sparkles, Info,
-  AlertTriangle, Languages, Timer, KeyRound
+  AlertTriangle, Languages, Timer
 } from 'lucide-react';
 import { format, isSameDay } from 'date-fns';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -49,7 +49,6 @@ import { useTypingPresence } from '@/hooks/useTypingPresence';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
 import { LRUMap } from '@/lib/utils/lruMap';
 import { DisappearingMessagesDialog } from './DisappearingMessagesDialog';
-import { SenderKeysDialog } from './SenderKeysDialog';
 import { IdentityChangeBanner } from './IdentityChangeBanner';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
 import { DocumentBubble } from './DocumentBubble';
@@ -103,7 +102,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [forwardMsg, setForwardMsg] = useState<{ id: string; plaintext: string } | null>(null);
   const [showGroupPanel, setShowGroupPanel] = useState(false);
   const [showDisappearing, setShowDisappearing] = useState(false);
-  const [showSenderKeys, setShowSenderKeys] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
@@ -217,6 +215,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const handlePlaintextCached = useCallback((serverId: string, plaintext: string) => {
     const media = parseMediaMessage(plaintext);
     if (media) setMediaKey(serverId, media.keyB64, isVideoMediaLabel(media.label));
+    if (decryptedCache.get(serverId) === plaintext) return;
     decryptedCache.set(serverId, plaintext);
     bumpCache();
     void savePlaintext(serverId, plaintext);
@@ -643,9 +642,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const onDecrypted = useCallback((msgId: string, text: string) => {
     const parsed = parseMediaMessage(text);
     if (parsed) setMediaKey(msgId, parsed.keyB64, isVideoMediaLabel(parsed.label));
-    decryptedCache.set(msgId, parsed ? text : text);
+    if (decryptedCache.get(msgId) === text) return;
+    decryptedCache.set(msgId, text);
     bumpCache();
-    void savePlaintext(msgId, parsed ? text : text);
+    void savePlaintext(msgId, text);
   }, [bumpCache]);
 
   // Pre-warm the in-memory cache from the persistent IndexedDB store as soon as
@@ -744,9 +744,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowDisappearing(true)} title="Messages éphémères">
               <Timer className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowSenderKeys(true)} title="Chiffrement de groupe (Sender Keys)">
-              <KeyRound className="w-5 h-5" />
-            </Button>
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary" onClick={() => setShowGroupPanel(!showGroupPanel)}>
               <Info className="w-5 h-5" />
             </Button>
@@ -775,9 +772,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       )}
 
       {/* Silent restore policy: no "Restaurer mes clés" banner inside the chat.
-          Restoration runs automatically in background via useAccountKeySync,
-          realtimeKeySync and messageQueue.resumeAll(). The dedicated UI lives
-          in Settings → Privacy → Key Backup.
+          Sesame-lite refreshes device routes and retries its encrypted outbox.
 
           We keep ONLY the fingerprint-change banner: that's a real MITM
           security signal that REQUIRES explicit user action — it must stay
@@ -1515,16 +1510,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
           open={showDisappearing}
           onOpenChange={setShowDisappearing}
           conversationId={conversationId}
-        />
-      )}
-
-      {/* Sender Keys (group E2EE) opt-in dialog */}
-      {conversationId && (
-        <SenderKeysDialog
-          open={showSenderKeys}
-          onOpenChange={setShowSenderKeys}
-          conversationId={conversationId}
-          isGroup={!!isGroup}
         />
       )}
 

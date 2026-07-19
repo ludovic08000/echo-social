@@ -5,9 +5,8 @@
  * ratchet prefixes and let v5 (`x3dh5.`) envelopes silently fall through
  * every decoder, leaving the message displayed as ciphertext.
  *
- * The recipient-side fan-out path MUST route v4 AND v5 device-pair
- * envelopes to `ratchetDecryptWithSession`. Anything else regresses
- * cross-platform first contact.
+ * Sesame-lite routes only authenticated v5 envelopes. Older formats must be
+ * rejected without touching ratchet state or requesting refanout.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -18,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   supabaseRpc: vi.fn(),
   x3dhRespondForDevice: vi.fn(),
   getOrCreateIdentityKeys: vi.fn(),
+  invalidateDeviceSession: vi.fn(),
   senderIdentityKey: { value: null as string | null },
   x3dhUnwrapForDeviceFlag: { called: false },
 }));
@@ -27,6 +27,7 @@ const {
   supabaseRpc,
   x3dhRespondForDevice,
   getOrCreateIdentityKeys,
+  invalidateDeviceSession,
   senderIdentityKey,
   x3dhUnwrapForDeviceFlag,
 } = mocks;
@@ -36,7 +37,7 @@ vi.mock('@/lib/crypto/deviceRatchet', () => ({
   ratchetDecryptWithSession: mocks.ratchetDecryptWithSession,
   establishDeviceSession: vi.fn(),
   getSessionPeerSpkId: vi.fn(),
-  invalidateDeviceSession: vi.fn(),
+  invalidateDeviceSession: mocks.invalidateDeviceSession,
   RATCHET_PREFIX_V4: 'x3dh4.',
   RATCHET_PREFIX_V5: 'x3dh5.',
 }));
@@ -111,6 +112,7 @@ beforeEach(() => {
   supabaseRpc.mockResolvedValue({ data: [] });
   x3dhRespondForDevice.mockReset();
   getOrCreateIdentityKeys.mockReset();
+  invalidateDeviceSession.mockReset();
   getOrCreateIdentityKeys.mockResolvedValue({});
   senderIdentityKey.value = null;
   x3dhUnwrapForDeviceFlag.called = false;
@@ -143,7 +145,7 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
     expect(x3dhUnwrapForDeviceFlag.called).toBe(false);
   });
 
-  it('still routes legacy v4 (`x3dh4.`) copies to ratchetDecryptWithSession', async () => {
+  it('rejects former v4 (`x3dh4.`) copies', async () => {
     ratchetDecryptWithSession.mockResolvedValue('hello v4');
 
     const pt = await tryDecryptDeviceTargetedBody(
@@ -156,8 +158,8 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
       ME.deviceId,
     );
 
-    expect(pt).toBe('hello v4');
-    expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
+    expect(pt).toBeNull();
+    expect(ratchetDecryptWithSession).not.toHaveBeenCalled();
   });
 
   it('does not route disabled v3 (`x3dh3.`) copies through the v5/v4 path', async () => {
@@ -192,11 +194,12 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
 
     expect(pt).toBeNull();
     expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
+    expect(invalidateDeviceSession).not.toHaveBeenCalled();
     // Still must not fall through to X3DH unwrap (would consume an OPK for nothing).
     expect(x3dhUnwrapForDeviceFlag.called).toBe(false);
   });
 
-  it('requests a fresh device copy when a v5 row exists but decrypt fails', async () => {
+  it('does not start a refanout protocol when a v5 copy fails', async () => {
     ratchetDecryptWithSession.mockResolvedValue(null);
     supabaseRpc.mockImplementation((name: string) => {
       if (name === 'get_device_copy_for_message') {
@@ -216,11 +219,7 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
 
     expect(pt).toBeNull();
     expect(ratchetDecryptWithSession).toHaveBeenCalledTimes(1);
-    expect(requestDeviceCopyRetry).toHaveBeenCalledWith({
-      messageId: 'message-v5-failed',
-      senderUserId: SENDER.user_id,
-      senderDeviceId: SENDER.device_id,
-    });
+    expect(requestDeviceCopyRetry).not.toHaveBeenCalled();
   });
 
   it('does not request retry during diagnostic resync scans', async () => {
@@ -269,11 +268,7 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
 
     expect(pt).toBeNull();
     expect(ratchetDecryptWithSession).not.toHaveBeenCalled();
-    expect(requestDeviceCopyRetry).toHaveBeenCalledWith({
-      messageId: 'message-needs-refanout',
-      senderUserId: SENDER.user_id,
-      senderDeviceId: SENDER.device_id,
-    });
+    expect(requestDeviceCopyRetry).not.toHaveBeenCalled();
   });
 
   it('does not request refanout for missing targeted rows during diagnostic scans', async () => {
@@ -301,7 +296,7 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
     expect(requestDeviceCopyRetry).not.toHaveBeenCalled();
   });
 
-  it('requests a fresh copy when x3dh5.init used an OPK missing from local storage', async () => {
+  it('rejects the former unversioned x3dh5.init bootstrap', async () => {
     senderIdentityKey.value = 'sender-identity-key-b64';
     x3dhRespondForDevice.mockRejectedValue(new Error('X3DH_OPK_PRIVATE_MISSING'));
     supabaseRpc.mockImplementation((name: string) => {
@@ -321,16 +316,7 @@ describe('tryDecryptCopy — cross-platform v5 envelope routing', () => {
     const pt = await tryReadDeviceCopy('message-opk-missing', SENDER.user_id);
 
     expect(pt).toBeNull();
-    expect(x3dhRespondForDevice).toHaveBeenCalledWith(
-      expect.anything(),
-      ME.userId,
-      ME.deviceId,
-      expect.objectContaining({ opkId: 7 }),
-    );
-    expect(requestDeviceCopyRetry).toHaveBeenCalledWith({
-      messageId: 'message-opk-missing',
-      senderUserId: SENDER.user_id,
-      senderDeviceId: SENDER.device_id,
-    });
+    expect(x3dhRespondForDevice).not.toHaveBeenCalled();
+    expect(requestDeviceCopyRetry).not.toHaveBeenCalled();
   });
 });

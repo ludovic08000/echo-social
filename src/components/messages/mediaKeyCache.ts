@@ -32,6 +32,10 @@ function evictOneUnsubscribed(): void {
 
 export function setMediaKey(messageId: string, mediaKeyB64: string, isVideo: boolean): void {
   const existing = store.get(messageId);
+  if (existing?.mediaKeyB64 === mediaKeyB64 && existing.isVideo === isVideo) {
+    touch(messageId, existing);
+    return;
+  }
   if (!existing && store.size >= MAX_ENTRIES) evictOneUnsubscribed();
 
   const entry: Entry = { mediaKeyB64, isVideo };

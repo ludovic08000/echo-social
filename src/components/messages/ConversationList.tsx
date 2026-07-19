@@ -128,10 +128,7 @@ export function ConversationList() {
           </div>
         </header>
 
-        {/* Silent recovery: no "Restaurer mes clés" CTA in the conversation
-            list. Restoration runs automatically in background (useAccountKeySync
-            + realtimeKeySync + messageQueue). The dedicated UI is in
-            Settings → Privacy → Key Backup. */}
+        {/* Sesame-lite prepares device routes silently; no recovery CTA here. */}
 
         {!search && conversations && conversations.length > 0 && (
           <div className="flex gap-4 px-4 py-3 overflow-x-auto scrollbar-none">

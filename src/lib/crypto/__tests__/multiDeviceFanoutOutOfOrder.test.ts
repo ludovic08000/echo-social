@@ -35,7 +35,7 @@ import { bufferToBase64, randomBytes } from '../utils';
 
 // ─── Session seeding (copy of helpers from multiDeviceIntegration) ─────────
 const DB_NAME = 'forsure-device-sessions';
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 const STORE = 'sessions';
 
 function openDB(): Promise<IDBDatabase> {
@@ -331,6 +331,19 @@ describe('fan-out multi-session — concurrent senders', () => {
 });
 
 describe('fan-out multi-session — replay & cache hardening', () => {
+  it('accepts a concurrently delivered envelope only once', async () => {
+    await seedSession(A1, B1);
+    const envelope = await ratchetEncrypt(A1.user, A1.device, B1.user, B1.device, 'single-use');
+
+    const results = await Promise.all([
+      ratchetDecrypt(B1.user, B1.device, envelope!),
+      ratchetDecrypt(B1.user, B1.device, envelope!),
+    ]);
+
+    expect(results.filter(result => result === 'single-use')).toHaveLength(1);
+    expect(results.filter(result => result === null)).toHaveLength(1);
+  });
+
   it('each envelope is single-use per receiver device (replay rejected)', async () => {
     await seedSession(A1, B1);
     await seedSession(A1, B2);

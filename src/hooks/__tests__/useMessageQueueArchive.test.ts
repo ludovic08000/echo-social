@@ -1,78 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { buildMultiDeviceParentEnvelope, selectInitialDeliveryMode, shouldArchiveMessageBody } from '../useMessageQueue';
+import { buildMultiDeviceParentEnvelope, selectInitialDeliveryMode } from '../useMessageQueue';
 import { classifyOutboundFailure } from '../useMessageQueueSignal';
 
-const MEDIA_KEY =
-  'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
-
-describe('useMessageQueue archive gating', () => {
-  it('archives normal encrypted text bodies', () => {
-    expect(
-      shouldArchiveMessageBody({
-        sanitized: 'hello',
-        isSpecial: false,
-        encryptedSuccessfully: true,
-        encryptionWasRequired: true,
-      }),
-    ).toBe(true);
-  });
-
-  it('archives encrypted media bodies that carry a media key', () => {
-    expect(
-      shouldArchiveMessageBody({
-        sanitized: buildMediaMessageBody('Photo', MEDIA_KEY),
-        isSpecial: true,
-        encryptedSuccessfully: true,
-        encryptionWasRequired: true,
-      }),
-    ).toBe(true);
-  });
-
-  it('does not archive view-once media keys', () => {
-    expect(
-      shouldArchiveMessageBody({
-        sanitized: buildMediaMessageBody('Photo', MEDIA_KEY),
-        isSpecial: true,
-        viewOnce: true,
-        encryptedSuccessfully: true,
-        encryptionWasRequired: true,
-      }),
-    ).toBe(false);
-  });
-
-  it('does not archive legacy special labels without a media key', () => {
-    expect(
-      shouldArchiveMessageBody({
-        sanitized: 'Photo',
-        isSpecial: true,
-        encryptedSuccessfully: true,
-        encryptionWasRequired: true,
-      }),
-    ).toBe(false);
-  });
-
-  it('does not archive when encryption was not used or required', () => {
-    expect(
-      shouldArchiveMessageBody({
-        sanitized: buildMediaMessageBody('Photo', MEDIA_KEY),
-        isSpecial: true,
-        encryptedSuccessfully: false,
-        encryptionWasRequired: false,
-      }),
-    ).toBe(false);
-  });
-  it('uses direct E2EE immediately for a fresh encrypted send', () => {
+describe('useMessageQueue Sesame-lite transport', () => {
+  it('uses Sesame-lite fan-out for every fresh encrypted send', () => {
     expect(selectInitialDeliveryMode({
       encryptionWasRequired: true,
       resumedEncryptedBody: null,
       preparedCopyCount: 0,
-    })).toBe('direct');
+    })).toBe('multi_device');
   });
 
-  it('resumes Sesame only when exact prepared copies are already durable', () => {
+  it('never downgrades to direct E2EE when prepared copies are absent', () => {
     const parent = buildMultiDeviceParentEnvelope('local-resume', 'trace-resume');
     expect(selectInitialDeliveryMode({
       encryptionWasRequired: true,
@@ -83,7 +24,7 @@ describe('useMessageQueue archive gating', () => {
       encryptionWasRequired: true,
       resumedEncryptedBody: parent,
       preparedCopyCount: 0,
-    })).toBe('direct');
+    })).toBe('multi_device');
   });
 
   it('keeps Zeus plaintext mode explicit', () => {
@@ -119,6 +60,8 @@ describe('useMessageQueue archive gating', () => {
 
     expect(isMultiDeviceEnvelopeBody(envelope)).toBe(true);
     expect(parsed).toMatchObject({
+      protocol: 'forsure-sesame-lite',
+      version: 1,
       encryptionMode: 'multi_device',
       v: PROTOCOL_VERSION,
       ct: 'device_copies',

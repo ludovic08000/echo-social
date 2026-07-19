@@ -13,11 +13,8 @@ const recoveryIdentities = new Map<string, Promise<RecoveredIdentity>>();
 const restoreAttempts = new Map<string, Promise<IdentityKeyPair | null>>();
 
 function normalizeIdentity(keys: IdentityKeyPair, recoveredAfterLoss = false): RecoveredIdentity {
-  // Critical compatibility rule:
-  // useE2EE.ts still contains a legacy guard that blocks when isNewIdentity=true
-  // and an older server key/backup exists. Identity recovery is now handled by
-  // identityRecovery/identityBootstrap, so this public safe facade must never
-  // expose isNewIdentity=true to runtime hooks.
+  // Identity recovery is handled here before the Sesame-lite trust gate runs,
+  // so runtime consumers receive one already-resolved account identity.
   return {
     ...keys,
     isNewIdentity: false,
@@ -41,7 +38,9 @@ async function tryRestoreLatestBackup(userId: string): Promise<IdentityKeyPair |
           window.dispatchEvent(new CustomEvent('forsure-e2ee-identity-restored', {
             detail: { source: 'latest_backup', fingerprint: keys.fingerprint },
           }));
-        } catch {}
+        } catch {
+          // Event dispatch is optional in non-browser runtimes.
+        }
 
         console.info('[E2EE][RECOVERY] Identity restored from latest encrypted backup.');
         return keys;
@@ -78,7 +77,9 @@ async function createReplacementIdentity(userId: string, reason: string): Promis
       window.dispatchEvent(new CustomEvent('forsure-e2ee-security-code-changed', {
         detail: { reason, fingerprint: keys.fingerprint },
       }));
-    } catch {}
+    } catch {
+      // Event dispatch is optional in non-browser runtimes.
+    }
 
     return normalizeIdentity(keys, true);
   })();
@@ -90,7 +91,8 @@ async function createReplacementIdentity(userId: string, reason: string): Promis
 export async function getOrCreateIdentityKeys(userId: string): Promise<RecoveredIdentity> {
   try {
     const keys = await strictGetOrCreateIdentityKeys(userId);
-    return normalizeIdentity(keys, !!(keys as any).recoveredAfterLoss);
+    const recoveryMetadata = keys as IdentityKeyPair & { recoveredAfterLoss?: boolean };
+    return normalizeIdentity(keys, recoveryMetadata.recoveredAfterLoss === true);
   } catch (error) {
     if (error instanceof PinUnlockRequiredError) {
       return createReplacementIdentity(userId, error.message || 'pin_required');

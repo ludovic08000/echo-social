@@ -35,7 +35,7 @@ const INITIAL: FanoutCopyRow[] = [{
 const REBUILT: FanoutCopyRow[] = [{
   ...INITIAL[0],
   recipient_device_id: 'device-new-12345678',
-  encrypted_body: 'x3dh5.init.v2.iv.ct.ek.1.2.ika.ikb',
+  encrypted_body: 'x3dh5.init.v3.payload',
 }];
 
 function args(rebuildCopies = vi.fn(async () => REBUILT)) {
@@ -130,16 +130,48 @@ describe('sendMessageWithSesameRetry', () => {
     expect(mocks.commit).not.toHaveBeenCalled();
   });
 
-  it('falls back to the old RPC signature only when the new overload is absent', async () => {
-    mocks.rpc
-      .mockResolvedValueOnce({ data: null, error: { code: '42883', message: 'p_sender_device_id overload does not exist' } })
-      .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
+  it('keeps ratchet state pending when the transport promise throws', async () => {
+    mocks.rpc.mockRejectedValue(new Error('Failed to fetch'));
 
     const result = await sendMessageWithSesameRetry(args());
 
-    expect(result.error).toBeNull();
-    expect(result.usedCompatibilitySignature).toBe(true);
+    expect(result.error?.message).toContain('Failed to fetch');
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rollback).not.toHaveBeenCalled();
+    expect(mocks.commit).not.toHaveBeenCalled();
+  });
+
+  it('bounds a transport that never settles and keeps the same ciphertext pending', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.rpc.mockImplementation(() => new Promise(() => {}));
+
+      const pending = sendMessageWithSesameRetry(args());
+      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(6_000);
+      const result = await pending;
+
+      expect(result.error?.message).toContain('NETWORK_TRANSPORT_TIMEOUT');
+      expect(mocks.rpc).toHaveBeenCalledTimes(2);
+      expect(mocks.rollback).not.toHaveBeenCalled();
+      expect(mocks.commit).not.toHaveBeenCalled();
+      expect(result.copies).toEqual(INITIAL);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects a server that does not expose the authoritative device-bound RPC', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { code: '42883', message: 'p_sender_device_id overload does not exist' },
+    });
+
+    const result = await sendMessageWithSesameRetry(args());
+
+    expect(result.error?.code).toBe('42883');
+    expect(result.usedCompatibilitySignature).toBe(false);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.rpc.mock.calls[0][1]).toHaveProperty('p_sender_device_id');
-    expect(mocks.rpc.mock.calls[1][1]).not.toHaveProperty('p_sender_device_id');
   });
 });

@@ -13,21 +13,6 @@ export {
   type EncryptedEnvelope,
 } from './e2ee';
 
-export {
-  initRatchetAsInitiator,
-  initRatchetAsResponder,
-  ratchetEncrypt,
-  ratchetDecrypt,
-  serializeRatchetState,
-  deserializeRatchetState,
-  getRatchetReadiness,
-  isRatchetReadyForEncrypt,
-  isRatchetReadyForDecrypt,
-  type RatchetState,
-  type RatchetEnvelope,
-  type RatchetReadiness,
-} from './ratchet';
-
 export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
 export { getOrCreateIdentityKeys } from './keyManagerSafe';
@@ -97,12 +82,6 @@ export {
   isReplay,
   markReplaySeen,
 } from './replayGuard';
-
-export {
-  clearAllRatchetSessions,
-  clearConversationRatchetSession,
-  startSessionInvalidationWatcher,
-} from './sessionInvalidation';
 
 export {
   exportPublicKeyBundle,

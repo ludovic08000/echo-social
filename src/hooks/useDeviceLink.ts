@@ -99,7 +99,7 @@ function notifyKeysRestored(status: string): void {
       detail: { status, source: 'device_link' },
     }));
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
-    window.dispatchEvent(new CustomEvent('forsure:e2ee-request-refanout-scan'));
+    window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready'));
   } catch {
     // SSR/tests
   }

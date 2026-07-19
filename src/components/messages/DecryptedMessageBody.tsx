@@ -105,6 +105,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const silentRetryAttemptRef = useRef(0);
   const identityRef = useRef(messageId ?? body);
   const mountedAtRef = useRef(Date.now());
+  // Publishing plaintext updates the parent cache, which changes refreshKey.
+  // Remember the last value we published so that refresh does not feed back
+  // into another identical publication and an unbounded render/decrypt loop.
+  const lastPublishedPlaintextRef = useRef<string | null>(cachedPlaintext ?? null);
   const lastGoodOutcomeRef = useRef<DecryptionOutcome | null>(
     initial.outcome && !initial.outcome.hidden ? initial.outcome : null,
   );
@@ -183,6 +187,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     setRecoveryExpired(false);
     setLocalEditedText(null);
     silentRetryAttemptRef.current = 0;
+    lastPublishedPlaintextRef.current = cachedPlaintext ?? null;
     bubbleDiagnostic('UNKNOWN', {
       messageId,
       reason: 'bubble_identity_changed_without_unmount',
@@ -275,7 +280,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       }
       if (!next.hidden) {
         const persisted = persistOutcome(body, next, messageId);
-        onDecryptedRef.current?.(persisted);
+        if (lastPublishedPlaintextRef.current !== persisted) {
+          lastPublishedPlaintextRef.current = persisted;
+          onDecryptedRef.current?.(persisted);
+        }
       }
       bubbleDiagnostic('DECRYPT_SUCCESS', {
         messageId,
@@ -352,7 +360,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     const editedText = messageEdit.resolved?.text;
     if (!editedText) return;
     setLocalEditedText(editedText);
-    onDecryptedRef.current?.(editedText);
+    if (lastPublishedPlaintextRef.current !== editedText) {
+      lastPublishedPlaintextRef.current = editedText;
+      onDecryptedRef.current?.(editedText);
+    }
     bubbleDiagnostic('DECRYPT_SUCCESS', {
       messageId,
       reason: 'resolved_message_edit',
@@ -481,7 +492,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       const resolved = await messageEdit.editMessage(next);
       setLocalEditedText(resolved.text);
       setEditorOpen(false);
-      onDecryptedRef.current?.(resolved.text);
+      if (lastPublishedPlaintextRef.current !== resolved.text) {
+        lastPublishedPlaintextRef.current = resolved.text;
+        onDecryptedRef.current?.(resolved.text);
+      }
       toast.success('Message modifié');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Modification impossible.');

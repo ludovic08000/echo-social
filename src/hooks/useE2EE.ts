@@ -1,240 +1,113 @@
 /**
- * useE2EE - React hook for End-to-End Encryption (v6 — Mode-Tagged & Robust)
- * 
- * SECURITY GUARANTEES:
- * - encrypt() NEVER returns plaintext — throws on failure
- * - decrypt() NEVER shows raw ciphertext — shows explicit error states
- * - Fingerprint changes are detected and BLOCK communication until acknowledged
- * - verified=true ONLY when signature is cryptographically verified
- * 
- * ARCHITECTURE (v7 — Ratchet-Only Outbound, Mode-Tagged Payloads):
- * - Every encrypted payload carries an explicit `encryptionMode` field:
- *   "ratchet" or "legacy"
- * - Decrypt dispatches to the correct decryption path — NO blind fallback
- * - Primary: Double Ratchet (X25519 DH ratchet + symmetric KDF chain)
- * - Legacy session ONLY used for inbound decrypt of old messages (never outbound)
+ * Account identity and trust gate for Sesame-lite.
+ *
+ * Message encryption does not live in this hook. Sesame-lite owns exactly one
+ * Double Ratchet session per local-device/remote-device pair and sends only
+ * device-targeted copies through the atomic message RPC.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  getOrCreateIdentityKeys,
   exportPublicKeyBundle,
-  initRatchetAsInitiator,
-  initRatchetAsResponder,
-  ratchetEncrypt,
-  ratchetDecrypt,
-  serializeRatchetState,
-  deserializeRatchetState,
-  getRatchetReadiness,
-  isRatchetReadyForEncrypt,
-  isRatchetReadyForDecrypt,
-  // X3DH
-  x3dhInitiate,
-  x3dhRespond,
-  fetchPrekeyBundle,
-  generateAndUploadSignedPrekey,
+  getOrCreateIdentityKeys,
   refreshSignedPrekeyIfNeeded,
   type IdentityKeyPair,
-  type RatchetState,
-  type RatchetEnvelope,
-  type X3DHInitialMessage,
 } from '@/lib/crypto';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
-import { base64ToBuffer, bufferToBase64, constantTimeEqual } from '@/lib/crypto/utils';
-import { cryptoRateCheck } from '@/lib/crypto/rateLimiter';
-import { verifyCryptoIntegrity, isTampered, hardGlobals, hardCrypto } from '@/lib/crypto/cryptoIntegrity';
-import { KX_KEY_PARAMS, STORE_PREKEYS, STORE_SESSION } from '@/lib/crypto/constants';
-import { openE2EEDB } from '@/lib/crypto/indexedDb';
-import { runTx, runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import {
-  saveRatchetLocal,
-  loadRatchetLocal,
-  deleteRatchetLocal,
-  recreateLegacyE2EEDatabase,
-  RATCHET_DB_NAME,
-  RATCHET_DB_VERSION,
-  RATCHET_STORE_NAME,
-  setRatchetSyncHook,
-} from '@/lib/crypto/ratchetStore';
-import {
-  fetchPeerPublicKeys,
-  getCachedAuthUserId,
-  primeAuthUserId,
-  _peerKeyCache,
-  _peerSyncPromise,
-} from '@/lib/crypto/peerKeyCache';
-import {
-  KNOWN_FP_KEY,
-  getKnownFingerprints,
-  saveKnownFingerprint,
-  saveKnownFingerprintServer,
-  checkFingerprintChange,
   checkFingerprintChangeWithServer,
   invalidateFingerprintCheckCache,
-  type FingerprintCheckResult,
+  saveKnownFingerprint,
+  saveKnownFingerprintServer,
 } from '@/lib/crypto/fingerprintTracker';
-import { isPeerSPKStale } from '@/lib/crypto/spkFreshness';
-import { isCryptoJsonBody, isStrictRatchetEnvelopeBody, isUnsupportedEncryptedBody } from '@/lib/messaging/messageCompatibility';
-import { unwrapSecurePipelineEnvelope } from '@/lib/crypto/secureMessagePipeline';
-import { isSenderKeyWire, parseSKDM, SENDER_KEY_PREFIX } from '@/lib/crypto/senderKeys';
 import {
-  installSKDM,
-  loadRecipientStateForWire,
-  decryptFromGroup,
-} from '@/lib/crypto/senderKeySession';
-import { tryEncryptViaSenderKeys } from '@/lib/crypto/senderKeyOutbound';
+  _peerKeyCache,
+  fetchPeerPublicKeys,
+  primeAuthUserId,
+} from '@/lib/crypto/peerKeyCache';
 import {
-  fetchPeerDeviceSigningKeys,
-  resolveSigningKeyForEnvelope,
-  type DeviceSigningKeyMap,
-} from '@/lib/crypto/peerDeviceSigningKeys';
-import {
-  archiveRatchetState,
-  tryDecryptWithArchivedSessions,
-  exportArchiveJson,
-  importArchiveJson,
-} from '@/lib/crypto/ratchetArchive';
-import {
-  noteFailureAndDecideReset,
-  recordReset,
-  clearSessionReset,
-} from '@/lib/crypto/sessionResetTracker';
-import {
-  pushEncryptedSession,
-  pushEncryptedArchive,
-  pullEncryptedSession,
-  pullEncryptedArchive,
-} from '@/lib/crypto/encryptedSessionSync';
+  isCryptoJsonBody,
+  isUnsupportedEncryptedBody,
+} from '@/lib/messaging/messageCompatibility';
 
 const ZEUS_ID = '00000000-0000-0000-0000-000000000001';
 
-// ─── Conversation-scoped decrypt serializer & terminal-failure tracking ───
-// Prevents 50 concurrent decrypts from each spawning their own ratchet init.
+type IdentityWithMetadata = IdentityKeyPair & { isNewIdentity?: boolean };
 
-// ─── Global deduplication & caching layer ───
-// Peer-key cache, auth-user cache, fingerprint tracker and SPK freshness probe
-// have been moved to dedicated modules under `@/lib/crypto/*` (see imports).
+type ReadyIdentity = {
+  keys: IdentityKeyPair;
+  fingerprint: string;
+};
 
-/**
- * Global decrypt serializer per conversation.
- * When 50 messages mount simultaneously, they ALL call decrypt() in parallel.
- * Without serialization, each one tries to init the ratchet independently,
- * causing hundreds of duplicate user_public_keys/x3dh requests.
- * This ensures only ONE ratchet init runs at a time per conversation.
- */
-const _decryptQueue = new Map<string, Promise<any>>();
-const _ratchetTerminalFailures = new Set<string>();
+const identityInitialization = new Map<string, Promise<ReadyIdentity>>();
 
-async function serializedDecrypt<T>(convId: string, fn: () => Promise<T>): Promise<T> {
-  const prev = _decryptQueue.get(convId) ?? Promise.resolve();
-  const next = prev.then(fn, fn); // run fn after previous completes (even if it failed)
-  _decryptQueue.set(convId, next);
-  // Clean up the reference once done to prevent memory leaks
-  next.finally(() => {
-    if (_decryptQueue.get(convId) === next) {
-      _decryptQueue.delete(convId);
+async function initializeIdentity(userId: string): Promise<ReadyIdentity> {
+  const active = identityInitialization.get(userId);
+  if (active) return active;
+
+  const initialization = (async () => {
+    primeAuthUserId(userId);
+    const keysResult = await getOrCreateIdentityKeys(userId);
+    const keys: IdentityKeyPair = keysResult;
+    const bundle = await exportPublicKeyBundle(keys);
+
+    const { data: existingKey, error: existingKeyError } = await supabase
+      .from('user_public_keys')
+      .select('fingerprint')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (existingKeyError) throw existingKeyError;
+
+    const isNewIdentity = (keysResult as IdentityWithMetadata).isNewIdentity === true;
+    if (isNewIdentity && existingKey && existingKey.fingerprint !== bundle.fingerprint) {
+      window.dispatchEvent(new CustomEvent('forsure-identity-lost', {
+        detail: {
+          hasBackup: true,
+          serverFingerprint: existingKey.fingerprint,
+        },
+      }));
+      throw new Error('identity_lost_backup_available');
     }
+
+    const { error: publishError } = await supabase
+      .from('user_public_keys')
+      .upsert({
+        user_id: userId,
+        identity_key: bundle.identityKey,
+        signing_key: bundle.signingKey,
+        fingerprint: bundle.fingerprint,
+        kem_type: 'X25519',
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,is_active' });
+
+    if (publishError) throw publishError;
+
+    void refreshSignedPrekeyIfNeeded(userId, keys.signingPrivateKey).catch(error => {
+      console.warn('[SESAME_LITE] signed prekey refresh failed', error);
+    });
+    void supabase.rpc('push_my_fingerprint_to_peers');
+
+    return { keys, fingerprint: bundle.fingerprint };
+  })().catch(error => {
+    identityInitialization.delete(userId);
+    throw error;
   });
-  return next;
+
+  identityInitialization.set(userId, initialization);
+  return initialization;
 }
 
-function markRatchetTerminalFailure(conversationId: string | undefined, body: string | undefined) {
-  if (!conversationId || !body) return;
-  _ratchetTerminalFailures.add(`${conversationId}:${body}`);
-}
-
-function hasRatchetTerminalFailure(conversationId: string | undefined, body: string | undefined) {
-  if (!conversationId || !body) return false;
-  return _ratchetTerminalFailures.has(`${conversationId}:${body}`);
-}
-
-function clearRatchetTerminalFailures(conversationId: string | undefined) {
-  if (!conversationId) {
-    _ratchetTerminalFailures.clear();
-    return;
-  }
-  for (const key of Array.from(_ratchetTerminalFailures)) {
-    if (key.startsWith(`${conversationId}:`)) _ratchetTerminalFailures.delete(key);
+export class EncryptionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EncryptionError';
   }
 }
-
-/** Dedup for own key publishing — prevents ChatView + ChatWidget from both publishing */
-let _ownKeyPublishPromise: Promise<void> | null = null;
-let _ownKeyPublishTs = 0;
-const OWN_KEY_PUBLISH_TTL = 60_000; // 1 minute
-
-/** Dedup for initKeys — prevents ChatView + ChatWidget from both initializing */
-let _initKeysPromise: Promise<void> | null = null;
-let _initKeysTs = 0;
-const INIT_KEYS_TTL = 30_000; // 30 seconds
-
-/** Dedup for peer key setup effect — prevents duplicate runs from ChatView + ChatWidget */
-const _peerSetupPromise = new Map<string, Promise<void>>();
-const _peerSetupTs = new Map<string, number>();
-const PEER_SETUP_TTL = 30_000; // 30 seconds
-
-// getCachedAuthUserId / fetchPeerPublicKeys → @/lib/crypto/peerKeyCache
-// recreateLegacyE2EEDatabase / saveRatchetLocal / loadRatchetLocal /
-// deleteRatchetLocal → @/lib/crypto/ratchetStore
-// isPeerSPKStale → @/lib/crypto/spkFreshness
-// getKnownFingerprints / saveKnownFingerprint / saveKnownFingerprintServer /
-// checkFingerprintChange / checkFingerprintChangeWithServer /
-// invalidateFingerprintCheckCache → @/lib/crypto/fingerprintTracker
-
-function base64KeysEqual(a?: string | null, b?: string | null): boolean {
-  if (!a || !b) return false;
-  try {
-    const left = new Uint8Array(base64ToBuffer(a));
-    const right = new Uint8Array(base64ToBuffer(b));
-    return constantTimeEqual(left, right);
-  } catch {
-    return false;
-  }
-}
-
-// Clean up legacy localStorage ratchet data
-function cleanupLegacyStorage() {
-  try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('forsure-ratchet-states:')) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-
-    // One-time migration v4: clear broken ratchet states
-    const migrationKey = 'forsure-e2ee-migration-v4';
-    if (!localStorage.getItem(migrationKey)) {
-      localStorage.setItem(migrationKey, '1');
-      void runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
-        tx.objectStore(RATCHET_STORE_NAME).clear();
-      }).then(() => console.log('[E2EE] Cleared stale ratchet states (migration v4)')).catch(() => {});
-      void runTx([STORE_SESSION], 'readwrite', (tx) => {
-        try { tx.objectStore(STORE_SESSION).clear(); } catch {}
-      }).then(() => console.log('[E2EE] Cleared stale session keys (migration v4)')).catch(() => {});
-    }
-  } catch {}
-}
-
-// ─── Ratchet readiness check ───
-
-/** Returns true only if the ratchet state is fully ready for v4 AEAD encryption */
-function isRatchetFullyReady(state: RatchetState | null): boolean {
-  if (!isRatchetReadyForEncrypt(state)) return false;
-  // v4 strict: identity keys + role MUST be present, otherwise AAD cannot be
-  // built and ratchetEncrypt will throw E_RATCHET_V4_REQUIRED. Old persisted
-  // states predating v4 are treated as invalid → triggers a fresh X3DH.
-  if (!state?.myIdentityKeyB64 || !state?.peerIdentityKeyB64 || !state?.role) {
-    return false;
-  }
-  return true;
-}
-
-// ─── Hook ───
 
 export interface E2EEState {
   ready: boolean;
@@ -242,11 +115,8 @@ export interface E2EEState {
   peerFingerprint: string | null;
   encrypted: boolean;
   ratchetActive: boolean;
-  /** True if peer fingerprint changed since last known value */
   fingerprintChanged: boolean;
-  /** True if peer has no public keys (encryption impossible) */
   peerKeyMissing: boolean;
-  /** Initialization error if any */
   initError: string | null;
 }
 
@@ -257,1465 +127,220 @@ export interface DecryptResult {
   incompatible?: boolean;
 }
 
-export function useE2EE(conversationId: string | undefined, peerUserId: string | undefined) {
-  const { user } = useAuth();
-  const [state, setState] = useState<E2EEState>({
-    ready: false,
-    fingerprint: null,
-    peerFingerprint: null,
-    encrypted: false,
-    ratchetActive: false,
-    fingerprintChanged: false,
-    peerKeyMissing: false,
-    initError: null,
-  });
-  const keysRef = useRef<IdentityKeyPair | null>(null);
-  const peerKeyRef = useRef<{ identityKey: string; signingKey: string; fingerprint: string } | null>(null);
-  // Per-device identity signing keys of the peer, keyed by identity fingerprint
-  // (== ratchet envelope `fp`). Populated best-effort; empty until the backend
-  // publishes per-device signing keys, in which case verification transparently
-  // falls back to the account-level key (see peerDeviceSigningKeys.ts).
-  const peerDeviceSigningKeysRef = useRef<DeviceSigningKeyMap | null>(null);
-  const peerDeviceSigningKeysFetching = useRef<boolean>(false);
-  const ratchetRef = useRef<RatchetState | null>(null);
-  const pendingPayloadRef = useRef<Map<string, string>>(new Map());
-  const prekeyInfoRef = useRef<{ prekeyId: number; senderPublicKey: string } | null>(null);
-  const x3dhInfoRef = useRef<X3DHInitialMessage | null>(null);
-  const initRef = useRef(false);
-  const legacySessionReadyRef = useRef(false);
-  const peerHasRespondedRef = useRef(false);
-  // #2 perf: dedup concurrent X3DH inits (open-prewarm racing first send).
-  const initRatchetPromiseRef = useRef<Promise<RatchetState | null> | null>(null);
+const INITIAL_STATE: E2EEState = {
+  ready: false,
+  fingerprint: null,
+  peerFingerprint: null,
+  encrypted: false,
+  ratchetActive: false,
+  fingerprintChanged: false,
+  peerKeyMissing: false,
+  initError: null,
+};
 
+function initializationErrorCode(error: unknown): string {
+  if (error instanceof PinUnlockRequiredError) return 'pin_unlock_required';
+  if (error instanceof Error && error.message === 'identity_lost_backup_available') {
+    return 'identity_lost_backup_available';
+  }
+  return 'key_initialization_failed';
+}
+
+export function useE2EE(_conversationId: string | undefined, peerUserId: string | undefined) {
+  const { user } = useAuth();
+  const [state, setState] = useState<E2EEState>(INITIAL_STATE);
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
   const isZeus = peerUserId === ZEUS_ID;
 
-  // Initialize identity keys + publish
-  const initKeys = useCallback(async () => {
-    if (!user) return;
-    // Warm up the auth user ID cache to avoid repeated getUser() calls
-    primeAuthUserId(user.id);
-    try {
-      const keysResult = await getOrCreateIdentityKeys(user.id);
-      const isNewIdentity = !!(keysResult as any).isNewIdentity;
-      const keys: IdentityKeyPair = keysResult;
-      keysRef.current = keys;
+  const requestRefresh = useCallback((clearCaches: boolean) => {
+    if (clearCaches && peerUserId) {
+      _peerKeyCache.delete(peerUserId);
+      invalidateFingerprintCheckCache(peerUserId);
+    }
+    setRefreshEpoch(epoch => epoch + 1);
+  }, [peerUserId]);
 
-      const bundle = await exportPublicKeyBundle(keys);
+  useEffect(() => {
+    if (!user) {
+      setState(INITIAL_STATE);
+      return;
+    }
 
-      // Check server state BEFORE publishing
-      const { data: existingServerKey } = await supabase
-        .from('user_public_keys')
-        .select('fingerprint, identity_key')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
+    let cancelled = false;
 
-      if (isNewIdentity && existingServerKey) {
-        // IDENTITY LOSS DETECTED: local keys were regenerated but server has old keys.
-        // Check if an encrypted backup exists — if so, require restore instead of overwriting.
-        const { data: backupData } = await supabase
-          .from('user_backups' as any)
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
+    void (async () => {
+      try {
+        const ownIdentity = await initializeIdentity(user.id);
+        if (cancelled) return;
 
-        if (backupData) {
-          console.error(
-            '[E2EE] ⛔ Identity loss detected! Server fingerprint:',
-            existingServerKey.fingerprint,
-            '— Encrypted backup exists. Requesting restore before continuing.'
-          );
-          setState(s => ({
-            ...s,
-            ready: false,
-            initError: 'identity_lost_backup_available',
-          }));
-          // Dispatch event so UI can show restore dialog
-          window.dispatchEvent(new CustomEvent('forsure-identity-lost', {
-            detail: { hasBackup: true, serverFingerprint: existingServerKey.fingerprint }
-          }));
+        if (!peerUserId || isZeus) {
+          setState({
+            ...INITIAL_STATE,
+            ready: true,
+            fingerprint: ownIdentity.fingerprint,
+          });
           return;
         }
 
-        // No backup exists — this is a genuine new identity (first device, or user accepted loss)
-        console.warn(
-          '[E2EE] ⚠️ New identity created (no backup found). Server keys will be replaced.',
-          `Old: ${existingServerKey.fingerprint}`,
-          `New: ${bundle.fingerprint}`
+        const peerKey = await fetchPeerPublicKeys(peerUserId);
+        if (cancelled) return;
+
+        if (!peerKey) {
+          setState({
+            ...INITIAL_STATE,
+            fingerprint: ownIdentity.fingerprint,
+            peerKeyMissing: true,
+            initError: 'peer_key_missing',
+          });
+          return;
+        }
+
+        const fingerprintCheck = await checkFingerprintChangeWithServer(
+          user.id,
+          peerUserId,
+          peerKey.fingerprint,
         );
-      }
+        if (cancelled) return;
 
-      // Publish keys to server
-      await supabase
-        .from('user_public_keys')
-        .upsert({
-          user_id: user.id,
-          identity_key: bundle.identityKey,
-          signing_key: bundle.signingKey,
-          fingerprint: bundle.fingerprint,
-          kem_type: 'X25519',
-          is_active: true,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,is_active' });
+        if (fingerprintCheck.changed) {
+          setState({
+            ready: false,
+            fingerprint: ownIdentity.fingerprint,
+            peerFingerprint: peerKey.fingerprint,
+            encrypted: true,
+            ratchetActive: false,
+            fingerprintChanged: true,
+            peerKeyMissing: false,
+            initError: 'fingerprint_changed',
+          });
+          return;
+        }
 
-      // Push updated fingerprint to peers who cached a stale one
-      supabase.rpc('push_my_fingerprint_to_peers').then(({ data: updated }) => {
-        if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
-      });
-
-      // Refresh Signed Prekey if needed (X3DH 3-DH only mode — no OPK).
-      refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey).catch(e =>
-        console.warn('[E2EE] SPK refresh failed:', e),
-      );
-
-      // IMPORTANT: do NOT auto-delete raw identity JWKs immediately after a
-      // successful PIN unlock. Device registration + resyncE2EE call
-      // getOrCreateIdentityKeys() after this hook initializes; deleting here
-      // recreates the observed loop:
-      //   PIN ok → raw keys restored → useE2EE init → raw keys deleted →
-      //   resync/device publish sees only wrapped keys → PinUnlockRequiredError.
-      // Raw keys are still purged by the explicit PIN lock path
-      // (lockWithoutWiping: blur/idle/return), after the latest snapshot is
-      // re-wrapped. During the unlocked session they must remain available to
-      // the E2EE maintenance pipeline.
-      console.log('[E2EE] PIN-unlocked raw identity retained for device registration/resync until next lock');
-
-      setState(s => ({
-        ...s,
-        fingerprint: bundle.fingerprint,
-        initError: null,
-        ready: s.ready || s.encrypted,
-      }));
-      console.log('[E2EE] Keys initialized & published (with prekeys)');
-    } catch (err) {
-      // Handle PIN unlock required (keys exist wrapped, need PIN)
-      if (err instanceof PinUnlockRequiredError) {
-        console.log('[E2EE] PIN unlock required to recover identity keys');
-        setState(s => ({
-          ...s,
-          ready: false,
-          initError: 'pin_unlock_required',
-        }));
-        window.dispatchEvent(new CustomEvent('forsure-pin-required-for-keys'));
-        return;
-      }
-
-      console.error('[E2EE] Init failed:', err);
-      const isMissingStoreError = err instanceof DOMException && err.name === 'NotFoundError';
-      if (isMissingStoreError) {
-        console.warn('[E2EE] Legacy IndexedDB schema detected, recreating local E2EE stores');
-        await recreateLegacyE2EEDatabase();
-        initRef.current = false;
-        keysRef.current = null;
-        peerKeyRef.current = null;
-        ratchetRef.current = null;
-        prekeyInfoRef.current = null;
-        x3dhInfoRef.current = null;
-        legacySessionReadyRef.current = false;
-        setState(s => ({
-          ...s,
-          ready: false,
-          encrypted: false,
-          ratchetActive: false,
-          fingerprint: null,
-          peerFingerprint: null,
+        saveKnownFingerprint(peerUserId, peerKey.fingerprint);
+        void saveKnownFingerprintServer(peerUserId, peerKey.fingerprint);
+        setState({
+          ready: true,
+          fingerprint: ownIdentity.fingerprint,
+          peerFingerprint: peerKey.fingerprint,
+          encrypted: true,
+          ratchetActive: true,
           fingerprintChanged: false,
           peerKeyMissing: false,
           initError: null,
-        }));
-        queueMicrotask(() => {
-          if (!initRef.current) {
-            initRef.current = true;
-            void initKeys();
-          }
         });
-        return;
-      }
-      setState(s => ({ ...s, initError: 'Key initialization failed' }));
-    }
-  }, [user]);
-
-  // Auto-init on mount — GLOBALLY DEDUPLICATED across hook instances
-  useEffect(() => {
-    if (!user || initRef.current) return;
-    initRef.current = true;
-    cleanupLegacyStorage();
-    // Dedup: if another instance already ran initKeys recently, reuse its promise
-    if (_initKeysPromise && Date.now() - _initKeysTs < INIT_KEYS_TTL) {
-      _initKeysPromise.then(() => {
-        // After the other instance finishes, sync our local refs
-        if (!keysRef.current) {
-          getOrCreateIdentityKeys(user.id).then(keys => {
-            keysRef.current = keys;
-            exportPublicKeyBundle(keys).then(b => {
-              setState(s => ({ ...s, fingerprint: b.fingerprint, initError: null }));
-            });
-          }).catch(() => {});
-        }
-      });
-      return;
-    }
-    _initKeysTs = Date.now();
-    _initKeysPromise = initKeys().catch(() => {}).finally(() => {
-      // Keep promise reference for TTL window, don't null immediately
-    });
-  }, [user, initKeys]);
-
-  // Register the off-device encrypted-sync hook once: every local ratchet save
-  // best-effort pushes an encrypted copy to Supabase (durability against iOS
-  // IndexedDB purges). The store stays network-free; this injects the behaviour.
-  // pushEncryptedSession is a no-op when the vault is locked and never throws.
-  useEffect(() => {
-    setRatchetSyncHook((convId, state) => {
-      void pushEncryptedSession(convId, state);
-    });
-    return () => setRatchetSyncHook(null);
-  }, []);
-
-  // Re-init when PIN unlocks keys
-  useEffect(() => {
-    const handler = () => {
-      console.log('[E2EE] Keys unlocked via PIN — re-initializing');
-      clearRatchetTerminalFailures(conversationId);
-      initKeys();
-    };
-    window.addEventListener('forsure-keys-unlocked', handler);
-    return () => window.removeEventListener('forsure-keys-unlocked', handler);
-  }, [conversationId, initKeys]);
-
-  // Re-init when iOS/backup restore rehydrates IndexedDB after a cache purge.
-  useEffect(() => {
-    const handler = () => {
-      console.log('[E2EE] Keys restored from backup — resetting stale refs');
-      keysRef.current = null;
-      ratchetRef.current = null;
-      prekeyInfoRef.current = null;
-      x3dhInfoRef.current = null;
-      legacySessionReadyRef.current = false;
-      peerHasRespondedRef.current = false;
-      clearRatchetTerminalFailures(conversationId);
-      void initKeys().finally(() => {
-        try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
-      });
-    };
-    window.addEventListener('forsure-keys-restored', handler);
-    return () => window.removeEventListener('forsure-keys-restored', handler);
-  }, [conversationId, initKeys]);
-
-  useEffect(() => {
-    const handler = () => {
-      console.log('[E2EE] Keys locked via PIN — clearing in-memory crypto state');
-      keysRef.current = null;
-      ratchetRef.current = null;
-      prekeyInfoRef.current = null;
-      x3dhInfoRef.current = null;
-      legacySessionReadyRef.current = false;
-      peerHasRespondedRef.current = false;
-      pendingPayloadRef.current.clear();
-      setState(s => ({
-        ...s,
-        ready: false,
-        ratchetActive: false,
-        initError: null,
-      }));
-    };
-    window.addEventListener('forsure-keys-locked', handler);
-    return () => window.removeEventListener('forsure-keys-locked', handler);
-  }, []);
-
-  // Fetch peer public key + pre-establish legacy session
-  // GLOBALLY DEDUPLICATED: if ChatView + ChatWidget both mount with the same
-  // conversationId+peerUserId, only ONE runs the full setup; the other waits.
-  useEffect(() => {
-    if (!peerUserId || !user) return;
-
-    if (isZeus) {
-      setState(s => ({ ...s, encrypted: false, ready: true, ratchetActive: false }));
-      return;
-    }
-
-    const setupKey = `${user.id}:${peerUserId}:${conversationId}`;
-    const lastSetup = _peerSetupTs.get(setupKey);
-    if (lastSetup && Date.now() - lastSetup < PEER_SETUP_TTL && _peerSetupPromise.has(setupKey)) {
-      // Another hook instance already ran this setup recently — wait for it
-      _peerSetupPromise.get(setupKey)!.then(() => {
-        // Sync state from cached data
-        const cached = _peerKeyCache.get(peerUserId);
-        if (cached?.data) {
-          peerKeyRef.current = {
-            identityKey: cached.data.identity_key,
-            signingKey: cached.data.signing_key,
-            fingerprint: cached.data.fingerprint,
-          };
-          setState(s => ({
-            ...s,
-            peerFingerprint: cached.data!.fingerprint,
-            encrypted: true,
-            ready: true,
-            peerKeyMissing: false,
-            initError: null,
-          }));
-        }
-      }).catch(() => {});
-      return;
-    }
-
-    let cancelled = false;
-
-    const setupPromise = (async () => {
-      try {
-        // Ensure our own keys are ready first (may race with initKeys)
-        if (!keysRef.current) {
-          console.log('[E2EE] Waiting for own keys before peer fetch...');
-          const keys = await getOrCreateIdentityKeys(user.id);
-          if (cancelled) return;
-          keysRef.current = keys;
-          const bundle = await exportPublicKeyBundle(keys);
-          if (cancelled) return;
-          
-          // Publish if not done yet — DEDUPLICATED across hook instances
-          if (!_ownKeyPublishPromise || Date.now() - _ownKeyPublishTs > OWN_KEY_PUBLISH_TTL) {
-            _ownKeyPublishTs = Date.now();
-            _ownKeyPublishPromise = (async () => {
-              await supabase
-                .from('user_public_keys')
-                .upsert({
-                  user_id: user.id,
-                  identity_key: bundle.identityKey,
-                  signing_key: bundle.signingKey,
-                  fingerprint: bundle.fingerprint,
-                  kem_type: 'X25519',
-                  is_active: true,
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: 'user_id,is_active' });
-              
-              supabase.rpc('push_my_fingerprint_to_peers').then(({ data: updated }) => {
-                if (updated && (updated as number) > 0) console.log('[E2EE] Pushed fingerprint to', updated, 'peer(s)');
-              });
-            })();
-          }
-          await _ownKeyPublishPromise;
-          
-          setState(s => ({ ...s, fingerprint: bundle.fingerprint }));
-          console.log('[E2EE] Own keys loaded on-demand');
-        }
-
-        const data = await fetchPeerPublicKeys(peerUserId);
-
-        if (cancelled) return;
-
-        if (data) {
-          console.log('[PEER_KEY] loaded', peerUserId);
-
-          // Check for fingerprint change — server-backed + local
-          const { changed: fpChanged } = await checkFingerprintChangeWithServer(user.id, peerUserId, data.fingerprint);
-
-          peerKeyRef.current = {
-            identityKey: data.identity_key,
-            signingKey: data.signing_key,
-            fingerprint: data.fingerprint,
-          };
-
-          // STRICT MODE: If fingerprint changed, BLOCK sending until user explicitly acknowledges.
-          if (fpChanged) {
-            console.warn('[PEER_KEY] 🛑 Fingerprint changed for', peerUserId, '— BLOCKING until user acknowledges');
-            
-            peerKeyRef.current = {
-              identityKey: data.identity_key,
-              signingKey: data.signing_key,
-              fingerprint: data.fingerprint,
-            };
-
-            if (conversationId) {
-              void runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
-                try { tx.objectStore(RATCHET_STORE_NAME).delete(conversationId); } catch {}
-              }).catch(() => {});
-              ratchetRef.current = null;
-              peerHasRespondedRef.current = false;
-              x3dhInfoRef.current = null;
-              pendingPayloadRef.current.clear();
-              legacySessionReadyRef.current = false;
-            }
-            
-            setState(s => ({
-              ...s,
-              peerFingerprint: data.fingerprint,
-              encrypted: true,
-              ready: false,
-              fingerprintChanged: true,
-              peerKeyMissing: false,
-              ratchetActive: false,
-              initError: 'fingerprint_changed',
-            }));
-            return;
-          }
-
-          // Save fingerprint both locally and server-side
-          saveKnownFingerprint(peerUserId, data.fingerprint);
-          saveKnownFingerprintServer(peerUserId, data.fingerprint);
-
-          // Legacy per-conversation session removed — Double Ratchet handles
-          // all messaging encryption. Nothing to pre-establish here.
-
-          setState(s => ({
-            ...s,
-            peerFingerprint: data.fingerprint,
-            encrypted: true,
-            ready: true,
-            ratchetActive: false,
-            fingerprintChanged: false,
-            peerKeyMissing: false,
-            initError: null,
-          }));
-        } else {
-          console.log('[PEER_KEY] No identity key found for', peerUserId, '— peer may not have published keys yet');
-          console.warn('[PEER_KEY] ⚠️ No public keys for', peerUserId, '— will retry on next open');
-          setState(s => ({
-            ...s,
-            encrypted: false,
-            ready: false,
-            peerKeyMissing: true,
-          }));
-        }
-      } catch (err) {
-        console.error('[E2EE] Peer key fetch failed:', err);
-        if (!cancelled) {
-          setState(s => ({
-            ...s,
-            encrypted: false,
-            ready: false,
-            initError: 'Peer key fetch failed',
-          }));
-        }
-      }
-    })();
-
-    _peerSetupTs.set(setupKey, Date.now());
-    _peerSetupPromise.set(setupKey, setupPromise);
-    setupPromise.finally(() => {
-      // Clean up after TTL to allow re-runs
-      setTimeout(() => {
-        if (_peerSetupPromise.get(setupKey) === setupPromise) {
-          _peerSetupPromise.delete(setupKey);
-        }
-      }, PEER_SETUP_TTL);
-    });
-
-    return () => { cancelled = true; };
-  }, [peerUserId, user, conversationId, isZeus]);
-
-  // Retry peer key fetch when peerKeyMissing — contact may have come online
-  useEffect(() => {
-    if (!state.peerKeyMissing || !peerUserId || !user || isZeus) return;
-    const interval = setInterval(async () => {
-      try {
-        // Invalidate cache before retry to get fresh data
-        _peerKeyCache.delete(peerUserId);
-        const data = await fetchPeerPublicKeys(peerUserId);
-        if (data) {
-          console.log('[PEER_KEY] ✅ Peer keys now available — upgrading to encrypted mode');
-          const { changed: fpChanged } = await checkFingerprintChangeWithServer(user.id, peerUserId, data.fingerprint);
-          peerKeyRef.current = {
-            identityKey: data.identity_key,
-            signingKey: data.signing_key,
-            fingerprint: data.fingerprint,
-          };
-          if (fpChanged) {
-            console.warn('[PEER_KEY] Fingerprint changed while retrying peer keys - blocking until acknowledgement');
-            setState(s => ({
-              ...s,
-              peerFingerprint: data.fingerprint,
-              encrypted: true,
-              ready: false,
-              fingerprintChanged: true,
-              peerKeyMissing: false,
-              ratchetActive: false,
-              initError: 'fingerprint_changed',
-            }));
-            return;
-          }
-          saveKnownFingerprint(peerUserId, data.fingerprint);
-          saveKnownFingerprintServer(peerUserId, data.fingerprint);
-          
-          // Legacy per-conversation session removed.
-          
-          setState(s => ({
-            ...s,
-            peerFingerprint: data.fingerprint,
-            encrypted: true,
-            ready: true,
-            peerKeyMissing: false,
-          }));
-        }
-      } catch {}
-    }, 30_000); // retry every 30s
-    return () => clearInterval(interval);
-  }, [state.peerKeyMissing, peerUserId, user, isZeus, conversationId]);
-
-  // Legacy per-conversation session helper removed — Double Ratchet only.
-
-  const ensureKeysAndPeerSync = useCallback(async (forceSessionRefresh = false): Promise<boolean> => {
-    if (!user || !peerUserId || isZeus) return false;
-
-    if (!keysRef.current) {
-      try {
-        const keys = await getOrCreateIdentityKeys(user.id);
-        keysRef.current = keys;
-        setState(s => ({ ...s, fingerprint: s.fingerprint ?? keys.fingerprint }));
       } catch (error) {
-        console.warn('[E2EE] Failed to recover local identity keys:', error);
-        return false;
-      }
-    }
-
-    if (peerKeyRef.current && !forceSessionRefresh) {
-      return !state.fingerprintChanged;
-    }
-
-    try {
-      const freshPeerKey = await fetchPeerPublicKeys(peerUserId);
-
-      if (!freshPeerKey) {
-        setState(s => ({
-          ...s,
-          encrypted: false,
-          ready: false,
-          peerKeyMissing: true,
-        }));
-        return false;
-      }
-
-      const { changed: fingerprintChanged } = await checkFingerprintChangeWithServer(
-        user.id,
-        peerUserId,
-        freshPeerKey.fingerprint,
-      );
-
-      peerKeyRef.current = {
-        identityKey: freshPeerKey.identity_key,
-        signingKey: freshPeerKey.signing_key,
-        fingerprint: freshPeerKey.fingerprint,
-      };
-
-      if (fingerprintChanged) {
-        if (conversationId) {
-          // Signal-style: archive the current session instead of destroying it,
-          // so messages the peer already encrypted under the OLD key remain
-          // decryptable via the archived session (see ratchetArchive.ts). Only
-          // then reset the live ratchet for the new identity.
-          if (ratchetRef.current) {
-            try {
-              await archiveRatchetState(conversationId, ratchetRef.current);
-              // Mirror the archive off-device (encrypted) so it survives a purge.
-              const archiveJson = await exportArchiveJson(conversationId);
-              if (archiveJson) void pushEncryptedArchive(conversationId, archiveJson);
-            } catch {}
-          }
-          try {
-            await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
-              tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-            });
-          } catch {}
-
-          ratchetRef.current = null;
-          peerHasRespondedRef.current = false;
-          x3dhInfoRef.current = null;
-          pendingPayloadRef.current.clear();
-
-          try {
-            const { deleteSessionKey } = await import('@/lib/crypto/keyManager');
-            await deleteSessionKey(conversationId);
-          } catch {}
-        }
-
-        setState(s => ({
-          ...s,
-          peerFingerprint: freshPeerKey.fingerprint,
-          encrypted: true,
+        if (cancelled) return;
+        const initError = initializationErrorCode(error);
+        setState(previous => ({
+          ...previous,
           ready: false,
           ratchetActive: false,
-          fingerprintChanged: true,
-          peerKeyMissing: false,
-          initError: 'fingerprint_changed',
+          initError,
         }));
-
-        return false;
-      }
-
-      saveKnownFingerprint(peerUserId, freshPeerKey.fingerprint);
-      void saveKnownFingerprintServer(peerUserId, freshPeerKey.fingerprint);
-
-      if (conversationId && forceSessionRefresh) {
-        try {
-          await runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
-            tx.objectStore(RATCHET_STORE_NAME).delete(conversationId);
-          });
-        } catch {}
-
-        ratchetRef.current = null;
-        peerHasRespondedRef.current = false;
-        x3dhInfoRef.current = null;
-        pendingPayloadRef.current.clear();
-
-        try {
-          const { deleteSessionKey } = await import('@/lib/crypto/keyManager');
-          await deleteSessionKey(conversationId);
-        } catch {}
-      }
-
-      // Legacy session re-establish removed.
-
-      setState(s => ({
-        ...s,
-        peerFingerprint: freshPeerKey.fingerprint,
-        encrypted: true,
-        ready: true,
-        ratchetActive: s.ratchetActive,
-        fingerprintChanged: false,
-        peerKeyMissing: false,
-        initError: null,
-      }));
-
-      return true;
-    } catch (error) {
-      console.warn('[E2EE] Peer key sync failed:', error);
-      return false;
-    }
-  }, [conversationId, isZeus, peerUserId, user, state.fingerprintChanged]);
-
-  const resetRatchetBootstrapState = useCallback(async (reason: string) => {
-    if (!conversationId) return;
-
-    console.warn(`[E2EE] Resetting local ratchet bootstrap (${reason}) for conversation ${conversationId}`);
-    await deleteRatchetLocal(conversationId);
-    ratchetRef.current = null;
-    x3dhInfoRef.current = null;
-    peerHasRespondedRef.current = false;
-    pendingPayloadRef.current.clear();
-    setState(s => ({ ...s, ratchetActive: false }));
-  }, [conversationId]);
-
-  /**
-   * Initialize Double Ratchet as initiator (sender of first ratchet message).
-   * Uses X3DH for key agreement (3 or 4 DH operations) then seeds Double Ratchet.
-   * Never falls back to legacy for outbound modern messages.
-   */
-  const initRatchetIfNeeded = useCallback(async (): Promise<RatchetState | null> => {
-    if (initRatchetPromiseRef.current) return initRatchetPromiseRef.current;
-    const run = (async (): Promise<RatchetState | null> => {
-    if (!conversationId || !keysRef.current || !peerKeyRef.current || !peerUserId) return null;
-
-    // ─── Cache-bust: si le SPK du pair a changé sur le serveur depuis notre
-    // dernier handshake, purger la session locale pour forcer un nouveau X3DH.
-    // Sans ça, l'expéditeur réutilise une session basée sur un SPK obsolète
-    // que le récepteur ne peut plus déchiffrer ("clé signée introuvable").
-    const lastSpkId = ratchetRef.current
-      ? x3dhInfoRef.current?.spkId
-      : (await loadRatchetLocal(conversationId))?.x3dhHeader?.spkId;
-    if (lastSpkId !== undefined && await isPeerSPKStale(peerUserId, lastSpkId)) {
-      console.warn('[E2EE] 🔄 Cache-bust SPK déclenché — purge ratchet local et nouveau X3DH');
-      await resetRatchetBootstrapState('peer_spk_stale');
-    }
-
-    // Already have a ratchet? Use it only if fully ready
-    if (ratchetRef.current) {
-      if (isRatchetFullyReady(ratchetRef.current)) {
-        return ratchetRef.current;
-      }
-      await resetRatchetBootstrapState('in_memory_incomplete');
-    }
-
-    // Try loading persisted ratchet + X3DH header
-    const persisted = await loadRatchetLocal(conversationId);
-    if (persisted) {
-      if (isRatchetFullyReady(persisted.state)) {
-        ratchetRef.current = persisted.state;
-        // Restore X3DH header for Signal-style PreKey persistence across refresh
-        if (persisted.x3dhHeader) {
-          x3dhInfoRef.current = persisted.x3dhHeader;
-          peerHasRespondedRef.current = false;
-          console.info('[E2EE] Restored X3DH header from persistence (PreKey header will be re-attached)');
-        }
-        console.info('[E2EE] Loaded persisted ratchet — ready for encrypt');
-        return persisted.state;
-      }
-      await resetRatchetBootstrapState('persisted_incomplete');
-    }
-
-    // Restore-on-purge: local IndexedDB had nothing usable (e.g. WKWebView
-    // evicted it on iOS). Before falling back to a fresh X3DH handshake, try the
-    // encrypted Supabase backup. The blob is decrypted client-side with the
-    // Master Key — Supabase never saw the keys. Also restore the archive so
-    // old-key messages stay recoverable.
-    try {
-      const restored = await pullEncryptedSession(conversationId);
-      if (restored && isRatchetFullyReady(restored)) {
-        ratchetRef.current = restored;
-        await saveRatchetLocal(conversationId, restored, null);
-        const archiveJson = await pullEncryptedArchive(conversationId);
-        if (archiveJson) {
-          try { await importArchiveJson(conversationId, archiveJson); } catch {}
-        }
-        console.info('[E2EE] ✅ Ratchet restored from encrypted Supabase backup (local purge recovery)');
-        return restored;
-      }
-    } catch (e) {
-      console.warn('[E2EE] encrypted session restore failed', e);
-    }
-
-    // X3DH key agreement (Signal spec) — NO legacy fallback
-    console.info(`[X3DH] init initiator — fetching bundle for peer ${peerUserId}`);
-
-    const peerSynced = await ensureKeysAndPeerSync(true);
-    if (!peerSynced || !peerKeyRef.current) {
-      throw new EncryptionError('Cle de securite du contact modifiee - verification obligatoire avant envoi');
-    }
-
-    // Prefer per-device bundle (4-DH with OPK); fall back to legacy per-user bundle (3-DH only).
-    let bundle = null as Awaited<ReturnType<typeof fetchPrekeyBundle>>;
-    let route: 'per-device-4dh' | 'legacy-3dh' = 'legacy-3dh';
-    try {
-      const { fetchActiveDevices } = await import('@/lib/crypto/deviceList');
-      const { fetchPrekeyBundleForDevice } = await import('@/lib/crypto/x3dh');
-      const peerDevices = await fetchActiveDevices(peerUserId);
-      // Pick most recently seen active device
-      const target = peerDevices[0];
-      if (target) {
-        const devBundle = await fetchPrekeyBundleForDevice(peerUserId, target.deviceId);
-        if (devBundle) {
-          bundle = devBundle;
-          route = 'per-device-4dh';
-          console.info(`[X3DH][ROUTE] per-device 4-DH bundle for ${peerUserId.slice(0, 8)}…/${target.deviceId.slice(0, 8)}…`);
+        if (initError === 'pin_unlock_required') {
+          window.dispatchEvent(new CustomEvent('forsure-pin-required-for-keys'));
         }
       }
-    } catch (e) {
-      console.warn('[X3DH][ROUTE] per-device bundle lookup failed, falling back to legacy:', e);
-    }
-    if (!bundle) {
-      bundle = await fetchPrekeyBundle(peerUserId);
-      console.info(`[X3DH][ROUTE] legacy 3-DH bundle for ${peerUserId.slice(0, 8)}…`);
-    }
-    if (!bundle) {
-      console.error('[X3DH] ⛔ Bundle pair absent, expiré ou incohérent — impossible d\'initialiser X3DH');
-      throw new EncryptionError('🔒 Bundle X3DH du contact indisponible ou incohérent — message en attente chiffrée');
-    }
-
-    if (
-      !base64KeysEqual(bundle.identityKey, peerKeyRef.current.identityKey) ||
-      !base64KeysEqual(bundle.signingKey, peerKeyRef.current.signingKey)
-    ) {
-      throw new EncryptionError('Cle de securite du contact modifiee - verification obligatoire avant envoi');
-    }
-
-    const x3dhResult = await x3dhInitiate(keysRef.current, bundle);
-
-    // Store X3DH metadata for the initial message header
-    // IMPORTANT: Do NOT null this until the first message is confirmed sent
-    const myPubRaw = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
-    x3dhInfoRef.current = {
-      ik: bufferToBase64(myPubRaw),
-      ek: x3dhResult.ephemeralKey,
-      spkId: x3dhResult.usedSPKId,
-      opkId: x3dhResult.usedOTPKId,
-      kemCt: x3dhResult.kemCiphertext,
-    };
-    console.info(`[X3DH] init initiator — X3DH header stored (SPK #${x3dhResult.usedSPKId}, OPK ${x3dhResult.usedOTPKId ?? 'none'})`);
-
-    // Import peer SPK as DH ratchet key for Double Ratchet init
-    // Per Signal spec: Alice uses Bob's SPK as the initial remote ratchet key
-    const peerSPKKey = await hardCrypto.importKey(
-      'raw', base64ToBuffer(bundle.signedPrekey),
-      KX_KEY_PARAMS as any, true, [],
-    );
-
-    const ratchet = await initRatchetAsInitiator(
-      conversationId,
-      x3dhResult.sharedSecret,
-      peerSPKKey,
-      {
-        myIdentityKeyB64: bufferToBase64(myPubRaw),
-        peerIdentityKeyB64: peerKeyRef.current.identityKey,
-      },
-    );
-
-    const readiness = getRatchetReadiness(ratchet);
-    if (!readiness.canEncrypt) {
-      throw new EncryptionError(`🔒 Double Ratchet non prêt pour l'envoi${readiness.reason ? ` (${readiness.reason})` : ''} — message en attente chiffrée`);
-    }
-
-    ratchetRef.current = ratchet;
-    await saveRatchetLocal(conversationId, ratchet, x3dhInfoRef.current);
-    console.info('[RATCHET] ✅ init with X3DH (initiator) — ready for encrypt');
-    return ratchet;
     })();
-    initRatchetPromiseRef.current = run;
-    try { return await run; } finally { initRatchetPromiseRef.current = null; }
-  }, [conversationId, peerUserId, resetRatchetBootstrapState, ensureKeysAndPeerSync]);
 
-  // #2 perf — pre-establish the X3DH/Double-Ratchet session when the
-  // conversation OPENS (WhatsApp model), so the FIRST message sends instantly
-  // instead of paying the bundle-fetch + X3DH cost at send time. Best-effort:
-  // any failure is swallowed and encrypt() still establishes it lazily.
+    return () => {
+      cancelled = true;
+    };
+  }, [isZeus, peerUserId, refreshEpoch, user]);
+
   useEffect(() => {
-    if (!conversationId || !peerUserId || isZeus || !user) return;
-    if (state.fingerprintChanged) return;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          if (cancelled) return;
-          if (ratchetRef.current && isRatchetFullyReady(ratchetRef.current)) return;
-          const synced = await ensureKeysAndPeerSync(false);
-          if (cancelled || !synced || state.fingerprintChanged) return;
-          await initRatchetIfNeeded();
-          if (!cancelled) console.debug('[E2EE] session prewarmed on conversation open');
-        } catch {
-          /* non-fatal — first send will establish lazily */
-        }
-      })();
-    }, 0);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [conversationId, peerUserId, isZeus, user, state.fingerprintChanged, ensureKeysAndPeerSync, initRatchetIfNeeded]);
+    if (!user) return;
 
-  /**
-   * Encrypt — NEVER returns plaintext.
-   * Uses Double Ratchet exclusively (per-message forward secrecy).
-   * Throws EncryptionError if all paths fail.
-   * 
-   * CRITICAL: Every payload now carries `encryptionMode` for deterministic decryption routing.
-   */
-  const encrypt = useCallback(async (plaintext: string, localId?: string): Promise<string> => {
-    if (localId) {
-      const cachedPayload = pendingPayloadRef.current.get(localId);
-      if (cachedPayload) {
-        console.info(`[E2EE] Reusing cached encrypted payload for retry (${localId})`);
-        return cachedPayload;
-      }
-    }
+    const onUnlockedOrRestored = () => {
+      identityInitialization.delete(user.id);
+      requestRefresh(true);
+    };
+    const onLocked = () => {
+      identityInitialization.delete(user.id);
+      setState(previous => ({
+        ...previous,
+        ready: false,
+        ratchetActive: false,
+        initError: 'pin_unlock_required',
+      }));
+    };
+    const onRouteReady = () => requestRefresh(true);
+    const onOnline = () => requestRefresh(true);
 
-    // Fingerprint changes are a safety stop: no outbound plaintext or
-    // ciphertext is produced until the user explicitly trusts the new key.
-    if (state.fingerprintChanged) {
-      throw new EncryptionError('Cle de securite du contact modifiee - verification obligatoire avant envoi');
-    }
+    window.addEventListener('forsure-keys-unlocked', onUnlockedOrRestored);
+    window.addEventListener('forsure-keys-restored', onUnlockedOrRestored);
+    window.addEventListener('forsure-keys-locked', onLocked);
+    window.addEventListener('forsure:sesame-route-ready', onRouteReady);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('forsure-keys-unlocked', onUnlockedOrRestored);
+      window.removeEventListener('forsure-keys-restored', onUnlockedOrRestored);
+      window.removeEventListener('forsure-keys-locked', onLocked);
+      window.removeEventListener('forsure:sesame-route-ready', onRouteReady);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [requestRefresh, user]);
 
-    // Auto-load keys if ref is empty (race with initKeys)
-    if (!keysRef.current && user) {
-      try {
-        const keys = await getOrCreateIdentityKeys(user.id);
-        keysRef.current = keys;
-      } catch (e) {
-        throw new EncryptionError('Encryption not available — keys not ready');
-      }
-    }
+  const acknowledgeFingerprint = useCallback(async () => {
+    if (!peerUserId || !state.peerFingerprint) return;
+    saveKnownFingerprint(peerUserId, state.peerFingerprint);
+    await saveKnownFingerprintServer(peerUserId, state.peerFingerprint, true);
+    invalidateFingerprintCheckCache(peerUserId);
+    setState(previous => ({
+      ...previous,
+      ready: true,
+      encrypted: true,
+      ratchetActive: true,
+      fingerprintChanged: false,
+      peerKeyMissing: false,
+      initError: null,
+    }));
+    window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', {
+      detail: { peerUserId },
+    }));
+  }, [peerUserId, state.peerFingerprint]);
 
-    if (!keysRef.current) {
-      throw new EncryptionError('Encryption not available — keys not ready');
-    }
-
-    if (!peerKeyRef.current) {
-      throw new EncryptionError('🔒 Clés du contact indisponibles — message en attente chiffrée jusqu\'à publication du bundle');
-    }
-
-    if (!cryptoRateCheck('encrypt')) {
-      throw new EncryptionError('Rate limited — possible exfiltration attempt');
-    }
-
-    // ─── Sender Keys (group E2EE) opt-in path ──────────────────────────────
-    // When `conversations.enable_sender_keys=true`, encrypt via the group
-    // chain and emit a `sk1.` wire. SKDM fan-out happens inside the helper
-    // (idempotent per chain generation). Returns null when the conv is not
-    // opted in or the orchestration fails — we then fall through to the
-    // pairwise Double Ratchet path below (zero downgrade risk: both paths
-    // are E2EE).
-    if (conversationId && user) {
-      try {
-        const skWire = await tryEncryptViaSenderKeys(conversationId, user.id, plaintext);
-        if (skWire) {
-          if (localId) pendingPayloadRef.current.set(localId, skWire);
-          return skWire;
-        }
-      } catch (e) {
-        console.warn('[E2EE] sender-keys path errored; falling back to pairwise', e);
-      }
-    }
-
-    // Signal protocol: NEVER fall back from Double Ratchet to legacy.
-    // A fallback would be a downgrade attack vector — an attacker who causes
-    // ratchet init to fail (e.g. by deleting prekeys) would force weaker encryption.
-    // Instead, we throw and let the message queue retry when ratchet is ready.
-    const ratchet = await initRatchetIfNeeded();
-    const readiness = getRatchetReadiness(ratchet);
-    if (!ratchet || !readiness.canEncrypt || !isRatchetReadyForEncrypt(ratchet)) {
-      throw new EncryptionError('🔒 Session Double Ratchet non prête — message en attente, réessai automatique');
-    }
-
-    const { envelope, newState } = await ratchetEncrypt(
-      ratchet,
-      plaintext,
-      keysRef.current.signingPrivateKey,
-      keysRef.current.fingerprint,
-    );
-
-    const taggedEnvelope = envelope as any;
-    taggedEnvelope.encryptionMode = 'ratchet';
-
-    if (x3dhInfoRef.current && !peerHasRespondedRef.current) {
-      taggedEnvelope.x3dh = x3dhInfoRef.current;
-    }
-
-    const serializedPayload = hardGlobals.jsonStringify(taggedEnvelope);
-    if (localId) {
-      pendingPayloadRef.current.set(localId, serializedPayload);
-    }
-
-    ratchetRef.current = newState;
-    await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
-
-    setState(s => ({ ...s, ratchetActive: true }));
-    return serializedPayload;
-  }, [state.fingerprintChanged, conversationId, user, initRatchetIfNeeded]);
-
-  /**
-   * Decrypt — NEVER shows raw ciphertext.
-   * Uses `encryptionMode` tag for deterministic dispatch.
-   * For legacy messages without the tag, falls back to heuristic detection.
-   * 
-   * CRITICAL: All decrypts for the same conversation are SERIALIZED via a global
-   * queue to prevent 50 concurrent ratchet inits when loading a chat.
-   */
-  const decrypt = useCallback(async (body: string): Promise<DecryptResult> => {
-    // Lot — Sender Keys (group E2EE) wire detection. Bypasses the JSON
-    // ratchet envelope path: `sk1.` is a flat dotted wire, not JSON.
-    if (typeof body === 'string' && isSenderKeyWire(body)) {
-      try {
-        const recipient = await loadRecipientStateForWire(body);
-        if (!recipient) {
-          // SKDM not yet delivered → keep ciphertext placeholder, will retry
-          // once the pairwise SKDM lands and installs the chain.
-          return { text: '', encrypted: true, verified: false, incompatible: true };
-        }
-        const { plaintext } = await decryptFromGroup(recipient, body);
-        if (plaintext === null) {
-          return { text: '', encrypted: true, verified: false, incompatible: true };
-        }
-        return { text: plaintext, encrypted: true, verified: true };
-      } catch (err) {
-        console.warn('[E2EE] Sender Key decrypt failed:', err);
-        return { text: '', encrypted: true, verified: false, incompatible: true };
-      }
-    }
-
-    if (!isCryptoJsonBody(body)) {
-      return { text: body, encrypted: false, verified: false };
-    }
-
-    // Serialize all decrypt operations for this conversation to prevent
-    // concurrent ratchet init storms (50 messages → 50 x3dh inits)
-    const convId = conversationId || 'unknown';
-    return serializedDecrypt(convId, async () => {
-      if (!isZeus && !peerKeyRef.current) {
-        const syncKey = `${user?.id}:${peerUserId}`;
-        if (!_peerSyncPromise.has(syncKey)) {
-          const p = ensureKeysAndPeerSync(false).finally(() => _peerSyncPromise.delete(syncKey));
-          _peerSyncPromise.set(syncKey, p);
-        }
-        const synced = await _peerSyncPromise.get(syncKey);
-        if (!synced) {
-          return { text: '', encrypted: true, verified: false, incompatible: true };
-        }
-      }
-
-      if (!cryptoRateCheck('decrypt')) {
-        return { text: '', encrypted: true, verified: false, incompatible: true };
-      }
-
-      try {
-        const secureWrapped = unwrapSecurePipelineEnvelope(body);
-        const decryptBody = secureWrapped?.body || body;
-        const parsed = hardGlobals.jsonParse(decryptBody);
-
-        if (isStrictRatchetEnvelopeBody(decryptBody)) {
-          return await decryptRatchetMessage(parsed, decryptBody);
-        }
-
-        if (conversationId) {
-          void scheduleLegacyCleanup(conversationId, user?.id);
-        }
-        return { text: '', encrypted: true, verified: false, incompatible: true };
-
-      } catch (err) {
-        console.error('[E2EE] decrypt failed:', err);
-        return { text: '', encrypted: true, verified: false, incompatible: true };
-      }
-    });
-  }, [conversationId, ensureKeysAndPeerSync, isZeus, user, peerUserId, state.fingerprintChanged]);
-
-  /**
-   * If the decrypted ratchet plaintext is actually an SKDM (Sender Key
-   * Distribution Message), install it into `sender_key_state` and swallow
-   * the message — it's protocol metadata, not a user message.
-   */
-  const maybeAbsorbSKDM = useCallback(async (plaintext: string): Promise<DecryptResult | null> => {
-    const parsed = parseSKDM(plaintext);
-    if (!parsed) return null;
-    try {
-      await installSKDM(plaintext);
-      console.info('[E2EE] SKDM absorbed', { conv: parsed.conversationId, sender: parsed.senderUserId, iter: parsed.iteration });
-    } catch (err) {
-      console.warn('[E2EE] SKDM install failed', err);
-    }
-    return { text: '', encrypted: true, verified: true, incompatible: true };
+  const encrypt = useCallback(async (
+    _plaintext: string,
+    _localId?: string,
+  ): Promise<string> => {
+    throw new EncryptionError('Le chiffrement direct est désactivé : utilisez Sesame-lite.');
   }, []);
 
-  const decryptRatchetMessage = useCallback(async (
-    parsed: any,
-    rawBody: string,
-  ): Promise<DecryptResult> => {
-    if (!isZeus && state.fingerprintChanged) {
-      console.warn('[E2EE] Blocking decrypt until fingerprint change is acknowledged');
-      return { text: '', encrypted: true, verified: false, incompatible: true };
+  const decrypt = useCallback(async (body: string): Promise<DecryptResult> => {
+    if (!isCryptoJsonBody(body) && !isUnsupportedEncryptedBody(body)) {
+      return { text: body, encrypted: false, verified: false };
     }
-
-    if (hasRatchetTerminalFailure(conversationId, rawBody)) {
-      if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-      return { text: '', encrypted: true, verified: false, incompatible: true };
-    }
-
-    const envelope: RatchetEnvelope = parsed;
-    const x3dhHeader: X3DHInitialMessage | undefined = parsed.x3dh;
-    let ratchet = ratchetRef.current;
-
-    // NOTE (multi-device signature verification):
-    // The Ed25519 signature is a *secondary*, defense-in-depth check. The
-    // primary authenticity guarantee is the AES-GCM AEAD tag, which only
-    // verifies if the message key derived from the X3DH-authenticated Double
-    // Ratchet session is correct — i.e. the message provably came from the
-    // peer's session. In multi-device, each device signs with its OWN Ed25519
-    // key, but the receiver only holds the peer's account-level signing key,
-    // so `verified` is a FALSE NEGATIVE for messages from a secondary device.
-    // Suppressing the (already AEAD-authenticated) plaintext on that basis is
-    // what produced empty "blank" bubbles. We therefore surface the plaintext
-    // and propagate `verified: false` for the UI to badge, instead of dropping.
-    // Per-device resolution (below) picks the SENDING device's signing key by
-    // `envelope.fp` when the backend publishes it; until then we fall back to
-    // the account-level key and simply surface the plaintext (badge-only),
-    // which avoids the empty-bubble regression during rollout.
-    const noteUnverifiedSignature = (verified: boolean, stage: string): void => {
-      if (verified) return;
-      console.warn('[E2EE] ratchet plaintext AEAD-authenticated but Ed25519-unverified (surfacing, not dropping)', {
-        conversationId,
-        stage,
-        hasPeerSigningKey: !!peerKeyRef.current?.signingKey,
-      });
-    };
-
-    // Resolve the signing key to verify THIS envelope against. Prefers the
-    // sending device's own identity signing key (keyed by envelope.fp) so that
-    // multi-device messages verify correctly; falls back to the peer's
-    // account-level key. Best-effort: kicks off a one-shot fetch of the peer's
-    // per-device keys the first time, using the fallback for the current call.
-    const resolvePeerSigningKeyB64 = (): string | undefined => {
-      const fallback = peerKeyRef.current?.signingKey;
-      if (
-        peerDeviceSigningKeysRef.current === null &&
-        !peerDeviceSigningKeysFetching.current &&
-        peerUserId
-      ) {
-        peerDeviceSigningKeysFetching.current = true;
-        void fetchPeerDeviceSigningKeys(peerUserId)
-          .then((map) => { peerDeviceSigningKeysRef.current = map; })
-          .catch(() => { peerDeviceSigningKeysRef.current = new Map(); })
-          .finally(() => { peerDeviceSigningKeysFetching.current = false; });
-      }
-      const resolved = resolveSigningKeyForEnvelope(
-        peerDeviceSigningKeysRef.current,
-        envelope.fp,
-        fallback,
-      );
-      if (resolved.source === 'device') {
-        console.debug('[E2EE] verifying with per-device signing key', { fp: envelope.fp?.slice(0, 12) });
-      }
-      return resolved.signingKeyB64;
-    };
-
-    const bootstrapResponderFromHeader = async (reason: string): Promise<RatchetState | null> => {
-      if (!conversationId || !keysRef.current || !user || !x3dhHeader) return null;
-
-      console.warn(`[E2EE] Rebootstrapping responder ratchet (${reason}) for ${conversationId}`);
-      await resetRatchetBootstrapState(`responder_rebootstrap:${reason}`);
-
-      if (!base64KeysEqual(x3dhHeader.ik, peerKeyRef.current?.identityKey)) {
-        throw new Error('X3DH identity key mismatch for peer');
-      }
-
-      const { sharedSecret, spkKeyPair } = await x3dhRespond(
-        keysRef.current,
-        user.id,
-        x3dhHeader,
-      );
-
-      const myPubRawResp = await hardCrypto.exportKey('raw', keysRef.current.publicKey);
-      const rebuilt = await initRatchetAsResponder(
-        conversationId,
-        sharedSecret,
-        spkKeyPair,
-        {
-          // Responder POV: peer = initiator (Alice) = x3dhHeader.ik; me = Bob.
-          myIdentityKeyB64: bufferToBase64(myPubRawResp),
-          peerIdentityKeyB64: x3dhHeader.ik,
-        },
-      );
-
-      ratchetRef.current = rebuilt;
-      await saveRatchetLocal(conversationId, rebuilt, null);
-      console.info('[RATCHET] ✅ responder ratchet rebuilt from X3DH header');
-      return rebuilt;
-    };
-
-    if (!ratchet && conversationId && keysRef.current && user) {
-      try {
-        const persisted = await loadRatchetLocal(conversationId);
-        if (persisted) {
-          ratchet = persisted.state;
-          ratchetRef.current = ratchet;
-          console.info('[RATCHET] Loaded persisted ratchet state for decrypt');
-        } else if (x3dhHeader) {
-          ratchet = await bootstrapResponderFromHeader('missing_local_state');
-        } else {
-          console.error('[E2EE] ⛔ X3DH header MISSING on first ratchet message — cannot init responder ratchet. This message cannot be decrypted without proper X3DH handshake.');
-          markRatchetTerminalFailure(conversationId, rawBody);
-          if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-          return { text: '', encrypted: true, verified: false, incompatible: true };
-        }
-      } catch (initErr) {
-        const errMsg = initErr instanceof Error ? initErr.message : String(initErr);
-        console.error('[E2EE] ⛔ Ratchet responder init FAILED:', errMsg);
-        markRatchetTerminalFailure(conversationId, rawBody);
-        if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-        if (errMsg.includes('SPK') && errMsg.includes('NOT FOUND')) {
-          return { text: '', encrypted: true, verified: false, incompatible: true };
-        }
-        if (errMsg.includes('OPK') && errMsg.includes('NOT FOUND')) {
-          return { text: '', encrypted: true, verified: false, incompatible: true };
-        }
-        return { text: '', encrypted: true, verified: false, incompatible: true };
-      }
-    }
-
-    if (ratchet) {
-      const readiness = getRatchetReadiness(ratchet);
-      if (!readiness.canDecrypt) {
-        console.warn('[E2EE] Ratchet state not decrypt-ready:', readiness.reason);
-        if (x3dhHeader) {
-          try {
-            const healed = await bootstrapResponderFromHeader(`not_ready:${readiness.reason}`);
-            if (healed) {
-              const { plaintext, verified, newState } = await ratchetDecrypt(
-                healed, envelope, resolvePeerSigningKeyB64(),
-              );
-              noteUnverifiedSignature(verified, 'readiness_self_heal');
-              ratchetRef.current = newState;
-              await saveRatchetLocal(conversationId!, newState, null);
-              setState(s => ({ ...s, ratchetActive: true }));
-              console.debug(`[RATCHET] ✅ decrypt OK after readiness self-heal — verified=${verified}`);
-              const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
-              if (skdmAbsorbed) return skdmAbsorbed;
-              return { text: plaintext, encrypted: true, verified };
-            }
-          } catch (healErr) {
-            console.error('[E2EE] Ratchet self-heal after readiness failure failed:', healErr);
-            markRatchetTerminalFailure(conversationId, rawBody);
-            if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-            return { text: '', encrypted: true, verified: false, incompatible: true };
-          }
-        }
-        return { text: '', encrypted: true, verified: false, incompatible: true };
-      }
-
-      try {
-        console.debug(`[RATCHET] decrypt — msg #${envelope.hdr.n}, dh=${envelope.hdr.dh.slice(0, 12)}…`);
-        const { plaintext, verified, newState } = await ratchetDecrypt(
-          ratchet, envelope, resolvePeerSigningKeyB64(),
-        );
-        noteUnverifiedSignature(verified, 'primary');
-        ratchetRef.current = newState;
-        if (!peerHasRespondedRef.current) {
-          peerHasRespondedRef.current = true;
-          if (x3dhInfoRef.current) {
-            console.info('[E2EE] Peer responded — X3DH header cleared (Signal-style promotion)');
-            x3dhInfoRef.current = null;
-          }
-        }
-        await saveRatchetLocal(conversationId!, newState, x3dhInfoRef.current);
-        setState(s => ({ ...s, ratchetActive: true }));
-        console.debug(`[RATCHET] ✅ decrypt OK — verified=${verified}`);
-        if (conversationId) clearSessionReset(conversationId);
-        const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
-        if (skdmAbsorbed) return skdmAbsorbed;
-        return { text: plaintext, encrypted: true, verified };
-      } catch (ratchetErr) {
-        const errMsg = ratchetErr instanceof Error ? ratchetErr.message : String(ratchetErr);
-        console.error('[E2EE] ❌ Ratchet decrypt failed:', errMsg);
-
-        if (x3dhHeader) {
-          try {
-            const healed = await bootstrapResponderFromHeader(`decrypt_failed:${errMsg}`);
-            if (healed) {
-              const { plaintext, verified, newState } = await ratchetDecrypt(
-                healed, envelope, resolvePeerSigningKeyB64(),
-              );
-              noteUnverifiedSignature(verified, 'decrypt_self_heal');
-              ratchetRef.current = newState;
-              await saveRatchetLocal(conversationId!, newState, null);
-              setState(s => ({ ...s, ratchetActive: true }));
-              console.debug(`[RATCHET] ✅ decrypt OK after X3DH self-heal — verified=${verified}`);
-              const skdmAbsorbed = await maybeAbsorbSKDM(plaintext);
-              if (skdmAbsorbed) return skdmAbsorbed;
-              return { text: plaintext, encrypted: true, verified };
-            }
-          } catch (healErr) {
-            console.error('[E2EE] Ratchet self-heal after decrypt failure failed:', healErr);
-            markRatchetTerminalFailure(conversationId, rawBody);
-            if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
-            return { text: '', encrypted: true, verified: false, incompatible: true };
-          }
-        }
-        // No X3DH header to self-heal from — return a precise diagnostic.
-        console.error('[E2EE] ⛔ decrypt failed AND no X3DH header to self-heal — terminal', {
-          conversationId,
-          hasRatchet: !!ratchetRef.current,
-          envelopeN: envelope?.hdr?.n,
-          envelopeDh: envelope?.hdr?.dh?.slice(0, 12),
-          errMsg,
-        });
-      }
-    }
-
-    // Last resort before declaring failure: try sessions we archived on a past
-    // key change (Signal previousStates). This recovers messages the peer
-    // encrypted under the OLD identity key after an iOS reinstall/restore.
-    if (conversationId) {
-      try {
-        const archived = await tryDecryptWithArchivedSessions(
-          conversationId,
-          envelope,
-          resolvePeerSigningKeyB64(),
-        );
-        if (archived) {
-          noteUnverifiedSignature(archived.verified, 'archived_session');
-          console.debug('[E2EE] ✅ decrypted via archived session (post key-change recovery)');
-          return { text: archived.plaintext, encrypted: true, verified: archived.verified };
-        }
-      } catch (e) {
-        console.warn('[E2EE][ARCHIVE] archived-session decrypt attempt failed', e);
-      }
-    }
-
-    // Diagnostic dump before declaring "session expirée" — helps identify the
-    // exact path that led here (no ratchet, no X3DH header, peer key missing…).
-    console.error('[E2EE] ⛔ decryptRatchetMessage reached terminal fallback', {
-      conversationId,
-      hasRatchet: !!ratchet,
-      hasX3dhHeader: !!x3dhHeader,
-      hasPeerKey: !!peerKeyRef.current,
-      hasMyKeys: !!keysRef.current,
-      envelopeN: envelope?.hdr?.n,
-      envelopeDh: envelope?.hdr?.dh?.slice(0, 12),
-    });
-
-    // SELF-HEAL / SESSION RESET: si on a un ratchet local mais le message
-    // arrive sans header X3DH et qu'on n'arrive pas à le déchiffrer, on est
-    // désynchronisé avec le pair. Le remède (purge locale + rotation SPK pour
-    // forcer un re-handshake) est coûteux, donc on ne le déclenche qu'après un
-    // seuil d'échecs persistants, avec cooldown et cap anti-tempête (voir
-    // sessionResetTracker) — au lieu de roter le SPK à chaque échec.
-    if (ratchet && !x3dhHeader && conversationId) {
-      const decision = noteFailureAndDecideReset(conversationId);
-      if (!decision.shouldReset) {
-        console.debug('[E2EE] session-reset deferred', {
-          conversationId,
-          reason: decision.reason,
-          fails: decision.fails,
-        });
-        // Not yet — leave state intact so the retry mechanism can re-drive; a
-        // reset that fires too eagerly causes handshake storms.
-        markRatchetTerminalFailure(conversationId, rawBody);
-        return { text: '', encrypted: true, verified: false, incompatible: true };
-      }
-
-      console.warn('[E2EE] 🔄 Session reset (peer ratchet desync) — purge locale + rotation SPK', {
-        conversationId,
-        fails: decision.fails,
-      });
-      await resetRatchetBootstrapState('peer_ratchet_desync');
-      // Rotate our SPK so the peer's next send detects isPeerSPKStale and re-runs X3DH automatically.
-      if (user && keysRef.current) {
-        try {
-          await generateAndUploadSignedPrekey(user.id, keysRef.current.signingPrivateKey);
-          console.info('[E2EE] ✅ SPK rotated — peer will re-handshake on next send');
-        } catch (e) {
-          console.warn('[E2EE] SPK rotation failed (peer may stay desynced):', e);
-        }
-      }
-      recordReset(conversationId);
-      markRatchetTerminalFailure(conversationId, rawBody);
-      return { text: '', encrypted: true, verified: false, incompatible: true };
-    }
-
-    markRatchetTerminalFailure(conversationId, rawBody);
-    if (conversationId) void scheduleLegacyCleanup(conversationId, user?.id);
     return { text: '', encrypted: true, verified: false, incompatible: true };
-  }, [conversationId, user, resetRatchetBootstrapState, isZeus, state.fingerprintChanged]);
+  }, []);
 
-  // Legacy message decrypt path removed — incompatible bodies are auto-purged.
-
-  /** Check if encryption is ready for this conversation */
-  const isReady = useCallback((): boolean => {
-    if (isZeus) return true;
-    // Ready if we have peer keys and our own keys, and no fingerprint block
-    const ready =
+  const isReady = useCallback(() => (
+    isZeus || (
+      state.ready &&
       state.encrypted &&
-      !!keysRef.current &&
-      !!peerKeyRef.current &&
-      !state.fingerprintChanged;
-    if (!ready) {
-      // High-signal debug breadcrumb — surfaces in iOS Web Inspector.
-      console.debug('[E2EE.isReady] NOT ready', {
-        conversationId,
-        encrypted: state.encrypted,
-        hasOwnKeys: !!keysRef.current,
-        hasPeerKey: !!peerKeyRef.current,
-        fingerprintChanged: state.fingerprintChanged,
-        peerKeyMissing: state.peerKeyMissing,
-        initError: state.initError,
-      });
-    }
-    return ready;
-  }, [state.encrypted, state.fingerprintChanged, state.peerKeyMissing, state.initError, isZeus, conversationId]);
+      !state.fingerprintChanged &&
+      !state.peerKeyMissing &&
+      state.initError === null
+    )
+  ), [isZeus, state]);
 
-  /** Acknowledge fingerprint change — user explicitly trusts new key */
-  const acknowledgeFingerprint = useCallback(async () => {
-    if (peerKeyRef.current && peerUserId) {
-      saveKnownFingerprint(peerUserId, peerKeyRef.current.fingerprint);
-      await saveKnownFingerprintServer(peerUserId, peerKeyRef.current.fingerprint, true);
-    }
-    if (conversationId) {
-      // Clear old ratchet state
-      void runTxOn('ratchet', [RATCHET_STORE_NAME], 'readwrite', (tx) => {
-        try { tx.objectStore(RATCHET_STORE_NAME).delete(conversationId); } catch {}
-      }).catch(() => {});
-      ratchetRef.current = null;
-      peerHasRespondedRef.current = false;
-      x3dhInfoRef.current = null;
-      pendingPayloadRef.current.clear();
+  const acknowledgeSentPayload = useCallback((_localId: string): Promise<void> => (
+    Promise.resolve()
+  ), []);
 
-      // Legacy session purge/re-establish removed — Double Ratchet only.
-    }
-    setState(s => ({ ...s, fingerprintChanged: false, ready: true, ratchetActive: false, initError: null }));
-  }, [peerUserId, conversationId]);
-
-  useEffect(() => {
-    if (!conversationId) return;
-    const onContactVerified = (event: Event) => {
-      const detail = (event as CustomEvent<{ conversationId?: string }>).detail || {};
-      if (detail.conversationId && detail.conversationId !== conversationId) return;
-      if (!state.fingerprintChanged) return;
-      void acknowledgeFingerprint();
-    };
-    window.addEventListener('forsure:e2ee-contact-verified', onContactVerified as EventListener);
-    return () => window.removeEventListener('forsure:e2ee-contact-verified', onContactVerified as EventListener);
-  }, [acknowledgeFingerprint, conversationId, state.fingerprintChanged]);
-
-  const acknowledgeSentPayload = useCallback(async (localId: string) => {
-    pendingPayloadRef.current.delete(localId);
-    console.info(`[E2EE] ✅ Payload acknowledged (${localId})`);
-  }, [conversationId]);
-
-  return {
+  return useMemo(() => ({
     ...state,
     encrypt,
     decrypt,
     isReady,
     acknowledgeFingerprint,
     acknowledgeSentPayload,
-  };
-}
-
-// ─── Custom error ───
-
-export class EncryptionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'EncryptionError';
-  }
-}
-
-// ─── Helpers ───
-
-function isRatchetEnvelope(body: string): boolean {
-  if (!body.startsWith('{')) return false;
-  try {
-    const p = hardGlobals.jsonParse(body);
-    return p.v !== undefined && p.hdr !== undefined && p.ct !== undefined;
-  } catch {
-    return false;
-  }
-}
-
-function isLegacyEncryptedEnvelope(body: string): boolean {
-  if (!body.startsWith('{')) return false;
-  try {
-    const p = hardGlobals.jsonParse(body);
-    return p.v !== undefined && p.kem !== undefined && p.ct !== undefined;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Anti-loop guard: only run cleanup ONCE per conversation per session.
- * Detects messages whose body starts with `{` and looks like an old crypto payload
- * but is NEITHER a valid legacy envelope (v+kem+ct) NOR a valid ratchet envelope (v+hdr+ct),
- * and deletes them. Plain text, GIFs, audio, calls and valid encrypted messages are untouched.
- */
-const _legacyCleanupRan = new Set<string>();
-async function scheduleLegacyCleanup(conversationId: string, userId?: string): Promise<void> {
-  if (_legacyCleanupRan.has(conversationId)) return;
-  _legacyCleanupRan.add(conversationId);
-
-  try {
-    if (!userId) return;
-    const { data: rows, error } = await supabase
-      .from('messages')
-      .select('id, body')
-      .eq('conversation_id', conversationId)
-      .like('body', '{%')
-      .limit(500);
-
-    if (error || !rows?.length) return;
-
-    const idsToDelete: string[] = [];
-    for (const row of rows) {
-      const body = (row as any).body as string | null;
-      if (!body || typeof body !== 'string') continue;
-      if (!body.startsWith('{')) continue;
-      if (isUnsupportedEncryptedBody(body)) idsToDelete.push((row as any).id);
-    }
-
-    if (idsToDelete.length === 0) {
-      console.log('[E2EE] Legacy cleanup: nothing to remove for', conversationId);
-      return;
-    }
-
-    // Never persist crypto failures as "delete for me". A session restore can
-    // temporarily lack keys/PIN/device copies, and hiding rows in the database
-    // makes a recoverable conversation look empty on every future visit.
-    console.warn('[E2EE] Legacy cleanup found incompatible crypto rows; leaving them visible for recovery', {
-      conversationId,
-      count: idsToDelete.length,
-    });
-  } catch (e) {
-    console.warn('[E2EE] Legacy cleanup error:', e);
-  }
+  }), [
+    acknowledgeFingerprint,
+    acknowledgeSentPayload,
+    decrypt,
+    encrypt,
+    isReady,
+    state,
+  ]);
 }

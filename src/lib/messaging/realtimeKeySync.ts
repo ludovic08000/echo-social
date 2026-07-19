@@ -1,13 +1,10 @@
 /**
  * Realtime E2EE readiness sync.
  *
- * Besides key/prekey changes, this channel watches the two encrypted-history
- * locations. A sender archive is often committed after the parent message;
- * iOS or Windows may already have cached a failed decrypt by then. The targeted
- * retry event invalidates that message only and lets the archive path resolve.
+ * Key/prekey changes invalidate stale routes and wake durable Sesame-lite
+ * outboxes. Message delivery itself is handled by the atomic parent+copies RPC.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { messageQueue } from './messageQueue';
 import { getCurrentDeviceId } from './currentDevice';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 
@@ -27,17 +24,6 @@ let lastResumeAt = 0;
 const RESUME_DEBOUNCE_MS = 600;
 const RESUME_MIN_INTERVAL_MS = 1500;
 
-function dispatchTargetedDecryptRetry(messageId: string | null | undefined, reason: string): void {
-  if (!messageId || typeof window === 'undefined') return;
-  try {
-    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
-      detail: { messageId, reason },
-    }));
-  } catch {
-    // Browser/UI wakeup is best-effort and contains no key material.
-  }
-}
-
 function scheduleResume(reason: string): void {
   if (resumeTimer) clearTimeout(resumeTimer);
   resumeTimer = setTimeout(() => {
@@ -48,12 +34,9 @@ function scheduleResume(reason: string): void {
       return;
     }
     lastResumeAt = now;
-    void messageQueue.resumeAll().catch(err => {
-      console.warn('[RT_KEYS] resumeAll failed:', err);
-    });
-    if (typeof console !== 'undefined') {
-      console.log(`[RT_KEYS] resumeAll triggered by ${reason}`);
-    }
+    try {
+      window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', { detail: { reason } }));
+    } catch { /* browser wakeup is best-effort */ }
   }, RESUME_DEBOUNCE_MS);
 }
 
@@ -89,24 +72,6 @@ async function handleDeviceSpkUpdate(payload: any, selfUserId: string): Promise<
   }
 }
 
-function handleSenderArchiveUpdate(payload: any): void {
-  const next = payload?.new;
-  const previous = payload?.old;
-  const messageId = next?.id as string | undefined;
-  const nextArchive = next?.archive_body as string | null | undefined;
-  const previousArchive = previous?.archive_body as string | null | undefined;
-  if (!messageId || !nextArchive || nextArchive === previousArchive) return;
-  dispatchTargetedDecryptRetry(messageId, 'sender_archive_available');
-}
-
-function handleRecipientArchiveUpdate(payload: any): void {
-  const row = payload?.new;
-  const messageId = row?.message_id as string | undefined;
-  const archiveBody = row?.archive_body as string | null | undefined;
-  if (!messageId || !archiveBody) return;
-  dispatchTargetedDecryptRetry(messageId, 'recipient_archive_available');
-}
-
 export interface RealtimeKeySyncOptions {
   userId: string;
 }
@@ -134,30 +99,6 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
       },
     );
   }
-
-  // Sender-owned archive_body is written asynchronously after the message row.
-  channel.on(
-    'postgres_changes' as any,
-    {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'messages',
-      filter: `sender_id=eq.${userId}`,
-    },
-    handleSenderArchiveUpdate,
-  );
-
-  // Received messages are archived per viewer in message_archives.
-  channel.on(
-    'postgres_changes' as any,
-    {
-      event: '*',
-      schema: 'public',
-      table: 'message_archives',
-      filter: `user_id=eq.${userId}`,
-    },
-    handleRecipientArchiveUpdate,
-  );
 
   channel.subscribe(status => {
     if (status === 'SUBSCRIBED') {

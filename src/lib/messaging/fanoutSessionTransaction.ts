@@ -1,4 +1,5 @@
 import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
+import { runDeviceSessionJob } from '@/lib/crypto/deviceSessionQueue';
 
 const SESSION_STORE = 'sessions';
 const INITIATING_STORE = 'initiating-sessions';
@@ -78,21 +79,21 @@ export async function rollbackFanoutSessionTransaction(messageId: string): Promi
   if (!transaction || transaction.size === 0) return 0;
 
   const snapshots = [...transaction.values()];
-  await runTxOn(
-    'device-sessions',
-    [SESSION_STORE, INITIATING_STORE],
-    'readwrite',
-    (tx) => {
-      const sessions = tx.objectStore(SESSION_STORE);
-      const initiating = tx.objectStore(INITIATING_STORE);
-      for (const snapshot of snapshots) {
+  await Promise.all(snapshots.map((snapshot) =>
+    runDeviceSessionJob('route', snapshot.key, () => runTxOn(
+      'device-sessions',
+      [SESSION_STORE, INITIATING_STORE],
+      'readwrite',
+      (tx) => {
+        const sessions = tx.objectStore(SESSION_STORE);
+        const initiating = tx.objectStore(INITIATING_STORE);
         if (snapshot.session) sessions.put(structuredClone(snapshot.session));
         else sessions.delete(snapshot.key);
         if (snapshot.initiating) initiating.put(structuredClone(snapshot.initiating));
         else initiating.delete(snapshot.key);
-      }
-    },
-  );
+      },
+    )),
+  ));
   attempts.delete(messageId);
   return snapshots.length;
 }

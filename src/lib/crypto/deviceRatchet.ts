@@ -11,14 +11,13 @@
  *   - Out-of-order delivery: skipped message keys are cached (bounded) so
  *     reordered messages still decrypt.
  *
- * Wire format (v4):
- *   "x3dh4." sessionId "." dhPubB64 "." Ns "." PN "." ivB64 "." ctB64
+ * Wire format:
+ *   "x3dh5." sessionId "." dhPubB64 "." Ns "." PN "." ivB64 "." ctB64
  *     - dhPubB64 : sender's current ratchet public key (X25519)
  *     - Ns       : message number in current sending chain
  *     - PN       : length of previous sending chain (lets receiver skip keys)
  *
- * New traffic must be `x3dh5.` only. `x3dh4.` is accepted for short-term
- * compatibility; pre-v4 device-copy formats are retired from runtime routing.
+ * Sesame-lite accepts this authenticated v5 format only.
  *
  * Storage: IndexedDB `forsure-device-sessions` / `sessions`
  *   key   = `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`
@@ -31,19 +30,18 @@ import { logCryptoError } from './errorLogger';
 import { exportPublicKeyRaw } from './keyManager';
 import { runTxOn, reqToPromise } from './indexedDbTx';
 import { RATCHET_MAX_SKIP, RATCHET_MAX_SKIPPED_CACHE } from './constants';
+import { runDeviceSessionJob } from './deviceSessionQueue';
 
 const STORE = 'sessions';
 
-export const RATCHET_PREFIX_V4 = 'x3dh4.'; // Double Ratchet w/ DH (no AAD)
 export const RATCHET_PREFIX_V5 = 'x3dh5.'; // Double Ratchet w/ DH + AAD (X3DH §3.3)
 
 const AD_PREFIX_DEV_V5 = 'FORSURE-DEV-AD-v5|';
 const AD_HEADER_PREFIX_DEV_V6 = 'FORSURE-DEV-HDR-v6|';
 const HEADER_BOUND_SESSION_PREFIX = 's6';
+const X25519_ALGORITHM: Algorithm = { name: 'X25519' };
 
-// Unified with the pairwise ratchet (ratchet.ts) so a burst of reordered
-// messages (e.g. iOS APNs batch delivery after wake) does not throw on the
-// device path while the pairwise path would tolerate it.
+// A bounded skipped-key window tolerates reordered delivery after mobile wake.
 const MAX_SKIP = RATCHET_MAX_SKIP;            // max skipped message keys per chain
 const MAX_SKIPPED_TOTAL = RATCHET_MAX_SKIPPED_CACHE;  // hard cap across all stored skipped keys
 
@@ -88,10 +86,6 @@ interface StoredSession {
    */
   peerSpkId?: number | null;
 
-  // Legacy v3 fallback (kept for already-established sessions)
-  legacySharedSecretB64?: string | null;
-  legacySendCounter?: number;
-  legacyRecvCounter?: number;
 }
 
 interface DecryptLogContext {
@@ -190,7 +184,7 @@ async function hkdf(ikm: ArrayBuffer, salt: ArrayBuffer, info: string, lenBits: 
       hash: 'SHA-256',
       salt: new Uint8Array(salt),
       info: new hardGlobals.TextEncoder().encode(info),
-    } as any,
+    },
     baseKey,
     lenBits,
   );
@@ -210,9 +204,8 @@ async function kdfCK(ckB64: string): Promise<{ ck: string; mk: string }> {
   const hmacKey = await hardCrypto.importKey(
     'raw', ckBuf, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   );
-  const sign = (hardCrypto as any).sign as (alg: any, key: CryptoKey, data: BufferSource) => Promise<ArrayBuffer>;
-  const mk = await sign({ name: 'HMAC' }, hmacKey, new Uint8Array([0x01]));
-  const ck = await sign({ name: 'HMAC' }, hmacKey, new Uint8Array([0x02]));
+  const mk = await hardCrypto.sign({ name: 'HMAC' }, hmacKey, new Uint8Array([0x01]));
+  const ck = await hardCrypto.sign({ name: 'HMAC' }, hmacKey, new Uint8Array([0x02]));
   return {
     mk: bufferToBase64(mk),
     ck: bufferToBase64(ck),
@@ -226,14 +219,14 @@ async function importMessageKey(mkB64: string): Promise<CryptoKey> {
 }
 
 async function generateRatchetKeyPair(): Promise<{ priv: CryptoKey; privJwk: JsonWebKey; pubB64: string }> {
-  const kp = await hardCrypto.generateKey({ name: 'X25519' } as any, true, ['deriveBits']) as CryptoKeyPair;
+  const kp = await hardCrypto.generateKey(X25519_ALGORITHM, true, ['deriveBits']) as CryptoKeyPair;
   const privJwk = await hardCrypto.exportKey('jwk', kp.privateKey);
   const pubRaw = await exportPublicKeyRaw(kp.publicKey);
   return { priv: kp.privateKey, privJwk, pubB64: bufferToBase64(pubRaw) };
 }
 
 async function importPriv(jwk: JsonWebKey): Promise<CryptoKey> {
-  return importKeyFromJWK(jwk, { name: 'X25519' } as any, ['deriveBits'], true);
+  return importKeyFromJWK(jwk, X25519_ALGORITHM, ['deriveBits'], true);
 }
 
 async function importPub(b64: string): Promise<CryptoKey> {
@@ -243,7 +236,8 @@ async function importPub(b64: string): Promise<CryptoKey> {
 async function dh(privJwk: JsonWebKey, peerPubB64: string): Promise<ArrayBuffer> {
   const priv = await importPriv(privJwk);
   const pub = await importPub(peerPubB64);
-  return hardCrypto.deriveBits({ name: 'X25519', public: pub } as any, priv, 256);
+  const algorithm: Algorithm & { public: CryptoKey } = { name: 'X25519', public: pub };
+  return hardCrypto.deriveBits(algorithm, priv, 256);
 }
 
 async function dhRatchet(session: StoredSession, peerNewPubB64: string): Promise<StoredSession> {
@@ -277,8 +271,7 @@ async function trySkippedKeys(
   n: number,
   iv: Uint8Array,
   ct: ArrayBuffer,
-  aad: Uint8Array | null,
-  requireAAD = false,
+  aad: Uint8Array,
 ): Promise<{ pt: string; updated: StoredSession } | null> {
   const idx = session.skipped.findIndex(s => s.dhPubB64 === dhPubB64 && s.n === n);
   if (idx === -1) return null;
@@ -288,26 +281,11 @@ async function trySkippedKeys(
     const ivCopy = new Uint8Array(iv.byteLength);
     ivCopy.set(iv);
     const ctCopy = (ct as ArrayBuffer).slice(0);
-    let pt: ArrayBuffer;
-    if (aad) {
-      try {
-        pt = await hardCrypto.decrypt(
-          { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
-          aes, ctCopy,
-        );
-      } catch (err) {
-        if (requireAAD) throw err;
-        const ivCopy2 = new Uint8Array(iv.byteLength); ivCopy2.set(iv);
-        const ctCopy2 = (ct as ArrayBuffer).slice(0);
-        pt = await hardCrypto.decrypt(
-          { name: 'AES-GCM', iv: ivCopy2 as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ctCopy2,
-        );
-      }
-    } else {
-      pt = await hardCrypto.decrypt(
-        { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ctCopy,
-      );
-    }
+    const pt = await hardCrypto.decrypt(
+      { name: 'AES-GCM', iv: ivCopy as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
+      aes,
+      ctCopy,
+    );
     const newSkipped = session.skipped.slice();
     newSkipped.splice(idx, 1);
     return {
@@ -324,7 +302,7 @@ async function skipMessageKeys(session: StoredSession, until: number): Promise<S
   if (session.Nr + MAX_SKIP < until) {
     throw new Error('too_many_skipped');
   }
-  let s = { ...session, skipped: [...session.skipped] };
+  const s = { ...session, skipped: [...session.skipped] };
   while (s.Nr < until) {
     const { ck, mk } = await kdfCK(s.ckRecvB64!);
     s.skipped.push({ dhPubB64: s.dhrPubB64!, n: s.Nr, keyB64: mk });
@@ -337,7 +315,7 @@ async function skipMessageKeys(session: StoredSession, until: number): Promise<S
   return s;
 }
 
-export async function establishDeviceSession(
+async function establishDeviceSessionUnlocked(
   myUserId: string,
   myDeviceId: string,
   peerUserId: string,
@@ -392,7 +370,34 @@ export async function establishDeviceSession(
   return finalSessionId;
 }
 
-export async function ratchetEncrypt(
+export async function establishDeviceSession(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+  sharedSecret: ArrayBuffer,
+  sessionId?: string,
+  opts?: {
+    peerInitialDhPubB64?: string | null;
+    isInitiator?: boolean;
+    peerSpkId?: number | null;
+    selfInitialDhPrivJwk?: JsonWebKey | null;
+    selfInitialDhPubB64?: string | null;
+  },
+): Promise<string> {
+  const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
+  return runDeviceSessionJob('ratchet', key, () => establishDeviceSessionUnlocked(
+    myUserId,
+    myDeviceId,
+    peerUserId,
+    peerDeviceId,
+    sharedSecret,
+    sessionId,
+    opts,
+  ));
+}
+
+async function ratchetEncryptUnlocked(
   myUserId: string,
   myDeviceId: string,
   peerUserId: string,
@@ -400,24 +405,13 @@ export async function ratchetEncrypt(
   plaintext: string,
 ): Promise<string | null> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-  let session = await loadSession(key);
+  const session = await loadSession(key);
   if (!session) {
     void logCryptoError({
       severity: 'info',
       context: 'encrypt',
       errorCode: 'E_NO_SESSION',
       errorMessage: 'No device-pair session — caller must run X3DH',
-      myDeviceId, peerUserId, peerDeviceId,
-    });
-    return null;
-  }
-
-  if (session.legacySharedSecretB64 && !session.ckSendB64 && !session.dhsPubB64) {
-    void logCryptoError({
-      severity: 'warning',
-      context: 'encrypt',
-      errorCode: 'E_V3_OUTBOUND_DISABLED',
-      errorMessage: 'Legacy v3 outbound disabled; caller must re-bootstrap v5',
       myDeviceId, peerUserId, peerDeviceId,
     });
     return null;
@@ -459,43 +453,77 @@ export async function ratchetEncrypt(
   ].join('.');
 }
 
+export async function ratchetEncrypt(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+  plaintext: string,
+): Promise<string | null> {
+  const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
+  return runDeviceSessionJob('ratchet', key, () => ratchetEncryptUnlocked(
+    myUserId,
+    myDeviceId,
+    peerUserId,
+    peerDeviceId,
+    plaintext,
+  ));
+}
+
 export async function ratchetDecrypt(
   myUserId: string,
   myDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  if (payload.startsWith(RATCHET_PREFIX_V5)) {
-    return decryptV4or5(myUserId, myDeviceId, payload, RATCHET_PREFIX_V5);
-  }
-  if (payload.startsWith(RATCHET_PREFIX_V4)) {
-    return decryptV4or5(myUserId, myDeviceId, payload, RATCHET_PREFIX_V4);
-  }
-  return null;
+  if (!payload.startsWith(RATCHET_PREFIX_V5)) return null;
+  const parts = payload.slice(RATCHET_PREFIX_V5.length).split('.');
+  if (parts.length !== 6 || !parts[0]) return null;
+  const found = await lookupSessionById(myUserId, myDeviceId, parts[0]);
+  if (!found) return null;
+  return runDeviceSessionJob('ratchet', found.key, () => decryptV5(myUserId, myDeviceId, payload));
 }
 
-async function decryptV4or5(
+async function decryptV5(
   myUserId: string,
   myDeviceId: string,
   payload: string,
-  prefix: string,
 ): Promise<string | null> {
-  const parts = payload.slice(prefix.length).split('.');
+  const parts = payload.slice(RATCHET_PREFIX_V5.length).split('.');
   if (parts.length !== 6) return null;
   const [sessionId] = parts;
   const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
   if (!found) return null;
   const peer = parseCompositeKey(found.key);
-  const isV5 = prefix === RATCHET_PREFIX_V5;
-  if (isV5 && !peer) return null;
-  const headerBound = isV5 && isHeaderBoundSession(sessionId);
+  if (!peer) return null;
+  const headerBound = isHeaderBoundSession(sessionId);
   const header = { dh: parts[1], n: Number(parts[2]), pn: Number(parts[3]) };
   if (headerBound && (!Number.isSafeInteger(header.n) || !Number.isSafeInteger(header.pn))) return null;
-  const aad = isV5 && peer
-    ? (headerBound
-      ? buildDevAADWithHeader(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId, header)
-      : buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId))
-    : null;
-  return decryptV4WithStored(found.key, found.session, parts, aad, isV5, peer ?? undefined);
+  const aad = headerBound
+    ? buildDevAADWithHeader(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId, header)
+    : buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId);
+  return decryptV5WithStored(found.key, found.session, parts, aad, peer);
+}
+
+async function ratchetDecryptWithSessionUnlocked(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+  payload: string,
+): Promise<string | null> {
+  if (!payload.startsWith(RATCHET_PREFIX_V5)) return null;
+  const parts = payload.slice(RATCHET_PREFIX_V5.length).split('.');
+  if (parts.length !== 6) return null;
+  const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
+  const session = await loadSession(key);
+  if (!session) return null;
+  const headerBound = isHeaderBoundSession(parts[0]);
+  const header = { dh: parts[1], n: Number(parts[2]), pn: Number(parts[3]) };
+  if (headerBound && (!Number.isSafeInteger(header.n) || !Number.isSafeInteger(header.pn))) return null;
+  const aad = headerBound
+    ? buildDevAADWithHeader(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0], header)
+    : buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0]);
+  return decryptV5WithStored(key, session, parts, aad, { peerUserId, peerDeviceId });
 }
 
 export async function ratchetDecryptWithSession(
@@ -505,47 +533,33 @@ export async function ratchetDecryptWithSession(
   peerDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  const isV5 = payload.startsWith(RATCHET_PREFIX_V5);
-  const isV4 = payload.startsWith(RATCHET_PREFIX_V4);
-  if (!isV5 && !isV4) {
-    return null;
-  }
-  const prefix = isV5 ? RATCHET_PREFIX_V5 : RATCHET_PREFIX_V4;
-  const parts = payload.slice(prefix.length).split('.');
-  if (parts.length !== 6) return null;
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-  const session = await loadSession(key);
-  if (!session) return null;
-  const headerBound = isV5 && isHeaderBoundSession(parts[0]);
-  const header = { dh: parts[1], n: Number(parts[2]), pn: Number(parts[3]) };
-  if (headerBound && (!Number.isSafeInteger(header.n) || !Number.isSafeInteger(header.pn))) return null;
-  const aad = isV5
-    ? (headerBound
-      ? buildDevAADWithHeader(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0], header)
-      : buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0]))
-    : null;
-  return decryptV4WithStored(key, session, parts, aad, isV5, { peerUserId, peerDeviceId });
+  return runDeviceSessionJob('ratchet', key, () => ratchetDecryptWithSessionUnlocked(
+    myUserId,
+    myDeviceId,
+    peerUserId,
+    peerDeviceId,
+    payload,
+  ));
 }
 
-async function decryptV4WithStored(
+async function decryptV5WithStored(
   key: string,
   initialSession: StoredSession,
   parts: string[],
-  aad: Uint8Array | null,
-  requireAAD = false,
+  aad: Uint8Array,
   logContext: DecryptLogContext = {},
 ): Promise<string | null> {
   const [sessionId, dhPubB64, NsStr, PNStr, ivB64, ctB64] = parts;
   const Ns = parseInt(NsStr, 10);
   const PN = parseInt(PNStr, 10);
   if (Number.isNaN(Ns) || Number.isNaN(PN)) return null;
-  if (requireAAD && !aad) return null;
 
   let session = initialSession;
   const iv = new Uint8Array(base64ToBuffer(ivB64));
   const ct = base64ToBuffer(ctB64);
 
-  const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct, aad, requireAAD);
+  const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct, aad);
   if (skipped) {
     await saveSession(key, skipped.updated);
     return skipped.pt;
@@ -560,24 +574,11 @@ async function decryptV4WithStored(
 
     const { ck, mk } = await kdfCK(session.ckRecvB64!);
     const aes = await importMessageKey(mk);
-    let pt: ArrayBuffer;
-    if (aad) {
-      try {
-        pt = await hardCrypto.decrypt(
-          { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
-          aes, ct,
-        );
-      } catch (err) {
-        if (requireAAD) throw err;
-        pt = await hardCrypto.decrypt(
-          { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
-        );
-      }
-    } else {
-      pt = await hardCrypto.decrypt(
-        { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 }, aes, ct,
-      );
-    }
+    const pt = await hardCrypto.decrypt(
+      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
+      aes,
+      ct,
+    );
     session = { ...session, ckRecvB64: ck, Nr: session.Nr + 1 };
     await saveSession(key, session);
     return new hardGlobals.TextDecoder().decode(pt);
@@ -585,12 +586,12 @@ async function decryptV4WithStored(
     void logCryptoError({
       severity: 'error',
       context: 'decrypt',
-      errorCode: requireAAD ? 'E_DECRYPT_V5' : 'E_DECRYPT_V4',
+      errorCode: 'E_DECRYPT_V5',
       errorMessage: err instanceof Error ? err.message : String(err),
       myDeviceId: key.split('::')[1] ?? 'unknown',
       peerUserId: logContext.peerUserId,
       peerDeviceId: logContext.peerDeviceId,
-      metadata: { sessionId, Ns, PN, requireAAD },
+      metadata: { sessionId, Ns, PN },
     });
     return null;
   }
@@ -606,7 +607,7 @@ export async function getSessionPeerSpkId(
   return session?.peerSpkId ?? null;
 }
 
-export async function invalidateDeviceSession(
+async function invalidateDeviceSessionUnlocked(
   myUserId: string,
   myDeviceId: string,
   peerUserId: string,
@@ -619,6 +620,21 @@ export async function invalidateDeviceSession(
   } catch {
     // non-fatal
   }
+}
+
+export async function invalidateDeviceSession(
+  myUserId: string,
+  myDeviceId: string,
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<void> {
+  const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
+  await runDeviceSessionJob('ratchet', key, () => invalidateDeviceSessionUnlocked(
+    myUserId,
+    myDeviceId,
+    peerUserId,
+    peerDeviceId,
+  ));
 }
 
 export async function listKnownSessionIds(

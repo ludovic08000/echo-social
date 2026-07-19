@@ -22,7 +22,7 @@ const B_USER = 'user-bob';
 const B_DEV = 'dev-bob-1';
 
 const DB_NAME = 'forsure-device-sessions';
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 const STORE = 'sessions';
 
 function makeSharedSecret(seed: number): ArrayBuffer {

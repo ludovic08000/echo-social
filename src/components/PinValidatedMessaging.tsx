@@ -20,7 +20,7 @@ function wakeMessageDecryptors(deviceId: string | null, reason: string): void {
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
       detail: { reason, deviceId },
     }));
-    window.dispatchEvent(new CustomEvent('forsure:e2ee-request-refanout-scan', {
+    window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', {
       detail: { reason, deviceId },
     }));
     window.dispatchEvent(new CustomEvent('forsure-keys-restored', {

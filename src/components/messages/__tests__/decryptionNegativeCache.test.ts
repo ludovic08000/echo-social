@@ -47,21 +47,10 @@ import {
   resolvePlaintext,
 } from '@/components/messages/decryptionService';
 
-function ratchetBody(seed: string): string {
-  return JSON.stringify({
-    encryptionMode: 'ratchet',
-    v: 4,
-    hdr: { dh: `dh-${seed}`, pn: 0, n: 0 },
-    iv: `iv-${seed}`,
-    ct: `ct-${seed}`,
-    sig: `sig-${seed}`,
-    fp: `fp-${seed}`,
-    ts: 1,
-  });
-}
-
 function multiDeviceBody(seed: string): string {
   return JSON.stringify({
+    protocol: 'forsure-sesame-lite',
+    version: 1,
     encryptionMode: 'multi_device',
     v: 4,
     ct: 'device_copies',
@@ -105,59 +94,34 @@ describe('targeted decryption cache and Bubble Hold', () => {
   });
 
   it('clears every body variant for one message without clearing another message', async () => {
-    const bodyA1 = ratchetBody('a1');
-    const bodyA2 = ratchetBody('a2');
-    const bodyB = ratchetBody('b');
+    const bodyA1 = multiDeviceBody('a1');
+    const bodyA2 = multiDeviceBody('a2');
+    const bodyB = multiDeviceBody('b');
     const fail = vi.fn(async () => failedDecrypt());
 
     await Promise.all([
-      resolvePlaintext({ body: bodyA1, messageId: 'message-a', decrypt: fail }),
-      resolvePlaintext({ body: bodyA2, messageId: 'message-a', decrypt: fail }),
-      resolvePlaintext({ body: bodyB, messageId: 'message-b', decrypt: fail }),
+      resolvePlaintext({ body: bodyA1, messageId: 'message-a', senderId: 'sender', decrypt: fail }),
+      resolvePlaintext({ body: bodyA2, messageId: 'message-a', senderId: 'sender', decrypt: fail }),
+      resolvePlaintext({ body: bodyB, messageId: 'message-b', senderId: 'sender', decrypt: fail }),
     ]);
 
     clearNegativeCacheForMessage('message-a');
+    mocks.tryReadDeviceCopy.mockResolvedValue('restored-a');
 
-    const recoverA1 = vi.fn(async () => ({
-      text: 'restored-a1',
-      incompatible: false,
-      encrypted: true,
-      verified: true,
-    }));
-    const recoverA2 = vi.fn(async () => ({
-      text: 'restored-a2',
-      incompatible: false,
-      encrypted: true,
-      verified: true,
-    }));
-    const recoverB = vi.fn(async () => ({
-      text: 'must-not-run',
-      incompatible: false,
-      encrypted: true,
-      verified: true,
-    }));
-
-    expect((await resolvePlaintext({ body: bodyA1, messageId: 'message-a', decrypt: recoverA1 }))?.text).toBe('restored-a1');
-    expect((await resolvePlaintext({ body: bodyA2, messageId: 'message-a', decrypt: recoverA2 }))?.text).toBe('restored-a2');
-    expect(await resolvePlaintext({ body: bodyB, messageId: 'message-b', decrypt: recoverB })).toBeNull();
-
-    expect(recoverA1).toHaveBeenCalledOnce();
-    expect(recoverA2).toHaveBeenCalledOnce();
-    expect(recoverB).not.toHaveBeenCalled();
+    expect((await resolvePlaintext({ body: bodyA1, messageId: 'message-a', senderId: 'sender', decrypt: fail }))?.text).toBe('restored-a');
+    expect((await resolvePlaintext({ body: bodyA2, messageId: 'message-a', senderId: 'sender', decrypt: fail }))?.text).toBe('restored-a');
+    expect(await resolvePlaintext({ body: bodyB, messageId: 'message-b', senderId: 'sender', decrypt: fail })).toBeNull();
   });
 
   it('keeps the last authenticated plaintext when a later retry fails', async () => {
-    const body = ratchetBody('sticky');
-    const firstDecrypt = vi.fn(async () => ({
-      text: 'Cette bulle doit rester visible',
-      incompatible: false,
-      encrypted: true,
-      verified: true,
-    }));
+    const body = multiDeviceBody('sticky');
+    const firstDecrypt = vi.fn(async () => failedDecrypt());
+    mocks.tryReadDeviceCopy.mockResolvedValueOnce('Cette bulle doit rester visible');
 
     const first = await resolvePlaintext({
       body,
       messageId: 'message-sticky',
+      senderId: 'sender',
       decrypt: firstDecrypt,
     });
     expect(first?.text).toBe('Cette bulle doit rester visible');
@@ -165,14 +129,16 @@ describe('targeted decryption cache and Bubble Hold', () => {
     dropCache('message-sticky', body);
     clearNegativeCacheForMessage('message-sticky');
     const retryDecrypt = vi.fn(async () => failedDecrypt());
+    mocks.tryReadDeviceCopy.mockResolvedValueOnce(null);
 
     const retried = await resolvePlaintext({
       body,
       messageId: 'message-sticky',
+      senderId: 'sender',
       decrypt: retryDecrypt,
     });
 
-    expect(retryDecrypt).toHaveBeenCalledOnce();
+    expect(retryDecrypt).not.toHaveBeenCalled();
     expect(retried?.text).toBe('Cette bulle doit rester visible');
   });
 

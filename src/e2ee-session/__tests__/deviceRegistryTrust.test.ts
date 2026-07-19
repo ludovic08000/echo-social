@@ -4,7 +4,7 @@
  * Verifies that `listDevicesForUser`:
  *   1) returns ONLY signed devices when the L4 signed list is non-empty
  *      (rogue devices injected via the raw RPC must NOT leak through).
- *   2) falls back to the legacy raw RPC only when the signed list is empty.
+ *   2) fails closed when no signed list exists.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -57,7 +57,7 @@ describe('Lot A1 — trust-gated device list', () => {
     expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
-  it('falls back to legacy RPC when no signed entry exists', async () => {
+  it('refuses unsigned raw devices when no signed entry exists', async () => {
     fetchVerifiedMock.mockResolvedValue({
       signedListPresent: false,
       trusted: [],
@@ -68,8 +68,8 @@ describe('Lot A1 — trust-gated device list', () => {
       error: null,
     });
     const out = await listDevicesForUser('user-456');
-    expect(out.map(d => d.deviceId)).toEqual(['dev-legacy']);
-    expect(supabase.rpc).toHaveBeenCalledWith('list_active_devices_for_user', { p_user_id: 'user-456' });
+    expect(out).toEqual([]);
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   it('returns [] when both paths fail', async () => {

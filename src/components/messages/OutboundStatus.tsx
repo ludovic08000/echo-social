@@ -1,5 +1,5 @@
 import { SesameMessageMetadata } from './SesameMessageMetadata';
-import type { OutboundMessageStatus } from '@/lib/messaging/messageQueue';
+import type { OutboxStatus as OutboundMessageStatus } from '@/lib/messaging/outboxVault';
 
 interface OutboundStatusProps {
   status: OutboundMessageStatus;

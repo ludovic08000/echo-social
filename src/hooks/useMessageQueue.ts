@@ -3,27 +3,21 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { savePlaintext } from '@/lib/crypto/plaintextStore';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
-import { prewarmSenderKeysFlag } from '@/lib/crypto/senderKeyOutbound';
 import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
 import {
   cancelSignalRetry,
   isRetryableOutboundStatus,
-  runSignalConversationJob,
   scheduleSignalRetry,
 } from '@/lib/messaging/signalWebConversationQueue';
 import {
-  recoverRecentMessagesAfterUnlock,
-  installRecoverRecentMessagesListeners,
-} from '@/lib/crypto/recoverRecentMessagesAfterUnlock';
-import {
   useMessageQueue as useSignalMessageQueue,
-  shouldArchiveMessageBody,
   buildMultiDeviceParentEnvelope,
   selectInitialDeliveryMode,
+  type OutboundMessage,
 } from './useMessageQueueSignal';
 
-export { shouldArchiveMessageBody, buildMultiDeviceParentEnvelope, selectInitialDeliveryMode };
+export { buildMultiDeviceParentEnvelope, selectInitialDeliveryMode };
 export type { OutboundMessage } from './useMessageQueueSignal';
 
 type SendExtra = {
@@ -34,17 +28,13 @@ type SendExtra = {
   document_size_bytes?: number | null;
 };
 
-function perfNow(): number {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
-}
-
 const PREWARM_TTL_MS = 60_000;
 const prewarmCompletedAt = new Map<string, number>();
 const prewarmInflight = new Map<string, Promise<void>>();
 
 export function useMessageQueue(
   conversationId: string,
-  encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
+  _encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
   isEncryptionReady: boolean,
   isEncryptionActive: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
@@ -54,21 +44,6 @@ export function useMessageQueue(
   const { user } = useAuth();
   const previousPendingRef = useRef(new Map<string, { status: string; serverId: string | null }>());
   const scheduledRetryKeysRef = useRef(new Set<string>());
-  const conversationQueueKey = `${user?.id ?? 'anonymous'}:${conversationId}`;
-
-  useEffect(() => {
-    if (!user?.id || allowPlaintext || !isEncryptionActive) return;
-
-    const stop = installRecoverRecentMessagesListeners(user.id);
-    const timer = window.setTimeout(() => {
-      void recoverRecentMessagesAfterUnlock(user.id, 'message-queue-mounted').catch(() => undefined);
-    }, 250);
-
-    return () => {
-      window.clearTimeout(timer);
-      stop();
-    };
-  }, [user?.id, allowPlaintext, isEncryptionActive]);
 
   /**
    * Signal-style warm send path.
@@ -76,7 +51,7 @@ export function useMessageQueue(
    * Signal creates a local outgoing message and durable job immediately, while
    * identities/device routes are normally already hot. Sesame keeps the same
    * trust gates, but primes the authenticated session, local E2EE identity,
-   * Sender Keys flag and canonical signed device lists before Send. No
+   * canonical signed device lists before Send. No
    * plaintext, ciphertext or ratchet step is produced here.
    */
   useEffect(() => {
@@ -95,7 +70,6 @@ export function useMessageQueue(
         await Promise.allSettled([
           supabase.auth.getSession(),
           ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
-          prewarmSenderKeysFlag(conversationId),
           (async () => {
             const { data, error } = await supabase
               .from('conversation_participants')
@@ -145,54 +119,9 @@ export function useMessageQueue(
     await onMessageSent?.(localId);
   }, [conversationId, onMessageSent]);
 
-  /**
-   * Only the stateful encryption step is serialized. useMessageQueueSignal
-   * creates and persists the optimistic local bubble before it calls this
-   * function, so queue/network delays are no longer displayed as a slow click.
-   * This also protects the Double Ratchet from concurrent chain advancement.
-   */
-  const queuedEncrypt = useCallback(async (plaintext: string, localId?: string): Promise<string> => {
-    if (!encrypt) throw new Error('Encryption not available');
-    const queuedAt = perfNow();
-
-    return runSignalConversationJob(`${conversationQueueKey}:encrypt`, async () => {
-      const startedAt = perfNow();
-      const waitMs = Math.round(startedAt - queuedAt);
-      console.info('[E2EE_PERF]', {
-        stage: 'encrypt_queue_acquired',
-        conversationId,
-        localId: localId ?? null,
-        waitMs,
-      });
-
-      try {
-        const result = await encrypt(plaintext, localId);
-        console.info('[E2EE_PERF]', {
-          stage: 'encrypt_complete',
-          conversationId,
-          localId: localId ?? null,
-          waitMs,
-          encryptMs: Math.round(perfNow() - startedAt),
-          totalMs: Math.round(perfNow() - queuedAt),
-        });
-        return result;
-      } catch (error) {
-        console.warn('[E2EE_PERF]', {
-          stage: 'encrypt_failed',
-          conversationId,
-          localId: localId ?? null,
-          waitMs,
-          encryptMs: Math.round(perfNow() - startedAt),
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      }
-    });
-  }, [conversationId, conversationQueueKey, encrypt]);
-
   const queue = useSignalMessageQueue(
     conversationId,
-    encrypt ? queuedEncrypt : null,
+    null,
     isEncryptionReady,
     isEncryptionActive,
     handleSent,
@@ -211,7 +140,8 @@ export function useMessageQueue(
     },
   );
 
-  const scheduleRetryForMessage = useCallback((message: (typeof queue.pendingMessages)[number], immediate = false) => {
+  const retryMessage = queue.retryMessage;
+  const scheduleRetryForMessage = useCallback((message: OutboundMessage, immediate = false) => {
     if (!user?.id) return;
 
     const retryKey = `${user.id}:${message.localId}`;
@@ -226,13 +156,11 @@ export function useMessageQueue(
     scheduleSignalRetry(
       retryKey,
       async () => {
-        // retryMessage calls queuedEncrypt internally. Do not take the same lock
-        // here or Web Locks would become non-reentrant and deadlock.
-        await queue.retryMessage(message.localId);
+        await retryMessage(message.localId);
       },
       { immediate },
     );
-  }, [queue.pendingMessages, queue.retryMessage, user?.id]);
+  }, [retryMessage, user?.id]);
 
   // Signal-style durable resume: rows restored from the encrypted IndexedDB
   // outbox are retried automatically instead of waiting for a manual tap.
@@ -263,9 +191,11 @@ export function useMessageQueue(
 
     window.addEventListener('online', retryNow);
     window.addEventListener('focus', retryNow);
+    window.addEventListener('forsure:sesame-route-ready', retryNow);
     return () => {
       window.removeEventListener('online', retryNow);
       window.removeEventListener('focus', retryNow);
+      window.removeEventListener('forsure:sesame-route-ready', retryNow);
     };
   }, [queue.pendingMessages, scheduleRetryForMessage]);
 

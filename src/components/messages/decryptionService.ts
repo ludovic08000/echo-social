@@ -1,12 +1,12 @@
 /**
  * decryptionService — single crypto entry point for message UI.
  *
- * Resolution order for a single message body:
- *   1. Already-known plaintext (RAM / IndexedDB).
- *   2. Conversation-level Double Ratchet.
- *   3. Per-message Sesame device copy.
- *   4. Multi-session router.
- *   5. Account-wrapped encrypted archive.
+ * Sesame-lite resolution order for a single message body:
+ *   1. Already-known plaintext for the exact parent ciphertext.
+ *   2. The authenticated copy addressed to this device.
+ *
+ * Unknown encrypted JSON is rejected so ciphertext is never rendered as text.
+ * No alternate wire format is decrypted.
  *
  * Bubble Hold invariant: once authenticated plaintext has been displayed for an
  * immutable message id, a later transient retry is never allowed to replace it
@@ -22,8 +22,6 @@ import {
 import {
   isCryptoJsonBody,
   isMultiDeviceEnvelopeBody,
-  isSecurePipelineEnvelopeBody,
-  isStrictRatchetEnvelopeBody,
 } from '@/lib/messaging/messageCompatibility';
 import {
   loadPlaintext,
@@ -32,11 +30,8 @@ import {
   savePlaintextForCiphertext,
 } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
-import { routeIncoming } from '@/e2ee-session';
 import { supabase } from '@/integrations/supabase/client';
-import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiveKey';
 import type { DecryptResult } from '@/hooks/useE2EE';
-import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 
 export interface DecryptionOutcome {
   text: string;
@@ -45,12 +40,7 @@ export interface DecryptionOutcome {
 }
 
 export function looksEncrypted(body: string): boolean {
-  return (
-    isCryptoJsonBody(body) ||
-    isStrictRatchetEnvelopeBody(body) ||
-    isMultiDeviceEnvelopeBody(body) ||
-    isSecurePipelineEnvelopeBody(body)
-  );
+  return isCryptoJsonBody(body) || isMultiDeviceEnvelopeBody(body);
 }
 
 const CACHE_CAP = 500;
@@ -262,6 +252,8 @@ export async function resolvePlaintext(opts: {
     return outcome;
   }
 
+  if (!isMultiDeviceEnvelopeBody(body)) return null;
+
   const key = cacheKey(messageId, body);
   const cached = cache.get(key);
   if (cached) return cached;
@@ -278,31 +270,7 @@ export async function resolvePlaintext(opts: {
   if (!promise) {
     promise = (async (): Promise<DecryptionOutcome | null> => {
       let senderId: string | null = opts.senderId ?? null;
-      let authUserId: string | null | undefined;
-      const resolveAuthUserId = async (): Promise<string | null> => {
-        if (authUserId === undefined) authUserId = await getCachedAuthUserId();
-        return authUserId;
-      };
-
-      if (!isMultiDeviceEnvelopeBody(body)) {
-        try {
-          const result = await decrypt(body);
-          if (!result.incompatible) {
-            if (result.encrypted && !result.verified && typeof console !== 'undefined') {
-              console.warn('[DECRYPT] AEAD-authenticated but Ed25519-unverified plaintext surfaced', {
-                messageId,
-                kind: isStrictRatchetEnvelopeBody(body) ? 'strict' : 'secure',
-              });
-            }
-            if (result.text !== '') {
-              const outcome = await buildAuthenticatedOutcomeFromText(result.text, messageId);
-              return cacheAndPersist(key, body, outcome, messageId);
-            }
-          }
-        } catch {
-          /* fall through */
-        }
-      }
+      void decrypt;
 
       if (messageId) {
         if (!senderId) senderId = await getSenderId(messageId);
@@ -319,84 +287,12 @@ export async function resolvePlaintext(opts: {
         }
       }
 
-      if (isMultiDeviceEnvelopeBody(body)) {
-        negCache.set(key, Date.now());
-        return stickyOrNull(messageId);
-      }
-
-      if (messageId) {
-        try {
-          const userId = await resolveAuthUserId();
-          if (userId && senderId) {
-            const routed = await routeIncoming({
-              encryptedBody: body,
-              recipientUserId: userId,
-              senderUserId: senderId,
-              messageId,
-            });
-            if (routed.ok && routed.plaintext !== null) {
-              const outcome = await buildAuthenticatedOutcomeFromText(routed.plaintext, messageId);
-              return cacheAndPersist(key, body, outcome, messageId);
-            }
-          }
-        } catch {
-          /* pending queue will retry */
-        }
-      }
-
-      let archiveFound = false;
-      let archiveDecrypted = false;
-      if (messageId) {
-        try {
-          const userId = await resolveAuthUserId();
-          if (userId) {
-            const { data: row } = await supabase
-              .from('messages')
-              .select('archive_body, conversation_id')
-              .eq('id', messageId)
-              .maybeSingle();
-            const conversationId = (row as any)?.conversation_id as string | null | undefined;
-            if (conversationId) {
-              let archiveBody: string | null = ((row as any)?.archive_body as string | null) ?? null;
-              try {
-                const { data: mine } = await (supabase as any)
-                  .from('message_archives')
-                  .select('archive_body')
-                  .eq('message_id', messageId)
-                  .maybeSingle();
-                const mineArchive = (mine as any)?.archive_body as string | null | undefined;
-                if (mineArchive) archiveBody = mineArchive;
-              } catch {
-                /* table may be absent before migration */
-              }
-              if (archiveBody && isArchivePayload(archiveBody)) {
-                archiveFound = true;
-                const plaintext = await decryptArchive(archiveBody, conversationId, userId);
-                if (plaintext !== null) {
-                  archiveDecrypted = true;
-                  const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);
-                  return cacheAndPersist(key, body, outcome, messageId);
-                }
-              }
-            }
-          }
-        } catch {
-          /* fall through to sticky snapshot */
-        }
-      }
-
       if (typeof console !== 'undefined') {
-        console.warn('[DECRYPT-FAIL] no fresh path; preserving last valid bubble snapshot', {
+        console.warn('[DECRYPT-FAIL] Sesame-lite device copy unavailable', {
           messageId,
-          kind: isMultiDeviceEnvelopeBody(body)
-            ? 'multidevice'
-            : isStrictRatchetEnvelopeBody(body)
-              ? 'strict'
-              : 'secure_or_future',
+          kind: 'sesame-lite',
           isMe: opts.isMe === true,
           senderId: senderId ? String(senderId).slice(0, 8) : null,
-          archiveFound,
-          archiveDecrypted,
           stickyAvailable: Boolean(readLastGoodOutcome(messageId)),
         });
       }

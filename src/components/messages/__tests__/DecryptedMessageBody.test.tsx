@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
+import { useState } from 'react';
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
@@ -25,8 +26,22 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 vi.mock('@/lib/crypto/plaintextStore', () => ({
+  savePlaintext: vi.fn().mockResolvedValue(undefined),
   savePlaintextForCiphertext: vi.fn().mockResolvedValue(undefined),
+  loadPlaintext: vi.fn().mockResolvedValue(null),
   loadPlaintextForCiphertext: vi.fn().mockResolvedValue(null),
+}));
+vi.mock('@/hooks/useMessageEdit', () => ({
+  useMessageEdit: () => ({
+    meta: null,
+    latest: null,
+    resolved: null,
+    canEdit: false,
+    isLoading: false,
+    editMessage: vi.fn(),
+    isSaving: false,
+    error: null,
+  }),
 }));
 vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   tryReadDeviceCopy: vi.fn().mockResolvedValue(null),
@@ -74,6 +89,59 @@ describe('DecryptedMessageBody', () => {
     );
     expect(await screen.findByText('bonjour')).toBeInTheDocument();
     expect(decrypt).not.toHaveBeenCalled();
+  });
+
+  it('does not republish identical cached plaintext when refreshKey changes', async () => {
+    const onDecrypted = vi.fn();
+    const decrypt = vi.fn();
+    const props = {
+      body: RATCHET_BODY,
+      decrypt,
+      isEncryptionActive: true,
+      cachedPlaintext: 'bonjour',
+      messageId: 'msg-refresh-loop',
+      onDecrypted,
+    };
+    const { rerender } = render(
+      <DecryptedMessageBody {...props} refreshKey="cache:1" />,
+    );
+
+    expect(await screen.findByText('bonjour')).toBeInTheDocument();
+    rerender(<DecryptedMessageBody {...props} refreshKey="cache:2" />);
+    await act(async () => Promise.resolve());
+
+    expect(decrypt).not.toHaveBeenCalled();
+    expect(onDecrypted).not.toHaveBeenCalled();
+  });
+
+  it('publishes newly resolved plaintext once when the parent refreshes its cache', async () => {
+    const published = vi.fn();
+
+    function ParentCacheHarness() {
+      const [cachedPlaintext, setCachedPlaintext] = useState<string>();
+      const [refreshKey, setRefreshKey] = useState(0);
+      return (
+        <DecryptedMessageBody
+          body="new plaintext"
+          decrypt={vi.fn()}
+          isEncryptionActive={false}
+          cachedPlaintext={cachedPlaintext}
+          refreshKey={refreshKey}
+          messageId="msg-parent-cache-loop"
+          onDecrypted={(text) => {
+            published(text);
+            setCachedPlaintext(text);
+            setRefreshKey((value) => value + 1);
+          }}
+        />
+      );
+    }
+
+    render(<ParentCacheHarness />);
+    expect(await screen.findByText('new plaintext')).toBeInTheDocument();
+    await waitFor(() => expect(published).toHaveBeenCalledTimes(1));
+    await act(async () => Promise.resolve());
+    expect(published).toHaveBeenCalledTimes(1);
   });
 
   it('normalizes cached media plaintext and never renders the embedded key', async () => {

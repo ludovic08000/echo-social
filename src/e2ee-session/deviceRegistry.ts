@@ -159,7 +159,7 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
 /**
  * Lot A1 — Trust gate. Returns only signed and verified device routes.
  *
- * Results are cached in RAM for ten seconds. This does not weaken the trust
+ * Results are cached in RAM for thirty seconds. This does not weaken the trust
  * gate: cached entries already passed canonical-root and signature checks, and
  * no unsigned fallback is introduced. The short TTL bounds device-revocation
  * staleness while removing repeated Supabase + Ed25519 work from every message.

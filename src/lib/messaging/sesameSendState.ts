@@ -5,7 +5,7 @@
 // Signal Desktop — ts/messages/MessageSendState.std.ts
 // Signal-specific models and memoization dependencies were removed.
 
-import type { OutboundMessageStatus } from './messageQueue';
+import type { OutboxStatus as OutboundMessageStatus } from './outboxVault';
 
 /**
  * Per-recipient delivery state. The order is monotonic: authenticated receipts

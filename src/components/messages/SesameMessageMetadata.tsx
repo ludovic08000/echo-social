@@ -14,7 +14,7 @@ import {
   Pin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { OutboundMessageStatus } from '@/lib/messaging/messageQueue';
+import type { OutboxStatus as OutboundMessageStatus } from '@/lib/messaging/outboxVault';
 import {
   aggregateSesameUiMessageStatus,
   SesameSendStatus,

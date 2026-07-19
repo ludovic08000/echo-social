@@ -12,10 +12,4 @@ export {
   hasExternalProvider,
 } from './provider';
 
-export {
-  messageQueue,
-  getStatusLabel,
-  getStatusIcon,
-  type OutboundMessage,
-  type OutboundMessageStatus,
-} from './messageQueue';
+export type { OutboxPayload as OutboundMessage, OutboxStatus as OutboundMessageStatus } from './outboxVault';

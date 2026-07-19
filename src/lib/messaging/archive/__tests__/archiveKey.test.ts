@@ -36,6 +36,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 vi.mock('@/lib/crypto/accountKeyBackup', () => ({
   getSessionMasterKey: () => mocks.masterKey.value,
+  getSessionUserId: () => '00000000-0000-4000-8000-000000000002',
 }));
 
 vi.mock('@/lib/messaging/archive/archivePrefs', () => ({

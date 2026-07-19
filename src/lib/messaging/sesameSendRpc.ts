@@ -13,6 +13,14 @@ type RpcError = {
   hint?: string | null;
 } | null;
 
+type RpcResponse = {
+  data: unknown;
+  error: RpcError;
+};
+
+const SEND_TRANSPORT_TIMEOUT_MS = 15_000;
+const SEND_CONFIRM_TIMEOUT_MS = 6_000;
+
 type SendArguments = {
   messageId: string;
   conversationId: string;
@@ -45,16 +53,6 @@ export function isSesameDeviceListStale(error: RpcError): boolean {
   return errorText(error).includes('e2ee_device_list_stale');
 }
 
-function isAuthoritativeOverloadMissing(error: RpcError): boolean {
-  const text = errorText(error);
-  return (
-    text.includes('42883') ||
-    text.includes('p_sender_device_id') ||
-    text.includes('could not find the function') ||
-    (text.includes('function public.send_message_with_device_copies') && text.includes('does not exist'))
-  );
-}
-
 function isExplicitProtocolFailure(error: RpcError): boolean {
   const text = errorText(error);
   return (
@@ -80,27 +78,41 @@ function isAmbiguousTransportFailure(error: RpcError): boolean {
   );
 }
 
-async function callAuthoritative(args: SendArguments, copies: FanoutCopyRow[]) {
-  return supabase.rpc('send_message_with_device_copies', {
-    p_message_id: args.messageId,
-    p_conversation_id: args.conversationId,
-    p_body: args.body,
-    p_image_url: args.imageUrl,
-    p_extra: args.extra as never,
-    p_copies: copies as never,
-    p_sender_device_id: args.senderDeviceId,
-  } as never);
+function thrownRpcError(error: unknown): RpcError {
+  return {
+    code: null,
+    message: error instanceof Error ? error.message : String(error ?? 'RPC transport failed'),
+    details: null,
+    hint: null,
+  };
 }
 
-async function callCompatibility(args: SendArguments, copies: FanoutCopyRow[]) {
-  return supabase.rpc('send_message_with_device_copies', {
-    p_message_id: args.messageId,
-    p_conversation_id: args.conversationId,
-    p_body: args.body,
-    p_image_url: args.imageUrl,
-    p_extra: args.extra as never,
-    p_copies: copies as never,
-  } as never);
+async function callAuthoritative(
+  args: SendArguments,
+  copies: FanoutCopyRow[],
+  timeoutMs: number,
+): Promise<RpcResponse> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('NETWORK_TRANSPORT_TIMEOUT')), timeoutMs);
+  });
+
+  try {
+    const request = Promise.resolve(supabase.rpc('send_message_with_device_copies', {
+      p_message_id: args.messageId,
+      p_conversation_id: args.conversationId,
+      p_body: args.body,
+      p_image_url: args.imageUrl,
+      p_extra: args.extra as never,
+      p_copies: copies as never,
+      p_sender_device_id: args.senderDeviceId,
+    } as never)) as Promise<RpcResponse>;
+    return await Promise.race([request, timeout]);
+  } catch (error) {
+    return { data: null, error: thrownRpcError(error) };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /**
@@ -116,15 +128,10 @@ export async function sendMessageWithSesameRetry(
 ): Promise<SesameSendResult> {
   let copies = args.initialCopies;
   let retriedStaleRoute = false;
-  let usedCompatibilitySignature = false;
+  const usedCompatibilitySignature = false;
 
   for (let staleAttempt = 0; staleAttempt < 2; staleAttempt += 1) {
-    let response = await callAuthoritative(args, copies);
-
-    if (response.error && isAuthoritativeOverloadMissing(response.error)) {
-      usedCompatibilitySignature = true;
-      response = await callCompatibility(args, copies);
-    }
+    const response = await callAuthoritative(args, copies, SEND_TRANSPORT_TIMEOUT_MS);
 
     if (!response.error) {
       commitFanoutSessionTransaction(args.messageId);
@@ -158,9 +165,7 @@ export async function sendMessageWithSesameRetry(
     if (isAmbiguousTransportFailure(response.error)) {
       // Confirm the same UUID once. The server RPC is idempotent, so this does
       // not duplicate a message if the first response was merely lost.
-      const confirmation = usedCompatibilitySignature
-        ? await callCompatibility(args, copies)
-        : await callAuthoritative(args, copies);
+      const confirmation = await callAuthoritative(args, copies, SEND_CONFIRM_TIMEOUT_MS);
       if (!confirmation.error) {
         commitFanoutSessionTransaction(args.messageId);
         return {
