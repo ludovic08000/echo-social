@@ -174,6 +174,8 @@ export function classifyOutboundFailure(error: unknown): {
     'e2ee_device_copies_unavailable',
     'e2ee_device_list_unavailable',
     'e2ee_device_route_unavailable',
+    'e2ee_participant_route_unavailable',
+    'e2ee_no_secure_target',
     'device_prekey_bundle_unavailable',
     'signed_device_list_missing',
     'no canonical signed device list',

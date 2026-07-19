@@ -130,6 +130,25 @@ describe('sendMessageWithAegisRetry', () => {
     expect(mocks.commit).not.toHaveBeenCalled();
   });
 
+  it('refreshes once when a participant route becomes available during send', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: '23514', message: 'E2EE_PARTICIPANT_ROUTE_UNAVAILABLE' },
+      })
+      .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
+    const rebuild = vi.fn(async () => REBUILT);
+
+    const result = await sendMessageWithAegisRetry(args(rebuild));
+
+    expect(result.error).toBeNull();
+    expect(result.retriedStaleRoute).toBe(true);
+    expect(rebuild).toHaveBeenCalledTimes(1);
+    expect(mocks.invalidateRoute).toHaveBeenCalledTimes(1);
+    expect(mocks.rollback).toHaveBeenCalledTimes(1);
+    expect(mocks.commit).toHaveBeenCalledWith(INITIAL[0].message_id);
+  });
+
   it('keeps ratchet state pending when the transport promise throws', async () => {
     mocks.rpc.mockRejectedValue(new Error('Failed to fetch'));
 

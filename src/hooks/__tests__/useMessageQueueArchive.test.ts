@@ -84,5 +84,8 @@ describe('useMessageQueue Aegis transport', () => {
     expect(classifyOutboundFailure(new Error('DEVICE_SPK_SIGNATURE_INVALID'))).toMatchObject({
       status: 'waiting_secure_channel',
     });
+    expect(classifyOutboundFailure(new Error('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE'))).toMatchObject({
+      status: 'waiting_secure_channel',
+    });
   });
 });

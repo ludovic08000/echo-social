@@ -49,7 +49,12 @@ function errorText(error: RpcError): string {
 }
 
 export function isAegisDeviceListStale(error: RpcError): boolean {
-  return errorText(error).includes('e2ee_device_list_stale');
+  const text = errorText(error);
+  return (
+    text.includes('e2ee_device_list_stale') ||
+    text.includes('e2ee_participant_route_unavailable') ||
+    text.includes('e2ee_no_secure_target')
+  );
 }
 
 function isExplicitProtocolFailure(error: RpcError): boolean {
@@ -141,7 +146,9 @@ export async function sendMessageWithAegisRetry(
       };
     }
 
-    // A stale-list rejection is explicit even when a proxy strips the SQLSTATE.
+    // A stale/missing route rejection is explicit even when a proxy strips the
+    // SQLSTATE. Refresh once: registration or root repair may have completed
+    // between local preparation and the atomic RPC.
     if (isAegisDeviceListStale(response.error)) {
       await rollbackFanoutSessionTransaction(args.messageId);
       if (staleAttempt === 0) {

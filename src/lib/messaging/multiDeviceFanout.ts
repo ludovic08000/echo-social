@@ -19,7 +19,10 @@ import {
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 import { invalidateFanoutRoute, resolveFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
-import { captureFanoutSessionBeforeMutation } from '@/lib/messaging/fanoutSessionTransaction';
+import {
+  captureFanoutSessionBeforeMutation,
+  rollbackFanoutSessionTarget,
+} from '@/lib/messaging/fanoutSessionTransaction';
 import {
   acknowledgeInitiatingSessionFromRatchetPayload,
   createRepeatablePreKeyEnvelope,
@@ -52,7 +55,7 @@ interface DeviceEncryptTargetInput {
 }
 
 const FANOUT_ENCRYPT_CONCURRENCY = 2;
-const INVALID_DEVICE_QUARANTINE_MS = 2_000;
+const INVALID_DEVICE_QUARANTINE_MS = 60_000;
 
 type DeviceCopyPrefix = 'aegis1.init.v1' | 'aegis1.ratchet' | 'unsupported';
 
@@ -467,7 +470,16 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
         recipientDevicePublicKey: dev.devicePublicKey,
         plaintext: input.plaintext,
       });
-      if (!encrypted) return null;
+      if (!encrypted) {
+        await rollbackFanoutSessionTarget({
+          messageId: input.messageId,
+          myUserId: input.senderUserId,
+          myDeviceId: senderDeviceId,
+          peerUserId: dev.userId,
+          peerDeviceId: dev.deviceId,
+        }).catch(() => false);
+        return null;
+      }
       return {
         message_id: input.messageId,
         recipient_user_id: dev.userId,
@@ -477,6 +489,13 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
         encrypted_body: encrypted.encryptedBody,
       } as FanoutCopyRow;
     } catch (e) {
+      await rollbackFanoutSessionTarget({
+        messageId: input.messageId,
+        myUserId: input.senderUserId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.userId,
+        peerDeviceId: dev.deviceId,
+      }).catch(() => false);
       logCryptoException('fanout', e, {
         severity: 'warning',
         conversationId: input.conversationId,
@@ -491,7 +510,22 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
 
   const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
   if (rows.length !== targets.length) {
-    throw new Error('E2EE_DEVICE_COPY_BUILD_INCOMPLETE');
+    // A stale device must not deny messaging to every healthy device. The RPC
+    // still verifies that every supplied route is canonical and requires at
+    // least one authenticated copy for every non-sender participant.
+    logCryptoError({
+      severity: 'warning',
+      context: 'fanout',
+      errorCode: 'AEGIS_PARTIAL_DEVICE_FANOUT',
+      errorMessage: 'Some authenticated device routes were unavailable',
+      conversationId: input.conversationId,
+      myDeviceId: senderDeviceId,
+      metadata: {
+        targetCount: targets.length,
+        copyCount: rows.length,
+        omittedCount: targets.length - rows.length,
+      },
+    });
   }
   return { rows, hasTargets: true };
 }

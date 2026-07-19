@@ -46,11 +46,10 @@ async function listApprovedDevices(userId: string): Promise<DeviceRow[]> {
 }
 
 /**
- * Aegis routes are all-or-nothing: every advertised device must have a Signed
- * PreKey that validates against the account signing key. Old development
- * devices created with another account key otherwise poison every send. Retire
- * only our own deterministic invalid/missing devices; transient fetch errors
- * are deliberately ignored so a network outage can never revoke a device.
+ * Retire deterministic invalid/missing devices from our own account so they do
+ * not remain advertised as unusable destinations. Aegis sends can continue to
+ * other authenticated devices, but cleaning stale routes keeps cross-device
+ * delivery complete. Transient fetch errors never quarantine a device.
  */
 export async function quarantineInvalidApprovedDevices(
   userId: string,
@@ -148,10 +147,15 @@ async function publishCanonicalIdentityRoot(
   primaryDeviceId: string,
   primarySigningPublic: string,
 ): Promise<void> {
-  const { data, error } = await (supabase as any).rpc('publish_user_identity_root', {
-    p_primary_device_id: primaryDeviceId,
-    p_identity_pub_b64: primarySigningPublic,
-  });
+  const response = await supabase.rpc(
+    'publish_user_identity_root' as never,
+    {
+      p_primary_device_id: primaryDeviceId,
+      p_identity_pub_b64: primarySigningPublic,
+    } as never,
+  );
+  const data = response.data as { ok?: boolean } | null;
+  const { error } = response;
 
   if (error) {
     const text = `${error.code ?? ''} ${error.message ?? ''}`;
@@ -329,7 +333,9 @@ export async function finalizeLinkedDeviceAfterRestore(
           detail: { reason: 'linked_device_trusted', deviceId: companion.device_id },
         }));
         window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
-      } catch {}
+      } catch {
+        // Browser event dispatch is best-effort outside the DOM runtime.
+      }
       return true;
     } catch {
       // Registration and realtime replication can settle on the next pass.
