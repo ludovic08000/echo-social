@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   __test__,
+  cancelSignalRetry,
   isRetryableOutboundStatus,
   retryDelayMs,
   runSignalConversationJob,
@@ -55,6 +56,44 @@ describe('Signal-style web conversation queue', () => {
     await vi.advanceTimersByTimeAsync(500);
 
     expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves backoff while a retry is temporarily encrypting', async () => {
+    vi.useFakeTimers();
+    const task = vi.fn(async () => {
+      throw new Error('route unavailable');
+    });
+
+    scheduleSignalRetry('job-backoff', task);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(__test__.attempts('job-backoff')).toBe(1);
+
+    cancelSignalRetry('job-backoff', { resetAttempts: false });
+    scheduleSignalRetry('job-backoff', task);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(task).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it('never starts two retries for the same outbox row concurrently', async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    const running = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const task = vi.fn(() => running);
+
+    scheduleSignalRetry('job-single-flight', task);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(task).toHaveBeenCalledTimes(1);
+
+    scheduleSignalRetry('job-single-flight', task, { immediate: true });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(task).toHaveBeenCalledTimes(1);
+
+    finish();
+    await Promise.resolve();
   });
 
   it('does not auto-retry authentication or safety-number failures', () => {

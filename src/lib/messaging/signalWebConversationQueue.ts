@@ -14,6 +14,8 @@
 const conversationChains = new Map<string, Promise<void>>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const retryAttempts = new Map<string, number>();
+const retryInflight = new Set<string>();
+const retryStopped = new Set<string>();
 
 const RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000] as const;
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length;
@@ -84,11 +86,17 @@ export function retryDelayMs(attempt: number): number {
   return RETRY_DELAYS_MS[index];
 }
 
-export function cancelSignalRetry(retryKey: string): void {
+export function cancelSignalRetry(
+  retryKey: string,
+  options: { resetAttempts?: boolean } = {},
+): void {
   const timer = retryTimers.get(retryKey);
   if (timer !== undefined) clearTimeout(timer);
   retryTimers.delete(retryKey);
-  retryAttempts.delete(retryKey);
+  if (options.resetAttempts !== false) {
+    retryAttempts.delete(retryKey);
+    retryStopped.add(retryKey);
+  }
 }
 
 export function scheduleSignalRetry(
@@ -96,7 +104,11 @@ export function scheduleSignalRetry(
   task: () => Promise<void>,
   options: { immediate?: boolean } = {},
 ): boolean {
-  if (retryTimers.has(retryKey)) return true;
+  // A new explicit schedule re-arms a previously cancelled key. If a task is
+  // already running, its completion owns the next retry so two sends can never
+  // overlap for the same durable outbox row.
+  retryStopped.delete(retryKey);
+  if (retryTimers.has(retryKey) || retryInflight.has(retryKey)) return true;
 
   const attempt = retryAttempts.get(retryKey) ?? 0;
   if (attempt >= MAX_RETRY_ATTEMPTS) return false;
@@ -105,13 +117,20 @@ export function scheduleSignalRetry(
   const timer = setTimeout(() => {
     retryTimers.delete(retryKey);
     retryAttempts.set(retryKey, attempt + 1);
+    retryInflight.add(retryKey);
     void task()
       .then(() => {
         retryAttempts.delete(retryKey);
+        retryStopped.delete(retryKey);
       })
       .catch(() => {
-        // The hook will see the still-pending outbox row and schedule the next
-        // bounded attempt. Keeping the count here prevents hot retry loops.
+        retryInflight.delete(retryKey);
+        if (!retryStopped.has(retryKey)) {
+          scheduleSignalRetry(retryKey, task);
+        }
+      })
+      .finally(() => {
+        retryInflight.delete(retryKey);
       });
   }, delay);
   retryTimers.set(retryKey, timer);
@@ -157,5 +176,10 @@ export const __test__ = {
     conversationChains.clear();
     retryTimers.clear();
     retryAttempts.clear();
+    retryInflight.clear();
+    retryStopped.clear();
+  },
+  attempts(retryKey: string): number {
+    return retryAttempts.get(retryKey) ?? 0;
   },
 };

@@ -128,6 +128,20 @@ describe('signed device list', () => {
     expect(result.find((entry) => entry.deviceId === COMP_DEV)?.reason).toBe('VALID');
   });
 
+  it('keeps the signature valid when PostgreSQL reformats signed_at', async () => {
+    const companion = await signedCompanion();
+    const postgresTimestamp = companion.signedAt!.replace('Z', '+00:00');
+    const result = await verifySignedDeviceList(USER, [
+      primaryEntry(),
+      { ...companion, signedAt: postgresTimestamp },
+    ]);
+
+    expect(result.find((entry) => entry.deviceId === COMP_DEV)).toMatchObject({
+      ok: true,
+      reason: 'VALID',
+    });
+  });
+
   it('rejects the whole list when there is no primary', async () => {
     const companion = await signedCompanion();
     const result = await verifySignedDeviceList(USER, [companion]);

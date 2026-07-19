@@ -36,11 +36,22 @@ export interface DeviceVerificationResult {
 
 function canonicalPayload(args: {
   userId: string;
+  primaryDeviceId: string;
   deviceId: string;
   devicePub: string;
-  signedAt: string;
 }): string {
-  return JSON.stringify({ u: args.userId, d: args.deviceId, dp: args.devicePub, ts: args.signedAt });
+  // Only immutable, byte-stable values belong in the signed payload. A
+  // PostgreSQL timestamptz is metadata: PostgREST may serialize the same
+  // instant as either `Z` or `+00:00`, which made freshly published device
+  // signatures fail verification after the database round-trip.
+  return JSON.stringify({
+    protocol: 'forsure-aegis-device',
+    version: 1,
+    userId: args.userId,
+    primaryDeviceId: args.primaryDeviceId,
+    deviceId: args.deviceId,
+    devicePublicKey: args.devicePub,
+  });
 }
 
 export async function signCompanionDevice(args: {
@@ -61,9 +72,9 @@ export async function signCompanionDevice(args: {
   const signedAt = new Date().toISOString();
   const payload = canonicalPayload({
     userId: args.userId,
+    primaryDeviceId: args.primaryDeviceId,
     deviceId: args.companionDeviceId,
     devicePub: args.companionPublicKeyB64,
-    signedAt,
   });
   const signature = await hardCrypto.sign(
     'Ed25519' as any,
@@ -302,9 +313,9 @@ export async function verifySignedDeviceList(
 
     const payload = canonicalPayload({
       userId,
+      primaryDeviceId: primary.deviceId,
       deviceId: entry.deviceId,
       devicePub: entry.devicePublicKey,
-      signedAt: entry.signedAt,
     });
 
     let ok = false;

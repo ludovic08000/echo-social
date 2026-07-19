@@ -173,7 +173,15 @@ export function useMessageQueue(
     }
 
     for (const retryKey of scheduledRetryKeysRef.current) {
-      if (!activeRetryKeys.has(retryKey)) cancelSignalRetry(retryKey);
+      if (activeRetryKeys.has(retryKey)) continue;
+      const stillPending = queue.pendingMessages.find(
+        (message) => `${user?.id}:${message.localId}` === retryKey,
+      );
+      // A retry task temporarily moves through encrypting/sending. Preserve
+      // its attempt counter or every failure restarts at 500 ms forever.
+      cancelSignalRetry(retryKey, {
+        resetAttempts: !stillPending || stillPending.status === 'failed_visible',
+      });
     }
     scheduledRetryKeysRef.current = activeRetryKeys;
   }, [queue.pendingMessages, scheduleRetryForMessage, user?.id]);

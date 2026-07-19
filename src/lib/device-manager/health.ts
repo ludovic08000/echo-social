@@ -73,9 +73,9 @@ async function verifyOwnDeviceListWithRestoredRoot(
       );
       const payload = signedDeviceListTest.canonicalPayload({
         userId,
+        primaryDeviceId: primary.deviceId,
         deviceId: entry.deviceId,
         devicePub: entry.devicePublicKey,
-        signedAt: entry.signedAt,
       });
       const ok = await hardCrypto.verify(
         'Ed25519' as any,

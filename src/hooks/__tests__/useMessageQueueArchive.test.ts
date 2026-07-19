@@ -76,4 +76,13 @@ describe('useMessageQueue Aegis transport', () => {
     });
     expect(created.body).not.toContain('hello');
   });
+
+  it('waits for a route event when the canonical device channel is unavailable', () => {
+    expect(classifyOutboundFailure(new Error('E2EE_DEVICE_COPIES_UNAVAILABLE'))).toMatchObject({
+      status: 'waiting_secure_channel',
+    });
+    expect(classifyOutboundFailure(new Error('DEVICE_SPK_SIGNATURE_INVALID'))).toMatchObject({
+      status: 'waiting_secure_channel',
+    });
+  });
 });

@@ -32,7 +32,10 @@ import {
 import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
-import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
+import {
+  ensureApprovedDeviceTrust,
+  quarantineInvalidApprovedDevices,
+} from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import {
   hasLocalKeys,
@@ -406,52 +409,30 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
 
-        // 4. Self-heal a STALE PRIMARY. If THIS active device is published but
-        //    NOT primary, and the current primary is one of MY OTHER devices
-        //    that has NO active signed-prekey bundle (so it cannot receive any
-        //    message and only blocks promotion of the real device), quarantine
-        //    it. The DB trigger (ensure_primary_device_exists) then promotes
-        //    THIS device, so peers can finally target it (fixes the cross-device
-        //    "empty blue bubble"). A healthy secondary device (which always has
-        //    a valid bundle) is never touched. Best-effort, non-fatal.
+        // 4. Hard-cutover hygiene. One missing or wrongly signed SPK poisons
+        //    the all-device fan-out. Retire only deterministic invalid devices
+        //    from this account; transient network errors never quarantine.
         try {
-          const { data: myDevices } = await supabase
-            .from('user_devices')
-            .select('device_id, is_primary')
-            .eq('user_id', user.id)
-            .eq('is_active', true)
-            .is('revoked_at', null);
-          const meRow = (myDevices ?? []).find((d: any) => d.device_id === deviceId) as any;
-          const stalePrimary = (myDevices ?? []).find((d: any) => d.is_primary && d.device_id !== deviceId) as any;
-          if (meRow && !meRow.is_primary && stalePrimary) {
-            const { data: spk } = await supabase
-              .from('device_signed_prekeys')
-              .select('spk_id')
-              .eq('user_id', user.id)
-              .eq('device_id', stalePrimary.device_id)
-              .eq('is_active', true)
-              .limit(1)
-              .maybeSingle();
-            if (!spk) {
-              console.warn('[useDeviceRegistration] stale primary without bundle — quarantining so current device is promoted', {
-                stalePrimary: String(stalePrimary.device_id).slice(0, 8),
-                current: String(deviceId).slice(0, 8),
-              });
-              await (supabase as any).rpc('quarantine_own_invalid_device', {
-                p_device_id: stalePrimary.device_id,
-                p_reason: 'stale_primary_no_bundle_blocking_current_device',
-              });
-              try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
-            }
+          const quarantined = await quarantineInvalidApprovedDevices(user.id, deviceId);
+          for (const invalidDeviceId of quarantined) {
+            await invalidateDeviceSession(user.id, deviceId, user.id, invalidDeviceId).catch(() => {});
+          }
+          if (quarantined.length > 0) {
+            invalidateAllFanoutRoutes();
+            console.warn('[useDeviceRegistration] incompatible development devices retired', {
+              count: quarantined.length,
+              devices: quarantined.map((id) => id.slice(0, 8)),
+            });
+            try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* best-effort wakeup */ }
           }
         } catch (healErr) {
-          console.warn('[useDeviceRegistration] stale-primary self-heal failed (non-fatal):', healErr);
+          console.warn('[useDeviceRegistration] invalid-device hygiene failed (non-fatal):', healErr);
         }
 
         // Registration and prekeys are not enough for Aegis. Publish the
         // canonical account root, sign companions, then prove that this exact
         // DeviceID is visible through the fail-closed route used by senders.
-        // This runs after stale-primary repair so the root binds the final
+        // This runs after invalid-device repair so the root binds the final
         // primary selected by the database.
         const repairedCompanions = await ensureApprovedDeviceTrust(user.id, deviceId);
         invalidateAllFanoutRoutes();

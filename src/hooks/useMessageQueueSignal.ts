@@ -157,7 +157,7 @@ async function withSendStageTimeout<T>(
 }
 
 export function classifyOutboundFailure(error: unknown): {
-  status: 'retry_pending' | 'failed_visible';
+  status: 'waiting_secure_channel' | 'retry_pending' | 'failed_visible';
   message: string;
 } {
   const raw = error instanceof Error ? error.message : String(error ?? 'Échec de l’envoi chiffré.');
@@ -170,8 +170,21 @@ export function classifyOutboundFailure(error: unknown): {
     'pin unlock required',
     'identity_lost_backup_available',
   ].some(marker => text.includes(marker));
+  const routeUnavailable = [
+    'e2ee_device_copies_unavailable',
+    'e2ee_device_list_unavailable',
+    'e2ee_device_route_unavailable',
+    'device_prekey_bundle_unavailable',
+    'signed_device_list_missing',
+    'no canonical signed device list',
+    'device_spk_signature_invalid',
+  ].some(marker => text.includes(marker));
   return {
-    status: permanent ? 'failed_visible' : 'retry_pending',
+    status: permanent
+      ? 'failed_visible'
+      : routeUnavailable
+        ? 'waiting_secure_channel'
+        : 'retry_pending',
     message: isAuthenticationError(error)
       ? 'Session expirée — reconnectez-vous pour envoyer.'
       : raw || 'Échec de l’envoi chiffré.',
@@ -554,7 +567,7 @@ throw longMessageError instanceof Error ? longMessageError : new Error(message);
           }, { encryptedBody: bodyToStore, keyCapsule, preparedCopies: [] });
           trace('aegis_prepare_failed', {
             error: failure.message,
-            retryable: failure.status === 'retry_pending',
+            retryable: failure.status === 'retry_pending' || failure.status === 'waiting_secure_channel',
           });
           throw error instanceof Error ? error : new Error(failure.message);
         }
