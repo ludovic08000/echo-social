@@ -72,59 +72,6 @@ function messagingStabilityGuard(): Plugin {
         return transformed === code ? null : { code: transformed, map: null };
       }
 
-      if (cleanId.endsWith("/src/components/messages/decryptionService.ts")) {
-        let transformed = code.replace(/\r\n?/g, "\n");
-        const hotImport = "import { readHotPlaintext, writeHotPlaintext } from '@/lib/crypto/plaintextHotCache';";
-        if (!transformed.includes(hotImport)) {
-          const importAnchor = "import { decryptArchive, isArchivePayload } from '@/lib/messaging/archive/archiveKey';";
-          transformed = transformed.replace(importAnchor, `${importAnchor}\n${hotImport}`);
-        }
-
-        const readCacheAnchor = `export function readCache(messageId: string | undefined, body: string): DecryptionOutcome | undefined {
-  return cache.get(cacheKey(messageId, body));
-}`;
-        const readCacheHot = `export function readCache(messageId: string | undefined, body: string): DecryptionOutcome | undefined {
-  const key = cacheKey(messageId, body);
-  const memoryCached = cache.get(key);
-  if (memoryCached) return memoryCached;
-  const hotPlaintext = readHotPlaintext(messageId, body);
-  if (!hotPlaintext) return undefined;
-  const outcome = buildOutcomeFromText(hotPlaintext);
-  cache.set(key, outcome);
-  rememberLastGoodOutcome(messageId, outcome);
-  return outcome;
-}`;
-        transformed = transformed.replace(readCacheAnchor, readCacheHot);
-
-        const persistAnchor = `  rememberLastGoodOutcome(messageId, outcome);
-  if (messageId) void savePlaintext(messageId, persisted);`;
-        const persistHot = `  rememberLastGoodOutcome(messageId, outcome);
-  writeHotPlaintext(messageId, body, persisted);
-  if (messageId) void savePlaintext(messageId, persisted);`;
-        if (!transformed.includes("writeHotPlaintext(messageId, body, persisted);")) {
-          transformed = transformed.replace(persistAnchor, persistHot);
-        }
-
-        const byMessageAnchor = `  if (byMessageId) {
-    if (looksEncrypted(body)) void savePlaintextForCiphertext(body, byMessageId);
-    const outcome = buildOutcomeFromText(byMessageId);`;
-        const byMessageHot = `  if (byMessageId) {
-    writeHotPlaintext(messageId, body, byMessageId);
-    if (looksEncrypted(body)) void savePlaintextForCiphertext(body, byMessageId);
-    const outcome = buildOutcomeFromText(byMessageId);`;
-        transformed = transformed.replace(byMessageAnchor, byMessageHot);
-
-        const byCipherAnchor = `  if (!byCiphertext) return null;
-  if (messageId) void savePlaintext(messageId, byCiphertext);
-  const outcome = buildOutcomeFromText(byCiphertext);`;
-        const byCipherHot = `  if (!byCiphertext) return null;
-  writeHotPlaintext(messageId, body, byCiphertext);
-  if (messageId) void savePlaintext(messageId, byCiphertext);
-  const outcome = buildOutcomeFromText(byCiphertext);`;
-        transformed = transformed.replace(byCipherAnchor, byCipherHot);
-        return transformed === code ? null : { code: transformed, map: null };
-      }
-
       if (cleanId.endsWith("/src/hooks/useDeviceRegistration.ts")) {
         let transformed = code.replace(/\r\n?/g, "\n");
         const sessionImport = "import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';";
