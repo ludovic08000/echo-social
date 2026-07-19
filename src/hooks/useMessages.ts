@@ -6,6 +6,10 @@ import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/m
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
 import { sendSesameLiteMessage } from '@/lib/messaging/sendSesameLiteMessage';
+import {
+  clearDeviceCopyCacheForMessage,
+  preloadDeviceCopies,
+} from '@/lib/messaging/multiDeviceFanout';
 import type { Database } from '@/integrations/supabase/types';
 
 type MessageRow = Database['public']['Tables']['messages']['Row'];
@@ -446,6 +450,7 @@ export function useMessages(conversationId: string) {
         (payload) => {
           const messageId = (payload.new as Partial<MessageDeviceCopyRow>).message_id;
           if (messageId) {
+            clearDeviceCopyCacheForMessage(messageId);
             try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { messageId } })); } catch { /* SSR */ }
             return;
           }
@@ -569,9 +574,12 @@ export function useMessages(conversationId: string) {
       // Warm only recent Sesame-lite device copies after a cold reload. Older
       // messages resolve lazily when mounted during scroll.
       if (user) {
-        const decryptTasks = compatibleMessages
+        const recentEncrypted = compatibleMessages
           .slice(-24)
-          .filter(isMultiDeviceMessageRow)
+          .filter(isMultiDeviceMessageRow);
+        await preloadDeviceCopies(recentEncrypted.map((message) => message.id)).catch(() => undefined);
+
+        const decryptTasks = recentEncrypted
           .map(async (m) => {
             try {
               const outcome = await resolvePlaintext({

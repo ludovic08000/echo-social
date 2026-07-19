@@ -66,16 +66,105 @@ interface DeviceCopyDecryptAttempt {
 }
 
 type CopyRow = {
+  message_id?: string;
   encrypted_body: string;
   sender_user_id: string;
   sender_device_id: string;
   recipient_device_id?: string;
 };
 
+const deviceCopyCache = new Map<string, CopyRow | null>();
+const deviceCopyPreloads = new Map<string, Promise<void>>();
+const decryptedCapsuleCache = new Map<string, string>();
+const DECRYPTED_CAPSULE_CACHE_CAP = 500;
+
+function copyCacheKey(userId: string, deviceId: string, messageId: string): string {
+  return `${userId}|${deviceId}|${messageId}`;
+}
+
+export function clearDeviceCopyCache(): void {
+  deviceCopyCache.clear();
+  deviceCopyPreloads.clear();
+  decryptedCapsuleCache.clear();
+}
+
+export function clearDeviceCopyCacheForMessage(messageId: string): void {
+  if (!messageId) return;
+  const suffix = `|${messageId}`;
+  for (const key of deviceCopyCache.keys()) {
+    if (key.endsWith(suffix)) deviceCopyCache.delete(key);
+  }
+}
+
+/**
+ * Loads the visible device-copy window in one query. The server RLS still
+ * restricts rows to the authenticated recipient; this cache only removes the
+ * previous one-RPC-per-bubble startup pattern.
+ */
+export async function preloadDeviceCopies(messageIds: string[]): Promise<void> {
+  const uniqueIds = [...new Set(messageIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return;
+  const myDeviceId = getCurrentDeviceId();
+  const userId = await getCachedAuthUserId();
+  if (!userId || isDeviceIdTemporary()) return;
+
+  const missing = uniqueIds.filter((messageId) =>
+    !deviceCopyCache.has(copyCacheKey(userId, myDeviceId, messageId)),
+  );
+  if (missing.length === 0) return;
+
+  const preloadKey = `${userId}|${myDeviceId}|${missing.slice().sort().join(',')}`;
+  const existing = deviceCopyPreloads.get(preloadKey);
+  if (existing) return existing;
+
+  const task = (async () => {
+    for (let offset = 0; offset < missing.length; offset += 100) {
+      const batch = missing.slice(offset, offset + 100);
+      const { data, error } = await supabase
+        .from('message_device_copies')
+        .select('message_id,encrypted_body,sender_user_id,sender_device_id,recipient_device_id')
+        .in('message_id', batch)
+        .eq('recipient_user_id', userId)
+        .eq('recipient_device_id', myDeviceId);
+      if (error) throw error;
+      for (const messageId of batch) {
+        deviceCopyCache.set(copyCacheKey(userId, myDeviceId, messageId), null);
+      }
+      for (const row of (data ?? []) as CopyRow[]) {
+        if (!row.message_id) continue;
+        deviceCopyCache.set(copyCacheKey(userId, myDeviceId, row.message_id), row);
+      }
+    }
+  })().finally(() => {
+    deviceCopyPreloads.delete(preloadKey);
+  });
+  deviceCopyPreloads.set(preloadKey, task);
+  return task;
+}
+
 function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
   if (isRepeatablePreKeyEnvelope(body)) return 'x3dh5.init.v3';
   if (body.startsWith(RATCHET_PREFIX_V5)) return 'x3dh5';
   return 'unsupported';
+}
+
+function decryptedCapsuleKey(
+  userId: string,
+  deviceId: string,
+  messageId: string,
+  encryptedBody: string,
+): string {
+  return `${userId}|${deviceId}|${messageId}|${encryptedBody}`;
+}
+
+function rememberDecryptedCapsule(key: string, plaintext: string): void {
+  decryptedCapsuleCache.delete(key);
+  decryptedCapsuleCache.set(key, plaintext);
+  while (decryptedCapsuleCache.size > DECRYPTED_CAPSULE_CACHE_CAP) {
+    const oldest = decryptedCapsuleCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    decryptedCapsuleCache.delete(oldest);
+  }
 }
 
 const invalidDeviceUntil = new Map<string, number>();
@@ -256,7 +345,7 @@ async function encryptPlaintextForDeviceTargetUnlocked(
     });
   }
 
-  // Sesame fast path: an existing Double Ratchet session is used without a
+  // Aegis fast path: an existing Double Ratchet session is used without a
   // pre-send SPK network round-trip. Only when no usable ratchet session exists
   // do we check SPK freshness and fall back to X3DH bootstrap.
   try {
@@ -422,6 +511,24 @@ export async function tryReadDeviceCopy(
   if (!userId || isDeviceIdTemporary()) return null;
 
   try {
+    const cacheKey = copyCacheKey(userId, myDeviceId, messageId);
+    const hasCachedResult = deviceCopyCache.has(cacheKey);
+    const cached = deviceCopyCache.get(cacheKey);
+    if (cached && (!expectedSenderUserId || cached.sender_user_id === expectedSenderUserId)) {
+      const capsuleKey = decryptedCapsuleKey(
+        userId,
+        myDeviceId,
+        messageId,
+        cached.encrypted_body,
+      );
+      const alreadyDecrypted = decryptedCapsuleCache.get(capsuleKey);
+      if (alreadyDecrypted !== undefined) return alreadyDecrypted;
+      const plaintext = (await tryDecryptCopy(cached, userId, myDeviceId)).plaintext;
+      if (plaintext !== null) rememberDecryptedCapsule(capsuleKey, plaintext);
+      return plaintext;
+    }
+    if (hasCachedResult && cached === null) return null;
+
     const { data } = await supabase.rpc('get_device_copy_for_message', {
       p_message_id: messageId,
       p_device_id: myDeviceId,
@@ -431,15 +538,22 @@ export async function tryReadDeviceCopy(
       .filter(row => !expectedSenderUserId || row.sender_user_id === expectedSenderUserId);
 
     for (const row of rows) {
+      deviceCopyCache.set(cacheKey, row);
+      const capsuleKey = decryptedCapsuleKey(userId, myDeviceId, messageId, row.encrypted_body);
+      const alreadyDecrypted = decryptedCapsuleCache.get(capsuleKey);
+      if (alreadyDecrypted !== undefined) return alreadyDecrypted;
       const attempt = await tryDecryptCopy(row, userId, myDeviceId);
-      if (attempt.plaintext !== null) return attempt.plaintext;
+      if (attempt.plaintext !== null) {
+        rememberDecryptedCapsule(capsuleKey, attempt.plaintext);
+        return attempt.plaintext;
+      }
     }
     return null;
   } catch (error) {
     logCryptoException('decrypt', error, {
       severity: 'error',
       myDeviceId,
-      metadata: { messageId, stage: 'sesame_lite_device_copy' },
+      metadata: { messageId, stage: 'aegis_device_key_capsule' },
     });
     return null;
   }

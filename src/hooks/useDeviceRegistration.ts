@@ -3,17 +3,14 @@
  * for the logged-in user, and publishes a per-device Signed PreKey so that
  * other users can perform a targeted X3DH handshake against THIS device.
  *
- * Hybrid multi-device model:
- *   - identity key (IK) and signing key (SIG) are SHARED across the user's
- *     devices (legacy compatible — kept in IndexedDB by getOrCreateIdentityKeys);
- *   - each device has its OWN Signed PreKey + Double Ratchet state, so that
- *     a sender can negotiate an independent secure channel per device.
- *
- * Failure here is NEVER fatal — the legacy single-device flow continues to
- * work even if device or device-SPK registration fails.
+ * Aegis multi-device model:
+ *   - the account identity and signing keys are portable through Aegis Vault;
+ *   - each physical device has its own KX key, prekeys and ratchet sessions;
+ *   - peer sends remain fail-closed until the authenticated route is ready.
  */
 
 import { useEffect, useRef } from 'react';
+import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import {
@@ -29,7 +26,6 @@ import { getOrCreateIdentityKeys, exportPublicKeyBundle, PinUnlockRequiredError 
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
-  refreshSignedPrekeyIfNeeded,
   peekDeviceSignedPrekey,
   isDevicePrekeyBundleError,
 } from '@/lib/crypto/x3dh';
@@ -121,6 +117,7 @@ export function useDeviceRegistration() {
       ranRef.current = true;
       inFlightRef.current = true;
       try {
+        await requireAuthenticatedDeviceSession(user.id);
         console.log('[useDeviceRegistration] publishing current device', { reason, attempt });
         const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
         if (isDeviceIdTemporary()) {
@@ -223,58 +220,33 @@ export function useDeviceRegistration() {
           }
 
           if (!localKx) {
-            console.warn('[useDeviceRegistration] server device key exists but local material is still unavailable - waiting for restore');
-            try {
-              window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
-                detail: { source: 'device-registration', deviceId, reason: 'local-missing' },
-              }));
-            } catch {}
-            try {
-              window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
-                detail: {
-                  source: 'device-registration',
-                  deviceId,
-                  reason: 'registered_device_key_missing',
-                  message: 'Deverrouillage requis pour restaurer cet appareil',
-                },
-              }));
-            } catch {}
+            // The account vault deliberately never clones physical-device
+            // secrets. If this browser retained a DeviceID but lost its private
+            // KX key, retire that logical identity and enroll a fresh device.
+            if (attempt < 2) {
+              rotateCurrentDeviceId('aegis-device-private-key-missing');
+              ranRef.current = false;
+              inFlightRef.current = false;
+              return registerCurrentDevice('rotated-after-device-key-loss', attempt + 1);
+            }
+            console.warn('[useDeviceRegistration] unable to enroll replacement device key');
             ranRef.current = false;
             return;
           }
 
           if (localKx.publicB64 !== serverDevicePublicKey) {
-            // Legacy migration window: the server may still hold the shared
-            // identity key from the pre-per-device-kx era. In that case we
-            // upgrade to the per-device kx and republish — that is allowed
-            // because the previous entry was the shared key, not a device-
-            // specific one. Anything else is a hard mismatch → BLOCK.
-            const isLegacyShared = serverDevicePublicKey === bundle.identityKey;
-            if (!isLegacyShared) {
-              console.warn('[useDeviceRegistration] server/local device key mismatch - waiting for restore');
-              try {
-                window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
-                  detail: {
-                    source: 'device-registration',
-                    deviceId,
-                    reason: 'mismatch',
-                  },
-                }));
-              } catch {}
-              try {
-                window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
-                  detail: {
-                    source: 'device-registration',
-                    deviceId,
-                    reason: 'registered_device_key_mismatch',
-                    message: 'Deverrouillage requis pour restaurer cet appareil',
-                  },
-                }));
-              } catch {}
-              ranRef.current = false;
-              return;
-            }
-            console.log('[useDeviceRegistration] migrating legacy shared-identity device entry → per-device kx');
+            console.warn('[useDeviceRegistration] server/local device key mismatch - waiting for restore');
+            try {
+              window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
+                detail: {
+                  source: 'device-registration',
+                  deviceId,
+                  reason: 'mismatch',
+                },
+              }));
+            } catch {}
+            ranRef.current = false;
+            return;
           }
 
           devicePublicKeyB64 = localKx.publicB64;
@@ -287,9 +259,12 @@ export function useDeviceRegistration() {
               localKx = kx;
             }
           } catch (kxErr) {
-            console.warn('[useDeviceRegistration] device kx key generation failed, falling back to identityKey:', kxErr);
+            console.warn('[useDeviceRegistration] device kx key generation failed:', kxErr);
           }
-          if (!devicePublicKeyB64) devicePublicKeyB64 = bundle.identityKey;
+          if (!devicePublicKeyB64) {
+            ranRef.current = false;
+            return;
+          }
         }
 
         // Stable device fingerprint — lets the server-side
@@ -325,10 +300,9 @@ export function useDeviceRegistration() {
         };
 
         // 1. Register the device.
-        // Prefer the safe RPC added in the matching migration; fall back to the
-        // legacy upsert while still detecting the revoked-device SQL error.
+        // The authenticated RPC is the only registration path. Direct upsert
+        // fallback is forbidden because it would bypass device approval.
         let registered = false;
-        let allowLegacyUpsert = false;
         try {
           const { data: rpcResult, error: rpcErr } = await (supabase as any).rpc('register_user_device_safe', {
             p_user_id: payload.user_id,
@@ -363,10 +337,8 @@ export function useDeviceRegistration() {
             ranRef.current = false;
             return;
           } else if (rpcErr) {
-            allowLegacyUpsert = !!serverDevicePublicKey;
             console.warn('[useDeviceRegistration] safe RPC unavailable/failed:', {
               message: rpcErr.message,
-              legacyFallback: allowLegacyUpsert,
             });
           } else {
             console.warn('[useDeviceRegistration] safe RPC non-ok; device publish paused:', rpcResult);
@@ -374,32 +346,15 @@ export function useDeviceRegistration() {
             return;
           }
         } catch (rpcUnexpectedErr) {
-          allowLegacyUpsert = !!serverDevicePublicKey;
           console.warn('[useDeviceRegistration] safe RPC unexpected failure:', {
             error: rpcUnexpectedErr,
-            legacyFallback: allowLegacyUpsert,
           });
         }
 
         if (!registered) {
-          if (!allowLegacyUpsert) {
-            notifyDeviceApprovalPending(deviceId, `register-rpc-unavailable:${reason}`, 'DEVICE_REGISTRATION_RPC_UNAVAILABLE');
-            ranRef.current = false;
-            return;
-          }
-          const { error: devErr } = await supabase
-            .from('user_devices')
-            .upsert(payload, { onConflict: 'user_id,device_id' });
-          if (devErr) {
-            console.warn('[useDeviceRegistration] device upsert failed:', devErr.message);
-            if (REVOKED_DEVICE_ERROR_RE.test(devErr.message) && attempt < 2) {
-              rotateCurrentDeviceId('upsert-revoked-device');
-              ranRef.current = false;
-              inFlightRef.current = false;
-              return registerCurrentDevice('rotated-after-upsert-revoked', attempt + 1);
-            }
-            return;
-          }
+          notifyDeviceApprovalPending(deviceId, `register-rpc-unavailable:${reason}`, 'DEVICE_REGISTRATION_RPC_UNAVAILABLE');
+          ranRef.current = false;
+          return;
         }
 
         // Mark stale/revoke old devices and delete our local sessions to
@@ -416,16 +371,7 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] stale device cleanup failed (non-fatal):', cleanupErr);
         }
 
-        // 2. Ensure the legacy/shared Signed PreKey also exists.
-        //    The main conversation X3DH bootstrap still depends on this bundle,
-        //    so publishing it here prevents peers from seeing "Bundle X3DH ... indisponible".
-        try {
-          await refreshSignedPrekeyIfNeeded(user.id, keys.signingPrivateKey);
-        } catch (spkErr) {
-          console.warn('[useDeviceRegistration] shared SPK refresh failed (non-fatal):', spkErr);
-        }
-
-        // 3. Ensure a per-device Signed PreKey exists & is fresh.
+        // 2. Ensure the per-device Signed PreKey exists and is fresh.
         //    This is what makes targeted X3DH per device possible. After the
         //    normal refresh, peek the SPK without consuming OPK. If it is still
         //    invalid/missing, run the repair helper: purge stale SPK/OPK state,
@@ -452,7 +398,7 @@ export function useDeviceRegistration() {
           }
         }
 
-        // 4. Refill the OPK pool if low (forward secrecy on bursts).
+        // 3. Refill the OPK pool if low (forward secrecy on bursts).
         //    Non-fatal: X3DH gracefully degrades to 3-DH when no OPK is available.
         try {
           await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);
@@ -460,7 +406,7 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
 
-        // 5. Self-heal a STALE PRIMARY. If THIS active device is published but
+        // 4. Self-heal a STALE PRIMARY. If THIS active device is published but
         //    NOT primary, and the current primary is one of MY OTHER devices
         //    that has NO active signed-prekey bundle (so it cannot receive any
         //    message and only blocks promotion of the real device), quarantine
@@ -502,7 +448,7 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] stale-primary self-heal failed (non-fatal):', healErr);
         }
 
-        // Registration and prekeys are not enough for Sesame-lite. Publish the
+        // Registration and prekeys are not enough for Aegis. Publish the
         // canonical account root, sign companions, then prove that this exact
         // DeviceID is visible through the fail-closed route used by senders.
         // This runs after stale-primary repair so the root binds the final
@@ -513,6 +459,10 @@ export function useDeviceRegistration() {
           deviceId: deviceId.slice(0, 8),
           repairedCompanions,
         });
+        void import('@/lib/crypto/accountKeyBackup').then((vault) => {
+          void vault.syncKeychainSnapshotFromLocal(user.id);
+          vault.requestBackgroundBackup('aegis-device-registration-ready');
+        }).catch(() => undefined);
         try {
           window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
             detail: { source: `authenticated-registration:${reason}`, deviceId },

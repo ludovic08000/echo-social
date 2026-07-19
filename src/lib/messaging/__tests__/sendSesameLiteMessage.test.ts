@@ -43,14 +43,14 @@ vi.mock('@/lib/messaging/sesameSendRpc', () => ({
 vi.mock('@/lib/messaging/signalWebConversationQueue', () => ({
   runSignalConversationJob: vi.fn((_key: string, job: () => Promise<unknown>) => job()),
 }));
+vi.mock('@/lib/messaging/archive/archiveKey', () => ({
+  archiveBubbleForUser: vi.fn().mockResolvedValue(true),
+}));
 
-import {
-  buildSesameLiteParentEnvelope,
-  sendSesameLiteMessage,
-} from '@/lib/messaging/sendSesameLiteMessage';
+import { sendSesameLiteMessage } from '@/lib/messaging/sendSesameLiteMessage';
+import { AEGIS_MESSAGE_PROTOCOL, parseAegisKeyCapsule } from '@/lib/messaging/aegisEnvelope';
 import {
   isMultiDeviceEnvelopeBody,
-  SESAME_LITE_PROTOCOL,
 } from '@/lib/messaging/messageCompatibility';
 
 const COPY = {
@@ -79,8 +79,8 @@ beforeEach(() => {
   });
 });
 
-describe('sendSesameLiteMessage', () => {
-  it('persists exact device copies before the atomic RPC and then clears the outbox', async () => {
+describe('Aegis multi-device send', () => {
+  it('persists the stable ciphertext and exact key copies before the atomic RPC', async () => {
     const result = await sendSesameLiteMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
       senderUserId: COPY.sender_user_id,
@@ -91,17 +91,23 @@ describe('sendSesameLiteMessage', () => {
     });
 
     expect(isMultiDeviceEnvelopeBody(result.parentBody)).toBe(true);
-    expect(JSON.parse(result.parentBody).protocol).toBe(SESAME_LITE_PROTOCOL);
-    expect(mocks.putOutbox).toHaveBeenCalledTimes(2);
-    expect(mocks.putOutbox.mock.calls[1][1]).toMatchObject({
+    expect(JSON.parse(result.parentBody).protocol).toBe(AEGIS_MESSAGE_PROTOCOL);
+    expect(mocks.putOutbox).toHaveBeenCalledTimes(3);
+    expect(mocks.putOutbox.mock.calls[2][1]).toMatchObject({
       localId: 'local-one',
       reservedServerId: COPY.message_id,
       transportPlaintext: 'message secret',
       preparedCopies: [COPY],
       status: 'sending',
     });
-    expect(mocks.putOutbox.mock.invocationCallOrder[1])
+    expect(mocks.putOutbox.mock.invocationCallOrder[2])
       .toBeLessThan(mocks.sendRpc.mock.invocationCallOrder[0]);
+    const capsule = mocks.buildCopies.mock.calls[0][0].plaintext as string;
+    expect(parseAegisKeyCapsule(capsule)).toMatchObject({
+      messageId: COPY.message_id,
+      senderId: COPY.sender_user_id,
+    });
+    expect(capsule).not.toContain('message secret');
     expect(mocks.sendRpc).toHaveBeenCalledWith(expect.objectContaining({
       messageId: COPY.message_id,
       senderDeviceId: 'sender-device',
@@ -135,10 +141,19 @@ describe('sendSesameLiteMessage', () => {
     );
   });
 
-  it('builds only the current strict parent marker', () => {
-    const parent = buildSesameLiteParentEnvelope('local-three', 'trace-three');
-    expect(isMultiDeviceEnvelopeBody(parent)).toBe(true);
-    expect(parent).not.toContain('ratchet');
-    expect(parent).not.toContain('secure_pipeline');
+  it('keeps the same Aegis ciphertext when device routing is unavailable', async () => {
+    mocks.buildCopies.mockResolvedValue({ rows: [], hasTargets: false });
+    await expect(sendSesameLiteMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message secret',
+      localId: 'local-three',
+      traceId: 'trace-three',
+      messageId: COPY.message_id,
+    })).rejects.toThrow();
+
+    const payload = mocks.putOutbox.mock.calls.at(-1)?.[1];
+    expect(isMultiDeviceEnvelopeBody(payload.encryptedBody)).toBe(true);
+    expect(parseAegisKeyCapsule(payload.keyCapsule)).not.toBeNull();
   });
 });

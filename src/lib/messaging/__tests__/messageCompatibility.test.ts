@@ -3,23 +3,28 @@ import {
   isKnownCryptoEnvelopeBody,
   isMultiDeviceEnvelopeBody,
   isUnsupportedEncryptedBody,
-  SESAME_LITE_PROTOCOL,
-  SESAME_LITE_VERSION,
+  AEGIS_PROTOCOL,
+  AEGIS_VERSION,
 } from '@/lib/messaging/messageCompatibility';
-import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 
-const sesameLiteEnvelope = {
-  protocol: SESAME_LITE_PROTOCOL,
-  version: SESAME_LITE_VERSION,
+const aegisEnvelope = {
+  protocol: AEGIS_PROTOCOL,
+  version: AEGIS_VERSION,
   encryptionMode: 'multi_device',
-  v: PROTOCOL_VERSION,
-  ct: 'device_copies',
-  ts: 1777907800000,
+  algorithm: 'AES-256-GCM',
+  keyTransport: 'device_ratchet',
+  messageId: '11111111-1111-4111-8111-111111111111',
+  conversationId: '22222222-2222-4222-8222-222222222222',
+  senderId: '33333333-3333-4333-8333-333333333333',
+  iv: 'aXYtYnl0ZXM=',
+  ciphertext: 'Y2lwaGVydGV4dA==',
+  digest: 'ZGlnZXN0',
+  createdAt: 1777907800000,
 };
 
 describe('messageCompatibility', () => {
-  it('accepts only the Sesame-lite parent envelope', () => {
-    const body = JSON.stringify(sesameLiteEnvelope);
+  it('accepts only the Aegis v1 parent envelope', () => {
+    const body = JSON.stringify(aegisEnvelope);
     expect(isMultiDeviceEnvelopeBody(body)).toBe(true);
     expect(isKnownCryptoEnvelopeBody(body)).toBe(true);
     expect(isUnsupportedEncryptedBody(body)).toBe(false);
@@ -28,7 +33,7 @@ describe('messageCompatibility', () => {
   it('rejects the former direct-ratchet envelope', () => {
     const body = JSON.stringify({
       encryptionMode: 'ratchet',
-      v: PROTOCOL_VERSION,
+      v: 4,
       hdr: { dh: 'peer-dh', pn: 0, n: 1 },
       iv: 'iv',
       ct: 'ciphertext',
@@ -45,7 +50,7 @@ describe('messageCompatibility', () => {
   it('rejects an unversioned encrypted parent', () => {
     const formerParent = JSON.stringify({
       encryptionMode: 'multi_device',
-      v: PROTOCOL_VERSION,
+      v: 4,
       ct: 'device_copies',
       ts: 1777907800000,
     });
@@ -56,7 +61,7 @@ describe('messageCompatibility', () => {
 
   it('rejects malformed crypto JSON', () => {
     const body = JSON.stringify({
-      protocol: SESAME_LITE_PROTOCOL,
+      protocol: AEGIS_PROTOCOL,
       encryptionMode: 'multi_device',
       ct: 'device_copies',
     });

@@ -1,22 +1,20 @@
-import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
+import {
+  AEGIS_MESSAGE_PROTOCOL,
+  AEGIS_WIRE_VERSION,
+  parseAegisMessageEnvelope,
+  type AegisMessageEnvelope,
+} from '@/lib/messaging/aegisEnvelope';
 
-export const SESAME_LITE_PROTOCOL = 'forsure-sesame-lite';
-export const SESAME_LITE_VERSION = 1;
+export const AEGIS_PROTOCOL = AEGIS_MESSAGE_PROTOCOL;
+export const AEGIS_VERSION = AEGIS_WIRE_VERSION;
 
-export interface MultiDeviceEnvelopeShape {
-  protocol: typeof SESAME_LITE_PROTOCOL;
-  version: typeof SESAME_LITE_VERSION;
-  encryptionMode: 'multi_device';
-  v: number;
-  ct: 'device_copies';
-  ts: number;
-}
+export type MultiDeviceEnvelopeShape = AegisMessageEnvelope;
 
 export function isCryptoJsonBody(body: string | null | undefined): boolean {
   if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
   try {
     const parsed = JSON.parse(body) as Record<string, unknown>;
-    return ['protocol', 'encryptionMode', 'ct', 'hdr', 'kem']
+    return ['protocol', 'encryptionMode', 'ciphertext', 'keyTransport', 'ct', 'hdr', 'kem']
       .some((key) => Object.prototype.hasOwnProperty.call(parsed, key));
   } catch {
     return false;
@@ -24,21 +22,7 @@ export function isCryptoJsonBody(body: string | null | undefined): boolean {
 }
 
 export function isMultiDeviceEnvelopeBody(body: string | null | undefined): body is string {
-  if (!body || typeof body !== 'string' || !body.startsWith('{')) return false;
-
-  try {
-    const parsed = JSON.parse(body) as Partial<MultiDeviceEnvelopeShape>;
-    return (
-      parsed.protocol === SESAME_LITE_PROTOCOL &&
-      parsed.version === SESAME_LITE_VERSION &&
-      parsed.encryptionMode === 'multi_device' &&
-      parsed.v === PROTOCOL_VERSION &&
-      parsed.ct === 'device_copies' &&
-      typeof parsed.ts === 'number'
-    );
-  } catch {
-    return false;
-  }
+  return parseAegisMessageEnvelope(body) !== null;
 }
 
 export function isKnownCryptoEnvelopeBody(body: string | null | undefined): boolean {

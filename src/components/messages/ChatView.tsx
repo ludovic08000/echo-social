@@ -47,7 +47,7 @@ import { EMOJI_CATEGORIES, formatDateSeparator, isSingleEmoji } from './constant
 import { savePlaintext, loadPlaintext, loadPlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { useTypingPresence } from '@/hooks/useTypingPresence';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
-import { LRUMap } from '@/lib/utils/lruMap';
+import { CiphertextBoundPlaintextCache } from '@/lib/messaging/ciphertextBoundPlaintextCache';
 import { DisappearingMessagesDialog } from './DisappearingMessagesDialog';
 import { IdentityChangeBanner } from './IdentityChangeBanner';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
@@ -79,7 +79,7 @@ function parseVoiceMessage(text: string): { url: string; duration: number } | nu
 // Bounded LRU: keeps the last N decrypted plaintexts in RAM.
 // Prevents unbounded growth on long sessions / huge conversations while still
 // covering the typical scroll window. Older entries fall back to re-decrypt.
-const decryptedCache = new LRUMap<string, string>(2000);
+const decryptedCache = new CiphertextBoundPlaintextCache(2000);
 
 export function ChatView({ conversationId }: ChatViewProps) {
   const { user } = useAuth();
@@ -114,6 +114,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // Auto-translate disabled
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const conversation = conversations?.find(c => c.id === conversationId);
@@ -184,7 +185,20 @@ export function ChatView({ conversationId }: ChatViewProps) {
     peerUserId,
   );
   const [cacheVersion, setCacheVersion] = useState(0);
-  const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
+  const cacheRenderFrameRef = useRef<number | null>(null);
+  const bumpCache = useCallback(() => {
+    if (cacheRenderFrameRef.current !== null) return;
+    cacheRenderFrameRef.current = window.requestAnimationFrame(() => {
+      cacheRenderFrameRef.current = null;
+      setCacheVersion((version) => version + 1);
+    });
+  }, []);
+  useEffect(() => () => {
+    if (cacheRenderFrameRef.current !== null) {
+      window.cancelAnimationFrame(cacheRenderFrameRef.current);
+      cacheRenderFrameRef.current = null;
+    }
+  }, []);
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
   const stableBadgeRef = useRef({ encrypted: false, verified: false, ratchetActive: false });
 
@@ -485,6 +499,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
 
   const lastScrollSigRef = useRef<string>('');
+  const lastPendingScrollIdRef = useRef<string>('');
   useEffect(() => {
     const lastMsgId = messages?.length ? messages[messages.length - 1].id : '';
     const lastPendingId = queue.pendingMessages.length
@@ -492,8 +507,20 @@ export function ChatView({ conversationId }: ChatViewProps) {
       : '';
     const sig = `${messages?.length ?? 0}:${lastMsgId}|${queue.pendingMessages.length}:${lastPendingId}`;
     if (sig === lastScrollSigRef.current) return;
+
+    const ownPendingChanged = Boolean(
+      lastPendingId && lastPendingId !== lastPendingScrollIdRef.current,
+    );
     lastScrollSigRef.current = sig;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    lastPendingScrollIdRef.current = lastPendingId;
+    if (!nearBottomRef.current && !ownPendingChanged) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: ownPendingChanged ? 'auto' : 'smooth',
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [messages, queue.pendingMessages]);
 
   useEffect(() => {
@@ -503,7 +530,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    setShowScrollDown(scrollHeight - scrollTop - clientHeight > 200);
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    nearBottomRef.current = distanceFromBottom <= 160;
+    setShowScrollDown(distanceFromBottom > 200);
   }, []);
 
   const scrollToBottom = () => {
@@ -515,7 +544,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
    * populated by DecryptedMessageBody.
    */
   const getDecryptedText = useCallback((msg: Message): string => {
-    const cached = decryptedCache.get(msg.id);
+    const cached = decryptedCache.get(msg.id, msg.body);
     if (cached) {
       const parsed = parseMediaMessage(cached);
       return parsed ? parsed.label : cached;
@@ -639,11 +668,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
   }, [messages]);
 
   /** Callback from DecryptedMessageBody to cache decrypted text + persist it */
-  const onDecrypted = useCallback((msgId: string, text: string) => {
+  const onDecrypted = useCallback((msgId: string, body: string, text: string) => {
     const parsed = parseMediaMessage(text);
     if (parsed) setMediaKey(msgId, parsed.keyB64, isVideoMediaLabel(parsed.label));
-    if (decryptedCache.get(msgId) === text) return;
-    decryptedCache.set(msgId, text);
+    if (decryptedCache.get(msgId, body) === text) return;
+    decryptedCache.set(msgId, text, body);
     bumpCache();
     void savePlaintext(msgId, text);
   }, [bumpCache]);
@@ -662,18 +691,18 @@ export function ChatView({ conversationId }: ChatViewProps) {
           msg,
           // A (durability): fall back to the ciphertext-hash key when the
           // message-id lookup misses (id reconcile can break the id-keyed entry).
-          pt: decryptedCache.has(msg.id)
+          pt: decryptedCache.has(msg.id, msg.body)
             ? null
-            : ((await loadPlaintext(msg.id)) ?? (await loadPlaintextForCiphertext(msg.body))),
+            : ((await loadPlaintextForCiphertext(msg.body)) ?? (await loadPlaintext(msg.id))),
         })),
       );
       for (const { msg, pt } of loaded) {
-        if (decryptedCache.has(msg.id)) continue;
+        if (decryptedCache.has(msg.id, msg.body)) continue;
         if (cancelled) return;
         if (pt) {
           const media = parseMediaMessage(pt);
           if (media) setMediaKey(msg.id, media.keyB64, isVideoMediaLabel(media.label));
-          decryptedCache.set(msg.id, pt);
+          decryptedCache.set(msg.id, pt, msg.body);
           added = true;
         }
       }
@@ -997,8 +1026,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
         ) : (
 
           <>
-            {groupedMessages.map((group, gi) => (
-              <div key={gi}>
+            {groupedMessages.map((group) => (
+              <div key={format(new Date(group.date), 'yyyy-MM-dd')}>
                 <div className="flex items-center justify-center my-4">
                   <span className="text-[11px] font-medium text-muted-foreground px-3 py-1 rounded-full bg-secondary/60 capitalize">
                     {formatDateSeparator(group.date)}
@@ -1020,6 +1049,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
                     return (
                       <div
                         key={msg.id}
+                        data-message-id={msg.id}
+                        style={{ contentVisibility: 'auto', contain: 'layout paint style' }}
                         className={cn(
                           'flex items-end gap-1.5 relative group',
                           isFirstInGroup ? 'mt-2' : 'mt-px'
@@ -1082,7 +1113,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                           )}
 
                           {(() => {
-                            const rawBody = decryptedCache.get(msg.id) || msg.body || '';
+                            const rawBody = decryptedCache.get(msg.id, msg.body) || msg.body || '';
                             const doc = parseDocumentBody(rawBody);
                             if (doc && msg.image_url) {
                               return (
@@ -1096,7 +1127,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                             return null;
                           })()}
 
-                          {isImage && !parseDocumentBody(decryptedCache.get(msg.id) || msg.body || '') && (
+                          {isImage && !parseDocumentBody(decryptedCache.get(msg.id, msg.body) || msg.body || '') && (
                             <div
                               onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
                               onContextMenu={(e) => { e.preventDefault(); setActiveMessageId(msg.id); }}
@@ -1111,12 +1142,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
                                 decrypt={e2ee.decrypt}
                                 isEncryptionActive={e2ee.encrypted && !isZeusConversation}
                                 messageId={msg.id}
+                                cachedPlaintext={decryptedCache.get(msg.id, msg.body)}
                               />
                             </div>
                           )}
 
                           {(() => {
-                            const rawBody = decryptedCache.get(msg.id) || msg.body || '';
+                            const rawBody = decryptedCache.get(msg.id, msg.body) || msg.body || '';
                             const media = parseMediaMessage(rawBody);
                             const label = media?.label ?? rawBody;
                             const docParsed = parseDocumentBody(rawBody);
@@ -1162,9 +1194,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               body={msg.body}
                               decrypt={e2ee.decrypt}
                               isEncryptionActive={e2ee.encrypted && !isZeusConversation}
-                              onDecrypted={(text) => onDecrypted(msg.id, text)}
+                              onDecrypted={(text) => onDecrypted(msg.id, msg.body, text)}
                               isMe={isMe}
-                              cachedPlaintext={decryptedCache.get(msg.id)}
+                              cachedPlaintext={decryptedCache.get(msg.id, msg.body)}
                               refreshKey={decryptRefreshKey}
                               messageId={msg.id}
                               senderId={msg.sender_id}
@@ -1206,7 +1238,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               {stableBadgeState.encrypted && looksEncrypted && (
                                 <EncryptionBadge
                                   encrypted={true}
-                                  verified={decryptedCache.has(msg.id) && stableBadgeState.verified}
+                                  verified={decryptedCache.has(msg.id, msg.body) && stableBadgeState.verified}
                                   ratchetActive={stableBadgeState.ratchetActive}
                                   size="xs"
                                   showLabel

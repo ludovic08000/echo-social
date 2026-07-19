@@ -27,13 +27,15 @@ function wakeMessageDecryptors(deviceId: string | null, reason: string): void {
     window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
       detail: { status: 'pin_unlocked', reason, deviceId },
     }));
-  } catch {}
+  } catch {
+    // Browser event dispatch is best-effort during teardown/SSR.
+  }
 }
 
 /**
- * verifyPin() has already restored the local crypto blob before this component
- * exists. Render conversations immediately; server/device maintenance is a
- * detached optimisation and can never replace or delay the message tree.
+ * The local PIN only opens the UI; it never mutates E2EE keys or ratchets.
+ * Render conversations immediately. Server/device maintenance is detached and
+ * can never replace or delay the message tree.
  */
 export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) {
   const { user } = useAuth();

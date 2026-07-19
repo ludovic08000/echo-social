@@ -12,12 +12,11 @@ import {
 } from '@/lib/messaging/signalWebConversationQueue';
 import {
   useMessageQueue as useSignalMessageQueue,
-  buildMultiDeviceParentEnvelope,
   selectInitialDeliveryMode,
   type OutboundMessage,
 } from './useMessageQueueSignal';
 
-export { buildMultiDeviceParentEnvelope, selectInitialDeliveryMode };
+export { selectInitialDeliveryMode };
 export type { OutboundMessage } from './useMessageQueueSignal';
 
 type SendExtra = {

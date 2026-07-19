@@ -200,16 +200,20 @@ export async function getOrCreateArchiveKey(
 }
 
 export interface ArchivePayload {
-  v: 1;
+  v: 2;
   iv: string;
   ct: string;
+  context: string;
 }
 
 export function isArchivePayload(value: string | null | undefined): boolean {
   if (!value) return false;
   try {
     const payload = JSON.parse(value);
-    return payload?.v === 1 && typeof payload.iv === 'string' && typeof payload.ct === 'string';
+    return payload?.v === 2
+      && typeof payload.iv === 'string'
+      && typeof payload.ct === 'string'
+      && typeof payload.context === 'string';
   } catch {
     return false;
   }
@@ -219,6 +223,7 @@ export async function encryptArchive(
   plaintext: string,
   conversationId: string,
   userId: string,
+  contextId = conversationId,
 ): Promise<string | null> {
   if (!plaintext || !isArchiveBackupEnabled()) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
@@ -227,14 +232,22 @@ export async function encryptArchive(
   try {
     const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LEN));
     const ct = await hardCrypto.encrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
+      {
+        name: 'AES-GCM',
+        iv: iv as Uint8Array<ArrayBuffer>,
+        additionalData: new hardGlobals.TextEncoder().encode(
+          `FORSURE-AEGIS-ARCHIVE-v2|${userId}|${conversationId}|${contextId}`,
+        ),
+        tagLength: 128,
+      },
       key,
       new hardGlobals.TextEncoder().encode(plaintext),
     );
     return JSON.stringify({
-      v: 1,
+      v: 2,
       iv: bufferToBase64(iv.buffer as ArrayBuffer),
       ct: bufferToBase64(ct as ArrayBuffer),
+      context: contextId,
     } satisfies ArchivePayload);
   } catch {
     return null;
@@ -245,6 +258,7 @@ export async function decryptArchive(
   archiveBody: string,
   conversationId: string,
   userId: string,
+  expectedContextId = conversationId,
 ): Promise<string | null> {
   if (!isArchivePayload(archiveBody)) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
@@ -252,10 +266,18 @@ export async function decryptArchive(
 
   try {
     const parsed = JSON.parse(archiveBody) as ArchivePayload;
+    if (parsed.context !== expectedContextId) return null;
     const iv = new Uint8Array(base64ToBuffer(parsed.iv));
     const ciphertext = base64ToBuffer(parsed.ct);
     const plaintext = await hardCrypto.decrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
+      {
+        name: 'AES-GCM',
+        iv: iv as Uint8Array<ArrayBuffer>,
+        additionalData: new hardGlobals.TextEncoder().encode(
+          `FORSURE-AEGIS-ARCHIVE-v2|${userId}|${conversationId}|${expectedContextId}`,
+        ),
+        tagLength: 128,
+      },
       key,
       ciphertext,
     );
@@ -328,4 +350,50 @@ export async function setMessageArchiveBody(
     error: lastError,
   });
   return false;
+}
+
+export async function archiveBubbleForUser(input: {
+  messageId: string;
+  conversationId: string;
+  userId: string;
+  plaintext: string;
+}): Promise<boolean> {
+  const archiveBody = await encryptArchive(
+    input.plaintext,
+    input.conversationId,
+    input.userId,
+    input.messageId,
+  );
+  if (!archiveBody) return false;
+  const { error } = await supabase
+    .from('message_archives' as any)
+    .upsert({
+      message_id: input.messageId,
+      user_id: input.userId,
+      archive_body: archiveBody,
+    }, {
+      onConflict: 'message_id,user_id',
+      ignoreDuplicates: true,
+    });
+  return !error;
+}
+
+export async function recoverBubbleFromArchive(input: {
+  messageId: string;
+  conversationId: string;
+  userId: string;
+}): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('message_archives' as any)
+    .select('archive_body')
+    .eq('message_id', input.messageId)
+    .eq('user_id', input.userId)
+    .maybeSingle();
+  if (error || !(data as any)?.archive_body) return null;
+  return decryptArchive(
+    (data as any).archive_body,
+    input.conversationId,
+    input.userId,
+    input.messageId,
+  );
 }

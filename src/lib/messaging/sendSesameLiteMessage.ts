@@ -1,6 +1,7 @@
 import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
 import {
@@ -17,11 +18,6 @@ import {
 } from '@/lib/messaging/outboxVault';
 import { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';
 import { runSignalConversationJob } from '@/lib/messaging/signalWebConversationQueue';
-import {
-  SESAME_LITE_PROTOCOL,
-  SESAME_LITE_VERSION,
-} from '@/lib/messaging/messageCompatibility';
-import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
 
 export interface SendSesameLiteInput {
   conversationId: string;
@@ -39,25 +35,12 @@ export interface SendSesameLiteResult {
   parentBody: string;
 }
 
-export function buildSesameLiteParentEnvelope(localId: string, traceId?: string): string {
-  return JSON.stringify({
-    protocol: SESAME_LITE_PROTOCOL,
-    version: SESAME_LITE_VERSION,
-    encryptionMode: 'multi_device',
-    v: PROTOCOL_VERSION,
-    ct: 'device_copies',
-    ts: Date.now(),
-    __lid: localId,
-    ...(traceId ? { __tid: traceId } : {}),
-  });
-}
-
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message?: unknown }).message ?? 'Échec du transport chiffré.');
+    return String((error as { message?: unknown }).message ?? 'Echec du transport chiffre.');
   }
-  return String(error ?? 'Échec du transport chiffré.');
+  return String(error ?? 'Echec du transport chiffre.');
 }
 
 function isAmbiguousTransportError(error: unknown): boolean {
@@ -73,6 +56,11 @@ function isAmbiguousTransportError(error: unknown): boolean {
   );
 }
 
+/**
+ * Aegis v1 send path. The user payload is encrypted exactly once. Double
+ * Ratchet fan-out transports only the small content-key capsule to each
+ * authenticated device.
+ */
 export async function sendSesameLiteMessage(
   input: SendSesameLiteInput,
 ): Promise<SendSesameLiteResult> {
@@ -80,8 +68,9 @@ export async function sendSesameLiteMessage(
   const localId = input.localId ?? `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
   const traceId = input.traceId ?? safeUUID();
   const messageId = input.messageId ?? safeUUID();
-  const parentBody = buildSesameLiteParentEnvelope(localId, traceId);
   let transportPlaintext = input.plaintext;
+  let parentBody: string | null = null;
+  let keyCapsule: string | null = null;
   let copies: FanoutCopyRow[] = [];
 
   const snapshot: OutboxPayload = {
@@ -91,7 +80,8 @@ export async function sendSesameLiteMessage(
     senderId: input.senderUserId,
     plaintext: input.plaintext,
     transportPlaintext,
-    encryptedBody: parentBody,
+    encryptedBody: null,
+    keyCapsule: null,
     preparedCopies: [],
     archiveBody: null,
     imageUrl: input.imageUrl ?? null,
@@ -116,11 +106,47 @@ export async function sendSesameLiteMessage(
     transportPlaintext = prepared.transportBody;
   }
 
+  try {
+    const preparedMessage = await createAegisMessage({
+      messageId,
+      conversationId: input.conversationId,
+      senderId: input.senderUserId,
+      plaintext: transportPlaintext,
+      localId,
+      traceId,
+      createdAt: now,
+    });
+    parentBody = preparedMessage.body;
+    keyCapsule = preparedMessage.keyCapsule;
+
+    await putOutboxPayload(input.senderUserId, {
+      ...snapshot,
+      transportPlaintext,
+      encryptedBody: parentBody,
+      keyCapsule,
+      updatedAt: Date.now(),
+    });
+  } catch (error) {
+    await putOutboxPayload(input.senderUserId, {
+      ...snapshot,
+      transportPlaintext,
+      encryptedBody: null,
+      keyCapsule: null,
+      preparedCopies: [],
+      status: 'retry_pending',
+      lastError: errorMessage(error),
+      updatedAt: Date.now(),
+    }).catch(() => undefined);
+    throw error;
+  }
+
   const persistCopies = async (next: FanoutCopyRow[]) => {
     copies = next;
     await putOutboxPayload(input.senderUserId, {
       ...snapshot,
       transportPlaintext,
+      encryptedBody: parentBody,
+      keyCapsule,
       preparedCopies: next,
       status: 'sending',
       updatedAt: Date.now(),
@@ -129,12 +155,12 @@ export async function sendSesameLiteMessage(
 
   try {
     const built = await runSignalConversationJob(
-      `${input.senderUserId}:${input.conversationId}:sesame-lite-fanout`,
+      `${input.senderUserId}:${input.conversationId}:aegis-key-fanout`,
       () => buildFanoutCopies({
         messageId,
         conversationId: input.conversationId,
         senderUserId: input.senderUserId,
-        plaintext: transportPlaintext,
+        plaintext: keyCapsule!,
       }),
     );
     if (!built.hasTargets || built.rows.length === 0) {
@@ -153,12 +179,12 @@ export async function sendSesameLiteMessage(
       initialCopies: copies,
       rebuildCopies: async () => {
         const rebuilt = await runSignalConversationJob(
-          `${input.senderUserId}:${input.conversationId}:sesame-lite-fanout`,
+          `${input.senderUserId}:${input.conversationId}:aegis-key-fanout`,
           () => buildFanoutCopies({
             messageId,
             conversationId: input.conversationId,
             senderUserId: input.senderUserId,
-            plaintext: transportPlaintext,
+            plaintext: keyCapsule!,
           }),
         );
         if (!rebuilt.hasTargets || rebuilt.rows.length === 0) {
@@ -174,6 +200,8 @@ export async function sendSesameLiteMessage(
       await putOutboxPayload(input.senderUserId, {
         ...snapshot,
         transportPlaintext,
+        encryptedBody: parentBody,
+        keyCapsule,
         preparedCopies: retainedCopies,
         status: 'retry_pending',
         lastError: errorMessage(result.error),
@@ -186,6 +214,14 @@ export async function sendSesameLiteMessage(
       savePlaintext(result.data ?? messageId, input.plaintext),
       savePlaintextForCiphertext(parentBody, input.plaintext),
     ]).catch(() => undefined);
+    void import('@/lib/messaging/archive/archiveKey').then(({ archiveBubbleForUser }) =>
+      archiveBubbleForUser({
+        messageId: result.data ?? messageId,
+        conversationId: input.conversationId,
+        userId: input.senderUserId,
+        plaintext: input.plaintext,
+      }),
+    ).catch(() => false);
     await deleteOutboxPayload(localId).catch(() => undefined);
     return { id: result.data ?? messageId, parentBody };
   } catch (error) {
@@ -194,6 +230,8 @@ export async function sendSesameLiteMessage(
       await putOutboxPayload(input.senderUserId, {
         ...snapshot,
         transportPlaintext,
+        encryptedBody: parentBody,
+        keyCapsule,
         preparedCopies: [],
         status: 'retry_pending',
         lastError: errorMessage(error),

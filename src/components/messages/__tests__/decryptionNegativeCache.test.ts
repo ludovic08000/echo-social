@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   savePlaintextForCiphertext: vi.fn(),
   tryReadDeviceCopy: vi.fn(),
   routeIncoming: vi.fn(),
+  openAegisMessage: vi.fn(),
   from: vi.fn(),
   getUser: vi.fn(),
 }));
@@ -26,6 +27,14 @@ vi.mock('@/e2ee-session', () => ({
   routeIncoming: mocks.routeIncoming,
 }));
 
+vi.mock('@/lib/messaging/aegisEnvelope', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/messaging/aegisEnvelope')>();
+  return {
+    ...actual,
+    openAegisMessage: mocks.openAegisMessage,
+  };
+});
+
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     auth: { getUser: mocks.getUser },
@@ -36,6 +45,8 @@ vi.mock('@/integrations/supabase/client', () => ({
 vi.mock('@/lib/messaging/archive/archiveKey', () => ({
   decryptArchive: vi.fn(async () => null),
   isArchivePayload: vi.fn(() => false),
+  archiveBubbleForUser: vi.fn(async () => true),
+  recoverBubbleFromArchive: vi.fn(async () => null),
 }));
 
 import {
@@ -47,15 +58,20 @@ import {
   resolvePlaintext,
 } from '@/components/messages/decryptionService';
 
-function multiDeviceBody(seed: string): string {
+function multiDeviceBody(messageId: string, seed: string): string {
   return JSON.stringify({
-    protocol: 'forsure-sesame-lite',
+    protocol: 'forsure-aegis-message',
     version: 1,
     encryptionMode: 'multi_device',
-    v: 4,
-    ct: 'device_copies',
-    ts: 1,
-    seed,
+    algorithm: 'AES-256-GCM',
+    keyTransport: 'device_ratchet',
+    messageId,
+    conversationId: 'conversation-id',
+    senderId: 'sender',
+    iv: 'aXYtYnl0ZXM=',
+    ciphertext: seed,
+    digest: `digest-${seed}`,
+    createdAt: 1,
   });
 }
 
@@ -79,6 +95,7 @@ describe('targeted decryption cache and Bubble Hold', () => {
     mocks.savePlaintextForCiphertext.mockResolvedValue(undefined);
     mocks.tryReadDeviceCopy.mockResolvedValue(null);
     mocks.routeIncoming.mockResolvedValue({ ok: false, plaintext: null });
+    mocks.openAegisMessage.mockImplementation(async (_body: string, capsule: string) => capsule);
     mocks.getUser.mockResolvedValue({ data: { user: null } });
     mocks.from.mockImplementation((table: string) => {
       if (table !== 'messages') throw new Error(`Unexpected table: ${table}`);
@@ -94,9 +111,9 @@ describe('targeted decryption cache and Bubble Hold', () => {
   });
 
   it('clears every body variant for one message without clearing another message', async () => {
-    const bodyA1 = multiDeviceBody('a1');
-    const bodyA2 = multiDeviceBody('a2');
-    const bodyB = multiDeviceBody('b');
+    const bodyA1 = multiDeviceBody('message-a', 'a1');
+    const bodyA2 = multiDeviceBody('message-a', 'a2');
+    const bodyB = multiDeviceBody('message-b', 'b');
     const fail = vi.fn(async () => failedDecrypt());
 
     await Promise.all([
@@ -114,7 +131,7 @@ describe('targeted decryption cache and Bubble Hold', () => {
   });
 
   it('keeps the last authenticated plaintext when a later retry fails', async () => {
-    const body = multiDeviceBody('sticky');
+    const body = multiDeviceBody('message-sticky', 'sticky');
     const firstDecrypt = vi.fn(async () => failedDecrypt());
     mocks.tryReadDeviceCopy.mockResolvedValueOnce('Cette bulle doit rester visible');
 
@@ -143,7 +160,7 @@ describe('targeted decryption cache and Bubble Hold', () => {
   });
 
   it('retries sender lookup after a transient empty realtime result', async () => {
-    const body = multiDeviceBody('sender-retry');
+    const body = multiDeviceBody('message-sender-retry', 'sender-retry');
     let senderLookupCount = 0;
 
     mocks.from.mockImplementation((table: string) => {
@@ -194,7 +211,7 @@ describe('targeted decryption cache and Bubble Hold', () => {
   });
 
   it('uses a known sender id without waiting for a sender lookup query', async () => {
-    const body = multiDeviceBody('known-sender');
+    const body = multiDeviceBody('message-known-sender', 'known-sender');
     mocks.tryReadDeviceCopy.mockResolvedValueOnce('copie directe');
 
     const result = await resolvePlaintext({

@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { checkLoginAllowed, recordFailedLogin, resetLoginAttempts } from '@/lib/loginRateLimit';
-import { initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
 
 export default function Login() {
   const location = useLocation();
@@ -21,6 +20,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [lockoutSeconds, setLockoutSeconds] = useState(() => checkLoginAllowed());
+  const queryClient = useQueryClient();
 
   // Countdown timer for lockout
   useEffect(() => {
@@ -37,8 +37,6 @@ export default function Login() {
     const from = (location.state as { from?: string })?.from || '/feed';
     return <Navigate to={from} replace />;
   }
-
-  const queryClient = useQueryClient();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,19 +72,6 @@ export default function Login() {
 
     resetLoginAttempts();
     queryClient.removeQueries({ queryKey: ['posts', 'friends-feed'] });
-
-    // Auto-sync E2EE keys from server backup (Google-style)
-    try {
-      const { data: { user: authUser } } = await (await import('@/integrations/supabase/client')).supabase.auth.getUser();
-      if (authUser) {
-        const result = await initAccountKeySync(password, authUser.id);
-        if (result === 'restored') {
-          toast({ title: '🔑 Clés E2EE restaurées automatiquement' });
-        }
-      }
-    } catch (e) {
-      console.warn('[Login] Key sync failed:', e);
-    }
 
     setIsLoading(false);
   };

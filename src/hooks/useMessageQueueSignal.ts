@@ -10,7 +10,7 @@ import { sendMessageWithSesameRetry } from '@/lib/messaging/sesameSendRpc';
 import { runSignalConversationJob } from '@/lib/messaging/signalWebConversationQueue';
 import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
-import { buildSesameLiteParentEnvelope } from '@/lib/messaging/sendSesameLiteMessage';
+import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import {
@@ -69,10 +69,6 @@ type SentMessageSnapshot = {
     avatar_url: string | null;
   };
 };
-
-export function buildMultiDeviceParentEnvelope(localId: string, traceId?: string): string {
-  return buildSesameLiteParentEnvelope(localId, traceId);
-}
 
 function inferMediaBody(body: string, imageUrl?: string | null): string {
   const trimmed = body.trim();
@@ -357,6 +353,7 @@ export function useMessageQueue(
       extra: extra ?? resumePayload?.extra,
       reservedServerId: serverMessageId,
       transportPlaintext: resumePayload?.transportPlaintext ?? null,
+      keyCapsule: resumePayload?.keyCapsule ?? null,
       preparedCopies: resumePayload?.preparedCopies ?? [],
       archiveBody: null,
     };
@@ -416,14 +413,13 @@ export function useMessageQueue(
       resumedEncryptedBody,
       preparedCopyCount: resumedPreparedCopies.length,
     });
-    const resumedParent = isMultiDeviceParentBody(resumedEncryptedBody) && resumedPreparedCopies.length > 0
+    const resumedParent = isMultiDeviceParentBody(resumedEncryptedBody) && Boolean(resumePayload?.keyCapsule)
       ? resumedEncryptedBody
       : null;
     let transportPlaintext = resumePayload?.transportPlaintext ?? sanitized;
-    let bodyToStore = resumedParent ?? (encryptionWasRequired
-      ? buildMultiDeviceParentEnvelope(localId, traceId)
-      : sanitized);
-    let encryptedSuccessfully = encryptionWasRequired && Boolean(resumedParent);
+    let bodyToStore = resumedParent ?? sanitized;
+    let keyCapsule = resumedParent ? resumePayload?.keyCapsule ?? null : null;
+    let encryptedSuccessfully = false;
     let fanoutRows: FanoutCopyRow[] = resumedParent ? resumedPreparedCopies : [];
     const requiresLongAttachment = !isSpecial && utf8ByteLength(sanitized) > MAX_INLINE_MESSAGE_BODY_BYTES;
 
@@ -469,30 +465,67 @@ throw longMessageError instanceof Error ? longMessageError : new Error(message);
         }
       }
 
-      if (resumedParent) {
-        bodyToStore = resumedParent!;
+      if (!resumedParent) {
+        try {
+          const preparedMessage = await createAegisMessage({
+            messageId: serverMessageId,
+            conversationId,
+            senderId: user.id,
+            plaintext: transportPlaintext,
+            localId,
+            traceId,
+            createdAt: now,
+          });
+          bodyToStore = preparedMessage.body;
+          keyCapsule = preparedMessage.keyCapsule;
+          await persistOutbox({
+            encryptedBody: bodyToStore,
+            keyCapsule,
+            transportPlaintext,
+            preparedCopies: [],
+          });
+          trace('aegis_payload_ready', {
+            bodyBytes: utf8ByteLength(bodyToStore),
+            longMessage: requiresLongAttachment,
+          });
+        } catch (error) {
+          const failure = classifyOutboundFailure(error);
+          updatePending({
+            status: failure.status,
+            lastError: failure.message,
+          }, {
+            encryptedBody: null,
+            keyCapsule: null,
+            preparedCopies: [],
+          });
+          trace('aegis_payload_failed', { error: failure.message });
+          throw error instanceof Error ? error : new Error(failure.message);
+        }
+      }
+
+      if (!keyCapsule || !isMultiDeviceParentBody(bodyToStore)) {
+        throw new Error('AEGIS_DURABLE_PAYLOAD_MISSING');
+      }
+
+      if (resumedPreparedCopies.length > 0) {
+        fanoutRows = resumedPreparedCopies;
         encryptedSuccessfully = true;
-        await persistOutbox({
-encryptedBody: bodyToStore,
-transportPlaintext,
-preparedCopies: resumedPreparedCopies,
-        });
         updatePending({ encryptedBody: bodyToStore, status: 'sending', lastError: null });
         void savePlaintextForCiphertext(bodyToStore, sanitized).catch(() => {});
-        trace('multidevice_resume_ready', {
-copyCount: resumedPreparedCopies.length,
-longMessage: requiresLongAttachment,
+        trace('aegis_resume_ready', {
+          copyCount: resumedPreparedCopies.length,
+          longMessage: requiresLongAttachment,
         });
       } else {
         updatePending({ status: 'encrypting', lastError: null });
         try {
           const built = await runSignalConversationJob(
-            `${user.id}:${conversationId}:sesame-lite-fanout`,
+            `${user.id}:${conversationId}:aegis-key-fanout`,
             () => buildFanoutCopies({
               messageId: serverMessageId,
               conversationId,
               senderUserId: user.id,
-              plaintext: transportPlaintext,
+              plaintext: keyCapsule!,
             }),
           );
           if (!built.hasTargets || built.rows.length === 0) {
@@ -502,12 +535,13 @@ longMessage: requiresLongAttachment,
           encryptedSuccessfully = true;
           await persistOutbox({
             encryptedBody: bodyToStore,
+            keyCapsule,
             transportPlaintext,
             preparedCopies: fanoutRows,
           });
           updatePending({ encryptedBody: bodyToStore, status: 'sending', lastError: null });
           void savePlaintextForCiphertext(bodyToStore, sanitized).catch(() => {});
-          trace('sesame_lite_copies_ready', {
+          trace('aegis_key_copies_ready', {
             copyCount: fanoutRows.length,
             longMessage: requiresLongAttachment,
           });
@@ -517,8 +551,8 @@ longMessage: requiresLongAttachment,
           updatePending({
             status: failure.status,
             lastError: failure.message,
-          }, { encryptedBody: null, preparedCopies: [] });
-          trace('sesame_lite_prepare_failed', {
+          }, { encryptedBody: bodyToStore, keyCapsule, preparedCopies: [] });
+          trace('aegis_prepare_failed', {
             error: failure.message,
             retryable: failure.status === 'retry_pending',
           });
@@ -531,7 +565,7 @@ longMessage: requiresLongAttachment,
       messageId: serverMessageId,
       conversationId,
       senderUserId: user.id,
-      plaintext: transportPlaintext,
+      plaintext: keyCapsule ?? '',
     };
     if (deliveryMode === 'multi_device' && fanoutRows.length === 0) {
       throw new Error('E2EE_PREPARED_COPIES_MISSING');
@@ -684,7 +718,7 @@ lastError: visibleMessage,
       }
 
       data = { id: sendResult.data || serverMessageId };
-      sendMethod = 'sesame_lite_authoritative_rpc';
+      sendMethod = 'aegis_authoritative_rpc';
       retriedStaleRoute = sendResult.retriedStaleRoute;
     }
 
@@ -706,6 +740,14 @@ lastError: visibleMessage,
         savePlaintextForCiphertext(bodyToStore, sanitized),
       ]).catch(() => {});
       dispatchDecryptRetry(data.id);
+      void import('@/lib/messaging/archive/archiveKey').then(({ archiveBubbleForUser }) =>
+        archiveBubbleForUser({
+          messageId: data.id,
+          conversationId,
+          userId: user.id,
+          plaintext: sanitized,
+        }),
+      ).catch(() => false);
     }
 
     const sentMessage: SentMessageSnapshot = {

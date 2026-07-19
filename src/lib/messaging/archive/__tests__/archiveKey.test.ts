@@ -43,7 +43,7 @@ vi.mock('@/lib/messaging/archive/archivePrefs', () => ({
   isArchiveBackupEnabled: () => true,
 }));
 
-import { encryptArchive, isArchivePayload } from '../archiveKey';
+import { decryptArchive, encryptArchive, isArchivePayload } from '../archiveKey';
 
 beforeEach(async () => {
   mocks.storedRow.value = null;
@@ -72,5 +72,21 @@ describe('archiveKey', () => {
     });
     expect(mocks.selectCount.value).toBe(2);
     expect(mocks.storedRow.value?.wrapped_key).toEqual(expect.any(String));
+  });
+
+  it('binds a bubble archive to its stable message UUID', async () => {
+    const conversationId = '00000000-0000-4000-8000-000000000001';
+    const userId = '00000000-0000-4000-8000-000000000002';
+    const messageId = '00000000-0000-4000-8000-000000000003';
+    const payload = await encryptArchive('saved bubble', conversationId, userId, messageId);
+
+    await expect(decryptArchive(payload!, conversationId, userId, messageId))
+      .resolves.toBe('saved bubble');
+    await expect(decryptArchive(
+      payload!,
+      conversationId,
+      userId,
+      '00000000-0000-4000-8000-000000000004',
+    )).resolves.toBeNull();
   });
 });

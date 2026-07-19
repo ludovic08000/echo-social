@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useChatPin } from '@/hooks/useChatPin';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { PinValidatedMessaging } from '@/components/PinValidatedMessaging';
 
 const CompactCtx = createContext(false);
 
@@ -42,7 +43,7 @@ export function MessagingPinGate({ children, compact = false }: MessagingPinGate
     );
   }
 
-  if (pin.unlocked) return <>{children}</>;
+  if (pin.unlocked) return <PinValidatedMessaging>{children}</PinValidatedMessaging>;
 
   return (
     <CompactCtx.Provider value={compact}>

@@ -48,6 +48,8 @@ export interface OutboxPayload {
   transportPlaintext?: string | null;
   /** Stable encrypted-only parent body sent to the server. */
   encryptedBody: string | null;
+  /** Exact Aegis content-key capsule, protected by this encrypted local outbox. */
+  keyCapsule?: string | null;
   /** Exact per-device envelopes, persisted before the RPC for crash-safe idempotent replay. */
   preparedCopies?: OutboxPreparedCopy[];
   /** Optional account-wrapped archive prepared before transport. */

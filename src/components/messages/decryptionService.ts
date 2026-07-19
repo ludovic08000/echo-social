@@ -1,7 +1,7 @@
 /**
  * decryptionService — single crypto entry point for message UI.
  *
- * Sesame-lite resolution order for a single message body:
+ * Aegis v1 resolution order for a single message body:
  *   1. Already-known plaintext for the exact parent ciphertext.
  *   2. The authenticated copy addressed to this device.
  *
@@ -30,8 +30,17 @@ import {
   savePlaintextForCiphertext,
 } from '@/lib/crypto/plaintextStore';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
+import {
+  openAegisMessage,
+  parseAegisMessageEnvelope,
+} from '@/lib/messaging/aegisEnvelope';
 import { supabase } from '@/integrations/supabase/client';
 import type { DecryptResult } from '@/hooks/useE2EE';
+import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
+import {
+  archiveBubbleForUser,
+  recoverBubbleFromArchive,
+} from '@/lib/messaging/archive/archiveKey';
 
 export interface DecryptionOutcome {
   text: string;
@@ -69,20 +78,26 @@ class LruMap<K, V> {
 }
 
 const cache = new LruMap<string, DecryptionOutcome>(CACHE_CAP);
-const lastGoodByMessage = new LruMap<string, DecryptionOutcome>(CACHE_CAP);
+type LastGoodEntry = { body: string; outcome: DecryptionOutcome };
+const lastGoodByMessage = new LruMap<string, LastGoodEntry>(CACHE_CAP);
 const inflight = new Map<string, Promise<DecryptionOutcome | null>>();
 
-export function readLastGoodOutcome(messageId?: string): DecryptionOutcome | undefined {
-  if (!messageId) return undefined;
-  return lastGoodByMessage.get(messageId);
+export function readLastGoodOutcome(
+  messageId?: string,
+  body?: string,
+): DecryptionOutcome | undefined {
+  if (!messageId || body === undefined) return undefined;
+  const entry = lastGoodByMessage.get(messageId);
+  return entry?.body === body ? entry.outcome : undefined;
 }
 
 export function rememberLastGoodOutcome(
   messageId: string | undefined,
   outcome: DecryptionOutcome,
+  body?: string,
 ): void {
-  if (!messageId || outcome.hidden || outcome.text === '') return;
-  lastGoodByMessage.set(messageId, outcome);
+  if (!messageId || body === undefined || outcome.hidden || outcome.text === '') return;
+  lastGoodByMessage.set(messageId, { body, outcome });
 }
 
 export function clearLastGoodOutcome(messageId?: string): void {
@@ -93,7 +108,7 @@ export function clearLastGoodOutcome(messageId?: string): void {
   lastGoodByMessage.clear();
 }
 
-const NEG_TTL_MS = 60_000;
+const NEG_TTL_MS = 2_000;
 const negCache = new Map<string, number>();
 function negCacheHit(key: string): boolean {
   const at = negCache.get(key);
@@ -194,7 +209,7 @@ export function persistOutcome(body: string, outcome: DecryptionOutcome, message
   const persisted = outcome.mediaKeyB64
     ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
     : outcome.text;
-  rememberLastGoodOutcome(messageId, outcome);
+  rememberLastGoodOutcome(messageId, outcome, body);
   if (messageId) void savePlaintext(messageId, persisted);
   void savePlaintextForCiphertext(body, persisted);
   return persisted;
@@ -210,7 +225,7 @@ async function loadPersistedOutcome(
   if (byMessageId) {
     if (looksEncrypted(body)) void savePlaintextForCiphertext(body, byMessageId);
     const outcome = await buildAuthenticatedOutcomeFromText(byMessageId, messageId);
-    rememberLastGoodOutcome(messageId, outcome);
+    rememberLastGoodOutcome(messageId, outcome, body);
     return outcome;
   }
 
@@ -218,7 +233,7 @@ async function loadPersistedOutcome(
   if (!byCiphertext) return null;
   if (messageId) void savePlaintext(messageId, byCiphertext);
   const outcome = await buildAuthenticatedOutcomeFromText(byCiphertext, messageId);
-  rememberLastGoodOutcome(messageId, outcome);
+  rememberLastGoodOutcome(messageId, outcome, body);
   return outcome;
 }
 
@@ -233,8 +248,8 @@ function cacheAndPersist(
   return outcome;
 }
 
-function stickyOrNull(messageId?: string): DecryptionOutcome | null {
-  return readLastGoodOutcome(messageId) ?? null;
+function stickyOrNull(messageId: string | undefined, body: string): DecryptionOutcome | null {
+  return readLastGoodOutcome(messageId, body) ?? null;
 }
 
 export async function resolvePlaintext(opts: {
@@ -248,11 +263,13 @@ export async function resolvePlaintext(opts: {
 
   if (!looksEncrypted(body)) {
     const outcome = { text: body, mediaKeyB64: null, hidden: false };
-    rememberLastGoodOutcome(messageId, outcome);
+    rememberLastGoodOutcome(messageId, outcome, body);
     return outcome;
   }
 
   if (!isMultiDeviceEnvelopeBody(body)) return null;
+  const aegisEnvelope = parseAegisMessageEnvelope(body);
+  if (!aegisEnvelope || (messageId && aegisEnvelope.messageId !== messageId)) return null;
 
   const key = cacheKey(messageId, body);
   const cached = cache.get(key);
@@ -264,7 +281,7 @@ export async function resolvePlaintext(opts: {
     return persisted;
   }
 
-  if (negCacheHit(key)) return stickyOrNull(messageId);
+  if (negCacheHit(key)) return stickyOrNull(messageId, body);
 
   let promise = inflight.get(key);
   if (!promise) {
@@ -273,31 +290,59 @@ export async function resolvePlaintext(opts: {
       void decrypt;
 
       if (messageId) {
+        const currentUserId = await getCachedAuthUserId().catch(() => null);
         if (!senderId) senderId = await getSenderId(messageId);
         if (senderId) {
           try {
             const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
             if (copyText !== null) {
-              const outcome = await buildAuthenticatedOutcomeFromText(copyText, messageId);
-              return cacheAndPersist(key, body, outcome, messageId);
+              const plaintext = await openAegisMessage(body, copyText, {
+                messageId,
+                conversationId: aegisEnvelope.conversationId,
+                senderId,
+              });
+              if (plaintext !== null) {
+                const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);
+                if (currentUserId) {
+                  void archiveBubbleForUser({
+                    messageId,
+                    conversationId: aegisEnvelope.conversationId,
+                    userId: currentUserId,
+                    plaintext,
+                  }).catch(() => false);
+                }
+                return cacheAndPersist(key, body, outcome, messageId);
+              }
             }
           } catch {
             /* attachment download/decrypt remains retryable */
           }
         }
+
+        if (currentUserId) {
+          const archived = await recoverBubbleFromArchive({
+            messageId,
+            conversationId: aegisEnvelope.conversationId,
+            userId: currentUserId,
+          }).catch(() => null);
+          if (archived !== null) {
+            const outcome = await buildAuthenticatedOutcomeFromText(archived, messageId);
+            return cacheAndPersist(key, body, outcome, messageId);
+          }
+        }
       }
 
       if (typeof console !== 'undefined') {
-        console.warn('[DECRYPT-FAIL] Sesame-lite device copy unavailable', {
+        console.warn('[DECRYPT-FAIL] Aegis device key capsule unavailable', {
           messageId,
-          kind: 'sesame-lite',
+          kind: 'aegis-v1',
           isMe: opts.isMe === true,
           senderId: senderId ? String(senderId).slice(0, 8) : null,
-          stickyAvailable: Boolean(readLastGoodOutcome(messageId)),
+          stickyAvailable: Boolean(readLastGoodOutcome(messageId, body)),
         });
       }
       negCache.set(key, Date.now());
-      return stickyOrNull(messageId);
+      return stickyOrNull(messageId, body);
     })();
     const tracked = promise.finally(() => {
       if (inflight.get(key) === tracked) inflight.delete(key);

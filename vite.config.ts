@@ -1,94 +1,8 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
-import { repeatablePreKeyEnvelopeGuard } from "./vite.repeatable-prekey-plugin";
-
-/**
- * Guarded source fixes for oversized UI modules. They are deterministic and
- * idempotent, and apply in development, tests and production builds.
- */
-function messagingStabilityGuard(): Plugin {
-  return {
-    name: "forsure-messaging-stability-guard",
-    enforce: "pre",
-    transform(code, id) {
-      const cleanId = id.split("?", 1)[0].replace(/\\/g, "/");
-
-      if (cleanId.endsWith("/src/components/messages/ChatView.tsx")) {
-        let transformed = code.replace(/\r\n?/g, "\n");
-        transformed = transformed.replace(
-          "groupedMessages.map((group, gi) => (",
-          "groupedMessages.map((group) => (",
-        );
-        transformed = transformed.replace(
-          "<div key={gi}>",
-          "<div key={format(new Date(group.date), 'yyyy-MM-dd')}>",
-        );
-
-        const mediaMarker = `                                messageId={msg.id}
-                               />`;
-        const mediaStableMarker = `                                messageId={msg.id}
-                                 cachedPlaintext={decryptedCache.get(msg.id)}
-                               />`;
-        if (!transformed.includes(mediaStableMarker)) {
-          transformed = transformed.replace(mediaMarker, mediaStableMarker);
-        }
-
-        return transformed === code ? null : { code: transformed, map: null };
-      }
-
-      if (cleanId.endsWith("/src/components/MessagingPinGate.tsx")) {
-        let transformed = code.replace(/\r\n?/g, "\n");
-        const trustImport = "import { PinValidatedMessaging } from '@/components/PinValidatedMessaging';";
-        if (!transformed.includes(trustImport)) {
-          const importAnchor = "import { motion, AnimatePresence } from 'framer-motion';";
-          transformed = transformed.replace(importAnchor, `${importAnchor}\n${trustImport}`);
-        }
-        transformed = transformed.replace(
-          "if (pin.unlocked) return <>{children}</>;",
-          "if (pin.unlocked) return <PinValidatedMessaging>{children}</PinValidatedMessaging>;",
-        );
-        return transformed === code ? null : { code: transformed, map: null };
-      }
-
-      if (cleanId.endsWith("/src/hooks/useChatPin.ts")) {
-        let transformed = code.replace(/\r\n?/g, "\n");
-        transformed = transformed.replace(
-          `        await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
-        await deleteRawIdentityBlob(user.id);
-        console.log('[PIN] Full crypto blob wrapped (v2)');`,
-          `        await encryptAndSaveWrappedCrypto(user.id, wrapKey, saltB64, fullBlob);
-        console.log('[PIN] Full crypto blob wrapped and kept active for this unlocked session (v2)');`,
-        );
-        transformed = transformed.replace(
-          `            await encryptAndSaveWrappedCrypto(user.id, wrapKey, verifyResult.salt, fullBlob);
-            await deleteRawIdentityBlob(user.id);
-            console.log('[PIN] Full crypto blob wrapped on first verify (v2)');`,
-          `            await encryptAndSaveWrappedCrypto(user.id, wrapKey, verifyResult.salt, fullBlob);
-            console.log('[PIN] Full crypto blob wrapped on first verify and kept active (v2)');`,
-        );
-        return transformed === code ? null : { code: transformed, map: null };
-      }
-
-      if (cleanId.endsWith("/src/hooks/useDeviceRegistration.ts")) {
-        let transformed = code.replace(/\r\n?/g, "\n");
-        const sessionImport = "import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';";
-        if (!transformed.includes(sessionImport)) {
-          const importAnchor = "import { useEffect, useRef } from 'react';";
-          transformed = transformed.replace(importAnchor, `${importAnchor}\n${sessionImport}`);
-        }
-        const registrationAnchor = "      try {\n        console.log('[useDeviceRegistration] publishing current device', { reason, attempt });";
-        const guardedAnchor = "      try {\n        await requireAuthenticatedDeviceSession(user.id);\n        console.log('[useDeviceRegistration] publishing current device', { reason, attempt });";
-        if (!transformed.includes(guardedAnchor)) transformed = transformed.replace(registrationAnchor, guardedAnchor);
-        return transformed === code ? null : { code: transformed, map: null };
-      }
-
-      return null;
-    },
-  };
-}
 
 export default defineConfig(({ mode }) => ({
   server: { host: "::", port: 8080, hmr: { overlay: false } },
@@ -97,22 +11,20 @@ export default defineConfig(({ mode }) => ({
     modulePreload: { polyfill: false },
     rollupOptions: {
       output: {
-        entryFileNames: `assets/index-e2ee-final-[hash].js`,
-        chunkFileNames: `assets/[name]-e2ee-final-[hash].js`,
-        assetFileNames: `assets/[name]-e2ee-final-[hash][extname]`,
+        entryFileNames: `assets/index-aegis-v1-[hash].js`,
+        chunkFileNames: `assets/[name]-aegis-v1-[hash].js`,
+        assetFileNames: `assets/[name]-aegis-v1-[hash][extname]`,
       },
     },
   },
   plugins: [
-    messagingStabilityGuard(),
-    repeatablePreKeyEnvelopeGuard(),
     react(),
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "favicon.ico", "og-image.png"],
       workbox: {
-        cacheId: "forsure-e2ee-final-v5",
+        cacheId: "forsure-aegis-v1",
         maximumFileSizeToCacheInBytes: 5242880,
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
@@ -124,7 +36,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/storage\/.*/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "supabase-storage-e2ee-final-v5",
+              cacheName: "supabase-storage-aegis-v1",
               expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -133,7 +45,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /\.(png|jpg|jpeg|gif|webp|avif|svg)$/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "images-e2ee-final-v5",
+              cacheName: "images-aegis-v1",
               expiration: { maxEntries: 150, maxAgeSeconds: 30 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -142,7 +54,7 @@ export default defineConfig(({ mode }) => ({
             urlPattern: /\.(woff2?|ttf|otf|eot)$/i,
             handler: "CacheFirst",
             options: {
-              cacheName: "fonts-e2ee-final-v5",
+              cacheName: "fonts-aegis-v1",
               expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
@@ -158,7 +70,7 @@ export default defineConfig(({ mode }) => ({
         display: "standalone",
         orientation: "portrait",
         scope: "/",
-        start_url: "/?v=e2ee-final-v5",
+        start_url: "/?v=aegis-v1",
         icons: [
           { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
           { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },

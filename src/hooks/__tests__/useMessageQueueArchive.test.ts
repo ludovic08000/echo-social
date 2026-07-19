@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PROTOCOL_VERSION } from '@/lib/crypto/constants';
+import { AEGIS_MESSAGE_PROTOCOL, createAegisMessage } from '@/lib/messaging/aegisEnvelope';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { buildMultiDeviceParentEnvelope, selectInitialDeliveryMode } from '../useMessageQueue';
+import { selectInitialDeliveryMode } from '../useMessageQueue';
 import { classifyOutboundFailure } from '../useMessageQueueSignal';
 
-describe('useMessageQueue Sesame-lite transport', () => {
-  it('uses Sesame-lite fan-out for every fresh encrypted send', () => {
+describe('useMessageQueue Aegis transport', () => {
+  it('uses multi-device key fan-out for every fresh encrypted send', () => {
     expect(selectInitialDeliveryMode({
       encryptionWasRequired: true,
       resumedEncryptedBody: null,
@@ -14,15 +14,14 @@ describe('useMessageQueue Sesame-lite transport', () => {
   });
 
   it('never downgrades to direct E2EE when prepared copies are absent', () => {
-    const parent = buildMultiDeviceParentEnvelope('local-resume', 'trace-resume');
     expect(selectInitialDeliveryMode({
       encryptionWasRequired: true,
-      resumedEncryptedBody: parent,
+      resumedEncryptedBody: '{}',
       preparedCopyCount: 2,
     })).toBe('multi_device');
     expect(selectInitialDeliveryMode({
       encryptionWasRequired: true,
-      resumedEncryptedBody: parent,
+      resumedEncryptedBody: '{}',
       preparedCopyCount: 0,
     })).toBe('multi_device');
   });
@@ -54,20 +53,27 @@ describe('useMessageQueue Sesame-lite transport', () => {
     });
   });
 
-  it('builds a valid encrypted-only multi-device parent envelope', () => {
-    const envelope = buildMultiDeviceParentEnvelope('local-1', 'trace-1');
-    const parsed = JSON.parse(envelope);
+  it('builds a valid encrypted-only Aegis parent envelope', async () => {
+    const created = await createAegisMessage({
+      messageId: '11111111-1111-4111-8111-111111111111',
+      conversationId: '22222222-2222-4222-8222-222222222222',
+      senderId: '33333333-3333-4333-8333-333333333333',
+      plaintext: 'hello',
+      localId: 'local-1',
+      traceId: 'trace-1',
+    });
+    const parsed = JSON.parse(created.body);
 
-    expect(isMultiDeviceEnvelopeBody(envelope)).toBe(true);
+    expect(isMultiDeviceEnvelopeBody(created.body)).toBe(true);
     expect(parsed).toMatchObject({
-      protocol: 'forsure-sesame-lite',
+      protocol: AEGIS_MESSAGE_PROTOCOL,
       version: 1,
       encryptionMode: 'multi_device',
-      v: PROTOCOL_VERSION,
-      ct: 'device_copies',
-      __lid: 'local-1',
-      __tid: 'trace-1',
+      algorithm: 'AES-256-GCM',
+      keyTransport: 'device_ratchet',
+      localId: 'local-1',
+      traceId: 'trace-1',
     });
-    expect(envelope).not.toContain('hello');
+    expect(created.body).not.toContain('hello');
   });
 });

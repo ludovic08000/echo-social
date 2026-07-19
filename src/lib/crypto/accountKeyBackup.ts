@@ -35,14 +35,15 @@ const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
 const MASTER_KEY_LENGTH = 32;
-const BACKUP_VERSION = 6; // v6 = v5 + AAD binding (userId|backupType|version) — Signal/WA-style swap-attack protection
+const BACKUP_VERSION = 7;
 const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
 const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
 
 /** Domain-separated AAD bound to userId|backupType|version (Signal SVR / WA backup style). */
 function buildBackupAAD(userId: string, backupType: 'account' | 'recovery', version: number): Uint8Array {
-  return new hardGlobals.TextEncoder().encode(`forsure-backup|${userId}|${backupType}|v${version}`);
+  const domain = version >= 7 ? 'forsure-aegis-vault' : 'forsure-backup';
+  return new hardGlobals.TextEncoder().encode(`${domain}|${userId}|${backupType}|v${version}`);
 }
 
 /** Domain separator for the recovery key (mirrors passwordSecret to avoid cross-secret collisions). */
@@ -158,6 +159,7 @@ const LEGACY_DB_TO_KEY: Record<string, Exclude<DBKey, 'e2ee-keys'>> = {
   'forsure-pin-wrap': 'pin-wrap',
   'forsure-prekeys': 'prekeys',
   'forsure-spk': 'spk',
+  'forsure-device-sessions': 'device-sessions',
 };
 
 function dbKeyForLegacyName(name: string): Exclude<DBKey, 'e2ee-keys'> {
@@ -242,49 +244,59 @@ async function putAllInStore(db: IDBDatabase, storeName: string, records: any[])
   await new Promise<void>((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
 }
 
-/** Collect all local E2EE keys for backup */
-async function collectAllKeys(): Promise<string | null> {
+type BackupScope = 'aegis-vault' | 'device-keychain';
+
+/** Collect portable account material or physical-device recovery material. */
+async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<string | null> {
   const data: Record<string, any> = {};
+  const includeDeviceSecrets = scope === 'device-keychain';
 
   try {
     const db = await openE2EEDB();
     for (const storeName of Array.from(db.objectStoreNames)) {
-      data[`e2ee:${storeName}`] = await getAllFromStore(db, storeName);
+      if (!includeDeviceSecrets && storeName !== 'identity-keys') continue;
+      const rows = await getAllFromStore(db, storeName);
+      data[`e2ee:${storeName}`] = storeName === 'identity-keys' && !includeDeviceSecrets
+        ? rows.filter((row: any) => !String(row?.id ?? '').startsWith('device-kx::'))
+        : rows;
     }
     // db.close() skipped — shared singleton, see indexedDb.ts
   } catch {}
 
-  try {
-    data['ratchet:states'] = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
-  } catch {}
+  if (includeDeviceSecrets) {
+    try {
+      data['ratchet:states'] = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
+    } catch {}
+    try {
+      data['prekeys:private'] = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
+    } catch {}
+    try {
+      data['spk:private'] = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
+    } catch {}
+    try {
+      data['device:sessions'] = await getAllFromSideDB('forsure-device-sessions', 'sessions');
+      data['device:initiating-sessions'] = await getAllFromSideDB(
+        'forsure-device-sessions',
+        'initiating-sessions',
+      );
+    } catch {}
+  }
 
   try {
-    data['pinwrap:keys'] = await getAllFromSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
-  } catch {}
-
-  try {
-    data['prekeys:private'] = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
-  } catch {}
-
-  try {
-    data['spk:private'] = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
-  } catch {}
-
-  try {
-    const db = await openE2EEDB();
-    data['device:kx'] = (await getAllFromStore(db, 'identity-keys'))
-      .filter((r: any) => typeof r?.id === 'string' && r.id.startsWith('device-kx::'));
-    // db.close() skipped — shared singleton, see indexedDb.ts
     const fps = localStorage.getItem('forsure-known-fps');
     if (fps) data['fingerprints'] = fps;
   } catch {}
 
-  const hasIdentity = data['e2ee:identity-keys']?.length > 0 || data['pinwrap:keys']?.length > 0;
+  const hasIdentity = data['e2ee:identity-keys']?.some(
+    (row: any) => !String(row?.id ?? '').startsWith('device-kx::'),
+  );
   if (!hasIdentity) return null;
 
-  try {
-    data['device:id'] = getCurrentDeviceId();
-  } catch {}
+  if (includeDeviceSecrets) {
+    try {
+      data['device:id'] = getCurrentDeviceId();
+    } catch {}
+  }
 
   try {
     // Signal/WhatsApp-style secure backup: keep a small decryptable history
@@ -296,6 +308,7 @@ async function collectAllKeys(): Promise<string | null> {
 
   data['_meta'] = {
     version: BACKUP_VERSION,
+    scope,
     createdAt: new Date().toISOString(),
     stores: Object.keys(data).filter(k => k !== '_meta'),
   };
@@ -305,7 +318,7 @@ async function collectAllKeys(): Promise<string | null> {
 
 async function writeKeychainSnapshot(userId: string, keysJson?: string): Promise<boolean> {
   try {
-    const snapshot = keysJson ?? await collectAllKeys();
+    const snapshot = keysJson ?? await collectAllKeys('device-keychain');
     if (!snapshot) return false;
     return await secureSetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`, snapshot);
   } catch (e) {
@@ -347,10 +360,12 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
  */
 async function restoreAllKeys(json: string): Promise<void> {
   const data = JSON.parse(json);
+  const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
 
-  const hasIdentityKeys = data['e2ee:identity-keys']?.length > 0;
-  const hasPinWrappedKeys = data['pinwrap:keys']?.length > 0;
-  if (!hasIdentityKeys && !hasPinWrappedKeys) {
+  const hasIdentityKeys = data['e2ee:identity-keys']?.some(
+    (row: any) => !String(row?.id ?? '').startsWith('device-kx::'),
+  );
+  if (!hasIdentityKeys) {
     throw new Error('Backup invalide : aucune clé d\'identité');
   }
 
@@ -360,7 +375,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     // Phase 0: restore the encrypted device routing id before restoring the
     // matching per-device private key. This keeps message device-copies readable
     // after iOS/WebView storage purges without showing a "verify device" flow.
-    if (typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
+    if (isDeviceKeychain && typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
       adoptDeviceIdFromBackup(data['device:id']);
     }
 
@@ -368,10 +383,14 @@ async function restoreAllKeys(json: string): Promise<void> {
     for (const [key, records] of Object.entries(data)) {
       if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
       const storeName = key.replace('e2ee:', '');
+      if (!isDeviceKeychain && storeName !== 'identity-keys') continue;
+      const safeRecords = storeName === 'identity-keys' && !isDeviceKeychain
+        ? records.filter((row: any) => !String(row?.id ?? '').startsWith('device-kx::'))
+        : records;
       const db = await openE2EEDB();
       if (db.objectStoreNames.contains(storeName)) {
         const existing = await getAllFromStore(db, storeName);
-        await putAllInStore(db, storeName, records);
+        await putAllInStore(db, storeName, safeRecords);
         const sn = storeName;
         const ed = existing;
         rollbackOps.push(async () => {
@@ -383,7 +402,7 @@ async function restoreAllKeys(json: string): Promise<void> {
       // db.close() skipped — shared singleton, see indexedDb.ts
     }
 
-    if (Array.isArray(data['device:kx'])) {
+    if (isDeviceKeychain && Array.isArray(data['device:kx'])) {
       const currentDeviceKxId = `device-kx::${getCurrentDeviceId()}`;
       const deviceKx = data['device:kx'].filter((r: any) => r?.id === currentDeviceKxId);
       if (deviceKx.length > 0) {
@@ -395,7 +414,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     }
 
     // Phase 2: Ratchet states
-    if (Array.isArray(data['ratchet:states'])) {
+    if (isDeviceKeychain && Array.isArray(data['ratchet:states'])) {
       const existing = await getAllFromSideDB('forsure-ratchet', 'ratchet-states');
       await putAllInSideDB('forsure-ratchet', 'ratchet-states', data['ratchet:states']);
       rollbackOps.push(async () => {
@@ -404,7 +423,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     }
 
     // Phase 3: PIN-wrapped keys
-    if (Array.isArray(data['pinwrap:keys'])) {
+    if (isDeviceKeychain && Array.isArray(data['pinwrap:keys'])) {
       const existing = await getAllFromSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
       await putAllInSideDB('forsure-pin-wrap', 'pin-wrapped-keys', data['pinwrap:keys']);
       rollbackOps.push(async () => {
@@ -413,7 +432,7 @@ async function restoreAllKeys(json: string): Promise<void> {
     }
 
     // Phase 4: Private prekeys
-    if (Array.isArray(data['prekeys:private'])) {
+    if (isDeviceKeychain && Array.isArray(data['prekeys:private'])) {
       const existing = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
       await putAllInSideDB('forsure-prekeys', 'private-prekeys', data['prekeys:private']);
       rollbackOps.push(async () => {
@@ -422,11 +441,31 @@ async function restoreAllKeys(json: string): Promise<void> {
     }
 
     // Phase 4b: Signed prekey private halves (required to decrypt X3DH/device copies)
-    if (Array.isArray(data['spk:private'])) {
+    if (isDeviceKeychain && Array.isArray(data['spk:private'])) {
       const existing = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
       await putAllInSideDB('forsure-spk', 'signed-prekeys', data['spk:private']);
       rollbackOps.push(async () => {
         await putAllInSideDB('forsure-spk', 'signed-prekeys', existing);
+      });
+    }
+
+    if (isDeviceKeychain && Array.isArray(data['device:sessions'])) {
+      const existing = await getAllFromSideDB('forsure-device-sessions', 'sessions');
+      await putAllInSideDB('forsure-device-sessions', 'sessions', data['device:sessions']);
+      rollbackOps.push(async () => {
+        await putAllInSideDB('forsure-device-sessions', 'sessions', existing);
+      });
+    }
+
+    if (isDeviceKeychain && Array.isArray(data['device:initiating-sessions'])) {
+      const existing = await getAllFromSideDB('forsure-device-sessions', 'initiating-sessions');
+      await putAllInSideDB(
+        'forsure-device-sessions',
+        'initiating-sessions',
+        data['device:initiating-sessions'],
+      );
+      rollbackOps.push(async () => {
+        await putAllInSideDB('forsure-device-sessions', 'initiating-sessions', existing);
       });
     }
 
@@ -545,7 +584,7 @@ async function uploadBackup(
   backupType: 'account' | 'recovery',
   wrappingSecret: string,
 ): Promise<boolean> {
-  const keysJson = await collectAllKeys();
+  const keysJson = await collectAllKeys('aegis-vault');
   if (!keysJson) return false;
 
   // 1. Encrypt all E2EE state with Master Key (AAD-bound to userId|backupType|version)
@@ -579,7 +618,7 @@ async function uploadBackup(
   if (backupType === 'account') {
     try {
       const digest = await computeLocalCryptoDigest();
-      await writeKeychainSnapshot(userId, keysJson);
+      await writeKeychainSnapshot(userId);
       await writeKeySentinel({
         userId,
         digest,

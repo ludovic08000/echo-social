@@ -3,16 +3,10 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { ddosShield } from "../_shared/ddos-shield.ts";
 
 /**
- * verify-chat-pin — Server-side PIN verification for messaging (v2 — Hardened)
- * 
- * Actions: setup, verify, request-reset, confirm-reset
- * 
- * SECURITY:
- * - PIN hash (PBKDF2-SHA256, 600k iterations) computed SERVER-SIDE
- * - Hash NEVER sent to client (RLS blocks pin_hash/salt reads)
- * - Rate limiting: PERSISTENT in DB (not in-memory Map)
- * - Constant-time comparison
- * - Reset via email OTP (6-digit code, 10min expiry)
+ * Email recovery for the device-local messaging PIN.
+ *
+ * The PIN never reaches this function. The server keeps an opaque recovery
+ * ticket and validates only a short-lived email reset code.
  */
 
 const MAX_ATTEMPTS = 5;
@@ -33,24 +27,15 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-async function hashPinPBKDF2(pin: string, salt: Uint8Array): Promise<string> {
-  const pinBytes = new TextEncoder().encode(pin);
-  const baseKey = await crypto.subtle.importKey("raw", pinBytes, "PBKDF2", false, ["deriveBits"]);
+async function hashRecoveryCode(code: string, salt: Uint8Array): Promise<string> {
+  const codeBytes = new TextEncoder().encode(code);
+  const baseKey = await crypto.subtle.importKey("raw", codeBytes, "PBKDF2", false, ["deriveBits"]);
   const derived = await crypto.subtle.deriveBits(
     { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
     baseKey,
     256,
   );
   return bytesToBase64(new Uint8Array(derived));
-}
-
-async function hashPinLegacy(pin: string, salt: Uint8Array): Promise<string> {
-  const pinBytes = new TextEncoder().encode(pin);
-  const combined = new Uint8Array(pinBytes.length + salt.length);
-  combined.set(pinBytes);
-  combined.set(salt, pinBytes.length);
-  const hash = await crypto.subtle.digest("SHA-256", combined);
-  return bytesToBase64(new Uint8Array(hash));
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -115,14 +100,6 @@ async function recordFailedDB(supabase: any, userId: string) {
   }).eq("user_id", userId);
 }
 
-/** Clear failed attempts on success */
-async function clearFailedDB(supabase: any, userId: string) {
-  await supabase.from("user_chat_pins").update({
-    failed_attempts: 0,
-    locked_until: null,
-  }).eq("user_id", userId);
-}
-
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
@@ -156,8 +133,39 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action, pin, code } = body;
+    const { action, code } = body;
     const supabase = createClient(supabaseUrl, serviceKey);
+
+    // Register only an opaque email-recovery ticket. These random values are
+    // unrelated to the local PIN, so the server cannot verify or brute-force
+    // the PIN used by the device.
+    if (action === "register-local-recovery") {
+      const opaqueHash = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
+      const opaqueSalt = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
+      const { error } = await supabase.from("user_chat_pins").upsert({
+        user_id: user.id,
+        pin_hash: opaqueHash,
+        salt: opaqueSalt,
+        failed_attempts: 0,
+        locked_until: null,
+        reset_code_hash: null,
+        reset_code_salt: null,
+        reset_code_expires: null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+      if (error) throw error;
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Legacy clients must not send PIN material to the server anymore.
+    if (action === "setup" || action === "verify") {
+      return new Response(JSON.stringify({ ok: false, error: "PIN_LOCAL_ONLY" }), {
+        status: 410,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // ─── REQUEST RESET (send OTP email) ───
     if (action === "request-reset") {
@@ -181,7 +189,7 @@ Deno.serve(async (req) => {
 
       const resetCode = generateResetCode();
       const codeSalt = crypto.getRandomValues(new Uint8Array(16));
-      const codeHash = await hashPinPBKDF2(resetCode, codeSalt);
+      const codeHash = await hashRecoveryCode(resetCode, codeSalt);
       const expiresAt = new Date(Date.now() + RESET_CODE_EXPIRY_MS).toISOString();
 
       await supabase.from("user_chat_pins").update({
@@ -255,7 +263,7 @@ Deno.serve(async (req) => {
       }
 
       const salt = base64ToBytes(data.reset_code_salt);
-      const computedHash = await hashPinPBKDF2(code, salt);
+      const computedHash = await hashRecoveryCode(code, salt);
       if (!constantTimeEqual(computedHash, data.reset_code_hash)) {
         await recordFailedDB(supabase, user.id);
         return new Response(JSON.stringify({ ok: false, error: "Code incorrect" }), {
@@ -270,95 +278,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ─── Validate PIN format for setup/verify ───
-    if (typeof pin !== "string" || !/^\d{6}$/.test(pin)) {
-      return new Response(JSON.stringify({ error: "PIN invalide (6 chiffres)" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    switch (action) {
-      case "setup": {
-        const salt = crypto.getRandomValues(new Uint8Array(32));
-        const saltB64 = bytesToBase64(salt);
-        const pinHash = await hashPinPBKDF2(pin, salt);
-
-        const { error } = await supabase.from("user_chat_pins").upsert({
-          user_id: user.id,
-          pin_hash: pinHash,
-          salt: saltB64,
-          failed_attempts: 0,
-          locked_until: null,
-          reset_code_hash: null,
-          reset_code_salt: null,
-          reset_code_expires: null,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "user_id" });
-
-        if (error) throw error;
-
-        console.log(`[chat-pin] setup ok user=${user.id}`);
-        return new Response(JSON.stringify({ ok: true, salt: saltB64 }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      case "verify": {
-        if (!await checkRateLimitDB(supabase, user.id)) {
-          return new Response(JSON.stringify({ ok: false, error: "Trop de tentatives. Réessayez dans 5 minutes." }), {
-            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const { data, error } = await supabase
-          .from("user_chat_pins")
-          .select("pin_hash, salt")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-        if (!data) {
-          return new Response(JSON.stringify({ ok: false, error: "Aucun PIN configuré" }), {
-            status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const salt = base64ToBytes(data.salt);
-        const computedHash = await hashPinPBKDF2(pin, salt);
-        let matched = constantTimeEqual(computedHash, data.pin_hash);
-
-        if (!matched) {
-          const legacyHash = await hashPinLegacy(pin, salt);
-          if (constantTimeEqual(legacyHash, data.pin_hash)) {
-            matched = true;
-            await supabase.from("user_chat_pins").update({
-              pin_hash: computedHash,
-              updated_at: new Date().toISOString(),
-            }).eq("user_id", user.id);
-            console.log(`[chat-pin] migrated to PBKDF2 user=${user.id}`);
-          }
-        }
-
-        if (matched) {
-          await clearFailedDB(supabase, user.id);
-          console.log(`[chat-pin] verify ok user=${user.id}`);
-          return new Response(JSON.stringify({ ok: true, salt: data.salt }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        } else {
-          await recordFailedDB(supabase, user.id);
-          console.warn(`[chat-pin] verify failed user=${user.id}`);
-          return new Response(JSON.stringify({ ok: false, error: "PIN incorrect" }), {
-            status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
-
-      default:
-        return new Response(JSON.stringify({ error: `Action inconnue: ${action}` }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-    }
+    return new Response(JSON.stringify({ error: `Action inconnue: ${action}` }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     console.error("[chat-pin] error:", e instanceof Error ? e.message : "unknown");
     const corsHeaders = getCorsHeaders(req);

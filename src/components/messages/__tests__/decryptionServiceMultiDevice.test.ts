@@ -23,6 +23,8 @@ vi.mock('@/lib/crypto/plaintextStore', () => ({
 vi.mock('@/lib/messaging/archive/archiveKey', () => ({
   decryptArchive: vi.fn().mockResolvedValue(null),
   isArchivePayload: vi.fn().mockReturnValue(false),
+  archiveBubbleForUser: vi.fn().mockResolvedValue(true),
+  recoverBubbleFromArchive: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -69,12 +71,18 @@ describe('decryptionService multi-device routing', () => {
 
   it('does not send multi-device parent envelopes through the legacy incoming router after copy miss', async () => {
     const body = JSON.stringify({
-      protocol: 'forsure-sesame-lite',
+      protocol: 'forsure-aegis-message',
       version: 1,
       encryptionMode: 'multi_device',
-      v: 4,
-      ct: 'device_copies',
-      ts: Date.now(),
+      algorithm: 'AES-256-GCM',
+      keyTransport: 'device_ratchet',
+      messageId: 'msg-missing-current-device-copy',
+      conversationId: 'conversation-id',
+      senderId: 'sender-user',
+      iv: 'aXYtYnl0ZXM=',
+      ciphertext: 'Y2lwaGVydGV4dA==',
+      digest: 'ZGlnZXN0',
+      createdAt: Date.now(),
     });
 
     const result = resolvePlaintext({
