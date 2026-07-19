@@ -10,7 +10,7 @@ vi.mock('@/e2ee-session/deviceRegistry', () => ({
   invalidateVerifiedDeviceCache: mocks.invalidateVerifiedDeviceCache,
 }));
 
-import { __test__, invalidateFanoutRoute } from '../fanoutRouteCache';
+import { __test__, invalidateAllFanoutRoutes, invalidateFanoutRoute } from '../fanoutRouteCache';
 
 const TARGETS: DeviceDescriptor[] = [{
   userId: 'user-b',
@@ -67,5 +67,22 @@ describe('fanoutRouteCache', () => {
     invalidateFanoutRoute('conversation-a', 'sender-a');
 
     expect(mocks.invalidateVerifiedDeviceCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resurrect an in-flight route after a trust transition', async () => {
+    let release!: (value: DeviceDescriptor[]) => void;
+    const staleLoader = vi.fn(() => new Promise<DeviceDescriptor[]>((resolve) => {
+      release = resolve;
+    }));
+
+    const stale = __test__.resolveCachedRoute('route-stale', staleLoader, 1_000);
+    invalidateAllFanoutRoutes();
+    release([]);
+    await expect(stale).resolves.toEqual([]);
+
+    const freshLoader = vi.fn(async () => TARGETS);
+    await expect(__test__.resolveCachedRoute('route-stale', freshLoader, 1_001))
+      .resolves.toEqual(TARGETS);
+    expect(freshLoader).toHaveBeenCalledTimes(1);
   });
 });

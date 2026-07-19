@@ -7,6 +7,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId } from './currentDevice';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 
 const KEY_TABLES = [
   'user_public_keys',
@@ -14,6 +15,8 @@ const KEY_TABLES = [
   'signed_prekeys',
   'device_signed_prekeys',
   'device_one_time_prekeys',
+  'user_identity_roots',
+  'user_device_signatures',
 ] as const;
 
 let activeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -32,6 +35,8 @@ interface KeyChangePayload {
 }
 
 function scheduleResume(reason: string): void {
+  // A trust publication makes a cached empty route immediately obsolete.
+  invalidateAllFanoutRoutes();
   if (resumeTimer) clearTimeout(resumeTimer);
   resumeTimer = setTimeout(() => {
     resumeTimer = null;

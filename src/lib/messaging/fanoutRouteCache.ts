@@ -17,6 +17,7 @@ type RouteLoader = () => Promise<DeviceDescriptor[]>;
 
 const routeCache = new Map<string, RouteCacheEntry>();
 const inflightRoutes = new Map<string, Promise<DeviceDescriptor[]>>();
+let routeGeneration = 0;
 
 function routeKey(conversationId: string, senderUserId: string, senderDeviceId: string): string {
   return `${conversationId}:${senderUserId}:${senderDeviceId}`;
@@ -38,14 +39,17 @@ async function resolveCachedRoute(
   const active = inflightRoutes.get(key);
   if (active) return active;
 
+  const generation = routeGeneration;
   const promise = loader()
     .then((targets) => {
       // The cache is a latency optimisation only. The send RPC remains the
       // authoritative Sesame device-list validator and may force one refresh.
-      routeCache.set(key, {
-        expiresAt: now + ROUTE_TTL_MS,
-        targets,
-      });
+      if (generation === routeGeneration) {
+        routeCache.set(key, {
+          expiresAt: now + ROUTE_TTL_MS,
+          targets,
+        });
+      }
       return targets;
     })
     .finally(() => {
@@ -104,6 +108,7 @@ export function invalidateFanoutRoute(
   // The route cache is built from the separately cached signed device lists.
   // Clear both layers; otherwise a stale-route retry rebuilds the same route.
   invalidateVerifiedDeviceCache();
+  routeGeneration += 1;
   const prefix = routePrefix(conversationId, senderUserId);
   for (const key of routeCache.keys()) {
     if (key.startsWith(prefix)) routeCache.delete(key);
@@ -111,6 +116,14 @@ export function invalidateFanoutRoute(
   for (const key of inflightRoutes.keys()) {
     if (key.startsWith(prefix)) inflightRoutes.delete(key);
   }
+}
+
+/** Clear every speculative route after a device/root/signature transition. */
+export function invalidateAllFanoutRoutes(): void {
+  invalidateVerifiedDeviceCache();
+  routeGeneration += 1;
+  routeCache.clear();
+  inflightRoutes.clear();
 }
 
 /**
@@ -129,6 +142,7 @@ export const __test__ = {
   reset(): void {
     routeCache.clear();
     inflightRoutes.clear();
+    routeGeneration += 1;
   },
   size(): number {
     return routeCache.size;

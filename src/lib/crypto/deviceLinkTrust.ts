@@ -180,6 +180,28 @@ export async function repairApprovedDeviceTrust(userId: string): Promise<number>
   return rows.length;
 }
 
+/**
+ * Finish an authenticated device enrollment and prove that this exact DeviceID
+ * is exposed by the same fail-closed signed route used by message senders.
+ */
+export async function ensureApprovedDeviceTrust(
+  userId: string,
+  deviceId: string,
+): Promise<number> {
+  if (!userId || !deviceId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
+
+  const repaired = await repairApprovedDeviceTrust(userId);
+  const verified = await fetchVerifiedDeviceList(userId);
+  if (!verified.trusted.some((entry) => entry.deviceId === deviceId)) {
+    const verification = verified.verifications.find((entry) => entry.deviceId === deviceId);
+    const reason = verification?.reason
+      ?? (verified.signedListPresent ? 'CURRENT_DEVICE_MISSING' : 'SIGNED_LIST_MISSING');
+    throw new Error(`DEVICE_TRUST_CURRENT_DEVICE_UNVERIFIED:${reason}`);
+  }
+
+  return repaired;
+}
+
 export async function finalizeLinkedDeviceAfterRestore(
   userId: string,
   companionDeviceId: string,

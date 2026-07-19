@@ -33,6 +33,7 @@ interface CachedDeviceList {
 
 const verifiedDeviceCache = new Map<string, CachedDeviceList>();
 const verifiedDeviceInflight = new Map<string, Promise<DeviceDescriptor[]>>();
+let verifiedDeviceGeneration = 0;
 
 function cacheKey(userId: UserId, options: DeviceListOptions): string {
   return `${userId}:${options.verifyPrekeys === false ? 'no-spk' : 'spk'}`;
@@ -173,12 +174,15 @@ export async function listDevicesForUser(userId: UserId, options: DeviceListOpti
   const pending = verifiedDeviceInflight.get(key);
   if (pending) return cloneDevices(await pending);
 
+  const generation = verifiedDeviceGeneration;
   const request = resolveDevicesForUser(userId, options)
     .then(devices => {
-      verifiedDeviceCache.set(key, {
-        expiresAt: Date.now() + VERIFIED_DEVICE_CACHE_TTL_MS,
-        devices: cloneDevices(devices),
-      });
+      if (generation === verifiedDeviceGeneration) {
+        verifiedDeviceCache.set(key, {
+          expiresAt: Date.now() + VERIFIED_DEVICE_CACHE_TTL_MS,
+          devices: cloneDevices(devices),
+        });
+      }
       return devices;
     })
     .finally(() => {
@@ -191,6 +195,7 @@ export async function listDevicesForUser(userId: UserId, options: DeviceListOpti
 
 /** Explicit invalidation for registration, pairing or revocation flows. */
 export function invalidateVerifiedDeviceCache(userId?: UserId): void {
+  verifiedDeviceGeneration += 1;
   if (!userId) {
     verifiedDeviceCache.clear();
     verifiedDeviceInflight.clear();

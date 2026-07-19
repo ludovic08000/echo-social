@@ -21,6 +21,10 @@ vi.mock('@/lib/crypto/deviceRatchet', () => ({
   invalidateDeviceSession: vi.fn(),
 }));
 
+vi.mock('../fanoutRouteCache', () => ({
+  invalidateAllFanoutRoutes: vi.fn(),
+}));
+
 vi.mock('../currentDevice', () => ({
   getCurrentDeviceId: vi.fn(() => 'device-local'),
 }));
@@ -39,7 +43,7 @@ describe('realtimeKeySync module', () => {
     const stop = startRealtimeKeySync({ userId: 'user-local' });
 
     expect(stop).toBeTypeOf('function');
-    expect(channel.on).toHaveBeenCalledTimes(5);
+    expect(channel.on).toHaveBeenCalledTimes(7);
     expect(channel.subscribe).toHaveBeenCalledTimes(1);
 
     stop();

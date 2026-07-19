@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
-import { repairApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
+import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
+import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import {
   getCurrentDeviceId,
@@ -56,10 +57,11 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
     void runDeviceOperation(`pin-fast-maintenance:${userId}`, async () => {
       await requireAuthenticatedDeviceSession(userId);
       await hydrateDeviceId();
-      const deviceId = getCurrentDeviceId();
+      let deviceId = getCurrentDeviceId();
 
       try {
-        await recoverStableDeviceLifecycle(userId, deviceId);
+        const lifecycle = await recoverStableDeviceLifecycle(userId, deviceId);
+        deviceId = lifecycle.deviceId;
       } catch (error) {
         console.warn('[PIN-DEVTRUST] lifecycle maintenance deferred', {
           deviceId: deviceId.slice(0, 8),
@@ -76,7 +78,7 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
           await resyncE2EE(userId);
           return 'repaired';
         })(),
-        repairApprovedDeviceTrust(userId),
+        ensureApprovedDeviceTrust(userId, deviceId),
       ]);
 
       console.info('[PIN-DEVTRUST] fast maintenance complete', {
@@ -90,6 +92,7 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
           : `deferred:${String(trustResult.reason)}`,
       });
 
+      if (trustResult.status === 'fulfilled') invalidateAllFanoutRoutes();
       wake('pin_fast_maintenance_complete');
     }, { coalesce: true, cooldownMs: 2_000 }).catch((error) => {
       // Cooldown or network failure never affects already-mounted bubbles.

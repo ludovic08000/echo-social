@@ -18,7 +18,7 @@ import {
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
-import { resolveFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
+import { invalidateFanoutRoute, resolveFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
 import { captureFanoutSessionBeforeMutation } from '@/lib/messaging/fanoutSessionTransaction';
 import {
   acknowledgeInitiatingSessionFromRatchetPayload,
@@ -53,8 +53,8 @@ interface DeviceEncryptTargetInput {
   useOneTimePrekey?: boolean;
 }
 
-const INVALID_DEVICE_STORE_KEY = 'forsure:invalid-device-spk-cache:v1';
 const FANOUT_ENCRYPT_CONCURRENCY = 2;
+const INVALID_DEVICE_QUARANTINE_MS = 2_000;
 
 type DeviceCopyPrefix = 'x3dh5.init.v3' | 'x3dh5' | 'unsupported';
 
@@ -78,67 +78,19 @@ function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
   return 'unsupported';
 }
 
-const KNOWN_INVALID_DEVICE_IDS = new Set<string>([
-  '9da8c742a4fe81d1d9ce6c0ffb4e055b',
-  '6508eb47a200893f49720fe84b9290b3',
-  '75e575fcbfaa8066bcbc9105fc5f4ac8',
-  'c6601674b0f700f28c9f2956774eca97',
-  '52adb13ff236ae5c833c9d9049c0df71',
-  'b166de502d729356dcbd6c0b5b1a39b0',
-  '49cfdeab59355de3051925b4f09fba75',
-  '92585130870cedf210af1019379dbc61',
-  '450c0cd9af35813c8a99ec5bc0f39ab8',
-]);
-
-// Device IDs that were previously blocklisted by mistake — purge from any
-// persisted local cache so live iOS / web installs stop being skipped during
-// fan-out. Safe to extend; entries here are *removed* from the user's cache.
-const FORMERLY_INVALID_DEVICE_IDS = new Set<string>([
-  '84aaa52143235807214bf3aa161dd03a',
-]);
-
-try {
-  if (typeof localStorage !== 'undefined') {
-    const raw = localStorage.getItem(INVALID_DEVICE_STORE_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) {
-        const cleaned = arr.filter((id: unknown) => typeof id === 'string' && !FORMERLY_INVALID_DEVICE_IDS.has(id));
-        if (cleaned.length !== arr.length) {
-          localStorage.setItem(INVALID_DEVICE_STORE_KEY, JSON.stringify(cleaned));
-        }
-      }
-    }
-  }
-} catch {
-  // localStorage can be unavailable in private/restricted browser contexts.
-}
-
-function loadInvalidDeviceCache(): Set<string> {
-  const out = new Set(KNOWN_INVALID_DEVICE_IDS);
-  try {
-    const raw = localStorage.getItem(INVALID_DEVICE_STORE_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(arr)) arr.forEach((id) => typeof id === 'string' && out.add(id));
-  } catch {
-    // Treat an unreadable cache as empty; server-verified routes remain authoritative.
-  }
-  return out;
-}
+const invalidDeviceUntil = new Map<string, number>();
 
 function markInvalidDeviceId(deviceId: string | null | undefined): void {
   if (!deviceId) return;
-  try {
-    const set = loadInvalidDeviceCache();
-    set.add(deviceId);
-    localStorage.setItem(INVALID_DEVICE_STORE_KEY, JSON.stringify([...set].slice(-200)));
-  } catch {
-    // Cache persistence is best-effort and must never block encrypted delivery.
-  }
+  invalidDeviceUntil.set(deviceId, Date.now() + INVALID_DEVICE_QUARANTINE_MS);
 }
 
 function isKnownInvalidDeviceId(deviceId: string | null | undefined): boolean {
-  return !!deviceId && loadInvalidDeviceCache().has(deviceId);
+  if (!deviceId) return false;
+  const until = invalidDeviceUntil.get(deviceId) ?? 0;
+  if (until > Date.now()) return true;
+  if (until > 0) invalidDeviceUntil.delete(deviceId);
+  return false;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -408,7 +360,12 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
 
   const targets = (await resolveFanoutRoute(input.conversationId, input.senderUserId))
     .filter(device => !isKnownInvalidDeviceId(device.deviceId));
-  if (targets.length === 0) return { rows: [], hasTargets: false };
+  if (targets.length === 0) {
+    // Registration/trust publication can finish between two outbox attempts;
+    // never keep a negative route cached across the next bounded retry.
+    invalidateFanoutRoute(input.conversationId, input.senderUserId);
+    return { rows: [], hasTargets: false };
+  }
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
     if (!dev.devicePublicKey || isKnownInvalidDeviceId(dev.deviceId)) return null;

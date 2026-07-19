@@ -36,6 +36,8 @@ import {
 import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
+import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import {
   hasLocalKeys,
   restoreAccountKeysFromActiveSession,
@@ -458,20 +460,7 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
 
-        // 5. Publish the canonical signed device list (L4 / P1 — peers route
-        //    fanout through `signed_device_lists`; without this entry, the
-        //    rogue-companion defense is incomplete in production).
-        try {
-          const { publishOwnSignedDeviceList } = await import('@/lib/crypto/signedDeviceList');
-          const res = await publishOwnSignedDeviceList({ signerDeviceId: deviceId });
-          if (!res.ok) {
-            console.warn('[useDeviceRegistration] publishOwnSignedDeviceList non-ok:', res.error);
-          }
-        } catch (sdlErr) {
-          console.warn('[useDeviceRegistration] publishOwnSignedDeviceList failed (non-fatal):', sdlErr);
-        }
-
-        // 6. Self-heal a STALE PRIMARY. If THIS active device is published but
+        // 5. Self-heal a STALE PRIMARY. If THIS active device is published but
         //    NOT primary, and the current primary is one of MY OTHER devices
         //    that has NO active signed-prekey bundle (so it cannot receive any
         //    message and only blocks promotion of the real device), quarantine
@@ -512,6 +501,26 @@ export function useDeviceRegistration() {
         } catch (healErr) {
           console.warn('[useDeviceRegistration] stale-primary self-heal failed (non-fatal):', healErr);
         }
+
+        // Registration and prekeys are not enough for Sesame-lite. Publish the
+        // canonical account root, sign companions, then prove that this exact
+        // DeviceID is visible through the fail-closed route used by senders.
+        // This runs after stale-primary repair so the root binds the final
+        // primary selected by the database.
+        const repairedCompanions = await ensureApprovedDeviceTrust(user.id, deviceId);
+        invalidateAllFanoutRoutes();
+        console.info('[useDeviceRegistration] authenticated E2EE device ready', {
+          deviceId: deviceId.slice(0, 8),
+          repairedCompanions,
+        });
+        try {
+          window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
+            detail: { source: `authenticated-registration:${reason}`, deviceId },
+          }));
+          window.dispatchEvent(new CustomEvent('forsure:sesame-route-ready', {
+            detail: { reason: 'authenticated_device_ready', deviceId },
+          }));
+        } catch {}
       } catch (err) {
         if (err instanceof PinUnlockRequiredError || String(err).toLowerCase().includes('pin unlock required')) {
           ranRef.current = false;

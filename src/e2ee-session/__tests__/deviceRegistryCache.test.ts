@@ -64,4 +64,34 @@ describe('verified device routing cache', () => {
     await expect(listDevicesForUser('user-b', { verifyPrekeys: false }))
       .resolves.toEqual([]);
   });
+
+  it('does not cache a stale in-flight empty list after invalidation', async () => {
+    let release!: (value: unknown) => void;
+    mocks.fetchVerifiedDeviceList.mockImplementationOnce(() => new Promise((resolve) => {
+      release = resolve;
+    }));
+
+    const stale = listDevicesForUser('user-c', { verifyPrekeys: false });
+    invalidateVerifiedDeviceCache('user-c');
+    release({ signedListPresent: false, trusted: [], verifications: [] });
+    await expect(stale).resolves.toEqual([]);
+
+    mocks.fetchVerifiedDeviceList.mockResolvedValueOnce({
+      signedListPresent: true,
+      trusted: [{
+        deviceId: 'device-c',
+        devicePublicKey: 'public-key-c',
+        isPrimary: true,
+        primaryDeviceId: null,
+        primaryPubB64: 'root',
+        signatureB64: null,
+        signedAt: null,
+      }],
+      verifications: [{ deviceId: 'device-c', ok: true, reason: 'PRIMARY' }],
+    });
+
+    await expect(listDevicesForUser('user-c', { verifyPrekeys: false }))
+      .resolves.toEqual([expect.objectContaining({ deviceId: 'device-c' })]);
+    expect(mocks.fetchVerifiedDeviceList).toHaveBeenCalledTimes(2);
+  });
 });

@@ -87,13 +87,14 @@ describe('multiDeviceFanout security gates', () => {
     mocks.fetchPrekeyBundleForDevice.mockResolvedValue(null);
   });
 
-  it('never encrypts to a built-in revoked/invalid device', async () => {
+  it('does not permanently blacklist a historical DeviceID', async () => {
     const result = await encryptPlaintextForDeviceTarget(target('6508eb47a200893f49720fe84b9290b3'));
 
     expect(result).toBeNull();
-    expect(mocks.ratchetEncrypt).not.toHaveBeenCalled();
-    expect(mocks.fetchPrekeyBundleForDevice).not.toHaveBeenCalled();
+    expect(mocks.ratchetEncrypt).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchPrekeyBundleForDevice).toHaveBeenCalledTimes(1);
     expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
+    expect(localStorage.getItem(INVALID_CACHE_KEY)).toBeNull();
   });
 
   it('quarantines an invalid SPK and does not fall back to deviceWrap', async () => {
@@ -103,11 +104,13 @@ describe('multiDeviceFanout security gates', () => {
     });
 
     const result = await encryptPlaintextForDeviceTarget(target('fresh-invalid-spk-device'));
+    const quarantinedRetry = await encryptPlaintextForDeviceTarget(target('fresh-invalid-spk-device'));
 
     expect(result).toBeNull();
+    expect(quarantinedRetry).toBeNull();
     expect(mocks.fetchPrekeyBundleForDevice).toHaveBeenCalledTimes(1);
     expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
-    expect(localStorage.getItem(INVALID_CACHE_KEY)).toContain('fresh-invalid-spk-device');
+    expect(localStorage.getItem(INVALID_CACHE_KEY)).toBeNull();
   });
 
   it('does not permanently mark a temporarily missing bundle as invalid', async () => {
