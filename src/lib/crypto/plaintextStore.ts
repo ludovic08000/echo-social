@@ -9,6 +9,7 @@ import { runTxOn, reqToPromise } from './indexedDbTx';
 const STORE_MESSAGES = 'messages';
 const STORE_KEYS = 'device-keys';
 const DEVICE_KEY_ID = 'plaintext-cache-key-v1';
+const DEFAULT_BACKUP_EXPORT_CAP = 500;
 
 let cachedDeviceKey: CryptoKey | null = null;
 let cachedKeyPromise: Promise<CryptoKey> | null = null;

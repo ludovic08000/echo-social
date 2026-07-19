@@ -24,6 +24,13 @@ let lastResumeAt = 0;
 const RESUME_DEBOUNCE_MS = 600;
 const RESUME_MIN_INTERVAL_MS = 1500;
 
+interface KeyChangePayload {
+  new?: Record<string, unknown>;
+  old?: Record<string, unknown>;
+  table?: string;
+  eventType?: string;
+}
+
 function scheduleResume(reason: string): void {
   if (resumeTimer) clearTimeout(resumeTimer);
   resumeTimer = setTimeout(() => {
@@ -41,7 +48,7 @@ function scheduleResume(reason: string): void {
 }
 
 /** Drop a peer-device session after a keys_epoch bump. */
-async function handleDeviceSpkUpdate(payload: any, selfUserId: string): Promise<void> {
+async function handleDeviceSpkUpdate(payload: KeyChangePayload, selfUserId: string): Promise<void> {
   try {
     const newRow = payload?.new;
     const oldRow = payload?.old;
@@ -89,9 +96,9 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
 
   for (const table of KEY_TABLES) {
     channel.on(
-      'postgres_changes' as any,
+      'postgres_changes',
       { event: '*', schema: 'public', table },
-      (payload: any) => {
+      (payload: KeyChangePayload) => {
         scheduleResume(`${payload?.table ?? table}:${payload?.eventType ?? 'change'}`);
         if (table === 'device_signed_prekeys' && payload?.eventType === 'UPDATE') {
           void handleDeviceSpkUpdate(payload, userId);
@@ -128,8 +135,3 @@ export function stopRealtimeKeySync(): void {
   activeChannel = null;
   activeUserId = null;
 }
-
-export const __test__ = {
-  handleSenderArchiveUpdate,
-  handleRecipientArchiveUpdate,
-};
