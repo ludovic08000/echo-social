@@ -208,4 +208,18 @@ describe('sendMessageWithAegisRetry', () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.rpc.mock.calls[0][1]).toHaveProperty('p_sender_device_id');
   });
+
+  it('rejects an obsolete prepared copy before any server write', async () => {
+    const obsolete = [{ ...INITIAL[0], encrypted_body: 'x3dh5.init.v3.obsolete' }];
+
+    const result = await sendMessageWithAegisRetry({
+      ...args(),
+      initialCopies: obsolete,
+    });
+
+    expect(result.error?.code).toBe('AEGIS_CLIENT_DEVICE_COPY_WIRE_REJECTED');
+    expect(result.copies).toEqual([]);
+    expect(mocks.rollback).toHaveBeenCalledWith(INITIAL[0].message_id);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
 });

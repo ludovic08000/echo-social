@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
 import { invalidateFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
+import { isAegisDeviceCopyWire } from '@/lib/messaging/messageCompatibility';
 import {
   commitFanoutSessionTransaction,
   rollbackFanoutSessionTransaction,
@@ -132,6 +133,24 @@ export async function sendMessageWithAegisRetry(
 ): Promise<AegisSendResult> {
   let copies = args.initialCopies;
   let retriedStaleRoute = false;
+
+  if (
+    copies.length === 0 ||
+    copies.some((copy) =>
+      copy.message_id !== args.messageId || !isAegisDeviceCopyWire(copy.encrypted_body),
+    )
+  ) {
+    await rollbackFanoutSessionTransaction(args.messageId);
+    return {
+      data: null,
+      error: {
+        code: 'AEGIS_CLIENT_DEVICE_COPY_WIRE_REJECTED',
+        message: 'Prepared device copy does not use the Aegis v1 wire format.',
+      },
+      copies: [],
+      retriedStaleRoute: false,
+    };
+  }
 
   for (let staleAttempt = 0; staleAttempt < 2; staleAttempt += 1) {
     const response = await callAuthoritative(args, copies, SEND_TRANSPORT_TIMEOUT_MS);

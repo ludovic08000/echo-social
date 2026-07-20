@@ -188,6 +188,40 @@ describe('canonical Aegis outbound transaction engine', () => {
     );
   });
 
+  it('rebuilds an obsolete outbox device copy instead of replaying it', async () => {
+    await sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message secret',
+      localId: 'local-wire-seed',
+      traceId: 'trace-wire-seed',
+      messageId: COPY.message_id,
+    });
+    const durable = mocks.putOutbox.mock.calls[2][1];
+
+    mocks.buildCopies.mockClear();
+    mocks.sendRpc.mockClear();
+    mocks.putOutbox.mockClear();
+    mocks.deleteOutbox.mockClear();
+
+    await sendAegisOutboundMessage({
+      conversationId: durable.conversationId,
+      senderUserId: durable.senderId,
+      plaintext: durable.plaintext,
+      resumePayload: {
+        ...durable,
+        preparedCopies: [{ ...COPY, encrypted_body: 'x3dh5.init.v3.obsolete' }],
+        status: 'retry_pending',
+      },
+    });
+
+    expect(mocks.buildCopies).toHaveBeenCalledTimes(1);
+    expect(mocks.sendRpc).toHaveBeenCalledWith(expect.objectContaining({
+      initialCopies: [COPY],
+    }));
+    expect(JSON.stringify(mocks.sendRpc.mock.calls[0][0])).not.toContain('x3dh5');
+  });
+
   it('holds one conversation transaction lock through RPC confirmation', async () => {
     let tail = Promise.resolve<unknown>(undefined);
     mocks.runJob.mockImplementation((_key: string, job: () => Promise<unknown>) => {

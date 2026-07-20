@@ -7,6 +7,10 @@ const migration = readFileSync(
   resolve(root, 'supabase/migrations/20260720200000_aegis_core_finalization.sql'),
   'utf8',
 ).toLowerCase();
+const wireRepair = readFileSync(
+  resolve(root, 'supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql'),
+  'utf8',
+).toLowerCase();
 const lifecycle = readFileSync(
   resolve(root, 'src/lib/device-manager/lifecycle.ts'),
   'utf8',
@@ -21,6 +25,14 @@ describe('Aegis single-engine cutover', () => {
   it('removes the parallel edit-copy protocol', () => {
     expect(migration).toContain('drop function if exists public.send_message_edit_with_device_copies');
     expect(migration).toContain('drop function if exists public.send_message_with_device_copies');
+  });
+
+  it('makes the Aegis RPC the only device-copy writer', () => {
+    expect(wireRepair).toContain('create or replace function public.is_supported_aegis_device_copy');
+    expect(wireRepair).toContain('check (public.is_supported_aegis_device_copy(encrypted_body))');
+    expect(wireRepair).toContain('drop policy if exists "sender can insert device copies"');
+    expect(wireRepair).toContain('revoke insert on public.message_device_copies from anon, authenticated');
+    expect(wireRepair).toContain('delete from public.message_device_copies');
   });
 
   it('makes device lifecycle writes RPC-only', () => {

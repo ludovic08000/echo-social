@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isKnownCryptoEnvelopeBody,
+  isAegisDeviceCopyWire,
   isMultiDeviceEnvelopeBody,
   isUnsupportedEncryptedBody,
   AEGIS_PROTOCOL,
@@ -68,5 +69,13 @@ describe('messageCompatibility', () => {
 
     expect(isKnownCryptoEnvelopeBody(body)).toBe(false);
     expect(isUnsupportedEncryptedBody(body)).toBe(true);
+  });
+
+  it('accepts only Aegis v1 device-copy prefixes', () => {
+    expect(isAegisDeviceCopyWire('aegis1.ratchet.session.dh.0.0.iv.ct')).toBe(true);
+    expect(isAegisDeviceCopyWire('aegis1.init.v1.session.payload')).toBe(true);
+    expect(isAegisDeviceCopyWire('x3dh5.init.v3.payload')).toBe(false);
+    expect(isAegisDeviceCopyWire('aegis1.init.v2.payload')).toBe(false);
+    expect(isAegisDeviceCopyWire(null)).toBe(false);
   });
 });

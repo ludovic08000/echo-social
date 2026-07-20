@@ -13,7 +13,10 @@ import {
   prepareLongMessageForSend,
   utf8ByteLength,
 } from '@/lib/messaging/longMessageAttachment';
-import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
+import {
+  isAegisDeviceCopyWire,
+  isMultiDeviceEnvelopeBody,
+} from '@/lib/messaging/messageCompatibility';
 import { buildFanoutCopies, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
 import {
   deleteOutboxPayload,
@@ -116,7 +119,9 @@ export async function sendAegisOutboundMessage(
     : null;
   let keyCapsule = parentBody ? resumed?.keyCapsule ?? null : null;
   let copies = parentBody
-    ? (resumed?.preparedCopies ?? []).filter((copy) => copy.message_id === messageId) as FanoutCopyRow[]
+    ? (resumed?.preparedCopies ?? []).filter((copy) =>
+        copy.message_id === messageId && isAegisDeviceCopyWire(copy.encrypted_body),
+      ) as FanoutCopyRow[]
     : [];
 
   let snapshot: OutboxPayload = {
@@ -220,6 +225,9 @@ export async function sendAegisOutboundMessage(
     });
     if (!built.hasTargets || built.rows.length === 0) {
       throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
+    }
+    if (built.rows.some((row) => !isAegisDeviceCopyWire(row.encrypted_body))) {
+      throw new Error('AEGIS_DEVICE_COPY_WIRE_UNSUPPORTED');
     }
     copies = built.rows;
     await persist({
