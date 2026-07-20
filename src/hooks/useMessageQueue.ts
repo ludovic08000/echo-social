@@ -3,7 +3,6 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
-import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
 import {
   cancelAegisRetry,
   isRetryableOutboundStatus,
@@ -40,7 +39,6 @@ export function useMessageQueue(
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
 ) {
   const { user } = useAuth();
-  const previousPendingRef = useRef(new Map<string, { status: string; serverId: string | null }>());
   const scheduledRetryKeysRef = useRef(new Set<string>());
 
   /**
@@ -103,18 +101,8 @@ export function useMessageQueue(
   }, [user?.id, conversationId, allowPlaintext, isEncryptionActive]);
 
   const handleSent = useCallback(async (localId: string) => {
-    const previous = previousPendingRef.current.get(localId);
-    bubbleDiagnostic('OUTBOX_DELETE', {
-      conversationId,
-      localId,
-      serverId: previous?.serverId ?? null,
-      reason: 'on_message_sent_ack',
-      details: {
-        previousStatus: previous?.status ?? null,
-      },
-    });
     await onMessageSent?.(localId);
-  }, [conversationId, onMessageSent]);
+  }, [onMessageSent]);
 
   const queue = useAegisMessageQueue(
     conversationId,
@@ -123,14 +111,6 @@ export function useMessageQueue(
     handleSent,
     allowPlaintext,
     async (serverId, plaintext) => {
-      bubbleDiagnostic('REALTIME_EVENT', {
-        conversationId,
-        serverId,
-        reason: 'plaintext_cached_for_server_message',
-        details: {
-          textLength: plaintext.length,
-        },
-      });
       onPlaintextCached?.(serverId, plaintext);
     },
   );
@@ -218,91 +198,13 @@ export function useMessageQueue(
     scheduledRetryKeysRef.current.clear();
   }, [conversationId, user?.id]);
 
-  useEffect(() => {
-    const previous = previousPendingRef.current;
-    const current = new Map<string, { status: string; serverId: string | null }>();
-
-    for (const message of queue.pendingMessages) {
-      current.set(message.localId, {
-        status: message.status,
-        serverId: message.serverId,
-      });
-      const before = previous.get(message.localId);
-      if (!before) {
-        bubbleDiagnostic('OUTBOX_RESTORE', {
-          conversationId,
-          localId: message.localId,
-          serverId: message.serverId,
-          traceId: message.traceId,
-          reason: message.retryCount > 0 || message.status === 'retry_pending'
-            ? 'pending_message_restored_or_retried'
-            : 'pending_message_entered_queue',
-          details: {
-            status: message.status,
-            retryCount: message.retryCount,
-            maxRetries: message.maxRetries,
-            hasEncryptedBody: Boolean(message.encryptedBody),
-            hasMedia: Boolean(message.imageUrl),
-            ageMs: Date.now() - message.createdAt,
-          },
-        });
-      } else if (before.status !== message.status || before.serverId !== message.serverId) {
-        bubbleDiagnostic('OUTBOX_PUT', {
-          conversationId,
-          localId: message.localId,
-          serverId: message.serverId,
-          traceId: message.traceId,
-          reason: 'pending_message_state_changed',
-          details: {
-            previousStatus: before.status,
-            nextStatus: message.status,
-            previousServerId: before.serverId,
-            nextServerId: message.serverId,
-            retryCount: message.retryCount,
-            hasEncryptedBody: Boolean(message.encryptedBody),
-          },
-        });
-      }
-    }
-
-    for (const [localId, before] of previous) {
-      if (!current.has(localId)) {
-        bubbleDiagnostic('OUTBOX_DELETE', {
-          conversationId,
-          localId,
-          serverId: before.serverId,
-          reason: 'pending_message_left_queue',
-          details: {
-            previousStatus: before.status,
-          },
-        });
-      }
-    }
-
-    previousPendingRef.current = current;
-  }, [conversationId, queue.pendingMessages]);
-
   const sendMessage = useCallback(
     async (body: string, imageUrl?: string | null, extra?: SendExtra) => {
-      bubbleDiagnostic('OUTBOX_PUT', {
-        conversationId,
-        reason: 'send_requested',
-        details: {
-          textLength: body.length,
-          hasMedia: Boolean(imageUrl),
-          viewOnce: Boolean(extra?.view_once),
-          hasDocument: Boolean(extra?.document_url),
-          encryptionActive: isEncryptionActive,
-          encryptionReady: isEncryptionReady,
-          allowPlaintext,
-        },
-      });
-
       // Do not lock the whole send. The underlying hook immediately creates the
       // optimistic bubble and persists the durable job, then queuedEncrypt
       // serializes only the ratchet state transition.
       await queue.sendMessage(body, imageUrl, extra);
-    }, [allowPlaintext, conversationId, isEncryptionActive, isEncryptionReady, queue],
+    }, [queue],
   );
 
   return {

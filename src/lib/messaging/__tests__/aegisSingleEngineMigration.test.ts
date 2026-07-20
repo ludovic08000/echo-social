@@ -17,6 +17,11 @@ const lifecycle = readFileSync(
 ).toLowerCase();
 const queueHook = readFileSync(resolve(root, 'src/hooks/useAegisMessageQueue.ts'), 'utf8');
 const mutationHook = readFileSync(resolve(root, 'src/hooks/useMessages.ts'), 'utf8');
+const queueFacade = readFileSync(resolve(root, 'src/hooks/useMessageQueue.ts'), 'utf8');
+const messageBody = readFileSync(
+  resolve(root, 'src/components/messages/DecryptedMessageBody.tsx'),
+  'utf8',
+);
 const chatView = readFileSync(resolve(root, 'src/components/messages/ChatView.tsx'), 'utf8');
 const chatWidget = readFileSync(resolve(root, 'src/components/ChatWidget.tsx'), 'utf8');
 const viteConfig = readFileSync(resolve(root, 'vite.config.ts'), 'utf8');
@@ -51,6 +56,14 @@ describe('Aegis single-engine cutover', () => {
     expect(existsSync(resolve(root, 'src/hooks/useMessageQueueSignal.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'src/lib/messaging/signalWebConversationQueue.ts'))).toBe(false);
     expect(viteConfig).not.toContain('useMessagesStable');
+  });
+
+  it('removes the Bubble diagnostic channel from the runtime', () => {
+    expect(existsSync(resolve(root, 'src/lib/messaging/bubbleDiagnostics.ts'))).toBe(false);
+    expect(queueFacade).not.toContain('bubbleDiagnostic');
+    expect(messageBody).not.toContain('bubbleDiagnostic');
+    expect(queueFacade).not.toContain('__FORSURE_BUBBLE_DEBUG__');
+    expect(messageBody).not.toContain('__FORSURE_BUBBLE_DEBUG__');
   });
 
   it('never interprets cold encryption readiness as plaintext permission', () => {
