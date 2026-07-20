@@ -391,7 +391,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
   const e2ee = useE2EE(conversationId, peerUserId);
-  const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
+  // Policy, not readiness: every human conversation is always Aegis. During
+  // cold key hydration the outbox waits; it must never fall back to plaintext.
+  const isEncryptionActive = !isZeusConversation;
   const [cacheVersion, setCacheVersion] = useState(0);
   const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
@@ -668,9 +670,6 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         queue.sendMessage(body, url, {
           view_once: armedVO,
           document_url: url,
-          document_name: file.name,
-          document_mime: file.type || 'application/octet-stream',
-          document_size_bytes: file.size,
         }).catch((e) => {
           logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send_doc' } });
           toast.error('Erreur envoi document');

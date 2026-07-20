@@ -15,7 +15,7 @@ export type ExponentialBackoffOptions = Readonly<{
   firstBackoffs: ReadonlyArray<number>;
 }>;
 
-export const SIGNAL_BACKOFF_DEFAULTS: ExponentialBackoffOptions = Object.freeze({
+export const AEGIS_BACKOFF_DEFAULTS: ExponentialBackoffOptions = Object.freeze({
   maxBackoffTime: DEFAULT_MAX_BACKOFF_MS,
   multiplier: DEFAULT_BACKOFF_FACTOR,
   firstBackoffs: DEFAULT_FIRST_BACKOFFS_MS,
@@ -52,7 +52,7 @@ function assertValidOptions(options: ExponentialBackoffOptions): void {
  */
 export function exponentialBackoffSleepTime(
   attempt: number,
-  options: ExponentialBackoffOptions = SIGNAL_BACKOFF_DEFAULTS,
+  options: ExponentialBackoffOptions = AEGIS_BACKOFF_DEFAULTS,
 ): number {
   assertPositiveAttempt(attempt);
   assertValidOptions(options);
@@ -72,7 +72,7 @@ export function exponentialBackoffSleepTime(
 /** Returns the number of attempts whose cumulative delays cover a duration. */
 export function exponentialBackoffMaxAttempts(
   desiredDurationMs: number,
-  options: ExponentialBackoffOptions = SIGNAL_BACKOFF_DEFAULTS,
+  options: ExponentialBackoffOptions = AEGIS_BACKOFF_DEFAULTS,
 ): number {
   if (!Number.isFinite(desiredDurationMs) || desiredDurationMs < 1) {
     throw new RangeError('desiredDurationMs must be a finite number of at least 1 ms');
@@ -123,7 +123,7 @@ export function computeAegisRetryDelay({
   retryAfterMs,
   jitter = true,
   random = Math.random,
-  backoff = SIGNAL_BACKOFF_DEFAULTS,
+  backoff = AEGIS_BACKOFF_DEFAULTS,
 }: AegisRetryDelayOptions): number {
   if (retryAfterMs !== undefined) {
     if (!Number.isFinite(retryAfterMs) || retryAfterMs < 0) {

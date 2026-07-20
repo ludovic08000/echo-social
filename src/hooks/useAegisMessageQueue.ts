@@ -224,11 +224,10 @@ function toOutboundMessage(payload: OutboxPayload): OutboundMessage {
   };
 }
 
-export function useMessageQueue(
+export function useAegisMessageQueue(
   conversationId: string,
   _encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
   isEncryptionReady: boolean,
-  isEncryptionActive: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
   allowPlaintext = false,
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
@@ -324,7 +323,7 @@ export function useMessageQueue(
         traceId,
         conversationId,
         userId: user.id,
-        encryptionWasRequested: isEncryptionActive && !allowPlaintext,
+        encryptionWasRequested: !allowPlaintext,
         isEncryptionReady,
         hasMedia: !!imageUrl,
         resumed: Boolean(resumePayload),
@@ -342,7 +341,7 @@ export function useMessageQueue(
       imageUrl: imageUrl || null,
       status: resumePayload ? 'retry_pending' : 'pending_local',
       retryCount: resumePayload ? resumePayload.retryCount + 1 : 0,
-      maxRetries: resumePayload?.maxRetries ?? 3,
+      maxRetries: resumePayload?.maxRetries ?? 5,
       lastError: null,
       createdAt: now,
       updatedAt: Date.now(),
@@ -379,7 +378,6 @@ export function useMessageQueue(
       setPendingMessages(prev => prev.map(message =>
         message.localId === localId ? { ...message, ...patch, updatedAt } : message,
       ));
-      void putOutboxPayload(user.id, outboxSnapshot).catch(() => {});
     };
 
     trace('created', {
@@ -388,20 +386,29 @@ export function useMessageQueue(
       isSpecial,
     });
 
-    try {
-      await Promise.all([
-        persistOutbox(),
-        savePlaintext(serverMessageId, sanitized),
-      ]);
-      onPlaintextCached?.(serverMessageId, sanitized);
-      trace('local_durable');
-    } catch (error) {
-      const message = 'Stockage local indisponible — message non envoyé.';
-      updatePending({ status: 'failed_visible', lastError: message });
-      throw error instanceof Error ? error : new Error(message);
+    // Plaintext is a policy exception reserved for Zeus. Readiness flags are
+    // deliberately ignored here: a cold peer route must wait in the encrypted
+    // outbox and can never downgrade the request body sent to the server.
+    const encryptionWasRequired = !allowPlaintext;
+
+    if (!encryptionWasRequired) {
+      try {
+        await Promise.all([
+          persistOutbox(),
+          savePlaintext(serverMessageId, sanitized),
+        ]);
+        onPlaintextCached?.(serverMessageId, sanitized);
+        trace('local_durable');
+      } catch (error) {
+        const message = 'Stockage local indisponible — message non envoyé.';
+        updatePending({ status: 'failed_visible', lastError: message });
+        await persistOutbox().catch(() => undefined);
+        throw error instanceof Error ? error : new Error(message);
+      }
+    } else {
+      trace('aegis_durability_delegated');
     }
 
-    const encryptionWasRequired = isEncryptionActive && !allowPlaintext;
     updatePending({
       status: encryptionWasRequired ? 'encrypting' : 'sending',
       lastError: null,
@@ -427,6 +434,9 @@ export function useMessageQueue(
     let retriedStaleRoute = false;
 
     if (deliveryMode === 'plaintext') {
+      // The Zeus exception keeps its own durable outbox lifecycle. Encrypted
+      // peer traffic is persisted exclusively by the Aegis engine below.
+      await persistOutbox({ status: 'sending', lastError: null });
       let insertResponse: { data: unknown; error: unknown };
       try {
         insertResponse = await withSendStageTimeout(
@@ -457,6 +467,7 @@ document_size_bytes: extra?.document_size_bytes ?? null,
           encryptedBody: bodyToStore,
           preparedCopies: [],
         });
+        await persistOutbox().catch(() => undefined);
         throw error instanceof Error ? error : new Error(failure.message);
       }
 
@@ -481,6 +492,7 @@ document_size_bytes: extra?.document_size_bytes ?? null,
             encryptedBody: bodyToStore,
             preparedCopies: [],
           });
+          await persistOutbox().catch(() => undefined);
           throw confirmationError instanceof Error
             ? confirmationError
             : new Error(failure.message);
@@ -505,6 +517,7 @@ updatePending({
   status: isAuthenticationError(insertError) ? 'failed_visible' : 'retry_pending',
   lastError: visibleMessage,
 }, { encryptedBody: bodyToStore, preparedCopies: [] });
+await persistOutbox().catch(() => undefined);
 throw new Error(visibleMessage);
         }
       }
@@ -597,12 +610,14 @@ throw new Error(visibleMessage);
     // Remove the visible pending state immediately after server acknowledgement.
     // A slow IndexedDB delete is harmless: restore reconciliation checks the same
     // stable server UUID and removes an already-delivered row idempotently.
-    void deleteOutboxPayload(localId).catch(() => {});
+    if (deliveryMode === 'plaintext') {
+      void deleteOutboxPayload(localId).catch(() => {});
+    }
     void Promise.resolve(onMessageSent?.(localId)).catch(callbackError => {
       console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
     });
     scheduleLightConversationRefresh(queryClient);
-  }, [user, conversationId, isEncryptionReady, isEncryptionActive, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
+  }, [user, conversationId, isEncryptionReady, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {
     if (!user) return;
@@ -633,10 +648,30 @@ throw new Error(visibleMessage);
     setPendingMessages(prev => prev.filter(message => message.localId !== localId));
   }, []);
 
+  const markRetryExhausted = useCallback(async (localId: string) => {
+    const lastError = 'Envoi interrompu après plusieurs tentatives. Appuyez sur Réessayer.';
+    const updatedAt = Date.now();
+    setPendingMessages(prev => prev.map(message =>
+      message.localId === localId
+        ? { ...message, status: 'failed_visible', lastError, updatedAt }
+        : message,
+    ));
+    if (!user) return;
+    const payload = await getOutboxPayload(user.id, localId).catch(() => null);
+    if (!payload) return;
+    await putOutboxPayload(user.id, {
+      ...payload,
+      status: 'failed_visible',
+      lastError,
+      updatedAt,
+    }).catch(() => undefined);
+  }, [user]);
+
   return {
     pendingMessages,
     sendMessage,
     retryMessage,
+    markRetryExhausted,
     removeMessage,
     isInstant: true,
   };

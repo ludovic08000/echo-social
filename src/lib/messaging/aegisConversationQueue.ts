@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Browser send scheduler modelled after Signal Desktop's conversation job queue.
+ * Browser scheduler for the Aegis outbound transaction.
  *
  * The transport and cryptography stay owned by Aegis. This module only gives
  * the web client the queue guarantees that matter for stable delivery:
@@ -19,14 +19,14 @@ const retryStopped = new Set<string>();
 
 const RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000] as const;
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length;
-const LOCK_ACQUIRE_TIMEOUT_MS = 12_000;
+const LOCK_ACQUIRE_TIMEOUT_MS = 45_000;
 
-export class SignalConversationLockTimeoutError extends Error {
+export class AegisConversationLockTimeoutError extends Error {
   readonly code = 'E2EE_ENCRYPT_LOCK_TIMEOUT';
 
   constructor() {
     super('E2EE encryption lock timeout — automatic retry scheduled');
-    this.name = 'SignalConversationLockTimeoutError';
+    this.name = 'AegisConversationLockTimeoutError';
   }
 }
 
@@ -58,7 +58,7 @@ async function runWithMemoryLock<T>(conversationKey: string, task: () => Promise
   }
 }
 
-export async function runSignalConversationJob<T>(
+export async function runAegisConversationJob<T>(
   conversationKey: string,
   task: () => Promise<T>,
 ): Promise<T> {
@@ -72,7 +72,7 @@ export async function runSignalConversationJob<T>(
         task,
       );
     } catch (error) {
-      if (controller.signal.aborted) throw new SignalConversationLockTimeoutError();
+      if (controller.signal.aborted) throw new AegisConversationLockTimeoutError();
       throw error;
     } finally {
       clearTimeout(timer);
@@ -86,7 +86,7 @@ export function retryDelayMs(attempt: number): number {
   return RETRY_DELAYS_MS[index];
 }
 
-export function cancelSignalRetry(
+export function cancelAegisRetry(
   retryKey: string,
   options: { resetAttempts?: boolean } = {},
 ): void {
@@ -99,10 +99,10 @@ export function cancelSignalRetry(
   }
 }
 
-export function scheduleSignalRetry(
+export function scheduleAegisRetry(
   retryKey: string,
   task: () => Promise<void>,
-  options: { immediate?: boolean } = {},
+  options: { immediate?: boolean; onExhausted?: () => void } = {},
 ): boolean {
   // A new explicit schedule re-arms a previously cancelled key. If a task is
   // already running, its completion owns the next retry so two sends can never
@@ -111,7 +111,10 @@ export function scheduleSignalRetry(
   if (retryTimers.has(retryKey) || retryInflight.has(retryKey)) return true;
 
   const attempt = retryAttempts.get(retryKey) ?? 0;
-  if (attempt >= MAX_RETRY_ATTEMPTS) return false;
+  if (attempt >= MAX_RETRY_ATTEMPTS) {
+    options.onExhausted?.();
+    return false;
+  }
 
   const delay = options.immediate ? 0 : retryDelayMs(attempt);
   const timer = setTimeout(() => {
@@ -126,7 +129,7 @@ export function scheduleSignalRetry(
       .catch(() => {
         retryInflight.delete(retryKey);
         if (!retryStopped.has(retryKey)) {
-          scheduleSignalRetry(retryKey, task);
+          scheduleAegisRetry(retryKey, task, { onExhausted: options.onExhausted });
         }
       })
       .finally(() => {

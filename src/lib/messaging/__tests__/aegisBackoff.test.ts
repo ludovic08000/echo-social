@@ -4,10 +4,10 @@ import {
   computeAegisRetryDelay,
   exponentialBackoffMaxAttempts,
   exponentialBackoffSleepTime,
-} from '../signalBackoff';
+} from '../aegisBackoff';
 
 // Test cases adapted from Signal Desktop's exponentialBackoff_test.std.ts.
-describe('Signal-derived exponential backoff', () => {
+describe('Aegis exponential backoff', () => {
   it('returns Signal-compatible early delays', () => {
     expect(exponentialBackoffSleepTime(1)).toBe(0);
     expect(exponentialBackoffSleepTime(2)).toBe(190);

@@ -38,7 +38,6 @@ import {
 } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import {
-  hasLocalKeys,
   restoreAccountKeysFromActiveSession,
   restoreFromInMemoryMasterKey,
   restoreKeysFromKeychainSnapshot,
@@ -79,18 +78,13 @@ export function useDeviceRegistration() {
       } catch {}
     };
 
-    const approveCurrentDeviceIfKeysUnlocked = async (deviceId: string, source: string): Promise<boolean> => {
-      if (!(await hasLocalKeys().catch(() => false))) {
-        notifyDeviceApprovalPending(deviceId, source);
-        return false;
-      }
-
+    const approveCurrentAuthenticatedDevice = async (deviceId: string, source: string): Promise<boolean> => {
       try {
         const { data, error } = await (supabase as any).rpc('approve_user_device', {
           p_device_id: deviceId,
         });
         if (!error && data?.ok === true) {
-          console.info('[useDeviceRegistration] pending device approved after local key unlock', {
+          console.info('[useDeviceRegistration] authenticated device approved', {
             deviceId: deviceId.slice(0, 8),
             source,
           });
@@ -174,7 +168,7 @@ export function useDeviceRegistration() {
             return;
           }
           if (existing && approvalStatus === 'pending') {
-            const approved = await approveCurrentDeviceIfKeysUnlocked(deviceId, `existing-pending:${reason}`);
+            const approved = await approveCurrentAuthenticatedDevice(deviceId, `existing-pending:${reason}`);
             if (!approved) {
               ranRef.current = false;
               return;
@@ -320,7 +314,7 @@ export function useDeviceRegistration() {
           if (!rpcErr && rpcResult?.ok === true) {
             registered = true;
           } else if (!rpcErr && DEVICE_APPROVAL_PENDING_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
-            const approved = await approveCurrentDeviceIfKeysUnlocked(deviceId, `register-pending:${reason}`);
+            const approved = await approveCurrentAuthenticatedDevice(deviceId, `register-pending:${reason}`);
             if (!approved) {
               ranRef.current = false;
               return;

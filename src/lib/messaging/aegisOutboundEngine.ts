@@ -22,7 +22,7 @@ import {
   type OutboxPayload,
   type OutboxStatus,
 } from '@/lib/messaging/outboxVault';
-import { runSignalConversationJob } from '@/lib/messaging/signalWebConversationQueue';
+import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
 
 const IDENTITY_PREWARM_TIMEOUT_MS = 5_000;
 
@@ -135,7 +135,7 @@ export async function sendAegisOutboundMessage(
     extra: input.extra ?? resumed?.extra,
     status: 'encrypting',
     retryCount: resumed?.retryCount ?? 0,
-    maxRetries: resumed?.maxRetries ?? 3,
+    maxRetries: resumed?.maxRetries ?? 5,
     lastError: null,
     createdAt: now,
     updatedAt: Date.now(),
@@ -153,6 +153,14 @@ export async function sendAegisOutboundMessage(
     savePlaintext(messageId, input.plaintext),
   ]);
 
+  // One lock owns the complete mutable Ratchet transaction: copy creation,
+  // authoritative RPC, confirmation and any rollback. Releasing the lock
+  // after copy creation would let a later message commit before an earlier
+  // rejection rewinds the shared session.
+  try {
+    return await runAegisConversationJob(
+      `${input.senderUserId}:${input.conversationId}:aegis-outbound`,
+      async () => {
   if (!parentBody) {
     await withTimeout(
       ensureUserE2EEIdentity(input.senderUserId, { waitForMaintenance: false }),
@@ -204,15 +212,12 @@ export async function sendAegisOutboundMessage(
   }
 
   const buildCopies = async (): Promise<FanoutCopyRow[]> => {
-    const built = await runSignalConversationJob(
-      `${input.senderUserId}:${input.conversationId}:aegis-key-fanout`,
-      () => buildFanoutCopies({
-        messageId,
-        conversationId: input.conversationId,
-        senderUserId: input.senderUserId,
-        plaintext: keyCapsule!,
-      }),
-    );
+    const built = await buildFanoutCopies({
+      messageId,
+      conversationId: input.conversationId,
+      senderUserId: input.senderUserId,
+      plaintext: keyCapsule!,
+    });
     if (!built.hasTargets || built.rows.length === 0) {
       throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
     }
@@ -281,10 +286,10 @@ export async function sendAegisOutboundMessage(
   }
 
   const committedId = result.data ?? messageId;
-  void Promise.all([
-    savePlaintext(committedId, input.plaintext),
-    savePlaintextForCiphertext(parentBody, input.plaintext),
-  ]).catch(() => undefined);
+  // The stable message UUID was cached before the transaction. Only add the
+  // ciphertext index after commit; writing the same plaintext row twice wastes
+  // IndexedDB work on resource-constrained mobile browsers.
+  void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
   void import('@/lib/messaging/archive/archiveKey').then(({ archiveBubbleForUser }) =>
     archiveBubbleForUser({
       messageId: committedId,
@@ -304,4 +309,15 @@ export async function sendAegisOutboundMessage(
     localId,
     traceId,
   };
+      },
+    );
+  } catch (error) {
+    // This also covers a Web Lock acquisition timeout, which happens before
+    // the transaction callback can persist its own failure state.
+    await persist({
+      status: failureStatus(error),
+      lastError: errorMessage(error),
+    }).catch(() => undefined);
+    throw error;
+  }
 }

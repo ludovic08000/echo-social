@@ -1,23 +1,22 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
-import { savePlaintext } from '@/lib/crypto/plaintextStore';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
 import {
-  cancelSignalRetry,
+  cancelAegisRetry,
   isRetryableOutboundStatus,
-  scheduleSignalRetry,
-} from '@/lib/messaging/signalWebConversationQueue';
+  scheduleAegisRetry,
+} from '@/lib/messaging/aegisConversationQueue';
 import {
-  useMessageQueue as useSignalMessageQueue,
+  useAegisMessageQueue,
   selectInitialDeliveryMode,
   type OutboundMessage,
-} from './useMessageQueueSignal';
+} from './useAegisMessageQueue';
 
 export { selectInitialDeliveryMode };
-export type { OutboundMessage } from './useMessageQueueSignal';
+export type { OutboundMessage } from './useAegisMessageQueue';
 
 type SendExtra = {
   view_once?: boolean;
@@ -45,13 +44,12 @@ export function useMessageQueue(
   const scheduledRetryKeysRef = useRef(new Set<string>());
 
   /**
-   * Signal-style warm send path.
+   * Aegis warm send path.
    *
-   * Signal creates a local outgoing message and durable job immediately, while
-   * identities/device routes are normally already hot. Aegis keeps the same
-   * trust gates, but primes the authenticated session, local E2EE identity,
-   * canonical signed device lists before Send. No
-   * plaintext, ciphertext or ratchet step is produced here.
+   * Aegis creates a local outgoing message and durable job immediately while
+   * priming the authenticated session, local E2EE identity and canonical
+   * device routes before Send. The warmup never creates ciphertext or advances
+   * a Ratchet.
    */
   useEffect(() => {
     if (!user?.id || !conversationId || allowPlaintext || !isEncryptionActive) return;
@@ -118,11 +116,10 @@ export function useMessageQueue(
     await onMessageSent?.(localId);
   }, [conversationId, onMessageSent]);
 
-  const queue = useSignalMessageQueue(
+  const queue = useAegisMessageQueue(
     conversationId,
     null,
     isEncryptionReady,
-    isEncryptionActive,
     handleSent,
     allowPlaintext,
     async (serverId, plaintext) => {
@@ -135,33 +132,43 @@ export function useMessageQueue(
         },
       });
       onPlaintextCached?.(serverId, plaintext);
-      await savePlaintext(serverId, plaintext);
     },
   );
 
   const retryMessage = queue.retryMessage;
+  const markRetryExhausted = queue.markRetryExhausted;
   const scheduleRetryForMessage = useCallback((message: OutboundMessage, immediate = false) => {
     if (!user?.id) return;
 
     const retryKey = `${user.id}:${message.localId}`;
     if (!isRetryableOutboundStatus(message.status, message.lastError)) {
-      cancelSignalRetry(retryKey);
+      cancelAegisRetry(retryKey);
       scheduledRetryKeysRef.current.delete(retryKey);
       return;
     }
 
-    if (immediate) cancelSignalRetry(retryKey);
+    if (immediate) cancelAegisRetry(retryKey);
     scheduledRetryKeysRef.current.add(retryKey);
-    scheduleSignalRetry(
+    const scheduled = scheduleAegisRetry(
       retryKey,
       async () => {
         await retryMessage(message.localId);
       },
-      { immediate },
+      {
+        immediate,
+        onExhausted: () => {
+          scheduledRetryKeysRef.current.delete(retryKey);
+          void markRetryExhausted(message.localId);
+        },
+      },
     );
-  }, [retryMessage, user?.id]);
+    if (!scheduled) {
+      cancelAegisRetry(retryKey);
+      scheduledRetryKeysRef.current.delete(retryKey);
+    }
+  }, [markRetryExhausted, retryMessage, user?.id]);
 
-  // Signal-style durable resume: rows restored from the encrypted IndexedDB
+  // Aegis durable resume: rows restored from the encrypted IndexedDB
   // outbox are retried automatically instead of waiting for a manual tap.
   useEffect(() => {
     const activeRetryKeys = new Set<string>();
@@ -179,7 +186,7 @@ export function useMessageQueue(
       );
       // A retry task temporarily moves through encrypting/sending. Preserve
       // its attempt counter or every failure restarts at 500 ms forever.
-      cancelSignalRetry(retryKey, {
+      cancelAegisRetry(retryKey, {
         resetAttempts: !stillPending || stillPending.status === 'failed_visible',
       });
     }
@@ -207,7 +214,7 @@ export function useMessageQueue(
   }, [queue.pendingMessages, scheduleRetryForMessage]);
 
   useEffect(() => () => {
-    for (const retryKey of scheduledRetryKeysRef.current) cancelSignalRetry(retryKey);
+    for (const retryKey of scheduledRetryKeysRef.current) cancelAegisRetry(retryKey);
     scheduledRetryKeysRef.current.clear();
   }, [conversationId, user?.id]);
 

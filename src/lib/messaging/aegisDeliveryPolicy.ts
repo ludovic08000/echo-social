@@ -6,8 +6,8 @@
 // are deliberately not copied; this module classifies unknown web errors into
 // stable, user-safe recovery decisions.
 
-import { computeAegisRetryDelay } from './signalBackoff';
-import { parseRetryAfter } from './signalRetryAfter';
+import { computeAegisRetryDelay } from './aegisBackoff';
+import { parseRetryAfter } from './aegisRetryAfter';
 
 export type AegisDeliveryFailureKind =
   | 'identity-changed'

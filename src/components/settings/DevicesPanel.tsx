@@ -1,11 +1,8 @@
 /**
  * DevicesPanel — lists every active device tied to the logged-in user and
- * lets them revoke any device that isn't the current one. Revocation:
- *   1) sets `is_active = false` on `user_devices` (RLS ensures the user can
- *      only touch their own rows) so the device stops showing up in fan-out
- *      and X3DH bundle lookups,
- *   2) deletes the local device-pair sessions on the current device so
- *      future messages re-handshake cleanly.
+ * lets them revoke any device that isn't the current one. A server-authorized
+ * transaction transfers the canonical root when necessary, revokes the old
+ * route and then forces local route regeneration.
  */
 import { useEffect, useState } from 'react';
 import { Loader2, Smartphone, Monitor, Tablet, ShieldOff, BadgeCheck, Trash2, AlertTriangle } from 'lucide-react';
@@ -16,6 +13,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
+import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -39,6 +38,7 @@ interface DeviceRow {
   last_seen_at: string;
   created_at: string;
   is_active: boolean;
+  is_primary: boolean;
   stale_at: string | null;
   revoked_at: string | null;
   revoke_reason: string | null;
@@ -65,7 +65,7 @@ export function DevicesPanel() {
       const hydratedDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
       setCurrentDeviceId(hydratedDeviceId);
 
-      const columns = 'id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active, stale_at, revoked_at, revoke_reason' as const;
+      const columns = 'id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active, is_primary, stale_at, revoked_at, revoke_reason' as const;
       const { data, error } = await supabase
         .from('user_devices')
         .select(columns)
@@ -113,9 +113,28 @@ export function DevicesPanel() {
     try {
       const { data, error } = await supabase.rpc('revoke_user_device' as never, {
         p_device_id: dev.device_id,
+        p_replacement_device_id: currentDeviceId,
       } as never);
-      if (error || (data as { ok?: boolean } | null)?.ok !== true) {
+      const result = data as {
+        ok?: boolean;
+        primary_changed?: boolean;
+        new_primary_device_id?: string | null;
+      } | null;
+      if (error || result?.ok !== true) {
         throw error ?? new Error('DEVICE_REVOCATION_REJECTED');
+      }
+
+      if (result.primary_changed) {
+        invalidateAllFanoutRoutes();
+        await ensureApprovedDeviceTrust(user.id, currentDeviceId).catch((trustError) => {
+          // The server transaction already transferred the canonical root and
+          // revoked the target. Companion re-signing is repairable background
+          // work and must not make the completed revocation appear to fail.
+          console.warn('[DevicesPanel] post-revocation route repair deferred', trustError);
+        });
+        window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
+          detail: { reason: 'primary-device-rotated', deviceId: currentDeviceId },
+        }));
       }
 
       // Drop our local cached session for this peer (self → other own device)

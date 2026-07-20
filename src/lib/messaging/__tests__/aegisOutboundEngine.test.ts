@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   putOutbox: vi.fn(),
   deleteOutbox: vi.fn(),
   sendRpc: vi.fn(),
+  runJob: vi.fn(),
 }));
 
 vi.mock('@/e2ee-session', () => ({ safeUUID: vi.fn(() => crypto.randomUUID()) }));
@@ -40,8 +41,8 @@ vi.mock('@/lib/messaging/outboxVault', () => ({
 vi.mock('@/lib/messaging/aegisSendRpc', () => ({
   sendMessageWithAegisRetry: mocks.sendRpc,
 }));
-vi.mock('@/lib/messaging/signalWebConversationQueue', () => ({
-  runSignalConversationJob: vi.fn((_key: string, job: () => Promise<unknown>) => job()),
+vi.mock('@/lib/messaging/aegisConversationQueue', () => ({
+  runAegisConversationJob: mocks.runJob,
 }));
 vi.mock('@/lib/messaging/archive/archiveKey', () => ({
   archiveBubbleForUser: vi.fn().mockResolvedValue(true),
@@ -77,6 +78,7 @@ beforeEach(() => {
     copies: [COPY],
     retriedStaleRoute: false,
   });
+  mocks.runJob.mockImplementation((_key: string, job: () => Promise<unknown>) => job());
 });
 
 describe('canonical Aegis outbound transaction engine', () => {
@@ -184,5 +186,64 @@ describe('canonical Aegis outbound transaction engine', () => {
         status: 'waiting_secure_channel',
       }),
     );
+  });
+
+  it('holds one conversation transaction lock through RPC confirmation', async () => {
+    let tail = Promise.resolve<unknown>(undefined);
+    mocks.runJob.mockImplementation((_key: string, job: () => Promise<unknown>) => {
+      const result = tail.then(job);
+      tail = result.then(() => undefined, () => undefined);
+      return result;
+    });
+
+    let releaseFirstRpc!: () => void;
+    const firstRpcGate = new Promise<void>((resolve) => {
+      releaseFirstRpc = resolve;
+    });
+    mocks.sendRpc
+      .mockImplementationOnce(async () => {
+        await firstRpcGate;
+        return {
+          data: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          error: null,
+          copies: [COPY],
+          retriedStaleRoute: false,
+        };
+      })
+      .mockResolvedValueOnce({
+        data: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        error: null,
+        copies: [COPY],
+        retriedStaleRoute: false,
+      });
+
+    const first = sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'first',
+      localId: 'local-first',
+      traceId: 'trace-first',
+      messageId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    });
+    await vi.waitFor(() => expect(mocks.sendRpc).toHaveBeenCalledTimes(1));
+
+    const second = sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'second',
+      localId: 'local-second',
+      traceId: 'trace-second',
+      messageId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.buildCopies).toHaveBeenCalledTimes(1);
+    expect(mocks.sendRpc).toHaveBeenCalledTimes(1);
+
+    releaseFirstRpc();
+    await Promise.all([first, second]);
+    expect(mocks.buildCopies).toHaveBeenCalledTimes(2);
+    expect(mocks.sendRpc).toHaveBeenCalledTimes(2);
   });
 });

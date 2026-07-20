@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseRetryAfter, parseRetryAfterWithDefault } from '../signalRetryAfter';
+import { parseRetryAfter, parseRetryAfterWithDefault } from '../aegisRetryAfter';
 
-describe('Signal-derived Retry-After parsing', () => {
+describe('Aegis Retry-After parsing', () => {
   it('parses delta-seconds', () => {
     expect(parseRetryAfter('12')).toBe(12_000);
     expect(parseRetryAfter(3)).toBe(3_000);

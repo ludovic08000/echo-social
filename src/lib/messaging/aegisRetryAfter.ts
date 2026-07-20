@@ -10,7 +10,7 @@ const DEFAULT_RETRY_AFTER_MS = 60_000;
 const MINIMUM_RETRY_AFTER_MS = 1_000;
 const HTTP_DATE_PATTERN = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
 
-/** Parses Retry-After into milliseconds, or returns undefined when invalid. */
+/** Parses an Aegis Retry-After value into milliseconds. */
 export function parseRetryAfter(value: unknown, now: number = Date.now()): number | undefined {
   if (typeof value === 'number') {
     return Number.isFinite(value) && value >= 0 ? value * SECOND_MS : undefined;

@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   __test__,
-  cancelSignalRetry,
+  cancelAegisRetry,
   isRetryableOutboundStatus,
   retryDelayMs,
-  runSignalConversationJob,
-  scheduleSignalRetry,
-} from '../signalWebConversationQueue';
+  runAegisConversationJob,
+  scheduleAegisRetry,
+} from '../aegisConversationQueue';
 
 afterEach(() => {
   __test__.reset();
   vi.useRealTimers();
 });
 
-describe('Signal-style web conversation queue', () => {
+describe('Aegis conversation queue', () => {
   it('serializes jobs belonging to the same conversation', async () => {
     const events: string[] = [];
     let releaseFirst!: () => void;
@@ -21,12 +21,12 @@ describe('Signal-style web conversation queue', () => {
       releaseFirst = resolve;
     });
 
-    const first = runSignalConversationJob('user:conversation', async () => {
+    const first = runAegisConversationJob('user:conversation', async () => {
       events.push('first:start');
       await firstGate;
       events.push('first:end');
     });
-    const second = runSignalConversationJob('user:conversation', async () => {
+    const second = runAegisConversationJob('user:conversation', async () => {
       events.push('second:start');
       events.push('second:end');
     });
@@ -51,8 +51,8 @@ describe('Signal-style web conversation queue', () => {
     vi.useFakeTimers();
     const task = vi.fn(async () => undefined);
 
-    expect(scheduleSignalRetry('job-1', task)).toBe(true);
-    expect(scheduleSignalRetry('job-1', task)).toBe(true);
+    expect(scheduleAegisRetry('job-1', task)).toBe(true);
+    expect(scheduleAegisRetry('job-1', task)).toBe(true);
     await vi.advanceTimersByTimeAsync(500);
 
     expect(task).toHaveBeenCalledTimes(1);
@@ -64,12 +64,12 @@ describe('Signal-style web conversation queue', () => {
       throw new Error('route unavailable');
     });
 
-    scheduleSignalRetry('job-backoff', task);
+    scheduleAegisRetry('job-backoff', task);
     await vi.advanceTimersByTimeAsync(500);
     expect(__test__.attempts('job-backoff')).toBe(1);
 
-    cancelSignalRetry('job-backoff', { resetAttempts: false });
-    scheduleSignalRetry('job-backoff', task);
+    cancelAegisRetry('job-backoff', { resetAttempts: false });
+    scheduleAegisRetry('job-backoff', task);
     await vi.advanceTimersByTimeAsync(999);
     expect(task).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -84,16 +84,31 @@ describe('Signal-style web conversation queue', () => {
     });
     const task = vi.fn(() => running);
 
-    scheduleSignalRetry('job-single-flight', task);
+    scheduleAegisRetry('job-single-flight', task);
     await vi.advanceTimersByTimeAsync(500);
     expect(task).toHaveBeenCalledTimes(1);
 
-    scheduleSignalRetry('job-single-flight', task, { immediate: true });
+    scheduleAegisRetry('job-single-flight', task, { immediate: true });
     await vi.advanceTimersByTimeAsync(10_000);
     expect(task).toHaveBeenCalledTimes(1);
 
     finish();
     await Promise.resolve();
+  });
+
+  it('stops after the bounded attempt budget and exposes terminal failure', async () => {
+    vi.useFakeTimers();
+    const task = vi.fn(async () => {
+      throw new Error('route unavailable');
+    });
+    const exhausted = vi.fn();
+
+    expect(scheduleAegisRetry('job-exhausted', task, { onExhausted: exhausted })).toBe(true);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(task).toHaveBeenCalledTimes(5);
+    expect(exhausted).toHaveBeenCalledTimes(1);
+    expect(__test__.attempts('job-exhausted')).toBe(5);
   });
 
   it('does not auto-retry authentication or safety-number failures', () => {

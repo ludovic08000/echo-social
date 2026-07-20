@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AEGIS_MESSAGE_PROTOCOL, createAegisMessage } from '@/lib/messaging/aegisEnvelope';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { selectInitialDeliveryMode } from '../useMessageQueue';
-import { classifyOutboundFailure } from '../useMessageQueueSignal';
+import { classifyOutboundFailure } from '../useAegisMessageQueue';
 
 describe('useMessageQueue Aegis transport', () => {
   it('uses multi-device key fan-out for every fresh encrypted send', () => {

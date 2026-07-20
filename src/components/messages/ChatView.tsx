@@ -252,7 +252,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // STRICT: plaintext is allowed ONLY for the Zeus bot conversation.
   // Any peer conversation MUST go through E2EE — if encryption is not ready,
   // the message stays queued (never sent in clear).
-  const isEncryptionActive = !isZeusConversation && e2ee.encrypted;
+  // Policy, not readiness: every human conversation is always Aegis. During
+  // cold key hydration the outbox waits; it must never fall back to plaintext.
+  const isEncryptionActive = !isZeusConversation;
 
   const queue = useMessageQueue(
     conversationId,
@@ -306,9 +308,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
         queue.sendMessage(body, url, {
           view_once: armedVO,
           document_url: url,
-          document_name: file.name,
-          document_mime: file.type || 'application/octet-stream',
-          document_size_bytes: file.size,
         }).catch((e) => {
           logCryptoException('media', e, { severity: 'error', conversationId, metadata: { stage: 'queue_send_doc' } });
           toast.error('Erreur envoi document');
