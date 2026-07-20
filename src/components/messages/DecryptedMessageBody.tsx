@@ -1,19 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react';
-import { Pencil, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
 import { VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { useMessageEdit } from '@/hooks/useMessageEdit';
-import { isEditableTextContent } from '@/lib/messaging/messageEdits';
 import { bubbleDiagnostic } from '@/lib/messaging/bubbleDiagnostics';
 import { setMediaKey } from './mediaKeyCache';
 import {
@@ -78,7 +64,6 @@ function initialOutcomeFor(
 export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   body,
   decrypt,
-  isEncryptionActive,
   onDecrypted,
   isMe,
   cachedPlaintext,
@@ -92,15 +77,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   const [pending, setPending] = useState(initial.pending);
   const [retryTick, setRetryTick] = useState(0);
   const [recoveryExpired, setRecoveryExpired] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [localEditedText, setLocalEditedText] = useState<string | null>(null);
-
-  const messageEdit = useMessageEdit(
-    messageId,
-    Boolean(isEncryptionActive && messageId),
-  );
-
   const onDecryptedRef = useRef(onDecrypted);
   onDecryptedRef.current = onDecrypted;
   const silentRetryAttemptRef = useRef(0);
@@ -186,7 +162,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     setOutcome(next.outcome);
     setPending(next.pending);
     setRecoveryExpired(false);
-    setLocalEditedText(null);
     silentRetryAttemptRef.current = 0;
     lastPublishedPlaintextRef.current = cachedPlaintext ?? null;
     bubbleDiagnostic('UNKNOWN', {
@@ -360,24 +335,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body, messageId, senderId, cachedPlaintext, retryTick, refreshKey]);
 
-  useEffect(() => {
-    const editedText = messageEdit.resolved?.text;
-    if (!editedText) return;
-    setLocalEditedText(editedText);
-    if (lastPublishedPlaintextRef.current !== editedText) {
-      lastPublishedPlaintextRef.current = editedText;
-      onDecryptedRef.current?.(editedText);
-    }
-    bubbleDiagnostic('DECRYPT_SUCCESS', {
-      messageId,
-      reason: 'resolved_message_edit',
-      details: {
-        editId: messageEdit.resolved?.editId,
-        textLength: editedText.length,
-      },
-    });
-  }, [messageEdit.resolved?.editId, messageEdit.resolved?.text, messageId]);
-
   const retryNow = () => {
     clearNegativeCache(messageId, body);
     setRecoveryExpired(false);
@@ -427,12 +384,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  const displayedOutcome = localEditedText
-    ? buildOutcomeFromText(localEditedText)
-    : messageEdit.resolved?.text
-      ? buildOutcomeFromText(messageEdit.resolved.text)
-      : outcome;
-  const { text, mediaKeyB64 } = displayedOutcome;
+  const { text, mediaKeyB64 } = outcome;
 
   if (hasMedia && (isImageMediaLabel(text) || isVideoMediaLabel(text))) {
     bubbleDiagnostic('MEDIA_STATE', {
@@ -470,101 +422,5 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  const editResolved = Boolean(localEditedText || messageEdit.resolved);
-  const editPending = Boolean(messageEdit.latest && !editResolved);
-  const mayEdit = Boolean(
-    isMe &&
-    messageEdit.canEdit &&
-    !hasMedia &&
-    isEditableTextContent(text),
-  );
-
-  const openEditor = (event: React.MouseEvent) => {
-    event.stopPropagation();
-    setDraft(text);
-    setEditorOpen(true);
-  };
-
-  const saveEdit = async () => {
-    const next = draft.trim();
-    if (!next || next === text.trim()) {
-      setEditorOpen(false);
-      return;
-    }
-
-    try {
-      const resolved = await messageEdit.editMessage(next);
-      setLocalEditedText(resolved.text);
-      setEditorOpen(false);
-      if (lastPublishedPlaintextRef.current !== resolved.text) {
-        lastPublishedPlaintextRef.current = resolved.text;
-        onDecryptedRef.current?.(resolved.text);
-      }
-      toast.success('Message modifié');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Modification impossible.');
-    }
-  };
-
-  return (
-    <>
-      <span className="whitespace-pre-wrap">{text}</span>
-      {(editResolved || editPending || mayEdit) && (
-        <span
-          className="mt-0.5 flex items-center gap-1.5 text-[10px] opacity-70"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {editResolved && <span>modifié</span>}
-          {editPending && <span>modification en cours…</span>}
-          {mayEdit && (
-            <button
-              type="button"
-              onClick={openEditor}
-              className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current"
-              aria-label="Modifier le message"
-            >
-              <Pencil className="h-2.5 w-2.5" />
-              Modifier
-            </button>
-          )}
-        </span>
-      )}
-
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
-        <DialogContent onClick={(event) => event.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle>Modifier le message</DialogTitle>
-            <DialogDescription>
-              La modification sera chiffrée séparément et envoyée à chaque appareil. Elle reste possible pendant 15 minutes.
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            maxLength={5_000}
-            rows={5}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setEditorOpen(false)}
-              disabled={messageEdit.isSaving}
-            >
-              Annuler
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void saveEdit()}
-              disabled={messageEdit.isSaving || !draft.trim()}
-            >
-              {messageEdit.isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Enregistrer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
+  return <span className="whitespace-pre-wrap">{text}</span>;
 });

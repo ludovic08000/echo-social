@@ -18,16 +18,6 @@ vi.mock('@/components/messages/decryptionService', () => ({
 
 vi.mock('@/components/chat/VoiceRecorder', () => ({ VoiceMessagePlayer: () => null }));
 vi.mock('@/components/messages/mediaKeyCache', () => ({ setMediaKey: vi.fn() }));
-vi.mock('@/hooks/useMessageEdit', () => ({
-  useMessageEdit: () => ({
-    resolved: null,
-    latest: null,
-    canEdit: false,
-    isSaving: false,
-    editMessage: vi.fn(),
-  }),
-}));
-
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 
 describe('DecryptedMessageBody recovery state', () => {

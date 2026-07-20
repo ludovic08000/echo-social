@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
-import { sendAegisMessage } from '@/lib/messaging/sendAegisMessage';
+import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
 import {
   clearDeviceCopyCacheForMessage,
   preloadDeviceCopies,
@@ -670,9 +670,9 @@ export function useSendMessage() {
 
       const sanitizedBody = isSpecialMessage ? body : sanitizeMessageBody(body);
 
-      let sent: Awaited<ReturnType<typeof sendAegisMessage>>;
+      let sent: Awaited<ReturnType<typeof sendAegisOutboundMessage>>;
       try {
-        sent = await sendAegisMessage({
+        sent = await sendAegisOutboundMessage({
           conversationId,
           senderUserId: user.id,
           plaintext: sanitizedBody,

@@ -31,18 +31,6 @@ vi.mock('@/lib/crypto/plaintextStore', () => ({
   loadPlaintext: vi.fn().mockResolvedValue(null),
   loadPlaintextForCiphertext: vi.fn().mockResolvedValue(null),
 }));
-vi.mock('@/hooks/useMessageEdit', () => ({
-  useMessageEdit: () => ({
-    meta: null,
-    latest: null,
-    resolved: null,
-    canEdit: false,
-    isLoading: false,
-    editMessage: vi.fn(),
-    isSaving: false,
-    error: null,
-  }),
-}));
 vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   tryReadDeviceCopy: vi.fn().mockResolvedValue(null),
 }));

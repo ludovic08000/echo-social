@@ -65,8 +65,8 @@ export function DevicesPanel() {
       const hydratedDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
       setCurrentDeviceId(hydratedDeviceId);
 
-      const columns = 'id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active, stale_at, revoked_at, revoke_reason';
-      const { data, error } = await (supabase as any)
+      const columns = 'id, device_id, device_name, platform, user_agent, last_seen_at, created_at, is_active, stale_at, revoked_at, revoke_reason' as const;
+      const { data, error } = await supabase
         .from('user_devices')
         .select(columns)
         .eq('user_id', user.id)
@@ -86,7 +86,7 @@ export function DevicesPanel() {
         });
         toast.error(`Appareils: ${error.code ?? 'DB_ERROR'} · ${error.message}`);
       } else {
-        setDevices((data ?? []).map((row: any) => ({
+        setDevices((data ?? []).map((row) => ({
           stale_at: null,
           revoked_at: null,
           revoke_reason: null,
@@ -111,16 +111,12 @@ export function DevicesPanel() {
     }
     setRevoking(dev.device_id);
     try {
-      const { error } = await supabase
-        .from('user_devices')
-        .update({
-          is_active: false,
-          revoked_at: new Date().toISOString(),
-          revoke_reason: 'manual',
-        } as any)
-        .eq('user_id', user.id)
-        .eq('device_id', dev.device_id);
-      if (error) throw error;
+      const { data, error } = await supabase.rpc('revoke_user_device' as never, {
+        p_device_id: dev.device_id,
+      } as never);
+      if (error || (data as { ok?: boolean } | null)?.ok !== true) {
+        throw error ?? new Error('DEVICE_REVOCATION_REJECTED');
+      }
 
       // Drop our local cached session for this peer (self → other own device)
       // so we re-handshake on the next outbound message — defence in depth.
@@ -132,8 +128,8 @@ export function DevicesPanel() {
 
       toast.success('Appareil révoqué');
       setDevices(prev => prev.filter(d => d.device_id !== dev.device_id));
-    } catch (e: any) {
-      toast.error(e?.message || 'Échec de la révocation');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Échec de la révocation');
     } finally {
       setRevoking(null);
     }

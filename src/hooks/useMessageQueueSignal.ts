@@ -4,20 +4,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { safeUUID } from '@/e2ee-session';
-import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
-import { buildFanoutCopies, type FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
-import { sendMessageWithAegisRetry } from '@/lib/messaging/aegisSendRpc';
-import { runSignalConversationJob } from '@/lib/messaging/signalWebConversationQueue';
-import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
-import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
-import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
+import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
-import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
-import {
-  MAX_INLINE_MESSAGE_BODY_BYTES,
-  prepareLongMessageForSend,
-  utf8ByteLength,
-} from '@/lib/messaging/longMessageAttachment';
+import type { FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
+import { savePlaintext } from '@/lib/crypto/plaintextStore';
+import { MAX_INLINE_MESSAGE_BODY_BYTES, utf8ByteLength } from '@/lib/messaging/longMessageAttachment';
 import {
   deleteOutboxPayload,
   getOutboxPayload,
@@ -138,7 +129,6 @@ function isAuthenticationError(error: unknown): boolean {
 
 const SEND_TRANSPORT_TIMEOUT_MS = 15_000;
 const SEND_CONFIRM_TIMEOUT_MS = 6_000;
-const IDENTITY_PREWARM_TIMEOUT_MS = 5_000;
 
 async function withSendStageTimeout<T>(
   operation: PromiseLike<T>,
@@ -206,10 +196,6 @@ function isAmbiguousTransportError(error: unknown): boolean {
   );
 }
 
-function isMultiDeviceParentBody(value: string | null | undefined): value is string {
-  return isMultiDeviceEnvelopeBody(value);
-}
-
 export function selectInitialDeliveryMode(input: {
   encryptionWasRequired: boolean;
   resumedEncryptedBody?: string | null;
@@ -270,7 +256,7 @@ export function useMessageQueue(
 
       const restored: OutboundMessage[] = [];
       for (const payload of payloads) {
-        if (!allowPlaintext && payload.encryptedBody && !isMultiDeviceParentBody(payload.encryptedBody)) {
+        if (!allowPlaintext && payload.encryptedBody && !isMultiDeviceEnvelopeBody(payload.encryptedBody)) {
           await deleteOutboxPayload(payload.localId).catch(() => {});
           continue;
         }
@@ -420,176 +406,21 @@ export function useMessageQueue(
       status: encryptionWasRequired ? 'encrypting' : 'sending',
       lastError: null,
     });
-    const resumedEncryptedBody = resumePayload?.encryptedBody ?? null;
-    const resumedPreparedCopies = (resumePayload?.preparedCopies ?? [])
-      .filter(row => row.message_id === serverMessageId);
     const deliveryMode = selectInitialDeliveryMode({
       encryptionWasRequired,
-      resumedEncryptedBody,
-      preparedCopyCount: resumedPreparedCopies.length,
+      resumedEncryptedBody: resumePayload?.encryptedBody ?? null,
+      preparedCopyCount: resumePayload?.preparedCopies?.length ?? 0,
     });
-    const resumedParent = isMultiDeviceParentBody(resumedEncryptedBody) && Boolean(resumePayload?.keyCapsule)
-      ? resumedEncryptedBody
-      : null;
-    let transportPlaintext = resumePayload?.transportPlaintext ?? sanitized;
-    let bodyToStore = resumedParent ?? sanitized;
-    let keyCapsule = resumedParent ? resumePayload?.keyCapsule ?? null : null;
+    let bodyToStore = resumePayload?.encryptedBody ?? sanitized;
     let encryptedSuccessfully = false;
-    let fanoutRows: FanoutCopyRow[] = resumedParent ? resumedPreparedCopies : [];
+    let fanoutRows: FanoutCopyRow[] = [];
     const requiresLongAttachment = !isSpecial && utf8ByteLength(sanitized) > MAX_INLINE_MESSAGE_BODY_BYTES;
 
-    if (requiresLongAttachment && !encryptionWasRequired) {
-      const error = new Error('Les messages de plus de 2 Kio nécessitent une conversation chiffrée.');
-      updatePending({ status: 'failed_visible', lastError: error.message });
-      throw error;
-    }
-
-    if (encryptionWasRequired) {
-      if (!isEncryptionReady) {
-        try {
-trace('identity_cold_start');
-await withSendStageTimeout(
-  ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
-  IDENTITY_PREWARM_TIMEOUT_MS,
-  'identity prewarm',
-);
-trace('identity_cold_start_ready');
-        } catch (error) {
-trace('identity_cold_start_failed_non_fatal', {
-  error: error instanceof Error ? error.message : String(error),
-});
-        }
-      }
-
-      if (requiresLongAttachment && !resumePayload?.transportPlaintext) {
-        try {
-trace('long_message_upload_start', { bodyBytes: utf8ByteLength(sanitized) });
-const prepared = await prepareLongMessageForSend(sanitized, serverMessageId);
-transportPlaintext = prepared.transportBody;
-await persistOutbox({ transportPlaintext });
-trace('long_message_upload_ready', {
-  previewBytes: utf8ByteLength(prepared.preview),
-  transportBytes: utf8ByteLength(transportPlaintext),
-});
-        } catch (longMessageError) {
-const message = longMessageError instanceof Error
-  ? longMessageError.message
-  : 'Préparation du message long impossible.';
-updatePending({ status: 'failed_visible', lastError: message });
-throw longMessageError instanceof Error ? longMessageError : new Error(message);
-        }
-      }
-
-      if (!resumedParent) {
-        try {
-          const preparedMessage = await createAegisMessage({
-            messageId: serverMessageId,
-            conversationId,
-            senderId: user.id,
-            plaintext: transportPlaintext,
-            localId,
-            traceId,
-            createdAt: now,
-          });
-          bodyToStore = preparedMessage.body;
-          keyCapsule = preparedMessage.keyCapsule;
-          await persistOutbox({
-            encryptedBody: bodyToStore,
-            keyCapsule,
-            transportPlaintext,
-            preparedCopies: [],
-          });
-          trace('aegis_payload_ready', {
-            bodyBytes: utf8ByteLength(bodyToStore),
-            longMessage: requiresLongAttachment,
-          });
-        } catch (error) {
-          const failure = classifyOutboundFailure(error);
-          updatePending({
-            status: failure.status,
-            lastError: failure.message,
-          }, {
-            encryptedBody: null,
-            keyCapsule: null,
-            preparedCopies: [],
-          });
-          trace('aegis_payload_failed', { error: failure.message });
-          throw error instanceof Error ? error : new Error(failure.message);
-        }
-      }
-
-      if (!keyCapsule || !isMultiDeviceParentBody(bodyToStore)) {
-        throw new Error('AEGIS_DURABLE_PAYLOAD_MISSING');
-      }
-
-      if (resumedPreparedCopies.length > 0) {
-        fanoutRows = resumedPreparedCopies;
-        encryptedSuccessfully = true;
-        updatePending({ encryptedBody: bodyToStore, status: 'sending', lastError: null });
-        void savePlaintextForCiphertext(bodyToStore, sanitized).catch(() => {});
-        trace('aegis_resume_ready', {
-          copyCount: resumedPreparedCopies.length,
-          longMessage: requiresLongAttachment,
-        });
-      } else {
-        updatePending({ status: 'encrypting', lastError: null });
-        try {
-          const built = await runSignalConversationJob(
-            `${user.id}:${conversationId}:aegis-key-fanout`,
-            () => buildFanoutCopies({
-              messageId: serverMessageId,
-              conversationId,
-              senderUserId: user.id,
-              plaintext: keyCapsule!,
-            }),
-          );
-          if (!built.hasTargets || built.rows.length === 0) {
-            throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
-          }
-          fanoutRows = built.rows;
-          encryptedSuccessfully = true;
-          await persistOutbox({
-            encryptedBody: bodyToStore,
-            keyCapsule,
-            transportPlaintext,
-            preparedCopies: fanoutRows,
-          });
-          updatePending({ encryptedBody: bodyToStore, status: 'sending', lastError: null });
-          void savePlaintextForCiphertext(bodyToStore, sanitized).catch(() => {});
-          trace('aegis_key_copies_ready', {
-            copyCount: fanoutRows.length,
-            longMessage: requiresLongAttachment,
-          });
-        } catch (error) {
-          await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
-          const failure = classifyOutboundFailure(error);
-          updatePending({
-            status: failure.status,
-            lastError: failure.message,
-          }, { encryptedBody: bodyToStore, keyCapsule, preparedCopies: [] });
-          trace('aegis_prepare_failed', {
-            error: failure.message,
-            retryable: failure.status === 'retry_pending' || failure.status === 'waiting_secure_channel',
-          });
-          throw error instanceof Error ? error : new Error(failure.message);
-        }
-      }
-    }
-
-    const fanoutInput = {
-      messageId: serverMessageId,
-      conversationId,
-      senderUserId: user.id,
-      plaintext: keyCapsule ?? '',
-    };
-    if (deliveryMode === 'multi_device' && fanoutRows.length === 0) {
-      throw new Error('E2EE_PREPARED_COPIES_MISSING');
-    }
-
-    updatePending({ status: 'sending', serverId: serverMessageId, lastError: null });
-
-    const rpcExtra = { ...(extra || {}) } as Record<string, unknown>;
-    if (deliveryMode === 'multi_device') rpcExtra.body_kind = 'multi_device';
+    updatePending({
+      status: deliveryMode === 'multi_device' ? 'encrypting' : 'sending',
+      serverId: serverMessageId,
+      lastError: null,
+    });
 
     let data = { id: serverMessageId };
     let sendMethod = 'plaintext_system';
@@ -680,61 +511,49 @@ throw new Error(visibleMessage);
 
       data = { id: insertedRow?.id || serverMessageId };
     } else {
-      let sendResult: Awaited<ReturnType<typeof sendMessageWithAegisRetry>>;
       try {
-        sendResult = await sendMessageWithAegisRetry({
-messageId: serverMessageId,
-conversationId,
-body: bodyToStore,
-imageUrl: imageUrl || null,
-extra: rpcExtra,
-senderUserId: user.id,
-senderDeviceId: getCurrentDeviceId(),
-initialCopies: fanoutRows,
-rebuildCopies: async () => {
-  const rebuilt = await buildFanoutCopies(fanoutInput);
-  if (!rebuilt.hasTargets || rebuilt.rows.length === 0) {
-    throw new Error('E2EE_DEVICE_LIST_UNAVAILABLE');
-  }
-  fanoutRows = rebuilt.rows;
-  await persistOutbox({ preparedCopies: fanoutRows });
-  return fanoutRows;
-},
+        const sent = await sendAegisOutboundMessage({
+          conversationId,
+          senderUserId: user.id,
+          plaintext: sanitized,
+          imageUrl: imageUrl || null,
+          extra,
+          localId,
+          traceId,
+          messageId: serverMessageId,
+          createdAt: now,
+          resumePayload: outboxSnapshot,
+          onState: (payload) => {
+            outboxSnapshot = payload;
+            setPendingMessages(prev => prev.map(message =>
+              message.localId === localId
+                ? {
+                    ...message,
+                    encryptedBody: payload.encryptedBody,
+                    status: payload.status,
+                    retryCount: payload.retryCount,
+                    lastError: payload.lastError,
+                    updatedAt: payload.updatedAt,
+                    serverId: payload.reservedServerId,
+                  }
+                : message,
+            ));
+          },
         });
+        data = { id: sent.id };
+        bodyToStore = sent.parentBody;
+        fanoutRows = sent.copies;
+        encryptedSuccessfully = true;
+        sendMethod = 'aegis_authoritative_rpc';
+        retriedStaleRoute = sent.retriedStaleRoute;
       } catch (error) {
-        await rollbackFanoutSessionTransaction(serverMessageId).catch(() => 0);
-        await persistOutbox({ preparedCopies: [] });
-        const visibleMessage = isAuthenticationError(error)
-? 'Session expirée — reconnectez-vous pour envoyer.'
-: error instanceof Error ? error.message : 'Échec du transport chiffré.';
+        const failure = classifyOutboundFailure(error);
         updatePending({
-status: isAuthenticationError(error) ? 'failed_visible' : 'retry_pending',
-lastError: visibleMessage,
-        }, { preparedCopies: [] });
-        throw error instanceof Error ? error : new Error(visibleMessage);
+          status: failure.status,
+          lastError: failure.message,
+        });
+        throw error instanceof Error ? error : new Error(failure.message);
       }
-
-      fanoutRows = sendResult.copies;
-      if (sendResult.error) {
-        const ambiguous = isAmbiguousTransportError(sendResult.error);
-        const normalizedError = normalizeSupabaseError(sendResult.error);
-        const visibleMessage = isAuthenticationError(sendResult.error)
-? 'Session expirée — reconnectez-vous pour envoyer.'
-: ambiguous
-  ? 'Confirmation réseau en attente — nouvel essai automatique.'
-  : normalizedError.message;
-        const retainedCopies = ambiguous ? fanoutRows : [];
-        await persistOutbox({ preparedCopies: retainedCopies });
-        updatePending({
-status: isAuthenticationError(sendResult.error) ? 'failed_visible' : 'retry_pending',
-lastError: visibleMessage,
-        }, { preparedCopies: retainedCopies });
-        throw new Error(visibleMessage);
-      }
-
-      data = { id: sendResult.data || serverMessageId };
-      sendMethod = 'aegis_authoritative_rpc';
-      retriedStaleRoute = sendResult.retriedStaleRoute;
     }
 
     trace('message_inserted', {
@@ -748,21 +567,9 @@ lastError: visibleMessage,
     if (!isSpecial) recordSentMessage(sanitized);
     onPlaintextCached?.(data.id, sanitized);
     if (encryptedSuccessfully) {
-      // Delivery is already committed. Local readability caches are best-effort
-      // and must never keep the UI in `sending` if IndexedDB is slow on iOS.
-      void Promise.all([
-        savePlaintext(data.id, sanitized),
-        savePlaintextForCiphertext(bodyToStore, sanitized),
-      ]).catch(() => {});
+      // The Aegis engine owns local caches and archive writes. The queue only
+      // wakes mounted bubbles after the authoritative commit.
       dispatchDecryptRetry(data.id);
-      void import('@/lib/messaging/archive/archiveKey').then(({ archiveBubbleForUser }) =>
-        archiveBubbleForUser({
-          messageId: data.id,
-          conversationId,
-          userId: user.id,
-          plaintext: sanitized,
-        }),
-      ).catch(() => false);
     }
 
     const sentMessage: SentMessageSnapshot = {

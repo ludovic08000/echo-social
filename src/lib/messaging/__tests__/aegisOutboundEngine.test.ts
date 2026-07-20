@@ -47,7 +47,7 @@ vi.mock('@/lib/messaging/archive/archiveKey', () => ({
   archiveBubbleForUser: vi.fn().mockResolvedValue(true),
 }));
 
-import { sendAegisMessage } from '@/lib/messaging/sendAegisMessage';
+import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
 import { AEGIS_MESSAGE_PROTOCOL, parseAegisKeyCapsule } from '@/lib/messaging/aegisEnvelope';
 import {
   isMultiDeviceEnvelopeBody,
@@ -79,9 +79,9 @@ beforeEach(() => {
   });
 });
 
-describe('Aegis multi-device send', () => {
+describe('canonical Aegis outbound transaction engine', () => {
   it('persists the stable ciphertext and exact key copies before the atomic RPC', async () => {
-    const result = await sendAegisMessage({
+    const result = await sendAegisOutboundMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
       senderUserId: COPY.sender_user_id,
       plaintext: 'message secret',
@@ -120,7 +120,7 @@ describe('Aegis multi-device send', () => {
   it('never calls the server without a recipient-device copy', async () => {
     mocks.buildCopies.mockResolvedValue({ rows: [], hasTargets: false });
 
-    await expect(sendAegisMessage({
+    await expect(sendAegisOutboundMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
       senderUserId: COPY.sender_user_id,
       plaintext: 'message secret',
@@ -136,14 +136,14 @@ describe('Aegis multi-device send', () => {
       expect.objectContaining({
         localId: 'local-two',
         preparedCopies: [],
-        status: 'retry_pending',
+        status: 'waiting_secure_channel',
       }),
     );
   });
 
   it('keeps the same Aegis ciphertext when device routing is unavailable', async () => {
     mocks.buildCopies.mockResolvedValue({ rows: [], hasTargets: false });
-    await expect(sendAegisMessage({
+    await expect(sendAegisOutboundMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
       senderUserId: COPY.sender_user_id,
       plaintext: 'message secret',
@@ -155,5 +155,34 @@ describe('Aegis multi-device send', () => {
     const payload = mocks.putOutbox.mock.calls.at(-1)?.[1];
     expect(isMultiDeviceEnvelopeBody(payload.encryptedBody)).toBe(true);
     expect(parseAegisKeyCapsule(payload.keyCapsule)).not.toBeNull();
+  });
+
+  it('clears stale copies when authoritative route rebuilding fails', async () => {
+    mocks.buildCopies
+      .mockResolvedValueOnce({ rows: [COPY], hasTargets: true })
+      .mockResolvedValueOnce({ rows: [], hasTargets: false });
+    mocks.sendRpc.mockImplementationOnce(async (args: { rebuildCopies: () => Promise<unknown> }) => {
+      await args.rebuildCopies();
+      throw new Error('unreachable');
+    });
+
+    await expect(sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message secret',
+      localId: 'local-stale-rebuild',
+      traceId: 'trace-stale-rebuild',
+      messageId: COPY.message_id,
+    })).rejects.toThrow('E2EE_DEVICE_COPIES_UNAVAILABLE');
+
+    expect(mocks.rollback).toHaveBeenCalledWith(COPY.message_id);
+    expect(mocks.putOutbox).toHaveBeenLastCalledWith(
+      COPY.sender_user_id,
+      expect.objectContaining({
+        localId: 'local-stale-rebuild',
+        preparedCopies: [],
+        status: 'waiting_secure_channel',
+      }),
+    );
   });
 });

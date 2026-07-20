@@ -69,7 +69,7 @@ function isExplicitProtocolFailure(error: RpcError): boolean {
   );
 }
 
-function isAmbiguousTransportFailure(error: RpcError): boolean {
+export function isAegisAmbiguousTransportFailure(error: RpcError): boolean {
   if (!error || isExplicitProtocolFailure(error)) return false;
   const text = errorText(error);
   return (
@@ -165,7 +165,7 @@ export async function sendMessageWithAegisRetry(
       };
     }
 
-    if (isAmbiguousTransportFailure(response.error)) {
+    if (isAegisAmbiguousTransportFailure(response.error)) {
       // Confirm the same UUID once. The server RPC is idempotent, so this does
       // not duplicate a message if the first response was merely lost.
       const confirmation = await callAuthoritative(args, copies, SEND_CONFIRM_TIMEOUT_MS);

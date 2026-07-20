@@ -82,10 +82,11 @@ async function registerMissingStableDevice(
     p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
   };
 
-  const { data: rpcResult, error: rpcError } = await (supabase as any).rpc(
+  const { data: rpcData, error: rpcError } = await supabase.rpc(
     'register_user_device_safe',
     args,
   );
+  const rpcResult = rpcData as { ok?: boolean; code?: string; message?: string } | null;
 
   if (!rpcError && rpcResult?.ok === true) return;
 
@@ -94,21 +95,7 @@ async function registerMissingStableDevice(
   if (/DEVICE_REJECTED|DEVICE_REVOKED_OR_REJECTED/i.test(code)) {
     throw new Error('DEVICE_REJECTED_REQUIRES_EXPLICIT_USER_ACTION');
   }
-
-  const { error: upsertError } = await supabase.from('user_devices').upsert({
-    user_id: userId,
-    device_id: deviceId,
-    device_name: getCurrentDeviceLabel(),
-    device_public_key: devicePublicKey,
-    device_fingerprint: fingerprint,
-    platform: getCurrentPlatform(),
-    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
-    is_active: true,
-    last_seen_at: new Date().toISOString(),
-  } as never, { onConflict: 'user_id,device_id' });
-  if (upsertError) {
-    throw new Error(`DEVICE_REGISTRATION_FAILED:${upsertError.message}`);
-  }
+  throw new Error(`DEVICE_REGISTRATION_RPC_REQUIRED:${code || 'UNKNOWN'}`);
 }
 
 /**
@@ -162,9 +149,10 @@ export async function recoverStableDeviceLifecycle(
   }
 
   if (lifecycle.state === 'pending' || lifecycle.state === 'inactive') {
-    const { data, error } = await (supabase as any).rpc('approve_user_device', {
+    const { data: approvalData, error } = await supabase.rpc('approve_user_device' as never, {
       p_device_id: activeDeviceId,
-    });
+    } as never);
+    const data = approvalData as { ok?: boolean; code?: string } | null;
     if (error || data?.ok !== true) {
       console.warn('[DeviceManager] device approval failed', {
         deviceId: activeDeviceId.slice(0, 8),
