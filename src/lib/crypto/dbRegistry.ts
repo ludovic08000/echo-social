@@ -81,9 +81,9 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   },
   'pin-wrap': {
     name: 'forsure-pin-wrap',
-    version: 2,
+    version: 3,
     stores: [
-      { name: 'pin-wrapped-keys', keyPath: 'id' },
+      { name: 'pin-verifiers', keyPath: 'id' },
       { name: 'wrapped-keys', keyPath: 'id' },
     ],
   },
@@ -173,6 +173,14 @@ export function openDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
       }
       if (key === 'x3dh-replay' && event.oldVersion > 0 && event.oldVersion < 2) {
         request.transaction?.objectStore('consumed-initials').clear();
+      }
+      if (key === 'pin-wrap' && event.oldVersion < 3) {
+        // The old store mixed the UI PIN verifier and PIN-wrapped identity
+        // bundle under the same user id. The two records overwrote each other.
+        // Aegis keeps no compatibility path for that ambiguous format.
+        if (request.result.objectStoreNames.contains('pin-wrapped-keys')) {
+          request.result.deleteObjectStore('pin-wrapped-keys');
+        }
       }
       if (key === 'plaintext-cache' && event.oldVersion > 0 && event.oldVersion < 2) {
         request.transaction?.objectStore('messages').clear();

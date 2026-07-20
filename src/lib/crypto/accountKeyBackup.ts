@@ -265,6 +265,11 @@ async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<strin
 
   if (includeDeviceSecrets) {
     try {
+      data['pinwrap:keys'] = await getAllFromSideDB('forsure-pin-wrap', 'wrapped-keys');
+    } catch {
+      // Optional when this device has never wrapped an identity with a PIN.
+    }
+    try {
       data['prekeys:private'] = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
     } catch {}
     try {
@@ -405,10 +410,19 @@ async function restoreAllKeys(json: string): Promise<void> {
 
     // Phase 2: PIN-wrapped keys
     if (isDeviceKeychain && Array.isArray(data['pinwrap:keys'])) {
-      const existing = await getAllFromSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
-      await putAllInSideDB('forsure-pin-wrap', 'pin-wrapped-keys', data['pinwrap:keys']);
+      const wrappedKeys = data['pinwrap:keys'].filter((record: unknown) => {
+        if (!record || typeof record !== 'object') return false;
+        const candidate = record as Record<string, unknown>;
+        return candidate.version === 1 &&
+          typeof candidate.id === 'string' &&
+          typeof candidate.salt === 'string' &&
+          typeof candidate.iv === 'string' &&
+          typeof candidate.ciphertext === 'string';
+      });
+      const existing = await getAllFromSideDB('forsure-pin-wrap', 'wrapped-keys');
+      await putAllInSideDB('forsure-pin-wrap', 'wrapped-keys', wrappedKeys);
       rollbackOps.push(async () => {
-        await putAllInSideDB('forsure-pin-wrap', 'pin-wrapped-keys', existing);
+        await putAllInSideDB('forsure-pin-wrap', 'wrapped-keys', existing);
       });
     }
 
@@ -477,7 +491,7 @@ export async function hasLocalKeys(): Promise<boolean> {
   } catch {}
 
   try {
-    const pinCount = await countSideDB('forsure-pin-wrap', 'pin-wrapped-keys');
+    const pinCount = await countSideDB('forsure-pin-wrap', 'wrapped-keys');
     if (pinCount > 0) return true;
   } catch {}
 
@@ -506,7 +520,7 @@ export async function computeLocalCryptoDigest(): Promise<string> {
 
   for (const [dbName, storeName] of [
     ['forsure-ratchet', 'ratchet-states'],
-    ['forsure-pin-wrap', 'pin-wrapped-keys'],
+    ['forsure-pin-wrap', 'wrapped-keys'],
     ['forsure-prekeys', 'private-prekeys'],
     ['forsure-spk', 'signed-prekeys'],
   ]) {

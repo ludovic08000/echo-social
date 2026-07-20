@@ -12,7 +12,9 @@
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { runTxOn, reqToPromise } from './indexedDbTx';
 
-const PIN_WRAP_STORE = 'pin-wrapped-keys';
+// Identity bundles and the UI PIN verifier must never share a store/key.
+// Both are keyed by user id, so sharing previously caused silent overwrites.
+const PIN_WRAP_STORE = 'wrapped-keys';
 const PBKDF2_ITERATIONS = 600_000;
 
 interface WrappedKeyBlob {
@@ -136,9 +138,15 @@ export async function unwrapKeysWithPin(
 export async function hasWrappedKeys(userId: string): Promise<boolean> {
   try {
     const result = await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore(PIN_WRAP_STORE).get(userId)),
+      reqToPromise(tx.objectStore(PIN_WRAP_STORE).get(userId) as IDBRequest<WrappedKeyBlob | undefined>),
     );
-    return !!result;
+    return Boolean(
+      result &&
+      result.version === 1 &&
+      typeof result.salt === 'string' &&
+      typeof result.iv === 'string' &&
+      typeof result.ciphertext === 'string',
+    );
   } catch {
     return false;
   }
@@ -150,5 +158,7 @@ export async function deleteWrappedKeys(userId: string): Promise<void> {
     await runTxOn('pin-wrap', [PIN_WRAP_STORE], 'readwrite', (tx) => {
       tx.objectStore(PIN_WRAP_STORE).delete(userId);
     });
-  } catch {}
+  } catch {
+    // Deletion is idempotent; a missing/unavailable local store is already clear.
+  }
 }
