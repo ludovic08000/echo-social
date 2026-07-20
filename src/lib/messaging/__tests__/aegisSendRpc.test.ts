@@ -130,6 +130,22 @@ describe('sendMessageWithAegisRetry', () => {
     expect(mocks.commit).not.toHaveBeenCalled();
   });
 
+  it('rolls back when same-UUID confirmation resolves ambiguity with an explicit rejection', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: null, error: { message: 'Failed to fetch' } })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: '23514', message: 'E2EE_INVALID_DEVICE_COPY' },
+      });
+
+    const result = await sendMessageWithAegisRetry(args());
+
+    expect(result.error?.message).toBe('E2EE_INVALID_DEVICE_COPY');
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rollback).toHaveBeenCalledTimes(1);
+    expect(mocks.commit).not.toHaveBeenCalled();
+  });
+
   it('refreshes once when a participant route becomes available during send', async () => {
     mocks.rpc
       .mockResolvedValueOnce({

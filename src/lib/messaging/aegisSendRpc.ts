@@ -178,8 +178,18 @@ export async function sendMessageWithAegisRetry(
           retriedStaleRoute,
         };
       }
+      // A second, explicit server rejection resolves the original transport
+      // doubt: the idempotent same-UUID confirmation would have returned the
+      // committed message if the first call had succeeded. Restore the
+      // Ratchet snapshot instead of retaining ciphertext that the server has
+      // definitively refused.
+      if (!isAegisAmbiguousTransportFailure(confirmation.error)) {
+        await rollbackFanoutSessionTransaction(args.messageId);
+      }
       // Delivery is now ambiguous. Keep the advanced local state and outbox so
-      // a later same-message-id confirmation can resolve it safely.
+      // a later same-message-id confirmation can resolve it safely. Explicit
+      // confirmation failures were rolled back above and are discarded by the
+      // outbound engine.
       return {
         data: null,
         error: confirmation.error,
