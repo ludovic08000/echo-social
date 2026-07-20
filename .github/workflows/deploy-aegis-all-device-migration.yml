@@ -1,0 +1,87 @@
+name: Deploy Aegis all-device migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql
+      - .github/workflows/deploy-aegis-all-device-migration.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-aegis-all-device-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PROJECT_REF: vkpmoqfzrihcijjochks
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      MIGRATION_FILE: supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Supabase management token
+        shell: bash
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN" >&2
+            exit 1
+          fi
+
+      - name: Apply atomic all-device migration
+        shell: bash
+        run: |
+          jq -Rs '{query: ., read_only: false}' "$MIGRATION_FILE" > "$RUNNER_TEMP/migration-request.json"
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/migration-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/migration-request.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Supabase migration failed with HTTP $status" >&2
+            jq . "$RUNNER_TEMP/migration-response.json" >&2 || true
+            exit 1
+          fi
+
+      - name: Verify auto-enrollment and all-device trigger
+        shell: bash
+        run: |
+          verification_sql="select exists (
+            select 1 from pg_trigger
+            where tgname = 'aegis_require_all_device_copies'
+              and not tgisinternal
+          ) as trigger_installed,
+          coalesce(position(
+            'DEVICE_REGISTERED_AND_APPROVED' in pg_get_functiondef(
+              to_regprocedure('public.register_user_device_safe(uuid,text,text,text,text,text,text)')
+            )
+          ) > 0, false) as auto_approval_installed;"
+          jq -n --arg query "$verification_sql" \
+            '{query: $query, read_only: true}' > "$RUNNER_TEMP/verification-request.json"
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/verification-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/verification-request.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Supabase verification failed with HTTP $status" >&2
+            jq . "$RUNNER_TEMP/verification-response.json" >&2 || true
+            exit 1
+          fi
+          jq -e '
+            .. | objects |
+            select(.trigger_installed == true and .auto_approval_installed == true)
+          ' "$RUNNER_TEMP/verification-response.json" > /dev/null
