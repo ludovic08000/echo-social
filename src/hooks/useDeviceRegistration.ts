@@ -47,6 +47,12 @@ const REVOKED_DEVICE_ERROR_RE = /USER_DEVICES_REACTIVATION_BLOCKED|revoked_devic
 const DEVICE_APPROVAL_PENDING_RE = /DEVICE_APPROVAL_PENDING/i;
 const DEVICE_REJECTED_RE = /DEVICE_REJECTED|DEVICE_REVOKED_OR_REJECTED/i;
 
+type DeviceRegistrationRpcResult = {
+  ok?: boolean;
+  code?: string;
+  message?: string;
+};
+
 export function useDeviceRegistration() {
   const { user } = useAuth();
   const ranRef = useRef(false);
@@ -54,35 +60,14 @@ export function useDeviceRegistration() {
 
   useEffect(() => {
     if (!user) return;
-
-    const notifyDeviceApprovalPending = (deviceId: string, source: string, code = 'DEVICE_APPROVAL_PENDING') => {
-      console.warn('[useDeviceRegistration] current device requires approval before E2EE publish', {
-        deviceId: deviceId.slice(0, 8),
-        source,
-        code,
-      });
-      try {
-        window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approval-required', {
-          detail: { source, deviceId, code },
-        }));
-      } catch {}
-      try {
-        window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
-          detail: {
-            source,
-            deviceId,
-            reason: 'device_approval_required',
-            message: 'Déverrouillage requis pour approuver cet appareil',
-          },
-        }));
-      } catch {}
-    };
+    let retryTimer: number | undefined;
 
     const approveCurrentAuthenticatedDevice = async (deviceId: string, source: string): Promise<boolean> => {
       try {
-        const { data, error } = await (supabase as any).rpc('approve_user_device', {
+        const { data: approvalData, error } = await supabase.rpc('approve_user_device' as never, {
           p_device_id: deviceId,
-        });
+        } as never);
+        const data = approvalData as DeviceRegistrationRpcResult | null;
         if (!error && data?.ok === true) {
           console.info('[useDeviceRegistration] authenticated device approved', {
             deviceId: deviceId.slice(0, 8),
@@ -92,7 +77,7 @@ export function useDeviceRegistration() {
             window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
               detail: { source, deviceId },
             }));
-          } catch {}
+          } catch { /* browser event delivery is best-effort */ }
           return true;
         }
         console.warn('[useDeviceRegistration] approve_user_device non-ok', {
@@ -105,8 +90,23 @@ export function useDeviceRegistration() {
         console.warn('[useDeviceRegistration] approve_user_device failed', approvalErr);
       }
 
-      notifyDeviceApprovalPending(deviceId, source);
       return false;
+    };
+
+    const scheduleRegistrationRetry = (reason: string, attempt: number) => {
+      if (attempt >= 3) {
+        console.warn('[useDeviceRegistration] automatic enrollment retry exhausted', {
+          reason,
+          attempt,
+        });
+        return;
+      }
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      ranRef.current = false;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = undefined;
+        void registerCurrentDevice(`automatic-retry:${reason}`, attempt + 1);
+      }, 500 * (attempt + 1));
     };
 
     const registerCurrentDevice = async (reason: string, attempt = 0) => {
@@ -161,19 +161,21 @@ export function useDeviceRegistration() {
             .eq('device_id', deviceId)
             .maybeSingle();
 
-          const approvalStatus = (existing as any)?.approval_status as string | null | undefined;
+          const approvalStatus = existing?.approval_status;
           if (existing && approvalStatus === 'rejected') {
-            notifyDeviceApprovalPending(deviceId, `existing-rejected:${reason}`, 'DEVICE_REJECTED');
-            ranRef.current = false;
+            console.warn('[useDeviceRegistration] rejected routing identity replaced after authenticated login', {
+              deviceId: deviceId.slice(0, 8),
+              attempt,
+            });
+            if (attempt < 2) {
+              rotateCurrentDeviceId('authenticated-rejected-device');
+              ranRef.current = false;
+              inFlightRef.current = false;
+              return registerCurrentDevice('rotated-rejected-device', attempt + 1);
+            }
             return;
           }
-          if (existing && approvalStatus === 'pending') {
-            const approved = await approveCurrentAuthenticatedDevice(deviceId, `existing-pending:${reason}`);
-            if (!approved) {
-              ranRef.current = false;
-              return;
-            }
-          } else if (existing && (existing.is_active === false || existing.revoked_at)) {
+          if (existing && approvalStatus !== 'pending' && (existing.is_active === false || existing.revoked_at)) {
             console.warn('[useDeviceRegistration] server says current device id is revoked — rotating local id instead of reactivating', {
               deviceId: deviceId.slice(0, 8),
               attempt,
@@ -212,7 +214,7 @@ export function useDeviceRegistration() {
               try {
                 const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
                 localKx = await loadDeviceKxKey(deviceId, user.id);
-              } catch {}
+              } catch { /* the next enrollment attempt will retry restoration */ }
             }
           }
 
@@ -241,7 +243,7 @@ export function useDeviceRegistration() {
                   reason: 'mismatch',
                 },
               }));
-            } catch {}
+            } catch { /* browser event delivery is best-effort */ }
             ranRef.current = false;
             return;
           }
@@ -301,7 +303,7 @@ export function useDeviceRegistration() {
         // fallback is forbidden because it would bypass device approval.
         let registered = false;
         try {
-          const { data: rpcResult, error: rpcErr } = await (supabase as any).rpc('register_user_device_safe', {
+          const { data: rpcResult, error: rpcErr } = await supabase.rpc('register_user_device_safe', {
             p_user_id: payload.user_id,
             p_device_id: payload.device_id,
             p_device_name: payload.device_name,
@@ -310,18 +312,19 @@ export function useDeviceRegistration() {
             p_platform: payload.platform,
             p_user_agent: payload.user_agent,
           });
+          const registrationResult = rpcResult as DeviceRegistrationRpcResult | null;
 
-          if (!rpcErr && rpcResult?.ok === true) {
+          if (!rpcErr && registrationResult?.ok === true) {
             registered = true;
-          } else if (!rpcErr && DEVICE_APPROVAL_PENDING_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
+          } else if (!rpcErr && DEVICE_APPROVAL_PENDING_RE.test(String(registrationResult?.code ?? registrationResult?.message ?? ''))) {
             const approved = await approveCurrentAuthenticatedDevice(deviceId, `register-pending:${reason}`);
             if (!approved) {
-              ranRef.current = false;
+              scheduleRegistrationRetry(`approval:${reason}`, attempt);
               return;
             }
             registered = true;
-          } else if (!rpcErr && REVOKED_DEVICE_ERROR_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
-            console.warn('[useDeviceRegistration] safe RPC rejected revoked device — rotating local id', rpcResult);
+          } else if (!rpcErr && REVOKED_DEVICE_ERROR_RE.test(String(registrationResult?.code ?? registrationResult?.message ?? ''))) {
+            console.warn('[useDeviceRegistration] safe RPC rejected revoked device — rotating local id', registrationResult);
             if (attempt < 2) {
               rotateCurrentDeviceId('rpc-revoked-device');
               ranRef.current = false;
@@ -329,16 +332,20 @@ export function useDeviceRegistration() {
               return registerCurrentDevice('rotated-after-rpc-revoked', attempt + 1);
             }
             return;
-          } else if (!rpcErr && DEVICE_REJECTED_RE.test(String(rpcResult?.code ?? rpcResult?.message ?? ''))) {
-            notifyDeviceApprovalPending(deviceId, `register-rejected:${reason}`, String(rpcResult?.code ?? 'DEVICE_REJECTED'));
-            ranRef.current = false;
+          } else if (!rpcErr && DEVICE_REJECTED_RE.test(String(registrationResult?.code ?? registrationResult?.message ?? ''))) {
+            if (attempt < 2) {
+              rotateCurrentDeviceId('authenticated-rejected-device');
+              ranRef.current = false;
+              inFlightRef.current = false;
+              return registerCurrentDevice('rotated-after-rpc-rejected', attempt + 1);
+            }
             return;
           } else if (rpcErr) {
             console.warn('[useDeviceRegistration] safe RPC unavailable/failed:', {
               message: rpcErr.message,
             });
           } else {
-            console.warn('[useDeviceRegistration] safe RPC non-ok; device publish paused:', rpcResult);
+            console.warn('[useDeviceRegistration] safe RPC non-ok; device publish paused:', registrationResult);
             ranRef.current = false;
             return;
           }
@@ -349,15 +356,14 @@ export function useDeviceRegistration() {
         }
 
         if (!registered) {
-          notifyDeviceApprovalPending(deviceId, `register-rpc-unavailable:${reason}`, 'DEVICE_REGISTRATION_RPC_UNAVAILABLE');
-          ranRef.current = false;
+          scheduleRegistrationRetry(`registration-rpc:${reason}`, attempt);
           return;
         }
 
         // Mark stale/revoke old devices and delete our local sessions to
         // devices that crossed the long inactivity threshold.
         try {
-          const { data } = await (supabase as any).rpc("cleanup_stale_user_devices");
+          const { data } = await supabase.rpc('cleanup_stale_user_devices');
           const lifecycleRows = (data || []) as Array<{ device_id: string; action: string }>;
           await Promise.all(
             lifecycleRows
@@ -378,15 +384,15 @@ export function useDeviceRegistration() {
           const currentSpk = await peekDeviceSignedPrekey(user.id, deviceId);
           if (!currentSpk) {
             await repairCurrentDevicePrekeys(user.id, deviceId, keys.signingPrivateKey, 'current-device-spk-invalid-after-refresh');
-            try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch {}
-            try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
+            try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch { /* best-effort */ }
+            try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* best-effort */ }
           }
         } catch (spkErr) {
           if (isDevicePrekeyBundleError(spkErr, 'DEVICE_SPK_SIGNATURE_INVALID')) {
             try {
               await repairCurrentDevicePrekeys(user.id, deviceId, keys.signingPrivateKey, 'current-device-spk-signature-invalid');
-              try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch {}
-              try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch {}
+              try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch { /* best-effort */ }
+              try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* best-effort */ }
             } catch (repairErr) {
               console.warn('[useDeviceRegistration] device SPK signature repair failed (non-fatal):', repairErr);
             }
@@ -445,18 +451,19 @@ export function useDeviceRegistration() {
           window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
             detail: { reason: 'authenticated_device_ready', deviceId },
           }));
-        } catch {}
+        } catch { /* browser event delivery is best-effort */ }
       } catch (err) {
         if (err instanceof PinUnlockRequiredError || String(err).toLowerCase().includes('pin unlock required')) {
           ranRef.current = false;
           console.warn('[useDeviceRegistration] PIN_REQUIRED — device publish paused until PIN unlock');
           try {
             window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: { source: 'useDeviceRegistration' } }));
-          } catch {}
+          } catch { /* browser event delivery is best-effort */ }
           return;
         }
         ranRef.current = false;
         console.warn('[useDeviceRegistration] failed (non-fatal):', err);
+        scheduleRegistrationRetry(`failure:${reason}`, attempt);
       } finally {
         inFlightRef.current = false;
       }
@@ -465,6 +472,13 @@ export function useDeviceRegistration() {
     const onKeysAvailable = () => {
       ranRef.current = false;
       void registerCurrentDevice('keys-unlocked');
+    };
+
+    const onAuthenticatedDeviceEnroll = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string; source?: string }>).detail;
+      if (detail?.userId && detail.userId !== user.id) return;
+      ranRef.current = false;
+      void registerCurrentDevice(detail?.source ?? 'authenticated-device-enroll');
     };
 
     // A missing message copy is a message/refanout issue, not proof that the
@@ -493,11 +507,14 @@ export function useDeviceRegistration() {
     void registerCurrentDevice('auth-mounted');
     window.addEventListener('forsure-keys-unlocked', onKeysAvailable);
     window.addEventListener('forsure-keys-restored', onKeysAvailable);
+    window.addEventListener('forsure:authenticated-device-enroll', onAuthenticatedDeviceEnroll);
     window.addEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
 
     return () => {
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       window.removeEventListener('forsure-keys-unlocked', onKeysAvailable);
       window.removeEventListener('forsure-keys-restored', onKeysAvailable);
+      window.removeEventListener('forsure:authenticated-device-enroll', onAuthenticatedDeviceEnroll);
       window.removeEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
     };
   }, [user]);

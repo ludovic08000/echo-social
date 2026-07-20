@@ -29,7 +29,11 @@ import {
   savePlaintext,
   savePlaintextForCiphertext,
 } from '@/lib/crypto/plaintextStore';
-import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
+import {
+  clearDeviceCopyCache,
+  clearDeviceCopyCacheForMessage,
+  tryReadDeviceCopy,
+} from '@/lib/messaging/multiDeviceFanout';
 import {
   openAegisMessage,
   parseAegisMessageEnvelope,
@@ -149,9 +153,11 @@ if (typeof window !== 'undefined') {
       const messageId = (event as CustomEvent<{ messageId?: string }>).detail?.messageId;
       if (messageId) {
         clearNegativeCacheForMessage(messageId);
+        clearDeviceCopyCacheForMessage(messageId);
         return;
       }
       clearNegativeCache();
+      clearDeviceCopyCache();
     });
   }
 }
@@ -294,7 +300,9 @@ export async function resolvePlaintext(opts: {
         if (!senderId) senderId = await getSenderId(messageId);
         if (senderId) {
           try {
-            const copyText = await tryReadDeviceCopy(messageId, senderId).catch(() => null);
+            const copyText = await tryReadDeviceCopy(messageId, senderId, {
+              requestRetry: true,
+            }).catch(() => null);
             if (copyText !== null) {
               const plaintext = await openAegisMessage(body, copyText, {
                 messageId,

@@ -93,7 +93,11 @@ describe('decryptionService multi-device routing', () => {
 
     await expect(result).resolves.toBeNull();
 
-    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('msg-missing-current-device-copy', 'sender-user');
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith(
+      'msg-missing-current-device-copy',
+      'sender-user',
+      { requestRetry: true },
+    );
     expect(mocks.routeIncoming).not.toHaveBeenCalled();
   });
 

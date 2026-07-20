@@ -46,7 +46,7 @@ async function inspectCryptoReadiness(userId: string | undefined, reason: 'sessi
             `forsure:e2ee-resync-pending:${userId}`,
             JSON.stringify({ at: Date.now(), detail: { status: 'restored_from_keychain_auth', reason } }),
           );
-        } catch {}
+        } catch { /* storage can be unavailable in private browsing */ }
         window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
           detail: { status: 'restored_from_keychain_auth', reason },
         }));
@@ -169,8 +169,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { inspectThreat } = await import('@/hooks/useThreatShield');
       const threat = await inspectThreat({ endpoint: 'auth.signup', payload: `${email}|${name}` });
-      if (threat.blocked) return { error: { message: 'Requête bloquée par le bouclier de sécurité.' } as any };
-    } catch {}
+      if (threat.blocked) return { error: new Error('Requête bloquée par le bouclier de sécurité.') };
+    } catch { /* authentication remains available if the optional shield is unavailable */ }
 
     const { error } = await supabase.auth.signUp({
       email,
@@ -187,8 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { inspectThreat } = await import('@/hooks/useThreatShield');
       const threat = await inspectThreat({ endpoint: 'auth.signin', payload: email });
-      if (threat.blocked) return { error: { message: 'Requête bloquée par le bouclier de sécurité.' } as any };
-    } catch {}
+      if (threat.blocked) return { error: new Error('Requête bloquée par le bouclier de sécurité.') };
+    } catch { /* authentication remains available if the optional shield is unavailable */ }
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -216,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
               detail: { userId, reason: 'archive_master_unlock_failed' },
             }));
-          } catch {}
+          } catch { /* browser event delivery is best-effort */ }
         } else {
           const status = await initAccountKeySync(password, userId);
           console.log(`[AUTH][E2EE] initAccountKeySync status=${status}`);
@@ -234,13 +234,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // configured or its Edge Function has not been deployed.
       scheduleBackupMirrorToR2(userId);
       void inspectCryptoReadiness(userId, 'signed_in');
+      // Password authentication is also the user's authorization to enroll
+      // this installation. Wake the registration pipeline after the account
+      // keys have been restored so it never remains stuck in `pending` merely
+      // because the auth-state mount raced the password-derived key restore.
+      try {
+        window.dispatchEvent(new CustomEvent('forsure:authenticated-device-enroll', {
+          detail: { userId, source: 'password-sign-in' },
+        }));
+      } catch { /* browser event delivery is best-effort */ }
     }
 
     return { error };
   };
 
   const signOut = async () => {
-    try { stopSessionGuard(); } catch {}
+    try { stopSessionGuard(); } catch { /* guard may already be stopped */ }
     clearArchiveMasterKeySession();
     clearAccountKeySession();
     setSession(null);
@@ -268,7 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       purge(localStorage);
       purge(sessionStorage);
-    } catch {}
+    } catch { /* storage can be unavailable in private browsing */ }
   };
 
   return (

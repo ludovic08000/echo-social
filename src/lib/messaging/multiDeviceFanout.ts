@@ -75,9 +75,11 @@ type CopyRow = {
 };
 
 const deviceCopyCache = new Map<string, CopyRow | null>();
+const deviceCopyMissAt = new Map<string, number>();
 const deviceCopyPreloads = new Map<string, Promise<void>>();
 const decryptedCapsuleCache = new Map<string, string>();
 const DECRYPTED_CAPSULE_CACHE_CAP = 500;
+const DEVICE_COPY_MISS_TTL_MS = 2_000;
 
 function copyCacheKey(userId: string, deviceId: string, messageId: string): string {
   return `${userId}|${deviceId}|${messageId}`;
@@ -85,6 +87,7 @@ function copyCacheKey(userId: string, deviceId: string, messageId: string): stri
 
 export function clearDeviceCopyCache(): void {
   deviceCopyCache.clear();
+  deviceCopyMissAt.clear();
   deviceCopyPreloads.clear();
   decryptedCapsuleCache.clear();
 }
@@ -93,7 +96,10 @@ export function clearDeviceCopyCacheForMessage(messageId: string): void {
   if (!messageId) return;
   const suffix = `|${messageId}`;
   for (const key of deviceCopyCache.keys()) {
-    if (key.endsWith(suffix)) deviceCopyCache.delete(key);
+    if (key.endsWith(suffix)) {
+      deviceCopyCache.delete(key);
+      deviceCopyMissAt.delete(key);
+    }
   }
 }
 
@@ -129,11 +135,15 @@ export async function preloadDeviceCopies(messageIds: string[]): Promise<void> {
         .eq('recipient_device_id', myDeviceId);
       if (error) throw error;
       for (const messageId of batch) {
-        deviceCopyCache.set(copyCacheKey(userId, myDeviceId, messageId), null);
+        const cacheKey = copyCacheKey(userId, myDeviceId, messageId);
+        deviceCopyCache.set(cacheKey, null);
+        deviceCopyMissAt.set(cacheKey, Date.now());
       }
       for (const row of (data ?? []) as CopyRow[]) {
         if (!row.message_id) continue;
-        deviceCopyCache.set(copyCacheKey(userId, myDeviceId, row.message_id), row);
+        const cacheKey = copyCacheKey(userId, myDeviceId, row.message_id);
+        deviceCopyCache.set(cacheKey, row);
+        deviceCopyMissAt.delete(cacheKey);
       }
     }
   })().finally(() => {
@@ -510,9 +520,6 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
 
   const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
   if (rows.length !== targets.length) {
-    // A stale device must not deny messaging to every healthy device. The RPC
-    // still verifies that every supplied route is canonical and requires at
-    // least one authenticated copy for every non-sender participant.
     logCryptoError({
       severity: 'warning',
       context: 'fanout',
@@ -526,6 +533,9 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
         omittedCount: targets.length - rows.length,
       },
     });
+    // Never hand a partial route to the server. The parent message must remain
+    // in the durable outbox until every canonical device has its capsule.
+    throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
   }
   return { rows, hasTargets: true };
 }
@@ -535,7 +545,7 @@ interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 export async function tryReadDeviceCopy(
   messageId: string,
   expectedSenderUserId?: string,
-  _options: TryReadDeviceCopyOptions = {},
+  options: TryReadDeviceCopyOptions = {},
 ): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
   const userId = await getCachedAuthUserId();
@@ -558,7 +568,13 @@ export async function tryReadDeviceCopy(
       if (plaintext !== null) rememberDecryptedCapsule(capsuleKey, plaintext);
       return plaintext;
     }
-    if (hasCachedResult && cached === null) return null;
+    if (hasCachedResult && cached === null) {
+      const missAt = deviceCopyMissAt.get(cacheKey) ?? 0;
+      const missIsFresh = Date.now() - missAt < DEVICE_COPY_MISS_TTL_MS;
+      if (!options.requestRetry && missIsFresh) return null;
+      deviceCopyCache.delete(cacheKey);
+      deviceCopyMissAt.delete(cacheKey);
+    }
 
     const { data } = await supabase.rpc('get_device_copy_for_message', {
       p_message_id: messageId,
@@ -570,6 +586,7 @@ export async function tryReadDeviceCopy(
 
     for (const row of rows) {
       deviceCopyCache.set(cacheKey, row);
+      deviceCopyMissAt.delete(cacheKey);
       const capsuleKey = decryptedCapsuleKey(userId, myDeviceId, messageId, row.encrypted_body);
       const alreadyDecrypted = decryptedCapsuleCache.get(capsuleKey);
       if (alreadyDecrypted !== undefined) return alreadyDecrypted;
@@ -579,6 +596,8 @@ export async function tryReadDeviceCopy(
         return attempt.plaintext;
       }
     }
+    deviceCopyCache.set(cacheKey, null);
+    deviceCopyMissAt.set(cacheKey, Date.now());
     return null;
   } catch (error) {
     logCryptoException('decrypt', error, {

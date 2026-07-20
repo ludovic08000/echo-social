@@ -206,7 +206,11 @@ describe('targeted decryption cache and Bubble Hold', () => {
     });
 
     expect(senderLookupCount).toBe(2);
-    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('message-sender-retry', 'sender-user');
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith(
+      'message-sender-retry',
+      'sender-user',
+      { requestRetry: true },
+    );
     expect(second?.text).toBe('copie Aegis récupérée');
   });
 
@@ -222,7 +226,11 @@ describe('targeted decryption cache and Bubble Hold', () => {
     });
 
     expect(mocks.from).not.toHaveBeenCalled();
-    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith('message-known-sender', 'sender-known');
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith(
+      'message-known-sender',
+      'sender-known',
+      { requestRetry: true },
+    );
     expect(result?.text).toBe('copie directe');
   });
 

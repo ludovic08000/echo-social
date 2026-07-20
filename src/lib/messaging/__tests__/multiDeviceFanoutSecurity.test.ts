@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   fetchPrekeyBundleForDevice: vi.fn(),
-  isDevicePrekeyBundleError: vi.fn((value: any, code?: string) => (
-    value?.name === 'DevicePrekeyBundleError' && (!code || value.code === code)
-  )),
+  isDevicePrekeyBundleError: vi.fn((value: unknown, code?: string) => {
+    const candidate = value as { name?: string; code?: string } | null;
+    return candidate?.name === 'DevicePrekeyBundleError'
+      && (!code || candidate.code === code);
+  }),
   x3dhInitiate: vi.fn(),
   peekDeviceSignedPrekey: vi.fn(),
   ratchetEncrypt: vi.fn(),
@@ -13,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   wrapPlaintextForDevice: vi.fn(),
   logCryptoError: vi.fn(),
   logCryptoException: vi.fn(),
+  resolveFanoutRoute: vi.fn(),
+  rollbackFanoutSessionTarget: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -32,6 +36,26 @@ vi.mock('@/lib/messaging/deviceWrap', () => ({
 vi.mock('@/lib/messaging/deviceCopyRetryRequest', () => ({
   requestDeviceCopyRetry: vi.fn(),
 }));
+
+vi.mock('@/lib/messaging/fanoutRouteCache', () => ({
+  resolveFanoutRoute: mocks.resolveFanoutRoute,
+  invalidateFanoutRoute: vi.fn(),
+}));
+
+vi.mock('@/lib/messaging/fanoutSessionTransaction', () => ({
+  captureFanoutSessionBeforeMutation: vi.fn().mockResolvedValue(undefined),
+  rollbackFanoutSessionTarget: mocks.rollbackFanoutSessionTarget,
+}));
+
+vi.mock('@/lib/messaging/repeatablePreKeyEnvelope', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/messaging/repeatablePreKeyEnvelope')>();
+  return {
+    ...actual,
+    prepareInitiatingSessionForSend: vi.fn().mockResolvedValue('ready'),
+    restartExpiredInitiatingSession: vi.fn(),
+    wrapRatchetForInitiatingSession: vi.fn(async ({ ratchetPayload }) => ratchetPayload),
+  };
+});
 
 vi.mock('@/lib/crypto/x3dh', () => ({
   fetchPrekeyBundleForDevice: mocks.fetchPrekeyBundleForDevice,
@@ -60,7 +84,10 @@ vi.mock('@/lib/crypto/errorLogger', () => ({
   logCryptoException: mocks.logCryptoException,
 }));
 
-import { encryptPlaintextForDeviceTarget } from '@/lib/messaging/multiDeviceFanout';
+import {
+  buildFanoutCopies,
+  encryptPlaintextForDeviceTarget,
+} from '@/lib/messaging/multiDeviceFanout';
 
 const INVALID_CACHE_KEY = 'forsure:invalid-device-spk-cache:v1';
 
@@ -83,6 +110,8 @@ describe('multiDeviceFanout security gates', () => {
     mocks.ratchetEncrypt.mockResolvedValue(null);
     mocks.getSessionPeerSpkId.mockResolvedValue(null);
     mocks.fetchPrekeyBundleForDevice.mockResolvedValue(null);
+    mocks.resolveFanoutRoute.mockResolvedValue([]);
+    mocks.rollbackFanoutSessionTarget.mockResolvedValue(false);
   });
 
   it('does not permanently blacklist a historical DeviceID', async () => {
@@ -120,5 +149,55 @@ describe('multiDeviceFanout security gates', () => {
     expect(mocks.fetchPrekeyBundleForDevice).toHaveBeenCalledTimes(1);
     expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
     expect(localStorage.getItem(INVALID_CACHE_KEY) ?? '').not.toContain('temporarily-offline-device');
+  });
+
+  it('creates one capsule for every iOS, Android and Windows route', async () => {
+    mocks.resolveFanoutRoute.mockResolvedValue([
+      { userId: 'recipient-user', deviceId: 'ios-device', devicePublicKey: 'ios-key' },
+      { userId: 'recipient-user', deviceId: 'android-device', devicePublicKey: 'android-key' },
+      { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
+    ]);
+    mocks.ratchetEncrypt.mockImplementation(async (
+      _senderUserId: string,
+      _senderDeviceId: string,
+      _recipientUserId: string,
+      recipientDeviceId: string,
+    ) => `aegis1.ratchet.${recipientDeviceId}`);
+
+    const result = await buildFanoutCopies({
+      messageId: 'message-all-platforms',
+      conversationId: 'conversation-all-platforms',
+      senderUserId: 'sender-user',
+      plaintext: 'capsule',
+    });
+
+    expect(result.rows.map((row) => row.recipient_device_id).sort()).toEqual([
+      'android-device',
+      'ios-device',
+      'windows-device',
+    ]);
+  });
+
+  it('rejects the whole fanout when one canonical device cannot be encrypted', async () => {
+    mocks.resolveFanoutRoute.mockResolvedValue([
+      { userId: 'recipient-user', deviceId: 'ios-device', devicePublicKey: 'ios-key' },
+      { userId: 'recipient-user', deviceId: 'android-device', devicePublicKey: 'android-key' },
+      { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
+    ]);
+    mocks.ratchetEncrypt.mockImplementation(async (
+      _senderUserId: string,
+      _senderDeviceId: string,
+      _recipientUserId: string,
+      recipientDeviceId: string,
+    ) => recipientDeviceId === 'android-device'
+      ? null
+      : `aegis1.ratchet.${recipientDeviceId}`);
+
+    await expect(buildFanoutCopies({
+      messageId: 'message-partial-route',
+      conversationId: 'conversation-all-platforms',
+      senderUserId: 'sender-user',
+      plaintext: 'capsule',
+    })).rejects.toThrow('E2EE_DEVICE_COPIES_UNAVAILABLE');
   });
 });

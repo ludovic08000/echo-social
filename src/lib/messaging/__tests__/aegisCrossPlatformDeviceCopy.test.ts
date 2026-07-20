@@ -148,4 +148,26 @@ describe('Aegis cross-platform device-copy routing', () => {
       .resolves.toBeNull();
     expect(mocks.ratchetDecryptWithSession).not.toHaveBeenCalled();
   });
+
+  it('does not make a transient missing capsule permanent', async () => {
+    mocks.ratchetDecryptWithSession.mockResolvedValue('content-key-after-retry');
+    mocks.supabaseRpc
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({
+        data: [{
+          encrypted_body: CAPSULE,
+          sender_user_id: SENDER.user_id,
+          sender_device_id: SENDER.device_id,
+          recipient_device_id: ME.deviceId,
+        }],
+      });
+
+    await expect(tryReadDeviceCopy('message-late-capsule', SENDER.user_id))
+      .resolves.toBeNull();
+    await expect(tryReadDeviceCopy('message-late-capsule', SENDER.user_id, {
+      requestRetry: true,
+    })).resolves.toBe('content-key-after-retry');
+
+    expect(mocks.supabaseRpc).toHaveBeenCalledTimes(2);
+  });
 });
