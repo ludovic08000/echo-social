@@ -1437,6 +1437,7 @@ export type Database = {
       content_strikes: {
         Row: {
           acknowledged: boolean | null
+          acknowledged_at: string | null
           created_at: string | null
           id: string
           post_id: string | null
@@ -1447,6 +1448,7 @@ export type Database = {
         }
         Insert: {
           acknowledged?: boolean | null
+          acknowledged_at?: string | null
           created_at?: string | null
           id?: string
           post_id?: string | null
@@ -1457,6 +1459,7 @@ export type Database = {
         }
         Update: {
           acknowledged?: boolean | null
+          acknowledged_at?: string | null
           created_at?: string | null
           id?: string
           post_id?: string | null
@@ -7778,6 +7781,11 @@ export type Database = {
       }
     }
     Functions: {
+      acknowledge_all_content_strikes: { Args: never; Returns: number }
+      acknowledge_content_strike: {
+        Args: { p_strike_id: string }
+        Returns: boolean
+      }
       add_group_members: {
         Args: { p_conv_id: string; p_member_ids: string[] }
         Returns: number
