@@ -1,10 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { bufferToBase64 } from '@/lib/crypto/utils';
 import { exportPublicKeyRaw, loadIdentityKeys } from '@/lib/crypto/keyManager';
-import {
-  isDevicePrekeyBundleError,
-  peekDeviceSignedPrekey,
-} from '@/lib/crypto/x3dh';
+import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import {
   fetchVerifiedDeviceList,
   publishCompanionSignature,
@@ -25,7 +22,6 @@ type DeviceRow = {
 };
 
 type SignatureRow = Awaited<ReturnType<typeof signCompanionDevice>>;
-const MISSING_SPK_GRACE_MS = 10 * 60 * 1000;
 
 function delay(ms: number): Promise<void> {
   if (ms <= 0) return Promise.resolve();
@@ -43,74 +39,6 @@ async function listApprovedDevices(userId: string): Promise<DeviceRow[]> {
     .is('stale_at', null);
   if (error) throw error;
   return (data ?? []) as DeviceRow[];
-}
-
-/**
- * Retire deterministic invalid/missing devices from our own account so they do
- * not remain advertised as unusable destinations. Aegis sends can continue to
- * other authenticated devices, but cleaning stale routes keeps cross-device
- * delivery complete. Transient fetch errors never quarantine a device.
- */
-export async function quarantineInvalidApprovedDevices(
-  userId: string,
-  currentDeviceId: string,
-): Promise<string[]> {
-  const devices = await listApprovedDevices(userId);
-  const quarantined: string[] = [];
-
-  for (const device of devices) {
-    if (device.device_id === currentDeviceId) continue;
-
-    let reason: string | null = null;
-    try {
-      const verifiedSpk = await peekDeviceSignedPrekey(userId, device.device_id);
-      if (verifiedSpk) continue;
-
-      // The prekey reader also returns null for a transient RPC failure. Check
-      // the row directly before changing persistent device state.
-      const { data: activeSpk, error: activeSpkError } = await supabase
-        .from('device_signed_prekeys')
-        .select('spk_id')
-        .eq('user_id', userId)
-        .eq('device_id', device.device_id)
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle();
-      if (activeSpkError || activeSpk) continue;
-
-      const lastRegistrationActivity = Date.parse(
-        device.last_seen_at ?? device.created_at ?? '',
-      );
-      if (
-        Number.isFinite(lastRegistrationActivity) &&
-        Date.now() - lastRegistrationActivity < MISSING_SPK_GRACE_MS
-      ) {
-        continue;
-      }
-      reason = 'aegis_v1_missing_signed_prekey';
-    } catch (error) {
-      if (!isDevicePrekeyBundleError(error, 'DEVICE_SPK_SIGNATURE_INVALID')) continue;
-      reason = 'aegis_v1_invalid_signed_prekey_signature';
-    }
-
-    const { data, error } = await supabase.rpc('quarantine_own_invalid_device', {
-      p_device_id: device.device_id,
-      p_reason: reason,
-    });
-    const result = data && typeof data === 'object' && !Array.isArray(data)
-      ? data as Record<string, unknown>
-      : null;
-    if (error || result?.ok !== true) {
-      console.warn('[DeviceLinkTrust] invalid device quarantine failed', {
-        deviceId: device.device_id.slice(0, 8),
-        error: error?.message ?? result?.code ?? 'UNKNOWN',
-      });
-      continue;
-    }
-    quarantined.push(device.device_id);
-  }
-
-  return quarantined;
 }
 
 async function isDeviceCryptographicallyReady(

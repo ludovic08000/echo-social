@@ -31,11 +31,7 @@ import {
 } from '@/lib/crypto/x3dh';
 import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
-import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
-import {
-  ensureApprovedDeviceTrust,
-  quarantineInvalidApprovedDevices,
-} from '@/lib/crypto/deviceLinkTrust';
+import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import {
   restoreAccountKeysFromActiveSession,
@@ -360,20 +356,6 @@ export function useDeviceRegistration() {
           return;
         }
 
-        // Mark stale/revoke old devices and delete our local sessions to
-        // devices that crossed the long inactivity threshold.
-        try {
-          const { data } = await supabase.rpc('cleanup_stale_user_devices');
-          const lifecycleRows = (data || []) as Array<{ device_id: string; action: string }>;
-          await Promise.all(
-            lifecycleRows
-              .filter(row => row.action === 'revoked' && row.device_id !== deviceId)
-              .map(row => invalidateDeviceSession(user.id, deviceId, user.id, row.device_id)),
-          );
-        } catch (cleanupErr) {
-          console.warn('[useDeviceRegistration] stale device cleanup failed (non-fatal):', cleanupErr);
-        }
-
         // 2. Ensure the per-device Signed PreKey exists and is fresh.
         //    This is what makes targeted X3DH per device possible. After the
         //    normal refresh, peek the SPK without consuming OPK. If it is still
@@ -409,31 +391,11 @@ export function useDeviceRegistration() {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
 
-        // 4. Hard-cutover hygiene. One missing or wrongly signed SPK poisons
-        //    the all-device fan-out. Retire only deterministic invalid devices
-        //    from this account; transient network errors never quarantine.
-        try {
-          const quarantined = await quarantineInvalidApprovedDevices(user.id, deviceId);
-          for (const invalidDeviceId of quarantined) {
-            await invalidateDeviceSession(user.id, deviceId, user.id, invalidDeviceId).catch(() => {});
-          }
-          if (quarantined.length > 0) {
-            invalidateAllFanoutRoutes();
-            console.warn('[useDeviceRegistration] incompatible development devices retired', {
-              count: quarantined.length,
-              devices: quarantined.map((id) => id.slice(0, 8)),
-            });
-            try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* best-effort wakeup */ }
-          }
-        } catch (healErr) {
-          console.warn('[useDeviceRegistration] invalid-device hygiene failed (non-fatal):', healErr);
-        }
-
         // Registration and prekeys are not enough for Aegis. Publish the
         // canonical account root, sign companions, then prove that this exact
         // DeviceID is visible through the fail-closed route used by senders.
-        // This runs after invalid-device repair so the root binds the final
-        // primary selected by the database.
+        // Unhealthy companion devices stay visible for explicit user action;
+        // registration never revokes or retires them automatically.
         const repairedCompanions = await ensureApprovedDeviceTrust(user.id, deviceId);
         invalidateAllFanoutRoutes();
         console.info('[useDeviceRegistration] authenticated E2EE device ready', {

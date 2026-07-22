@@ -236,10 +236,8 @@ export async function refreshDeviceSignedPrekeyIfNeeded(userId: string, deviceId
     if (pubKeyErr || !pubKeyData?.signing_key) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
     const currentSignatureValid = await verifySignedPrekey(pubKeyData.signing_key, data.public_key, data.signature, { source: 'refreshDeviceSignedPrekeyIfNeeded.current_device_spk', identityKeyB64: pubKeyData.identity_key, userId, deviceId, spkId: data.spk_id });
     if (!currentSignatureValid) {
-      // P2: server-side quarantine of the bad device SPK so peers stop
-      // targeting it. If regeneration also fails, escalate by quarantining
-      // the device itself. Both RPCs are best-effort — failure must never
-      // block local regeneration.
+      // Quarantine only the invalid SPK. The authenticated DeviceID remains
+      // connected until the user explicitly revokes it from the device menu.
       try {
         await (supabase as any).rpc('quarantine_own_invalid_device_spk', {
           p_device_id: deviceId,
@@ -252,15 +250,7 @@ export async function refreshDeviceSignedPrekeyIfNeeded(userId: string, deviceId
       try {
         await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
       } catch (regenErr) {
-        console.warn('[X3DH-DEV] SPK regeneration failed — quarantining device:', regenErr);
-        try {
-          await (supabase as any).rpc('quarantine_own_invalid_device', {
-            p_device_id: deviceId,
-            p_reason: 'own_device_spk_regeneration_failed',
-          });
-        } catch (qErr2) {
-          console.warn('[X3DH-DEV] quarantine_own_invalid_device failed (non-fatal):', qErr2);
-        }
+        console.warn('[X3DH-DEV] SPK regeneration deferred; DeviceID remains connected:', regenErr);
       }
       return;
     }

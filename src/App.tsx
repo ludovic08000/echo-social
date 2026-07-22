@@ -24,7 +24,6 @@ import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -199,23 +198,6 @@ function AccountKeySyncRunner() {
     return () => stop();
   }, [user?.id]);
 
-
-  useEffect(() => {
-    if (!user?.id) return;
-    const t = window.setTimeout(() => {
-      void Promise.all([
-        import('@/integrations/supabase/client'),
-        import('@/lib/messaging/currentDevice'),
-      ]).then(([{ supabase }, { getCurrentDeviceId, isDeviceIdTemporary }]) => {
-        if (isDeviceIdTemporary()) return;
-        void (supabase as any).rpc('cleanup_current_user_stale_devices', {
-          p_current_device_id: getCurrentDeviceId(),
-          p_stale_after: '14 days',
-        });
-      }).catch(() => {});
-    }, 20_000);
-    return () => window.clearTimeout(t);
-  }, [user?.id]);
 
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
