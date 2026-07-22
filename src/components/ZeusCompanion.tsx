@@ -404,7 +404,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const secureSendMessage = useSendMessage();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
-  const { unacknowledged } = useContentStrikes();
+  const { unacknowledged, acknowledge, acknowledgeAll } = useContentStrikes();
   const [open, setOpen] = useState(inline);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
