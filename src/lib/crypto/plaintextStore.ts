@@ -126,7 +126,7 @@ async function saveEntry(id: string, plaintext: string): Promise<void> {
   const key = await getOrCreateDeviceKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv, additionalData: entryAAD(id) },
+    { name: 'AES-GCM', iv, additionalData: entryAAD(id) as BufferSource },
     key,
     new TextEncoder().encode(plaintext),
   );
