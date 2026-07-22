@@ -176,7 +176,7 @@ async function encryptPayload(userId: string, payload: OutboxPayload): Promise<S
     {
       name: 'AES-GCM',
       iv,
-      additionalData: aadFor(userId, payload.conversationId, payload.localId),
+      additionalData: aadFor(userId, payload.conversationId, payload.localId) as BufferSource,
       tagLength: 128,
     },
     key,
