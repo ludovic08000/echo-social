@@ -135,7 +135,7 @@ async function persistDeviceKey(userId: string, key: CryptoKey, raw?: Uint8Array
     try {
       await secureSetSecret(
         `${SECURE_PREFIX}${userId}`,
-        bufferToBase64(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)),
+        bufferToBase64(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer),
       );
     } catch {
       // Web has no Keychain/Keystore; IndexedDB remains the fallback.
@@ -302,7 +302,7 @@ export async function exportArchiveMasterKeyForDeviceLink(userId: string): Promi
   }
   if (sessionUserId !== userId || !sessionRaw || sessionRaw.byteLength !== 32) return null;
   return bufferToBase64(
-    sessionRaw.buffer.slice(sessionRaw.byteOffset, sessionRaw.byteOffset + sessionRaw.byteLength),
+    sessionRaw.buffer.slice(sessionRaw.byteOffset, sessionRaw.byteOffset + sessionRaw.byteLength) as ArrayBuffer,
   );
 }
 

@@ -176,7 +176,7 @@ async function encryptPayload(userId: string, payload: OutboxPayload): Promise<S
     {
       name: 'AES-GCM',
       iv,
-      additionalData: aadFor(userId, payload.conversationId, payload.localId),
+      additionalData: aadFor(userId, payload.conversationId, payload.localId) as BufferSource,
       tagLength: 128,
     },
     key,
@@ -201,8 +201,8 @@ async function decryptRecord(userId: string, record: StoredOutboxRecord): Promis
     const plaintext = await crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
-        iv: new Uint8Array(record.iv),
-        additionalData: aadFor(userId, record.conversationId, record.localId),
+        iv: new Uint8Array(record.iv) as BufferSource,
+        additionalData: aadFor(userId, record.conversationId, record.localId) as BufferSource,
         tagLength: 128,
       },
       key,
