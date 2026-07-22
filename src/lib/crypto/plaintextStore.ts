@@ -148,7 +148,7 @@ async function loadEntry(id: string): Promise<string | null> {
   const key = await getOrCreateDeviceKey();
   try {
     const pt = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: entry.iv, additionalData: entryAAD(id) },
+      { name: 'AES-GCM', iv: entry.iv, additionalData: entryAAD(id) as BufferSource },
       key,
       entry.ct,
     );
