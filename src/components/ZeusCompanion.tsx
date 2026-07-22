@@ -404,7 +404,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const secureSendMessage = useSendMessage();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
-  const { unacknowledged } = useContentStrikes();
+  const { unacknowledged, acknowledge, acknowledgeAll } = useContentStrikes();
   const [open, setOpen] = useState(inline);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -834,9 +834,17 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
               <div className="mx-3 mt-1 px-3 py-2 rounded-xl bg-destructive/10 border border-destructive/20">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-3.5 h-3.5 text-destructive mt-0.5 shrink-0" />
-                  <p className="text-[11px] text-destructive leading-relaxed">
+                  <p className="text-[11px] text-destructive leading-relaxed flex-1">
                     {(unacknowledged[0] as any).zeus_message || 'Alerte : contenu signalé détecté.'}
                   </p>
+                  <button
+                    onClick={() => acknowledgeAll.mutate()}
+                    disabled={acknowledgeAll.isPending}
+                    className="text-[10px] font-semibold text-destructive hover:text-destructive/80 underline shrink-0 disabled:opacity-50"
+                    aria-label="Marquer comme lu"
+                  >
+                    Compris
+                  </button>
                 </div>
               </div>
             )}

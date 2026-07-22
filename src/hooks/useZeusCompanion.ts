@@ -38,6 +38,7 @@ export function useZeusSettings() {
 
 export function useContentStrikes() {
   const { user } = useAuth();
+  const qc = useQueryClient();
 
   const { data: strikes } = useQuery({
     queryKey: ['content-strikes', user?.id],
@@ -58,13 +59,21 @@ export function useContentStrikes() {
 
   const acknowledge = useMutation({
     mutationFn: async (strikeId: string) => {
-      // Users can only update their own strikes (RLS)
-      // We need a function for this since we only have SELECT policy
-      // For now, just mark locally
+      const { error } = await (supabase as any).rpc('acknowledge_content_strike', { p_strike_id: strikeId });
+      if (error) throw error;
     },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['content-strikes'] }),
   });
 
-  return { strikes, unacknowledged, acknowledge };
+  const acknowledgeAll = useMutation({
+    mutationFn: async () => {
+      const { error } = await (supabase as any).rpc('acknowledge_all_content_strikes');
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['content-strikes'] }),
+  });
+
+  return { strikes, unacknowledged, acknowledge, acknowledgeAll };
 }
 
 export function usePostModeration() {
