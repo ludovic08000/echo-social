@@ -140,7 +140,7 @@ export async function reserveAegisInitial(params: {
   await reserveLocally(id, localToken);
 
   try {
-    const { data, error } = await supabase.rpc('reserve_x3dh_initial', {
+    const { data, error } = await (supabase as any).rpc("reserve_x3dh_initial", {
       p_fingerprint: id,
       p_ttl_seconds: Math.ceil(RESERVATION_TTL_MS / 1000),
     });
@@ -167,7 +167,7 @@ export async function reserveAegisInitial(params: {
 }
 
 export async function finalizeAegisInitial(reservation: AegisReplayReservation): Promise<void> {
-  const { data, error } = await supabase.rpc('finalize_x3dh_initial', {
+  const { data, error } = await (supabase as any).rpc("finalize_x3dh_initial", {
     p_fingerprint: reservation.fingerprint,
     p_reservation_token: reservation.serverToken,
   });
@@ -182,7 +182,7 @@ export async function finalizeAegisInitial(reservation: AegisReplayReservation):
 
 export async function cancelAegisInitial(reservation: AegisReplayReservation): Promise<void> {
   try {
-    await supabase.rpc('cancel_x3dh_initial', {
+    await (supabase as any).rpc("cancel_x3dh_initial", {
       p_fingerprint: reservation.fingerprint,
       p_reservation_token: reservation.serverToken,
     });
