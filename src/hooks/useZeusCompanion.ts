@@ -55,7 +55,7 @@ export function useContentStrikes() {
     enabled: !!user,
   });
 
-  const unacknowledged = strikes?.filter((s: any) => !s.acknowledged) || [];
+  const unacknowledged = strikes?.filter((s: any) => !s.acknowledged_at && !s.acknowledged) || [];
 
   const acknowledge = useMutation({
     mutationFn: async (strikeId: string) => {
