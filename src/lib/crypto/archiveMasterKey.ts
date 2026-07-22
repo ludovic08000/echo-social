@@ -302,7 +302,7 @@ export async function exportArchiveMasterKeyForDeviceLink(userId: string): Promi
   }
   if (sessionUserId !== userId || !sessionRaw || sessionRaw.byteLength !== 32) return null;
   return bufferToBase64(
-    sessionRaw.buffer.slice(sessionRaw.byteOffset, sessionRaw.byteOffset + sessionRaw.byteLength),
+    sessionRaw.buffer.slice(sessionRaw.byteOffset, sessionRaw.byteOffset + sessionRaw.byteLength) as ArrayBuffer,
   );
 }
 
