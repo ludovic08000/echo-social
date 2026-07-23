@@ -13,6 +13,7 @@ import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
 import { Coffee, X, Sparkles, Lock, Shield, Radio } from 'lucide-react';
 import { FeedZeusCard } from '@/components/feed/FeedZeusCard';
+import { FeedProfileHeader } from '@/components/feed/FeedProfileHeader';
 import { LazyMount } from '@/components/feed/LazyMount';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
