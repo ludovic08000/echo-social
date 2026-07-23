@@ -161,6 +161,8 @@ export function classifyOutboundFailure(error: unknown): {
     'identity_lost_backup_available',
   ].some(marker => text.includes(marker));
   const routeUnavailable = [
+    'e2ee_sender_device_not_trusted',
+    'e2ee_sender_device_required',
     'e2ee_device_copies_unavailable',
     'e2ee_device_list_unavailable',
     'e2ee_device_route_unavailable',

@@ -75,6 +75,8 @@ function failureStatus(error: unknown): OutboxStatus {
   }
   if (
     text.includes('e2ee_device') ||
+    text.includes('e2ee_sender_device_not_trusted') ||
+    text.includes('e2ee_sender_device_required') ||
     text.includes('e2ee_participant_route_unavailable') ||
     text.includes('e2ee_no_secure_target') ||
     text.includes('device_prekey_bundle_unavailable') ||
@@ -84,6 +86,24 @@ function failureStatus(error: unknown): OutboxStatus {
     return 'waiting_secure_channel';
   }
   return 'retry_pending';
+}
+
+function requestSenderTrustRepair(error: unknown): void {
+  const text = errorMessage(error).toLowerCase();
+  if (
+    !text.includes('e2ee_sender_device_not_trusted') &&
+    !text.includes('e2ee_sender_device_required')
+  ) {
+    return;
+  }
+
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
+      detail: { reason: 'sender-route-not-trusted' },
+    }));
+  } catch {
+    // Browser event delivery is best-effort outside the DOM runtime.
+  }
 }
 
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, code: string): Promise<T> {
@@ -250,6 +270,7 @@ export async function sendAegisOutboundMessage(
   } catch (error) {
     await rollbackFanoutSessionTransaction(messageId).catch(() => 0);
     copies = [];
+    requestSenderTrustRepair(error);
     await persist({
       preparedCopies: [],
       status: failureStatus(error),
@@ -285,6 +306,7 @@ export async function sendAegisOutboundMessage(
   copies = result.copies;
   if (result.error) {
     const retainedCopies = isAegisAmbiguousTransportFailure(result.error) ? copies : [];
+    requestSenderTrustRepair(result.error);
     await persist({
       preparedCopies: retainedCopies,
       status: failureStatus(result.error),

@@ -224,7 +224,9 @@ export async function finalizeLinkedDeviceAfterRestore(
     console.warn('[DeviceLinkTrust] device resync failed before trust publish', error);
   }
 
-  const retryDelays = [0, 500, 1_500, 3_000, 5_000];
+  // Keep the interactive restore bounded. If replication is slower, the
+  // authenticated registration repair chain continues in the background.
+  const retryDelays = [0, 250, 750, 1_500, 2_500];
   for (const waitMs of retryDelays) {
     await delay(waitMs);
 
@@ -273,5 +275,12 @@ export async function finalizeLinkedDeviceAfterRestore(
   console.warn('[DeviceLinkTrust] linked device failed readiness verification', {
     deviceId: companionDeviceId.slice(0, 8),
   });
-  throw new Error('LINKED_DEVICE_NOT_READY');
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
+      detail: { reason: 'linked-device-finalize-pending', deviceId: companionDeviceId },
+    }));
+  } catch {
+    // Browser event delivery is best-effort outside the DOM runtime.
+  }
+  return false;
 }

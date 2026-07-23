@@ -80,6 +80,9 @@ const deviceCopyPreloads = new Map<string, Promise<void>>();
 const decryptedCapsuleCache = new Map<string, string>();
 const DECRYPTED_CAPSULE_CACHE_CAP = 500;
 const DEVICE_COPY_MISS_TTL_MS = 2_000;
+const DEVICE_ROUTE_HEALTH_TTL_MS = 15_000;
+let lastDeviceRouteHealthAt = 0;
+let deviceRouteHealthInFlight: Promise<void> | null = null;
 
 function copyCacheKey(userId: string, deviceId: string, messageId: string): string {
   return `${userId}|${deviceId}|${messageId}`;
@@ -90,6 +93,8 @@ export function clearDeviceCopyCache(): void {
   deviceCopyMissAt.clear();
   deviceCopyPreloads.clear();
   decryptedCapsuleCache.clear();
+  lastDeviceRouteHealthAt = 0;
+  deviceRouteHealthInFlight = null;
 }
 
 export function clearDeviceCopyCacheForMessage(messageId: string): void {
@@ -542,6 +547,66 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
 
 interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
 
+function requestCurrentDeviceRouteRepair(userId: string, deviceId: string): void {
+  if (Date.now() - lastDeviceRouteHealthAt < DEVICE_ROUTE_HEALTH_TTL_MS) return;
+  if (deviceRouteHealthInFlight) return;
+  lastDeviceRouteHealthAt = Date.now();
+
+  deviceRouteHealthInFlight = import('@/lib/crypto/signedDeviceList')
+    .then(({ fetchVerifiedDeviceList }) => fetchVerifiedDeviceList(userId))
+    .then((verified) => {
+      if (verified.trusted.some((entry) => entry.deviceId === deviceId)) return;
+      try {
+        window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
+          detail: {
+            reason: 'current-device-route-missing',
+            deviceId,
+          },
+        }));
+      } catch {
+        // Browser event delivery is best-effort outside the DOM runtime.
+      }
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      deviceRouteHealthInFlight = null;
+    });
+}
+
+async function loadDeviceCopyRows(
+  messageId: string,
+  userId: string,
+  deviceId: string,
+): Promise<CopyRow[]> {
+  const rpcResult = await supabase.rpc('get_device_copy_for_message', {
+    p_message_id: messageId,
+    p_device_id: deviceId,
+  });
+  if (!rpcResult.error) {
+    return ((rpcResult.data ?? []) as CopyRow[])
+      .map((row) => ({ ...row, recipient_device_id: row.recipient_device_id ?? deviceId }));
+  }
+
+  // A deployment can briefly serve the new client before PostgREST refreshes
+  // the RPC schema. The exact RLS-filtered table lookup keeps delivery working
+  // during that window and, unlike the old code, never converts a 401/42883
+  // into a false "capsule absent" result.
+  const fallback = await supabase
+    .from('message_device_copies')
+    .select('message_id,encrypted_body,sender_user_id,sender_device_id,recipient_device_id')
+    .eq('message_id', messageId)
+    .eq('recipient_user_id', userId)
+    .eq('recipient_device_id', deviceId);
+  if (fallback.error) {
+    throw new Error(
+      `AEGIS_DEVICE_COPY_LOOKUP_FAILED:${rpcResult.error.code ?? 'RPC'}:${fallback.error.code ?? 'RLS'}`,
+    );
+  }
+
+  return ((fallback.data ?? []) as CopyRow[])
+    .map((row) => ({ ...row, recipient_device_id: row.recipient_device_id ?? deviceId }));
+}
+
 export async function tryReadDeviceCopy(
   messageId: string,
   expectedSenderUserId?: string,
@@ -576,13 +641,15 @@ export async function tryReadDeviceCopy(
       deviceCopyMissAt.delete(cacheKey);
     }
 
-    const { data } = await supabase.rpc('get_device_copy_for_message', {
-      p_message_id: messageId,
-      p_device_id: myDeviceId,
-    });
-    const rows = ((data ?? []) as CopyRow[])
-      .map(row => ({ ...row, recipient_device_id: row.recipient_device_id ?? myDeviceId }))
+    const rows = (await loadDeviceCopyRows(messageId, userId, myDeviceId))
       .filter(row => !expectedSenderUserId || row.sender_user_id === expectedSenderUserId);
+
+    if (rows.length === 0 && options.requestRetry) {
+      // A historical message can legitimately predate this DeviceID. Repair
+      // registration only when the canonical signed route also says the
+      // current device is missing; a lone old copy miss must not rotate keys.
+      requestCurrentDeviceRouteRepair(userId, myDeviceId);
+    }
 
     for (const row of rows) {
       deviceCopyCache.set(cacheKey, row);

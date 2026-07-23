@@ -10,6 +10,22 @@ import { hardCrypto } from './cryptoIntegrity';
 import { base64ToBuffer, bufferToBase64, encodeString } from './utils';
 import { exportPublicKeyRaw, loadIdentityKeys } from './keyManager';
 
+type CanonicalRootRow = {
+  primary_device_id: string;
+  identity_pub_b64: string;
+};
+
+type CanonicalRootTable = {
+  select: (columns: string) => {
+    eq: (column: string, value: string) => {
+      maybeSingle: () => Promise<{
+        data: CanonicalRootRow | null;
+        error: { message: string } | null;
+      }>;
+    };
+  };
+};
+
 export interface SignedDeviceEntry {
   deviceId: string;
   devicePublicKey: string;
@@ -77,7 +93,7 @@ export async function signCompanionDevice(args: {
     devicePub: args.companionPublicKeyB64,
   });
   const signature = await hardCrypto.sign(
-    'Ed25519' as any,
+    'Ed25519',
     args.primaryEdPrivate,
     encodeString(payload),
   );
@@ -99,21 +115,21 @@ export async function publishCompanionSignature(
     .upsert(row, { onConflict: 'user_id,device_id,primary_device_id' });
   if (error) throw new Error(`UDS_PUBLISH_FAILED: ${error.message}`);
 
-  try {
-    await publishOwnSignedDeviceList({
-      signerDeviceId: row.primary_device_id,
-      signatureB64: row.signature_b64,
-      repairCompanions: false,
-    });
-  } catch (publishError) {
-    console.warn('[signedDeviceList] publishOwnSignedDeviceList failed (non-fatal):', publishError);
+  // A companion signature authenticates one X25519 device key. It is not a
+  // signature over the advisory device list and must never be reused as one.
+  const published = await publishOwnSignedDeviceList({
+    signerDeviceId: row.primary_device_id,
+    repairCompanions: false,
+  });
+  if (!published.ok) {
+    throw new Error(`SIGNED_DEVICE_LIST_PUBLISH_FAILED:${published.error ?? 'UNKNOWN'}`);
   }
 }
 
 async function repairApprovedCompanionSignatures(
   userId: string,
   rows: Array<{ device_id: string; device_public_key: string; is_primary: boolean }>,
-): Promise<void> {
+): Promise<number> {
   const primaries = rows.filter((row) => row.is_primary);
   if (primaries.length !== 1) {
     throw new Error(`SIGNED_DEVICE_PRIMARY_COUNT_INVALID:${primaries.length}`);
@@ -121,46 +137,89 @@ async function repairApprovedCompanionSignatures(
   const primary = primaries[0];
 
   const companions = rows.filter((row) => !row.is_primary && row.device_public_key);
-  if (companions.length === 0) return;
+  const identity = await loadIdentityKeys(userId);
+  if (!identity?.signingPrivateKey || !identity.signingPublicKey) {
+    throw new Error('DEVICE_TRUST_ACCOUNT_KEY_LOCKED');
+  }
+  const primaryPubB64 = bufferToBase64(await exportPublicKeyRaw(identity.signingPublicKey));
 
-  const { data: signatures } = await supabase
+  const canonicalRoot = await loadCanonicalRoot(userId);
+  if (!canonicalRoot) {
+    throw new Error('IDENTITY_ROOT_MISSING');
+  }
+  if (canonicalRoot.identityPubB64 !== primaryPubB64) {
+    throw new Error('IDENTITY_ROOT_MISMATCH');
+  }
+  if (canonicalRoot.primaryDeviceId !== primary.device_id) {
+    throw new Error('CANONICAL_PRIMARY_DEVICE_MISMATCH');
+  }
+  if (companions.length === 0) return 0;
+
+  const { data: signatures, error: signaturesError } = await supabase
     .from('user_device_signatures')
-    .select('device_id, primary_device_id, revoked_at')
+    .select('device_id, primary_device_id, primary_pub_b64, signature_b64, revoked_at')
     .eq('user_id', userId)
     .eq('primary_device_id', primary.device_id)
     .is('revoked_at', null);
-  const alreadySigned = new Set((signatures ?? []).map((row) => row.device_id));
-  const missing = companions.filter((row) => !alreadySigned.has(row.device_id));
-  if (missing.length === 0) return;
+  if (signaturesError) {
+    throw new Error(`SIGNED_DEVICE_SIGNATURES_FETCH_FAILED:${signaturesError.message}`);
+  }
 
-  const identity = await loadIdentityKeys(userId);
-  if (!identity?.signingPrivateKey || !identity.signingPublicKey) return;
-  const primaryPubB64 = bufferToBase64(await exportPublicKeyRaw(identity.signingPublicKey));
+  const validDeviceIds = new Set<string>();
+  for (const companion of companions) {
+    const existing = (signatures ?? []).find((row) =>
+      row.device_id === companion.device_id &&
+      row.primary_device_id === primary.device_id &&
+      row.primary_pub_b64 === primaryPubB64 &&
+      typeof row.signature_b64 === 'string' &&
+      row.signature_b64.trim().length > 0,
+    );
+    if (!existing?.signature_b64) continue;
 
-  for (const companion of missing) {
-    const signatureRow = await signCompanionDevice({
+    const payload = canonicalPayload({
+      userId,
+      primaryDeviceId: primary.device_id,
+      deviceId: companion.device_id,
+      devicePub: companion.device_public_key,
+    });
+    try {
+      const valid = await hardCrypto.verify(
+        'Ed25519',
+        identity.signingPublicKey,
+        base64ToBuffer(existing.signature_b64),
+        encodeString(payload),
+      );
+      if (valid) validDeviceIds.add(companion.device_id);
+    } catch {
+      // Invalid Base64 and invalid Ed25519 signatures are both repaired below.
+    }
+  }
+
+  const missing = companions.filter((row) => !validDeviceIds.has(row.device_id));
+  if (missing.length === 0) return 0;
+
+  const repairedRows = await Promise.all(missing.map((companion) =>
+    signCompanionDevice({
       userId,
       primaryDeviceId: primary.device_id,
       primaryEdPrivate: identity.signingPrivateKey,
       primaryEdPublicB64: primaryPubB64,
       companionDeviceId: companion.device_id,
       companionPublicKeyB64: companion.device_public_key,
-    });
-    const { error } = await supabase
-      .from('user_device_signatures')
-      .upsert(signatureRow, { onConflict: 'user_id,device_id,primary_device_id' });
-    if (error) {
-      console.warn('[signedDeviceList] approved companion auto-sign failed', {
-        deviceId: companion.device_id.slice(0, 8),
-        error: error.message,
-      });
-    }
+    }),
+  ));
+  const { error: repairError } = await supabase
+    .from('user_device_signatures')
+    .upsert(repairedRows, { onConflict: 'user_id,device_id,primary_device_id' });
+  if (repairError) {
+    throw new Error(`SIGNED_DEVICE_SIGNATURE_REPAIR_FAILED:${repairError.message}`);
   }
+
+  return repairedRows.length;
 }
 
 export async function publishOwnSignedDeviceList(args?: {
   signerDeviceId?: string | null;
-  signatureB64?: string | null;
   repairCompanions?: boolean;
 }): Promise<{ ok: boolean; deviceCount?: number; error?: string }> {
   const { data: userData } = await supabase.auth.getUser();
@@ -188,34 +247,41 @@ export async function publishOwnSignedDeviceList(args?: {
   }
 
   if (args?.repairCompanions !== false) {
-    await repairApprovedCompanionSignatures(userId, approvedRows).catch((error) => {
-      console.warn('[signedDeviceList] companion auto-repair failed', error);
-    });
+    try {
+      await repairApprovedCompanionSignatures(userId, approvedRows);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   const deviceIds = approvedRows
     .map((row) => String(row.device_id || ''))
     .filter((deviceId) => deviceId.length >= 8);
 
-  const { data, error } = await (supabase as any).rpc('upsert_signed_device_list', {
+  const rpcArgs = {
     p_device_ids: deviceIds,
-    p_signer_device_id: args?.signerDeviceId ?? null,
-    p_signature: args?.signatureB64 ?? null,
-  });
+    ...(args?.signerDeviceId ? { p_signer_device_id: args.signerDeviceId } : {}),
+  };
+  const { data, error } = await supabase.rpc('upsert_signed_device_list', rpcArgs);
   if (error) return { ok: false, error: error.message };
 
-  const result = data as any;
+  const result = data && typeof data === 'object' && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : null;
   return {
     ok: result?.ok === true,
     deviceCount: typeof result?.device_count === 'number' ? result.device_count : undefined,
-    error: result?.ok === true ? undefined : (result?.code || 'UPSERT_FAILED'),
+    error: result?.ok === true ? undefined : String(result?.code || 'UPSERT_FAILED'),
   };
 }
 
 export async function fetchSignedDeviceList(userId: string): Promise<SignedDeviceEntry[]> {
   const { data, error } = await supabase.rpc('get_signed_device_list', { p_user_id: userId });
   if (error) throw new Error(`UDS_FETCH_FAILED: ${error.message}`);
-  return (data ?? []).map((row: any) => ({
+  return (data ?? []).map((row) => ({
     deviceId: row.device_id,
     devicePublicKey: row.device_public_key,
     isPrimary: row.is_primary,
@@ -243,8 +309,10 @@ async function loadCanonicalRoot(userId: string): Promise<{
   primaryDeviceId: string;
   identityPubB64: string;
 } | null> {
-  const { data, error } = await (supabase as any)
-    .from('user_identity_roots')
+  const rootTable = (supabase.from as unknown as (table: string) => CanonicalRootTable)(
+    'user_identity_roots',
+  );
+  const { data, error } = await rootTable
     .select('primary_device_id, identity_pub_b64')
     .eq('user_id', userId)
     .maybeSingle();
@@ -283,7 +351,7 @@ export async function verifySignedDeviceList(
     publicKey = await hardCrypto.importKey(
       'raw',
       base64ToBuffer(primarySigningRoot),
-      { name: 'Ed25519' } as any,
+      { name: 'Ed25519' },
       false,
       ['verify'],
     );
@@ -321,7 +389,7 @@ export async function verifySignedDeviceList(
     let ok = false;
     try {
       ok = await hardCrypto.verify(
-        'Ed25519' as any,
+        'Ed25519',
         publicKey,
         base64ToBuffer(entry.signatureB64),
         encodeString(payload),

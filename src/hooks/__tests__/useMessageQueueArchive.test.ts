@@ -87,5 +87,11 @@ describe('useMessageQueue Aegis transport', () => {
     expect(classifyOutboundFailure(new Error('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE'))).toMatchObject({
       status: 'waiting_secure_channel',
     });
+    expect(classifyOutboundFailure(new Error('E2EE_SENDER_DEVICE_NOT_TRUSTED'))).toMatchObject({
+      status: 'waiting_secure_channel',
+    });
+    expect(classifyOutboundFailure(new Error('E2EE_SENDER_DEVICE_REQUIRED'))).toMatchObject({
+      status: 'waiting_secure_channel',
+    });
   });
 });

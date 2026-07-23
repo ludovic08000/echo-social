@@ -4,6 +4,9 @@ const mocks = vi.hoisted(() => ({
   ratchetDecryptWithSession: vi.fn(),
   requestDeviceCopyRetry: vi.fn(),
   supabaseRpc: vi.fn(),
+  tableRows: [] as Array<Record<string, unknown>>,
+  tableError: null as { code?: string; message?: string } | null,
+  fetchVerifiedDeviceList: vi.fn(),
   invalidateDeviceSession: vi.fn(),
 }));
 
@@ -23,11 +26,23 @@ vi.mock('@/lib/crypto/errorLogger', () => ({
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null }) }) }),
-      }),
-    }),
+    from: () => {
+      const builder = {
+        select: () => builder,
+        eq: () => builder,
+        maybeSingle: () => Promise.resolve({ data: null, error: null }),
+        then: (
+          resolve: (value: {
+            data: Array<Record<string, unknown>>;
+            error: { code?: string; message?: string } | null;
+          }) => unknown,
+        ) => Promise.resolve({
+          data: mocks.tableRows,
+          error: mocks.tableError,
+        }).then(resolve),
+      };
+      return builder;
+    },
     rpc: mocks.supabaseRpc,
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-recipient' } } }) },
   },
@@ -52,6 +67,10 @@ vi.mock('@/lib/crypto/x3dh', () => ({
 vi.mock('@/lib/crypto/keyManager', () => ({
   getOrCreateIdentityKeys: vi.fn().mockResolvedValue({}),
   PinUnlockRequiredError: class PinUnlockRequiredError extends Error {},
+}));
+
+vi.mock('@/lib/crypto/signedDeviceList', () => ({
+  fetchVerifiedDeviceList: mocks.fetchVerifiedDeviceList,
 }));
 
 vi.mock('@/lib/crypto/cryptoIntegrity', () => ({
@@ -80,6 +99,13 @@ beforeEach(() => {
   clearDeviceCopyCache();
   mocks.requestDeviceCopyRetry.mockResolvedValue(true);
   mocks.supabaseRpc.mockResolvedValue({ data: [] });
+  mocks.tableRows = [];
+  mocks.tableError = null;
+  mocks.fetchVerifiedDeviceList.mockResolvedValue({
+    signedListPresent: true,
+    trusted: [{ deviceId: ME.deviceId }],
+    verifications: [{ deviceId: ME.deviceId, ok: true }],
+  });
 });
 
 describe('Aegis cross-platform device-copy routing', () => {
@@ -169,5 +195,23 @@ describe('Aegis cross-platform device-copy routing', () => {
     })).resolves.toBe('content-key-after-retry');
 
     expect(mocks.supabaseRpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the exact RLS table route when the RPC schema is temporarily unavailable', async () => {
+    mocks.ratchetDecryptWithSession.mockResolvedValue('content-key-from-table');
+    mocks.supabaseRpc.mockResolvedValue({
+      data: null,
+      error: { code: '42883', message: 'function does not exist' },
+    });
+    mocks.tableRows = [{
+      message_id: 'message-rpc-refresh',
+      encrypted_body: CAPSULE,
+      sender_user_id: SENDER.user_id,
+      sender_device_id: SENDER.device_id,
+      recipient_device_id: ME.deviceId,
+    }];
+
+    await expect(tryReadDeviceCopy('message-rpc-refresh', SENDER.user_id))
+      .resolves.toBe('content-key-from-table');
   });
 });

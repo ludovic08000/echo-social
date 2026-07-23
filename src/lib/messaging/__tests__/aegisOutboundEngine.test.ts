@@ -40,6 +40,8 @@ vi.mock('@/lib/messaging/outboxVault', () => ({
 }));
 vi.mock('@/lib/messaging/aegisSendRpc', () => ({
   sendMessageWithAegisRetry: mocks.sendRpc,
+  isAegisAmbiguousTransportFailure: (error: unknown) =>
+    error instanceof Error && error.message.includes('NETWORK_TRANSPORT_TIMEOUT'),
 }));
 vi.mock('@/lib/messaging/aegisConversationQueue', () => ({
   runAegisConversationJob: mocks.runJob,
@@ -220,6 +222,69 @@ describe('canonical Aegis outbound transaction engine', () => {
       initialCopies: [COPY],
     }));
     expect(JSON.stringify(mocks.sendRpc.mock.calls[0][0])).not.toContain('x3dh5');
+  });
+
+  it('parks an untrusted sender route and requests authenticated self-repair', async () => {
+    mocks.sendRpc.mockResolvedValue({
+      data: null,
+      error: { code: '23514', message: 'E2EE_SENDER_DEVICE_NOT_TRUSTED' },
+      copies: [COPY],
+      retriedStaleRoute: false,
+    });
+    const repairEvents: Array<{ reason?: string }> = [];
+    const onRepair = (event: Event) => {
+      repairEvents.push((event as CustomEvent<{ reason?: string }>).detail ?? {});
+    };
+    window.addEventListener('forsure:device-self-repair-required', onRepair);
+
+    try {
+      await expect(sendAegisOutboundMessage({
+        conversationId: '44444444-4444-4444-8444-444444444444',
+        senderUserId: COPY.sender_user_id,
+        plaintext: 'message secret',
+        localId: 'local-untrusted-sender',
+        traceId: 'trace-untrusted-sender',
+        messageId: COPY.message_id,
+      })).rejects.toThrow(/E2EE_SENDER_DEVICE_NOT_TRUSTED/i);
+    } finally {
+      window.removeEventListener('forsure:device-self-repair-required', onRepair);
+    }
+
+    expect(mocks.putOutbox).toHaveBeenLastCalledWith(
+      COPY.sender_user_id,
+      expect.objectContaining({
+        localId: 'local-untrusted-sender',
+        status: 'waiting_secure_channel',
+      }),
+    );
+    expect(repairEvents).toEqual([{ reason: 'sender-route-not-trusted' }]);
+  });
+
+  it('does not request device repair for an unrelated protocol rejection', async () => {
+    mocks.sendRpc.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'sender_not_conversation_participant' },
+      copies: [COPY],
+      retriedStaleRoute: false,
+    });
+    const repairEvents: Event[] = [];
+    const onRepair = (event: Event) => { repairEvents.push(event); };
+    window.addEventListener('forsure:device-self-repair-required', onRepair);
+
+    try {
+      await expect(sendAegisOutboundMessage({
+        conversationId: '44444444-4444-4444-8444-444444444444',
+        senderUserId: COPY.sender_user_id,
+        plaintext: 'message secret',
+        localId: 'local-not-participant',
+        traceId: 'trace-not-participant',
+        messageId: COPY.message_id,
+      })).rejects.toThrow(/sender_not_conversation_participant/i);
+    } finally {
+      window.removeEventListener('forsure:device-self-repair-required', onRepair);
+    }
+
+    expect(repairEvents).toHaveLength(0);
   });
 
   it('holds one conversation transaction lock through RPC confirmation', async () => {
