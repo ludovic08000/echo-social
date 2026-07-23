@@ -36,7 +36,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
-import Profile from "./pages/Profile";
+
 import NotFound from "./pages/NotFound";
 
 const isChunkLoadError = (e: unknown): boolean => {
