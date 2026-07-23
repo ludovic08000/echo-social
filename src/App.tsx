@@ -270,7 +270,7 @@ function AppContent() {
                     <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
                     <Route path="/channels" element={<Channels />} />
                     <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
-                    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                    <Route path="/profile" element={<Navigate to="/feed" replace />} />
                     <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
                     <Route path="/security/device" element={<ProtectedRoute><SecurityDeviceVerify /></ProtectedRoute>} />
                     <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
