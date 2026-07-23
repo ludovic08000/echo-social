@@ -36,7 +36,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
-import Profile from "./pages/Profile";
+
 import NotFound from "./pages/NotFound";
 
 const isChunkLoadError = (e: unknown): boolean => {
@@ -261,7 +261,7 @@ function AppContent() {
                     <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
                     <Route path="/feed" element={<Feed />} />
                     <Route path="/post/:id" element={<PostDetail />} />
-                    <Route path="/profile/:id" element={<Profile />} />
+                    <Route path="/profile/:id" element={<Navigate to="/feed" replace />} />
                     <Route path="/search" element={<Search />} />
                     <Route path="/videos" element={<Videos />} />
                     <Route path="/lives" element={<LiveScreen />} />
@@ -270,7 +270,7 @@ function AppContent() {
                     <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />
                     <Route path="/channels" element={<Channels />} />
                     <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
-                    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                    <Route path="/profile" element={<Navigate to="/feed" replace />} />
                     <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
                     <Route path="/security/device" element={<ProtectedRoute><SecurityDeviceVerify /></ProtectedRoute>} />
                     <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
