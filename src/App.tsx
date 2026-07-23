@@ -261,7 +261,7 @@ function AppContent() {
                     <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
                     <Route path="/feed" element={<Feed />} />
                     <Route path="/post/:id" element={<PostDetail />} />
-                    <Route path="/profile/:id" element={<Profile />} />
+                    <Route path="/profile/:id" element={<Navigate to="/feed" replace />} />
                     <Route path="/search" element={<Search />} />
                     <Route path="/videos" element={<Videos />} />
                     <Route path="/lives" element={<LiveScreen />} />
