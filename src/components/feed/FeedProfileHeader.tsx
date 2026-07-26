@@ -19,6 +19,40 @@ export function FeedProfileHeader() {
   const updateProfile = useUpdateProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const coverBoxRef = useRef<HTMLDivElement>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const [posY, setPosY] = useState<number>(50);
+  const draggingRef = useRef(false);
+  const startRef = useRef({ y: 0, pos: 50 });
+
+  useEffect(() => {
+    if (!adjusting) setPosY(profile?.cover_position_y ?? 50);
+  }, [profile?.cover_position_y, adjusting]);
+
+  const onDragStart = (clientY: number) => {
+    draggingRef.current = true;
+    startRef.current = { y: clientY, pos: posY };
+  };
+  const onDragMove = (clientY: number) => {
+    if (!draggingRef.current) return;
+    const h = coverBoxRef.current?.clientHeight || 140;
+    const delta = ((clientY - startRef.current.y) / h) * 100;
+    setPosY(Math.min(100, Math.max(0, startRef.current.pos - delta)));
+  };
+  const onDragEnd = () => {
+    draggingRef.current = false;
+  };
+
+  const saveCoverPosition = async () => {
+    try {
+      await updateProfile.mutateAsync({ cover_position_y: Math.round(posY) });
+      setAdjusting(false);
+      toast({ title: 'Position enregistrée' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
+
 
   const { data: counts } = useQuery({
     queryKey: ['feed-header-counts', user?.id],
