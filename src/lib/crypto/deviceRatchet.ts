@@ -4,10 +4,9 @@
  * Provides:
  *   - Forward Secrecy (FS): each message key is derived once via KDF chain
  *     and immediately discarded (no key reuse).
- *   - Post-Compromise Security (PCS): every message ships a fresh ephemeral
- *     ratchet public key. When the peer replies with their own new ratchet
- *     key, the root key is re-derived via DH(newPriv, peerNewPub), healing
- *     past compromises.
+ *   - Post-Compromise Security (PCS): a fresh X25519 ratchet key is generated
+ *     at each DH-ratchet turn. Messages inside one sending chain only advance
+ *     its KDF, avoiding needless DH/key allocations per message.
  *   - Out-of-order delivery: skipped message keys are cached (bounded) so
  *     reordered messages still decrypt.
  *
@@ -29,7 +28,11 @@ import { bufferToBase64, base64ToBuffer, randomBytes, importKeyFromJWK, importOk
 import { logCryptoError } from './errorLogger';
 import { exportPublicKeyRaw } from './keyManager';
 import { runTxOn, reqToPromise } from './indexedDbTx';
-import { RATCHET_MAX_SKIP, RATCHET_MAX_SKIPPED_CACHE } from './constants';
+import {
+  RATCHET_MAX_SKIP,
+  RATCHET_MAX_SKIPPED_CACHE,
+  RATCHET_SKIPPED_TTL_MS,
+} from './constants';
 import { runDeviceSessionJob } from './deviceSessionQueue';
 
 const STORE = 'sessions';
@@ -52,6 +55,8 @@ interface SkippedKey {
   n: number;
   /** raw 32B AES key, base64 */
   keyB64: string;
+  /** creation time used to enforce the bounded out-of-order window */
+  createdAt?: number;
 }
 
 interface StoredSession {
@@ -297,15 +302,36 @@ async function trySkippedKeys(
   }
 }
 
+function pruneExpiredSkippedKeys(
+  session: StoredSession,
+  now = Date.now(),
+): StoredSession {
+  const skipped = session.skipped.filter((entry) =>
+    typeof entry.createdAt === 'number' &&
+    Number.isFinite(entry.createdAt) &&
+    now - entry.createdAt >= 0 &&
+    now - entry.createdAt <= RATCHET_SKIPPED_TTL_MS,
+  );
+  return skipped.length === session.skipped.length
+    ? session
+    : { ...session, skipped };
+}
+
 async function skipMessageKeys(session: StoredSession, until: number): Promise<StoredSession> {
   if (session.ckRecvB64 === null) return session;
   if (session.Nr + MAX_SKIP < until) {
     throw new Error('too_many_skipped');
   }
-  const s = { ...session, skipped: [...session.skipped] };
+  const pruned = pruneExpiredSkippedKeys(session);
+  const s = { ...pruned, skipped: [...pruned.skipped] };
   while (s.Nr < until) {
     const { ck, mk } = await kdfCK(s.ckRecvB64!);
-    s.skipped.push({ dhPubB64: s.dhrPubB64!, n: s.Nr, keyB64: mk });
+    s.skipped.push({
+      dhPubB64: s.dhrPubB64!,
+      n: s.Nr,
+      keyB64: mk,
+      createdAt: Date.now(),
+    });
     s.ckRecvB64 = ck;
     s.Nr += 1;
   }
@@ -555,7 +581,7 @@ async function decryptAegisWithStored(
   const PN = parseInt(PNStr, 10);
   if (Number.isNaN(Ns) || Number.isNaN(PN)) return null;
 
-  let session = initialSession;
+  let session = pruneExpiredSkippedKeys(initialSession);
   const iv = new Uint8Array(base64ToBuffer(ivB64));
   const ct = base64ToBuffer(ctB64);
 

@@ -159,29 +159,19 @@ export function useDeviceRegistration() {
 
           const approvalStatus = existing?.approval_status;
           if (existing && approvalStatus === 'rejected') {
-            console.warn('[useDeviceRegistration] rejected routing identity replaced after authenticated login', {
-              deviceId: deviceId.slice(0, 8),
-              attempt,
-            });
-            if (attempt < 2) {
-              rotateCurrentDeviceId('authenticated-rejected-device');
-              ranRef.current = false;
-              inFlightRef.current = false;
-              return registerCurrentDevice('rotated-rejected-device', attempt + 1);
-            }
+            window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
+              detail: { deviceId, status: 'rejected' },
+            }));
             return;
           }
           if (existing && approvalStatus !== 'pending' && (existing.is_active === false || existing.revoked_at)) {
-            console.warn('[useDeviceRegistration] server says current device id is revoked — rotating local id instead of reactivating', {
+            console.warn('[useDeviceRegistration] server says current device id is revoked — enrollment blocked', {
               deviceId: deviceId.slice(0, 8),
               attempt,
             });
-            if (attempt < 2) {
-              rotateCurrentDeviceId('server-revoked-before-publish');
-              ranRef.current = false;
-              inFlightRef.current = false;
-              return registerCurrentDevice('rotated-revoked-device', attempt + 1);
-            }
+            window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
+              detail: { deviceId, status: 'revoked' },
+            }));
             return;
           }
 
@@ -219,6 +209,14 @@ export function useDeviceRegistration() {
             // secrets. If this browser retained a DeviceID but lost its private
             // KX key, retire that logical identity and enroll a fresh device.
             if (attempt < 2) {
+              try {
+                await supabase.rpc('mark_current_device_route_unavailable' as never, {
+                  p_device_id: deviceId,
+                  p_error_code: 'LOCAL_DEVICE_PRIVATE_KEY_MISSING',
+                } as never);
+              } catch {
+                // Registration will still fail closed if route-health update is unavailable.
+              }
               rotateCurrentDeviceId('aegis-device-private-key-missing');
               ranRef.current = false;
               inFlightRef.current = false;
@@ -231,6 +229,14 @@ export function useDeviceRegistration() {
 
           if (localKx.publicB64 !== serverDevicePublicKey) {
             console.warn('[useDeviceRegistration] server/local device key mismatch - waiting for restore');
+            try {
+              await supabase.rpc('mark_current_device_route_unavailable' as never, {
+                p_device_id: deviceId,
+                p_error_code: 'LOCAL_DEVICE_KEY_MISMATCH',
+              } as never);
+            } catch {
+              // Registration remains blocked even if health reporting fails.
+            }
             try {
               window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
                 detail: {
@@ -320,21 +326,15 @@ export function useDeviceRegistration() {
             }
             registered = true;
           } else if (!rpcErr && REVOKED_DEVICE_ERROR_RE.test(String(registrationResult?.code ?? registrationResult?.message ?? ''))) {
-            console.warn('[useDeviceRegistration] safe RPC rejected revoked device — rotating local id', registrationResult);
-            if (attempt < 2) {
-              rotateCurrentDeviceId('rpc-revoked-device');
-              ranRef.current = false;
-              inFlightRef.current = false;
-              return registerCurrentDevice('rotated-after-rpc-revoked', attempt + 1);
-            }
+            console.warn('[useDeviceRegistration] safe RPC rejected revoked device — enrollment blocked', registrationResult);
+            window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
+              detail: { deviceId, status: 'revoked' },
+            }));
             return;
           } else if (!rpcErr && DEVICE_REJECTED_RE.test(String(registrationResult?.code ?? registrationResult?.message ?? ''))) {
-            if (attempt < 2) {
-              rotateCurrentDeviceId('authenticated-rejected-device');
-              ranRef.current = false;
-              inFlightRef.current = false;
-              return registerCurrentDevice('rotated-after-rpc-rejected', attempt + 1);
-            }
+            window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
+              detail: { deviceId, status: 'rejected' },
+            }));
             return;
           } else if (rpcErr) {
             console.warn('[useDeviceRegistration] safe RPC unavailable/failed:', {
@@ -389,6 +389,20 @@ export function useDeviceRegistration() {
           await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);
         } catch (opkErr) {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
+        }
+
+        // Authorization and route health are separate server states. A login
+        // authorizes this stable device ID; only this proof marks its route
+        // healthy after a valid SPK has actually reached the server.
+        const { data: routeReadyData, error: routeReadyError } = await supabase.rpc(
+          'mark_current_device_route_ready' as never,
+          { p_device_id: deviceId } as never,
+        );
+        const routeReady = routeReadyData as { ok?: boolean; code?: string } | null;
+        if (routeReadyError || routeReady?.ok !== true) {
+          throw new Error(
+            `DEVICE_ROUTE_NOT_READY:${routeReady?.code ?? routeReadyError?.message ?? 'UNKNOWN'}`,
+          );
         }
 
         // Registration and prekeys are not enough for Aegis. Publish the

@@ -38,6 +38,7 @@ interface DecryptedMessageBodyProps {
   refreshKey?: string | number;
   messageId?: string;
   senderId?: string | null;
+  archiveBody?: string | null;
   hasMedia?: boolean;
 }
 
@@ -69,6 +70,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   refreshKey,
   messageId,
   senderId,
+  archiveBody,
   hasMedia,
 }: DecryptedMessageBodyProps) {
   const initial = initialOutcomeFor(body, messageId, cachedPlaintext);
@@ -197,7 +199,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       keepOrWait();
     }
 
-    void resolvePlaintext({ body, messageId, senderId, isMe, decrypt })
+    void resolvePlaintext({ body, messageId, senderId, isMe, archiveBody, decrypt })
       .then((next) => {
         if (cancelled) return;
         if (!next) {
@@ -213,7 +215,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, messageId, senderId, cachedPlaintext, retryTick, refreshKey]);
+  }, [body, messageId, senderId, archiveBody, cachedPlaintext, retryTick, refreshKey]);
 
   const retryNow = () => {
     clearNegativeCache(messageId, body);

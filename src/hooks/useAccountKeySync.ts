@@ -19,7 +19,7 @@ import {
   syncKeychainSnapshotFromLocal,
   restoreFromInMemoryMasterKey,
 } from '@/lib/crypto/accountKeyBackup';
-import { hydrateDeviceId, rotateCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
 import { transition, withEnsureLock, getSnapshot } from '@/lib/crypto/CryptoStateMachine';
 
@@ -52,7 +52,9 @@ export function useAccountKeySync() {
       try {
         const id = await hydrateDeviceId();
         console.log('[AccountKeySync] device id hydrated:', id.slice(0, 8));
-      } catch {}
+      } catch {
+        // Hydration retries on the next authenticated lifecycle event.
+      }
     })();
   }, []);
 
@@ -64,7 +66,11 @@ export function useAccountKeySync() {
     // and `identity_creating` is hard-locked to once-per-session by the
     // CryptoStateMachine — eliminates the IndexedDB-empty → recreate loop.
     void withEnsureLock(user.id, async () => {
-      try { transition(user.id, 'storage_checking', 'useAccountKeySync.boot'); } catch {}
+      try {
+        transition(user.id, 'storage_checking', 'useAccountKeySync.boot');
+      } catch {
+        // A concurrent bootstrap may already own this state transition.
+      }
       try {
         const [{ hasWrappedKeys }, { hasRawIdentityKeys }] = await Promise.all([
           import('@/lib/crypto/pinWrap'),
@@ -136,7 +142,7 @@ export function useAccountKeySync() {
           if (sentinel && sentinel.userId === user.id) {
             // Confirm a backup actually exists on the server before prompting.
             const { data: backupRow } = await supabase
-              .from('user_backups' as any)
+              .from('user_backups')
               .select('id, version, backup_type, created_at')
               .eq('user_id', user.id)
               .eq('backup_type', 'account')
@@ -184,13 +190,15 @@ export function useAccountKeySync() {
         if (snap.state === 'storage_checking') {
           transition(user.id, await hasLocalKeys() ? 'identity_loaded' : 'backup_restore_required', 'boot.fallback');
         }
-      } catch {}
+      } catch {
+        // The state-machine fallback is best-effort.
+      }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user]);
 
   // Poll for IndexedDB changes + WATCHDOG: detect mid-session storage purge.
   // iOS Safari/PWA can wipe IndexedDB silently while the app stays open
@@ -209,16 +217,22 @@ export function useAccountKeySync() {
           let recovered = false;
           try {
             recovered = (await restoreKeysFromKeychainSnapshot(user.id)) === 'restored';
-          } catch {}
+          } catch {
+            // Continue with the next silent restore source.
+          }
           if (!recovered) {
             try {
               recovered = (await restoreFromInMemoryMasterKey(user.id)) === 'restored';
-            } catch {}
+            } catch {
+              // Continue with the next silent restore source.
+            }
           }
           if (!recovered) {
             try {
               recovered = (await restoreAccountKeysFromActiveSession(user.id)) === 'restored';
-            } catch {}
+            } catch {
+              // The watchdog will retry while the app remains active.
+            }
           }
           if (recovered) {
             console.log('[AccountKeySync] watchdog: silent re-hydration succeeded');
@@ -228,7 +242,9 @@ export function useAccountKeySync() {
           }
         }
 
-      } catch {}
+      } catch {
+        // The watchdog is deliberately non-disruptive.
+      }
     };
 
     const interval = setInterval(checkForChanges, PURGE_WATCHDOG_MS);
@@ -256,7 +272,9 @@ export function useAccountKeySync() {
           }));
           return true;
         }
-      } catch {}
+      } catch {
+        // Continue with the in-memory master key.
+      }
       // 2) In-RAM Master Key (no password prompt — works mid-session)
       try {
         const m = await restoreFromInMemoryMasterKey(user.id);
@@ -266,7 +284,9 @@ export function useAccountKeySync() {
           }));
           return true;
         }
-      } catch {}
+      } catch {
+        // Continue with the authenticated password session.
+      }
       // 3) In-memory password session
       try {
         const p = await restoreAccountKeysFromActiveSession(user.id);
@@ -276,7 +296,9 @@ export function useAccountKeySync() {
           }));
           return true;
         }
-      } catch {}
+      } catch {
+        // Silent restore is retried on the next resume.
+      }
       return false;
     };
 
@@ -303,7 +325,9 @@ export function useAccountKeySync() {
         const handle = App.addListener('resume', onResume);
         unsubscribeApp = () => {
           // Capacitor 7 returns a promise from addListener
-          Promise.resolve(handle).then((h: any) => h?.remove?.()).catch(() => {});
+          Promise.resolve(handle)
+            .then((listener) => listener.remove())
+            .catch(() => undefined);
         };
       }).catch((e) => {
         console.warn('[AccountKeySync] @capacitor/app unavailable:', e);
@@ -341,14 +365,20 @@ export function useAccountKeySync() {
       try {
         // Make sure the persisted device id from native storage wins before
         // we re-publish anything to the server.
-        try { await hydrateDeviceId(); } catch {}
+        try {
+          await hydrateDeviceId();
+        } catch {
+          // The stable browser DeviceID remains available as fallback.
+        }
         const { resyncE2EE } = await import('@/lib/crypto/resyncE2EE');
         const report = await resyncE2EE(user.id);
         console.log('[AccountKeySync] resync report:', report);
         try {
           sessionStorage.setItem(RESYNC_DONE_KEY, String(Date.now()));
           sessionStorage.removeItem(RESYNC_PENDING_KEY);
-        } catch {}
+        } catch {
+          // Session storage is an optimisation, not durable crypto state.
+        }
       } catch (e) {
         console.warn('[AccountKeySync] resync failed:', e);
       } finally {
@@ -358,7 +388,11 @@ export function useAccountKeySync() {
 
     const onKeysRestored = (ev: Event) => {
       const detail = (ev as CustomEvent).detail ?? {};
-      try { sessionStorage.setItem(RESYNC_PENDING_KEY, JSON.stringify({ at: Date.now(), detail })); } catch {}
+      try {
+        sessionStorage.setItem(RESYNC_PENDING_KEY, JSON.stringify({ at: Date.now(), detail }));
+      } catch {
+        // Immediate resync below does not depend on session storage.
+      }
       void runResync('keys-restored-event', detail);
     };
 
@@ -372,7 +406,9 @@ export function useAccountKeySync() {
           await runResync('pending-on-mount', JSON.parse(pending));
           return;
         }
-      } catch {}
+      } catch {
+        // No pending marker is equivalent to a normal mount.
+      }
 
       // Safety net: if there are local keys but we've never resynced this
       // session AND the current device id isn't registered server-side,
@@ -381,7 +417,7 @@ export function useAccountKeySync() {
         if (cancelled) return;
         const done = sessionStorage.getItem(RESYNC_DONE_KEY);
         if (!(await hasLocalKeys())) return;
-        let did = await hydrateDeviceId();
+        const did = await hydrateDeviceId();
         const { data: row } = await supabase
           .from('user_devices')
           .select('device_id,is_active,revoked_at')
@@ -390,14 +426,17 @@ export function useAccountKeySync() {
           .maybeSingle();
 
         if (row && (row.is_active === false || row.revoked_at)) {
-          console.warn('[AccountKeySync] current device is revoked/inactive during health check - rotating before resync', {
+          console.warn('[AccountKeySync] current device is revoked/inactive during health check - resync blocked', {
             did: did.slice(0, 8),
           });
-          did = rotateCurrentDeviceId('account-sync-revoked-device');
+          window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
+            detail: { deviceId: did, status: 'revoked' },
+          }));
+          return;
         }
 
         const { data: spkRow } = await supabase
-          .from('device_signed_prekeys' as any)
+          .from('device_signed_prekeys')
           .select('spk_id')
           .eq('user_id', user.id)
           .eq('device_id', did)
@@ -430,7 +469,7 @@ export function useAccountKeySync() {
       cancelled = true;
       window.removeEventListener('forsure-keys-restored', onKeysRestored as EventListener);
     };
-  }, [user?.id]);
+  }, [user]);
 
   // Cleanup on logout
   useEffect(() => {

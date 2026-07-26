@@ -11,12 +11,14 @@ vi.mock('@/e2ee-session/deviceRegistry', () => ({
 }));
 
 import { __test__, invalidateAllFanoutRoutes, invalidateFanoutRoute } from '../fanoutRouteCache';
+import type { FanoutRouteSnapshot } from '../fanoutRouteCache';
 
 const TARGETS: DeviceDescriptor[] = [{
   userId: 'user-b',
   deviceId: 'device-b-12345678',
   devicePublicKey: 'public-key-b',
 }];
+const SNAPSHOT: FanoutRouteSnapshot = { version: 'route-version-1', targets: TARGETS };
 
 describe('fanoutRouteCache', () => {
   beforeEach(() => {
@@ -25,7 +27,7 @@ describe('fanoutRouteCache', () => {
   });
 
   it('coalesces and reuses a route inside the ttl', async () => {
-    const loader = vi.fn(async () => TARGETS);
+    const loader = vi.fn(async () => SNAPSHOT);
     const now = 1_000;
 
     const [first, second] = await Promise.all([
@@ -34,15 +36,15 @@ describe('fanoutRouteCache', () => {
     ]);
     const third = await __test__.resolveCachedRoute('route-a', loader, now + 1_000);
 
-    expect(first).toEqual(TARGETS);
-    expect(second).toEqual(TARGETS);
-    expect(third).toEqual(TARGETS);
+    expect(first).toEqual(SNAPSHOT);
+    expect(second).toEqual(SNAPSHOT);
+    expect(third).toEqual(SNAPSHOT);
     expect(loader).toHaveBeenCalledTimes(1);
     expect(__test__.size()).toBe(1);
   });
 
   it('reloads the route after the ttl', async () => {
-    const loader = vi.fn(async () => TARGETS);
+    const loader = vi.fn(async () => SNAPSHOT);
     const now = 10_000;
 
     await __test__.resolveCachedRoute('route-b', loader, now);
@@ -53,12 +55,12 @@ describe('fanoutRouteCache', () => {
 
   it('does not cache a rejected network resolution', async () => {
     const loader = vi
-      .fn<() => Promise<DeviceDescriptor[]>>()
+      .fn<() => Promise<FanoutRouteSnapshot>>()
       .mockRejectedValueOnce(new Error('network'))
-      .mockResolvedValueOnce(TARGETS);
+      .mockResolvedValueOnce(SNAPSHOT);
 
     await expect(__test__.resolveCachedRoute('route-c', loader, 0)).rejects.toThrow('network');
-    await expect(__test__.resolveCachedRoute('route-c', loader, 1)).resolves.toEqual(TARGETS);
+    await expect(__test__.resolveCachedRoute('route-c', loader, 1)).resolves.toEqual(SNAPSHOT);
 
     expect(loader).toHaveBeenCalledTimes(2);
   });
@@ -70,19 +72,19 @@ describe('fanoutRouteCache', () => {
   });
 
   it('does not resurrect an in-flight route after a trust transition', async () => {
-    let release!: (value: DeviceDescriptor[]) => void;
-    const staleLoader = vi.fn(() => new Promise<DeviceDescriptor[]>((resolve) => {
+    let release!: (value: FanoutRouteSnapshot) => void;
+    const staleLoader = vi.fn(() => new Promise<FanoutRouteSnapshot>((resolve) => {
       release = resolve;
     }));
 
     const stale = __test__.resolveCachedRoute('route-stale', staleLoader, 1_000);
     invalidateAllFanoutRoutes();
-    release([]);
-    await expect(stale).resolves.toEqual([]);
+    release({ version: 'route-version-stale', targets: [] });
+    await expect(stale).resolves.toEqual({ version: 'route-version-stale', targets: [] });
 
-    const freshLoader = vi.fn(async () => TARGETS);
+    const freshLoader = vi.fn(async () => SNAPSHOT);
     await expect(__test__.resolveCachedRoute('route-stale', freshLoader, 1_001))
-      .resolves.toEqual(TARGETS);
+      .resolves.toEqual(SNAPSHOT);
     expect(freshLoader).toHaveBeenCalledTimes(1);
   });
 });

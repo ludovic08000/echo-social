@@ -35,19 +35,6 @@ let hydrationPromise: Promise<string> | null = null;
 let memoryDeviceIdIsTemporary = false;
 let cachedFingerprints: { strict: string; loose: string; ultraLoose: string } | null = null;
 
-const BLOCKED_RECOVERY_DEVICE_IDS = new Set<string>([
-  '84aaa52143235807214bf3aa161dd03a',
-  '6508eb47a200893f49720fe84b9290b3',
-  '9da8c742a4fe81d1d9ce6c0ffb4e055b',
-  '75e575fcbfaa8066bcbc9105fc5f4ac8',
-  'c6601674b0f700f28c9f2956774eca97',
-  '52adb13ff236ae5c833c9d9049c0df71',
-  'b166de502d729356dcbd6c0b5b1a39b0',
-  '49cfdeab59355de3051925b4f09fba75',
-  '92585130870cedf210af1019379dbc61',
-  '450c0cd9af35813c8a99ec5bc0f39ab8',
-]);
-
 function storageKey(): string {
   return currentDeviceUserScope ? `${BASE_STORAGE_KEY}:${currentDeviceUserScope}` : BASE_STORAGE_KEY;
 }
@@ -86,12 +73,20 @@ export function setCurrentDeviceUserScope(userId: string | null | undefined): vo
       const scoped = nativeGetSync(scopedKey);
       if (!scoped) {
         const unscoped = nativeGetSync(BASE_STORAGE_KEY);
-        if (unscoped && unscoped.length >= 16 && !isBlockedRecoveryDeviceId(unscoped)) {
+        if (unscoped && unscoped.length >= 16) {
           memoryDeviceId = unscoped;
           memoryDeviceIdIsTemporary = false;
           hydrationPromise = Promise.resolve(unscoped);
-          try { localStorage.setItem(scopedKey, unscoped); } catch {}
-          try { sessionStorage.setItem(scopedKey, unscoped); } catch {}
+          try {
+            localStorage.setItem(scopedKey, unscoped);
+          } catch {
+            // Other persistence layers below still preserve the stable id.
+          }
+          try {
+            sessionStorage.setItem(scopedKey, unscoped);
+          } catch {
+            // Other persistence layers below still preserve the stable id.
+          }
           void secureSet(scopedKey, unscoped).catch(() => {});
           void nativeSet(scopedKey, unscoped).catch(() => {});
           console.log('[device-id] seeded per-account id from pre-scope id', {
@@ -99,7 +94,9 @@ export function setCurrentDeviceUserScope(userId: string | null | undefined): vo
           });
         }
       }
-    } catch {}
+    } catch {
+      // Storage may be unavailable in private browsing; hydration can recover.
+    }
   }
 }
 
@@ -108,11 +105,9 @@ async function ensureUserScopeFromAuth(): Promise<void> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (user?.id) setCurrentDeviceUserScope(user.id);
-  } catch {}
-}
-
-function isBlockedRecoveryDeviceId(id: string | null | undefined): boolean {
-  return !!id && BLOCKED_RECOVERY_DEVICE_IDS.has(id);
+  } catch {
+    // An unauthenticated bootstrap keeps the unscoped routing identity.
+  }
 }
 
 /**
@@ -149,7 +144,7 @@ async function computeDeviceFingerprints(): Promise<{ strict: string; loose: str
   if (cachedFingerprints) return cachedFingerprints;
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
   const lang = (typeof navigator !== 'undefined' && navigator.language) || '';
-  const cpu = String((typeof navigator !== 'undefined' && (navigator as any).hardwareConcurrency) || '');
+  const cpu = String((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || '');
   const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })();
   const screenStr = (() => {
     if (typeof screen === 'undefined') return '';
@@ -169,7 +164,11 @@ async function computeDeviceFingerprints(): Promise<{ strict: string; loose: str
   const ultraLoose = await sha256Hex(`platform:${family}:${scope}`);
 
   cachedFingerprints = { strict, loose, ultraLoose };
-  try { localStorage.setItem(FINGERPRINT_KEY, strict); } catch {}
+  try {
+    localStorage.setItem(FINGERPRINT_KEY, strict);
+  } catch {
+    // Fingerprint persistence is advisory; the computed value remains usable.
+  }
   return cachedFingerprints;
 }
 
@@ -191,8 +190,16 @@ function persistEverywhere(id: string): string {
   const key = storageKey();
   memoryDeviceId = id;
   memoryDeviceIdIsTemporary = false;
-  try { localStorage.setItem(key, id); } catch {}
-  try { sessionStorage.setItem(key, id); } catch {}
+  try {
+    localStorage.setItem(key, id);
+  } catch {
+    // Secure/native stores below are independent persistence layers.
+  }
+  try {
+    sessionStorage.setItem(key, id);
+  } catch {
+    // Secure/native stores below are independent persistence layers.
+  }
   void secureSet(key, id).catch(() => {});
   void nativeSet(key, id).catch(() => {});
   return id;
@@ -200,7 +207,6 @@ function persistEverywhere(id: string): string {
 
 export function setCurrentDeviceId(id: string): string {
   if (!id || typeof id !== 'string') return getCurrentDeviceId();
-  if (isBlockedRecoveryDeviceId(id)) return rotateCurrentDeviceId('blocked-recovery-device');
   if (memoryDeviceId === id) return id;
   hydrationPromise = null;
   console.log('[device-id] forcing device id from backup', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8), scoped: !!currentDeviceUserScope });
@@ -220,12 +226,11 @@ export function setCurrentDeviceId(id: string): string {
  */
 export function adoptDeviceIdFromBackup(id: string): string {
   if (!id || typeof id !== 'string' || id.length < 16) return getCurrentDeviceId();
-  if (isBlockedRecoveryDeviceId(id)) return getCurrentDeviceId();
 
   const key = storageKey();
   const existing = memoryDeviceId || nativeGetSync(key);
   // Keep an already-established, non-temporary local id — never override it.
-  if (existing && !memoryDeviceIdIsTemporary && !isBlockedRecoveryDeviceId(existing)) {
+  if (existing && !memoryDeviceIdIsTemporary) {
     if (existing !== id) {
       console.log('[device-id] keeping stable local id; ignoring backup id', {
         local: existing.slice(0, 8), backup: id.slice(0, 8),
@@ -240,7 +245,7 @@ export function adoptDeviceIdFromBackup(id: string): string {
   return persistEverywhere(id);
 }
 
-export function rotateCurrentDeviceId(reason = 'revoked-device'): string {
+export function rotateCurrentDeviceId(reason = 'device-key-loss'): string {
   const key = storageKey();
   const previous = memoryDeviceId || nativeGetSync(key) || null;
   const next = generateId();
@@ -264,7 +269,6 @@ export function getCurrentDeviceId(): string {
   const key = storageKey();
   const localId = nativeGetSync(key);
   if (localId) {
-    if (isBlockedRecoveryDeviceId(localId)) return persistEverywhere(generateId());
     memoryDeviceId = localId;
     void nativeSet(key, localId).catch(() => {});
     return localId;
@@ -274,7 +278,11 @@ export function getCurrentDeviceId(): string {
   if (isNativePlatform()) {
     memoryDeviceId = fresh;
     memoryDeviceIdIsTemporary = true;
-    try { sessionStorage.setItem(key, fresh); } catch {}
+    try {
+      sessionStorage.setItem(key, fresh);
+    } catch {
+      // Native hydration will persist the final stable id.
+    }
     console.log('[device-id] Generated temporary device id pending native hydration');
     return fresh;
   }
@@ -294,7 +302,6 @@ export async function hydrateDeviceId(): Promise<string> {
       const key = storageKey();
       const stored = await secureGet(key);
       if (stored) {
-        if (isBlockedRecoveryDeviceId(stored)) return persistEverywhere(generateId());
         if (memoryDeviceId && memoryDeviceId !== stored) {
           console.log('[device-id] Native store overrides in-memory id', {
             memory: memoryDeviceId.slice(0, 8),
@@ -308,7 +315,6 @@ export async function hydrateDeviceId(): Promise<string> {
 
       const local = nativeGetSync(key);
       if (local) {
-        if (isBlockedRecoveryDeviceId(local)) return persistEverywhere(generateId());
         return persistEverywhere(local);
       }
 
@@ -318,11 +324,10 @@ export async function hydrateDeviceId(): Promise<string> {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { data: serverId, error } = await supabase.rpc(
-            'resolve_device_id_by_fingerprints' as any,
+            'resolve_device_id_by_fingerprints',
             { p_fingerprints: candidates, p_platform: platform },
           );
           if (!error && typeof serverId === 'string' && serverId.length >= 16) {
-            if (isBlockedRecoveryDeviceId(serverId)) return persistEverywhere(generateId());
             console.log('[device-id] Recovered from server fingerprint binding', {
               recovered: serverId.slice(0, 8),
               platform,

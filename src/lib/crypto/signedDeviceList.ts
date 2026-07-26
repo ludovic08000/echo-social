@@ -228,18 +228,18 @@ export async function publishOwnSignedDeviceList(args?: {
 
   const { data: rows, error: listError } = await supabase
     .from('user_devices')
-    .select('device_id, device_public_key, is_primary')
+    .select('device_id, device_public_key, is_primary, routing_status')
     .eq('user_id', userId)
     .eq('is_active', true)
     .eq('approval_status', 'approved')
-    .is('revoked_at', null)
-    .is('stale_at', null);
+    .is('revoked_at', null);
   if (listError) return { ok: false, error: listError.message };
 
   const approvedRows = (rows ?? []) as Array<{
     device_id: string;
     device_public_key: string;
     is_primary: boolean;
+    routing_status: string;
   }>;
   const primaryCount = approvedRows.filter((row) => row.is_primary).length;
   if (primaryCount !== 1) {
@@ -258,6 +258,7 @@ export async function publishOwnSignedDeviceList(args?: {
   }
 
   const deviceIds = approvedRows
+    .filter((row) => row.routing_status === 'ready')
     .map((row) => String(row.device_id || ''))
     .filter((deviceId) => deviceId.length >= 8);
 
@@ -292,12 +293,6 @@ export async function fetchSignedDeviceList(userId: string): Promise<SignedDevic
   }));
 }
 
-/** The canonical Ed25519 root is advertised on the unique primary row. */
-function resolvePrimarySigningRoot(primary: SignedDeviceEntry | undefined): string | null {
-  if (!primary?.primaryPubB64 || primary.primaryPubB64.trim().length === 0) return null;
-  return primary.primaryPubB64;
-}
-
 function rejectWholeList(
   list: SignedDeviceEntry[],
   reason: DeviceVerificationResult['reason'],
@@ -328,21 +323,20 @@ export async function verifySignedDeviceList(
   list: SignedDeviceEntry[],
 ): Promise<DeviceVerificationResult[]> {
   const primaries = list.filter((entry) => entry.isPrimary);
-  if (primaries.length !== 1) {
+  if (primaries.length > 1) {
     return rejectWholeList(list, 'PRIMARY_COUNT_INVALID');
   }
 
   const primary = primaries[0];
-  const primarySigningRoot = resolvePrimarySigningRoot(primary);
   const canonicalRoot = await loadCanonicalRoot(userId);
-  if (!primarySigningRoot || !canonicalRoot) {
+  if (!canonicalRoot) {
     return rejectWholeList(list, 'PRIMARY_ROOT_MISSING');
   }
-  if (
+  if (primary && (
     canonicalRoot.primaryDeviceId !== primary.deviceId ||
-    canonicalRoot.identityPubB64 !== primarySigningRoot ||
+    canonicalRoot.identityPubB64 !== primary.primaryPubB64 ||
     primary.primaryDeviceId !== null
-  ) {
+  )) {
     return rejectWholeList(list, 'PRIMARY_PUB_MISMATCH');
   }
 
@@ -350,7 +344,7 @@ export async function verifySignedDeviceList(
   try {
     publicKey = await hardCrypto.importKey(
       'raw',
-      base64ToBuffer(primarySigningRoot),
+      base64ToBuffer(canonicalRoot.identityPubB64),
       { name: 'Ed25519' },
       false,
       ['verify'],
@@ -359,9 +353,9 @@ export async function verifySignedDeviceList(
     return rejectWholeList(list, 'IMPORT_FAILED');
   }
 
-  const results: DeviceVerificationResult[] = [
-    { deviceId: primary.deviceId, ok: true, reason: 'PRIMARY' },
-  ];
+  const results: DeviceVerificationResult[] = primary
+    ? [{ deviceId: primary.deviceId, ok: true, reason: 'PRIMARY' }]
+    : [];
 
   for (const entry of list) {
     if (entry.isPrimary) continue;
@@ -372,8 +366,8 @@ export async function verifySignedDeviceList(
     }
 
     if (
-      entry.primaryDeviceId !== primary.deviceId ||
-      entry.primaryPubB64 !== primarySigningRoot
+      entry.primaryDeviceId !== canonicalRoot.primaryDeviceId ||
+      entry.primaryPubB64 !== canonicalRoot.identityPubB64
     ) {
       results.push({ deviceId: entry.deviceId, ok: false, reason: 'PRIMARY_PUB_MISMATCH' });
       continue;
@@ -381,7 +375,10 @@ export async function verifySignedDeviceList(
 
     const payload = canonicalPayload({
       userId,
-      primaryDeviceId: primary.deviceId,
+      // The authorized primary route may be temporarily unavailable and thus
+      // absent from this routable snapshot. The immutable account root remains
+      // the authority for companion signatures.
+      primaryDeviceId: canonicalRoot.primaryDeviceId,
       deviceId: entry.deviceId,
       devicePub: entry.devicePublicKey,
     });
@@ -443,4 +440,4 @@ export async function revokeCompanionSignature(args: {
   if (error) throw new Error(`UDS_REVOKE_FAILED: ${error.message}`);
 }
 
-export const __test__ = { canonicalPayload, resolvePrimarySigningRoot, rejectWholeList };
+export const __test__ = { canonicalPayload, rejectWholeList };

@@ -29,6 +29,11 @@ vi.mock('@/lib/crypto/utils', () => ({
   importOkpPublicKeyFromBase64: vi.fn(async () => ({})),
 }));
 
+vi.mock('@/lib/crypto/keyManager', () => ({
+  exportPublicKeyRaw: vi.fn(),
+  verifyPublicIdentityBinding: vi.fn(async () => true),
+}));
+
 import { fetchPrekeyBundleForDevice } from '@/lib/crypto/x3dh';
 
 function installPrekeyResponses() {

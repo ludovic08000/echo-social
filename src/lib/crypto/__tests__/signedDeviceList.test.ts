@@ -54,7 +54,7 @@ let companionPubB64: string;
 
 beforeAll(async () => {
   primarySigningKp = (await hardCrypto.generateKey(
-    { name: 'Ed25519' } as any,
+    { name: 'Ed25519' } as Algorithm,
     true,
     ['sign', 'verify'],
   )) as CryptoKeyPair;
@@ -63,7 +63,7 @@ beforeAll(async () => {
   );
 
   const primaryTransportKp = (await hardCrypto.generateKey(
-    { name: 'X25519' } as any,
+    { name: 'X25519' } as Algorithm,
     true,
     ['deriveBits'],
   )) as CryptoKeyPair;
@@ -72,7 +72,7 @@ beforeAll(async () => {
   );
 
   const companionKp = (await hardCrypto.generateKey(
-    { name: 'X25519' } as any,
+    { name: 'X25519' } as Algorithm,
     true,
     ['deriveBits'],
   )) as CryptoKeyPair;
@@ -142,10 +142,10 @@ describe('signed device list', () => {
     });
   });
 
-  it('rejects the whole list when there is no primary', async () => {
+  it('accepts a signed companion when the authorized primary route is unavailable', async () => {
     const companion = await signedCompanion();
     const result = await verifySignedDeviceList(USER, [companion]);
-    expect(result).toEqual([{ deviceId: COMP_DEV, ok: false, reason: 'PRIMARY_COUNT_INVALID' }]);
+    expect(result).toEqual([{ deviceId: COMP_DEV, ok: true, reason: 'VALID' }]);
   });
 
   it('rejects the whole list when there are two primaries', async () => {
@@ -209,7 +209,7 @@ describe('signed device list', () => {
 
   it('rejects a ghost primary Ed25519 key', async () => {
     const attacker = (await hardCrypto.generateKey(
-      { name: 'Ed25519' } as any,
+      { name: 'Ed25519' } as Algorithm,
       true,
       ['sign', 'verify'],
     )) as CryptoKeyPair;
@@ -244,7 +244,7 @@ describe('signed device list', () => {
   it('rejects a swapped companion X25519 key', async () => {
     const companion = await signedCompanion();
     const fake = (await hardCrypto.generateKey(
-      { name: 'X25519' } as any,
+      { name: 'X25519' } as Algorithm,
       true,
       ['deriveBits'],
     )) as CryptoKeyPair;

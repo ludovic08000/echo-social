@@ -10,13 +10,18 @@ const ROUTE_TTL_MS = 20_000;
 
 type RouteCacheEntry = {
   expiresAt: number;
+  snapshot: FanoutRouteSnapshot;
+};
+
+export type FanoutRouteSnapshot = {
+  version: string;
   targets: DeviceDescriptor[];
 };
 
-type RouteLoader = () => Promise<DeviceDescriptor[]>;
+type RouteLoader = () => Promise<FanoutRouteSnapshot>;
 
 const routeCache = new Map<string, RouteCacheEntry>();
-const inflightRoutes = new Map<string, Promise<DeviceDescriptor[]>>();
+const inflightRoutes = new Map<string, Promise<FanoutRouteSnapshot>>();
 let routeGeneration = 0;
 
 function routeKey(conversationId: string, senderUserId: string, senderDeviceId: string): string {
@@ -31,9 +36,11 @@ async function resolveCachedRoute(
   key: string,
   loader: RouteLoader,
   now = Date.now(),
-): Promise<DeviceDescriptor[]> {
+): Promise<FanoutRouteSnapshot> {
   const cached = routeCache.get(key);
-  if (cached && cached.expiresAt > now) return cached.targets;
+  if (cached && cached.expiresAt > now) {
+    return { version: cached.snapshot.version, targets: [...cached.snapshot.targets] };
+  }
   if (cached) routeCache.delete(key);
 
   const active = inflightRoutes.get(key);
@@ -41,16 +48,16 @@ async function resolveCachedRoute(
 
   const generation = routeGeneration;
   const promise = loader()
-    .then((targets) => {
+    .then((snapshot) => {
       // The cache is a latency optimisation only. The send RPC remains the
       // authoritative Aegis device-list validator and may force one refresh.
       if (generation === routeGeneration) {
         routeCache.set(key, {
           expiresAt: now + ROUTE_TTL_MS,
-          targets,
+          snapshot,
         });
       }
-      return targets;
+      return snapshot;
     })
     .finally(() => {
       if (inflightRoutes.get(key) === promise) inflightRoutes.delete(key);
@@ -84,17 +91,51 @@ async function loadFanoutRoute(
   );
 }
 
-export async function resolveFanoutRoute(
+async function readConversationRouteVersion(conversationId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('get_aegis_conversation_route_version', {
+    p_conversation_id: conversationId,
+  });
+  if (error || typeof data !== 'string' || data.length < 8) {
+    throw new Error(error?.message || 'E2EE_ROUTE_VERSION_UNAVAILABLE');
+  }
+  return data;
+}
+
+async function loadStableFanoutRoute(
   conversationId: string,
   senderUserId: string,
-): Promise<DeviceDescriptor[]> {
-  if (!conversationId || !senderUserId || isDeviceIdTemporary()) return [];
+  senderDeviceId: string,
+): Promise<FanoutRouteSnapshot> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const before = await readConversationRouteVersion(conversationId);
+    const targets = await loadFanoutRoute(conversationId, senderUserId, senderDeviceId);
+    const after = await readConversationRouteVersion(conversationId);
+    if (before === after) return { version: after, targets };
+    invalidateVerifiedDeviceCache();
+  }
+  throw new Error('E2EE_DEVICE_LIST_STALE');
+}
+
+export async function resolveFanoutRouteSnapshot(
+  conversationId: string,
+  senderUserId: string,
+): Promise<FanoutRouteSnapshot> {
+  if (!conversationId || !senderUserId || isDeviceIdTemporary()) {
+    return { version: '', targets: [] };
+  }
   const senderDeviceId = getCurrentDeviceId();
   const key = routeKey(conversationId, senderUserId, senderDeviceId);
   return resolveCachedRoute(
     key,
-    () => loadFanoutRoute(conversationId, senderUserId, senderDeviceId),
+    () => loadStableFanoutRoute(conversationId, senderUserId, senderDeviceId),
   );
+}
+
+export async function resolveFanoutRoute(
+  conversationId: string,
+  senderUserId: string,
+): Promise<DeviceDescriptor[]> {
+  return (await resolveFanoutRouteSnapshot(conversationId, senderUserId)).targets;
 }
 
 /**

@@ -17,7 +17,6 @@ import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
   hydrateDeviceId,
-  rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 import {
   getOrCreateIdentityKeys,
@@ -134,6 +133,18 @@ function isNonEmptyB64(s: unknown): s is string {
 
 type DBTableName = 'user_public_keys' | 'user_devices' | 'device_signed_prekeys';
 type DBPayload = Record<string, unknown>;
+type SupabaseErrorLike = {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
+};
+
+function errorFields(error: unknown): SupabaseErrorLike {
+  return typeof error === 'object' && error !== null
+    ? error as SupabaseErrorLike
+    : {};
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STABLE_DEVICE_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
@@ -156,13 +167,15 @@ function sanitizePayloadForLog(payload: DBPayload) {
   return Object.fromEntries(Object.entries(payload).map(([field, value]) => [field, describeValueForLog(field, value)]));
 }
 
-function inferRejectedColumn(error: any, payload: DBPayload): string | undefined {
-  const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
+function inferRejectedColumn(error: unknown, payload: DBPayload): string | undefined {
+  const fields = errorFields(error);
+  const haystack = [fields.message, fields.details, fields.hint].filter(Boolean).join(' ');
   return Object.keys(payload).find((key) => new RegExp(`\\b${key}\\b`, 'i').test(haystack));
 }
 
-function inferViolatedConstraint(error: any): string | undefined {
-  const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
+function inferViolatedConstraint(error: unknown): string | undefined {
+  const fields = errorFields(error);
+  const haystack = [fields.message, fields.details, fields.hint].filter(Boolean).join(' ');
   return haystack.match(/constraint "([^"]+)"/i)?.[1]
     ?? haystack.match(/violates ([^\s]+) constraint/i)?.[1]
     ?? undefined;
@@ -195,28 +208,30 @@ async function ensureRepublishableDeviceId(
     }
 
     if (data && (data.is_active === false || data.revoked_at)) {
-      const next = rotateCurrentDeviceId('resync-revoked-device');
-      diag?.push('init', 'warn', 'current device id revoked before resync; rotated', {
-        previous: deviceId,
-        next,
+      diag?.push('init', 'error', 'current device id revoked; automatic replacement forbidden', {
+        deviceId,
       });
-      return next;
+      throw new Error('DEVICE_REVOKED_REQUIRES_EXPLICIT_USER_ACTION');
     }
   } catch (e) {
+    if (describeError(e).includes('DEVICE_REVOKED_REQUIRES_EXPLICIT_USER_ACTION')) {
+      throw e;
+    }
     diag?.push('init', 'warn', 'device lifecycle lookup threw', { error: describeError(e) });
   }
   return deviceId;
 }
 
-function formatSupabaseError(table: DBTableName, step: string, error: any, payload: DBPayload) {
+function formatSupabaseError(table: DBTableName, step: string, error: unknown, payload: DBPayload) {
+  const fields = errorFields(error);
   const rejectedColumn = inferRejectedColumn(error, payload);
   const diagnostic = {
     table,
     step,
-    code: error?.code,
-    message: error?.message,
-    details: error?.details,
-    hint: error?.hint,
+    code: fields.code,
+    message: fields.message,
+    details: fields.details,
+    hint: fields.hint,
     constraint_violated: inferViolatedConstraint(error) ?? 'unknown_from_supabase_error',
     rejected_column: rejectedColumn ?? 'unknown_from_supabase_error',
     rejected_value: rejectedColumn ? describeValueForLog(rejectedColumn, payload[rejectedColumn]) : undefined,
@@ -272,7 +287,7 @@ async function republishDeviceIdentity(
   });
 
   diag?.push('identity', 'info', 'stage export_public_bundle');
-  let bundle: { identityKey: string; signingKey: string; fingerprint: string };
+  let bundle: Awaited<ReturnType<typeof exportPublicKeyBundle>>;
   try {
     bundle = await exportPublicKeyBundle(keys);
   } catch (e) {
@@ -315,8 +330,9 @@ async function republishDeviceIdentity(
   if (!deviceId || typeof deviceId !== 'string' || deviceId.length < 8) {
     throw new Error(`invalid device_id (len=${deviceId?.length ?? 0})`);
   }
+  const devicePublicKeyLength = devicePublicKeyB64.length;
   if (!isNonEmptyB64(devicePublicKeyB64)) {
-    throw new Error(`invalid device_public_key type=${typeof devicePublicKeyB64} len=${(devicePublicKeyB64 as any)?.length ?? 0}`);
+    throw new Error(`invalid device_public_key type=${typeof devicePublicKeyB64} len=${devicePublicKeyLength}`);
   }
 
   const platform = normalizePlatform(getCurrentPlatform());
@@ -326,7 +342,9 @@ async function republishDeviceIdentity(
   try {
     const { getDeviceFingerprint } = await import('@/lib/messaging/currentDevice');
     deviceFingerprint = await getDeviceFingerprint();
-  } catch {}
+  } catch {
+    // Fingerprint metadata is optional; the device public key is authoritative.
+  }
 
   const payload = {
     user_id: userId,
@@ -345,6 +363,8 @@ async function republishDeviceIdentity(
     identity_key: bundle.identityKey,
     signing_key: bundle.signingKey,
     fingerprint: bundle.fingerprint,
+    identity_binding_version: bundle.bindingVersion,
+    identity_binding_signature: bundle.bindingSignature,
     kem_type: 'X25519',
     is_active: true,
     updated_at: new Date().toISOString(),
@@ -396,7 +416,7 @@ async function republishDeviceIdentity(
     devicePublicKeyLen: payload.device_public_key.length,
   });
   try {
-    const { data: registerResult, error: registerErr } = await (supabase as any).rpc('register_user_device_safe', {
+    const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe', {
       p_user_id: payload.user_id,
       p_device_id: payload.device_id,
       p_device_name: payload.device_name,
@@ -405,6 +425,11 @@ async function republishDeviceIdentity(
       p_platform: payload.platform,
       p_user_agent: payload.user_agent,
     });
+    const registerResult = registerData as {
+      ok?: boolean;
+      code?: string;
+      message?: string;
+    } | null;
 
     const code = String(registerResult?.code ?? registerResult?.message ?? '');
     if (registerErr) {
@@ -416,9 +441,10 @@ async function republishDeviceIdentity(
       if (!(await hasLocalKeys())) {
         throw new Error('DEVICE_APPROVAL_PENDING: local keys must be unlocked before device approval');
       }
-      const { data: approveResult, error: approveErr } = await (supabase as any).rpc('approve_user_device', {
+      const { data: approveData, error: approveErr } = await supabase.rpc('approve_user_device', {
         p_device_id: payload.device_id,
       });
+      const approveResult = approveData as { ok?: boolean; code?: string } | null;
       if (approveErr || approveResult?.ok !== true) {
         throw new Error(`DEVICE_APPROVAL_PENDING: approve_user_device failed (${approveErr?.message ?? approveResult?.code ?? 'unknown'})`);
       }
@@ -660,7 +686,9 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
         window.dispatchEvent(
           new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: report }),
         );
-      } catch {}
+      } catch {
+        // The caller still receives the structured restore report.
+      }
       return report;
     }
   }

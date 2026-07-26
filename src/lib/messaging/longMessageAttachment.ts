@@ -1,6 +1,7 @@
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { base64ToBuffer, bufferToBase64, randomBytes } from '@/lib/crypto/utils';
 import { fetchR2Object, uploadToR2 } from '@/lib/r2';
+import { readResponseArrayBufferBounded } from './boundedResponse';
 
 const KIBIBYTE = 1024;
 
@@ -215,7 +216,11 @@ export async function resolveLongMessageBody(value: string, messageId: string): 
     throw new Error('Pièce jointe de message long surdimensionnée.');
   }
 
-  const encrypted = new Uint8Array(await response.arrayBuffer());
+  const encrypted = new Uint8Array(await readResponseArrayBufferBounded(
+    response,
+    expectedEncryptedBytes,
+    expectedEncryptedBytes,
+  ));
   if (encrypted.byteLength !== expectedEncryptedBytes) {
     throw new Error('Taille de pièce jointe de message long invalide.');
   }

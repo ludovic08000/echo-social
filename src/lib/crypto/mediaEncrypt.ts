@@ -163,13 +163,22 @@ function unpackMediaPayload(decrypted: Uint8Array): DecryptedMediaPayload {
     throw new Error('Manifest du média chiffré invalide.');
   }
 
-  const declaredMime = normalizeMimeType(textDecoder.decode(decrypted.slice(PAYLOAD_HEADER_BYTES, dataOffset)));
-  const fileBytes = decrypted.slice(dataOffset);
+  const declaredMime = normalizeMimeType(
+    textDecoder.decode(decrypted.subarray(PAYLOAD_HEADER_BYTES, dataOffset)),
+  );
+  const fileBytes = decrypted.subarray(dataOffset);
   const sniffedMime = detectMediaMimeType(fileBytes);
+  const isAmbiguousAvContainer =
+    declaredMime.startsWith('audio/') &&
+    (sniffedMime === 'video/webm' ||
+      sniffedMime === 'video/mp4' ||
+      sniffedMime === 'video/quicktime');
   // The authenticated manifest is useful metadata, but byte signatures are the
   // final rendering authority. This prevents a mislabeled video from entering
   // an <img> loop and handles iOS files whose Blob.type is generic or wrong.
-  const resolvedMime = sniffedMime || (declaredMime === 'application/octet-stream' ? null : declaredMime);
+  const resolvedMime = isAmbiguousAvContainer
+    ? declaredMime
+    : sniffedMime || (declaredMime === 'application/octet-stream' ? null : declaredMime);
   return {
     data: copyToArrayBuffer(fileBytes),
     mimeType: resolvedMime,
@@ -264,8 +273,8 @@ export async function decryptMediaWithMetadata(
   }
 
   const data = new Uint8Array(encryptedData);
-  const iv = data.slice(0, IV_LEN);
-  const ciphertext = data.slice(IV_LEN);
+  const iv = data.subarray(0, IV_LEN);
+  const ciphertext = data.subarray(IV_LEN);
   const decrypted = await hardCrypto.decrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128 },
     key,

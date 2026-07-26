@@ -3,6 +3,7 @@
  * encrypted copies in `message_device_copies`.
  */
 import { supabase } from '@/integrations/supabase/client';
+import { verifyPublicIdentityBinding } from '@/lib/crypto/keyManager';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import {
   isDevicePrekeyBundleError,
@@ -18,7 +19,10 @@ import {
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
-import { invalidateFanoutRoute, resolveFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
+import {
+  invalidateFanoutRoute,
+  resolveFanoutRouteSnapshot,
+} from '@/lib/messaging/fanoutRouteCache';
 import {
   captureFanoutSessionBeforeMutation,
   rollbackFanoutSessionTarget,
@@ -458,17 +462,22 @@ export interface FanoutCopyRow {
  * Pass a synthetic `messageId` (e.g. the to-be-assigned UUID) — the same id
  * must then be reused when persisting the `messages` row.
  */
-export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: FanoutCopyRow[]; hasTargets: boolean }> {
-  if (isDeviceIdTemporary()) return { rows: [], hasTargets: false };
+export async function buildFanoutCopies(input: FanoutInput): Promise<{
+  rows: FanoutCopyRow[];
+  hasTargets: boolean;
+  routeVersion: string;
+}> {
+  if (isDeviceIdTemporary()) return { rows: [], hasTargets: false, routeVersion: '' };
   const senderDeviceId = getCurrentDeviceId();
 
-  const targets = (await resolveFanoutRoute(input.conversationId, input.senderUserId))
+  const route = await resolveFanoutRouteSnapshot(input.conversationId, input.senderUserId);
+  const targets = route.targets
     .filter(device => !isKnownInvalidDeviceId(device.deviceId));
   if (targets.length === 0) {
     // Registration/trust publication can finish between two outbox attempts;
     // never keep a negative route cached across the next bounded retry.
     invalidateFanoutRoute(input.conversationId, input.senderUserId);
-    return { rows: [], hasTargets: false };
+    return { rows: [], hasTargets: false, routeVersion: route.version };
   }
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
@@ -542,7 +551,7 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{ rows: Fan
     // in the durable outbox until every canonical device has its capsule.
     throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
   }
-  return { rows, hasTargets: true };
+  return { rows, hasTargets: true, routeVersion: route.version };
 }
 
 interface TryReadDeviceCopyOptions { requestRetry?: boolean; }
@@ -689,8 +698,25 @@ async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
     if (prefix === 'aegis1.init.v1') {
-      const { data: senderPub } = await supabase.from('user_public_keys').select('identity_key').eq('user_id', row.sender_user_id).eq('is_active', true).maybeSingle();
-      if (!senderPub?.identity_key) {
+      const { data: senderPub } = await supabase
+        .from('user_public_keys')
+        .select(
+          'identity_key, signing_key, fingerprint, identity_binding_version, identity_binding_signature',
+        )
+        .eq('user_id', row.sender_user_id)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (
+        !senderPub?.identity_key ||
+        !senderPub.signing_key ||
+        !await verifyPublicIdentityBinding({
+          identityKey: senderPub.identity_key,
+          signingKey: senderPub.signing_key,
+          fingerprint: senderPub.fingerprint,
+          bindingVersion: senderPub.identity_binding_version,
+          bindingSignature: senderPub.identity_binding_signature,
+        })
+      ) {
         return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };
       }
       const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);

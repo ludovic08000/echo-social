@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   wrapPlaintextForDevice: vi.fn(),
   logCryptoError: vi.fn(),
   logCryptoException: vi.fn(),
-  resolveFanoutRoute: vi.fn(),
+  resolveFanoutRouteSnapshot: vi.fn(),
   rollbackFanoutSessionTarget: vi.fn(),
 }));
 
@@ -38,7 +38,7 @@ vi.mock('@/lib/messaging/deviceCopyRetryRequest', () => ({
 }));
 
 vi.mock('@/lib/messaging/fanoutRouteCache', () => ({
-  resolveFanoutRoute: mocks.resolveFanoutRoute,
+  resolveFanoutRouteSnapshot: mocks.resolveFanoutRouteSnapshot,
   invalidateFanoutRoute: vi.fn(),
 }));
 
@@ -110,7 +110,10 @@ describe('multiDeviceFanout security gates', () => {
     mocks.ratchetEncrypt.mockResolvedValue(null);
     mocks.getSessionPeerSpkId.mockResolvedValue(null);
     mocks.fetchPrekeyBundleForDevice.mockResolvedValue(null);
-    mocks.resolveFanoutRoute.mockResolvedValue([]);
+    mocks.resolveFanoutRouteSnapshot.mockResolvedValue({
+      version: 'route-version-empty',
+      targets: [],
+    });
     mocks.rollbackFanoutSessionTarget.mockResolvedValue(false);
   });
 
@@ -152,11 +155,14 @@ describe('multiDeviceFanout security gates', () => {
   });
 
   it('creates one capsule for every iOS, Android and Windows route', async () => {
-    mocks.resolveFanoutRoute.mockResolvedValue([
-      { userId: 'recipient-user', deviceId: 'ios-device', devicePublicKey: 'ios-key' },
-      { userId: 'recipient-user', deviceId: 'android-device', devicePublicKey: 'android-key' },
-      { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
-    ]);
+    mocks.resolveFanoutRouteSnapshot.mockResolvedValue({
+      version: 'route-version-1',
+      targets: [
+        { userId: 'recipient-user', deviceId: 'ios-device', devicePublicKey: 'ios-key' },
+        { userId: 'recipient-user', deviceId: 'android-device', devicePublicKey: 'android-key' },
+        { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
+      ],
+    });
     mocks.ratchetEncrypt.mockImplementation(async (
       _senderUserId: string,
       _senderDeviceId: string,
@@ -179,11 +185,14 @@ describe('multiDeviceFanout security gates', () => {
   });
 
   it('rejects the whole fanout when one canonical device cannot be encrypted', async () => {
-    mocks.resolveFanoutRoute.mockResolvedValue([
-      { userId: 'recipient-user', deviceId: 'ios-device', devicePublicKey: 'ios-key' },
-      { userId: 'recipient-user', deviceId: 'android-device', devicePublicKey: 'android-key' },
-      { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
-    ]);
+    mocks.resolveFanoutRouteSnapshot.mockResolvedValue({
+      version: 'route-version-1',
+      targets: [
+        { userId: 'recipient-user', deviceId: 'ios-device', devicePublicKey: 'ios-key' },
+        { userId: 'recipient-user', deviceId: 'android-device', devicePublicKey: 'android-key' },
+        { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
+      ],
+    });
     mocks.ratchetEncrypt.mockImplementation(async (
       _senderUserId: string,
       _senderDeviceId: string,

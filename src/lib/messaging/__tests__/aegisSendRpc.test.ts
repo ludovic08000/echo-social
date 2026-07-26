@@ -38,7 +38,13 @@ const REBUILT: FanoutCopyRow[] = [{
   encrypted_body: 'aegis1.init.v1.payload',
 }];
 
-function args(rebuildCopies = vi.fn(async () => REBUILT)) {
+const INITIAL_ROUTE_VERSION = 'route-version-initial';
+const REBUILT_ROUTE_VERSION = 'route-version-rebuilt';
+
+function args(rebuildCopies = vi.fn(async () => ({
+  copies: REBUILT,
+  routeVersion: REBUILT_ROUTE_VERSION,
+}))) {
   return {
     messageId: INITIAL[0].message_id,
     conversationId: '44444444-4444-4444-8444-444444444444',
@@ -48,6 +54,7 @@ function args(rebuildCopies = vi.fn(async () => REBUILT)) {
     senderUserId: INITIAL[0].sender_user_id,
     senderDeviceId: INITIAL[0].sender_device_id,
     initialCopies: INITIAL,
+    routeVersion: INITIAL_ROUTE_VERSION,
     rebuildCopies,
   };
 }
@@ -62,7 +69,10 @@ describe('sendMessageWithAegisRetry', () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'E2EE_DEVICE_LIST_STALE' } })
       .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
-    const rebuild = vi.fn(async () => REBUILT);
+    const rebuild = vi.fn(async () => ({
+      copies: REBUILT,
+      routeVersion: REBUILT_ROUTE_VERSION,
+    }));
 
     const result = await sendMessageWithAegisRetry(args(rebuild));
 
@@ -76,11 +86,16 @@ describe('sendMessageWithAegisRetry', () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
     expect(mocks.rpc.mock.calls[0][1].p_message_id).toBe(INITIAL[0].message_id);
     expect(mocks.rpc.mock.calls[1][1].p_message_id).toBe(INITIAL[0].message_id);
+    expect(mocks.rpc.mock.calls[0][1].p_route_version).toBe(INITIAL_ROUTE_VERSION);
+    expect(mocks.rpc.mock.calls[1][1].p_route_version).toBe(REBUILT_ROUTE_VERSION);
   });
 
   it('stops after the single stale-route retry', async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'E2EE_DEVICE_LIST_STALE' } });
-    const rebuild = vi.fn(async () => REBUILT);
+    const rebuild = vi.fn(async () => ({
+      copies: REBUILT,
+      routeVersion: REBUILT_ROUTE_VERSION,
+    }));
 
     const result = await sendMessageWithAegisRetry(args(rebuild));
 
@@ -153,7 +168,10 @@ describe('sendMessageWithAegisRetry', () => {
         error: { code: '23514', message: 'E2EE_PARTICIPANT_ROUTE_UNAVAILABLE' },
       })
       .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
-    const rebuild = vi.fn(async () => REBUILT);
+    const rebuild = vi.fn(async () => ({
+      copies: REBUILT,
+      routeVersion: REBUILT_ROUTE_VERSION,
+    }));
 
     const result = await sendMessageWithAegisRetry(args(rebuild));
 

@@ -52,6 +52,10 @@ export interface OutboxPayload {
   keyCapsule?: string | null;
   /** Exact per-device envelopes, persisted before the RPC for crash-safe idempotent replay. */
   preparedCopies?: OutboxPreparedCopy[];
+  /** Monotonic server route version used to prepare `preparedCopies`. */
+  routeVersion?: string | null;
+  /** Backup policy captured when the durable send was first created. */
+  archiveBackupEnabled?: boolean;
   /** Optional account-wrapped archive prepared before transport. */
   archiveBody?: string | null;
   imageUrl: string | null;

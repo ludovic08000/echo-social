@@ -4,6 +4,12 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { fetchR2Object } from '@/lib/r2';
+import { readResponseArrayBufferBounded } from '@/lib/messaging/boundedResponse';
+import {
+  MAX_AUTO_DOWNLOAD_ATTACHMENT_BYTES,
+  MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES,
+} from '@/lib/messaging/attachmentLimits';
 
 // Detect best supported audio mimeType across browsers
 // Prioritize mp4/aac for maximum cross-platform playback (iOS requires it)
@@ -116,21 +122,23 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       setPermError(null);
       setDuration(0);
       timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorName = err instanceof Error ? err.name : '';
+      const errorMessage = err instanceof Error ? err.message : String(err);
       const inPreviewIframe = window.self !== window.top;
       let msg = 'Impossible d\'accéder au micro';
 
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
         msg = inPreviewIframe
           ? 'Le micro est bloqué en mode preview. Ouvrez la version publiée et autorisez le micro.'
           : 'Micro bloqué. Cliquez sur l’icône cadenas (barre d’adresse) puis autorisez le micro.';
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
         msg = 'Aucun microphone détecté sur cet appareil';
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+      } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
         msg = 'Le micro est utilisé par une autre application';
-      } else if (err.name === 'OverconstrainedError') {
+      } else if (errorName === 'OverconstrainedError') {
         msg = 'Impossible de trouver un micro compatible';
-      } else if (err.name === 'SecurityError') {
+      } else if (errorName === 'SecurityError') {
         msg = inPreviewIframe
           ? 'Le micro est bloqué en preview. Testez depuis la version publiée.'
           : 'Accès au micro bloqué (HTTPS requis).';
@@ -138,7 +146,7 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
 
       setPermError(msg);
       toast.error(msg);
-      console.error('Microphone access error:', err.name, err.message);
+      console.error('Microphone access error:', errorName, errorMessage);
     }
   }, []);
 
@@ -174,9 +182,10 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       const label = `🎙️ vocal:${url}|${duration}`;
       const body = buildMediaMessageBody(label, keyB64);
       onSend(url, duration, body);
-    } catch (err: any) {
-      console.error('Voice upload error:', err?.message || err);
-      toast.error(`Erreur lors de l'envoi du vocal: ${err?.message || 'Réessayez'}`);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error('Voice upload error:', errorMessage);
+      toast.error(`Erreur lors de l'envoi du vocal: ${errorMessage || 'Réessayez'}`);
     } finally {
       setUploading(false);
     }
@@ -205,7 +214,11 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try { mediaRecorderRef.current.stop(); } catch {}
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // Recorder may already have stopped during browser teardown.
+        }
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -330,21 +343,21 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
 
     (async () => {
       try {
-        const { importMediaKey, decryptMedia } = await import('@/lib/crypto/mediaEncrypt');
+        const { importMediaKey, decryptMediaWithMetadata } = await import('@/lib/crypto/mediaEncrypt');
         const key = await importMediaKey(mediaKeyB64);
-        const res = await fetch(audioUrl);
+        const res = await fetchR2Object(audioUrl);
         if (!res.ok) throw new Error('fetch failed');
-        const encryptedData = await res.arrayBuffer();
-        const plainAudio = await decryptMedia(encryptedData, key);
+        const encryptedData = await readResponseArrayBufferBounded(
+          res,
+          MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES,
+        );
+        const plainAudio = await decryptMediaWithMetadata(encryptedData, key);
 
         if (cancelled) return;
-        // Guess mime from URL extension
-        let mime = 'audio/mp4';
-        if (audioUrl.includes('.webm')) mime = 'audio/webm';
-        else if (audioUrl.includes('.ogg')) mime = 'audio/ogg';
-        else if (audioUrl.includes('.wav')) mime = 'audio/wav';
-
-        const blob = new Blob([plainAudio], { type: mime });
+        const mime = plainAudio.mimeType?.startsWith('audio/')
+          ? plainAudio.mimeType
+          : 'audio/mp4';
+        const blob = new Blob([plainAudio.data], { type: mime });
         setBlobSrc(URL.createObjectURL(blob));
       } catch (err) {
         if (!cancelled) setError(true);
@@ -365,7 +378,13 @@ export function VoiceMessagePlayer({ audioUrl, duration, isMe, mediaKeyB64 }: Vo
     try {
       const res = await fetch(audioUrl);
       if (!res.ok) throw new Error('fetch failed');
-      const blob = await res.blob();
+      const bytes = await readResponseArrayBufferBounded(
+        res,
+        MAX_AUTO_DOWNLOAD_ATTACHMENT_BYTES,
+      );
+      const blob = new Blob([bytes], {
+        type: res.headers.get('content-type') || 'application/octet-stream',
+      });
       const url = URL.createObjectURL(blob);
       setBlobSrc(url);
       setError(false);

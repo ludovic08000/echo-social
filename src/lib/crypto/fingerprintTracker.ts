@@ -1,19 +1,24 @@
 /**
- * Fingerprint tracker — extracted from useE2EE.ts.
+ * Account-identity trust tracker.
  *
- * Local (localStorage) + server (`user_known_fingerprints`) tracking with a
- * 60s cache to avoid request storms. Automatic TOFU saves are only "seen",
- * never user-verified. A hard "changed" return is reserved for fingerprints
- * the user explicitly trusted (Signal/WhatsApp-style safety number semantics).
+ * First contact uses TOFU. Once an account identity has been observed, every
+ * change is fail-closed until the user explicitly accepts the new safety
+ * number. Recovery markers only explain a change; they never auto-authorize it.
  */
 
 import { supabase } from '@/integrations/supabase/client';
 import { hardGlobals } from './cryptoIntegrity';
-import { getCachedAuthUserId } from './peerKeyCache';
+import {
+  fetchPeerPublicKeys,
+  getCachedAuthUserId,
+} from './peerKeyCache';
 
 export const KNOWN_FP_KEY = 'forsure-known-fps';
 
-export type FingerprintCheckResult = { changed: boolean; previousFp: string | null };
+export type FingerprintCheckResult = {
+  changed: boolean;
+  previousFp: string | null;
+};
 
 export function getKnownFingerprints(): Record<string, string> {
   try {
@@ -23,206 +28,176 @@ export function getKnownFingerprints(): Record<string, string> {
   }
 }
 
-export function saveKnownFingerprint(userId: string, fp: string): void {
+export function saveKnownFingerprint(userId: string, fingerprint: string): void {
   const known = getKnownFingerprints();
-  known[userId] = fp;
+  known[userId] = fingerprint;
   localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
 }
 
-const _fpCheckCache = new Map<string, { result: FingerprintCheckResult; ts: number }>();
+const fingerprintCheckCache = new Map<
+  string,
+  { result: FingerprintCheckResult; timestamp: number }
+>();
+const fingerprintSaveCache = new Map<string, number>();
+const CACHE_TTL_MS = 60_000;
 
 export function invalidateFingerprintCheckCache(peerUserId: string): void {
-  for (const key of _fpCheckCache.keys()) {
-    if (key.includes(`:${peerUserId}:`)) _fpCheckCache.delete(key);
+  for (const key of fingerprintCheckCache.keys()) {
+    if (key.includes(`:${peerUserId}:`)) fingerprintCheckCache.delete(key);
   }
 }
 
-const _fpSaveCache = new Map<string, number>();
-
-/** Save fingerprint to server for cross-device verification (deduplicated). */
 export async function saveKnownFingerprintServer(
   peerUserId: string,
-  fp: string,
+  fingerprint: string,
   verifiedByUser = false,
 ): Promise<void> {
-  const cacheKey = `${peerUserId}:${fp}`;
-  const lastSaved = _fpSaveCache.get(cacheKey);
-  if (!verifiedByUser && lastSaved && Date.now() - lastSaved < 60_000) return;
-  _fpSaveCache.set(cacheKey, Date.now());
+  const cacheKey = `${peerUserId}:${fingerprint}`;
+  const lastSavedAt = fingerprintSaveCache.get(cacheKey);
+  if (!verifiedByUser && lastSavedAt && Date.now() - lastSavedAt < CACHE_TTL_MS) return;
 
   try {
     const userId = await getCachedAuthUserId();
     if (!userId) return;
-    await (supabase as any)
-      .from('user_known_fingerprints')
-      .upsert(
-        {
-          user_id: userId,
-          peer_user_id: peerUserId,
-          fingerprint: fp,
-          last_seen_at: new Date().toISOString(),
-          acknowledged: verifiedByUser,
-          verified_manually: verifiedByUser,
-        },
-        { onConflict: 'user_id,peer_user_id' },
-      );
+    const row = {
+      user_id: userId,
+      peer_user_id: peerUserId,
+      fingerprint,
+      last_seen_at: new Date().toISOString(),
+      acknowledged: verifiedByUser,
+      verified_manually: verifiedByUser,
+    };
+    const { error } = verifiedByUser
+      ? await supabase
+        .from('user_known_fingerprints')
+        .upsert(row, { onConflict: 'user_id,peer_user_id' })
+      : await supabase
+        .from('user_known_fingerprints')
+        .upsert(row, {
+          onConflict: 'user_id,peer_user_id',
+          ignoreDuplicates: true,
+        });
+    if (error) throw error;
+    // A passive TOFU observation must never downgrade a previous manual
+    // verification. Cache only a confirmed write so transient failures retry.
+    fingerprintSaveCache.set(cacheKey, Date.now());
     invalidateFingerprintCheckCache(peerUserId);
-  } catch (e) {
-    console.warn('[E2EE] Server fingerprint save failed:', e);
+  } catch (error) {
+    console.warn('[E2EE] Server fingerprint save failed', error);
   }
 }
 
-/** Check fingerprint against both local AND server records (with cache). */
+async function recordChange(input: {
+  observerUserId: string;
+  peerUserId: string;
+  previousFingerprint: string;
+  newFingerprint: string;
+}): Promise<void> {
+  try {
+    const [{ recordIdentityChange }, { peerHasRecentRecoveryMarker }] = await Promise.all([
+      import('@/lib/crypto/identityChangeLedger'),
+      import('@/lib/crypto/recoveryMarkers'),
+    ]);
+    const recovery = await peerHasRecentRecoveryMarker(
+      input.peerUserId,
+      input.newFingerprint,
+    );
+    await recordIdentityChange({
+      ...input,
+      changeType: recovery ? 'recovery_restore' : 'identity_rotation',
+    });
+  } catch (error) {
+    console.warn('[E2EE] Identity change ledger unavailable', error);
+  }
+}
+
+/** Check the composite X25519+Ed25519 fingerprint against local and server trust. */
 export async function checkFingerprintChangeWithServer(
   currentUserId: string,
   peerUserId: string,
-  currentFp: string,
+  currentFingerprint: string,
 ): Promise<FingerprintCheckResult> {
-  const known = getKnownFingerprints();
-  const localPrevious = known[peerUserId];
+  const localPrevious = getKnownFingerprints()[peerUserId] ?? null;
+  const cacheKey = `${currentUserId}:${peerUserId}:${currentFingerprint}`;
+  const cached = fingerprintCheckCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
 
-  const cacheKey = `${currentUserId}:${peerUserId}:${currentFp}`;
-  const cached = _fpCheckCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < 60_000) return cached.result;
-
+  let serverPrevious: string | null = null;
   try {
-    const { data } = await (supabase as any)
+    const { data, error } = await supabase
       .from('user_known_fingerprints')
-      .select('fingerprint, acknowledged, verified_manually')
+      .select('fingerprint')
       .eq('user_id', currentUserId)
       .eq('peer_user_id', peerUserId)
       .maybeSingle();
+    if (error) throw error;
+    serverPrevious = data?.fingerprint ?? null;
+  } catch {
+    // Local trust remains authoritative while the server is temporarily
+    // unreachable. A missing local record is first contact, not a rotation.
+  }
 
-    if (data && data.fingerprint !== currentFp) {
-      // Silent trust-on-first-rotation when not user-verified.
-      if (!(data as any).verified_manually && !data.acknowledged) {
-        console.warn('[PEER_KEY] 🔄 Server fingerprint rotated for', peerUserId, '— auto-trusting (was never user-verified)');
-        try {
-          const userId = await getCachedAuthUserId();
-          if (userId) {
-            await (supabase as any)
-              .from('user_known_fingerprints')
-              .upsert(
-                {
-                  user_id: userId,
-                  peer_user_id: peerUserId,
-                  fingerprint: currentFp,
-                  last_seen_at: new Date().toISOString(),
-                  acknowledged: false,
-                  verified_manually: false,
-                },
-                { onConflict: 'user_id,peer_user_id' },
-              );
-          }
-        } catch (e) {
-          console.warn('[PEER_KEY] auto-rotate save failed', e);
-        }
-        saveKnownFingerprint(peerUserId, currentFp);
-        const result = { changed: false, previousFp: null };
-        _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
-        return result;
-      }
-      if (!(data as any).verified_manually) {
-        console.warn('[PEER_KEY] 🔄 Server fingerprint rotated for', peerUserId, '— auto-trusting (not manually verified)');
-        try {
-          await (supabase as any)
-            .from('user_known_fingerprints')
-            .upsert(
-              {
-                user_id: currentUserId,
-                peer_user_id: peerUserId,
-                fingerprint: currentFp,
-                last_seen_at: new Date().toISOString(),
-                acknowledged: false,
-                verified_manually: false,
-              },
-              { onConflict: 'user_id,peer_user_id' },
-            );
-        } catch (e) {
-          console.warn('[PEER_KEY] auto-rotate save failed', e);
-        }
-        saveKnownFingerprint(peerUserId, currentFp);
-        const result = { changed: false, previousFp: data.fingerprint };
-        _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
-        return result;
-      }
-
-      let isRecovery = false;
-      try {
-        const [{ recordIdentityChange }, { peerHasRecentRecoveryMarker }] = await Promise.all([
-          import('@/lib/crypto/identityChangeLedger'),
-          import('@/lib/crypto/recoveryMarkers'),
-        ]);
-        isRecovery = await peerHasRecentRecoveryMarker(peerUserId, currentFp);
-        await recordIdentityChange({
-          observerUserId: currentUserId,
-          peerUserId,
-          previousFingerprint: data.fingerprint,
-          newFingerprint: currentFp,
-          changeType: isRecovery ? 'recovery_restore' : 'identity_rotation',
-        });
-      } catch (e) {
-        console.warn('[A4] recordIdentityChange failed', e);
-      }
-
-      if (isRecovery) {
-        console.warn('[PEER_KEY] 🔄 Recovery fingerprint rotation for', peerUserId, '— continuing with revalidation banner');
-        try {
-          await (supabase as any)
-            .from('user_known_fingerprints')
-            .upsert(
-              {
-                user_id: currentUserId,
-                peer_user_id: peerUserId,
-                fingerprint: currentFp,
-                last_seen_at: new Date().toISOString(),
-                acknowledged: false,
-                verified_manually: false,
-              },
-              { onConflict: 'user_id,peer_user_id' },
-            );
-        } catch (e) {
-          console.warn('[PEER_KEY] recovery auto-rotate save failed', e);
-        }
-        saveKnownFingerprint(peerUserId, currentFp);
-        const result = { changed: false, previousFp: data.fingerprint };
-        _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
-        return result;
-      }
-
-      console.warn('[PEER_KEY] ⚠️ Server-side fingerprint mismatch for', peerUserId, '(was previously verified)');
-      const result = { changed: true, previousFp: data.fingerprint };
-      _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
-      return result;
-    }
-
-    if (data && data.fingerprint === currentFp) {
-      if (localPrevious !== currentFp) saveKnownFingerprint(peerUserId, currentFp);
-      const result = { changed: false, previousFp: null };
-      _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
-      return result;
-    }
-  } catch {}
-
-  if (localPrevious && localPrevious !== currentFp) {
-    console.warn('[PEER_KEY] 🔄 Local fingerprint rotated for', peerUserId, '— auto-updating local TOFU cache');
-    saveKnownFingerprint(peerUserId, currentFp);
-    const result = { changed: false, previousFp: localPrevious };
-    _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+  const previousFingerprint = serverPrevious ?? localPrevious;
+  if (previousFingerprint && previousFingerprint !== currentFingerprint) {
+    await recordChange({
+      observerUserId: currentUserId,
+      peerUserId,
+      previousFingerprint,
+      newFingerprint: currentFingerprint,
+    });
+    const result = { changed: true, previousFp: previousFingerprint };
+    fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
     return result;
   }
 
+  if (previousFingerprint === currentFingerprint && localPrevious !== currentFingerprint) {
+    saveKnownFingerprint(peerUserId, currentFingerprint);
+  }
   const result = { changed: false, previousFp: null };
-  _fpCheckCache.set(cacheKey, { result, ts: Date.now() });
+  fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
   return result;
 }
 
-export function checkFingerprintChange(userId: string, currentFp: string): boolean {
-  const known = getKnownFingerprints();
-  const previousFp = known[userId];
-  if (previousFp && previousFp !== currentFp) {
-    console.warn('[PEER_KEY] ⚠️ fingerprint changed for', userId);
-    return true;
-  }
-  return false;
+/**
+ * Core transport gate. Background retries call this as well, so no UI race can
+ * send after an account identity rotation that has not been acknowledged.
+ */
+export async function assertConversationFingerprintsTrusted(
+  currentUserId: string,
+  conversationId: string,
+): Promise<void> {
+  const { data: participants, error } = await supabase
+    .from('conversation_participants')
+    .select('user_id')
+    .eq('conversation_id', conversationId);
+  if (error) throw error;
+
+  const peerUserIds = Array.from(new Set((participants ?? [])
+    .map((participant) => participant.user_id)
+    .filter((userId): userId is string => Boolean(userId) && userId !== currentUserId)));
+
+  await Promise.all(peerUserIds.map(async (peerUserId) => {
+    // The core send gate intentionally bypasses the performance cache. A
+    // two-minute cached identity would otherwise allow messages to leave after
+    // a peer account key changed.
+    const peerKeys = await fetchPeerPublicKeys(peerUserId, { forceRefresh: true });
+    if (!peerKeys) throw new Error('PEER_IDENTITY_BINDING_UNAVAILABLE');
+
+    const check = await checkFingerprintChangeWithServer(
+      currentUserId,
+      peerUserId,
+      peerKeys.fingerprint,
+    );
+    if (check.changed) throw new Error('FINGERPRINT_CHANGED');
+
+    if (!getKnownFingerprints()[peerUserId]) {
+      saveKnownFingerprint(peerUserId, peerKeys.fingerprint);
+      await saveKnownFingerprintServer(peerUserId, peerKeys.fingerprint, false);
+    }
+  }));
+}
+
+export function checkFingerprintChange(userId: string, currentFingerprint: string): boolean {
+  const previousFingerprint = getKnownFingerprints()[userId];
+  return Boolean(previousFingerprint && previousFingerprint !== currentFingerprint);
 }

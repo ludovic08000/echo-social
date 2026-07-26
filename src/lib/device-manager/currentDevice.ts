@@ -13,18 +13,17 @@ export const getCurrentPlatform = legacy.getCurrentPlatform;
 
 const EXPLICIT_ROTATION_REASONS = new Set([
   'explicit-user-reset',
-  'blocked-recovery-device',
   'fresh-install-without-stable-id',
-  // A revoked DeviceID is permanently retired. After the account identity has
-  // been unlocked with the PIN, the same physical installation must enroll as
-  // a new device instead of clearing revoked_at on the old row.
-  'revoked-reenrollment-after-pin',
+  // Loss of the private device key is not an authorization revocation. The old
+  // route is first marked unavailable, then a new cryptographic installation
+  // is enrolled under the authenticated account session.
+  'aegis-device-private-key-missing',
 ]);
 
 /**
  * Device IDs are immutable routing identities. Automatic rotation is forbidden.
- * A revoked row is the one exception that requires a NEW routing identity, but
- * only from the explicit post-PIN reenrollment flow.
+ * A revoked/rejected row has no rotation exception: it remains blocked until a
+ * deliberate user action. Route-key loss is a separate health transition.
  */
 export function rotateCurrentDeviceId(reason = 'automatic-request'): string {
   const current = legacy.getCurrentDeviceId();
@@ -42,7 +41,9 @@ export function rotateCurrentDeviceId(reason = 'automatic-request'): string {
           reason,
         },
       }));
-    } catch {}
+    } catch {
+      // Browser event delivery is advisory; the rotation remains blocked.
+    }
     return current;
   }
 

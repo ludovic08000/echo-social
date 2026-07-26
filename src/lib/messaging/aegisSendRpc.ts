@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { Json } from '@/integrations/supabase/types';
 import type { FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
 import { invalidateFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
 import { isAegisDeviceCopyWire } from '@/lib/messaging/messageCompatibility';
@@ -31,7 +32,8 @@ type SendArguments = {
   senderUserId: string;
   senderDeviceId: string;
   initialCopies: FanoutCopyRow[];
-  rebuildCopies: () => Promise<FanoutCopyRow[]>;
+  routeVersion: string;
+  rebuildCopies: () => Promise<{ copies: FanoutCopyRow[]; routeVersion: string }>;
 };
 
 export type AegisSendResult = {
@@ -39,6 +41,7 @@ export type AegisSendResult = {
   error: RpcError;
   copies: FanoutCopyRow[];
   retriedStaleRoute: boolean;
+  routeVersion: string;
 };
 
 function errorText(error: RpcError): string {
@@ -108,10 +111,11 @@ async function callAuthoritative(
       p_conversation_id: args.conversationId,
       p_body: args.body,
       p_image_url: args.imageUrl,
-      p_extra: args.extra as never,
-      p_copies: copies as never,
+      p_extra: args.extra as Json,
+      p_copies: copies as unknown as Json,
       p_sender_device_id: args.senderDeviceId,
-    } as never)) as Promise<RpcResponse>;
+      p_route_version: args.routeVersion,
+    })) as Promise<RpcResponse>;
     return await Promise.race([request, timeout]);
   } catch (error) {
     return { data: null, error: thrownRpcError(error) };
@@ -132,6 +136,7 @@ export async function sendMessageWithAegisRetry(
   args: SendArguments,
 ): Promise<AegisSendResult> {
   let copies = args.initialCopies;
+  let routeVersion = args.routeVersion;
   let retriedStaleRoute = false;
 
   if (
@@ -149,6 +154,7 @@ export async function sendMessageWithAegisRetry(
       },
       copies: [],
       retriedStaleRoute: false,
+      routeVersion,
     };
   }
 
@@ -162,6 +168,7 @@ export async function sendMessageWithAegisRetry(
         error: null,
         copies,
         retriedStaleRoute,
+        routeVersion,
       };
     }
 
@@ -173,7 +180,10 @@ export async function sendMessageWithAegisRetry(
       if (staleAttempt === 0) {
         retriedStaleRoute = true;
         invalidateFanoutRoute(args.conversationId, args.senderUserId);
-        copies = await args.rebuildCopies();
+        const rebuilt = await args.rebuildCopies();
+        copies = rebuilt.copies;
+        routeVersion = rebuilt.routeVersion;
+        args = { ...args, routeVersion };
         continue;
       }
       return {
@@ -181,6 +191,7 @@ export async function sendMessageWithAegisRetry(
         error: response.error,
         copies,
         retriedStaleRoute: true,
+        routeVersion,
       };
     }
 
@@ -195,6 +206,7 @@ export async function sendMessageWithAegisRetry(
           error: null,
           copies,
           retriedStaleRoute,
+          routeVersion,
         };
       }
       // A second, explicit server rejection resolves the original transport
@@ -214,6 +226,7 @@ export async function sendMessageWithAegisRetry(
         error: confirmation.error,
         copies,
         retriedStaleRoute,
+        routeVersion,
       };
     }
 
@@ -223,6 +236,7 @@ export async function sendMessageWithAegisRetry(
       error: response.error,
       copies,
       retriedStaleRoute,
+      routeVersion,
     };
   }
 
@@ -234,5 +248,6 @@ export async function sendMessageWithAegisRetry(
     },
     copies,
     retriedStaleRoute: true,
+    routeVersion,
   };
 }

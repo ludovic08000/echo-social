@@ -6,11 +6,14 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { verifyPublicIdentityBinding } from '@/lib/crypto/keyManager';
 
 export type PeerPublicKeys = {
   identity_key: string;
   signing_key: string;
   fingerprint: string;
+  identity_binding_version: number;
+  identity_binding_signature: string;
 };
 
 /** Deduplication lock for ensureKeysAndPeerSync (shared with useE2EE). */
@@ -53,9 +56,12 @@ function isPeerKeyCacheFresh(entry: { data: PeerPublicKeys | null; ts: number } 
 }
 
 /** Fetch peer public keys with global dedup + cache. */
-export async function fetchPeerPublicKeys(peerUserId: string): Promise<PeerPublicKeys | null> {
+export async function fetchPeerPublicKeys(
+  peerUserId: string,
+  options?: { forceRefresh?: boolean },
+): Promise<PeerPublicKeys | null> {
   const cached = _peerKeyCache.get(peerUserId);
-  if (isPeerKeyCacheFresh(cached)) return cached!.data;
+  if (!options?.forceRefresh && isPeerKeyCacheFresh(cached)) return cached!.data;
 
   const inflightKey = `fetch:${peerUserId}`;
   const inflight = _peerSyncPromise.get(inflightKey);
@@ -67,7 +73,9 @@ export async function fetchPeerPublicKeys(peerUserId: string): Promise<PeerPubli
   const p = (async () => {
     const { data, error } = await supabase
       .from('user_public_keys')
-      .select('identity_key, signing_key, fingerprint')
+      .select(
+        'identity_key, signing_key, fingerprint, identity_binding_version, identity_binding_signature',
+      )
       .eq('user_id', peerUserId)
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
@@ -80,6 +88,21 @@ export async function fetchPeerPublicKeys(peerUserId: string): Promise<PeerPubli
         error: error.message,
       });
       return false;
+    }
+
+    if (data) {
+      const valid = await verifyPublicIdentityBinding({
+        identityKey: data.identity_key,
+        signingKey: data.signing_key,
+        fingerprint: data.fingerprint,
+        bindingVersion: data.identity_binding_version,
+        bindingSignature: data.identity_binding_signature,
+      });
+      if (!valid) {
+        console.warn('[PEER_KEY] composite identity binding rejected', { peerUserId });
+        _peerKeyCache.set(peerUserId, { data: null, ts: Date.now() });
+        return false;
+      }
     }
 
     _peerKeyCache.set(peerUserId, { data, ts: Date.now() });

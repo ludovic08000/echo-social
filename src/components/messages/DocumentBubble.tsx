@@ -3,6 +3,12 @@ import { FileText, Download, Loader2, FileSpreadsheet, FileArchive, FileType2 } 
 import { cn } from '@/lib/utils';
 import { formatBytes, type ParsedDocument } from '@/lib/messaging/documentMessage';
 import { toast } from 'sonner';
+import { fetchR2Object } from '@/lib/r2';
+import {
+  MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES,
+  MAX_OUTGOING_ATTACHMENT_PLAINTEXT_BYTES,
+} from '@/lib/messaging/attachmentLimits';
+import { readResponseArrayBufferBounded } from '@/lib/messaging/boundedResponse';
 
 interface Props {
   encryptedUrl: string;
@@ -28,13 +34,27 @@ export function DocumentBubble({ encryptedUrl, doc, isMe }: Props) {
 
   const decryptBlob = async (): Promise<Blob | null> => {
     try {
-      const { importMediaKey, decryptMedia } = await import('@/lib/crypto/mediaEncrypt');
+      if (
+        !Number.isSafeInteger(doc.size) ||
+        doc.size < 0 ||
+        doc.size > MAX_OUTGOING_ATTACHMENT_PLAINTEXT_BYTES
+      ) {
+        throw new Error('document_size_invalid');
+      }
+      const { importMediaKey, decryptMediaWithMetadata } = await import('@/lib/crypto/mediaEncrypt');
       const key = await importMediaKey(doc.keyB64);
-      const res = await fetch(encryptedUrl);
+      const res = await fetchR2Object(encryptedUrl);
       if (!res.ok) throw new Error('fetch failed');
-      const enc = await res.arrayBuffer();
-      const plain = await decryptMedia(enc, key);
-      return new Blob([plain], { type: doc.mime || 'application/octet-stream' });
+      const enc = await readResponseArrayBufferBounded(
+        res,
+        Math.min(MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES, doc.size + 1024),
+      );
+      const plain = await decryptMediaWithMetadata(enc, key);
+      if (plain.data.byteLength !== doc.size) throw new Error('document_size_mismatch');
+      return new Blob(
+        [plain.data],
+        { type: plain.mimeType || doc.mime || 'application/octet-stream' },
+      );
     } catch (e) {
       console.error('[doc] decrypt failed', e);
       return null;

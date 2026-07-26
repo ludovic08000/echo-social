@@ -1,5 +1,6 @@
 import { safeUUID } from '@/e2ee-session';
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
+import { assertConversationFingerprintsTrusted } from '@/lib/crypto/fingerprintTracker';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
 import {
@@ -26,6 +27,7 @@ import {
   type OutboxStatus,
 } from '@/lib/messaging/outboxVault';
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
+import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 
 const IDENTITY_PREWARM_TIMEOUT_MS = 5_000;
 
@@ -69,7 +71,8 @@ function failureStatus(error: unknown): OutboxStatus {
     text.includes('not_authenticated') ||
     text.includes('pin unlock required') ||
     text.includes('verification obligatoire') ||
-    text.includes('fingerprint changed')
+    text.includes('fingerprint changed') ||
+    text.includes('fingerprint_changed')
   ) {
     return 'failed_visible';
   }
@@ -138,11 +141,15 @@ export async function sendAegisOutboundMessage(
     ? resumed.encryptedBody
     : null;
   let keyCapsule = parentBody ? resumed?.keyCapsule ?? null : null;
+  let archiveBody = resumed?.archiveBody ?? null;
+  const archiveBackupEnabled =
+    resumed?.archiveBackupEnabled ?? isArchiveBackupEnabled();
   let copies = parentBody
     ? (resumed?.preparedCopies ?? []).filter((copy) =>
         copy.message_id === messageId && isAegisDeviceCopyWire(copy.encrypted_body),
       ) as FanoutCopyRow[]
     : [];
+  let routeVersion = parentBody ? resumed?.routeVersion ?? null : null;
 
   let snapshot: OutboxPayload = {
     ...(resumed ?? {}),
@@ -155,7 +162,9 @@ export async function sendAegisOutboundMessage(
     encryptedBody: parentBody,
     keyCapsule,
     preparedCopies: copies,
-    archiveBody: resumed?.archiveBody ?? null,
+    routeVersion,
+    archiveBackupEnabled,
+    archiveBody,
     imageUrl: input.imageUrl ?? resumed?.imageUrl ?? null,
     extra: input.extra ?? resumed?.extra,
     status: 'encrypting',
@@ -192,7 +201,29 @@ export async function sendAegisOutboundMessage(
       IDENTITY_PREWARM_TIMEOUT_MS,
       'IDENTITY_PREWARM_TIMEOUT',
     ).catch(() => undefined);
+  }
 
+  // Re-check on every attempt, including a retry with durable ciphertext and
+  // copies. Otherwise an identity rotation between preparation and retry could
+  // bypass the transport gate.
+  await assertConversationFingerprintsTrusted(
+    input.senderUserId,
+    input.conversationId,
+  );
+
+  if (archiveBackupEnabled && !archiveBody) {
+    const { encryptArchive } = await import('@/lib/messaging/archive/archiveKey');
+    archiveBody = await encryptArchive(
+      input.plaintext,
+      input.conversationId,
+      input.senderUserId,
+      messageId,
+    );
+    if (!archiveBody) throw new Error('AEGIS_ARCHIVE_PREPARE_FAILED');
+    await persist({ archiveBody });
+  }
+
+  if (!parentBody) {
     if (utf8ByteLength(input.plaintext) > MAX_INLINE_MESSAGE_BODY_BYTES && !resumed?.transportPlaintext) {
       const prepared = await prepareLongMessageForSend(input.plaintext, messageId);
       transportPlaintext = prepared.transportBody;
@@ -212,11 +243,13 @@ export async function sendAegisOutboundMessage(
       parentBody = preparedMessage.body;
       keyCapsule = preparedMessage.keyCapsule;
       copies = [];
+      routeVersion = null;
       await persist({
         transportPlaintext,
         encryptedBody: parentBody,
         keyCapsule,
         preparedCopies: [],
+        routeVersion: null,
       });
     } catch (error) {
       await persist({
@@ -236,7 +269,7 @@ export async function sendAegisOutboundMessage(
     throw error;
   }
 
-  const buildCopies = async (): Promise<FanoutCopyRow[]> => {
+  const buildCopies = async (): Promise<{ copies: FanoutCopyRow[]; routeVersion: string }> => {
     const built = await buildFanoutCopies({
       messageId,
       conversationId: input.conversationId,
@@ -250,19 +283,22 @@ export async function sendAegisOutboundMessage(
       throw new Error('AEGIS_DEVICE_COPY_WIRE_UNSUPPORTED');
     }
     copies = built.rows;
+    routeVersion = built.routeVersion;
+    if (!routeVersion) throw new Error('E2EE_ROUTE_VERSION_UNAVAILABLE');
     await persist({
       encryptedBody: parentBody,
       keyCapsule,
       transportPlaintext,
       preparedCopies: copies,
+      routeVersion,
       status: 'sending',
       lastError: null,
     });
-    return copies;
+    return { copies, routeVersion };
   };
 
   try {
-    if (copies.length === 0) {
+    if (copies.length === 0 || !routeVersion) {
       await buildCopies();
     } else {
       await persist({ status: 'sending', preparedCopies: copies, lastError: null });
@@ -286,10 +322,15 @@ export async function sendAegisOutboundMessage(
       conversationId: input.conversationId,
       body: parentBody,
       imageUrl: input.imageUrl ?? resumed?.imageUrl ?? null,
-      extra: { ...(input.extra ?? resumed?.extra ?? {}), body_kind: 'multi_device' },
+      extra: {
+        ...(input.extra ?? resumed?.extra ?? {}),
+        body_kind: 'multi_device',
+        archive_body: archiveBody,
+      },
       senderUserId: input.senderUserId,
       senderDeviceId: getCurrentDeviceId(),
       initialCopies: copies,
+      routeVersion,
       rebuildCopies: buildCopies,
     });
   } catch (error) {
@@ -320,14 +361,16 @@ export async function sendAegisOutboundMessage(
   // ciphertext index after commit; writing the same plaintext row twice wastes
   // IndexedDB work on resource-constrained mobile browsers.
   void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
-  void import('@/lib/messaging/archive/archiveKey').then(({ archiveBubbleForUser }) =>
-    archiveBubbleForUser({
-      messageId: committedId,
-      conversationId: input.conversationId,
-      userId: input.senderUserId,
-      plaintext: input.plaintext,
-    }),
-  ).catch(() => false);
+  if (archiveBackupEnabled) {
+    void import('@/lib/messaging/archive/archiveKey').then(({ archiveBubbleForUser }) =>
+      archiveBubbleForUser({
+        messageId: committedId,
+        conversationId: input.conversationId,
+        userId: input.senderUserId,
+        plaintext: input.plaintext,
+      }),
+    ).catch(() => false);
+  }
   await deleteOutboxPayload(localId).catch(() => undefined);
 
   return {

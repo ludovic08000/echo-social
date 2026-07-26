@@ -20,7 +20,11 @@ import {
   AES_ALGO, AES_KEY_LENGTH,
 } from './constants';
 import { supabase } from '@/integrations/supabase/client';
-import { type IdentityKeyPair, exportPublicKeyRaw } from './keyManager';
+import {
+  type IdentityKeyPair,
+  exportPublicKeyRaw,
+  verifyPublicIdentityBinding,
+} from './keyManager';
 
 export interface X3DHPrekeyBundle {
   identityKey: string;
@@ -58,7 +62,10 @@ export interface X3DHInitialMessage {
   kemCt?: string;
 }
 
-export type DevicePrekeyBundleErrorCode = 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE' | 'DEVICE_SPK_SIGNATURE_INVALID';
+export type DevicePrekeyBundleErrorCode =
+  | 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE'
+  | 'DEVICE_SPK_SIGNATURE_INVALID'
+  | 'ACCOUNT_IDENTITY_BINDING_INVALID';
 
 export class DevicePrekeyBundleError extends Error {
   code: DevicePrekeyBundleErrorCode;
@@ -142,9 +149,16 @@ function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys', payload: Recor
   });
 }
 
-function logDBUpsertError(table: 'device_signed_prekeys', step: string, error: any, payload: Record<string, unknown>) {
-  const haystack = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
-  const rejectedColumn = Object.keys(payload).find((key) => new RegExp(`\b${key}\b`, 'i').test(haystack));
+function logDBUpsertError(
+  table: 'device_signed_prekeys',
+  step: string,
+  error: { code?: string | null; message?: string | null; details?: string | null; hint?: string | null },
+  payload: Record<string, unknown>,
+) {
+  const haystack = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+  const rejectedColumn = Object.keys(payload).find((key) =>
+    new RegExp(`\\b${key}\\b`, 'i').test(haystack),
+  );
   const violatedConstraint = haystack.match(/constraint "([^"]+)"/i)?.[1]
     ?? haystack.match(/violates ([^\s]+) constraint/i)?.[1]
     ?? undefined;
@@ -208,10 +222,10 @@ async function getNextDeviceSPKId(userId: string, deviceId: string): Promise<num
 
 export async function generateAndUploadDeviceSignedPrekey(userId: string, deviceId: string, signingPrivateKey: CryptoKey): Promise<{ spkId: number; publicKey: string; signature: string }> {
   const spkId = await getNextDeviceSPKId(userId, deviceId);
-  const spkPair = await hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']) as CryptoKeyPair;
+  const spkPair = await hardCrypto.generateKey(KX_KEY_PARAMS, true, ['deriveBits']) as CryptoKeyPair;
   const publicRaw = await exportPublicKeyRaw(spkPair.publicKey);
   const publicBase64 = bufferToBase64(publicRaw);
-  const signature = await hardCrypto.sign('Ed25519' as any, signingPrivateKey, publicRaw);
+  const signature = await hardCrypto.sign('Ed25519', signingPrivateKey, publicRaw);
   const signatureBase64 = bufferToBase64(signature);
   await saveDeviceSPKPrivate(userId, deviceId, spkId, spkPair.privateKey, publicBase64);
   const payload = { user_id: userId, device_id: deviceId, spk_id: spkId, public_key: publicBase64, signature: signatureBase64, is_active: true };
@@ -239,7 +253,7 @@ export async function refreshDeviceSignedPrekeyIfNeeded(userId: string, deviceId
       // Quarantine only the invalid SPK. The authenticated DeviceID remains
       // connected until the user explicitly revokes it from the device menu.
       try {
-        await (supabase as any).rpc('quarantine_own_invalid_device_spk', {
+        await supabase.rpc('quarantine_own_invalid_device_spk', {
           p_device_id: deviceId,
           p_spk_id: data.spk_id,
           p_reason: 'own_device_spk_signature_invalid',
@@ -279,12 +293,18 @@ async function loadDeviceOPKPrivate(userId: string, deviceId: string, opkId: num
   try {
     const result = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) => reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(deviceOPKKey(userId, deviceId, opkId))));
     if (!result) return null;
-    return importKeyFromJWK(result.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
+    return importKeyFromJWK(result.privateKeyJWK, KX_KEY_PARAMS, ['deriveBits'], false);
   } catch { return null; }
 }
 
 async function deleteDeviceOPKPrivate(userId: string, deviceId: string, opkId: number): Promise<void> {
-  try { await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => { tx.objectStore(SPK_STORE).delete(deviceOPKKey(userId, deviceId, opkId)); }); } catch {}
+  try {
+    await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+      tx.objectStore(SPK_STORE).delete(deviceOPKKey(userId, deviceId, opkId));
+    });
+  } catch {
+    // Consumed OPK cleanup is best-effort.
+  }
 }
 
 async function getNextDeviceOPKBaseId(userId: string, deviceId: string): Promise<number> {
@@ -299,7 +319,9 @@ async function getNextDeviceOPKBaseId(userId: string, deviceId: string): Promise
         if (!Number.isNaN(id) && id > localMax) localMax = id;
       }
     }
-  } catch {}
+  } catch {
+    // Continue with the authoritative server maximum.
+  }
 
   let serverMax = 0;
   try {
@@ -312,7 +334,9 @@ async function getNextDeviceOPKBaseId(userId: string, deviceId: string): Promise
       .limit(1)
       .maybeSingle();
     if (data?.opk_id && Number.isFinite(data.opk_id)) serverMax = Number(data.opk_id);
-  } catch {}
+  } catch {
+    // Local maximum still prevents ordinary OPK id reuse.
+  }
 
   return Math.max(localMax, serverMax) + 1;
 }
@@ -328,13 +352,13 @@ export async function refillDeviceOneTimePrekeysIfNeeded(userId: string, deviceI
     const rows: Array<{ user_id: string; device_id: string; opk_id: number; public_key: string }> = [];
     for (let i = 0; i < OPK_BATCH_SIZE; i++) {
       const opkId = baseId + i;
-      const pair = await hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']) as CryptoKeyPair;
+      const pair = await hardCrypto.generateKey(KX_KEY_PARAMS, true, ['deriveBits']) as CryptoKeyPair;
       const pubRaw = await exportPublicKeyRaw(pair.publicKey);
       const pubB64 = bufferToBase64(pubRaw);
       await saveDeviceOPKPrivate(userId, deviceId, opkId, pair.privateKey, pubB64);
       rows.push({ user_id: userId, device_id: deviceId, opk_id: opkId, public_key: pubB64 });
     }
-    const { error: insErr } = await supabase.from('device_one_time_prekeys').upsert(rows as any, { onConflict: 'user_id,device_id,opk_id', ignoreDuplicates: true });
+    const { error: insErr } = await supabase.from('device_one_time_prekeys').upsert(rows, { onConflict: 'user_id,device_id,opk_id', ignoreDuplicates: true });
     if (insErr) { console.warn('[X3DH-OPK] batch upsert failed:', insErr.message); return; }
     console.log(`[X3DH-OPK] ✅ ${OPK_BATCH_SIZE} new OPKs published for ${deviceId.slice(0, 8)}…`);
   } catch (e) { console.warn('[X3DH-OPK] refill failed (non-fatal):', e); }
@@ -343,15 +367,37 @@ export async function refillDeviceOneTimePrekeysIfNeeded(userId: string, deviceI
 async function claimPeerDeviceOPK(peerUserId: string, peerDeviceId: string): Promise<{ opkId: number; publicKey: string } | null> {
   try {
     const { data, error } = await supabase.rpc('claim_device_one_time_prekey', { p_user_id: peerUserId, p_device_id: peerDeviceId });
-    if (error || !data || (data as any[]).length === 0) return null;
-    const row = (data as any[])[0];
-    return { opkId: row.opk_id as number, publicKey: row.public_key as string };
+    if (error || !data || data.length === 0) return null;
+    const row = data[0];
+    return { opkId: row.opk_id, publicKey: row.public_key };
   } catch { return null; }
 }
 
 async function fetchDevicePrekeyMaterial(peerUserId: string, peerDeviceId: string): Promise<{ identityKey: string; signingKey: string; spkId: number; publicKey: string; signature: string } | null> {
-  const { data: pubKeys } = await supabase.from('user_public_keys').select('identity_key, signing_key').eq('user_id', peerUserId).eq('is_active', true).maybeSingle();
+  const { data: pubKeys } = await supabase
+    .from('user_public_keys')
+    .select(
+      'identity_key, signing_key, fingerprint, identity_binding_version, identity_binding_signature',
+    )
+    .eq('user_id', peerUserId)
+    .eq('is_active', true)
+    .maybeSingle();
   if (!pubKeys) return null;
+  const identityBindingValid = await verifyPublicIdentityBinding({
+    identityKey: pubKeys.identity_key,
+    signingKey: pubKeys.signing_key,
+    fingerprint: pubKeys.fingerprint,
+    bindingVersion: pubKeys.identity_binding_version,
+    bindingSignature: pubKeys.identity_binding_signature,
+  });
+  if (!identityBindingValid) {
+    throw new DevicePrekeyBundleError(
+      'ACCOUNT_IDENTITY_BINDING_INVALID',
+      peerUserId,
+      peerDeviceId,
+      undefined,
+    );
+  }
   const { data: spkRows, error } = await supabase.rpc('get_device_prekey_bundle', { p_user_id: peerUserId, p_device_id: peerDeviceId });
   if (error || !spkRows || spkRows.length === 0) return null;
   const spk = spkRows[0] as { spk_id: number; public_key: string; signature: string };
@@ -364,7 +410,7 @@ async function verifySignedPrekey(signingKeyB64: string, spkPublicB64: string, s
   const diagBase = { source: context.source, user_id: context.userId, device_id: context.deviceId, spk_id: context.spkId, encoding: 'base64(raw Ed25519 signature over raw X25519 SPK public key)', identity_len: context.identityKeyB64?.length ?? null, signing_len: signingKeyB64?.length ?? null, spk_len: spkPublicB64?.length ?? null, sig_len: signatureB64?.length ?? null, identity_bytes: context.identityKeyB64 ? safeBase64BytesLength(context.identityKeyB64) : null, signing_bytes: signingKeyB64 ? safeBase64BytesLength(signingKeyB64) : null, spk_bytes: spkPublicB64 ? safeBase64BytesLength(spkPublicB64) : null, sig_bytes: signatureB64 ? safeBase64BytesLength(signatureB64) : null };
   try {
     const peerSigningKey = await importEd25519Public(signingKeyB64);
-    const valid = await hardCrypto.verify('Ed25519' as any, peerSigningKey, base64ToBuffer(signatureB64), base64ToBuffer(spkPublicB64));
+    const valid = await hardCrypto.verify('Ed25519', peerSigningKey, base64ToBuffer(signatureB64), base64ToBuffer(spkPublicB64));
     console.log('[X3DH][SPK_VERIFY]', { ...diagBase, valid });
     return valid;
   } catch (e) { console.warn('[X3DH][SPK_VERIFY_ERROR]', { ...diagBase, valid: false, error: e }); return false; }
@@ -404,16 +450,16 @@ export async function x3dhInitiate(myKeys: IdentityKeyPair, bundle: X3DHPrekeyBu
   if (!sigValid) throw new Error(`X3DH: Signed prekey signature verification FAILED`);
   const peerIK = await importX25519Public(bundle.identityKey);
   const peerSPK = await importX25519Public(bundle.signedPrekey);
-  const ephemeralPair = await hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']) as CryptoKeyPair;
+  const ephemeralPair = await hardCrypto.generateKey(KX_KEY_PARAMS, true, ['deriveBits']) as CryptoKeyPair;
   const ephPubRaw = await exportPublicKeyRaw(ephemeralPair.publicKey);
   const ephemeralKey = bufferToBase64(ephPubRaw);
-  const dh1 = await hardCrypto.deriveBits({ name: 'X25519', public: peerSPK } as any, myKeys.privateKey, 256);
-  const dh2 = await hardCrypto.deriveBits({ name: 'X25519', public: peerIK } as any, ephemeralPair.privateKey, 256);
-  const dh3 = await hardCrypto.deriveBits({ name: 'X25519', public: peerSPK } as any, ephemeralPair.privateKey, 256);
+  const dh1 = await hardCrypto.deriveBits({ name: 'X25519', public: peerSPK } as Algorithm & { public: CryptoKey }, myKeys.privateKey, 256);
+  const dh2 = await hardCrypto.deriveBits({ name: 'X25519', public: peerIK } as Algorithm & { public: CryptoKey }, ephemeralPair.privateKey, 256);
+  const dh3 = await hardCrypto.deriveBits({ name: 'X25519', public: peerSPK } as Algorithm & { public: CryptoKey }, ephemeralPair.privateKey, 256);
   let dh4: ArrayBuffer | null = null;
   if (bundle.oneTimePrekey) {
     const peerOPK = await importX25519Public(bundle.oneTimePrekey);
-    dh4 = await hardCrypto.deriveBits({ name: 'X25519', public: peerOPK } as any, ephemeralPair.privateKey, 256);
+    dh4 = await hardCrypto.deriveBits({ name: 'X25519', public: peerOPK } as Algorithm & { public: CryptoKey }, ephemeralPair.privateKey, 256);
   }
   const filler = new Uint8Array(32).fill(0xFF);
   const dhConcat = dh4 ? concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3, dh4) : concatBuffers(filler.buffer as ArrayBuffer, dh1, dh2, dh3);
@@ -441,16 +487,21 @@ export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: st
     const aliceEK = await importX25519Public(initialMessage.ek);
     const spkRecord = await loadDeviceSPKRecord(myUserId, myDeviceId, initialMessage.spkId);
     if (!spkRecord) throw new Error(`[X3DH-DEV] device SPK #${initialMessage.spkId} NOT FOUND for ${myDeviceId.slice(0, 8)}…`);
-    const spkPrivate = await importKeyFromJWK(spkRecord.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], true);
+    const spkPrivate = await importKeyFromJWK(
+      spkRecord.privateKeyJWK,
+      KX_KEY_PARAMS,
+      ['deriveBits'],
+      false,
+    );
     const spkPublic = await importX25519Public(spkRecord.publicKeyBase64);
-    const dh1 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceIK } as any, spkPrivate, 256);
-    const dh2 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as any, myKeys.privateKey, 256);
-    const dh3 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as any, spkPrivate, 256);
+    const dh1 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceIK } as Algorithm & { public: CryptoKey }, spkPrivate, 256);
+    const dh2 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as Algorithm & { public: CryptoKey }, myKeys.privateKey, 256);
+    const dh3 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as Algorithm & { public: CryptoKey }, spkPrivate, 256);
     let dh4: ArrayBuffer | null = null;
     if (initialMessage.opkId !== undefined) {
       const opkPriv = await loadDeviceOPKPrivate(myUserId, myDeviceId, initialMessage.opkId);
       if (!opkPriv) throw new Error('X3DH_OPK_PRIVATE_MISSING');
-      dh4 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as any, opkPriv, 256);
+      dh4 = await hardCrypto.deriveBits({ name: 'X25519', public: aliceEK } as Algorithm & { public: CryptoKey }, opkPriv, 256);
     }
     const filler = new Uint8Array(32).fill(0xFF);
     const dhConcat = dh4

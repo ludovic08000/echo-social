@@ -43,8 +43,10 @@ import type { DecryptResult } from '@/hooks/useE2EE';
 import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 import {
   archiveBubbleForUser,
+  decryptArchive,
   recoverBubbleFromArchive,
 } from '@/lib/messaging/archive/archiveKey';
+import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 
 export interface DecryptionOutcome {
   text: string;
@@ -263,6 +265,7 @@ export async function resolvePlaintext(opts: {
   messageId?: string;
   senderId?: string | null;
   isMe?: boolean;
+  archiveBody?: string | null;
   decrypt: (body: string) => Promise<DecryptResult>;
 }): Promise<DecryptionOutcome | null> {
   const { body, messageId, decrypt } = opts;
@@ -311,7 +314,7 @@ export async function resolvePlaintext(opts: {
               });
               if (plaintext !== null) {
                 const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);
-                if (currentUserId) {
+                if (currentUserId && isArchiveBackupEnabled()) {
                   void archiveBubbleForUser({
                     messageId,
                     conversationId: aegisEnvelope.conversationId,
@@ -328,6 +331,23 @@ export async function resolvePlaintext(opts: {
         }
 
         if (currentUserId) {
+          // The sender's archive is committed atomically with the parent
+          // message. It is account-encrypted and can recover an own bubble on
+          // a newly linked device even when no historical device capsule was
+          // addressed to that installation.
+          if (opts.isMe === true && opts.archiveBody) {
+            const parentArchive = await decryptArchive(
+              opts.archiveBody,
+              aegisEnvelope.conversationId,
+              currentUserId,
+              messageId,
+            ).catch(() => null);
+            if (parentArchive !== null) {
+              const outcome = await buildAuthenticatedOutcomeFromText(parentArchive, messageId);
+              return cacheAndPersist(key, body, outcome, messageId);
+            }
+          }
+
           const archived = await recoverBubbleFromArchive({
             messageId,
             conversationId: aegisEnvelope.conversationId,

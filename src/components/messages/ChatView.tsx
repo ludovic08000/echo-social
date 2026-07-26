@@ -147,7 +147,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       const [wrappedKeysPresent, rawIdentityPresent, backupCountResult, messageCountResult] = await Promise.all([
         hasWrappedKeys(user.id),
         hasRawIdentityKeys(user.id),
-        supabase.from('user_backups' as any).select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('user_backups').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         supabase.from('messages').select('id', { count: 'exact', head: true }).eq('conversation_id', conversationId).in('status', ['delivered', 'pending']),
       ]);
 
@@ -221,7 +221,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
     }
 
     return stableBadgeRef.current;
-  }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
+  }, [e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
 
   // Cache plaintext for own sent messages (ratchet can't decrypt own ciphertext).
   // Persisted to IndexedDB (device-key encrypted) so the message stays readable
@@ -278,7 +278,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
   >([]);
   useEffect(() => () => {
     // Revoke any leftover objectURLs when the chat unmounts.
-    mediaPlaceholders.forEach(p => { try { URL.revokeObjectURL(p.previewUrl); } catch {} });
+    mediaPlaceholders.forEach((placeholder) => {
+      try {
+        URL.revokeObjectURL(placeholder.previewUrl);
+      } catch {
+        // Object URL may already have been revoked by the completed upload.
+      }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
@@ -336,7 +342,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
         const next = failed
           ? prev.map(p => p.id === placeholderId ? { ...p, failed: true } : p)
           : prev.filter(p => p.id !== placeholderId);
-        if (!failed && previewUrl) { try { URL.revokeObjectURL(previewUrl); } catch {} }
+        if (!failed && previewUrl) {
+          try {
+            URL.revokeObjectURL(previewUrl);
+          } catch {
+            // Object URL may already have been revoked during unmount cleanup.
+          }
+        }
         return next;
       });
     };
@@ -454,7 +466,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
     conversationId,
     botPlaintextSend,
     queue,
-    e2ee.fingerprintChanged,
     e2ee.peerKeyMissing,
     e2ee.initError,
     viewOnceArmed,
@@ -524,7 +535,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   useEffect(() => {
     if (conversationId) markRead.mutate(conversationId);
-  }, [conversationId]);
+  }, [conversationId, markRead]);
 
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -563,6 +574,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
     // Hard blockers — show a clear reason and abort
     if (!isZeusConversation) {
+      if (e2ee.fingerprintChanged || e2ee.initError === 'fingerprint_changed') {
+        toast.error("L'identité du contact a changé. Vérifie-la avant d'envoyer.");
+        return;
+      }
       if (e2ee.peerKeyMissing) {
         toast.error('Clés du contact indisponibles — réessaie dans un instant.');
         return;
@@ -611,6 +626,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // safely holds the message and encrypts it when keys are ready.
   const encryptionReady = isZeusConversation || e2ee.isReady();
   const sendBlocked = !isZeusConversation && (
+    e2ee.fingerprintChanged ||
+    e2ee.initError === 'fingerprint_changed' ||
     e2ee.peerKeyMissing ||
     e2ee.initError === 'pin_unlock_required' ||
     e2ee.initError === 'identity_lost_backup_available'
@@ -1199,6 +1216,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                               refreshKey={decryptRefreshKey}
                               messageId={msg.id}
                               senderId={msg.sender_id}
+                              archiveBody={msg.archive_body}
                               hasMedia={!!msg.image_url}
                             />
                           </div>

@@ -3529,6 +3529,7 @@ export type Database = {
       }
       messages: {
         Row: {
+          aegis_route_version: string | null
           archive_body: string | null
           body: string
           body_kind: string
@@ -3547,6 +3548,7 @@ export type Database = {
           viewed_at: string | null
         }
         Insert: {
+          aegis_route_version?: string | null
           archive_body?: string | null
           body: string
           body_kind?: string
@@ -3565,6 +3567,7 @@ export type Database = {
           viewed_at?: string | null
         }
         Update: {
+          aegis_route_version?: string | null
           archive_body?: string | null
           body?: string
           body_kind?: string
@@ -6704,6 +6707,9 @@ export type Database = {
           rejected_by: string | null
           revoke_reason: string | null
           revoked_at: string | null
+          routing_checked_at: string | null
+          routing_error: string | null
+          routing_status: string
           stale_at: string | null
           updated_at: string
           user_agent: string | null
@@ -6732,6 +6738,9 @@ export type Database = {
           rejected_by?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
+          routing_checked_at?: string | null
+          routing_error?: string | null
+          routing_status?: string
           stale_at?: string | null
           updated_at?: string
           user_agent?: string | null
@@ -6760,6 +6769,9 @@ export type Database = {
           rejected_by?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
+          routing_checked_at?: string | null
+          routing_error?: string | null
+          routing_status?: string
           stale_at?: string | null
           updated_at?: string
           user_agent?: string | null
@@ -7027,6 +7039,8 @@ export type Database = {
           created_at: string
           fingerprint: string
           id: string
+          identity_binding_signature: string | null
+          identity_binding_version: number | null
           identity_key: string
           is_active: boolean
           kem_type: string
@@ -7039,6 +7053,8 @@ export type Database = {
           created_at?: string
           fingerprint: string
           id?: string
+          identity_binding_signature?: string | null
+          identity_binding_version?: number | null
           identity_key: string
           is_active?: boolean
           kem_type?: string
@@ -7051,6 +7067,8 @@ export type Database = {
           created_at?: string
           fingerprint?: string
           id?: string
+          identity_binding_signature?: string | null
+          identity_binding_version?: number | null
           identity_key?: string
           is_active?: boolean
           kem_type?: string
@@ -7798,11 +7816,12 @@ export type Database = {
         Args: {
           p_body: string
           p_conversation_id: string
-          p_copies?: Json
-          p_extra?: Json
-          p_image_url?: string
+          p_copies: Json
+          p_extra: Json
+          p_image_url: string | null
           p_message_id: string
-          p_sender_device_id?: string
+          p_route_version: string
+          p_sender_device_id: string
         }
         Returns: string
       }
@@ -8230,6 +8249,10 @@ export type Database = {
           signed_at: string
         }[]
       }
+      get_aegis_conversation_route_version: {
+        Args: { p_conversation_id: string }
+        Returns: string
+      }
       get_signed_prekey: {
         Args: { p_user_id: string }
         Returns: {
@@ -8558,6 +8581,14 @@ export type Database = {
         }
         Returns: Json
       }
+      mark_current_device_route_ready: {
+        Args: { p_device_id: string }
+        Returns: Json
+      }
+      mark_current_device_route_unavailable: {
+        Args: { p_device_id: string; p_error_code: string }
+        Returns: Json
+      }
       release_backup_master_key: {
         Args: { _backup_type: string; _user_id: string }
         Returns: {
@@ -8613,7 +8644,7 @@ export type Database = {
       }
       resolve_device_id_by_fingerprints: {
         Args: { p_fingerprints: string[]; p_platform?: string }
-        Returns: string
+        Returns: string | null
       }
       resolve_device_primary_repair_request: {
         Args: { p_id: string }

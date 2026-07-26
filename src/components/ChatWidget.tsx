@@ -163,12 +163,12 @@ function NewConversationDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const createConversation = useCreateConversation();
   const { openConversation } = useChatWidget();
 
-  const friends = friendsData?.friends || [];
   const filtered = useMemo(() => {
+    const friends = friendsData?.friends ?? [];
     if (!search.trim()) return friends;
     const q = search.toLowerCase();
     return friends.filter(f => f.profile.name.toLowerCase().includes(q));
-  }, [friends, search]);
+  }, [friendsData?.friends, search]);
 
   const handleSelect = async (friendUserId: string) => {
     try {
@@ -418,7 +418,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     }
 
     return stableBadgeRef.current;
-  }, [conversationId, e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
+  }, [e2ee.encrypted, e2ee.fingerprintChanged, e2ee.ratchetActive]);
 
   const decryptedCacheRef = useRef<Map<string, string>>(new Map());
   const cachePlaintext = useCallback((msgId: string, text: string) => {
@@ -487,7 +487,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [counterNegId, setCounterNegId] = useState<string | null>(null);
 
   const seller = negotiationProduct?.seller_profiles;
-  const isSeller = seller && (seller as any).user_id === user?.id;
+  const isSeller = seller && seller.user_id === user?.id;
 
   const myNegotiation = useMemo(() =>
     negotiations.find(n => n.buyer_id === user?.id && ['pending', 'counter'].includes(n.status)),
@@ -542,7 +542,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   };
 
   const [showRelayPicker, setShowRelayPicker] = useState(false);
-  const [selectedRelay, setSelectedRelay] = useState<any>(null);
+  const [selectedRelay, setSelectedRelay] = useState<{
+    id: string;
+    name: string;
+    address: string;
+    postcode: string;
+    city: string;
+    country: string;
+  } | null>(null);
   const [negPayLoading, setNegPayLoading] = useState(false);
 
   const estimateShipping = (weightGrams: number) => {
@@ -555,14 +562,19 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     if (!acceptedNeg) return;
     setNegPayLoading(true);
     try {
-      const payload: any = { action: 'negotiation_checkout', negotiationId: acceptedNeg.id };
+      const payload: Record<string, unknown> = {
+        action: 'negotiation_checkout',
+        negotiationId: acceptedNeg.id,
+      };
       if (selectedRelay) {
         payload.relay = selectedRelay;
       }
       const { data, error } = await supabase.functions.invoke('marketplace-checkout', { body: payload });
       if (error || data?.error) throw new Error(data?.error || 'Erreur');
       if (data?.url) window.location.href = data.url;
-    } catch (e: any) { toast.error(e.message || 'Erreur paiement'); }
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Erreur paiement');
+    }
     finally { setNegPayLoading(false); }
   };
 
@@ -586,13 +598,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       if (info.wasMissed) {
         setShowVoicemailPrompt(true);
       }
-    }, [conversationId]),
+    }, [conversationId, sendMessage]),
   });
+  const callState = call.callState;
+  const endCall = call.endCall;
 
   // Listen for callee declining/cancelling the call → auto-end on caller side
   useEffect(() => {
     const callId = activeCallIdRef.current;
-    if (!callId || call.callState === 'idle') return;
+    if (!callId || callState === 'idle') return;
 
     const channel = supabase
       .channel(`call-status-${callId}`)
@@ -605,9 +619,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           filter: `id=eq.${callId}`,
         },
         (payload) => {
-          const updated = payload.new as any;
+          const updated = payload.new as { status?: string };
           if (updated.status === 'declined' || updated.status === 'cancelled' || updated.status === 'ended') {
-            call.endCall();
+            endCall();
           }
         }
       )
@@ -616,7 +630,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [call.callState]);
+  }, [callState, endCall]);
 
   const playSound = useRealtimeNotificationSound();
   const prevMsgCountRef = useRef(0);
@@ -631,7 +645,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       }
     }
     prevMsgCountRef.current = messages.length;
-  }, [messages?.length]);
+  }, [messages, playSound, user?.id]);
 
   const { upload: rawUpload, isUploading } = useImageUpload({
     bucket: 'post-images',
@@ -805,7 +819,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   useEffect(() => {
     if (conversationId) markRead.mutate(conversationId);
-  }, [conversationId]);
+  }, [conversationId, markRead]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -852,8 +866,13 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     }
   };
 
-  // Fingerprint change is no longer a blocker — only true unrecoverable states are.
-  const sendBlocked = !isZeusConversation && (e2ee.peerKeyMissing || e2ee.initError === 'pin_unlock_required' || e2ee.initError === 'identity_lost_backup_available');
+  const sendBlocked = !isZeusConversation && (
+    e2ee.fingerprintChanged ||
+    e2ee.initError === 'fingerprint_changed' ||
+    e2ee.peerKeyMissing ||
+    e2ee.initError === 'pin_unlock_required' ||
+    e2ee.initError === 'identity_lost_backup_available'
+  );
 
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
     if (!newMessage.trim() || aiLoading) return;
@@ -1277,7 +1296,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                         )}
 
                         {(() => {
-                          const docParsed = parseDocumentBody(msg.body);
+                          const resolvedBody = decryptedCacheRef.current.get(msg.id) ?? msg.body;
+                          const docParsed = parseDocumentBody(resolvedBody);
                           if (docParsed && msg.image_url) {
                             return (
                               <DocumentBubble
@@ -1290,7 +1310,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                           return null;
                         })()}
 
-                        {msg.image_url && !parseDocumentBody(msg.body) && (
+                        {msg.image_url && !parseDocumentBody(
+                          decryptedCacheRef.current.get(msg.id) ?? msg.body,
+                        ) && (
                           <button
                             type="button"
                             onClick={() => setLightboxMedia({ url: msg.image_url!, body: msg.body, messageId: msg.id })}
@@ -1397,6 +1419,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               refreshKey={decryptRefreshKey}
                               messageId={msg.id}
                               senderId={msg.sender_id}
+                              archiveBody={msg.archive_body}
                               hasMedia={!!msg.image_url}
                             />
                           </div>
@@ -2019,7 +2042,9 @@ export function ChatWidget() {
     try {
       const saved = localStorage.getItem(POS_KEY);
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch {
+      // Ignore malformed or unavailable persisted widget coordinates.
+    }
     return null;
   });
 
@@ -2029,7 +2054,9 @@ export function ChatWidget() {
     try {
       const saved = localStorage.getItem(MOBILE_POS_KEY);
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch {
+      // Ignore malformed or unavailable persisted mobile coordinates.
+    }
     return { x: 16, y: window.innerHeight - 160 };
   });
 
@@ -2085,7 +2112,11 @@ export function ChatWidget() {
             (p) => {
               if (!moved) { restoreChat(); return; }
               if (isMobile) {
-                try { localStorage.setItem(MOBILE_POS_KEY, JSON.stringify(p)); } catch {}
+                try {
+                  localStorage.setItem(MOBILE_POS_KEY, JSON.stringify(p));
+                } catch {
+                  // Widget movement must remain usable when storage is unavailable.
+                }
               }
             }
           );
@@ -2124,7 +2155,13 @@ export function ChatWidget() {
         if (target.closest('button, a, input, textarea')) return;
         startDrag(e, effectivePos, WIDGET_W, WIDGET_H,
           (p) => setPos(p),
-          (p) => { try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {} }
+          (p) => {
+            try {
+              localStorage.setItem(POS_KEY, JSON.stringify(p));
+            } catch {
+              // Widget movement must remain usable when storage is unavailable.
+            }
+          }
         );
       }}
       className="fixed z-[60] bg-background border border-border/40 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-in slide-in-from-bottom-4 duration-200 overflow-hidden"

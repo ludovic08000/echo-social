@@ -39,6 +39,8 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<v
       identity_key: bundle.identityKey,
       signing_key: bundle.signingKey,
       fingerprint: bundle.fingerprint,
+      identity_binding_version: bundle.bindingVersion,
+      identity_binding_signature: bundle.bindingSignature,
       kem_type: 'X25519',
       is_active: true,
       updated_at: new Date().toISOString()
@@ -56,7 +58,9 @@ async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<v
     window.dispatchEvent(new CustomEvent('forsure-e2ee-identity-ready', {
       detail: { userId, fingerprint: bundle.fingerprint },
     }));
-  } catch {}
+  } catch {
+    // Event delivery is best-effort in non-browser runtimes.
+  }
 
   console.info('[E2EE][IDENTITY] key assigned and published', {
     userId,
@@ -96,7 +100,9 @@ async function runIdentityMaintenance(
       window.dispatchEvent(new CustomEvent('forsure-e2ee-security-code-changed', {
         detail: { userId, fingerprint: keys.fingerprint },
       }));
-    } catch {}
+    } catch {
+      // Event delivery is best-effort in non-browser runtimes.
+    }
   }
 
   console.info('[E2EE][IDENTITY] bootstrap complete', { userId, mode });

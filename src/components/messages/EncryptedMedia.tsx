@@ -16,6 +16,8 @@ import {
   subscribeDecryptedMedia,
 } from './decryptedMediaCache';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
+import { readResponseArrayBufferBounded } from '@/lib/messaging/boundedResponse';
+import { MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES } from '@/lib/messaging/attachmentLimits';
 
 interface EncryptedMediaProps {
   encryptedUrl: string;
@@ -94,7 +96,10 @@ export const EncryptedMedia = memo(function EncryptedMedia({
       try {
         const response = await fetchR2Object(encryptedUrl);
         if (!response.ok) throw new Error(`media_fetch_${response.status}`);
-        const encryptedData = await response.arrayBuffer();
+        const encryptedData = await readResponseArrayBufferBounded(
+          response,
+          MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES,
+        );
 
         const key = await importMediaKey(mediaKeyB64);
         const decrypted = await decryptMediaWithMetadata(encryptedData, key);

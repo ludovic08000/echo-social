@@ -10,11 +10,18 @@ const mocks = vi.hoisted(() => ({
   deleteOutbox: vi.fn(),
   sendRpc: vi.fn(),
   runJob: vi.fn(),
+  assertTrusted: vi.fn(),
+  encryptArchive: vi.fn(),
+  archiveBubbleForUser: vi.fn(),
+  archiveEnabled: vi.fn(),
 }));
 
 vi.mock('@/e2ee-session', () => ({ safeUUID: vi.fn(() => crypto.randomUUID()) }));
 vi.mock('@/lib/crypto/identityBootstrap', () => ({
   ensureUserE2EEIdentity: mocks.ensureIdentity,
+}));
+vi.mock('@/lib/crypto/fingerprintTracker', () => ({
+  assertConversationFingerprintsTrusted: mocks.assertTrusted,
 }));
 vi.mock('@/lib/crypto/plaintextStore', () => ({
   savePlaintext: mocks.savePlaintext,
@@ -47,7 +54,11 @@ vi.mock('@/lib/messaging/aegisConversationQueue', () => ({
   runAegisConversationJob: mocks.runJob,
 }));
 vi.mock('@/lib/messaging/archive/archiveKey', () => ({
-  archiveBubbleForUser: vi.fn().mockResolvedValue(true),
+  archiveBubbleForUser: mocks.archiveBubbleForUser,
+  encryptArchive: mocks.encryptArchive,
+}));
+vi.mock('@/lib/messaging/archive/archivePrefs', () => ({
+  isArchiveBackupEnabled: mocks.archiveEnabled,
 }));
 
 import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
@@ -73,14 +84,23 @@ beforeEach(() => {
   mocks.rollback.mockResolvedValue(1);
   mocks.putOutbox.mockResolvedValue(undefined);
   mocks.deleteOutbox.mockResolvedValue(undefined);
-  mocks.buildCopies.mockResolvedValue({ rows: [COPY], hasTargets: true });
+  mocks.buildCopies.mockResolvedValue({
+    rows: [COPY],
+    hasTargets: true,
+    routeVersion: 'route-version-1',
+  });
   mocks.sendRpc.mockResolvedValue({
     data: COPY.message_id,
     error: null,
     copies: [COPY],
     retriedStaleRoute: false,
+    routeVersion: 'route-version-1',
   });
   mocks.runJob.mockImplementation((_key: string, job: () => Promise<unknown>) => job());
+  mocks.assertTrusted.mockResolvedValue(undefined);
+  mocks.encryptArchive.mockResolvedValue(null);
+  mocks.archiveBubbleForUser.mockResolvedValue(true);
+  mocks.archiveEnabled.mockReturnValue(false);
 });
 
 describe('canonical Aegis outbound transaction engine', () => {
@@ -116,9 +136,11 @@ describe('canonical Aegis outbound transaction engine', () => {
       messageId: COPY.message_id,
       senderDeviceId: 'sender-device',
       initialCopies: [COPY],
-      extra: { body_kind: 'multi_device' },
+      extra: expect.objectContaining({ body_kind: 'multi_device' }),
+      routeVersion: 'route-version-1',
     }));
     expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-one');
+    expect(mocks.archiveBubbleForUser).not.toHaveBeenCalled();
   });
 
   it('never calls the server without a recipient-device copy', async () => {
@@ -163,8 +185,16 @@ describe('canonical Aegis outbound transaction engine', () => {
 
   it('clears stale copies when authoritative route rebuilding fails', async () => {
     mocks.buildCopies
-      .mockResolvedValueOnce({ rows: [COPY], hasTargets: true })
-      .mockResolvedValueOnce({ rows: [], hasTargets: false });
+      .mockResolvedValueOnce({
+        rows: [COPY],
+        hasTargets: true,
+        routeVersion: 'route-version-1',
+      })
+      .mockResolvedValueOnce({
+        rows: [],
+        hasTargets: false,
+        routeVersion: 'route-version-2',
+      });
     mocks.sendRpc.mockImplementationOnce(async (args: { rebuildCopies: () => Promise<unknown> }) => {
       await args.rebuildCopies();
       throw new Error('unreachable');
@@ -222,6 +252,106 @@ describe('canonical Aegis outbound transaction engine', () => {
       initialCopies: [COPY],
     }));
     expect(JSON.stringify(mocks.sendRpc.mock.calls[0][0])).not.toContain('x3dh5');
+  });
+
+  it('commits the sender history archive atomically when backup is enabled', async () => {
+    mocks.archiveEnabled.mockReturnValue(true);
+    mocks.encryptArchive.mockResolvedValue('aegis-archive-v1.encrypted');
+
+    await sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message sauvegardé',
+      localId: 'local-archive',
+      traceId: 'trace-archive',
+      messageId: COPY.message_id,
+    });
+
+    expect(mocks.encryptArchive).toHaveBeenCalledWith(
+      'message sauvegardé',
+      '44444444-4444-4444-8444-444444444444',
+      COPY.sender_user_id,
+      COPY.message_id,
+    );
+    expect(mocks.putOutbox).toHaveBeenCalledWith(
+      COPY.sender_user_id,
+      expect.objectContaining({ archiveBody: 'aegis-archive-v1.encrypted' }),
+    );
+    expect(mocks.sendRpc).toHaveBeenCalledWith(expect.objectContaining({
+      extra: expect.objectContaining({
+        archive_body: 'aegis-archive-v1.encrypted',
+      }),
+    }));
+    await vi.waitFor(() => {
+      expect(mocks.archiveBubbleForUser).toHaveBeenCalledWith({
+        messageId: COPY.message_id,
+        conversationId: '44444444-4444-4444-8444-444444444444',
+        userId: COPY.sender_user_id,
+        plaintext: 'message sauvegardé',
+      });
+    });
+  });
+
+  it('does not send when a required sender history archive cannot be prepared', async () => {
+    mocks.archiveEnabled.mockReturnValue(true);
+    mocks.encryptArchive.mockResolvedValue(null);
+
+    await expect(sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message sauvegardé',
+      localId: 'local-archive-failed',
+      traceId: 'trace-archive-failed',
+      messageId: COPY.message_id,
+    })).rejects.toThrow('AEGIS_ARCHIVE_PREPARE_FAILED');
+
+    expect(mocks.buildCopies).not.toHaveBeenCalled();
+    expect(mocks.sendRpc).not.toHaveBeenCalled();
+    expect(mocks.putOutbox).toHaveBeenLastCalledWith(
+      COPY.sender_user_id,
+      expect.objectContaining({
+        status: 'retry_pending',
+        lastError: 'AEGIS_ARCHIVE_PREPARE_FAILED',
+      }),
+    );
+  });
+
+  it('blocks a durable retry when the peer identity changed after preparation', async () => {
+    await sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message secret',
+      localId: 'local-identity-seed',
+      traceId: 'trace-identity-seed',
+      messageId: COPY.message_id,
+    });
+    const durable = mocks.putOutbox.mock.calls[2][1];
+
+    mocks.sendRpc.mockClear();
+    mocks.buildCopies.mockClear();
+    mocks.putOutbox.mockClear();
+    mocks.assertTrusted.mockRejectedValueOnce(new Error('FINGERPRINT_CHANGED'));
+
+    await expect(sendAegisOutboundMessage({
+      conversationId: durable.conversationId,
+      senderUserId: durable.senderId,
+      plaintext: durable.plaintext,
+      resumePayload: {
+        ...durable,
+        status: 'retry_pending',
+      },
+    })).rejects.toThrow('FINGERPRINT_CHANGED');
+
+    expect(mocks.buildCopies).not.toHaveBeenCalled();
+    expect(mocks.sendRpc).not.toHaveBeenCalled();
+    expect(mocks.putOutbox).toHaveBeenLastCalledWith(
+      COPY.sender_user_id,
+      expect.objectContaining({
+        localId: 'local-identity-seed',
+        status: 'failed_visible',
+        lastError: 'FINGERPRINT_CHANGED',
+      }),
+    );
   });
 
   it('parks an untrusted sender route and requests authenticated self-repair', async () => {

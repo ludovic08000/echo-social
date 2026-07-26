@@ -22,9 +22,8 @@ export type {
 };
 
 /**
- * Managed resync for one active DeviceID. A revoked ID may be replaced exactly
- * once by recoverStableDeviceLifecycle(); the remainder of this pass must then
- * use the returned replacement ID, not the retired one.
+ * Managed resync for one active DeviceID. Revoked and rejected IDs fail closed;
+ * this path never replaces an authorization decision with a fresh routing ID.
  */
 export async function resyncE2EE(
   userId: string,

@@ -79,6 +79,8 @@ async function initializeIdentity(userId: string): Promise<ReadyIdentity> {
         identity_key: bundle.identityKey,
         signing_key: bundle.signingKey,
         fingerprint: bundle.fingerprint,
+        identity_binding_version: bundle.bindingVersion,
+        identity_binding_signature: bundle.bindingSignature,
         kem_type: 'X25519',
         is_active: true,
         updated_at: new Date().toISOString(),

@@ -1,11 +1,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { loadIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
-import { deleteDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
   getDeviceFingerprint,
-  rotateCurrentDeviceId,
 } from './currentDevice';
 import { requireAuthenticatedDeviceSession } from './sessionGate';
 
@@ -103,16 +102,15 @@ async function registerMissingStableDevice(
  *
  * - missing: register the same stable ID;
  * - pending/inactive: approve the existing ID;
- * - revoked: NEVER clear revoked_at. Retire that ID, mint one fresh ID exactly
- *   once, generate a fresh per-device X25519 key and enroll it normally.
+ * - revoked/rejected: fail closed until the user explicitly acts from the
+ *   connected-devices screen. Authentication never bypasses revocation.
  */
 export async function recoverStableDeviceLifecycle(
   userId: string,
   deviceId: string,
 ): Promise<ManagedDeviceLifecycle> {
   await requireAuthenticatedDeviceSession(userId);
-  let activeDeviceId = deviceId;
-  let replacedDeviceId: string | undefined;
+  const activeDeviceId = deviceId;
   let lifecycle = await readManagedDeviceLifecycle(userId, activeDeviceId);
 
   if (lifecycle.state === 'rejected') {
@@ -120,27 +118,7 @@ export async function recoverStableDeviceLifecycle(
   }
 
   if (lifecycle.state === 'revoked') {
-    // Do not rotate before the PIN/account identity is actually available.
-    const identity = await loadIdentityKeys(userId);
-    if (!identity?.privateKey || !identity.signingPrivateKey) {
-      throw new Error('DEVICE_REVOKED_PIN_UNLOCK_REQUIRED');
-    }
-
-    replacedDeviceId = activeDeviceId;
-    const replacement = rotateCurrentDeviceId('revoked-reenrollment-after-pin');
-    if (!replacement || replacement === replacedDeviceId) {
-      throw new Error('DEVICE_REVOKED_REENROLLMENT_BLOCKED');
-    }
-
-    // The revoked transport key must never be reused locally.
-    await deleteDeviceKxKey(replacedDeviceId, userId);
-    activeDeviceId = replacement;
-    lifecycle = await readManagedDeviceLifecycle(userId, activeDeviceId);
-
-    console.warn('[DeviceManager] revoked device reenrollment started', {
-      previous: replacedDeviceId.slice(0, 8),
-      next: activeDeviceId.slice(0, 8),
-    });
+    throw new Error('DEVICE_REVOKED_REQUIRES_EXPLICIT_USER_ACTION');
   }
 
   if (lifecycle.state === 'missing') {
@@ -171,6 +149,5 @@ export async function recoverStableDeviceLifecycle(
   return {
     ...lifecycle,
     deviceId: activeDeviceId,
-    replacedDeviceId,
   };
 }

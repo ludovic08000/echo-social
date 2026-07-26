@@ -17,7 +17,11 @@ import {
   decodeString,
   importOkpPublicKeyFromBase64,
 } from './utils';
-import { loadSessionKey, getOrCreateIdentityKeys } from './keyManager';
+import {
+  loadSessionKey,
+  getOrCreateIdentityKeys,
+  verifyPublicIdentityBinding,
+} from './keyManager';
 import { supabase } from '@/integrations/supabase/client';
 
 const IV_LEN = 12;
@@ -36,12 +40,25 @@ async function ensureFreshCallSession(
 ) {
   const { data: peerKey } = await supabase
     .from('user_public_keys')
-    .select('identity_key, fingerprint')
+    .select(
+      'identity_key, signing_key, fingerprint, identity_binding_version, identity_binding_signature',
+    )
     .eq('user_id', peerUserId)
     .eq('is_active', true)
     .maybeSingle();
 
-  if (!peerKey?.identity_key || !peerKey.fingerprint) {
+  if (
+    !peerKey?.identity_key ||
+    !peerKey.signing_key ||
+    !peerKey.fingerprint ||
+    !await verifyPublicIdentityBinding({
+      identityKey: peerKey.identity_key,
+      signingKey: peerKey.signing_key,
+      fingerprint: peerKey.fingerprint,
+      bindingVersion: peerKey.identity_binding_version,
+      bindingSignature: peerKey.identity_binding_signature,
+    })
+  ) {
     throw new Error('No active peer identity key for this conversation');
   }
 
@@ -52,7 +69,7 @@ async function ensureFreshCallSession(
   const peerPub = await importOkpPublicKeyFromBase64(peerKey.identity_key, 'X25519', [], true);
 
   const sharedBits = await hardCrypto.deriveBits(
-    { name: 'X25519', public: peerPub } as any,
+    { name: 'X25519', public: peerPub } as Algorithm & { public: CryptoKey },
     identityKeys.privateKey,
     256,
   );

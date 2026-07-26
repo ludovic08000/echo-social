@@ -166,6 +166,8 @@ export interface Message {
   sender_id: string;
   body: string;
   body_kind?: string | null;
+  archive_body?: string | null;
+  aegis_route_version?: string | null;
   image_url: string | null;
   created_at: string;
   status: 'delivered' | 'pending' | 'blocked';
@@ -426,6 +428,8 @@ export function useMessages(conversationId: string) {
               body: newMsg.body,
               messageId: newMsg.id,
               senderId: newMsg.sender_id,
+              archiveBody: newMsg.archive_body,
+              isMe: newMsg.sender_id === user.id,
               decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
             }).then((outcome) => {
               if (!outcome || outcome.hidden) return;
@@ -586,6 +590,8 @@ export function useMessages(conversationId: string) {
                 body: m.body,
                 messageId: m.id,
                 senderId: m.sender_id,
+                archiveBody: m.archive_body,
+                isMe: m.sender_id === user.id,
                 decrypt: async () => ({ text: '', incompatible: true, encrypted: true, verified: false }),
               });
               if (!outcome || outcome.hidden) return false;

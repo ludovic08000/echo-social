@@ -87,7 +87,8 @@ installGlobalCrashHandlers();
  * blank because boot was significantly delayed.
  *
  * It's now gated by a localStorage marker so the cleanup runs exactly once
- * per browser, after which subsequent boots are fast and preserve queues.
+ * per browser. Durable message/outbox databases are deliberately excluded:
+ * clearing them at boot could erase an encrypted send awaiting confirmation.
  */
 const CLEANUP_MARKER_KEY = 'forsure:legacy-cache-cleanup:v2';
 
@@ -100,26 +101,28 @@ async function cleanupNonCryptoRuntimeCaches() {
   }
 
   try {
-    indexedDB.deleteDatabase('forsure-msg-queue');
-  } catch {}
-
-  try {
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.map((r) => r.unregister()));
     }
-  } catch {}
+  } catch {
+    // A blocked service-worker API must not prevent application startup.
+  }
 
   try {
     if ('caches' in window) {
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => caches.delete(k)));
     }
-  } catch {}
+  } catch {
+    // A blocked Cache API must not prevent application startup.
+  }
 
   try {
     localStorage.setItem(CLEANUP_MARKER_KEY, '1');
-  } catch {}
+  } catch {
+    // Storage may be disabled; cleanup remains best-effort.
+  }
 
   console.info('[BOOT] non-crypto runtime caches cleaned (one-shot)');
 }
@@ -141,7 +144,9 @@ async function bootstrap() {
   const runDeferred = async () => {
     try {
       await cleanupNonCryptoRuntimeCaches();
-    } catch {}
+    } catch {
+      // Deferred cleanup is non-critical.
+    }
 
     try {
       const [
@@ -170,7 +175,7 @@ async function bootstrap() {
   };
 
   const ric: typeof window.requestIdleCallback | undefined =
-    (window as any).requestIdleCallback;
+    window.requestIdleCallback?.bind(window);
   if (ric) {
     ric(() => void runDeferred(), { timeout: 1500 });
   } else {

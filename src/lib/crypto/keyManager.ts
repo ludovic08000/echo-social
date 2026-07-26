@@ -8,7 +8,13 @@ import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
 import { isIndexedDBClosingError, openE2EEDB, reopenE2EEDB } from './indexedDb';
-import { exportKeyToJWK, importKeyFromJWK, bufferToBase64, base64ToBuffer } from './utils';
+import {
+  exportKeyToJWK,
+  importKeyFromJWK,
+  bufferToBase64,
+  base64ToBuffer,
+  encodeString,
+} from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import * as memCache from './memoryIdentityCache';
 import { runTxOn, reqToPromise } from './indexedDbTx';
@@ -20,6 +26,17 @@ export interface IdentityKeyPair {
   signingPrivateKey: CryptoKey;
   createdAt: number;
   fingerprint: string;
+  /** Private JWKs retained only until the non-extractable keys are persisted. */
+  _privJWK?: JsonWebKey;
+  _sigPrivJWK?: JsonWebKey;
+}
+
+export interface PublicIdentityBundle {
+  identityKey: string;
+  signingKey: string;
+  fingerprint: string;
+  bindingVersion: number;
+  bindingSignature: string;
 }
 
 export interface SessionKey {
@@ -146,9 +163,78 @@ async function computeFingerprintFromRaw(raw: ArrayBuffer): Promise<string> {
   return fp.toUpperCase();
 }
 
-async function computeFingerprint(publicKey: CryptoKey): Promise<string> {
-  const raw = await exportPublicKeyRaw(publicKey);
-  return computeFingerprintFromRaw(raw);
+const IDENTITY_BINDING_PROTOCOL = 'forsure-aegis-account-identity';
+export const IDENTITY_BINDING_VERSION = 1;
+
+function identityBindingPayload(identityKey: string, signingKey: string): string {
+  return JSON.stringify({
+    protocol: IDENTITY_BINDING_PROTOCOL,
+    version: IDENTITY_BINDING_VERSION,
+    identityKey,
+    signingKey,
+  });
+}
+
+async function computeCompositeFingerprint(
+  identityPublicKey: CryptoKey,
+  signingPublicKey: CryptoKey,
+): Promise<string> {
+  const [identityRaw, signingRaw] = await Promise.all([
+    exportPublicKeyRaw(identityPublicKey),
+    exportPublicKeyRaw(signingPublicKey),
+  ]);
+  return computeCompositeFingerprintFromBase64(
+    bufferToBase64(identityRaw),
+    bufferToBase64(signingRaw),
+  );
+}
+
+export async function computeCompositeFingerprintFromBase64(
+  identityKey: string,
+  signingKey: string,
+): Promise<string> {
+  return computeFingerprintFromRaw(
+    encodeString(identityBindingPayload(identityKey, signingKey)),
+  );
+}
+
+export async function verifyPublicIdentityBinding(bundle: {
+  identityKey: string;
+  signingKey: string;
+  fingerprint: string;
+  bindingVersion: number;
+  bindingSignature: string;
+}): Promise<boolean> {
+  if (
+    bundle.bindingVersion !== IDENTITY_BINDING_VERSION ||
+    !bundle.identityKey ||
+    !bundle.signingKey ||
+    !bundle.bindingSignature
+  ) {
+    return false;
+  }
+  try {
+    const expectedFingerprint = await computeCompositeFingerprintFromBase64(
+      bundle.identityKey,
+      bundle.signingKey,
+    );
+    if (expectedFingerprint !== bundle.fingerprint) return false;
+    const signingPublicKey = await hardCrypto.importKey(
+      'raw',
+      base64ToBuffer(bundle.signingKey),
+      { name: 'Ed25519' },
+      false,
+      ['verify'],
+    );
+    return hardCrypto.verify(
+      'Ed25519',
+      signingPublicKey,
+      base64ToBuffer(bundle.bindingSignature),
+      encodeString(identityBindingPayload(bundle.identityKey, bundle.signingKey)),
+    );
+  } catch {
+    return false;
+  }
 }
 
 function jwkXToBase64(jwk: JsonWebKey, label: string): string {
@@ -163,11 +249,14 @@ function jwkXToBase64(jwk: JsonWebKey, label: string): string {
 
 export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
   const [kxPair, sigPair] = await Promise.all([
-    hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']),
-    hardCrypto.generateKey(SIG_KEY_PARAMS as any, true, ['sign', 'verify']),
+    hardCrypto.generateKey(KX_KEY_PARAMS, true, ['deriveBits']),
+    hardCrypto.generateKey(SIG_KEY_PARAMS, true, ['sign', 'verify']),
   ]);
 
-  const fingerprint = await computeFingerprint((kxPair as CryptoKeyPair).publicKey);
+  const fingerprint = await computeCompositeFingerprint(
+    (kxPair as CryptoKeyPair).publicKey,
+    (sigPair as CryptoKeyPair).publicKey,
+  );
 
   const [privJWK, sigPrivJWK] = await Promise.all([
     exportKeyToJWK((kxPair as CryptoKeyPair).privateKey),
@@ -175,8 +264,8 @@ export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
   ]);
 
   const [privateKeyNonExtractable, sigPrivNonExtractable] = await Promise.all([
-    importKeyFromJWK(privJWK, KX_KEY_PARAMS as any, ['deriveBits'], false),
-    importKeyFromJWK(sigPrivJWK, SIG_KEY_PARAMS as any, ['sign'], false),
+    importKeyFromJWK(privJWK, KX_KEY_PARAMS, ['deriveBits'], false),
+    importKeyFromJWK(sigPrivJWK, SIG_KEY_PARAMS, ['sign'], false),
   ]);
 
   return {
@@ -186,7 +275,8 @@ export async function generateIdentityKeys(): Promise<IdentityKeyPair> {
     signingPrivateKey: sigPrivNonExtractable,
     createdAt: Date.now(),
     fingerprint,
-    ...(({ _privJWK: privJWK, _sigPrivJWK: sigPrivJWK }) as any),
+    _privJWK: privJWK,
+    _sigPrivJWK: sigPrivJWK,
   };
 }
 
@@ -199,10 +289,9 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
   let privateKeyJWK: JsonWebKey;
   let signingPrivateKeyJWK: JsonWebKey;
 
-  const attached = keys as any;
-  if (attached._privJWK && attached._sigPrivJWK) {
-    privateKeyJWK = attached._privJWK;
-    signingPrivateKeyJWK = attached._sigPrivJWK;
+  if (keys._privJWK && keys._sigPrivJWK) {
+    privateKeyJWK = keys._privJWK;
+    signingPrivateKeyJWK = keys._sigPrivJWK;
   } else {
     try {
       privateKeyJWK = await exportKeyToJWK(keys.privateKey);
@@ -239,7 +328,9 @@ export async function saveIdentityKeys(userId: string, keys: IdentityKeyPair): P
       fingerprint: keys.fingerprint,
       createdAt: keys.createdAt,
     });
-  } catch {}
+  } catch {
+    // RAM caching is an optimisation; persisted keys remain authoritative.
+  }
 }
 
 export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair | null> {
@@ -261,30 +352,44 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
         signingPublicKey: cached.signingPublic,
         signingPrivateKey: cached.signingPrivate,
         createdAt: cached.createdAt ?? Date.now(),
-        fingerprint: cached.fingerprint,
+        fingerprint: await computeCompositeFingerprint(
+          cached.identityPublic,
+          cached.signingPublic,
+        ),
       };
     }
-  } catch {}
+  } catch {
+    // Ignore a transient RAM-cache failure and continue with IndexedDB.
+  }
 
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   if (!stored) return null;
 
   const [publicKey, privateKey, signingPublicKey, signingPrivateKey] = await Promise.all([
-    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS as any, [], true),
-    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false),
-    importKeyFromJWK(stored.signingPublicKeyJWK, SIG_KEY_PARAMS as any, ['verify'], true),
-    importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS as any, ['sign'], false),
+    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS, [], true),
+    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS, ['deriveBits'], false),
+    importKeyFromJWK(stored.signingPublicKeyJWK, SIG_KEY_PARAMS, ['verify'], true),
+    importKeyFromJWK(stored.signingPrivateKeyJWK, SIG_KEY_PARAMS, ['sign'], false),
   ]);
 
+  const compositeFingerprint = await computeCompositeFingerprint(publicKey, signingPublicKey);
   const result: IdentityKeyPair = {
     publicKey,
     privateKey,
     signingPublicKey,
     signingPrivateKey,
     createdAt: stored.createdAt,
-    fingerprint: stored.fingerprint,
-    ...(({ _privJWK: stored.privateKeyJWK, _sigPrivJWK: stored.signingPrivateKeyJWK }) as any),
+    fingerprint: compositeFingerprint,
+    _privJWK: stored.privateKeyJWK,
+    _sigPrivJWK: stored.signingPrivateKeyJWK,
   };
+
+  if (stored.fingerprint !== compositeFingerprint) {
+    void dbPut<StoredKeyPair & { id: string }>(STORE_KEYS, {
+      ...stored,
+      fingerprint: compositeFingerprint,
+    }).catch(() => undefined);
+  }
 
   try {
     memCache.set(userId, {
@@ -295,7 +400,9 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
       fingerprint: result.fingerprint,
       createdAt: result.createdAt,
     });
-  } catch {}
+  } catch {
+    // RAM caching is an optimisation; persisted keys remain authoritative.
+  }
 
   return result;
 }
@@ -336,7 +443,7 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
     const { supabase } = await import('@/integrations/supabase/client');
     const [{ data: activeKey }, { data: backup }] = await Promise.all([
       supabase.from('user_public_keys').select('fingerprint').eq('user_id', userId).eq('is_active', true).maybeSingle(),
-      supabase.from('user_backups' as any).select('id').eq('user_id', userId).limit(1).maybeSingle(),
+      supabase.from('user_backups').select('id').eq('user_id', userId).limit(1).maybeSingle(),
     ]);
 
     if (activeKey || backup) {
@@ -369,11 +476,7 @@ export class PinUnlockRequiredError extends Error {
   }
 }
 
-export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
-  identityKey: string;
-  signingKey: string;
-  fingerprint: string;
-}> {
+export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<PublicIdentityBundle> {
   const exportPublic = async (key: CryptoKey): Promise<string> => {
     try {
       const raw = await hardCrypto.exportKey('raw', key);
@@ -401,22 +504,50 @@ export async function exportPublicKeyBundle(keys: IdentityKeyPair): Promise<{
     exportPublic(keys.signingPublicKey),
   ]);
 
-  return { identityKey, signingKey, fingerprint: keys.fingerprint };
+  const fingerprint = await computeCompositeFingerprintFromBase64(identityKey, signingKey);
+  const bindingSignature = bufferToBase64(await hardCrypto.sign(
+    'Ed25519',
+    keys.signingPrivateKey,
+    encodeString(identityBindingPayload(identityKey, signingKey)),
+  ) as ArrayBuffer);
+
+  return {
+    identityKey,
+    signingKey,
+    fingerprint,
+    bindingVersion: IDENTITY_BINDING_VERSION,
+    bindingSignature,
+  };
 }
 
-export async function exportPublicKeyBundleFromStoredKeys(userId: string): Promise<{
-  identityKey: string;
-  signingKey: string;
-  fingerprint: string;
-} | null> {
+export async function exportPublicKeyBundleFromStoredKeys(
+  userId: string,
+): Promise<PublicIdentityBundle | null> {
   const stored = await dbGet<StoredKeyPair & { id: string }>(STORE_KEYS, userId);
   if (!stored) return null;
 
   const identityKey = jwkXToBase64(stored.publicKeyJWK, 'identity public key');
   const signingKey = jwkXToBase64(stored.signingPublicKeyJWK, 'signing public key');
-  const fingerprint = stored.fingerprint || await computeFingerprintFromRaw(base64ToBuffer(identityKey));
+  const fingerprint = await computeCompositeFingerprintFromBase64(identityKey, signingKey);
+  const signingPrivateKey = await importKeyFromJWK(
+    stored.signingPrivateKeyJWK,
+    SIG_KEY_PARAMS,
+    ['sign'],
+    false,
+  );
+  const bindingSignature = bufferToBase64(await hardCrypto.sign(
+    'Ed25519',
+    signingPrivateKey,
+    encodeString(identityBindingPayload(identityKey, signingKey)),
+  ) as ArrayBuffer);
 
-  return { identityKey, signingKey, fingerprint };
+  return {
+    identityKey,
+    signingKey,
+    fingerprint,
+    bindingVersion: IDENTITY_BINDING_VERSION,
+    bindingSignature,
+  };
 }
 
 export async function saveSessionKey(session: SessionKey): Promise<void> {
@@ -471,7 +602,11 @@ export async function incrementSessionMessageCount(conversationId: string): Prom
 }
 
 export async function deleteRawIdentityKeys(userId: string): Promise<void> {
-  try { memCache.clear(userId, 'delete_raw'); } catch {}
+  try {
+    memCache.clear(userId, 'delete_raw');
+  } catch {
+    // IndexedDB deletion below remains authoritative.
+  }
   await dbDelete(STORE_KEYS, userId);
 }
 
@@ -482,7 +617,11 @@ export async function hasRawIdentityKeys(userId: string): Promise<boolean> {
 }
 
 export async function wipeAllKeys(): Promise<void> {
-  try { memCache.clearAll('wipe_all'); } catch {}
+  try {
+    memCache.clearAll('wipe_all');
+  } catch {
+    // Persistent stores are still cleared below.
+  }
   try {
     const db = await openDB();
     const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');
@@ -493,7 +632,9 @@ export async function wipeAllKeys(): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-  } catch {}
+  } catch {
+    // Best-effort emergency wipe.
+  }
 }
 
 export async function wipeSessionKeys(userId?: string): Promise<void> {
@@ -505,13 +646,17 @@ export async function wipeSessionKeys(userId?: string): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-  } catch {}
+  } catch {
+    // Best-effort session wipe.
+  }
 
   try {
     await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
       tx.objectStore('ratchet-states').clear();
     });
-  } catch {}
+  } catch {
+    // Best-effort legacy ratchet wipe.
+  }
 }
 
 export async function exportAllSessionKeys(): Promise<StoredSessionKey[]> {
@@ -540,23 +685,25 @@ export async function importAllSessionKeys(records: StoredSessionKey[]): Promise
   });
 }
 
-export async function exportAllRatchetStates(): Promise<any[]> {
+export async function exportAllRatchetStates(): Promise<unknown[]> {
   try {
     return await runTxOn('ratchet', ['ratchet-states'], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore('ratchet-states').getAll() as IDBRequest<any[]>),
+      reqToPromise(tx.objectStore('ratchet-states').getAll() as IDBRequest<unknown[]>),
     ) ?? [];
   } catch {
     return [];
   }
 }
 
-export async function importAllRatchetStates(records: any[]): Promise<void> {
+export async function importAllRatchetStates(records: unknown[]): Promise<void> {
   if (!records.length) return;
   try {
     await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
       const store = tx.objectStore('ratchet-states');
       for (const r of records) store.put(r);
     });
-  } catch {}
+  } catch {
+    // Import is best-effort for compatibility with older backups.
+  }
 }
 

@@ -8,6 +8,8 @@ const app = read('src/App.tsx');
 const registration = read('src/hooks/useDeviceRegistration.ts');
 const x3dh = read('src/lib/crypto/x3dh.ts');
 const deviceTrust = read('src/lib/crypto/deviceLinkTrust.ts');
+const managedDevice = read('src/lib/device-manager/currentDevice.ts');
+const deviceIdStore = read('src/lib/messaging/currentDevice.ts');
 const devicesPanel = read('src/components/settings/DevicesPanel.tsx');
 const migration = read(
   'supabase/migrations/20260722120000_manual_device_revocation_only.sql',
@@ -30,6 +32,13 @@ describe('manual-only DeviceID revocation policy', () => {
     expect(devicesPanel).toContain("rpc('revoke_user_device'");
     expect(devicesPanel).toContain('Révoquer cet appareil ?');
     expect(devicesPanel).toContain('onClick={() => void handleRevoke(dev)}');
+  });
+
+  it('has no automatic DeviceID rotation escape for a revoked route', () => {
+    expect(managedDevice).not.toContain('revoked-reenrollment-after-pin');
+    expect(managedDevice).not.toContain('blocked-recovery-device');
+    expect(deviceIdStore).not.toContain('BLOCKED_RECOVERY_DEVICE_IDS');
+    expect(managedDevice).toContain('aegis-device-private-key-missing');
   });
 
   it('neutralizes legacy cleanup RPCs and rejects non-manual revocation in SQL', () => {
