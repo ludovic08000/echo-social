@@ -18,6 +18,7 @@ export function FeedProfileHeader() {
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const { data: counts } = useQuery({
     queryKey: ['feed-header-counts', user?.id],
