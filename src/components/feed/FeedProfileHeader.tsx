@@ -18,6 +18,7 @@ export function FeedProfileHeader() {
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const { data: counts } = useQuery({
     queryKey: ['feed-header-counts', user?.id],
@@ -62,6 +63,23 @@ export function FeedProfileHeader() {
     }
   };
 
+  const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'Image trop volumineuse', description: 'Maximum 5 Mo', variant: 'destructive' });
+      return;
+    }
+    try {
+      const { uploadToR2 } = await import('@/lib/r2');
+      const { url } = await uploadToR2(file, 'covers');
+      await updateProfile.mutateAsync({ cover_url: url + '?t=' + Date.now() });
+      toast({ title: 'Fond mis à jour' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
+
   const goFriends = () => navigate('/friends');
   const memberSince = profile?.created_at
     ? format(new Date(profile.created_at), 'MMM yyyy', { locale: fr })
@@ -89,6 +107,15 @@ export function FeedProfileHeader() {
             <div className="w-full h-full bg-gradient-to-br from-primary/30 via-accent/20 to-primary/10" />
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-card/90" />
+          <button
+            onClick={() => coverInputRef.current?.click()}
+            aria-label="Changer le fond"
+            className="absolute top-2 right-2 inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-background/70 backdrop-blur-md border border-border/40 text-xs font-medium hover:bg-background transition-colors"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            Fond
+          </button>
+          <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
         </div>
 
         {/* Body */}
