@@ -110,10 +110,9 @@ export function FeedProfileHeader() {
           <button
             onClick={() => coverInputRef.current?.click()}
             aria-label="Changer le fond"
-            className="absolute top-2 right-2 inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-background/70 backdrop-blur-md border border-border/40 text-xs font-medium hover:bg-background transition-colors"
+            className="absolute top-2 right-2 w-9 h-9 rounded-full bg-background/70 backdrop-blur-md border border-border/40 flex items-center justify-center hover:bg-background transition-colors"
           >
-            <Camera className="w-3.5 h-3.5" />
-            Fond
+            <ImageIcon className="w-4 h-4" />
           </button>
           <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
         </div>
