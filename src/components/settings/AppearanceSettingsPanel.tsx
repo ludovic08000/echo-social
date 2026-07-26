@@ -81,31 +81,23 @@ export function AppearanceSettingsPanel() {
 
   // Dynamic theme - auto switch based on time of day
   useEffect(() => {
+    localStorage.setItem(modeKey('dynamic-theme'), String(dynamicTheme));
     localStorage.setItem('dynamic-theme', String(dynamicTheme));
     if (!dynamicTheme) return;
 
     const applyDynamicTheme = () => {
       const hour = new Date().getHours();
-      const root = document.documentElement;
-      if (hour >= 6 && hour < 18) {
-        root.classList.remove('dark');
-        root.classList.add('light');
-      } else {
-        root.classList.remove('light');
-        root.classList.add('dark');
-      }
+      const next: ThemeMode = hour >= 6 && hour < 18 ? 'light' : 'dark';
+      setThemeMode(prev => (prev === next ? prev : next));
     };
 
     applyDynamicTheme();
     const interval = setInterval(applyDynamicTheme, 60000); // check every minute
     return () => clearInterval(interval);
-  }, [dynamicTheme]);
+  }, [dynamicTheme, uxMode]);
 
   const handleDynamicThemeToggle = (enabled: boolean) => {
     setDynamicTheme(enabled);
-    if (enabled) {
-      setThemeMode('system'); // reset manual mode
-    }
   };
 
   const { setMode: setUXMode } = useUXMode();
@@ -116,27 +108,30 @@ export function AppearanceSettingsPanel() {
   ];
 
   const resetToDefaults = useCallback(() => {
-    // Reset theme
-    setThemeMode('dark');
-    // Reset accent color
-    setAccentColor('bleu');
-    // Reset font size
-    setFontSize(16);
-    // Reset toggles
-    setCompactMode(false);
-    setAnimationsEnabled(true);
-    setDynamicTheme(false);
-    // Clear mode-scoped keys
-    const keys = ['theme-mode', 'accent-color', 'font-size', 'compact-mode', 'animations-disabled', 'dynamic-theme', 'feed-font', 'feed-text-color', 'feed-bg-color', 'custom-bg-url'];
+    // Clear mode-scoped keys first
+    const keys = ['theme-mode', 'accent-color', 'font-size', 'compact-mode', 'animations-disabled', 'dynamic-theme', 'feed-customization', 'custom-bg-url'];
     keys.forEach(k => {
       localStorage.removeItem(modeKey(k));
       localStorage.removeItem(k);
     });
-    // Reset inline styles
+
+    // Reset inline styles then re-apply defaults
     const root = document.documentElement;
-    root.style.fontSize = '16px';
     root.removeAttribute('style');
+    root.classList.remove('compact-mode', 'no-animations');
+
+    // Reset state (effects will persist defaults + re-apply CSS vars)
+    setThemeMode('dark');
+    setAccentColor('bleu');
+    setFontSize(16);
+    setCompactMode(false);
+    setAnimationsEnabled(true);
+    setDynamicTheme(false);
+
+    reapplyAppearance(uxMode);
+    window.dispatchEvent(new Event('forsure:appearance-reset'));
   }, [uxMode]);
+
 
   return (
     <div className="space-y-6">

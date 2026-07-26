@@ -801,3 +801,30 @@ body.ux-flow {
     -webkit-backdrop-filter: none !important;
   }
 }
+/* ── Appearance: compact mode ── */
+.compact-mode {
+  --compact-scale: 0.85;
+}
+.compact-mode body {
+  line-height: 1.35;
+}
+.compact-mode .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.9rem; }
+.compact-mode .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
+.compact-mode .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.6rem; }
+.compact-mode .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.45rem; }
+.compact-mode .gap-6 { gap: 0.9rem; }
+.compact-mode .gap-4 { gap: 0.6rem; }
+.compact-mode .p-6 { padding: 0.9rem; }
+.compact-mode .p-4 { padding: 0.65rem; }
+.compact-mode .py-4 { padding-top: 0.65rem; padding-bottom: 0.65rem; }
+.compact-mode .py-6 { padding-top: 0.9rem; padding-bottom: 0.9rem; }
+
+/* ── Appearance: disable animations ── */
+.no-animations *,
+.no-animations *::before,
+.no-animations *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}

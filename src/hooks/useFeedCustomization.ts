@@ -84,6 +84,13 @@ export function useFeedCustomization() {
     applyFeedCustomization(prefs);
   }, [prefs, mode]);
 
+  // Reset when appearance defaults are restored
+  useEffect(() => {
+    const onReset = () => setPrefs(DEFAULTS);
+    window.addEventListener('forsure:appearance-reset', onReset);
+    return () => window.removeEventListener('forsure:appearance-reset', onReset);
+  }, []);
+
   const update = (patch: Partial<FeedCustomization>) =>
     setPrefs(prev => ({ ...prev, ...patch }));
 
