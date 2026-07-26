@@ -1,6 +1,6 @@
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Camera, Check, MessageCircle, Lock, FolderOpen, Newspaper, LogOut, Calendar, ShieldCheck, Image as ImageIcon } from 'lucide-react';
+import { Camera, Check, MessageCircle, Lock, FolderOpen, Newspaper, LogOut, Calendar, ShieldCheck, Image as ImageIcon, Move, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -19,6 +19,40 @@ export function FeedProfileHeader() {
   const updateProfile = useUpdateProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const coverBoxRef = useRef<HTMLDivElement>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const [posY, setPosY] = useState<number>(50);
+  const draggingRef = useRef(false);
+  const startRef = useRef({ y: 0, pos: 50 });
+
+  useEffect(() => {
+    if (!adjusting) setPosY(profile?.cover_position_y ?? 50);
+  }, [profile?.cover_position_y, adjusting]);
+
+  const onDragStart = (clientY: number) => {
+    draggingRef.current = true;
+    startRef.current = { y: clientY, pos: posY };
+  };
+  const onDragMove = (clientY: number) => {
+    if (!draggingRef.current) return;
+    const h = coverBoxRef.current?.clientHeight || 140;
+    const delta = ((clientY - startRef.current.y) / h) * 100;
+    setPosY(Math.min(100, Math.max(0, startRef.current.pos - delta)));
+  };
+  const onDragEnd = () => {
+    draggingRef.current = false;
+  };
+
+  const saveCoverPosition = async () => {
+    try {
+      await updateProfile.mutateAsync({ cover_position_y: Math.round(posY) });
+      setAdjusting(false);
+      toast({ title: 'Position enregistrée' });
+    } catch {
+      toast({ title: 'Erreur', variant: 'destructive' });
+    }
+  };
+
 
   const { data: counts } = useQuery({
     queryKey: ['feed-header-counts', user?.id],
@@ -95,27 +129,73 @@ export function FeedProfileHeader() {
     >
       <div className="relative rounded-[28px] border border-border/30 bg-card/80 backdrop-blur-xl overflow-hidden shadow-[0_18px_50px_-24px_hsl(var(--foreground)/0.22)]">
         {/* Cover */}
-        <div className="relative h-32 sm:h-40 w-full overflow-hidden">
+        <div
+          ref={coverBoxRef}
+          className={cn('relative h-32 sm:h-40 w-full overflow-hidden', adjusting && 'cursor-grab active:cursor-grabbing touch-none select-none')}
+          onMouseDown={(e) => adjusting && onDragStart(e.clientY)}
+          onMouseMove={(e) => adjusting && onDragMove(e.clientY)}
+          onMouseUp={onDragEnd}
+          onMouseLeave={onDragEnd}
+          onTouchStart={(e) => adjusting && onDragStart(e.touches[0].clientY)}
+          onTouchMove={(e) => adjusting && onDragMove(e.touches[0].clientY)}
+          onTouchEnd={onDragEnd}
+        >
           {profile?.cover_url ? (
             <img
               src={profile.cover_url}
               alt=""
+              draggable={false}
               className="w-full h-full object-cover"
-              style={{ objectPosition: `center ${profile.cover_position_y ?? 50}%` }}
+              style={{ objectPosition: `center ${adjusting ? posY : (profile.cover_position_y ?? 50)}%` }}
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-primary/30 via-accent/20 to-primary/10" />
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-card/90" />
-          <button
-            onClick={() => coverInputRef.current?.click()}
-            aria-label="Changer le fond"
-            className="absolute top-2 right-2 w-9 h-9 rounded-full bg-background/70 backdrop-blur-md border border-border/40 flex items-center justify-center hover:bg-background transition-colors"
-          >
-            <ImageIcon className="w-4 h-4" />
-          </button>
+
+          {adjusting ? (
+            <div className="absolute inset-x-0 top-2 flex items-center justify-center gap-2">
+              <span className="px-3 py-1 rounded-full text-[11px] bg-background/80 backdrop-blur-md border border-border/40">
+                Glisse pour cadrer
+              </span>
+              <button
+                onClick={saveCoverPosition}
+                aria-label="Enregistrer le cadrage"
+                className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => { setAdjusting(false); setPosY(profile?.cover_position_y ?? 50); }}
+                aria-label="Annuler"
+                className="w-9 h-9 rounded-full bg-background/80 backdrop-blur-md border border-border/40 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="absolute top-2 right-2 flex items-center gap-2">
+              {profile?.cover_url && (
+                <button
+                  onClick={() => setAdjusting(true)}
+                  aria-label="Calibrer le fond"
+                  className="w-9 h-9 rounded-full bg-background/70 backdrop-blur-md border border-border/40 flex items-center justify-center hover:bg-background transition-colors"
+                >
+                  <Move className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={() => coverInputRef.current?.click()}
+                aria-label="Changer le fond"
+                className="w-9 h-9 rounded-full bg-background/70 backdrop-blur-md border border-border/40 flex items-center justify-center hover:bg-background transition-colors"
+              >
+                <ImageIcon className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
         </div>
+
 
         {/* Body */}
         <div className="px-5 pb-5 -mt-12 relative flex flex-col items-center text-center">
