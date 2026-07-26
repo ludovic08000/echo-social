@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Camera, Check, MessageCircle, Lock, FolderOpen, Newspaper, LogOut, Calendar, ShieldCheck } from 'lucide-react';
+import { Camera, Check, MessageCircle, Lock, FolderOpen, Newspaper, LogOut, Calendar, ShieldCheck, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
