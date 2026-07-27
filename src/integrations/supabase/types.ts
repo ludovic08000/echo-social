@@ -520,6 +520,24 @@ export type Database = {
           },
         ]
       }
+      aegis_user_route_versions: {
+        Row: {
+          route_version: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          route_version?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          route_version?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_agent_conversations: {
         Row: {
           agent_id: string
@@ -7818,7 +7836,7 @@ export type Database = {
           p_conversation_id: string
           p_copies: Json
           p_extra: Json
-          p_image_url: string | null
+          p_image_url: string
           p_message_id: string
           p_route_version: string
           p_sender_device_id: string
@@ -7845,6 +7863,10 @@ export type Database = {
         Returns: boolean
       }
       approve_user_device: { Args: { p_device_id: string }; Returns: Json }
+      bump_aegis_user_route_version: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
       bump_device_keys_epoch: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
@@ -8039,6 +8061,10 @@ export type Database = {
           device_public_key: string
           user_id: string
         }[]
+      }
+      get_aegis_conversation_route_version: {
+        Args: { p_conversation_id: string }
+        Returns: string
       }
       get_ai_data_sharing_enabled: {
         Args: { p_user_id: string }
@@ -8249,10 +8275,6 @@ export type Database = {
           signed_at: string
         }[]
       }
-      get_aegis_conversation_route_version: {
-        Args: { p_conversation_id: string }
-        Returns: string
-      }
       get_signed_prekey: {
         Args: { p_user_id: string }
         Returns: {
@@ -8355,6 +8377,14 @@ export type Database = {
           score: number
           wellbeing_score: number
         }[]
+      }
+      mark_current_device_route_ready: {
+        Args: { p_device_id: string }
+        Returns: Json
+      }
+      mark_current_device_route_unavailable: {
+        Args: { p_device_id: string; p_error_code: string }
+        Returns: Json
       }
       mark_device_copy_retry_failed: {
         Args: { p_error?: string; p_request_id: string }
@@ -8571,22 +8601,14 @@ export type Database = {
       }
       register_user_device_safe: {
         Args: {
-          p_device_fingerprint?: string
+          p_device_fingerprint: string
           p_device_id: string
-          p_device_name?: string
-          p_device_public_key?: string
-          p_platform?: string
-          p_user_agent?: string
+          p_device_name: string
+          p_device_public_key: string
+          p_platform: string
+          p_user_agent: string
           p_user_id: string
         }
-        Returns: Json
-      }
-      mark_current_device_route_ready: {
-        Args: { p_device_id: string }
-        Returns: Json
-      }
-      mark_current_device_route_unavailable: {
-        Args: { p_device_id: string; p_error_code: string }
         Returns: Json
       }
       release_backup_master_key: {
@@ -8644,7 +8666,7 @@ export type Database = {
       }
       resolve_device_id_by_fingerprints: {
         Args: { p_fingerprints: string[]; p_platform?: string }
-        Returns: string | null
+        Returns: string
       }
       resolve_device_primary_repair_request: {
         Args: { p_id: string }
