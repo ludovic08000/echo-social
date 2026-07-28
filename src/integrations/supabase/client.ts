@@ -34,7 +34,9 @@ function clearStaleSupabaseAuthSession(reason = 'supabase-rest-401') {
     window.dispatchEvent(new CustomEvent('forsure:auth-session-invalid', {
       detail: { reason },
     }));
-  } catch {}
+  } catch {
+    // Browser storage can be blocked or unavailable.
+  }
 }
 
 function recoverSupabaseAuthAfter401(): void {
@@ -110,7 +112,9 @@ const guardedFetch: typeof fetch = async (input, init) => {
         recoverSupabaseAuthAfter401();
       }
     }
-  } catch {}
+  } catch {
+    // Response inspection is best-effort and must not break the request.
+  }
   return response;
 };
 
