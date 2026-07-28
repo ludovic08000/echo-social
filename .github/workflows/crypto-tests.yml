@@ -8,7 +8,7 @@ on:
       - 'src/lib/messaging/**'
       - 'src/test/**'
       - 'package.json'
-      - 'bun.lock'
+      - 'package-lock.json'
       - 'vitest.config.ts'
       - '.github/workflows/crypto-tests.yml'
   pull_request:
@@ -25,19 +25,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Run crypto + messaging test suite
         id: tests
         run: |
           mkdir -p test-results
-          bun run vitest run \
+          npm exec vitest run -- \
             src/lib/crypto/__tests__ \
             src/lib/messaging/__tests__ \
             --reporter=default \
