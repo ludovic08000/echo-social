@@ -95,6 +95,34 @@ async function publishCanonicalIdentityRoot(
   if (data?.ok !== true) throw new Error('DEVICE_TRUST_ROOT_PUBLISH_REJECTED');
 }
 
+function isIdentityRootMismatch(error: unknown): boolean {
+  return String(error instanceof Error ? error.message : error).includes('IDENTITY_ROOT_MISMATCH');
+}
+
+async function rotateCanonicalIdentityRoot(
+  userId: string,
+  deviceId: string,
+): Promise<void> {
+  const identity = await loadIdentityKeys(userId);
+  if (!identity?.signingPublicKey) {
+    throw new Error('DEVICE_TRUST_ACCOUNT_KEY_LOCKED');
+  }
+
+  const identityPublicB64 = bufferToBase64(
+    await exportPublicKeyRaw(identity.signingPublicKey),
+  );
+  const { data, error } = await supabase.rpc('rotate_user_identity_root', {
+    p_new_primary_device_id: deviceId,
+    p_new_identity_pub_b64: identityPublicB64,
+  });
+  if (error) {
+    throw new Error(`DEVICE_TRUST_ROOT_ROTATION_FAILED:${error.message ?? 'UNKNOWN'}`);
+  }
+  if (!(data && typeof data === 'object' && 'ok' in data && data.ok === true)) {
+    throw new Error('DEVICE_TRUST_ROOT_ROTATION_REJECTED');
+  }
+}
+
 async function signOneCompanion(args: {
   userId: string;
   primary: DeviceRow;
@@ -199,7 +227,19 @@ export async function ensureApprovedDeviceTrust(
 ): Promise<number> {
   if (!userId || !deviceId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
 
-  const repaired = await repairApprovedDeviceTrust(userId);
+  let repaired: number;
+  try {
+    repaired = await repairApprovedDeviceTrust(userId);
+  } catch (error) {
+    if (!isIdentityRootMismatch(error)) throw error;
+
+    // Authentication plus an already approved, active DeviceID is the account
+    // recovery authority for the web client. The server performs the guarded
+    // rotation and records the identity change; the client then republishes
+    // every device route under the new canonical root in one repair pass.
+    await rotateCanonicalIdentityRoot(userId, deviceId);
+    repaired = await repairApprovedDeviceTrust(userId);
+  }
   const verified = await fetchVerifiedDeviceList(userId);
   if (!verified.trusted.some((entry) => entry.deviceId === deviceId)) {
     const verification = verified.verifications.find((entry) => entry.deviceId === deviceId);

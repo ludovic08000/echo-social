@@ -8611,6 +8611,10 @@ export type Database = {
         }
         Returns: Json
       }
+      rotate_user_identity_root: {
+        Args: { p_new_identity_pub_b64: string; p_new_primary_device_id: string }
+        Returns: Json
+      }
       release_backup_master_key: {
         Args: { _backup_type: string; _user_id: string }
         Returns: {

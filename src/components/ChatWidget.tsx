@@ -4,7 +4,8 @@ import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
   ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed,
-  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2, Users
+  Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2, Users,
+  Timer, Share2
 } from 'lucide-react';
 import { AddParticipantSheet } from '@/components/calls/AddParticipantSheet';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
@@ -50,6 +51,12 @@ import { savePlaintext, loadPlaintext } from '@/lib/crypto/plaintextStore';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
 import { useMessageReactions } from '@/hooks/useMessageReactions';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
+import { IdentityChangeBanner } from '@/components/messages/IdentityChangeBanner';
+import { TypingIndicator } from '@/components/messages/TypingIndicator';
+import { useTypingPresence } from '@/hooks/useTypingPresence';
+import { ForwardMessageDialog } from '@/components/messages/ForwardMessageDialog';
+import { ShareContentPicker } from '@/components/messages/ShareContentPicker';
+import { DisappearingMessagesDialog } from '@/components/messages/DisappearingMessagesDialog';
 
 // ─── Utils ───────────────────────────────────────────────
 function formatMessageTime(dateStr: string) {
@@ -364,6 +371,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [deleteMenuMsgId, setDeleteMenuMsgId] = useState<string | null>(null);
+  const [forwardMsg, setForwardMsg] = useState<{ id: string; plaintext: string } | null>(null);
+  const [showSharePicker, setShowSharePicker] = useState(false);
+  const [showDisappearing, setShowDisappearing] = useState(false);
   const [lightboxMedia, setLightboxMedia] = useState<{ url: string; body: string; messageId: string } | null>(null);
   // Persisted + realtime reactions (replaces local-only state)
   const [showAIMenu, setShowAIMenu] = useState(false);
@@ -394,6 +404,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   // Policy, not readiness: every human conversation is always Aegis. During
   // cold key hydration the outbox waits; it must never fall back to plaintext.
   const isEncryptionActive = !isZeusConversation;
+  const { peerTyping, notifyTyping, notifyStopped } = useTypingPresence(
+    conversationId,
+    user?.id,
+    peerUserId,
+  );
   const [cacheVersion, setCacheVersion] = useState(0);
   const bumpCache = useCallback(() => setCacheVersion(v => v + 1), []);
   const decryptRefreshKey = `${conversationId}:${e2ee.peerFingerprint ?? 'none'}:${Number(e2ee.encrypted)}:${cacheVersion}`;
@@ -855,6 +870,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     setShowEmojis(false);
     shouldAutoScrollRef.current = true;
     inputRef.current?.focus();
+    notifyStopped();
 
     if (isZeusConversation) {
       sendMessage.mutate({ conversationId, body });
@@ -978,6 +994,28 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         />
       )}
 
+      {conversationId && (
+        <DisappearingMessagesDialog
+          open={showDisappearing}
+          onOpenChange={setShowDisappearing}
+          conversationId={conversationId}
+        />
+      )}
+
+      <ForwardMessageDialog
+        open={!!forwardMsg}
+        onOpenChange={(v) => { if (!v) setForwardMsg(null); }}
+        messageBody={forwardMsg?.plaintext || ''}
+        onForward={(targetConvId) => {
+          if (forwardMsg) {
+            const forwardBody = `↪️ Message transféré:\n"${forwardMsg.plaintext}"`;
+            sendMessage.mutate({ conversationId: targetConvId, body: forwardBody });
+            toast.success('Message transféré');
+          }
+          setForwardMsg(null);
+        }}
+      />
+
       <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,text/plain,text/csv" className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) handleMediaFile(file);
@@ -1084,6 +1122,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           >
             <PhoneMissed className="w-4 h-4" />
           </button>
+          {!isZeusConversation && (
+            <button
+              onClick={() => setShowDisappearing(true)}
+              className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
+              title="Messages éphémères"
+            >
+              <Timer className="w-4 h-4" />
+            </button>
+          )}
           <button onClick={minimizeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm" title="Réduire">
             <Minus className="w-4 h-4" />
           </button>
@@ -1095,7 +1142,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
       {/* E2EE Status bar removed per user request — encryption is silent */}
 
-      {/* Fingerprint change banner removed per user request — silent re-keying */}
+      {/* Signal-style "safety number changed" warning — real MITM signal,
+          must stay visible and require an explicit user action. */}
+      {!isZeusConversation && user && peerUserId && (
+        <IdentityChangeBanner
+          observerUserId={user.id}
+          peerUserId={peerUserId}
+        />
+      )}
 
       {/* Identity and route preparation stay silent. Aegis retries its
           encrypted device-copy outbox when peer keys become available. */}
@@ -1199,6 +1253,15 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                               <button onClick={() => { setReplyTo(msg); setActiveMessageId(null); }} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-secondary transition-all">
                                 <Reply className="w-3 h-3 text-muted-foreground" />
                               </button>
+                              <button
+                                onClick={() => {
+                                  setForwardMsg({ id: msg.id, plaintext: decryptedCacheRef.current.get(msg.id) ?? msg.body });
+                                  setActiveMessageId(null);
+                                }}
+                                className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-secondary transition-all"
+                              >
+                                <Forward className="w-3 h-3 text-muted-foreground" />
+                              </button>
                               <button onClick={() => { setDeleteMenuMsgId(msg.id); setActiveMessageId(null); }} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-destructive/10 transition-all">
                                 <Trash2 className="w-3 h-3 text-destructive" />
                               </button>
@@ -1227,6 +1290,21 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                                 </div>
                               </div>
                               <div className="p-2 space-y-0.5">
+                                <button
+                                  onClick={() => {
+                                    setForwardMsg({ id: msg.id, plaintext: decryptedCacheRef.current.get(msg.id) ?? msg.body });
+                                    setDeleteMenuMsgId(null);
+                                  }}
+                                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs hover:bg-secondary transition-all text-left group/btn"
+                                >
+                                  <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center group-hover/btn:bg-muted-foreground/10 transition-colors">
+                                    <Forward className="w-3.5 h-3.5 text-muted-foreground" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium">Transférer</p>
+                                    <p className="text-[10px] text-muted-foreground">Envoyer à une autre conversation</p>
+                                  </div>
+                                </button>
                                 <button
                                   onClick={() => {
                                     deleteForMe.mutate({ messageId: msg.id, conversationId });
@@ -1529,6 +1607,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
             </div>
           ))}
           </>
+        )}
+        {peerTyping && conversation && !conversation.is_group && (
+          <TypingIndicator name={conversation.participant.name} />
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -1935,6 +2016,20 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
+      {showSharePicker && (
+        <ShareContentPicker
+          onShare={(shareText) => {
+            if (isZeusConversation) {
+              sendMessage.mutate({ conversationId, body: shareText });
+            } else {
+              queue.sendMessage(shareText).catch(() => toast.error('Erreur'));
+            }
+            setShowSharePicker(false);
+          }}
+          onClose={() => setShowSharePicker(false)}
+        />
+      )}
+
       {/* Input bar */}
       {!showVoiceRecorder && (
         <div className="border-t border-border/30 bg-background">
@@ -1984,12 +2079,25 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
               <button type="button" onClick={() => { setShowAIMenu(v => !v); setShowEmojis(false); setShowGifs(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showAIMenu ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 {aiLoading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Wand2 className="w-5 h-5" />}
               </button>
+              <button
+                type="button"
+                onClick={() => { setShowSharePicker(v => !v); setShowEmojis(false); setShowGifs(false); setShowAIMenu(false); }}
+                title="Partager du contenu"
+                className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showSharePicker ? "text-primary" : "text-muted-foreground hover:text-primary")}
+              >
+                <Share2 className="w-5 h-5" />
+              </button>
             </div>
 
             <input
               ref={inputRef}
               value={newMessage}
-              onChange={e => setNewMessage(e.target.value)}
+              onChange={e => {
+                const v = e.target.value;
+                setNewMessage(v);
+                if (v.trim()) notifyTyping(); else notifyStopped();
+              }}
+              onBlur={notifyStopped}
               onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
               placeholder="Aa"
               className="flex-1 bg-secondary/60 rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"

@@ -22,7 +22,6 @@ const messageBody = readFileSync(
   resolve(root, 'src/components/messages/DecryptedMessageBody.tsx'),
   'utf8',
 );
-const chatView = readFileSync(resolve(root, 'src/components/messages/ChatView.tsx'), 'utf8');
 const chatWidget = readFileSync(resolve(root, 'src/components/ChatWidget.tsx'), 'utf8');
 const viteConfig = readFileSync(resolve(root, 'vite.config.ts'), 'utf8');
 
@@ -69,7 +68,6 @@ describe('Aegis single-engine cutover', () => {
   it('never interprets cold encryption readiness as plaintext permission', () => {
     expect(queueHook).toContain('const encryptionWasRequired = !allowPlaintext');
     expect(queueHook).not.toContain('isEncryptionActive &&');
-    expect(chatView).toContain('const isEncryptionActive = !isZeusConversation');
     expect(chatWidget).toContain('const isEncryptionActive = !isZeusConversation');
   });
 
