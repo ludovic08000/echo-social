@@ -1,41 +1,58 @@
 /**
  * Crypto Integrity Shield — Anti-tampering defense layer
- * 
+ *
  * Protects against:
- * - Prototype pollution (Object.prototype, Array.prototype)
- * - crypto.subtle monkey-patching (XSS replacing encrypt/decrypt)
+ * - crypto.subtle monkey-patching
  * - JSON.parse / TextEncoder / indexedDB.open tampering
- * - Runtime code injection
- * 
- * STRATEGY: Snapshot ALL critical native references at module load time.
- * If malicious JS loads AFTER this module, it cannot replace these.
- * If it loads BEFORE — nothing can help (CSP is the real defense there).
+ * - runtime replacement of critical crypto dependencies
+ *
+ * STRATEGY: snapshot native references at module load time. Bound helpers are
+ * used for calls, while integrity checks compare against the original unbound
+ * references. Comparing native methods to .bind() wrappers would always report
+ * a false tamper event.
  */
 
 // ─── Snapshot native references at load time ───
 
-// crypto.subtle
+// crypto.subtle native references used for integrity comparisons
 const _subtle = crypto.subtle;
-const _generateKey = _subtle.generateKey.bind(_subtle);
-const _importKey = _subtle.importKey.bind(_subtle);
-const _exportKey = _subtle.exportKey.bind(_subtle);
-const _encrypt = _subtle.encrypt.bind(_subtle);
-const _decrypt = _subtle.decrypt.bind(_subtle);
-const _deriveBits = _subtle.deriveBits.bind(_subtle);
-const _deriveKey = _subtle.deriveKey.bind(_subtle);
-const _sign = _subtle.sign.bind(_subtle);
-const _verify = _subtle.verify.bind(_subtle);
-const _digest = _subtle.digest.bind(_subtle);
-const _getRandomValues = <T extends ArrayBufferView | null>(array: T): T => crypto.getRandomValues(array as any) as T;
+const _generateKeyNative = _subtle.generateKey;
+const _importKeyNative = _subtle.importKey;
+const _exportKeyNative = _subtle.exportKey;
+const _encryptNative = _subtle.encrypt;
+const _decryptNative = _subtle.decrypt;
+const _deriveBitsNative = _subtle.deriveBits;
+const _deriveKeyNative = _subtle.deriveKey;
+const _signNative = _subtle.sign;
+const _verifyNative = _subtle.verify;
+const _digestNative = _subtle.digest;
+const _getRandomValuesNative = crypto.getRandomValues;
+
+// Bound call helpers preserve the correct receiver.
+const _generateKey = _generateKeyNative.bind(_subtle);
+const _importKey = _importKeyNative.bind(_subtle);
+const _exportKey = _exportKeyNative.bind(_subtle);
+const _encrypt = _encryptNative.bind(_subtle);
+const _decrypt = _decryptNative.bind(_subtle);
+const _deriveBits = _deriveBitsNative.bind(_subtle);
+const _deriveKey = _deriveKeyNative.bind(_subtle);
+const _sign = _signNative.bind(_subtle);
+const _verify = _verifyNative.bind(_subtle);
+const _digest = _digestNative.bind(_subtle);
+const _getRandomValues = <T extends ArrayBufferView | null>(array: T): T =>
+  _getRandomValuesNative.call(crypto, array) as T;
 
 // Global APIs used in crypto pipeline
 const _JSONparse = JSON.parse;
 const _JSONstringify = JSON.stringify;
 const _TextEncoder = TextEncoder;
 const _TextDecoder = TextDecoder;
-const _idbOpen = indexedDB.open.bind(indexedDB);
-const _atob = globalThis.atob.bind(globalThis);
-const _btoa = globalThis.btoa.bind(globalThis);
+const _idbOpenNative = indexedDB.open;
+const _idbOpen = _idbOpenNative.bind(indexedDB);
+const _atobNative = globalThis.atob;
+const _btoaNative = globalThis.btoa;
+const _atob = _atobNative.bind(globalThis);
+const _btoa = _btoaNative.bind(globalThis);
 
 // Snapshot object identity for deep tamper detection
 const _subtleRef = crypto.subtle;
@@ -56,7 +73,7 @@ export const hardCrypto = Object.freeze({
   getRandomValues: _getRandomValues,
 });
 
-/** Hardened global utilities — snapshotted at load time */
+/** Hardened global utilities — snapshotted references */
 export const hardGlobals = Object.freeze({
   jsonParse: _JSONparse,
   jsonStringify: _JSONstringify,
@@ -71,9 +88,9 @@ export const hardGlobals = Object.freeze({
 
 let tamperDetected = false;
 const tamperCallbacks: Array<(reason: string) => void> = [];
-// Freeze the array structure — prevent .push()/.length=0 from external code
+
 Object.defineProperty(tamperCallbacks, 'push', {
-  value: function(this: Array<(reason: string) => void>, ...items: ((reason: string) => void)[]) {
+  value: function (this: Array<(reason: string) => void>, ...items: ((reason: string) => void)[]) {
     return Array.prototype.push.apply(this, items);
   },
   writable: false,
@@ -87,11 +104,13 @@ export function onTamperDetected(cb: (reason: string) => void) {
 }
 
 function triggerTamper(reason: string) {
-  if (tamperDetected) return; // Only fire once
+  if (tamperDetected) return;
   tamperDetected = true;
   console.error(`[SECURITY] 🚨 TAMPER DETECTED: ${reason}`);
   for (const cb of tamperCallbacks) {
-    try { cb(reason); } catch {}
+    try {
+      cb(reason);
+    } catch {}
   }
 }
 
@@ -100,12 +119,12 @@ export function isTampered(): boolean {
 }
 
 /**
- * Verify the full crypto pipeline hasn't been monkey-patched.
- * Checks crypto.subtle methods + JSON.parse + TextEncoder + indexedDB.open.
+ * Verify the crypto pipeline has not been monkey-patched.
+ * Native methods are compared with their original native references, never
+ * with bound wrappers used to invoke them.
  */
 export function verifyCryptoIntegrity(): boolean {
   try {
-    // Object identity checks — detect full object replacement
     if (crypto !== _cryptoRef) {
       triggerTamper('crypto object replaced');
       return false;
@@ -115,18 +134,17 @@ export function verifyCryptoIntegrity(): boolean {
       return false;
     }
 
-    // crypto.subtle method checks
-    const subtleChecks: [string, Function, Function][] = [
-      ['encrypt', crypto.subtle.encrypt, _encrypt],
-      ['decrypt', crypto.subtle.decrypt, _decrypt],
-      ['importKey', crypto.subtle.importKey, _importKey],
-      ['exportKey', crypto.subtle.exportKey, _exportKey],
-      ['sign', crypto.subtle.sign, _sign],
-      ['verify', crypto.subtle.verify, _verify],
-      ['deriveBits', crypto.subtle.deriveBits, _deriveBits],
-      ['deriveKey', crypto.subtle.deriveKey, _deriveKey],
-      ['generateKey', crypto.subtle.generateKey, _generateKey],
-      ['digest', crypto.subtle.digest, _digest],
+    const subtleChecks: Array<[string, unknown, unknown]> = [
+      ['encrypt', crypto.subtle.encrypt, _encryptNative],
+      ['decrypt', crypto.subtle.decrypt, _decryptNative],
+      ['importKey', crypto.subtle.importKey, _importKeyNative],
+      ['exportKey', crypto.subtle.exportKey, _exportKeyNative],
+      ['sign', crypto.subtle.sign, _signNative],
+      ['verify', crypto.subtle.verify, _verifyNative],
+      ['deriveBits', crypto.subtle.deriveBits, _deriveBitsNative],
+      ['deriveKey', crypto.subtle.deriveKey, _deriveKeyNative],
+      ['generateKey', crypto.subtle.generateKey, _generateKeyNative],
+      ['digest', crypto.subtle.digest, _digestNative],
     ];
 
     for (const [name, current, original] of subtleChecks) {
@@ -136,13 +154,11 @@ export function verifyCryptoIntegrity(): boolean {
       }
     }
 
-    // getRandomValues
-    if (crypto.getRandomValues !== _getRandomValues) {
+    if (crypto.getRandomValues !== _getRandomValuesNative) {
       triggerTamper('crypto.getRandomValues replaced');
       return false;
     }
 
-    // Global pipeline checks
     if (JSON.parse !== _JSONparse) {
       triggerTamper('JSON.parse replaced');
       return false;
@@ -159,11 +175,15 @@ export function verifyCryptoIntegrity(): boolean {
       triggerTamper('TextDecoder replaced');
       return false;
     }
-    if (globalThis.atob !== _atob) {
+    if (indexedDB.open !== _idbOpenNative) {
+      triggerTamper('indexedDB.open replaced');
+      return false;
+    }
+    if (globalThis.atob !== _atobNative) {
       triggerTamper('atob replaced');
       return false;
     }
-    if (globalThis.btoa !== _btoa) {
+    if (globalThis.btoa !== _btoaNative) {
       triggerTamper('btoa replaced');
       return false;
     }
@@ -175,11 +195,12 @@ export function verifyCryptoIntegrity(): boolean {
   }
 }
 
-// ─── Object.freeze critical prototypes ───
+// ─── Targeted hardening ───
 
 /**
- * Call once at app startup to prevent prototype pollution attacks.
- * Locks down critical methods on Object/Array prototypes.
+ * Lock only the critical Object.prototype methods used by the crypto pipeline.
+ * Do not freeze complete global prototypes: framework and SDK internals may
+ * legitimately install or patch unrelated properties.
  */
 export function hardenPrototypes() {
   try {
@@ -201,7 +222,7 @@ export function hardenPrototypes() {
 
 // ─── Memory scrubbing ───
 
-/** Zero-fill a Uint8Array (for key material) */
+/** Zero-fill a Uint8Array containing key material. */
 export function scrubBuffer(buffer: Uint8Array): void {
   buffer.fill(0);
 }
