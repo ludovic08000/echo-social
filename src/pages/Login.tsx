@@ -34,7 +34,9 @@ export default function Login() {
   }, [lockoutSeconds]);
 
   if (user) {
-    const from = (location.state as { from?: string })?.from || '/feed';
+    const rawNext = new URLSearchParams(location.search).get('next');
+    const safeNext = rawNext && /^\/(?!\/)/.test(rawNext) ? rawNext : null;
+    const from = safeNext || (location.state as { from?: string })?.from || '/feed';
     return <Navigate to={from} replace />;
   }
 

@@ -8611,10 +8611,6 @@ export type Database = {
         }
         Returns: Json
       }
-      rotate_user_identity_root: {
-        Args: { p_new_identity_pub_b64: string; p_new_primary_device_id: string }
-        Returns: Json
-      }
       release_backup_master_key: {
         Args: { _backup_type: string; _user_id: string }
         Returns: {
@@ -8668,16 +8664,19 @@ export type Database = {
         Args: { p_fingerprint: string }
         Returns: string
       }
-      resolve_device_id_by_fingerprints: {
-        Args: { p_fingerprints: string[]; p_platform?: string }
-        Returns: string
-      }
       resolve_device_primary_repair_request: {
         Args: { p_id: string }
         Returns: boolean
       }
       revoke_user_device: {
         Args: { p_device_id: string; p_replacement_device_id?: string }
+        Returns: Json
+      }
+      rotate_user_identity_root: {
+        Args: {
+          p_new_identity_pub_b64: string
+          p_new_primary_device_id: string
+        }
         Returns: Json
       }
       security_monitor_cron_tick: { Args: never; Returns: undefined }

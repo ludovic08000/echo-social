@@ -34,6 +34,7 @@ import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
 
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import OAuthConsent from "./pages/OAuthConsent";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
 
@@ -258,6 +259,8 @@ function AppContent() {
                     <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
                     <Route path="/reset-password" element={<ResetPassword />} />
                     <Route path="/onboarding" element={<Onboarding />} />
+                    <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
+
                     <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
                     <Route path="/feed" element={<Feed />} />
                     <Route path="/post/:id" element={<PostDetail />} />
