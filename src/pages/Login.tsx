@@ -11,6 +11,35 @@ import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { checkLoginAllowed, recordFailedLogin, resetLoginAttempts } from '@/lib/loginRateLimit';
 
+type LoginError = Error & {
+  code?: string;
+  status?: number;
+};
+
+function isInvalidCredentialError(error: Error): boolean {
+  const authError = error as LoginError;
+  const code = authError.code?.toLowerCase() ?? '';
+  const message = authError.message.toLowerCase();
+  return code === 'invalid_credentials'
+    || message.includes('invalid login credentials')
+    || message.includes('identifiants invalides');
+}
+
+function isNetworkError(error: Error): boolean {
+  const authError = error as LoginError;
+  const code = authError.code?.toLowerCase() ?? '';
+  const message = authError.message.toLowerCase();
+  return error.name === 'TypeError'
+    || error.name === 'TimeoutError'
+    || code.includes('network')
+    || code.includes('fetch')
+    || message.includes('failed to fetch')
+    || message.includes('network request')
+    || message.includes('timeout')
+    || message.includes('trop de temps')
+    || message.includes('load failed');
+}
+
 export default function Login() {
   const location = useLocation();
   const { signIn, user } = useAuth();
@@ -22,7 +51,6 @@ export default function Login() {
   const [lockoutSeconds, setLockoutSeconds] = useState(() => checkLoginAllowed());
   const queryClient = useQueryClient();
 
-  // Countdown timer for lockout
   useEffect(() => {
     if (lockoutSeconds <= 0) return;
     const timer = setInterval(() => {
@@ -60,25 +88,45 @@ export default function Login() {
       const { error } = await signIn(email.trim(), password);
 
       if (error) {
-        const lockout = recordFailedLogin();
+        if (isInvalidCredentialError(error)) {
+          const lockout = recordFailedLogin();
+          toast({
+            title: t('login.error'),
+            description: lockout > 0
+              ? `Compte temporairement verrouillé. Réessayez dans ${lockout}s.`
+              : t('login.errorDesc'),
+            variant: 'destructive',
+          });
+          if (lockout > 0) setLockoutSeconds(lockout);
+          return;
+        }
+
+        // Transport, extension, confirmation d'email ou autre erreur non liée
+        // au mot de passe : ne jamais l'enregistrer comme tentative abusive.
+        resetLoginAttempts();
+        setLockoutSeconds(0);
+        const networkFailure = isNetworkError(error);
         toast({
-          title: t('login.error'),
-          description: lockout > 0
-            ? `Compte temporairement verrouillé. Réessayez dans ${lockout}s.`
-            : t('login.errorDesc'),
+          title: networkFailure ? 'Connexion réseau bloquée' : t('login.error'),
+          description: networkFailure
+            ? 'Le navigateur ou une extension bloque la connexion au serveur. Le verrouillage du compte a été annulé.'
+            : error.message || t('login.errorDesc'),
           variant: 'destructive',
         });
-        if (lockout > 0) setLockoutSeconds(lockout);
         return;
       }
 
       resetLoginAttempts();
+      setLockoutSeconds(0);
       queryClient.removeQueries({ queryKey: ['posts', 'friends-feed'] });
     } catch (error) {
-      console.warn('[AUTH] sign-in request failed unexpectedly', error);
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      console.warn('[AUTH] sign-in request failed unexpectedly', normalizedError);
+      resetLoginAttempts();
+      setLockoutSeconds(0);
       toast({
-        title: t('login.error'),
-        description: 'La connexion a échoué temporairement. Vérifiez le réseau puis réessayez.',
+        title: 'Connexion réseau bloquée',
+        description: 'La connexion au serveur a échoué. Aucun verrouillage de compte n’a été appliqué.',
         variant: 'destructive',
       });
     } finally {
@@ -89,7 +137,6 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/40 flex flex-col items-center justify-center px-4 py-8">
       <div className="w-full max-w-md animate-fade-in">
-        {/* Unified card: brand banner + login form */}
         <div className="w-full bg-white rounded-3xl shadow-[0_20px_60px_-20px_rgba(0,35,149,0.25)] border border-slate-100 overflow-hidden">
           <Link to="/" className="flex w-full items-center justify-center bg-gradient-to-b from-white to-slate-50/60 pt-10 pb-6">
             <img
@@ -182,7 +229,6 @@ export default function Login() {
               </Link>
             </p>
 
-            {/* Trust badges fused into the bottom of the card */}
             <div className="mt-7 pt-5 border-t border-slate-100 grid grid-cols-3 gap-2 text-center">
               {[
                 { Icon: ShieldCheck, label: 'Messagerie\nsécurisée' },
