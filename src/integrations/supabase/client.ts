@@ -81,12 +81,12 @@ function recoverSupabaseAuthAfter401(): void {
 
 const guardedFetch: typeof fetch = async (input, init) => {
   const url = getRequestUrl(input);
-  const isSupabaseAuth = url.includes('/auth/v1/');
+  const requiresCleanTransport = url.includes('/auth/v1/') || url.includes('/functions/v1/');
   let response: Response;
 
-  if (isSupabaseAuth) {
-    // Authentication must not depend on window.fetch: browser extensions can
-    // replace it before the app loads and leave signInWithPassword unresolved.
+  if (requiresCleanTransport) {
+    // Authentication and pre-auth Edge Functions must not depend on
+    // window.fetch: extensions can replace it before the app is evaluated.
     response = await xhrFetch(input, init);
   } else {
     try {
