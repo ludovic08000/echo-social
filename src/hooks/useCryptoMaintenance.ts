@@ -16,10 +16,10 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
-  getOrCreateIdentityKeys,
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto';
+import { getOrCreateDeviceIdentity } from '@/lib/crypto/deviceIdentity';
 import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 
 const MAINTENANCE_TTL = 6 * 60 * 60 * 1000; // 6h between auto-refills
@@ -54,7 +54,7 @@ export function useCryptoMaintenance() {
         console.info('[CRYPTO-MAINT] Starting key maintenance check…');
 
         // 1. Ensure identity keys
-        const keys = await getOrCreateIdentityKeys(user.id);
+        const keys = await getOrCreateDeviceIdentity(user.id, await hydrateDeviceId().catch(() => getCurrentDeviceId()));
         if (!keys) {
           console.warn('[CRYPTO-MAINT] Identity keys unavailable (PIN locked?) — skipping');
           return;
@@ -65,7 +65,7 @@ export function useCryptoMaintenance() {
         try {
           const did = await hydrateDeviceId().catch(() => getCurrentDeviceId());
           if (did) {
-            await refreshDeviceSignedPrekeyIfNeeded(user.id, did, keys.signingPrivateKey).catch((e) =>
+            await refreshDeviceSignedPrekeyIfNeeded(user.id, did, keys.privateKey).catch((e) =>
               console.warn('[CRYPTO-MAINT] device SPK refresh failed:', e),
             );
             await refillDeviceOneTimePrekeysIfNeeded(user.id, did).catch((e) =>

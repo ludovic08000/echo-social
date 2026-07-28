@@ -1,6 +1,6 @@
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
-import { getOrCreateIdentityKeys, exportPublicKeyRaw } from '@/lib/crypto/keyManager';
+import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import {
   establishDeviceSession,
   invalidateDeviceSession,
@@ -243,11 +243,6 @@ export function parseRepeatablePreKeyEnvelope(payload: string): ParsedRepeatable
   };
 }
 
-async function exportIdentityKeyB64(publicKey: CryptoKey): Promise<string> {
-  const raw = await exportPublicKeyRaw(publicKey);
-  return bufferToBase64(raw);
-}
-
 async function readSession(key: string): Promise<StoredSessionRecord | null> {
   const value = await runTxOn('device-sessions', [SESSION_STORE], 'readonly', (tx) =>
     reqToPromise(tx.objectStore(SESSION_STORE).get(key) as IDBRequest<StoredSessionRecord | undefined>),
@@ -367,9 +362,9 @@ export async function createRepeatablePreKeyEnvelope(args: {
     });
     if (!bundle) return null;
 
-    const myKeys = await getOrCreateIdentityKeys(args.senderUserId);
-    const senderIdentityKeyB64 = await exportIdentityKeyB64(myKeys.publicKey);
-    const result = await x3dhInitiate(myKeys, bundle);
+    const myKeys = await getOrCreateDeviceKxKey(args.senderDeviceId, args.senderUserId);
+    const senderIdentityKeyB64 = myKeys.publicB64;
+    const result = await x3dhInitiate(myKeys as never, bundle);
     const sessionId = await establishDeviceSession(
       args.senderUserId,
       args.senderDeviceId,
@@ -436,8 +431,8 @@ export async function unwrapRepeatablePreKeyEnvelope(args: {
   const parsed = parseRepeatablePreKeyEnvelope(args.payload);
   if (!parsed) return null;
 
-  const myKeys = await getOrCreateIdentityKeys(args.recipientUserId);
-  const myIdentityKeyB64 = await exportIdentityKeyB64(myKeys.publicKey);
+  const myKeys = await getOrCreateDeviceKxKey(args.recipientDeviceId, args.recipientUserId);
+  const myIdentityKeyB64 = myKeys.publicB64;
   if (parsed.recipientIdentityKeyB64 !== myIdentityKeyB64) {
     throw new Error('X3DH_RECIPIENT_IDENTITY_MISMATCH');
   }
@@ -466,7 +461,7 @@ export async function unwrapRepeatablePreKeyEnvelope(args: {
   let replayReservation: unknown;
   try {
     const runtime = await import('@/lib/crypto/x3dh');
-    const response = await runtime.x3dhRespondForDevice(myKeys, args.recipientUserId, args.recipientDeviceId, {
+    const response = await runtime.x3dhRespondForDevice(myKeys as never, args.recipientUserId, args.recipientDeviceId, {
       ik: parsed.senderIdentityKeyB64,
       ek: parsed.ekB64,
       spkId: parsed.spkId,

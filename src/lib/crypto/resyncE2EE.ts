@@ -29,6 +29,10 @@ import {
   refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import {
+  getOrCreateDeviceIdentity,
+  signDeviceIdentityBinding,
+} from '@/lib/crypto/deviceIdentity';
 import { clearAllDeviceSessions } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
@@ -308,6 +312,7 @@ async function republishDeviceIdentity(
   }
 
   let devicePublicKeyB64: string;
+  const deviceIdentity = await getOrCreateDeviceIdentity(userId, deviceId);
   try {
     diag?.push('identity', 'info', 'stage device_kx');
     const kx = await getOrCreateDeviceKxKey(deviceId, userId);
@@ -351,6 +356,14 @@ async function republishDeviceIdentity(
     device_id: deviceId,
     device_name: deviceName,
     device_public_key: devicePublicKeyB64,
+    device_signing_key: deviceIdentity.publicB64,
+    device_identity_signature: await signDeviceIdentityBinding({
+      userId,
+      deviceId,
+      devicePublicKey: devicePublicKeyB64,
+      identity: deviceIdentity,
+    }),
+    device_identity_version: 1,
     platform,
     user_agent: userAgent,
     is_active: true,
@@ -424,6 +437,9 @@ async function republishDeviceIdentity(
       p_device_fingerprint: payload.device_fingerprint,
       p_platform: payload.platform,
       p_user_agent: payload.user_agent,
+      p_device_signing_key: payload.device_signing_key,
+      p_device_identity_signature: payload.device_identity_signature,
+      p_device_identity_version: payload.device_identity_version,
     });
     const registerResult = registerData as {
       ok?: boolean;
@@ -462,7 +478,7 @@ async function republishDeviceIdentity(
   }
 
   try {
-    await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, keys.signingPrivateKey);
+    await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, deviceIdentity.privateKey);
     result.spk = true;
   } catch (e) {
     console.warn('[resync] device SPK refresh failed:', e);

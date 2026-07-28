@@ -3,7 +3,6 @@
  * encrypted copies in `message_device_copies`.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { verifyPublicIdentityBinding } from '@/lib/crypto/keyManager';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import {
   isDevicePrekeyBundleError,
@@ -698,28 +697,31 @@ async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
     if (prefix === 'aegis1.init.v1') {
-      const { data: senderPub } = await supabase
-        .from('user_public_keys')
-        .select(
-          'identity_key, signing_key, fingerprint, identity_binding_version, identity_binding_signature',
-        )
+      const { data: senderDevice } = await supabase
+        .from('user_devices')
+        .select('device_public_key, device_signing_key, device_identity_signature, device_identity_version')
         .eq('user_id', row.sender_user_id)
+        .eq('device_id', row.sender_device_id)
         .eq('is_active', true)
+        .eq('approval_status', 'approved')
+        .is('revoked_at', null)
         .maybeSingle();
+      const { verifyDeviceIdentityBinding } = await import('@/lib/crypto/deviceIdentity');
       if (
-        !senderPub?.identity_key ||
-        !senderPub.signing_key ||
-        !await verifyPublicIdentityBinding({
-          identityKey: senderPub.identity_key,
-          signingKey: senderPub.signing_key,
-          fingerprint: senderPub.fingerprint,
-          bindingVersion: senderPub.identity_binding_version,
-          bindingSignature: senderPub.identity_binding_signature,
+        !senderDevice?.device_public_key ||
+        !senderDevice.device_signing_key ||
+        !senderDevice.device_identity_signature ||
+        !await verifyDeviceIdentityBinding({
+          userId: row.sender_user_id,
+          deviceId: row.sender_device_id,
+          devicePublicKey: senderDevice.device_public_key,
+          signingPublicKey: senderDevice.device_signing_key,
+          signature: senderDevice.device_identity_signature,
         })
       ) {
         return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };
       }
-      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderPub.identity_key, row.sender_user_id, row.sender_device_id);
+      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderDevice.device_public_key, row.sender_user_id, row.sender_device_id);
       return {
         plaintext,
         attemptedSupportedEnvelope: true,

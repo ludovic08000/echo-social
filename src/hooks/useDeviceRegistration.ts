@@ -22,7 +22,7 @@ import {
   getDeviceFingerprint,
   rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
-import { getOrCreateIdentityKeys, exportPublicKeyBundle, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
@@ -31,6 +31,10 @@ import {
 } from '@/lib/crypto/x3dh';
 import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import {
+  getOrCreateDeviceIdentity,
+  signDeviceIdentityBinding,
+} from '@/lib/crypto/deviceIdentity';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import {
@@ -118,8 +122,15 @@ export function useDeviceRegistration() {
           ranRef.current = false;
           return;
         }
-        const keys = await getOrCreateIdentityKeys(user.id);
-        const bundle = await exportPublicKeyBundle(keys);
+        const deviceIdentity = await getOrCreateDeviceIdentity(user.id, deviceId);
+        const keys = {
+          privateKey: deviceIdentity.privateKey,
+          signingPrivateKey: deviceIdentity.privateKey,
+        };
+        const bundle = {
+          identityKey: deviceIdentity.publicB64,
+          signingKey: deviceIdentity.publicB64,
+        };
 
         // Validation: ensure the shared identity is fully restored before publishing
         // anything that other users will pin against. Publishing a half-initialised
@@ -149,10 +160,11 @@ export function useDeviceRegistration() {
         // key right now. Instead we block and ask the user to restore.
         let devicePublicKeyB64: string | null = null;
         let serverDevicePublicKey: string | null = null;
+        let serverDeviceSigningKey: string | null = null;
         try {
           const { data: existing } = await supabase
             .from('user_devices')
-            .select('device_public_key,is_active,revoked_at,approval_status')
+            .select('device_public_key,device_signing_key,is_active,revoked_at,approval_status')
             .eq('user_id', user.id)
             .eq('device_id', deviceId)
             .maybeSingle();
@@ -176,8 +188,28 @@ export function useDeviceRegistration() {
           }
 
           serverDevicePublicKey = (existing?.device_public_key as string | null) ?? null;
+          serverDeviceSigningKey = (existing?.device_signing_key as string | null) ?? null;
         } catch (lookupErr) {
           console.warn('[useDeviceRegistration] server device lookup failed:', lookupErr);
+        }
+
+        if (
+          serverDeviceSigningKey &&
+          serverDeviceSigningKey !== deviceIdentity.publicB64
+        ) {
+          try {
+            await supabase.rpc('mark_current_device_route_unavailable' as never, {
+              p_device_id: deviceId,
+              p_error_code: 'LOCAL_DEVICE_IDENTITY_KEY_MISSING',
+            } as never);
+          } catch {}
+          rotateCurrentDeviceId('aegis-device-private-key-missing');
+          ranRef.current = false;
+          inFlightRef.current = false;
+          if (attempt < 2) {
+            return registerCurrentDevice('rotated-after-device-identity-loss', attempt + 1);
+          }
+          return;
         }
 
         let localKx: Awaited<ReturnType<typeof getOrCreateDeviceKxKey>> | null = null;
@@ -299,6 +331,12 @@ export function useDeviceRegistration() {
           is_active: true,
           last_seen_at: new Date().toISOString(),
         };
+        const deviceIdentitySignature = await signDeviceIdentityBinding({
+          userId: user.id,
+          deviceId,
+          devicePublicKey: devicePublicKeyB64,
+          identity: deviceIdentity,
+        });
 
         // 1. Register the device.
         // The authenticated RPC is the only registration path. Direct upsert
@@ -313,6 +351,9 @@ export function useDeviceRegistration() {
             p_device_fingerprint: payload.device_fingerprint,
             p_platform: payload.platform,
             p_user_agent: payload.user_agent,
+            p_device_signing_key: deviceIdentity.publicB64,
+            p_device_identity_signature: deviceIdentitySignature,
+            p_device_identity_version: 1,
           });
           const registrationResult = rpcResult as DeviceRegistrationRpcResult | null;
 

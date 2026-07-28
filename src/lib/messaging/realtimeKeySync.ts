@@ -14,8 +14,6 @@ const KEY_TABLES = [
   'user_devices',
   'signed_prekeys',
   'device_signed_prekeys',
-  'user_identity_roots',
-  'user_device_signatures',
 ] as const;
 
 let activeChannel: ReturnType<typeof supabase.channel> | null = null;

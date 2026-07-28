@@ -84,17 +84,6 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
       ]);
 
       const trustFailureReason = trustResult.status === 'rejected' ? String(trustResult.reason) : null;
-      // IDENTITY_ROOT_MISMATCH is a permanent, non-retryable state: the local
-      // identity key genuinely differs from the account's published root and
-      // publishCanonicalIdentityRoot() will refuse it every single time until
-      // an explicit rotation happens (rotate_user_identity_root RPC / device
-      // pairing). Waking decryptors + refetching conversations here just
-      // restarts the same failing maintenance pass on every trigger, storming
-      // the conversations query with aborted refetches for no benefit.
-      const isPermanentIdentityFailure = trustFailureReason !== null && (
-        trustFailureReason.includes('IDENTITY_ROOT_MISMATCH') ||
-        trustFailureReason.includes('DEVICE_TRUST_ROOT_PUBLISH_FAILED')
-      );
 
       console.info('[PIN-DEVTRUST] fast maintenance complete', {
         userId: userId.slice(0, 8),
@@ -109,13 +98,7 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
 
       if (trustResult.status === 'fulfilled') invalidateAllFanoutRoutes();
 
-      if (isPermanentIdentityFailure) {
-        console.warn('[PIN-DEVTRUST] identity root permanently mismatched — skipping wake/refetch, explicit rotation required', {
-          userId: userId.slice(0, 8),
-        });
-      } else {
-        wake('pin_fast_maintenance_complete');
-      }
+      wake('pin_fast_maintenance_complete');
     }, { coalesce: true, cooldownMs: 2_000 }).catch((error) => {
       // Cooldown or network failure never affects already-mounted bubbles.
       console.warn('[PIN-DEVTRUST] fast maintenance unavailable', {

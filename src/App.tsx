@@ -12,7 +12,6 @@ import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
 import { SafetyNumberRevalidationBanner } from "@/components/messages/SafetyNumberRevalidationBanner";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
-import DevicePrimaryRepairDialog from "@/components/DevicePrimaryRepairDialog";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useVersionWatcher } from "@/hooks/useVersionWatcher";
 import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
@@ -231,7 +230,6 @@ function AppContent() {
               <RecoveryFlowGuard />
               <AccountKeySyncRunner />
               <SafetyNumberRevalidationBanner />
-              <DevicePrimaryRepairDialog />
               <IncomingCallHandler />
               <E2EEDebugPanel />
               <RoutedErrorBoundary>

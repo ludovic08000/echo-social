@@ -23,7 +23,6 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   type IdentityKeyPair,
   exportPublicKeyRaw,
-  verifyPublicIdentityBinding,
 } from './keyManager';
 
 export interface X3DHPrekeyBundle {
@@ -246,9 +245,16 @@ export async function refreshDeviceSignedPrekeyIfNeeded(userId: string, deviceId
   try {
     const { data } = await supabase.from('device_signed_prekeys').select('created_at, expires_at, spk_id, public_key, signature').eq('user_id', userId).eq('device_id', deviceId).eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (!data) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
-    const { data: pubKeyData, error: pubKeyErr } = await supabase.from('user_public_keys').select('identity_key, signing_key').eq('user_id', userId).eq('is_active', true).maybeSingle();
-    if (pubKeyErr || !pubKeyData?.signing_key) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
-    const currentSignatureValid = await verifySignedPrekey(pubKeyData.signing_key, data.public_key, data.signature, { source: 'refreshDeviceSignedPrekeyIfNeeded.current_device_spk', identityKeyB64: pubKeyData.identity_key, userId, deviceId, spkId: data.spk_id });
+    const { data: pubKeyData, error: pubKeyErr } = await supabase
+      .from('user_devices')
+      .select('device_public_key, device_signing_key')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .eq('is_active', true)
+      .is('revoked_at', null)
+      .maybeSingle();
+    if (pubKeyErr || !pubKeyData?.device_signing_key) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
+    const currentSignatureValid = await verifySignedPrekey(pubKeyData.device_signing_key, data.public_key, data.signature, { source: 'refreshDeviceSignedPrekeyIfNeeded.current_device_spk', identityKeyB64: pubKeyData.device_public_key, userId, deviceId, spkId: data.spk_id });
     if (!currentSignatureValid) {
       // Quarantine only the invalid SPK. The authenticated DeviceID remains
       // connected until the user explicitly revokes it from the device menu.
@@ -374,21 +380,24 @@ async function claimPeerDeviceOPK(peerUserId: string, peerDeviceId: string): Pro
 }
 
 async function fetchDevicePrekeyMaterial(peerUserId: string, peerDeviceId: string): Promise<{ identityKey: string; signingKey: string; spkId: number; publicKey: string; signature: string } | null> {
-  const { data: pubKeys } = await supabase
-    .from('user_public_keys')
-    .select(
-      'identity_key, signing_key, fingerprint, identity_binding_version, identity_binding_signature',
-    )
+  const { data: device } = await supabase
+    .from('user_devices')
+    .select('device_public_key, device_signing_key, device_identity_signature, device_identity_version')
     .eq('user_id', peerUserId)
+    .eq('device_id', peerDeviceId)
     .eq('is_active', true)
+    .eq('approval_status', 'approved')
+    .eq('routing_status', 'ready')
+    .is('revoked_at', null)
     .maybeSingle();
-  if (!pubKeys) return null;
-  const identityBindingValid = await verifyPublicIdentityBinding({
-    identityKey: pubKeys.identity_key,
-    signingKey: pubKeys.signing_key,
-    fingerprint: pubKeys.fingerprint,
-    bindingVersion: pubKeys.identity_binding_version,
-    bindingSignature: pubKeys.identity_binding_signature,
+  if (!device?.device_public_key || !device.device_signing_key || !device.device_identity_signature) return null;
+  const { verifyDeviceIdentityBinding } = await import('./deviceIdentity');
+  const identityBindingValid = await verifyDeviceIdentityBinding({
+    userId: peerUserId,
+    deviceId: peerDeviceId,
+    devicePublicKey: device.device_public_key,
+    signingPublicKey: device.device_signing_key,
+    signature: device.device_identity_signature,
   });
   if (!identityBindingValid) {
     throw new DevicePrekeyBundleError(
@@ -401,7 +410,7 @@ async function fetchDevicePrekeyMaterial(peerUserId: string, peerDeviceId: strin
   const { data: spkRows, error } = await supabase.rpc('get_device_prekey_bundle', { p_user_id: peerUserId, p_device_id: peerDeviceId });
   if (error || !spkRows || spkRows.length === 0) return null;
   const spk = spkRows[0] as { spk_id: number; public_key: string; signature: string };
-  return { identityKey: pubKeys.identity_key, signingKey: pubKeys.signing_key, spkId: spk.spk_id, publicKey: spk.public_key, signature: spk.signature };
+  return { identityKey: device.device_public_key, signingKey: device.device_signing_key, spkId: spk.spk_id, publicKey: spk.public_key, signature: spk.signature };
 }
 
 function safeBase64BytesLength(value: string): number | 'invalid_base64' { try { return base64ToBuffer(value).byteLength; } catch { return 'invalid_base64'; } }

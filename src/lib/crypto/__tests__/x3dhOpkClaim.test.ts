@@ -34,23 +34,30 @@ vi.mock('@/lib/crypto/keyManager', () => ({
   verifyPublicIdentityBinding: vi.fn(async () => true),
 }));
 
+vi.mock('@/lib/crypto/deviceIdentity', () => ({
+  verifyDeviceIdentityBinding: vi.fn(async () => true),
+}));
+
 import { fetchPrekeyBundleForDevice } from '@/lib/crypto/x3dh';
 
 function installPrekeyResponses() {
   mocks.from.mockImplementation((table: string) => {
-    if (table !== 'user_public_keys') throw new Error(`Unexpected table: ${table}`);
-    return {
-      select: () => ({
-        eq: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({
-              data: { identity_key: 'AA==', signing_key: 'AA==' },
-              error: null,
-            }),
-          }),
-        }),
+    if (table !== 'user_devices') throw new Error(`Unexpected table: ${table}`);
+    const query = {
+      select: () => query,
+      eq: () => query,
+      is: () => query,
+      maybeSingle: async () => ({
+        data: {
+          device_public_key: 'AA==',
+          device_signing_key: 'AA==',
+          device_identity_signature: 'AA==',
+          device_identity_version: 1,
+        },
+        error: null,
       }),
     };
+    return query;
   });
 
   mocks.rpc.mockImplementation(async (name: string) => {

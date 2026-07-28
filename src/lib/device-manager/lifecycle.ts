@@ -1,6 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
-import { loadIdentityKeys, exportPublicKeyBundle } from '@/lib/crypto/keyManager';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import {
+  getOrCreateDeviceIdentity,
+  signDeviceIdentityBinding,
+} from '@/lib/crypto/deviceIdentity';
 import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
@@ -19,7 +22,6 @@ export type ManagedDeviceState =
 export interface ManagedDeviceLifecycle {
   deviceId: string;
   state: ManagedDeviceState;
-  isPrimary: boolean;
   devicePublicKey: string | null;
   replacedDeviceId?: string;
 }
@@ -30,13 +32,13 @@ export async function readManagedDeviceLifecycle(
 ): Promise<ManagedDeviceLifecycle> {
   const { data, error } = await supabase
     .from('user_devices')
-    .select('device_id,device_public_key,is_primary,is_active,approval_status,revoked_at')
+    .select('device_id,device_public_key,is_active,approval_status,revoked_at')
     .eq('user_id', userId)
     .eq('device_id', deviceId)
     .maybeSingle();
   if (error) throw error;
   if (!data) {
-    return { deviceId, state: 'missing', isPrimary: false, devicePublicKey: null };
+    return { deviceId, state: 'missing', devicePublicKey: null };
   }
 
   let state: ManagedDeviceState;
@@ -49,7 +51,6 @@ export async function readManagedDeviceLifecycle(
   return {
     deviceId,
     state,
-    isPrimary: Boolean(data.is_primary),
     devicePublicKey: data.device_public_key ?? null,
   };
 }
@@ -58,18 +59,19 @@ async function registerMissingStableDevice(
   userId: string,
   deviceId: string,
 ): Promise<void> {
-  const identity = await loadIdentityKeys(userId);
-  if (!identity?.privateKey || !identity.signingPrivateKey) {
-    throw new Error('DEVICE_REGISTRATION_KEYS_NOT_UNLOCKED');
-  }
-
-  const [bundle, deviceKx, fingerprint] = await Promise.all([
-    exportPublicKeyBundle(identity),
+  const [deviceKx, deviceIdentity, fingerprint] = await Promise.all([
     getOrCreateDeviceKxKey(deviceId, userId),
+    getOrCreateDeviceIdentity(userId, deviceId),
     getDeviceFingerprint().catch(() => null),
   ]);
-  const devicePublicKey = deviceKx?.publicB64 || bundle.identityKey;
+  const devicePublicKey = deviceKx.publicB64;
   if (!devicePublicKey) throw new Error('DEVICE_REGISTRATION_PUBLIC_KEY_MISSING');
+  const deviceIdentitySignature = await signDeviceIdentityBinding({
+    userId,
+    deviceId,
+    devicePublicKey,
+    identity: deviceIdentity,
+  });
 
   const args = {
     p_user_id: userId,
@@ -79,6 +81,9 @@ async function registerMissingStableDevice(
     p_device_fingerprint: fingerprint,
     p_platform: getCurrentPlatform(),
     p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
+    p_device_signing_key: deviceIdentity.publicB64,
+    p_device_identity_signature: deviceIdentitySignature,
+    p_device_identity_version: 1,
   };
 
   const { data: rpcData, error: rpcError } = await supabase.rpc(

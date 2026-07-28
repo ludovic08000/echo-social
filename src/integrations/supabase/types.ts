@@ -6713,11 +6713,13 @@ export type Database = {
           crypto_invalid_reason: string | null
           device_fingerprint: string | null
           device_id: string
+          device_identity_signature: string | null
+          device_identity_version: number
           device_name: string | null
           device_public_key: string
+          device_signing_key: string | null
           id: string
           is_active: boolean
-          is_primary: boolean
           last_seen_at: string
           platform: string | null
           prekey_repair_requested_at: string | null
@@ -6744,11 +6746,13 @@ export type Database = {
           crypto_invalid_reason?: string | null
           device_fingerprint?: string | null
           device_id: string
+          device_identity_signature?: string | null
+          device_identity_version?: number
           device_name?: string | null
           device_public_key: string
+          device_signing_key?: string | null
           id?: string
           is_active?: boolean
-          is_primary?: boolean
           last_seen_at?: string
           platform?: string | null
           prekey_repair_requested_at?: string | null
@@ -6775,11 +6779,13 @@ export type Database = {
           crypto_invalid_reason?: string | null
           device_fingerprint?: string | null
           device_id?: string
+          device_identity_signature?: string | null
+          device_identity_version?: number
           device_name?: string | null
           device_public_key?: string
+          device_signing_key?: string | null
           id?: string
           is_active?: boolean
-          is_primary?: boolean
           last_seen_at?: string
           platform?: string | null
           prekey_repair_requested_at?: string | null
@@ -8275,6 +8281,17 @@ export type Database = {
           signed_at: string
         }[]
       }
+      get_sesame_device_list: {
+        Args: { p_user_id: string }
+        Returns: {
+          device_id: string
+          device_identity_signature: string
+          device_identity_version: number
+          device_public_key: string
+          device_signing_key: string
+          last_seen_at: string
+        }[]
+      }
       get_signed_prekey: {
         Args: { p_user_id: string }
         Returns: {
@@ -8603,8 +8620,11 @@ export type Database = {
         Args: {
           p_device_fingerprint: string
           p_device_id: string
+          p_device_identity_signature: string
+          p_device_identity_version: number
           p_device_name: string
           p_device_public_key: string
+          p_device_signing_key: string
           p_platform: string
           p_user_agent: string
           p_user_id: string

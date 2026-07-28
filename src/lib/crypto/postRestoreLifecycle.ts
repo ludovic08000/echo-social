@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
-import { getOrCreateIdentityKeys } from './keyManager';
+import { getOrCreateDeviceIdentity } from './deviceIdentity';
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
@@ -35,12 +35,11 @@ async function bumpKeysEpochBestEffort(userId: string): Promise<number | null> {
 }
 
 async function revalidateCurrentDevicePrekeys(userId: string, deviceId: string): Promise<void> {
-  const keys = await getOrCreateIdentityKeys(userId);
-  if (!keys?.signingPrivateKey) return;
+  const identity = await getOrCreateDeviceIdentity(userId, deviceId);
 
-  await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, keys.signingPrivateKey).catch(async (err) => {
+  await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, identity.privateKey).catch(async (err) => {
     console.warn('[POST_RESTORE] device SPK refresh failed; attempting repair', err);
-    await repairCurrentDevicePrekeys(userId, deviceId, keys.signingPrivateKey, 'post-restore-spk-refresh-failed').catch((repairErr) => {
+    await repairCurrentDevicePrekeys(userId, deviceId, identity.privateKey, 'post-restore-spk-refresh-failed').catch((repairErr) => {
       console.warn('[POST_RESTORE] device prekey repair failed', repairErr);
     });
   });
@@ -48,30 +47,6 @@ async function revalidateCurrentDevicePrekeys(userId: string, deviceId: string):
   await refillDeviceOneTimePrekeysIfNeeded(userId, deviceId).catch((err) => {
     console.warn('[POST_RESTORE] OPK refill failed', err);
   });
-}
-
-async function refreshSignedDeviceListBestEffort(userId: string, deviceId: string): Promise<void> {
-  try {
-    const { data: deviceRow } = await supabase
-      .from('user_devices' as any)
-      .select('device_public_key')
-      .eq('user_id', userId)
-      .eq('device_id', deviceId)
-      .maybeSingle();
-    const device = deviceRow as { device_public_key?: string } | null;
-
-    if (!device?.device_public_key) return;
-
-    // This is intentionally conservative: the existing signed-device-list
-    // module requires primary-device context. We do not fabricate trust here.
-    // Instead, we broadcast a post-restore event so the primary/signing flow can
-    // re-sign this device if the account policy requires it.
-    window.dispatchEvent(new CustomEvent('forsure:e2ee-resign-device-list-needed', {
-      detail: { userId, deviceId, devicePublicKey: device.device_public_key, source: 'post-restore' },
-    }));
-  } catch (err) {
-    console.warn('[POST_RESTORE] signed device list refresh request failed', err);
-  }
 }
 
 export async function runPostRestoreLifecycle(
@@ -83,7 +58,6 @@ export async function runPostRestoreLifecycle(
     const keysEpoch = await bumpKeysEpochBestEffort(userId);
 
     await revalidateCurrentDevicePrekeys(userId, deviceId);
-    await refreshSignedDeviceListBestEffort(userId, deviceId);
     try {
       window.dispatchEvent(new CustomEvent('forsure:e2ee-post-restore-complete', {
         detail: { userId, deviceId, source, keysEpoch },
