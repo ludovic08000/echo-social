@@ -150,12 +150,25 @@ export function installGlobalCrashHandlers() {
   });
 
   window.addEventListener('unhandledrejection', (e) => {
-    const reason: any = e.reason;
+    const reason = e.reason as { name?: unknown; message?: unknown; stack?: unknown } | null;
+    const name = typeof reason?.name === 'string' ? reason.name : '';
+    const message = typeof reason?.message === 'string'
+      ? reason.message
+      : String(reason ?? 'unhandledrejection');
+    // TanStack Query and Supabase abort obsolete requests when a component
+    // remounts, auth refreshes or a newer refetch supersedes the old one.
+    // This is expected control flow, not an Aegis or application crash.
+    if (
+      name === 'AbortError' ||
+      /signal is aborted|operation was aborted|aborterror/i.test(message)
+    ) {
+      e.preventDefault();
+      return;
+    }
     captureCrash({
-      message:
-        (reason && (reason.message || String(reason))) || 'unhandledrejection',
+      message,
       source: 'unhandledrejection',
-      stack: reason?.stack,
+      stack: typeof reason?.stack === 'string' ? reason.stack : undefined,
     });
   });
 }
