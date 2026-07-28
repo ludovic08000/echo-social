@@ -281,8 +281,16 @@ $$;
 -- rotation or publication path that could reintroduce a primary device.
 drop function if exists public.publish_user_identity_root(text, text);
 drop function if exists public.rotate_user_identity_root(text, text);
-drop trigger if exists bump_aegis_root_route on public.user_identity_roots;
-drop trigger if exists bump_aegis_signature_route on public.user_device_signatures;
+do $$
+begin
+  if to_regclass('public.user_identity_roots') is not null then
+    execute 'drop trigger if exists bump_aegis_root_route on public.user_identity_roots';
+  end if;
+  if to_regclass('public.user_device_signatures') is not null then
+    execute 'drop trigger if exists bump_aegis_signature_route on public.user_device_signatures';
+  end if;
+end;
+$$;
 drop table if exists public.user_device_signatures cascade;
 drop table if exists public.user_identity_roots cascade;
 drop table if exists public.device_primary_repair_requests cascade;
