@@ -11,50 +11,23 @@ let confirmedAuthFailureCount = 0;
 let authRecoveryInFlight: Promise<void> | null = null;
 let supabaseClientRef: SupabaseClient<Database> | null = null;
 
-type RefreshErrorLike = {
-  status?: number;
-  code?: string;
-  message?: string;
-};
-
-function isConfirmedInvalidRefresh(error: RefreshErrorLike | null | undefined): boolean {
-  if (!error) return false;
-  const code = String(error.code ?? '').toLowerCase();
-  const message = String(error.message ?? '').toLowerCase();
-  const knownCodes = new Set([
-    'refresh_token_not_found',
-    'invalid_refresh_token',
-    'session_not_found',
-  ]);
-
-  if (knownCodes.has(code)) return true;
-  if (error.status !== 400 && error.status !== 401) return false;
-
-  return (
-    message.includes('refresh token') &&
-    (message.includes('invalid') || message.includes('not found') || message.includes('expired'))
-  );
-}
-
 function clearStaleSupabaseAuthSession(reason = 'supabase-rest-401') {
   if (typeof window === 'undefined') return;
   try {
     const purge = (storage: Storage) => {
       const keys: string[] = [];
       for (let i = 0; i < storage.length; i++) {
-        const key = storage.key(i);
-        if (key && (key.startsWith('sb-') || key.startsWith('supabase.auth.'))) keys.push(key);
+        const k = storage.key(i);
+        if (k && (k.startsWith('sb-') || k.startsWith('supabase.auth.'))) keys.push(k);
       }
-      keys.forEach((key) => storage.removeItem(key));
+      keys.forEach((k) => storage.removeItem(k));
     };
     purge(window.localStorage);
     purge(window.sessionStorage);
     window.dispatchEvent(new CustomEvent('forsure:auth-session-invalid', {
       detail: { reason },
     }));
-  } catch {
-    // storage can be unavailable
-  }
+  } catch {}
 }
 
 function recoverSupabaseAuthAfter401(): void {
@@ -67,42 +40,32 @@ function recoverSupabaseAuthAfter401(): void {
       if (!client?.auth) return;
 
       const { data: current } = await client.auth.getSession();
-      if (!current?.session) {
-        // A REST 401 can race initial session hydration. Absence of a local
-        // session here is not enough evidence to erase storage manually.
-        console.warn('[Supabase] REST 401 - no hydrated local session; leaving auth state to Supabase');
-        return;
-      }
-
-      const { data: refreshed, error } = await client.auth.refreshSession();
-      if (!error && refreshed?.session) {
-        confirmedAuthFailureCount = 0;
-        console.warn('[Supabase] REST 401 - session refreshed; keeping auth state');
-        window.dispatchEvent(new CustomEvent('forsure:auth-session-refreshed', {
-          detail: { reason: 'supabase-rest-401' },
-        }));
-        return;
-      }
-
-      if (!isConfirmedInvalidRefresh(error as RefreshErrorLike | null)) {
-        // Network failures, timeouts and temporary service errors must never
-        // destroy a potentially valid refresh token.
-        console.warn('[Supabase] REST 401 - refresh inconclusive; preserving local session', error?.message ?? error);
-        return;
+      if (current?.session) {
+        const { data: refreshed, error } = await client.auth.refreshSession();
+        if (!error && refreshed?.session) {
+          confirmedAuthFailureCount = 0;
+          console.warn('[Supabase] REST 401 - session refreshed; keeping auth state');
+          window.dispatchEvent(new CustomEvent('forsure:auth-session-refreshed', {
+            detail: { reason: 'supabase-rest-401' },
+          }));
+          return;
+        }
+        console.warn('[Supabase] REST 401 - refresh failed once; keeping auth pending retry', error?.message ?? error);
+      } else {
+        console.warn('[Supabase] REST 401 - no local session found during recovery');
       }
 
       confirmedAuthFailureCount += 1;
-      console.warn('[Supabase] REST 401 - refresh token explicitly rejected', {
-        attempts: confirmedAuthFailureCount,
-        code: (error as RefreshErrorLike | null)?.code,
-      });
       if (confirmedAuthFailureCount >= 2) {
-        clearStaleSupabaseAuthSession('supabase-rest-401-confirmed-invalid-refresh');
+        console.warn('[Supabase] REST 401 - confirmed stale auth twice; clearing local session');
+        clearStaleSupabaseAuthSession('supabase-rest-401-confirmed');
       }
     } catch (error) {
-      // A thrown transport/storage error is inconclusive. Do not increment the
-      // destructive counter and do not purge the session.
-      console.warn('[Supabase] REST 401 - recovery transport failure; preserving session', error);
+      confirmedAuthFailureCount += 1;
+      console.warn('[Supabase] REST 401 - auth recovery threw; keeping session unless repeated', error);
+      if (confirmedAuthFailureCount >= 2) {
+        clearStaleSupabaseAuthSession('supabase-rest-401-recovery-failed');
+      }
     } finally {
       authRecoveryInFlight = null;
     }
@@ -124,9 +87,7 @@ const guardedFetch: typeof fetch = async (input, init) => {
         recoverSupabaseAuthAfter401();
       }
     }
-  } catch {
-    // Fetch response inspection is best-effort.
-  }
+  } catch {}
   return response;
 };
 
@@ -144,7 +105,3 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
 });
 
 supabaseClientRef = supabase;
-
-export const __test__ = {
-  isConfirmedInvalidRefresh,
-};
