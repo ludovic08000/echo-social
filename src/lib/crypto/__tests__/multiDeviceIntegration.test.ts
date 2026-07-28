@@ -22,6 +22,8 @@ import {
   invalidateDeviceSession,
   clearAllDeviceSessions,
   getSessionPeerSpkId,
+  establishDeviceSession,
+  listKnownSessionIds,
 } from '../deviceRatchet';
 import { hardCrypto } from '../cryptoIntegrity';
 import { bufferToBase64, randomBytes } from '../utils';
@@ -259,6 +261,32 @@ describe('multi-device E2EE — out-of-order delivery', () => {
     expect(await ratchetDecrypt(B.user, B.device, env!)).toBe('once');
     // Key was consumed on first decrypt → second attempt must fail.
     expect(await ratchetDecrypt(B.user, B.device, env!)).toBeNull();
+  });
+});
+
+describe('Sesame active and inactive sessions', () => {
+  it('keeps a replaced session and promotes it when a delayed message decrypts', async () => {
+    const alice = { user: 'alice', device: 'A1' };
+    const bob = { user: 'bob', device: 'B1' };
+    await seedSession(alice, bob);
+
+    const delayed = await ratchetEncrypt(alice.user, alice.device, bob.user, bob.device, 'delayed');
+    expect(delayed).toBeTruthy();
+
+    await establishDeviceSession(
+      bob.user,
+      bob.device,
+      alice.user,
+      alice.device,
+      randomBytes(32).buffer as ArrayBuffer,
+      's6replacement',
+    );
+    expect((await listKnownSessionIds(bob.user, bob.device)).length).toBe(2);
+
+    await expect(ratchetDecrypt(bob.user, bob.device, delayed!)).resolves.toBe('delayed');
+    const sessions = await listKnownSessionIds(bob.user, bob.device);
+    expect(sessions).toHaveLength(2);
+    expect(sessions.some((session) => session.sessionId === 's6replacement')).toBe(true);
   });
 });
 

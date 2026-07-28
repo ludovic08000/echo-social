@@ -42,6 +42,7 @@ import {
   restoreFromInMemoryMasterKey,
   restoreKeysFromKeychainSnapshot,
 } from '@/lib/crypto/accountKeyBackup';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 const REVOKED_DEVICE_ERROR_RE = /USER_DEVICES_REACTIVATION_BLOCKED|revoked_device_cannot_be_reactivated|DEVICE_REVOKED_OR_LOCKED|DEVICE_REVOKED(?!_OR_REJECTED)/i;
 const DEVICE_APPROVAL_PENDING_RE = /DEVICE_APPROVAL_PENDING/i;
@@ -113,16 +114,34 @@ export function useDeviceRegistration() {
       if (ranRef.current || inFlightRef.current) return;
       ranRef.current = true;
       inFlightRef.current = true;
+      const traceStartedAt = Date.now();
+      let tracedDeviceId: string | undefined;
+      const trace = (
+        stage: string,
+        details: Partial<Parameters<typeof traceE2EE>[0]> = {},
+        level: 'info' | 'warn' | 'error' = 'info',
+      ) => traceE2EE({
+        direction: 'device',
+        stage,
+        deviceId: tracedDeviceId,
+        elapsedMs: Date.now() - traceStartedAt,
+        retryCount: attempt,
+        ...details,
+      }, level);
+      trace('DEVICE_REGISTRATION_START');
       try {
         await requireAuthenticatedDeviceSession(user.id);
         console.log('[useDeviceRegistration] publishing current device', { reason, attempt });
         const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+        tracedDeviceId = deviceId;
+        trace('DEVICE_ID_HYDRATED');
         if (isDeviceIdTemporary()) {
           console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
           ranRef.current = false;
           return;
         }
         const deviceIdentity = await getOrCreateDeviceIdentity(user.id, deviceId);
+        trace('DEVICE_IDENTITY_READY');
         const keys = {
           privateKey: deviceIdentity.privateKey,
           signingPrivateKey: deviceIdentity.privateKey,
@@ -202,7 +221,9 @@ export function useDeviceRegistration() {
               p_device_id: deviceId,
               p_error_code: 'LOCAL_DEVICE_IDENTITY_KEY_MISSING',
             } as never);
-          } catch {}
+          } catch {
+            // Registration still fails closed if route-health reporting fails.
+          }
           rotateCurrentDeviceId('aegis-device-private-key-missing');
           ranRef.current = false;
           inFlightRef.current = false;
@@ -393,9 +414,11 @@ export function useDeviceRegistration() {
         }
 
         if (!registered) {
+          trace('DEVICE_REGISTRATION_DEFERRED', {}, 'warn');
           scheduleRegistrationRetry(`registration-rpc:${reason}`, attempt);
           return;
         }
+        trace('DEVICE_REGISTERED');
 
         // 2. Ensure the per-device Signed PreKey exists and is fresh.
         //    This is what makes targeted X3DH per device possible. After the
@@ -410,6 +433,7 @@ export function useDeviceRegistration() {
             try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch { /* best-effort */ }
             try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* best-effort */ }
           }
+          trace('DEVICE_SPK_READY');
         } catch (spkErr) {
           if (isDevicePrekeyBundleError(spkErr, 'DEVICE_SPK_SIGNATURE_INVALID')) {
             try {
@@ -428,6 +452,7 @@ export function useDeviceRegistration() {
         //    Non-fatal: X3DH gracefully degrades to 3-DH when no OPK is available.
         try {
           await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);
+          trace('DEVICE_OPK_POOL_READY');
         } catch (opkErr) {
           console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
         }
@@ -445,6 +470,7 @@ export function useDeviceRegistration() {
             `DEVICE_ROUTE_NOT_READY:${routeReady?.code ?? routeReadyError?.message ?? 'UNKNOWN'}`,
           );
         }
+        trace('DEVICE_ROUTE_READY');
 
         // Registration and prekeys are not enough for Aegis. Publish the
         // canonical account root, sign companions, then prove that this exact
@@ -457,6 +483,7 @@ export function useDeviceRegistration() {
           deviceId: deviceId.slice(0, 8),
           repairedCompanions,
         });
+        trace('DEVICE_READY');
         void import('@/lib/crypto/accountKeyBackup').then((vault) => {
           void vault.syncKeychainSnapshotFromLocal(user.id);
           vault.requestBackgroundBackup('aegis-device-registration-ready');
@@ -470,6 +497,9 @@ export function useDeviceRegistration() {
           }));
         } catch { /* browser event delivery is best-effort */ }
       } catch (err) {
+        trace('DEVICE_REGISTRATION_FAILED', {
+          errorCode: err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120),
+        }, 'error');
         if (err instanceof PinUnlockRequiredError || String(err).toLowerCase().includes('pin unlock required')) {
           ranRef.current = false;
           console.warn('[useDeviceRegistration] PIN_REQUIRED — device publish paused until PIN unlock');

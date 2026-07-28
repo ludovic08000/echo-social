@@ -47,6 +47,7 @@ import {
   recoverBubbleFromArchive,
 } from '@/lib/messaging/archive/archiveKey';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 export interface DecryptionOutcome {
   text: string;
@@ -269,6 +270,18 @@ export async function resolvePlaintext(opts: {
   decrypt: (body: string) => Promise<DecryptResult>;
 }): Promise<DecryptionOutcome | null> {
   const { body, messageId, decrypt } = opts;
+  const traceStartedAt = Date.now();
+  const trace = (
+    stage: string,
+    details: Partial<Parameters<typeof traceE2EE>[0]> = {},
+    level: 'info' | 'warn' | 'error' = 'info',
+  ) => traceE2EE({
+    direction: 'receive',
+    stage,
+    messageId,
+    elapsedMs: Date.now() - traceStartedAt,
+    ...details,
+  }, level);
 
   if (!looksEncrypted(body)) {
     const outcome = { text: body, mediaKeyB64: null, hidden: false };
@@ -282,10 +295,14 @@ export async function resolvePlaintext(opts: {
 
   const key = cacheKey(messageId, body);
   const cached = cache.get(key);
-  if (cached) return cached;
+  if (cached) {
+    trace('DECRYPT_MEMORY_CACHE_HIT');
+    return cached;
+  }
 
   const persisted = await loadPersistedOutcome(messageId, body).catch(() => null);
   if (persisted) {
+    trace('DECRYPT_LOCAL_CACHE_HIT');
     cache.set(key, persisted);
     return persisted;
   }
@@ -299,6 +316,7 @@ export async function resolvePlaintext(opts: {
       void decrypt;
 
       if (messageId) {
+        trace('DEVICE_COPY_LOOKUP_START');
         const currentUserId = await getCachedAuthUserId().catch(() => null);
         if (!senderId) senderId = await getSenderId(messageId);
         if (senderId) {
@@ -307,12 +325,16 @@ export async function resolvePlaintext(opts: {
               requestRetry: true,
             }).catch(() => null);
             if (copyText !== null) {
+              trace('DEVICE_COPY_FOUND');
               const plaintext = await openAegisMessage(body, copyText, {
                 messageId,
                 conversationId: aegisEnvelope.conversationId,
                 senderId,
               });
               if (plaintext !== null) {
+                trace('MESSAGE_DECRYPTED', {
+                  conversationId: aegisEnvelope.conversationId,
+                });
                 const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);
                 if (currentUserId && isArchiveBackupEnabled()) {
                   void archiveBubbleForUser({
@@ -361,6 +383,9 @@ export async function resolvePlaintext(opts: {
       }
 
       if (typeof console !== 'undefined') {
+        trace('DEVICE_COPY_UNAVAILABLE', {
+          conversationId: aegisEnvelope.conversationId,
+        }, 'warn');
         console.warn('[DECRYPT-FAIL] Aegis device key capsule unavailable', {
           messageId,
           kind: 'aegis-v1',

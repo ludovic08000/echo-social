@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { readE2EETrace } from '@/lib/messaging/e2eeTrace';
 
 const STORAGE_KEY = 'forsure:e2ee:trace';
 const DEBUG_FLAG = 'forsure:e2ee:debug';
@@ -11,7 +12,7 @@ type TraceRow = {
   traceId?: string;
   conversationId?: string;
   error?: string;
-  [key: string]: unknown;
+  errorCode?: string;
 };
 
 function isDebugEnabled(): boolean {
@@ -21,6 +22,8 @@ function isDebugEnabled(): boolean {
 }
 
 function readRows(): TraceRow[] {
+  const live = readE2EETrace();
+  if (live.length > 0) return live.slice(-60).map((row) => ({ ...row }));
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
@@ -37,13 +40,17 @@ function pushRow(row: TraceRow) {
     rows.push({ at: new Date().toLocaleTimeString(), ...row });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(-80)));
     window.dispatchEvent(new CustomEvent('forsure:e2ee-trace'));
-  } catch {}
+  } catch {
+    // Debug persistence is optional in restricted browser modes.
+  }
 }
 
 function clearRows() {
   try {
     localStorage.removeItem(STORAGE_KEY);
-  } catch {}
+  } catch {
+    // Debug cleanup is best-effort.
+  }
 }
 
 function fmt(row: TraceRow): string {
@@ -55,7 +62,7 @@ function fmt(row: TraceRow): string {
 
 function installConsoleCapture() {
   if (typeof window === 'undefined') return;
-  const w = window as any;
+  const w = window as Window & { __forsureE2EEDebugPanelCaptureInstalled?: boolean };
   if (w.__forsureE2EEDebugPanelCaptureInstalled) return;
   w.__forsureE2EEDebugPanelCaptureInstalled = true;
 
@@ -65,7 +72,9 @@ function installConsoleCapture() {
       if (args[0] === '[MSG_TRACE]' && typeof args[1] === 'object' && args[1] !== null) {
         pushRow(args[1] as TraceRow);
       }
-    } catch {}
+    } catch {
+      // Never let diagnostic capture affect application logging.
+    }
     originalInfo(...args);
   };
 }

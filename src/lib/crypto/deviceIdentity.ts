@@ -24,6 +24,8 @@ interface StoredDeviceIdentity {
   createdAt: number;
 }
 
+const creationJobs = new Map<string, Promise<DeviceIdentityKey>>();
+
 function storageKey(userId: string, deviceId: string): string {
   return `device-signing::${userId}::${deviceId}`;
 }
@@ -84,34 +86,58 @@ export async function getOrCreateDeviceIdentity(
   userId: string,
   deviceId: string,
 ): Promise<DeviceIdentityKey> {
-  const existing = await loadDeviceIdentity(userId, deviceId);
-  if (existing) return existing;
+  const id = storageKey(userId, deviceId);
+  const pending = creationJobs.get(id);
+  if (pending) return pending;
 
-  const generated = await hardCrypto.generateKey(
-    SIG_KEY_PARAMS,
-    true,
-    ['sign', 'verify'],
-  ) as CryptoKeyPair;
-  const [publicKeyJWK, privateKeyJWK, publicB64] = await Promise.all([
-    exportKeyToJWK(generated.publicKey),
-    exportKeyToJWK(generated.privateKey),
-    publicKeyToBase64(generated.publicKey),
-  ]);
-  await dbPut<StoredDeviceIdentity>({
-    id: storageKey(userId, deviceId),
-    userId,
-    deviceId,
-    publicKeyJWK,
-    privateKeyJWK,
-    createdAt: Date.now(),
-  });
-  const privateKey = await importKeyFromJWK(
-    privateKeyJWK,
-    SIG_KEY_PARAMS,
-    ['sign'],
-    false,
-  );
-  return { publicKey: generated.publicKey, privateKey, publicB64 };
+  const job = createDeviceIdentityUnderLock(userId, deviceId, id)
+    .finally(() => {
+      if (creationJobs.get(id) === job) creationJobs.delete(id);
+    });
+  creationJobs.set(id, job);
+  return job;
+}
+
+async function createDeviceIdentityUnderLock(
+  userId: string,
+  deviceId: string,
+  id: string,
+): Promise<DeviceIdentityKey> {
+  const create = async (): Promise<DeviceIdentityKey> => {
+    const existing = await loadDeviceIdentity(userId, deviceId);
+    if (existing) return existing;
+
+    const generated = await hardCrypto.generateKey(
+      SIG_KEY_PARAMS,
+      true,
+      ['sign', 'verify'],
+    ) as CryptoKeyPair;
+    const [publicKeyJWK, privateKeyJWK, publicB64] = await Promise.all([
+      exportKeyToJWK(generated.publicKey),
+      exportKeyToJWK(generated.privateKey),
+      publicKeyToBase64(generated.publicKey),
+    ]);
+    await dbPut<StoredDeviceIdentity>({
+      id,
+      userId,
+      deviceId,
+      publicKeyJWK,
+      privateKeyJWK,
+      createdAt: Date.now(),
+    });
+    const privateKey = await importKeyFromJWK(
+      privateKeyJWK,
+      SIG_KEY_PARAMS,
+      ['sign'],
+      false,
+    );
+    return { publicKey: generated.publicKey, privateKey, publicB64 };
+  };
+
+  if (typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function') {
+    return navigator.locks.request(`forsure:device-identity:${id}`, { mode: 'exclusive' }, create);
+  }
+  return create();
 }
 
 export async function signDeviceIdentityBinding(args: {

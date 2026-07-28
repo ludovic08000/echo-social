@@ -18,9 +18,11 @@
  *
  * No earlier device-copy prefix is accepted.
  *
- * Storage: IndexedDB `forsure-device-sessions` / `sessions`
- *   key   = `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`
- *   value = full DR state (root key, chains, counters, skipped keys)
+ * Storage follows Sesame's DeviceRecord model:
+ *   active   = `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`
+ *   inactive = `${activeKey}::inactive::${sessionId}`
+ * Delayed messages may decrypt with an inactive session; a successful
+ * decryption promotes it atomically back to active.
  */
 
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
@@ -34,6 +36,7 @@ import {
   RATCHET_SKIPPED_TTL_MS,
 } from './constants';
 import { runDeviceSessionJob } from './deviceSessionQueue';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 const STORE = 'sessions';
 
@@ -47,6 +50,8 @@ const X25519_ALGORITHM: Algorithm = { name: 'X25519' };
 // A bounded skipped-key window tolerates reordered delivery after mobile wake.
 const MAX_SKIP = RATCHET_MAX_SKIP;            // max skipped message keys per chain
 const MAX_SKIPPED_TOTAL = RATCHET_MAX_SKIPPED_CACHE;  // hard cap across all stored skipped keys
+const MAX_INACTIVE_SESSIONS = 5;
+const INACTIVE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface SkippedKey {
   /** dhPub (peer ratchet pub) of the chain the key belongs to, base64 */
@@ -82,12 +87,12 @@ interface StoredSession {
 
   skipped: SkippedKey[];
   createdAt: number;
+  lastUsedAt?: number;
+  inactiveAt?: number;
 
   /**
-   * SPK id of the peer device used at handshake time. When the peer rotates
-   * its SignedPreKey, this no longer matches the latest bundle and the
-   * session must be invalidated to force a fresh X3DH (see
-   * `getSessionPeerSpkId` / `invalidateDeviceSession`).
+   * SPK id used only to describe the original X3DH bootstrap. Signed-prekey
+   * rotation never invalidates an established Double Ratchet session.
    */
   peerSpkId?: number | null;
 
@@ -100,6 +105,15 @@ interface DecryptLogContext {
 
 function compositeKey(myUserId: string, myDeviceId: string, peerUserId: string, peerDeviceId: string): string {
   return `${myUserId}::${myDeviceId}::${peerUserId}::${peerDeviceId}`;
+}
+
+function inactiveSessionKey(activeKey: string, sessionId: string): string {
+  return `${activeKey}::inactive::${sessionId}`;
+}
+
+function activeKeyFromStorageKey(key: string): string | null {
+  const parts = key.split('::');
+  return parts.length >= 4 ? parts.slice(0, 4).join('::') : null;
 }
 
 function buildDevAAD(
@@ -139,7 +153,7 @@ function buildDevAADWithHeader(
 
 function parseCompositeKey(key: string): { myUserId: string; myDeviceId: string; peerUserId: string; peerDeviceId: string } | null {
   const parts = key.split('::');
-  if (parts.length !== 4) return null;
+  if (parts.length < 4) return null;
   return { myUserId: parts[0], myDeviceId: parts[1], peerUserId: parts[2], peerDeviceId: parts[3] };
 }
 
@@ -160,11 +174,89 @@ async function saveSession(key: string, session: StoredSession): Promise<void> {
   });
 }
 
+async function installActiveSession(key: string, session: StoredSession): Promise<void> {
+  await runTxOn('device-sessions', [STORE], 'readwrite', (tx) =>
+    new Promise<void>((resolve, reject) => {
+      const store = tx.objectStore(STORE);
+      const request = store.getAll();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const now = Date.now();
+        const all = (request.result as StoredSession[]) ?? [];
+        const active = all.find((candidate) => candidate.id === key);
+        if (active && active.sessionId !== session.sessionId) {
+          store.put({
+            ...active,
+            id: inactiveSessionKey(key, active.sessionId),
+            inactiveAt: now,
+            lastUsedAt: active.lastUsedAt ?? now,
+          });
+          traceE2EE({
+            direction: 'session',
+            stage: 'SESSION_MOVED_INACTIVE',
+            sessionId: active.sessionId,
+            deviceId: key.split('::')[1],
+            peerDeviceId: key.split('::')[3],
+          });
+        }
+
+        store.delete(inactiveSessionKey(key, session.sessionId));
+        store.put({
+          ...session,
+          id: key,
+          inactiveAt: undefined,
+          lastUsedAt: now,
+        });
+        traceE2EE({
+          direction: 'session',
+          stage: active && active.sessionId !== session.sessionId
+            ? 'SESSION_REPLACED_ACTIVE'
+            : 'SESSION_ACTIVE',
+          sessionId: session.sessionId,
+          deviceId: key.split('::')[1],
+          peerDeviceId: key.split('::')[3],
+        });
+
+        const inactive = all
+          .filter((candidate) => candidate.id.startsWith(`${key}::inactive::`))
+          .filter((candidate) => candidate.sessionId !== session.sessionId)
+          .sort((a, b) => (b.inactiveAt ?? b.lastUsedAt ?? b.createdAt) - (a.inactiveAt ?? a.lastUsedAt ?? a.createdAt));
+        inactive.forEach((candidate, index) => {
+          const age = now - (candidate.inactiveAt ?? candidate.lastUsedAt ?? candidate.createdAt);
+          if (index >= MAX_INACTIVE_SESSIONS || age > INACTIVE_SESSION_TTL_MS) {
+            store.delete(candidate.id);
+          }
+        });
+        resolve();
+      };
+    }),
+  );
+}
+
+async function persistSuccessfulDecrypt(
+  activeKey: string,
+  storageKey: string,
+  session: StoredSession,
+): Promise<void> {
+  if (storageKey === activeKey) {
+    await saveSession(activeKey, { ...session, lastUsedAt: Date.now() });
+    return;
+  }
+  traceE2EE({
+    direction: 'session',
+    stage: 'INACTIVE_SESSION_PROMOTED',
+    sessionId: session.sessionId,
+    deviceId: activeKey.split('::')[1],
+    peerDeviceId: activeKey.split('::')[3],
+  });
+  await installActiveSession(activeKey, { ...session, lastUsedAt: Date.now() });
+}
+
 async function lookupSessionById(
   myUserId: string,
   myDeviceId: string,
   sessionId: string,
-): Promise<{ key: string; session: StoredSession } | null> {
+): Promise<{ key: string; activeKey: string; session: StoredSession } | null> {
   try {
     const all = await runTxOn('device-sessions', [STORE], 'readonly', (tx) =>
       reqToPromise(tx.objectStore(STORE).getAll() as IDBRequest<StoredSession[]>),
@@ -172,7 +264,8 @@ async function lookupSessionById(
     const prefix = `${myUserId}::${myDeviceId}::`;
     for (const s of all ?? []) {
       if (s.sessionId === sessionId && s.id.startsWith(prefix)) {
-        return { key: s.id, session: s };
+        const activeKey = activeKeyFromStorageKey(s.id);
+        if (activeKey) return { key: s.id, activeKey, session: s };
       }
     }
     return null;
@@ -392,7 +485,7 @@ async function establishDeviceSessionUnlocked(
     };
   }
 
-  await saveSession(key, session);
+  await installActiveSession(key, session);
   return finalSessionId;
 }
 
@@ -506,7 +599,7 @@ export async function ratchetDecrypt(
   if (parts.length !== 6 || !parts[0]) return null;
   const found = await lookupSessionById(myUserId, myDeviceId, parts[0]);
   if (!found) return null;
-  return runDeviceSessionJob('ratchet', found.key, () => decryptAegis(myUserId, myDeviceId, payload));
+  return runDeviceSessionJob('ratchet', found.activeKey, () => decryptAegis(myUserId, myDeviceId, payload));
 }
 
 async function decryptAegis(
@@ -527,7 +620,7 @@ async function decryptAegis(
   const aad = headerBound
     ? buildDevAADWithHeader(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId, header)
     : buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId);
-  return decryptAegisWithStored(found.key, found.session, parts, aad, peer);
+  return decryptAegisWithStored(found.activeKey, found.key, found.session, parts, aad, peer);
 }
 
 async function ratchetDecryptWithSessionUnlocked(
@@ -541,15 +634,16 @@ async function ratchetDecryptWithSessionUnlocked(
   const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
   if (parts.length !== 6) return null;
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-  const session = await loadSession(key);
-  if (!session) return null;
+  const found = await lookupSessionById(myUserId, myDeviceId, parts[0]);
+  if (!found || found.activeKey !== key) return null;
+  const session = found.session;
   const headerBound = isHeaderBoundSession(parts[0]);
   const header = { dh: parts[1], n: Number(parts[2]), pn: Number(parts[3]) };
   if (headerBound && (!Number.isSafeInteger(header.n) || !Number.isSafeInteger(header.pn))) return null;
   const aad = headerBound
     ? buildDevAADWithHeader(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0], header)
     : buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0]);
-  return decryptAegisWithStored(key, session, parts, aad, { peerUserId, peerDeviceId });
+  return decryptAegisWithStored(key, found.key, session, parts, aad, { peerUserId, peerDeviceId });
 }
 
 export async function ratchetDecryptWithSession(
@@ -570,7 +664,8 @@ export async function ratchetDecryptWithSession(
 }
 
 async function decryptAegisWithStored(
-  key: string,
+  activeKey: string,
+  storageKey: string,
   initialSession: StoredSession,
   parts: string[],
   aad: Uint8Array,
@@ -587,7 +682,7 @@ async function decryptAegisWithStored(
 
   const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct, aad);
   if (skipped) {
-    await saveSession(key, skipped.updated);
+    await persistSuccessfulDecrypt(activeKey, storageKey, skipped.updated);
     return skipped.pt;
   }
 
@@ -606,7 +701,7 @@ async function decryptAegisWithStored(
       ct,
     );
     session = { ...session, ckRecvB64: ck, Nr: session.Nr + 1 };
-    await saveSession(key, session);
+    await persistSuccessfulDecrypt(activeKey, storageKey, session);
     return new hardGlobals.TextDecoder().decode(pt);
   } catch (err) {
     void logCryptoError({
@@ -614,7 +709,7 @@ async function decryptAegisWithStored(
       context: 'decrypt',
       errorCode: 'AEGIS_DEVICE_DECRYPT_FAILED',
       errorMessage: err instanceof Error ? err.message : String(err),
-      myDeviceId: key.split('::')[1] ?? 'unknown',
+      myDeviceId: activeKey.split('::')[1] ?? 'unknown',
       peerUserId: logContext.peerUserId,
       peerDeviceId: logContext.peerDeviceId,
       metadata: { sessionId, Ns, PN },
@@ -640,9 +735,23 @@ async function invalidateDeviceSessionUnlocked(
   peerDeviceId: string,
 ): Promise<void> {
   try {
-    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
-      tx.objectStore(STORE).delete(compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId));
-    });
+    const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
+    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) =>
+      new Promise<void>((resolve, reject) => {
+        const store = tx.objectStore(STORE);
+        const request = store.getAllKeys();
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          for (const storedKey of request.result) {
+            const value = String(storedKey);
+            if (value === key || value.startsWith(`${key}::inactive::`)) {
+              store.delete(storedKey);
+            }
+          }
+          resolve();
+        };
+      }),
+    );
   } catch {
     // non-fatal
   }

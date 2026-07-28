@@ -6,14 +6,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
 import {
   isDevicePrekeyBundleError,
-  peekDeviceSignedPrekey,
 } from '@/lib/crypto/x3dh';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import {
   ratchetEncrypt,
   ratchetDecryptWithSession,
-  getSessionPeerSpkId,
-  invalidateDeviceSession,
   AEGIS_RATCHET_PREFIX,
 } from '@/lib/crypto/deviceRatchet';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
@@ -36,6 +33,7 @@ import {
   wrapRatchetForInitiatingSession,
 } from '@/lib/messaging/repeatablePreKeyEnvelope';
 import { runDeviceSessionJob } from '@/lib/crypto/deviceSessionQueue';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 interface FanoutInput {
   messageId: string;
@@ -364,62 +362,8 @@ async function encryptPlaintextForDeviceTargetUnlocked(
     });
   }
 
-  // Aegis fast path: an existing Double Ratchet session is used without a
-  // pre-send SPK network round-trip. Only when no usable ratchet session exists
-  // do we check SPK freshness and fall back to X3DH bootstrap.
-  try {
-    const cachedSpkId = await getSessionPeerSpkId(
-      input.senderUserId,
-      senderDeviceId,
-      input.recipientUserId,
-      input.recipientDeviceId,
-    );
-    if (cachedSpkId !== null) {
-      const spk = await peekDeviceSignedPrekey(input.recipientUserId, input.recipientDeviceId);
-      if (!spk) {
-        logCryptoError({
-          severity: 'warning',
-          context: 'fanout',
-          errorCode: 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE',
-          errorMessage: 'Skipping SPK freshness check because the peer Aegis bundle is unavailable',
-          conversationId: input.conversationId,
-          myDeviceId: senderDeviceId,
-          peerUserId: input.recipientUserId,
-          peerDeviceId: input.recipientDeviceId,
-          metadata: { cachedSpkId },
-        });
-      } else if (spk.signedPrekeyId !== cachedSpkId) {
-        await invalidateDeviceSession(
-          input.senderUserId,
-          senderDeviceId,
-          input.recipientUserId,
-          input.recipientDeviceId,
-        );
-      }
-    }
-  } catch (e) {
-    if (isDevicePrekeyBundleError(e, 'DEVICE_SPK_SIGNATURE_INVALID')) {
-      markInvalidDeviceId(input.recipientDeviceId);
-      logCryptoException('fanout', e, {
-        severity: 'error',
-        conversationId: input.conversationId,
-        myDeviceId: senderDeviceId,
-        peerUserId: input.recipientUserId,
-        peerDeviceId: input.recipientDeviceId,
-        metadata: { stage: 'spk_rotation_check', action: 'device_quarantined' },
-      });
-      return null;
-    }
-    logCryptoException('fanout', e, {
-      severity: 'warning',
-      conversationId: input.conversationId,
-      myDeviceId: senderDeviceId,
-      peerUserId: input.recipientUserId,
-      peerDeviceId: input.recipientDeviceId,
-      metadata: { stage: 'spk_rotation_check' },
-    });
-  }
-
+  // Sesame keeps an established Double Ratchet active across Signed PreKey
+  // rotations. X3DH/SPK lookup is only used when no active session can encrypt.
   encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
 
   if (!encrypted) {
@@ -657,6 +601,23 @@ export async function tryReadDeviceCopy(
       // registration only when the canonical signed route also says the
       // current device is missing; a lone old copy miss must not rotate keys.
       requestCurrentDeviceRouteRepair(userId, myDeviceId);
+      if (expectedSenderUserId) {
+        const { data, error } = await supabase.rpc('request_device_copy_retry', {
+          p_message_id: messageId,
+          p_sender_user_id: expectedSenderUserId,
+          p_requester_device_id: myDeviceId,
+        });
+        const result = data as { ok?: boolean; code?: string } | null;
+        traceE2EE({
+          direction: 'receive',
+          stage: error || result?.ok !== true
+            ? 'DEVICE_COPY_RETRY_REQUEST_FAILED'
+            : 'DEVICE_COPY_RETRY_REQUESTED',
+          messageId,
+          deviceId: myDeviceId,
+          errorCode: error?.message ?? result?.code,
+        }, error || result?.ok !== true ? 'warn' : 'info');
+      }
     }
 
     for (const row of rows) {
@@ -670,6 +631,23 @@ export async function tryReadDeviceCopy(
         rememberDecryptedCapsule(capsuleKey, attempt.plaintext);
         return attempt.plaintext;
       }
+    }
+    if (rows.length > 0 && options.requestRetry && expectedSenderUserId) {
+      const { data, error } = await supabase.rpc('request_device_copy_retry', {
+        p_message_id: messageId,
+        p_sender_user_id: expectedSenderUserId,
+        p_requester_device_id: myDeviceId,
+      });
+      const result = data as { ok?: boolean; code?: string } | null;
+      traceE2EE({
+        direction: 'receive',
+        stage: error || result?.ok !== true
+          ? 'DEVICE_COPY_RETRY_REQUEST_FAILED'
+          : 'UNDECRYPTABLE_COPY_RETRY_REQUESTED',
+        messageId,
+        deviceId: myDeviceId,
+        errorCode: error?.message ?? result?.code,
+      }, error || result?.ok !== true ? 'warn' : 'info');
     }
     deviceCopyCache.set(cacheKey, null);
     deviceCopyMissAt.set(cacheKey, Date.now());

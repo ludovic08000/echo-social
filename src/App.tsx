@@ -22,6 +22,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
+import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -51,11 +52,13 @@ if (typeof window !== 'undefined') {
         const k = sessionStorage.key(i);
         if (k && k.startsWith('r-')) sessionStorage.removeItem(k);
       }
-    } catch {}
+    } catch {
+      // Session storage cleanup is best-effort in restricted browser modes.
+    }
   }, 5000);
 }
 
-const lazyWithOneRetry = <TModule extends { default: React.ComponentType<any> }>(
+const lazyWithOneRetry = <TModule extends { default: React.ComponentType<object> }>(
   importer: () => Promise<TModule>,
   retryKey: string
 ) => lazy(async () => {
@@ -190,6 +193,7 @@ function AccountKeySyncRunner() {
   useAccountKeySync();
   useCryptoMaintenance();
   useDeviceRegistration();
+  useDeviceCopyRetryWorker();
 
 
   useEffect(() => {

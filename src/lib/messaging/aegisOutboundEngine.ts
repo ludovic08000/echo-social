@@ -28,6 +28,7 @@ import {
 } from '@/lib/messaging/outboxVault';
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 const IDENTITY_PREWARM_TIMEOUT_MS = 5_000;
 
@@ -136,6 +137,21 @@ export async function sendAegisOutboundMessage(
   const localId = input.localId ?? resumed?.localId ?? `local-${now}-${Math.random().toString(36).slice(2, 8)}`;
   const traceId = input.traceId ?? resumed?.traceId ?? safeUUID();
   const messageId = input.messageId ?? resumed?.reservedServerId ?? safeUUID();
+  const traceStartedAt = Date.now();
+  const trace = (
+    stage: string,
+    details: Partial<Parameters<typeof traceE2EE>[0]> = {},
+    level: 'info' | 'warn' | 'error' = 'info',
+  ) => traceE2EE({
+    direction: 'send',
+    stage,
+    traceId,
+    messageId,
+    conversationId: input.conversationId,
+    elapsedMs: Date.now() - traceStartedAt,
+    ...details,
+  }, level);
+  trace(resumed ? 'SEND_RESUME' : 'SEND_CREATED');
   let transportPlaintext = resumed?.transportPlaintext ?? input.plaintext;
   let parentBody = isMultiDeviceEnvelopeBody(resumed?.encryptedBody) && resumed?.keyCapsule
     ? resumed.encryptedBody
@@ -186,6 +202,7 @@ export async function sendAegisOutboundMessage(
     persist(),
     savePlaintext(messageId, input.plaintext),
   ]);
+  trace('OUTBOX_DURABLE');
 
   // One lock owns the complete mutable Ratchet transaction: copy creation,
   // authoritative RPC, confirmation and any rollback. Releasing the lock
@@ -195,6 +212,7 @@ export async function sendAegisOutboundMessage(
     return await runAegisConversationJob(
       `${input.senderUserId}:${input.conversationId}:aegis-outbound`,
       async () => {
+  trace('SEND_LOCK_ACQUIRED');
   if (!parentBody) {
     await withTimeout(
       ensureUserE2EEIdentity(input.senderUserId, { waitForMaintenance: false }),
@@ -242,6 +260,7 @@ export async function sendAegisOutboundMessage(
       });
       parentBody = preparedMessage.body;
       keyCapsule = preparedMessage.keyCapsule;
+      await savePlaintext(`aegis-capsule:${messageId}`, keyCapsule);
       copies = [];
       routeVersion = null;
       await persist({
@@ -251,6 +270,7 @@ export async function sendAegisOutboundMessage(
         preparedCopies: [],
         routeVersion: null,
       });
+      trace('PARENT_ENCRYPTED');
     } catch (error) {
       await persist({
         encryptedBody: null,
@@ -270,6 +290,7 @@ export async function sendAegisOutboundMessage(
   }
 
   const buildCopies = async (): Promise<{ copies: FanoutCopyRow[]; routeVersion: string }> => {
+    trace('FANOUT_START');
     const built = await buildFanoutCopies({
       messageId,
       conversationId: input.conversationId,
@@ -294,6 +315,7 @@ export async function sendAegisOutboundMessage(
       status: 'sending',
       lastError: null,
     });
+    trace('FANOUT_READY', { targetCount: built.rows.length, copyCount: copies.length });
     return { copies, routeVersion };
   };
 
@@ -317,6 +339,7 @@ export async function sendAegisOutboundMessage(
 
   let result: Awaited<ReturnType<typeof sendMessageWithAegisRetry>>;
   try {
+    trace('SERVER_SEND_START', { copyCount: copies.length });
     result = await sendMessageWithAegisRetry({
       messageId,
       conversationId: input.conversationId,
@@ -346,6 +369,10 @@ export async function sendAegisOutboundMessage(
 
   copies = result.copies;
   if (result.error) {
+    trace('SERVER_SEND_FAILED', {
+      copyCount: copies.length,
+      errorCode: errorMessage(result.error),
+    }, 'error');
     const retainedCopies = isAegisAmbiguousTransportFailure(result.error) ? copies : [];
     requestSenderTrustRepair(result.error);
     await persist({
@@ -357,6 +384,10 @@ export async function sendAegisOutboundMessage(
   }
 
   const committedId = result.data ?? messageId;
+  trace('MESSAGE_COMMITTED', {
+    copyCount: copies.length,
+    retryCount: result.retriedStaleRoute ? 1 : 0,
+  });
   // The stable message UUID was cached before the transaction. Only add the
   // ciphertext index after commit; writing the same plaintext row twice wastes
   // IndexedDB work on resource-constrained mobile browsers.
@@ -372,6 +403,7 @@ export async function sendAegisOutboundMessage(
     ).catch(() => false);
   }
   await deleteOutboxPayload(localId).catch(() => undefined);
+  trace('SEND_COMPLETE', { copyCount: copies.length });
 
   return {
     id: committedId,
@@ -391,6 +423,7 @@ export async function sendAegisOutboundMessage(
       status: failureStatus(error),
       lastError: errorMessage(error),
     }).catch(() => undefined);
+    trace('SEND_FAILED', { errorCode: errorMessage(error) }, 'error');
     throw error;
   }
 }

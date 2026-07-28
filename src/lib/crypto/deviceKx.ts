@@ -29,6 +29,8 @@ interface StoredDeviceKx {
   deviceId?: string;
 }
 
+const creationJobs = new Map<string, Promise<DeviceKxKey>>();
+
 function storageKey(deviceId: string, userId: string): string {
   return `device-kx::${userId}::${deviceId}`;
 }
@@ -73,8 +75,8 @@ function dbDelete(key: string): Promise<void> {
 
 async function importStoredDeviceKx(stored: StoredDeviceKx): Promise<DeviceKxKey> {
   const [publicKey, privateKey] = await Promise.all([
-    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS as any, [], true),
-    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false),
+    importKeyFromJWK(stored.publicKeyJWK, KX_KEY_PARAMS as Algorithm, [], true),
+    importKeyFromJWK(stored.privateKeyJWK, KX_KEY_PARAMS as Algorithm, ['deriveBits'], false),
   ]);
 
   const raw = await publicKeyToBase64(publicKey);
@@ -95,7 +97,7 @@ export async function loadDeviceKxKey(deviceId: string, userId: string): Promise
  * non-extractable at runtime.
  */
 export async function generateDeviceKxKey(deviceId: string, userId: string): Promise<DeviceKxKey> {
-  const pair = await hardCrypto.generateKey(KX_KEY_PARAMS as any, true, ['deriveBits']);
+  const pair = await hardCrypto.generateKey(KX_KEY_PARAMS as Algorithm, true, ['deriveBits']);
   const { publicKey, privateKey } = pair as CryptoKeyPair;
 
   const [publicKeyJWK, privateKeyJWK] = await Promise.all([
@@ -112,7 +114,7 @@ export async function generateDeviceKxKey(deviceId: string, userId: string): Pro
     createdAt: Date.now(),
   });
 
-  const safePriv = await importKeyFromJWK(privateKeyJWK, KX_KEY_PARAMS as any, ['deriveBits'], false);
+  const safePriv = await importKeyFromJWK(privateKeyJWK, KX_KEY_PARAMS as Algorithm, ['deriveBits'], false);
   const raw = await publicKeyToBase64(publicKey);
   return { publicKey, privateKey: safePriv, publicB64: raw };
 }
@@ -122,9 +124,23 @@ export async function generateDeviceKxKey(deviceId: string, userId: string): Pro
  * Idempotent and safe to call on every app boot.
  */
 export async function getOrCreateDeviceKxKey(deviceId: string, userId: string): Promise<DeviceKxKey> {
-  const existing = await loadDeviceKxKey(deviceId, userId);
-  if (existing) return existing;
-  return generateDeviceKxKey(deviceId, userId);
+  const id = storageKey(deviceId, userId);
+  const pending = creationJobs.get(id);
+  if (pending) return pending;
+  const job = (async () => {
+    const create = async () => {
+      const existing = await loadDeviceKxKey(deviceId, userId);
+      return existing ?? generateDeviceKxKey(deviceId, userId);
+    };
+    if (typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function') {
+      return navigator.locks.request(`forsure:device-kx:${id}`, { mode: 'exclusive' }, create);
+    }
+    return create();
+  })().finally(() => {
+    if (creationJobs.get(id) === job) creationJobs.delete(id);
+  });
+  creationJobs.set(id, job);
+  return job;
 }
 
 /** Used when a device is unlinked / revoked. */
