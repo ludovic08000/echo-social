@@ -85,7 +85,7 @@ export async function xhrFetch(input: RequestInfo | URL, init?: RequestInit): Pr
 
     xhr.open(method, url, true);
     xhr.responseType = 'arraybuffer';
-    xhr.timeout = 20_000;
+    // No client-side timeout: authentication waits for the actual network response.
     xhr.withCredentials = credentials === 'include';
 
     headers.forEach((value, key) => {
@@ -116,7 +116,6 @@ export async function xhrFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     });
 
     xhr.onerror = () => finish(() => reject(new TypeError('Network request failed')));
-    xhr.ontimeout = () => finish(() => reject(new DOMException('Network request timed out', 'TimeoutError')));
     xhr.onabort = () => finish(() => reject(signal?.reason ?? new DOMException('Request aborted', 'AbortError')));
 
     if (signal) signal.addEventListener('abort', onSignalAbort, { once: true });
