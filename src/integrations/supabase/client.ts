@@ -4,6 +4,7 @@ import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const nativeFetch: typeof fetch = globalThis.fetch.bind(globalThis);
 
 let last401At = 0;
 let confirmedAuthFailureCount = 0;
@@ -72,7 +73,7 @@ function recoverSupabaseAuthAfter401(): void {
 }
 
 const guardedFetch: typeof fetch = async (input, init) => {
-  const response = await fetch(input as RequestInfo | URL, init);
+  const response = await nativeFetch(input as RequestInfo | URL, init);
   try {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     const isSupabaseRest = typeof url === 'string' && url.includes('/rest/v1/');
