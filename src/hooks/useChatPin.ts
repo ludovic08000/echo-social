@@ -1,11 +1,9 @@
 /**
- * Local messaging PIN gate.
+ * Aegis messaging PIN gate.
  *
- * The PIN never leaves this device and never encrypts, deletes or restores a
- * Double Ratchet state. It protects access to the messaging UI; the account
- * password and Aegis Vault remain the recovery mechanism for E2EE material.
- * Keeping those responsibilities separate prevents a UI lock from advancing
- * or destroying a cryptographic session.
+ * The PIN itself never leaves the device. Supabase stores only a salt and the
+ * Aegis master key wrapped by a key derived from that PIN. This lets a browser
+ * recover the gate after cache loss without exposing the PIN or ratchet state.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -18,6 +16,11 @@ import {
   secureRemoveSecret,
   secureSetSecret,
 } from '@/lib/secureStore';
+import {
+  hasBackupPin,
+  restoreWithBackupPin,
+  setupBackupPin,
+} from '@/lib/crypto/accountKeyBackup';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
@@ -266,16 +269,18 @@ export function useChatPin() {
 
     const refresh = async (unlockCurrentOpen = false) => {
       const record = await loadLocalPin(user.id);
+      const serverHasPin = record ? false : await hasBackupPin(user.id);
       if (cancelled) return;
       const mode = localMode(user.id);
       const sessionUnlocked = storageGet(sessionStorage, SESSION_KEY) === user.id;
+      const hasPin = Boolean(record) || serverHasPin;
       const unlocked = Boolean(record) && (
         unlockCurrentOpen || (mode !== 'every_open' && sessionUnlocked)
       );
       pinModeRef.current = mode;
       setState({
         loaded: true,
-        hasPin: Boolean(record),
+        hasPin,
         unlocked,
         error: null,
         processing: false,
@@ -339,6 +344,14 @@ export function useChatPin() {
     }
     setState((current) => ({ ...current, processing: true, error: null }));
     try {
+      const backupResult = await setupBackupPin(pin, user.id);
+      if (backupResult !== 'ok') {
+        const message = backupResult === 'no_master_key'
+          ? 'Clé Aegis indisponible. Reconnectez-vous puis réessayez.'
+          : 'Impossible d’enregistrer le PIN chiffré sur le serveur';
+        setState((current) => ({ ...current, processing: false, error: message }));
+        return false;
+      }
       await saveLocalPin(user.id, pin);
       // This creates only an email-reset ticket. The PIN itself is deliberately
       // absent from the request and cannot be verified by the server.
@@ -371,10 +384,27 @@ export function useChatPin() {
       return false;
     }
     setState((current) => ({ ...current, processing: true, error: null }));
-    const valid = await verifyLocalPin(user.id, pin);
-    if (!valid) {
-      setState((current) => ({ ...current, processing: false, error: 'PIN incorrect' }));
-      return false;
+    const localRecord = await loadLocalPin(user.id);
+    if (localRecord) {
+      const valid = await verifyLocalPin(user.id, pin);
+      if (!valid) {
+        setState((current) => ({ ...current, processing: false, error: 'PIN incorrect' }));
+        return false;
+      }
+      // Upgrade PINs created by older clients to the server-wrapped backup.
+      await setupBackupPin(pin, user.id).catch(() => 'error');
+    } else {
+      const restored = await restoreWithBackupPin(pin, user.id);
+      if (restored.status !== 'restored') {
+        const error = restored.status === 'locked'
+          ? 'Trop de tentatives. Réessayez plus tard.'
+          : restored.status === 'wrong_pin'
+            ? 'PIN incorrect'
+            : 'Sauvegarde PIN Aegis indisponible';
+        setState((current) => ({ ...current, processing: false, error }));
+        return false;
+      }
+      await saveLocalPin(user.id, pin);
     }
     announceUnlock(user.id);
     setState((current) => ({ ...current, unlocked: true, processing: false, error: null }));
