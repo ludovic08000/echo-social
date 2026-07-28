@@ -34,6 +34,7 @@ import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
 
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import OAuthConsent from "./pages/OAuthConsent";
 import Signup from "./pages/Signup";
 import Feed from "./pages/Feed";
 
