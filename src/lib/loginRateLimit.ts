@@ -2,7 +2,7 @@
  * Client-side login rate limiter
  * Prevents brute-force attempts by enforcing exponential backoff.
  */
-const STORAGE_KEY = 'forsure-login-rl';
+const STORAGE_KEY = 'forsure-login-rl-v2';
 const MAX_ATTEMPTS = 5;
 const BASE_LOCKOUT_MS = 30_000; // 30s base
 const MAX_LOCKOUT_MS = 15 * 60_000; // 15 min max
@@ -44,7 +44,7 @@ export function checkLoginAllowed(): number {
   return 0;
 }
 
-/** Record a failed login attempt, returns remaining lockout seconds or 0 */
+/** Record a failed credential attempt, returns remaining lockout seconds or 0 */
 export function recordFailedLogin(): number {
   const s = getState();
   const now = Date.now();
@@ -64,9 +64,12 @@ export function recordFailedLogin(): number {
   return 0;
 }
 
-/** Reset after successful login */
+/** Reset after successful login or a non-credential transport failure */
 export function resetLoginAttempts(): void {
   try {
     sessionStorage.removeItem(STORAGE_KEY);
+    // Remove the previous key once. It could contain a false lockout created
+    // when a network/extension failure was counted as a wrong password.
+    sessionStorage.removeItem('forsure-login-rl');
   } catch {}
 }
