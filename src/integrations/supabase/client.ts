@@ -34,7 +34,9 @@ function clearStaleSupabaseAuthSession(reason = 'supabase-rest-401') {
     window.dispatchEvent(new CustomEvent('forsure:auth-session-invalid', {
       detail: { reason },
     }));
-  } catch {}
+  } catch {
+    // Browser storage can be blocked or unavailable.
+  }
 }
 
 function recoverSupabaseAuthAfter401(): void {
@@ -81,20 +83,21 @@ function recoverSupabaseAuthAfter401(): void {
 
 const guardedFetch: typeof fetch = async (input, init) => {
   const url = getRequestUrl(input);
-  const requiresCleanTransport = url.includes('/auth/v1/') || url.includes('/functions/v1/');
   let response: Response;
 
-  if (requiresCleanTransport) {
-    // Authentication and pre-auth Edge Functions must not depend on
-    // window.fetch: extensions can replace it before the app is evaluated.
+  try {
+    // Always prefer the browser's captured Fetch implementation. Supabase Auth
+    // is designed and tested around Fetch; forcing every auth call through XHR
+    // introduced a client-side 20-second timeout on otherwise healthy requests.
+    response = await capturedFetch(input as RequestInfo | URL, init);
+  } catch (error) {
+    // Keep XHR only as a compatibility fallback for browsers/extensions that
+    // break Fetch before the application starts. It is never the primary path.
+    console.warn('[Supabase] fetch failed; retrying once with XHR transport', {
+      url,
+      error,
+    });
     response = await xhrFetch(input, init);
-  } else {
-    try {
-      response = await capturedFetch(input as RequestInfo | URL, init);
-    } catch (error) {
-      console.warn('[Supabase] injected fetch failed; retrying with XHR transport', error);
-      response = await xhrFetch(input, init);
-    }
   }
 
   try {
@@ -109,7 +112,9 @@ const guardedFetch: typeof fetch = async (input, init) => {
         recoverSupabaseAuthAfter401();
       }
     }
-  } catch {}
+  } catch {
+    // Response inspection is best-effort and must not break the request.
+  }
   return response;
 };
 
