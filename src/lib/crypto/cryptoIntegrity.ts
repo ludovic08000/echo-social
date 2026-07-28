@@ -40,7 +40,7 @@ const _sign = _signNative.bind(_subtle);
 const _verify = _verifyNative.bind(_subtle);
 const _digest = _digestNative.bind(_subtle);
 const _getRandomValues = <T extends ArrayBufferView | null>(array: T): T =>
-  _getRandomValuesNative.call(crypto, array as any) as T;
+  _getRandomValuesNative.call(crypto, array) as T;
 
 // Global APIs used in crypto pipeline
 const _JSONparse = JSON.parse;
@@ -134,7 +134,7 @@ export function verifyCryptoIntegrity(): boolean {
       return false;
     }
 
-    const subtleChecks: [string, Function, Function][] = [
+    const subtleChecks: Array<[string, unknown, unknown]> = [
       ['encrypt', crypto.subtle.encrypt, _encryptNative],
       ['decrypt', crypto.subtle.decrypt, _decryptNative],
       ['importKey', crypto.subtle.importKey, _importKeyNative],
