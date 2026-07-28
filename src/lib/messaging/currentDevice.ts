@@ -29,6 +29,8 @@ import { supabase } from '@/integrations/supabase/client';
 
 const BASE_STORAGE_KEY = 'forsure-device-id-v1';
 const FINGERPRINT_KEY = 'forsure-device-fingerprint-v1';
+const DEVICE_ID_DB = 'forsure-device-routing-v1';
+const DEVICE_ID_STORE = 'device-ids';
 let currentDeviceUserScope: string | null = null;
 let memoryDeviceId: string | null = null;
 let hydrationPromise: Promise<string> | null = null;
@@ -37,6 +39,61 @@ let cachedFingerprints: { strict: string; loose: string; ultraLoose: string } | 
 
 function storageKey(): string {
   return currentDeviceUserScope ? `${BASE_STORAGE_KEY}:${currentDeviceUserScope}` : BASE_STORAGE_KEY;
+}
+
+function readDeviceIdFromIndexedDb(key: string): Promise<string | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const request = indexedDB.open(DEVICE_ID_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DEVICE_ID_STORE)) {
+        db.createObjectStore(DEVICE_ID_STORE);
+      }
+    };
+    request.onerror = () => resolve(null);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction(DEVICE_ID_STORE, 'readonly');
+      const get = transaction.objectStore(DEVICE_ID_STORE).get(key);
+      get.onsuccess = () => {
+        const value = get.result;
+        resolve(typeof value === 'string' && value.length >= 16 ? value : null);
+        db.close();
+      };
+      get.onerror = () => {
+        resolve(null);
+        db.close();
+      };
+    };
+  });
+}
+
+function writeDeviceIdToIndexedDb(key: string, id: string): Promise<void> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve();
+  return new Promise((resolve) => {
+    const request = indexedDB.open(DEVICE_ID_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DEVICE_ID_STORE)) {
+        db.createObjectStore(DEVICE_ID_STORE);
+      }
+    };
+    request.onerror = () => resolve();
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction(DEVICE_ID_STORE, 'readwrite');
+      transaction.objectStore(DEVICE_ID_STORE).put(id, key);
+      transaction.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      transaction.onerror = () => {
+        db.close();
+        resolve();
+      };
+    };
+  });
 }
 
 /**
@@ -56,48 +113,10 @@ export function setCurrentDeviceUserScope(userId: string | null | undefined): vo
   // fingerprint would leak into the next one.
   cachedFingerprints = null;
 
-  // Seed the per-account device id from the PRE-SCOPE (unscoped) id.
-  //
-  // Before the account is known (e.g. hydrateDeviceId running at app mount
-  // while the session is still restoring), the device id is resolved and
-  // persisted under the UNSCOPED key. When we then switch to the scoped key
-  // for the first time, that scoped slot is empty -> getCurrentDeviceId()
-  // would mint a BRAND NEW id, orphaning the device the account already has
-  // and forcing a full re-registration every session. That churn leaves stale
-  // `user_devices` rows behind (one of them may stay marked primary), which is
-  // the root cause of the cross-device "empty blue bubble". Carry the already
-  // established id over to the account slot instead of generating a new one.
-  if (next) {
-    try {
-      const scopedKey = `${BASE_STORAGE_KEY}:${next}`;
-      const scoped = nativeGetSync(scopedKey);
-      if (!scoped) {
-        const unscoped = nativeGetSync(BASE_STORAGE_KEY);
-        if (unscoped && unscoped.length >= 16) {
-          memoryDeviceId = unscoped;
-          memoryDeviceIdIsTemporary = false;
-          hydrationPromise = Promise.resolve(unscoped);
-          try {
-            localStorage.setItem(scopedKey, unscoped);
-          } catch {
-            // Other persistence layers below still preserve the stable id.
-          }
-          try {
-            sessionStorage.setItem(scopedKey, unscoped);
-          } catch {
-            // Other persistence layers below still preserve the stable id.
-          }
-          void secureSet(scopedKey, unscoped).catch(() => {});
-          void nativeSet(scopedKey, unscoped).catch(() => {});
-          console.log('[device-id] seeded per-account id from pre-scope id', {
-            id: unscoped.slice(0, 8), account: next.slice(0, 8),
-          });
-        }
-      }
-    } catch {
-      // Storage may be unavailable in private browsing; hydration can recover.
-    }
-  }
+  // Do not synchronously copy the unscoped bootstrap ID into the account slot.
+  // The account-scoped ID may still exist in IndexedDB even when localStorage
+  // was cleared. hydrateDeviceId() checks every scoped layer first and only
+  // adopts the bootstrap ID when no established scoped installation exists.
 }
 
 async function ensureUserScopeFromAuth(): Promise<void> {
@@ -202,6 +221,7 @@ function persistEverywhere(id: string): string {
   }
   void secureSet(key, id).catch(() => {});
   void nativeSet(key, id).catch(() => {});
+  void writeDeviceIdToIndexedDb(key, id);
   return id;
 }
 
@@ -275,19 +295,22 @@ export function getCurrentDeviceId(): string {
   }
 
   const fresh = generateId();
-  if (isNativePlatform()) {
-    memoryDeviceId = fresh;
-    memoryDeviceIdIsTemporary = true;
-    try {
-      sessionStorage.setItem(key, fresh);
-    } catch {
-      // Native hydration will persist the final stable id.
-    }
-    console.log('[device-id] Generated temporary device id pending native hydration');
-    return fresh;
+  // IndexedDB is asynchronous. Keep the first synchronous ID temporary until
+  // hydrateDeviceId() has had a chance to recover the established installation
+  // ID from every persistence layer. Persisting this provisional value here
+  // could overwrite a valid IndexedDB ID after localStorage was cleared.
+  memoryDeviceId = fresh;
+  memoryDeviceIdIsTemporary = true;
+  try {
+    sessionStorage.setItem(key, fresh);
+  } catch {
+    // Hydration will persist the final stable ID when storage is available.
   }
-  console.log('[device-id] Generated new device id (no persisted value found)', { scoped: !!currentDeviceUserScope });
-  return persistEverywhere(fresh);
+  console.info('[device-id] generated temporary id pending durable hydration', {
+    native: isNativePlatform(),
+    scoped: !!currentDeviceUserScope,
+  });
+  return fresh;
 }
 
 export function isDeviceIdTemporary(): boolean {
@@ -313,33 +336,34 @@ export async function hydrateDeviceId(): Promise<string> {
         return persistEverywhere(stored);
       }
 
+      const indexedDbId = await readDeviceIdFromIndexedDb(key);
+      if (indexedDbId) {
+        console.info('[device-id] restored stable installation id from IndexedDB', {
+          id: indexedDbId.slice(0, 8),
+          scoped: !!currentDeviceUserScope,
+        });
+        return persistEverywhere(indexedDbId);
+      }
+
       const local = nativeGetSync(key);
       if (local) {
         return persistEverywhere(local);
       }
 
-      try {
-        const candidates = await getDeviceFingerprintCandidates();
-        const platform = getCurrentPlatform();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: serverId, error } = await supabase.rpc(
-            'resolve_device_id_by_fingerprints',
-            { p_fingerprints: candidates, p_platform: platform },
-          );
-          if (!error && typeof serverId === 'string' && serverId.length >= 16) {
-            console.log('[device-id] Recovered from server fingerprint binding', {
-              recovered: serverId.slice(0, 8),
-              platform,
-              scoped: !!currentDeviceUserScope,
-            });
-            return persistEverywhere(serverId);
-          }
+      if (currentDeviceUserScope) {
+        const bootstrapId =
+          await secureGet(BASE_STORAGE_KEY)
+          ?? await readDeviceIdFromIndexedDb(BASE_STORAGE_KEY)
+          ?? nativeGetSync(BASE_STORAGE_KEY);
+        if (bootstrapId && bootstrapId.length >= 16) {
+          return persistEverywhere(bootstrapId);
         }
-      } catch (e) {
-        console.warn('[device-id] server fingerprint lookup failed:', e);
       }
 
+      // If every local persistence layer has disappeared, this is a new
+      // logical Sesame device. Browser/OS fingerprints are deliberately not
+      // used to reclaim a DeviceID: they are neither unique nor stable and can
+      // route ciphertext to another installation.
       const current = memoryDeviceId || generateId();
       return persistEverywhere(current);
     } catch (e) {
@@ -353,19 +377,26 @@ export async function hydrateDeviceId(): Promise<string> {
 export function getCurrentDeviceLabel(): string {
   if (typeof navigator === 'undefined') return 'Unknown device';
   const ua = navigator.userAgent || '';
+  const isIPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  const os =
+    /iPhone/i.test(ua) ? 'iPhone'
+    : /iPad|iPod/i.test(ua) || isIPadOS ? 'iPad'
+    : /Android/i.test(ua) ? 'Android'
+    : /Windows/i.test(ua) ? 'Windows'
+    : /Macintosh|Mac OS X/i.test(ua) ? 'macOS'
+    : /Linux/i.test(ua) ? 'Linux'
+    : 'Unknown OS';
+  const browser =
+    /EdgA?|EdgiOS/i.test(ua) ? 'Edge'
+    : /CriOS|Chrome/i.test(ua) ? 'Chrome'
+    : /FxiOS|Firefox/i.test(ua) ? 'Firefox'
+    : /OPiOS|OPR\//i.test(ua) ? 'Opera'
+    : /Safari/i.test(ua) ? 'Safari'
+    : 'Browser';
   if (isNativePlatform()) {
-    if (/iPhone/i.test(ua)) return 'iPhone (App)';
-    if (/iPad/i.test(ua)) return 'iPad (App)';
-    if (/Android/i.test(ua)) return 'Android (App)';
-    return 'Mobile App';
+    return `${os} · App`;
   }
-  if (/iPhone/i.test(ua)) return 'iPhone';
-  if (/iPad/i.test(ua)) return 'iPad';
-  if (/Android/i.test(ua)) return 'Android';
-  if (/Mac/i.test(ua)) return 'Mac';
-  if (/Windows/i.test(ua)) return 'Windows';
-  if (/Linux/i.test(ua)) return 'Linux';
-  return 'Browser';
+  return `${browser} · ${os}`;
 }
 
 export function getCurrentPlatform(): string {
@@ -380,6 +411,6 @@ export function getCurrentPlatform(): string {
   if (typeof navigator === 'undefined') return 'web';
   const ua = navigator.userAgent || '';
   if (/Android/i.test(ua)) return 'android';
-  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
+  if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
   return 'web';
 }

@@ -9,6 +9,17 @@ const migration = readFileSync(
   ),
   'utf8',
 ).toLowerCase();
+const deviceIdentityCutover = readFileSync(
+  resolve(
+    process.cwd(),
+    'supabase/migrations/20260728070000_remove_crypto_device_fingerprint_recovery.sql',
+  ),
+  'utf8',
+).toLowerCase();
+const currentDevice = readFileSync(
+  resolve(process.cwd(), 'src/lib/messaging/currentDevice.ts'),
+  'utf8',
+);
 
 function functionBody(name: string, nextMarker: string): string {
   const start = migration.indexOf(name);
@@ -74,5 +85,16 @@ describe('Aegis identity and stable-route migration', () => {
     expect(migration).toContain('v_existing_body = p_body');
     expect(migration).not.toMatch(/\btruncate\s+table\s+public\.messages\b/);
     expect(migration).not.toMatch(/\bdelete\s+from\s+public\.messages\b/);
+  });
+
+  it('never uses browser fingerprints as a cryptographic DeviceID', () => {
+    expect(deviceIdentityCutover).toContain(
+      'drop function if exists public.resolve_device_id_by_fingerprints',
+    );
+    expect(currentDevice).not.toContain(
+      "supabase.rpc(\n            'resolve_device_id_by_fingerprints'",
+    );
+    expect(currentDevice).toContain('readDeviceIdFromIndexedDb');
+    expect(currentDevice).toContain('writeDeviceIdToIndexedDb');
   });
 });
