@@ -3,7 +3,13 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
-import { detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
+import {
+  clearRecoveryFlag,
+  detectAndStoreRecoveryFromHash,
+  isRecoveryPending,
+  prepareNormalSignIn,
+  setRecoveryFlag,
+} from '@/lib/authRecovery';
 import { getSafeRedirectUrl } from '@/lib/urlUtils';
 import { hasLocalKeys, initAccountKeySync, restoreKeysFromKeychainSnapshot, clearAccountKeySession } from '@/lib/crypto/accountKeyBackup';
 import {
@@ -16,9 +22,48 @@ import {
   scheduleBackupMirrorToR2,
 } from '@/lib/crypto/r2BackupVault';
 
-/** Check URL hash for recovery tokens BEFORE any session is exposed */
+/** Check URL hash for recovery tokens BEFORE any session is exposed. */
 function detectRecoveryFromHash(): boolean {
   return detectAndStoreRecoveryFromHash();
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(null);
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
+async function inspectAuthThreat(endpoint: 'auth.signup' | 'auth.signin', payload: string): Promise<Error | null> {
+  try {
+    const result = await withTimeout(
+      import('@/hooks/useThreatShield').then(({ inspectThreat }) => inspectThreat({ endpoint, payload })),
+      3_500,
+    );
+    if (result?.blocked) return new Error('Requête bloquée par le bouclier de sécurité.');
+  } catch {
+    // Authentication remains available if the optional shield is unavailable.
+  }
+  return null;
 }
 
 interface AuthContextType {
@@ -31,7 +76,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const initialRecovery = detectRecoveryFromHash() || isRecoveryPending();
 
 async function inspectCryptoReadiness(userId: string | undefined, reason: 'session_restored' | 'signed_in') {
   if (!userId) return;
@@ -64,6 +108,51 @@ async function inspectCryptoReadiness(userId: string | undefined, reason: 'sessi
   }
 }
 
+async function runPostSignInSetup(password: string, userId: string): Promise<void> {
+  try {
+    // R2 is a cold encrypted mirror. Re-index the opaque backup in Supabase
+    // only when the hot row is absent; this never restores plaintext.
+    const r2IndexStatus = await ensureBackupIndexedFromR2(userId);
+    console.log(`[AUTH][E2EE] R2 backup index status=${r2IndexStatus}`);
+
+    const localKeysPresent = await hasLocalKeys();
+    const archiveStatus = await initializeArchiveMasterKeyFromPassword(password, userId);
+    console.log(`[AUTH][E2EE] archive master status=${archiveStatus}`);
+
+    if (localKeysPresent && archiveStatus === 'restored') {
+      console.log('[AUTH][E2EE] local device keys kept; convergent archive key reused');
+    } else if (localKeysPresent && archiveStatus === 'blocked') {
+      console.warn('[AUTH][E2EE] existing archive key could not be unlocked; backup preserved');
+      try {
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+          detail: { userId, reason: 'archive_master_unlock_failed' },
+        }));
+      } catch { /* browser event delivery is best-effort */ }
+    } else {
+      const status = await initAccountKeySync(password, userId);
+      console.log(`[AUTH][E2EE] initAccountKeySync status=${status}`);
+
+      if (archiveStatus === 'no_backup') {
+        const postCreateStatus = await initializeArchiveMasterKeyAfterBackupCreation(password, userId);
+        console.log(`[AUTH][E2EE] archive master after backup=${postCreateStatus}`);
+      }
+    }
+  } catch (syncError) {
+    console.warn('[AUTH][E2EE] key initialization failed:', syncError);
+  }
+
+  // These operations are deliberately outside the password-authentication
+  // critical path. Slow R2 or crypto recovery must never keep Login spinning.
+  scheduleBackupMirrorToR2(userId);
+  void inspectCryptoReadiness(userId, 'signed_in');
+
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:authenticated-device-enroll', {
+      detail: { userId, source: 'password-sign-in' },
+    }));
+  } catch { /* browser event delivery is best-effort */ }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -88,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      (event, nextSession) => {
         if (event === 'PASSWORD_RECOVERY') {
           setRecoveryFlag();
           clearSessionState();
@@ -101,20 +190,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const onResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
-        if (onResetRoute || detectRecoveryFromHash() || isRecoveryPending()) {
+        const recoveryHashDetected = detectRecoveryFromHash();
+        if (onResetRoute || recoveryHashDetected || (onResetRoute && isRecoveryPending())) {
           clearSessionState();
           return;
         }
 
-        applySessionState(session);
+        // A normal password SIGNED_IN event is authoritative. An abandoned
+        // recovery marker must never erase the fresh Supabase session.
+        if (event === 'SIGNED_IN') clearRecoveryFlag();
 
-        if (session?.user) {
-          void inspectCryptoReadiness(session.user.id, event === 'SIGNED_IN' ? 'signed_in' : 'session_restored');
+        applySessionState(nextSession);
+
+        if (nextSession?.user) {
+          void inspectCryptoReadiness(nextSession.user.id, event === 'SIGNED_IN' ? 'signed_in' : 'session_restored');
         }
 
-        if (event === 'SIGNED_IN' && session?.user) {
-          if (isRecoveryPending()) return;
-
+        if (event === 'SIGNED_IN' && nextSession?.user) {
           startSessionGuard();
 
           setTimeout(() => {
@@ -139,7 +231,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const initAuth = async () => {
       try {
-        const shouldBlockSession = isResetRoute || initialRecovery || detectRecoveryFromHash() || isRecoveryPending();
+        const recoveryHashDetected = detectRecoveryFromHash();
+        const shouldBlockSession = isResetRoute || recoveryHashDetected || (isResetRoute && isRecoveryPending());
         if (shouldBlockSession) {
           clearSessionState();
           return;
@@ -166,14 +259,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, name: string, dateOfBirth?: string) => {
-    try {
-      const { inspectThreat } = await import('@/hooks/useThreatShield');
-      const threat = await inspectThreat({ endpoint: 'auth.signup', payload: `${email}|${name}` });
-      if (threat.blocked) return { error: new Error('Requête bloquée par le bouclier de sécurité.') };
-    } catch { /* authentication remains available if the optional shield is unavailable */ }
+    const normalizedEmail = email.trim();
+    const threatError = await inspectAuthThreat('auth.signup', `${normalizedEmail}|${name}`);
+    if (threatError) return { error: threatError };
 
     const { error } = await supabase.auth.signUp({
-      email,
+      email: normalizedEmail,
       password,
       options: {
         emailRedirectTo: getSafeRedirectUrl('/auth/confirm'),
@@ -184,65 +275,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    try {
-      const { inspectThreat } = await import('@/hooks/useThreatShield');
-      const threat = await inspectThreat({ endpoint: 'auth.signin', payload: email });
-      if (threat.blocked) return { error: new Error('Requête bloquée par le bouclier de sécurité.') };
-    } catch { /* authentication remains available if the optional shield is unavailable */ }
+    prepareNormalSignIn();
+    const normalizedEmail = email.trim();
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const threatError = await inspectAuthThreat('auth.signin', normalizedEmail);
+    if (threatError) return { error: threatError };
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
 
     if (!error && data.user) {
-      const userId = data.user.id;
-      try {
-        // R2 is a cold encrypted mirror. Re-index the opaque backup in
-        // Supabase only when the hot row is absent; this never restores
-        // plaintext and never exposes the raw account identifier to R2.
-        const r2IndexStatus = await ensureBackupIndexedFromR2(userId);
-        console.log(`[AUTH][E2EE] R2 backup index status=${r2IndexStatus}`);
-
-        const localKeysPresent = await hasLocalKeys();
-        const archiveStatus = await initializeArchiveMasterKeyFromPassword(password, userId);
-        console.log(`[AUTH][E2EE] archive master status=${archiveStatus}`);
-
-        if (localKeysPresent && archiveStatus === 'restored') {
-          // Do not call the legacy initializer: its old local-keys branch can
-          // generate a random Master Key and split iOS/Windows archive access.
-          console.log('[AUTH][E2EE] local device keys kept; convergent archive key reused');
-        } else if (localKeysPresent && archiveStatus === 'blocked') {
-          // Preserve the existing backup rather than replacing its key.
-          console.warn('[AUTH][E2EE] existing archive key could not be unlocked; backup preserved');
-          try {
-            window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
-              detail: { userId, reason: 'archive_master_unlock_failed' },
-            }));
-          } catch { /* browser event delivery is best-effort */ }
-        } else {
-          const status = await initAccountKeySync(password, userId);
-          console.log(`[AUTH][E2EE] initAccountKeySync status=${status}`);
-
-          if (archiveStatus === 'no_backup') {
-            const postCreateStatus = await initializeArchiveMasterKeyAfterBackupCreation(password, userId);
-            console.log(`[AUTH][E2EE] archive master after backup=${postCreateStatus}`);
-          }
-        }
-      } catch (syncError) {
-        console.warn('[AUTH][E2EE] key initialization failed:', syncError);
-      }
-
-      // Best-effort and bounded. The app remains usable when R2 is not yet
-      // configured or its Edge Function has not been deployed.
-      scheduleBackupMirrorToR2(userId);
-      void inspectCryptoReadiness(userId, 'signed_in');
-      // Password authentication is also the user's authorization to enroll
-      // this installation. Wake the registration pipeline after the account
-      // keys have been restored so it never remains stuck in `pending` merely
-      // because the auth-state mount raced the password-derived key restore.
-      try {
-        window.dispatchEvent(new CustomEvent('forsure:authenticated-device-enroll', {
-          detail: { userId, source: 'password-sign-in' },
-        }));
-      } catch { /* browser event delivery is best-effort */ }
+      clearRecoveryFlag();
+      // Do not await backup/network/key work here. Authentication has already
+      // succeeded and the UI must redirect immediately.
+      void runPostSignInSetup(password, data.user.id);
     }
 
     return { error };
