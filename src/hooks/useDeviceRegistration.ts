@@ -47,6 +47,7 @@ import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 const REVOKED_DEVICE_ERROR_RE = /USER_DEVICES_REACTIVATION_BLOCKED|revoked_device_cannot_be_reactivated|DEVICE_REVOKED_OR_LOCKED|DEVICE_REVOKED(?!_OR_REJECTED)/i;
 const DEVICE_APPROVAL_PENDING_RE = /DEVICE_APPROVAL_PENDING/i;
 const DEVICE_REJECTED_RE = /DEVICE_REJECTED|DEVICE_REVOKED_OR_REJECTED/i;
+const RPC_SCHEMA_MISMATCH_RE = /could not find the function|schema cache|pgrst202/i;
 
 type DeviceRegistrationRpcResult = {
   ok?: boolean;
@@ -402,6 +403,22 @@ export function useDeviceRegistration() {
             console.warn('[useDeviceRegistration] safe RPC unavailable/failed:', {
               message: rpcErr.message,
             });
+            if (RPC_SCHEMA_MISMATCH_RE.test(rpcErr.message ?? '')) {
+              trace('DEVICE_SERVER_SCHEMA_OUTDATED', {
+                errorCode: 'REGISTER_USER_DEVICE_SAFE_SIGNATURE_MISSING',
+              }, 'error');
+              try {
+                window.dispatchEvent(new CustomEvent('forsure:e2ee-server-schema-outdated', {
+                  detail: {
+                    rpc: 'register_user_device_safe',
+                    migration: '20260728100000_sesame_per_device_identity.sql',
+                  },
+                }));
+              } catch {
+                // The trace remains available when DOM events are unavailable.
+              }
+              return;
+            }
           } else {
             console.warn('[useDeviceRegistration] safe RPC non-ok; device publish paused:', registrationResult);
             ranRef.current = false;

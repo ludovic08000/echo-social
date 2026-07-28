@@ -17,15 +17,35 @@ type RetryRow = {
 };
 
 let worker: Promise<void> | null = null;
+let schemaBlockedUntil = 0;
+
+function errorCode(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') {
+    const value = error as { code?: unknown; message?: unknown; details?: unknown };
+    return [value.code, value.message, value.details]
+      .filter((part) => typeof part === 'string' && part.length > 0)
+      .join(':') || 'AEGIS_RETRY_UNKNOWN_ERROR';
+  }
+  return String(error ?? 'AEGIS_RETRY_UNKNOWN_ERROR');
+}
 
 async function processPendingRetries(senderUserId: string): Promise<void> {
-  if (worker || isDeviceIdTemporary()) return worker ?? Promise.resolve();
+  if (worker || isDeviceIdTemporary() || Date.now() < schemaBlockedUntil) {
+    return worker ?? Promise.resolve();
+  }
   worker = (async () => {
     const senderDeviceId = getCurrentDeviceId();
     const { data, error } = await supabase.rpc('list_pending_device_copy_retries', {
       p_limit: 20,
     });
-    if (error) throw error;
+    if (error) {
+      const code = errorCode(error);
+      if (/could not find the function|schema cache|pgrst202/i.test(code)) {
+        schemaBlockedUntil = Date.now() + 60_000;
+      }
+      throw error;
+    }
 
     for (const row of (data ?? []) as RetryRow[]) {
       traceE2EE({
@@ -72,7 +92,7 @@ async function processPendingRetries(senderUserId: string): Promise<void> {
           peerDeviceId: row.requester_device_id,
         });
       } catch (retryError) {
-        const code = retryError instanceof Error ? retryError.message : String(retryError);
+        const code = errorCode(retryError);
         try {
           await supabase.rpc('mark_device_copy_retry_failed', {
             p_request_id: row.request_id,
@@ -103,10 +123,11 @@ export function useDeviceCopyRetryWorker(): void {
   useEffect(() => {
     if (!user?.id) return;
     const run = () => void processPendingRetries(user.id).catch((error) => {
+      const code = errorCode(error);
       traceE2EE({
         direction: 'send',
         stage: 'DEVICE_COPY_RETRY_WORKER_FAILED',
-        errorCode: error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120),
+        errorCode: code.slice(0, 120),
       }, 'warn');
     });
     run();
