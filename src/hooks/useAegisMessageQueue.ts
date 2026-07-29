@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { safeUUID } from '@/e2ee-session';
-import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
+import { sendAegisOutboundMessage } from '@/lib/aegis';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import type { FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
 import { savePlaintext } from '@/lib/crypto/plaintextStore';

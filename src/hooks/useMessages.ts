@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { isCryptoJsonBody, isUnsupportedEncryptedBody, isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import { clearNegativeCache, resolvePlaintext, persistOutcome } from '@/components/messages/decryptionService';
-import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
+import { sendAegisOutboundMessage } from '@/lib/aegis';
 import {
   clearDeviceCopyCacheForMessage,
   preloadDeviceCopies,

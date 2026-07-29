@@ -20,7 +20,7 @@ import {
   hasBackupPin,
   restoreWithBackupPin,
 } from '@/lib/crypto/accountKeyBackup';
-import { setupPersistentBackupPin } from '@/lib/crypto/aegisPinBackup';
+import { setupPersistentBackupPin } from '@/lib/aegis/recovery';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
