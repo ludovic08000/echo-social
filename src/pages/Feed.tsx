@@ -14,6 +14,7 @@ import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
 import { Coffee, X, Sparkles, Lock, Shield, Radio } from 'lucide-react';
 import { FeedZeusCard } from '@/components/feed/FeedZeusCard';
 import { FeedProfileHeader } from '@/components/feed/FeedProfileHeader';
+import { ProfileFeedView } from '@/components/feed/ProfileFeedView';
 import { LazyMount } from '@/components/feed/LazyMount';
 import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
 import { Button } from '@/components/ui/button';
@@ -208,6 +209,10 @@ export default function Feed() {
         <div className="w-full flex justify-center gap-6 xl:gap-10">
           <FeedLeftSidebar />
           <div className="flex-1 max-w-[680px] min-w-0">
+            {profileId ? (
+              <ProfileFeedView userId={profileId} />
+            ) : (
+            <>
             {/* Scroll pause reminder */}
             <AnimatePresence>
               {showPauseReminder && (
@@ -376,6 +381,8 @@ export default function Feed() {
                   </div>
                 )}
               </>
+            )}
+            </>
             )}
           </div>
           <FeedRightSidebar />
