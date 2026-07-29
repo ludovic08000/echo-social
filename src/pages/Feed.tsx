@@ -5,7 +5,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { CreatePost } from '@/components/CreatePost';
 import { PostCard } from '@/components/PostCard';
 import { StoriesBar } from '@/components/StoriesBar';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { FeedLeftSidebar } from '@/components/feed/FeedLeftSidebar';
 import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
@@ -247,7 +247,7 @@ export default function Feed() {
 
             {isMobile ? (
               <div className="space-y-4 pb-3">
-                <FeedProfileHeader />
+                <FeedProfileHeader userId={profileId} />
                 <div className="mx-2 rounded-[28px] border border-border/30 bg-card/80 backdrop-blur-sm overflow-hidden shadow-[0_12px_40px_-18px_hsl(var(--foreground)/0.18)]">
                   <div className="px-2 pt-2 pb-1">
                     <StoriesBar />
@@ -261,7 +261,7 @@ export default function Feed() {
               </div>
             ) : (
               <div className="space-y-5">
-                <FeedProfileHeader />
+                <FeedProfileHeader userId={profileId} />
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="px-4">
                   <div className="rounded-[30px] border border-border/30 bg-card/80 backdrop-blur-sm overflow-hidden shadow-[0_18px_50px_-24px_hsl(var(--foreground)/0.18)]">
                     <div className="px-2 pt-2 pb-1">
