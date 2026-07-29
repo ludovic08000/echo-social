@@ -391,14 +391,23 @@ async function fetchDevicePrekeyMaterial(peerUserId: string, peerDeviceId: strin
     .is('revoked_at', null)
     .maybeSingle();
   if (!device?.device_public_key || !device.device_signing_key || !device.device_identity_signature) return null;
-  const { verifyDeviceIdentityBinding } = await import('./deviceIdentity');
-  const identityBindingValid = await verifyDeviceIdentityBinding({
-    userId: peerUserId,
-    deviceId: peerDeviceId,
-    devicePublicKey: device.device_public_key,
-    signingPublicKey: device.device_signing_key,
-    signature: device.device_identity_signature,
-  });
+  const [{ verifyDeviceIdentityBinding, ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION }, { fetchPeerPublicKeys }] = await Promise.all([
+    import('./deviceIdentity'),
+    import('./peerKeyCache'),
+  ]);
+  const accountIdentity = await fetchPeerPublicKeys(peerUserId, { forceRefresh: true });
+  const identityBindingValid =
+    device.device_identity_version === ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION &&
+    Boolean(accountIdentity?.signing_key) &&
+    await verifyDeviceIdentityBinding({
+      userId: peerUserId,
+      deviceId: peerDeviceId,
+      devicePublicKey: device.device_public_key,
+      signingPublicKey: device.device_signing_key,
+      signature: device.device_identity_signature,
+      identityVersion: device.device_identity_version,
+      accountSigningPublicKey: accountIdentity!.signing_key,
+    });
   if (!identityBindingValid) {
     throw new DevicePrekeyBundleError(
       'ACCOUNT_IDENTITY_BINDING_INVALID',

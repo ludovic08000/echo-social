@@ -27,6 +27,7 @@ import {
 } from '../deviceRatchet';
 import { hardCrypto } from '../cryptoIntegrity';
 import { bufferToBase64, randomBytes } from '../utils';
+import { createAegisSessionId } from '@/lib/messaging/aegisWire';
 
 // ─── Low-level session seeding ─────────────────────────────────────────────
 //
@@ -134,9 +135,7 @@ async function seedSession(
   const dh1 = await dh(initiatorRatchet.privJwk, peerInitial.pubB64);
   const r1 = await kdfRK(sharedSecret, dh1);
 
-  const sessionId = bufferToBase64(randomBytes(8).buffer as ArrayBuffer)
-    .replace(/[+/=]/g, '')
-    .slice(0, 12);
+  const sessionId = createAegisSessionId();
 
   // Initiator state: has sending chain, knows peer's pre-key pub as dhr.
   const initiatorRecord = {
@@ -273,20 +272,21 @@ describe('Sesame active and inactive sessions', () => {
     const delayed = await ratchetEncrypt(alice.user, alice.device, bob.user, bob.device, 'delayed');
     expect(delayed).toBeTruthy();
 
+    const replacementSessionId = createAegisSessionId();
     await establishDeviceSession(
       bob.user,
       bob.device,
       alice.user,
       alice.device,
       randomBytes(32).buffer as ArrayBuffer,
-      's6replacement',
+      replacementSessionId,
     );
     expect((await listKnownSessionIds(bob.user, bob.device)).length).toBe(2);
 
     await expect(ratchetDecrypt(bob.user, bob.device, delayed!)).resolves.toBe('delayed');
     const sessions = await listKnownSessionIds(bob.user, bob.device);
     expect(sessions).toHaveLength(2);
-    expect(sessions.some((session) => session.sessionId === 's6replacement')).toBe(true);
+    expect(sessions.some((session) => session.sessionId === replacementSessionId)).toBe(true);
   });
 });
 

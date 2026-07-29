@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Aegis device-pair Double Ratchet — bidirectional with DH-ratchet.
  *
  * Provides:
@@ -37,14 +37,20 @@ import {
 } from './constants';
 import { runDeviceSessionJob } from './deviceSessionQueue';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import {
+  AEGIS_RATCHET_PREFIX,
+  createAegisSessionId,
+  isHeaderBoundAegisSessionId,
+  parseAegisRatchetWire,
+  type ParsedAegisRatchetWire,
+} from '@/lib/messaging/aegisWire';
 
 const STORE = 'sessions';
 
-export const AEGIS_RATCHET_PREFIX = 'aegis1.ratchet.';
+export { AEGIS_RATCHET_PREFIX };
 
 const AEGIS_DEVICE_AAD = 'FORSURE-AEGIS-DEVICE-v1|';
 const AEGIS_HEADER_AAD = 'FORSURE-AEGIS-HEADER-v1|';
-const HEADER_BOUND_SESSION_PREFIX = 's6';
 const X25519_ALGORITHM: Algorithm = { name: 'X25519' };
 
 // A bounded skipped-key window tolerates reordered delivery after mobile wake.
@@ -127,10 +133,6 @@ function buildDevAAD(
   const peer = `${peerUserId}::${peerDeviceId}`;
   const [a, b] = me < peer ? [me, peer] : [peer, me];
   return new hardGlobals.TextEncoder().encode(`${AEGIS_DEVICE_AAD}${sessionId}|${a}|${b}`);
-}
-
-function isHeaderBoundSession(sessionId: string): boolean {
-  return sessionId.startsWith(HEADER_BOUND_SESSION_PREFIX);
 }
 
 function buildDevAADWithHeader(
@@ -450,8 +452,10 @@ async function establishDeviceSessionUnlocked(
   },
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-  const finalSessionId =
-    sessionId ?? `${HEADER_BOUND_SESSION_PREFIX}${bufferToBase64(randomBytes(8).buffer as ArrayBuffer).replace(/[+/=]/g, '').slice(0, 10)}`;
+  const finalSessionId = sessionId ?? createAegisSessionId();
+  if (!isHeaderBoundAegisSessionId(finalSessionId)) {
+    throw new Error('AEGIS_UNSUPPORTED_SESSION_ID');
+  }
   const ss32 = sharedSecret.byteLength >= 32 ? sharedSecret.slice(0, 32) : sharedSecret;
   const rootKeyB64 = bufferToBase64(ss32);
 
@@ -536,6 +540,10 @@ async function ratchetEncryptUnlocked(
     return null;
   }
 
+  if (!isHeaderBoundAegisSessionId(session.sessionId)) {
+    return null;
+  }
+
   if (!session.ckSendB64 || !session.dhsPubB64) {
     void logCryptoError({
       severity: 'info',
@@ -552,9 +560,14 @@ async function ratchetEncryptUnlocked(
   const iv = randomBytes(12);
   const Ns = session.Ns;
   const header = { dh: session.dhsPubB64, pn: session.PN, n: Ns };
-  const aad = isHeaderBoundSession(session.sessionId)
-    ? buildDevAADWithHeader(myUserId, myDeviceId, peerUserId, peerDeviceId, session.sessionId, header)
-    : buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, session.sessionId);
+  const aad = buildDevAADWithHeader(
+    myUserId,
+    myDeviceId,
+    peerUserId,
+    peerDeviceId,
+    session.sessionId,
+    header,
+  );
   const ct = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> },
     aes,
@@ -594,33 +607,33 @@ export async function ratchetDecrypt(
   myDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  if (!payload.startsWith(AEGIS_RATCHET_PREFIX)) return null;
-  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
-  if (parts.length !== 6 || !parts[0]) return null;
-  const found = await lookupSessionById(myUserId, myDeviceId, parts[0]);
+  const parsed = parseAegisRatchetWire(payload);
+  if (!parsed) return null;
+  const found = await lookupSessionById(myUserId, myDeviceId, parsed.sessionId);
   if (!found) return null;
-  return runDeviceSessionJob('ratchet', found.activeKey, () => decryptAegis(myUserId, myDeviceId, payload));
+  return runDeviceSessionJob('ratchet', found.activeKey, () =>
+    decryptAegis(myUserId, myDeviceId, parsed),
+  );
 }
 
 async function decryptAegis(
   myUserId: string,
   myDeviceId: string,
-  payload: string,
+  parsed: ParsedAegisRatchetWire,
 ): Promise<string | null> {
-  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
-  if (parts.length !== 6) return null;
-  const [sessionId] = parts;
-  const found = await lookupSessionById(myUserId, myDeviceId, sessionId);
+  const found = await lookupSessionById(myUserId, myDeviceId, parsed.sessionId);
   if (!found) return null;
   const peer = parseCompositeKey(found.key);
   if (!peer) return null;
-  const headerBound = isHeaderBoundSession(sessionId);
-  const header = { dh: parts[1], n: Number(parts[2]), pn: Number(parts[3]) };
-  if (headerBound && (!Number.isSafeInteger(header.n) || !Number.isSafeInteger(header.pn))) return null;
-  const aad = headerBound
-    ? buildDevAADWithHeader(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId, header)
-    : buildDevAAD(peer.myUserId, peer.myDeviceId, peer.peerUserId, peer.peerDeviceId, sessionId);
-  return decryptAegisWithStored(found.activeKey, found.key, found.session, parts, aad, peer);
+  const aad = buildDevAADWithHeader(
+    peer.myUserId,
+    peer.myDeviceId,
+    peer.peerUserId,
+    peer.peerDeviceId,
+    parsed.sessionId,
+    { dh: parsed.dhPubB64, n: parsed.n, pn: parsed.pn },
+  );
+  return decryptAegisWithStored(found.activeKey, found.key, found.session, parsed, aad, peer);
 }
 
 async function ratchetDecryptWithSessionUnlocked(
@@ -630,20 +643,27 @@ async function ratchetDecryptWithSessionUnlocked(
   peerDeviceId: string,
   payload: string,
 ): Promise<string | null> {
-  if (!payload.startsWith(AEGIS_RATCHET_PREFIX)) return null;
-  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
-  if (parts.length !== 6) return null;
+  const parsed = parseAegisRatchetWire(payload);
+  if (!parsed) return null;
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-  const found = await lookupSessionById(myUserId, myDeviceId, parts[0]);
+  const found = await lookupSessionById(myUserId, myDeviceId, parsed.sessionId);
   if (!found || found.activeKey !== key) return null;
-  const session = found.session;
-  const headerBound = isHeaderBoundSession(parts[0]);
-  const header = { dh: parts[1], n: Number(parts[2]), pn: Number(parts[3]) };
-  if (headerBound && (!Number.isSafeInteger(header.n) || !Number.isSafeInteger(header.pn))) return null;
-  const aad = headerBound
-    ? buildDevAADWithHeader(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0], header)
-    : buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, parts[0]);
-  return decryptAegisWithStored(key, found.key, session, parts, aad, { peerUserId, peerDeviceId });
+  const aad = buildDevAADWithHeader(
+    myUserId,
+    myDeviceId,
+    peerUserId,
+    peerDeviceId,
+    parsed.sessionId,
+    { dh: parsed.dhPubB64, n: parsed.n, pn: parsed.pn },
+  );
+  return decryptAegisWithStored(
+    key,
+    found.key,
+    found.session,
+    parsed,
+    aad,
+    { peerUserId, peerDeviceId },
+  );
 }
 
 export async function ratchetDecryptWithSession(
@@ -667,18 +687,20 @@ async function decryptAegisWithStored(
   activeKey: string,
   storageKey: string,
   initialSession: StoredSession,
-  parts: string[],
+  parsed: ParsedAegisRatchetWire,
   aad: Uint8Array,
   logContext: DecryptLogContext = {},
 ): Promise<string | null> {
-  const [sessionId, dhPubB64, NsStr, PNStr, ivB64, ctB64] = parts;
-  const Ns = parseInt(NsStr, 10);
-  const PN = parseInt(PNStr, 10);
-  if (Number.isNaN(Ns) || Number.isNaN(PN)) return null;
+  const {
+    sessionId,
+    dhPubB64,
+    n: Ns,
+    pn: PN,
+    iv,
+    ciphertext: ct,
+  } = parsed;
 
   let session = pruneExpiredSkippedKeys(initialSession);
-  const iv = new Uint8Array(base64ToBuffer(ivB64));
-  const ct = base64ToBuffer(ctB64);
 
   const skipped = await trySkippedKeys(session, dhPubB64, Ns, iv, ct, aad);
   if (skipped) {

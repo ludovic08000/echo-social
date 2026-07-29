@@ -1,5 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
-import { verifyDeviceIdentityBinding } from './deviceIdentity';
+import {
+  ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION,
+  verifyDeviceIdentityBinding,
+} from './deviceIdentity';
+import { fetchPeerPublicKeys } from './peerKeyCache';
 
 export interface SignedDeviceEntry {
   deviceId: string;
@@ -15,6 +19,7 @@ export interface DeviceVerificationResult {
   ok: boolean;
   reason?:
     | 'VALID'
+    | 'NO_ACCOUNT_IDENTITY'
     | 'NO_IDENTITY'
     | 'UNSUPPORTED_IDENTITY_VERSION'
     | 'BAD_DEVICE_IDENTITY_SIGNATURE';
@@ -35,7 +40,6 @@ export async function fetchSignedDeviceList(userId: string): Promise<SignedDevic
     p_user_id: userId,
   });
   if (error) throw error;
-
   return ((data ?? []) as unknown as SesameDeviceRow[]).map((row) => ({
     deviceId: row.device_id,
     devicePublicKey: row.device_public_key,
@@ -50,15 +54,20 @@ export async function verifySignedDeviceList(
   userId: string,
   list: SignedDeviceEntry[],
 ): Promise<DeviceVerificationResult[]> {
+  const accountIdentity = await fetchPeerPublicKeys(userId, { forceRefresh: true });
+  if (!accountIdentity?.signing_key) {
+    return list.map((entry) => ({
+      deviceId: entry.deviceId,
+      ok: false,
+      reason: 'NO_ACCOUNT_IDENTITY',
+    }));
+  }
+
   return Promise.all(list.map(async (entry): Promise<DeviceVerificationResult> => {
-    if (
-      !entry.devicePublicKey ||
-      !entry.deviceSigningKey ||
-      !entry.identitySignature
-    ) {
+    if (!entry.devicePublicKey || !entry.deviceSigningKey || !entry.identitySignature) {
       return { deviceId: entry.deviceId, ok: false, reason: 'NO_IDENTITY' };
     }
-    if (entry.identityVersion !== 1) {
+    if (entry.identityVersion !== ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION) {
       return {
         deviceId: entry.deviceId,
         ok: false,
@@ -72,6 +81,8 @@ export async function verifySignedDeviceList(
       devicePublicKey: entry.devicePublicKey,
       signingPublicKey: entry.deviceSigningKey,
       signature: entry.identitySignature,
+      identityVersion: entry.identityVersion,
+      accountSigningPublicKey: accountIdentity.signing_key,
     });
     return {
       deviceId: entry.deviceId,
@@ -107,6 +118,4 @@ export async function fetchVerifiedDeviceList(userId: string): Promise<{
   };
 }
 
-export const __test__ = {
-  verifyDeviceIdentityBinding,
-};
+export const __test__ = { verifyDeviceIdentityBinding };

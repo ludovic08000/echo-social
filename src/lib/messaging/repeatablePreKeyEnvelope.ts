@@ -13,10 +13,15 @@ import {
   x3dhInitiate,
 } from '@/lib/crypto/x3dh';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
+import {
+  AEGIS_INIT_PREFIX,
+  parseAegisInitWire,
+  parseAegisRatchetWire,
+} from '@/lib/messaging/aegisWire';
 
 const SESSION_STORE = 'sessions';
 const INITIATING_STORE = 'initiating-sessions';
-const PREFIX = 'aegis1.init.v1.';
+const PREFIX = AEGIS_INIT_PREFIX;
 const MAC_INFO = 'ForSure-Aegis-device-init-v1';
 const INITIATING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_INITIATING_MESSAGES = 100;
@@ -70,19 +75,12 @@ function pairKey(
 }
 
 function parseRatchetSessionId(payload: string): string | null {
-  if (!payload.startsWith(AEGIS_RATCHET_PREFIX)) return null;
-  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
-  if (parts.length !== 6 || !parts[0]) return null;
-  return parts[0];
+  return parseAegisRatchetWire(payload)?.sessionId ?? null;
 }
 
 function utf8ToBase64(value: string): string {
   const bytes = new hardGlobals.TextEncoder().encode(value);
   return bufferToBase64(bytes.buffer as ArrayBuffer);
-}
-
-function base64ToUtf8(value: string): string {
-  return new hardGlobals.TextDecoder().decode(base64ToBuffer(value));
 }
 
 function canonicalMacPayload(args: {
@@ -208,39 +206,13 @@ function encodeEnvelope(record: InitiatingEnvelopeRecord, innerRatchet: string, 
 }
 
 export function isRepeatablePreKeyEnvelope(payload: string): boolean {
-  return payload.startsWith(PREFIX);
+  return parseAegisInitWire(payload) !== null;
 }
 
 export function parseRepeatablePreKeyEnvelope(payload: string): ParsedRepeatablePreKeyEnvelope | null {
-  if (!isRepeatablePreKeyEnvelope(payload)) return null;
-  const parts = payload.slice(PREFIX.length).split('.');
-  if (parts.length !== 8) return null;
-
-  const [sessionId, ekB64, spkIdRaw, opkIdRaw, senderIdentityKeyB64, recipientIdentityKeyB64, innerB64, tagB64] = parts;
-  const spkId = Number.parseInt(spkIdRaw, 10);
-  const opkId = opkIdRaw === '0' ? undefined : Number.parseInt(opkIdRaw, 10);
-  if (!sessionId || !ekB64 || !senderIdentityKeyB64 || !recipientIdentityKeyB64 || !innerB64 || !tagB64) return null;
-  if (!Number.isInteger(spkId) || spkId <= 0) return null;
-  if (opkIdRaw !== '0' && (!Number.isInteger(opkId) || (opkId as number) <= 0)) return null;
-
-  let innerRatchet: string;
-  try {
-    innerRatchet = base64ToUtf8(innerB64);
-  } catch {
-    return null;
-  }
-  if (parseRatchetSessionId(innerRatchet) !== sessionId) return null;
-
-  return {
-    sessionId,
-    ekB64,
-    spkId,
-    opkId,
-    senderIdentityKeyB64,
-    recipientIdentityKeyB64,
-    innerRatchet,
-    tagB64,
-  };
+  const parsed = parseAegisInitWire(payload);
+  if (!parsed) return null;
+  return parsed;
 }
 
 async function readSession(key: string): Promise<StoredSessionRecord | null> {

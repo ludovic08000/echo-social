@@ -22,7 +22,7 @@ import {
   getDeviceFingerprint,
   rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
-import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import { getOrCreateIdentityKeys, PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
@@ -33,6 +33,7 @@ import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import {
   getOrCreateDeviceIdentity,
+  ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION,
   signDeviceIdentityBinding,
 } from '@/lib/crypto/deviceIdentity';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
@@ -141,7 +142,10 @@ export function useDeviceRegistration() {
           ranRef.current = false;
           return;
         }
-        const deviceIdentity = await getOrCreateDeviceIdentity(user.id, deviceId);
+        const [deviceIdentity, accountIdentity] = await Promise.all([
+          getOrCreateDeviceIdentity(user.id, deviceId),
+          getOrCreateIdentityKeys(user.id),
+        ]);
         trace('DEVICE_IDENTITY_READY');
         const keys = {
           privateKey: deviceIdentity.privateKey,
@@ -358,6 +362,8 @@ export function useDeviceRegistration() {
           deviceId,
           devicePublicKey: devicePublicKeyB64,
           identity: deviceIdentity,
+          accountSigningPrivateKey: accountIdentity.signingPrivateKey,
+          identityVersion: ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION,
         });
 
         // 1. Register the device.
@@ -375,7 +381,7 @@ export function useDeviceRegistration() {
             p_user_agent: payload.user_agent,
             p_device_signing_key: deviceIdentity.publicB64,
             p_device_identity_signature: deviceIdentitySignature,
-            p_device_identity_version: 1,
+            p_device_identity_version: ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION,
           });
           const registrationResult = rpcResult as DeviceRegistrationRpcResult | null;
 

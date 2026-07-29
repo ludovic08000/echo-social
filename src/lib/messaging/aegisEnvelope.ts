@@ -8,6 +8,24 @@ export const AEGIS_WIRE_VERSION = 1;
 const CONTENT_KEY_BYTES = 32;
 const IV_BYTES = 12;
 const AAD_PREFIX = 'FORSURE-AEGIS-MESSAGE-v1|';
+const MAX_PARENT_BODY_BYTES = 512 * 1024;
+const MAX_PARENT_CIPHERTEXT_BYTES = 256 * 1024;
+const MAX_KEY_CAPSULE_BYTES = 8 * 1024;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function utf8Length(value: string): number {
+  return new hardGlobals.TextEncoder().encode(value).byteLength;
+}
+
+function base64LengthBetween(value: string, min: number, max: number): boolean {
+  if (!value || value.length > Math.ceil(max / 3) * 4 + 4) return false;
+  try {
+    const length = base64ToBuffer(value).byteLength;
+    return length >= min && length <= max;
+  } catch {
+    return false;
+  }
+}
 
 export interface AegisMessageEnvelope {
   protocol: typeof AEGIS_MESSAGE_PROTOCOL;
@@ -78,7 +96,7 @@ function isNonEmptyString(value: unknown): value is string {
 export function parseAegisMessageEnvelope(
   body: string | null | undefined,
 ): AegisMessageEnvelope | null {
-  if (!body || !body.startsWith('{')) return null;
+  if (!body || !body.startsWith('{') || utf8Length(body) > MAX_PARENT_BODY_BYTES) return null;
   try {
     const parsed = hardGlobals.jsonParse(body) as Partial<AegisMessageEnvelope>;
     if (
@@ -87,14 +105,16 @@ export function parseAegisMessageEnvelope(
       parsed.encryptionMode !== 'multi_device' ||
       parsed.algorithm !== 'AES-256-GCM' ||
       parsed.keyTransport !== 'device_ratchet' ||
-      !isNonEmptyString(parsed.messageId) ||
-      !isNonEmptyString(parsed.conversationId) ||
-      !isNonEmptyString(parsed.senderId) ||
-      !isNonEmptyString(parsed.iv) ||
+      !isNonEmptyString(parsed.messageId) || !UUID_RE.test(parsed.messageId) ||
+      !isNonEmptyString(parsed.conversationId) || !UUID_RE.test(parsed.conversationId) ||
+      !isNonEmptyString(parsed.senderId) || !UUID_RE.test(parsed.senderId) ||
+      !isNonEmptyString(parsed.iv) || !base64LengthBetween(parsed.iv, IV_BYTES, IV_BYTES) ||
       !isNonEmptyString(parsed.ciphertext) ||
-      !isNonEmptyString(parsed.digest) ||
+      !base64LengthBetween(parsed.ciphertext, 16, MAX_PARENT_CIPHERTEXT_BYTES) ||
+      !isNonEmptyString(parsed.digest) || !base64LengthBetween(parsed.digest, 32, 32) ||
       typeof parsed.createdAt !== 'number' ||
-      !Number.isFinite(parsed.createdAt)
+      !Number.isFinite(parsed.createdAt) ||
+      parsed.createdAt <= 0
     ) {
       return null;
     }
@@ -105,22 +125,21 @@ export function parseAegisMessageEnvelope(
 }
 
 export function parseAegisKeyCapsule(value: string | null | undefined): AegisKeyCapsule | null {
-  if (!value || !value.startsWith('{')) return null;
+  if (!value || !value.startsWith('{') || utf8Length(value) > MAX_KEY_CAPSULE_BYTES) return null;
   try {
     const parsed = hardGlobals.jsonParse(value) as Partial<AegisKeyCapsule>;
     if (
       parsed.protocol !== AEGIS_KEY_PROTOCOL ||
       parsed.version !== AEGIS_WIRE_VERSION ||
-      !isNonEmptyString(parsed.messageId) ||
-      !isNonEmptyString(parsed.conversationId) ||
-      !isNonEmptyString(parsed.senderId) ||
+      !isNonEmptyString(parsed.messageId) || !UUID_RE.test(parsed.messageId) ||
+      !isNonEmptyString(parsed.conversationId) || !UUID_RE.test(parsed.conversationId) ||
+      !isNonEmptyString(parsed.senderId) || !UUID_RE.test(parsed.senderId) ||
       !isNonEmptyString(parsed.contentKey) ||
-      !isNonEmptyString(parsed.digest)
+      !base64LengthBetween(parsed.contentKey, CONTENT_KEY_BYTES, CONTENT_KEY_BYTES) ||
+      !isNonEmptyString(parsed.digest) || !base64LengthBetween(parsed.digest, 32, 32)
     ) {
       return null;
     }
-    const raw = new Uint8Array(base64ToBuffer(parsed.contentKey));
-    if (raw.byteLength !== CONTENT_KEY_BYTES) return null;
     return parsed as AegisKeyCapsule;
   } catch {
     return null;

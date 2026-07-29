@@ -9,6 +9,9 @@ import {
   importKeyFromJWK,
 } from './utils';
 
+export const LEGACY_DEVICE_IDENTITY_VERSION = 1;
+export const ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION = 2;
+
 export interface DeviceIdentityKey {
   publicKey: CryptoKey;
   privateKey: CryptoKey;
@@ -58,10 +61,12 @@ export function canonicalDeviceIdentityPayload(args: {
   deviceId: string;
   devicePublicKey: string;
   signingPublicKey: string;
+  identityVersion?: number;
 }): string {
+  const version = args.identityVersion ?? LEGACY_DEVICE_IDENTITY_VERSION;
   return JSON.stringify({
     protocol: 'forsure-sesame-device',
-    version: 1,
+    version,
     userId: args.userId,
     deviceId: args.deviceId,
     devicePublicKey: args.devicePublicKey,
@@ -89,11 +94,9 @@ export async function getOrCreateDeviceIdentity(
   const id = storageKey(userId, deviceId);
   const pending = creationJobs.get(id);
   if (pending) return pending;
-
-  const job = createDeviceIdentityUnderLock(userId, deviceId, id)
-    .finally(() => {
-      if (creationJobs.get(id) === job) creationJobs.delete(id);
-    });
+  const job = createDeviceIdentityUnderLock(userId, deviceId, id).finally(() => {
+    if (creationJobs.get(id) === job) creationJobs.delete(id);
+  });
   creationJobs.set(id, job);
   return job;
 }
@@ -106,7 +109,6 @@ async function createDeviceIdentityUnderLock(
   const create = async (): Promise<DeviceIdentityKey> => {
     const existing = await loadDeviceIdentity(userId, deviceId);
     if (existing) return existing;
-
     const generated = await hardCrypto.generateKey(
       SIG_KEY_PARAMS,
       true,
@@ -140,21 +142,37 @@ async function createDeviceIdentityUnderLock(
   return create();
 }
 
+/**
+ * Version 2 is signed by the account Ed25519 key. The optional legacy branch is
+ * retained only for parsing/tests while v1 rows are migrated; secure routes use v2.
+ */
 export async function signDeviceIdentityBinding(args: {
   userId: string;
   deviceId: string;
   devicePublicKey: string;
   identity: DeviceIdentityKey;
+  accountSigningPrivateKey?: CryptoKey;
+  identityVersion?: number;
 }): Promise<string> {
+  const identityVersion = args.identityVersion ?? (
+    args.accountSigningPrivateKey
+      ? ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION
+      : LEGACY_DEVICE_IDENTITY_VERSION
+  );
   const payload = canonicalDeviceIdentityPayload({
     userId: args.userId,
     deviceId: args.deviceId,
     devicePublicKey: args.devicePublicKey,
     signingPublicKey: args.identity.publicB64,
+    identityVersion,
   });
+  const signer = identityVersion === ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION
+    ? args.accountSigningPrivateKey
+    : args.identity.privateKey;
+  if (!signer) throw new Error('ACCOUNT_SIGNING_KEY_REQUIRED_FOR_DEVICE_V2');
   return bufferToBase64(await hardCrypto.sign(
     'Ed25519',
-    args.identity.privateKey,
+    signer,
     encodeString(payload),
   ) as ArrayBuffer);
 }
@@ -165,11 +183,26 @@ export async function verifyDeviceIdentityBinding(args: {
   devicePublicKey: string;
   signingPublicKey: string;
   signature: string;
+  identityVersion?: number;
+  accountSigningPublicKey?: string;
 }): Promise<boolean> {
+  const identityVersion = args.identityVersion ?? LEGACY_DEVICE_IDENTITY_VERSION;
+  if (
+    identityVersion !== LEGACY_DEVICE_IDENTITY_VERSION &&
+    identityVersion !== ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION
+  ) return false;
+  if (
+    identityVersion === ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION &&
+    !args.accountSigningPublicKey
+  ) return false;
+
   try {
+    const verifierB64 = identityVersion === ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION
+      ? args.accountSigningPublicKey!
+      : args.signingPublicKey;
     const publicKey = await hardCrypto.importKey(
       'raw',
-      base64ToBuffer(args.signingPublicKey),
+      base64ToBuffer(verifierB64),
       { name: 'Ed25519' } as Algorithm,
       false,
       ['verify'],
@@ -178,7 +211,7 @@ export async function verifyDeviceIdentityBinding(args: {
       'Ed25519',
       publicKey,
       base64ToBuffer(args.signature),
-      encodeString(canonicalDeviceIdentityPayload(args)),
+      encodeString(canonicalDeviceIdentityPayload({ ...args, identityVersion })),
     );
   } catch {
     return false;

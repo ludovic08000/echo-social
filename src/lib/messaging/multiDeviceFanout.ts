@@ -684,17 +684,25 @@ async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user
         .eq('approval_status', 'approved')
         .is('revoked_at', null)
         .maybeSingle();
-      const { verifyDeviceIdentityBinding } = await import('@/lib/crypto/deviceIdentity');
+      const [{ verifyDeviceIdentityBinding, ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION }, { fetchPeerPublicKeys }] = await Promise.all([
+        import('@/lib/crypto/deviceIdentity'),
+        import('@/lib/crypto/peerKeyCache'),
+      ]);
+      const accountIdentity = await fetchPeerPublicKeys(row.sender_user_id, { forceRefresh: true });
       if (
         !senderDevice?.device_public_key ||
         !senderDevice.device_signing_key ||
         !senderDevice.device_identity_signature ||
+        senderDevice.device_identity_version !== ACCOUNT_AUTHORIZED_DEVICE_IDENTITY_VERSION ||
+        !accountIdentity?.signing_key ||
         !await verifyDeviceIdentityBinding({
           userId: row.sender_user_id,
           deviceId: row.sender_device_id,
           devicePublicKey: senderDevice.device_public_key,
           signingPublicKey: senderDevice.device_signing_key,
           signature: senderDevice.device_identity_signature,
+          identityVersion: senderDevice.device_identity_version,
+          accountSigningPublicKey: accountIdentity.signing_key,
         })
       ) {
         return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };

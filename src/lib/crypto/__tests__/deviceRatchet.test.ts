@@ -17,6 +17,7 @@ import {
   clearAllDeviceSessions,
   AEGIS_RATCHET_PREFIX,
 } from '@/lib/crypto/deviceRatchet';
+import { createAegisSessionId } from '@/lib/messaging/aegisWire';
 
 const A_USER = 'user-alice';
 const A_DEV = 'dev-alice-1';
@@ -168,17 +169,19 @@ describe('deviceRatchet — Aegis priming + Double Ratchet', () => {
   it('listKnownSessionIds enumerates only sessions for the queried self-device', async () => {
     const ss = makeSharedSecret(6);
     const spk = await generateX25519();
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, 'sess-AB', {
+    const sessionAB = createAegisSessionId();
+    const sessionOther = createAegisSessionId();
+    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, sessionAB, {
       isInitiator: true, peerInitialDhPubB64: spk.pubB64,
     });
-    await establishDeviceSession(A_USER, 'dev-alice-other', B_USER, B_DEV, ss, 'sess-other', {
+    await establishDeviceSession(A_USER, 'dev-alice-other', B_USER, B_DEV, ss, sessionOther, {
       isInitiator: true, peerInitialDhPubB64: spk.pubB64,
     });
 
     const known = await listKnownSessionIds(A_USER, A_DEV);
     const ids = known.map(s => s.sessionId);
-    expect(ids).toContain('sess-AB');
-    expect(ids).not.toContain('sess-other');
+    expect(ids).toContain(sessionAB);
+    expect(ids).not.toContain(sessionOther);
   });
 
   it('invalidateDeviceSession drops the session (forces re-X3DH on next send)', async () => {
