@@ -50,6 +50,7 @@ const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels'
 export default function Feed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
   const navigate = useNavigate();
+  const { id: profileId } = useParams<{ id: string }>();
   
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
