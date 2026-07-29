@@ -249,7 +249,7 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
             isOwn={isOwn}
             city={profile?.city ?? null}
             website={profile?.website_url ?? null}
-            visibility={profile?.field_visibility ?? null}
+            visibility={(profile?.field_visibility as unknown as Record<string, string>) ?? null}
             onToggle={async (next) => {
               try {
                 await updateProfile.mutateAsync({ field_visibility: next as any });
