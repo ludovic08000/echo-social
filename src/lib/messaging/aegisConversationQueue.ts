@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Browser scheduler for the Aegis outbound transaction.
+ * Browser scheduler for the stable outbound transaction.
  *
- * The transport and cryptography stay owned by Aegis. This module only gives
+ * The transport owns idempotent server commits. This module only gives
  * the web client the queue guarantees that matter for stable delivery:
  *   - one active send/retry per conversation;
  *   - cross-tab exclusion through the Web Locks API when available;
@@ -17,7 +17,7 @@ const retryAttempts = new Map<string, number>();
 const retryInflight = new Set<string>();
 const retryStopped = new Set<string>();
 
-const RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000] as const;
+const RETRY_DELAYS_MS = [1_500, 5_000, 15_000] as const;
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length;
 const LOCK_ACQUIRE_TIMEOUT_MS = 45_000;
 

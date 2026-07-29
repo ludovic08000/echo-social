@@ -408,7 +408,7 @@ export function useAegisMessageQueue(
         throw error instanceof Error ? error : new Error(message);
       }
     } else {
-      trace('aegis_durability_delegated');
+      trace('server_durability_delegated');
     }
 
     updatePending({
@@ -559,7 +559,7 @@ throw new Error(visibleMessage);
         bodyToStore = sent.parentBody;
         fanoutRows = sent.copies;
         encryptedSuccessfully = true;
-        sendMethod = 'aegis_authoritative_rpc';
+        sendMethod = 'server_authoritative_rpc';
         retriedStaleRoute = sent.retriedStaleRoute;
       } catch (error) {
         const failure = classifyOutboundFailure(error);
@@ -582,7 +582,7 @@ throw new Error(visibleMessage);
     if (!isSpecial) recordSentMessage(sanitized);
     onPlaintextCached?.(data.id, sanitized);
     if (encryptedSuccessfully) {
-      // The Aegis engine owns local caches and archive writes. The queue only
+      // The outbound engine owns the stable commit and local outbox. The queue only
       // wakes mounted bubbles after the authoritative commit.
       dispatchDecryptRetry(data.id);
     }
