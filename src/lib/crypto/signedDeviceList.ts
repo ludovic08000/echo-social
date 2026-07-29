@@ -31,12 +31,12 @@ type SesameDeviceRow = {
 
 export async function fetchSignedDeviceList(userId: string): Promise<SignedDeviceEntry[]> {
   if (!userId) return [];
-  const { data, error } = await supabase.rpc('get_sesame_device_list', {
+  const { data, error } = await (supabase as any).rpc('get_sesame_device_list', {
     p_user_id: userId,
   });
   if (error) throw error;
 
-  return ((data ?? []) as SesameDeviceRow[]).map((row) => ({
+  return ((data ?? []) as unknown as SesameDeviceRow[]).map((row) => ({
     deviceId: row.device_id,
     devicePublicKey: row.device_public_key,
     deviceSigningKey: row.device_signing_key,
