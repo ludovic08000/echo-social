@@ -77,3 +77,20 @@ rather than identity keys. The hardened path now:
   stable account fingerprints;
 - refuses the confirmation button unless the actual local and peer identities
   were loaded.
+
+
+## Server privacy boundaries
+
+The protocol can remain end-to-end encrypted only if auxiliary services do not
+receive message previews. The hardening therefore:
+
+- redacts likely keys, ciphertext, tokens, plaintext fields and arbitrary nested
+  metadata before crypto diagnostics leave the device;
+- permits server AI moderation only for a server-readable `system` message that
+  belongs to the authenticated sender and exactly matches the stored body;
+- skips every Aegis `multi_device` row without sending it to an AI provider;
+- replaces private-message push previews with generic text.
+
+This preserves content privacy but means automated server moderation cannot read
+ordinary E2EE conversations. Abuse reporting must use explicit client-side
+selection/upload with user consent rather than silent server scanning.

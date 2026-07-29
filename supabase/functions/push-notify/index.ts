@@ -198,8 +198,16 @@ Deno.serve(async (req) => {
       });
     }
 
+    const isPrivateMessagePush = typeof kind === "string" && (
+      kind === "message" ||
+      kind === "new_message" ||
+      kind === "chat_message" ||
+      kind.startsWith("message_")
+    );
+    const safeTitle = isPrivateMessagePush ? "Nouveau message" : title;
+    const safeBody = isPrivateMessagePush ? "Ouvre ForSure pour le déchiffrer." : (msgBody || "");
     const payload = JSON.stringify({
-      title, body: msgBody || "", icon: icon || "/pwa-192x192.png",
+      title: safeTitle, body: safeBody, icon: icon || "/pwa-192x192.png",
       badge: "/pwa-192x192.png", url: url || "/notifications",
       tag, kind, requireInteraction: !!requireInteraction,
       timestamp: Date.now(),

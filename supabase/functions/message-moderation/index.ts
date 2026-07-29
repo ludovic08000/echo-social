@@ -41,8 +41,43 @@ Deno.serve(async (req) => {
     if (action === "moderate_message") {
       const { messageBody, messageId } = body;
 
-      if (!messageBody || typeof messageBody !== "string") {
-        return new Response(JSON.stringify({ error: "messageBody required" }), {
+      if (!messageId || !messageBody || typeof messageBody !== "string") {
+        return new Response(JSON.stringify({ error: "messageId and messageBody required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: authoritativeMessage, error: messageError } = await supabase
+        .from("messages")
+        .select("id, sender_id, conversation_id, body, body_kind")
+        .eq("id", messageId)
+        .maybeSingle();
+      if (messageError) throw messageError;
+      if (!authoritativeMessage || authoritativeMessage.sender_id !== user.id) {
+        return new Response(JSON.stringify({ error: "FORBIDDEN_MESSAGE" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const bodyKind = authoritativeMessage.body_kind || "";
+      const storedBody = authoritativeMessage.body || "";
+      const isAegisCiphertext = bodyKind === "multi_device" || (
+        storedBody.startsWith("{") &&
+        storedBody.includes('"protocol":"forsure-aegis-message"')
+      );
+      if (isAegisCiphertext) {
+        return new Response(JSON.stringify({
+          safe: true,
+          reason: null,
+          skipped: "e2ee_client_private",
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (bodyKind !== "system" || storedBody !== messageBody) {
+        return new Response(JSON.stringify({ error: "UNVERIFIED_MESSAGE_CONTENT" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

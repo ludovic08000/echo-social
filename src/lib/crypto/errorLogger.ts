@@ -53,6 +53,40 @@ export interface CryptoErrorEntry {
 const BUFFER: Array<CryptoErrorEntry & { ts: string }> = [];
 const MAX_BUFFER = 20;
 const FLUSH_INTERVAL_MS = 2_000;
+const MAX_METADATA_DEPTH = 4;
+const SENSITIVE_FIELD_RE = /(?:plain(?:text)?|messagebody|contentkey|keycapsule|encrypted[_-]?body|cipher(?:text)?|secret|token|authorization|password|pin|recoverykey|privatekey)/i;
+const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
+const LONG_BASE64_RE = /\b[A-Za-z0-9+/]{40,}={0,2}\b/g;
+const MEDIA_KEY_RE = /\x00MKEY:[^\s]+/g;
+
+export function redactCryptoDiagnostic(value: string): string {
+  return value
+    .replace(JWT_RE, '[REDACTED_JWT]')
+    .replace(MEDIA_KEY_RE, '\x00MKEY:[REDACTED]')
+    .replace(/([?&](?:token|key|secret|signature|authorization)=)[^&\s]+/gi, '$1[REDACTED]')
+    .replace(/("?(?:plaintext|messageBody|contentKey|keyCapsule|encrypted_body|ciphertext|privateKey|recoveryKey|password|pin)"?\s*[:=]\s*)"?[^",}\s]+"?/gi, '$1[REDACTED]')
+    .replace(LONG_BASE64_RE, '[REDACTED_B64]')
+    .slice(0, 1000);
+}
+
+function sanitizeMetadataValue(value: unknown, depth = 0): unknown {
+  if (depth > MAX_METADATA_DEPTH) return '[TRUNCATED]';
+  if (typeof value === 'string') return redactCryptoDiagnostic(value);
+  if (typeof value === 'number' || typeof value === 'boolean' || value == null) return value;
+  if (Array.isArray(value)) {
+    return value.slice(0, 25).map((entry) => sanitizeMetadataValue(entry, depth + 1));
+  }
+  if (typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
+      result[key] = SENSITIVE_FIELD_RE.test(key)
+        ? '[REDACTED]'
+        : sanitizeMetadataValue(entry, depth + 1);
+    }
+    return result;
+  }
+  return String(value).slice(0, 200);
+}
 
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushing = false;
@@ -91,7 +125,11 @@ export function classifyCryptoError(err: unknown): { code: string; message: stri
     else if (/encrypt/i.test(msg)) code = 'E_ENCRYPT';
     else if (/key/i.test(msg)) code = 'E_KEY';
     else if (/network|fetch|503|502|429/i.test(msg)) code = 'E_NETWORK';
-    return { code, message: msg.slice(0, 1000), stack: err.stack?.slice(0, 2000) };
+    return {
+      code,
+      message: redactCryptoDiagnostic(msg),
+      stack: err.stack ? redactCryptoDiagnostic(err.stack).slice(0, 2000) : undefined,
+    };
   }
   return { code: 'E_UNKNOWN', message: String(err).slice(0, 1000) };
 }
@@ -150,18 +188,24 @@ function scheduleFlush() {
  */
 export function logCryptoError(entry: CryptoErrorEntry): void {
   try {
-    const enriched = { ...entry, ts: new Date().toISOString() };
+    const sanitizedEntry: CryptoErrorEntry = {
+      ...entry,
+      errorMessage: redactCryptoDiagnostic(entry.errorMessage),
+      stack: entry.stack ? redactCryptoDiagnostic(entry.stack).slice(0, 2000) : entry.stack,
+      metadata: sanitizeMetadataValue(entry.metadata) as Record<string, unknown> | null,
+    };
+    const enriched = { ...sanitizedEntry, ts: new Date().toISOString() };
     BUFFER.push(enriched);
     if (isDev()) {
       // eslint-disable-next-line no-console
       console.warn(
-        `[CRYPTO ${entry.severity.toUpperCase()}][${entry.context}] ${entry.errorCode}: ${entry.errorMessage}`,
+        `[CRYPTO ${sanitizedEntry.severity.toUpperCase()}][${sanitizedEntry.context}] ${sanitizedEntry.errorCode}: ${sanitizedEntry.errorMessage}`,
         {
-          conv: entry.conversationId,
-          myDev: entry.myDeviceId,
-          peer: entry.peerUserId,
-          peerDev: entry.peerDeviceId,
-          meta: entry.metadata,
+          conv: sanitizedEntry.conversationId,
+          myDev: sanitizedEntry.myDeviceId,
+          peer: sanitizedEntry.peerUserId,
+          peerDev: sanitizedEntry.peerDeviceId,
+          meta: sanitizedEntry.metadata,
         },
       );
     }
