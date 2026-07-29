@@ -1,0 +1,72 @@
+name: Apply immediate chat PIN unlock hotfix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-chat-pin-unlock-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch local PIN unlock ordering
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/hooks/useChatPin.ts')
+          source = path.read_text(encoding='utf-8')
+          old = """      // Upgrade PINs created by older clients to the server-wrapped backup.
+                await setupPersistentBackupPin(pin, user.id).catch(() => 'error');
+              } else {
+          """
+          new = """      // A locally verified PIN opens messaging immediately. Server backup
+                // maintenance is optional and must never block the widget or full page.
+                announceUnlock(user.id);
+                setState((current) => ({
+                  ...current,
+                  unlocked: true,
+                  processing: false,
+                  error: null,
+                }));
+                void setupPersistentBackupPin(pin, user.id)
+                  .then((result) => {
+                    if (result !== 'ok') {
+                      console.warn('[LOCAL-PIN] background server backup upgrade deferred', { result });
+                    }
+                  })
+                  .catch((error) => {
+                    console.warn('[LOCAL-PIN] background server backup upgrade failed', error);
+                  });
+                return true;
+              } else {
+          """
+
+          if source.count(old) != 1:
+              raise SystemExit(f'Expected exactly one PIN-upgrade block, found {source.count(old)}')
+
+          path.write_text(source.replace(old, new), encoding='utf-8')
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          if git diff --quiet -- src/hooks/useChatPin.ts; then
+            echo "No change produced" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/hooks/useChatPin.ts
+          git commit -m "fix(pin): open chat immediately after local verification"
+          git push origin HEAD:main
