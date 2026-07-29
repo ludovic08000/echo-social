@@ -1,4 +1,4 @@
-name: Patch PR48 widget
+name: Patch PR48 legacy hook
 
 on:
   push:
@@ -17,10 +17,10 @@ jobs:
         with:
           ref: refactor/server-message-transport
           fetch-depth: 0
-      - run: python scripts/patch_pr48_widget.py
+      - run: python scripts/fix_pr48_legacy_hook.py
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/components/ChatWidget.tsx src/hooks/useAegisMessageQueue.ts
-          git commit -m "refactor(messages): remove E2EE readiness from new sends"
+          git add src/hooks/useAegisMessageQueue.ts
+          git commit -m "fix(messages): keep legacy hook compilable"
           git push origin HEAD:refactor/server-message-transport
