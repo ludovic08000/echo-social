@@ -18,6 +18,22 @@ function getRequestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+function definitiveRefreshFailure(error: unknown): boolean {
+  if (!error) return false;
+  const value = error as { code?: unknown; message?: unknown; status?: unknown };
+  const code = typeof value.code === 'string' ? value.code.toLowerCase() : '';
+  const message = typeof value.message === 'string' ? value.message.toLowerCase() : '';
+  const status = typeof value.status === 'number' ? value.status : 0;
+
+  return code === 'refresh_token_not_found'
+    || code === 'bad_jwt'
+    || message.includes('invalid refresh token')
+    || message.includes('refresh token not found')
+    || message.includes('jwt expired')
+    || message.includes('invalid jwt')
+    || (status === 401 && message.includes('refresh'));
+}
+
 function clearStaleSupabaseAuthSession(reason = 'supabase-rest-401') {
   if (typeof window === 'undefined') return;
   try {
@@ -48,33 +64,50 @@ function recoverSupabaseAuthAfter401(): void {
       const client = supabaseClientRef;
       if (!client?.auth) return;
 
-      const { data: current } = await client.auth.getSession();
-      if (current?.session) {
-        const { data: refreshed, error } = await client.auth.refreshSession();
-        if (!error && refreshed?.session) {
-          confirmedAuthFailureCount = 0;
-          console.warn('[Supabase] REST 401 - session refreshed; keeping auth state');
-          window.dispatchEvent(new CustomEvent('forsure:auth-session-refreshed', {
-            detail: { reason: 'supabase-rest-401' },
-          }));
-          return;
-        }
-        console.warn('[Supabase] REST 401 - refresh failed once; keeping auth pending retry', error?.message ?? error);
-      } else {
-        console.warn('[Supabase] REST 401 - no local session found during recovery');
+      const { data: current, error: sessionError } = await client.auth.getSession();
+
+      // A REST 401 before login is not evidence of a stale session. The previous
+      // implementation counted these anonymous requests and deleted auth storage
+      // after two occurrences, racing with signIn and PIN persistence.
+      if (!current?.session) {
+        confirmedAuthFailureCount = 0;
+        console.warn('[Supabase] REST 401 - no local session; leaving auth storage untouched', {
+          error: sessionError?.message ?? null,
+        });
+        return;
+      }
+
+      const { data: refreshed, error } = await client.auth.refreshSession();
+      if (!error && refreshed?.session) {
+        confirmedAuthFailureCount = 0;
+        console.warn('[Supabase] REST 401 - session refreshed; keeping auth state');
+        window.dispatchEvent(new CustomEvent('forsure:auth-session-refreshed', {
+          detail: { reason: 'supabase-rest-401' },
+        }));
+        return;
+      }
+
+      if (!definitiveRefreshFailure(error)) {
+        confirmedAuthFailureCount = 0;
+        console.warn('[Supabase] REST 401 - refresh failed transiently; auth storage preserved', {
+          error: error?.message ?? error,
+        });
+        return;
       }
 
       confirmedAuthFailureCount += 1;
+      console.warn('[Supabase] REST 401 - definitive refresh failure', {
+        attempt: confirmedAuthFailureCount,
+        error: error?.message ?? error,
+      });
+
       if (confirmedAuthFailureCount >= 2) {
-        console.warn('[Supabase] REST 401 - confirmed stale auth twice; clearing local session');
-        clearStaleSupabaseAuthSession('supabase-rest-401-confirmed');
+        clearStaleSupabaseAuthSession('supabase-rest-401-confirmed-invalid-refresh');
       }
     } catch (error) {
-      confirmedAuthFailureCount += 1;
-      console.warn('[Supabase] REST 401 - auth recovery threw; keeping session unless repeated', error);
-      if (confirmedAuthFailureCount >= 2) {
-        clearStaleSupabaseAuthSession('supabase-rest-401-recovery-failed');
-      }
+      // Network/extension failures must never erase an otherwise usable session.
+      confirmedAuthFailureCount = 0;
+      console.warn('[Supabase] REST 401 - recovery check failed; auth storage preserved', error);
     } finally {
       authRecoveryInFlight = null;
     }
@@ -87,12 +120,9 @@ const guardedFetch: typeof fetch = async (input, init) => {
 
   try {
     // Always prefer the browser's captured Fetch implementation. Supabase Auth
-    // is designed and tested around Fetch; forcing every auth call through XHR
-    // introduced a client-side 20-second timeout on otherwise healthy requests.
+    // is designed and tested around Fetch; XHR remains a compatibility fallback.
     response = await capturedFetch(input as RequestInfo | URL, init);
   } catch (error) {
-    // Keep XHR only as a compatibility fallback for browsers/extensions that
-    // break Fetch before the application starts. It is never the primary path.
     console.warn('[Supabase] fetch failed; retrying once with XHR transport', {
       url,
       error,
