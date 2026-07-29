@@ -43,3 +43,19 @@ The former group-call path wrote the raw LiveKit key to
 
 A legacy wrapped-key fallback remains temporarily for old 1:1 callers during a
 rolling deployment. There is no legacy group fallback.
+
+
+## Recovery-key-only backup
+
+Password- and six-digit-PIN-wrapped Master Keys are removed from the active
+architecture. Both formats permit offline verification of a human secret after
+a database or object-store compromise. The strict vault now:
+
+- accepts only recovery backups wrapped by a random 256-bit recovery key;
+- keeps that recovery key in memory or native Keychain/Keystore, never on the
+  application server or R2;
+- treats the six-digit messaging PIN strictly as a local UI lock;
+- deletes legacy password/PIN rows and rejects recreation by older clients;
+- refuses automatic E2EE restore after ordinary account authentication;
+- makes recovery intentionally impossible without the recovery key or a linked
+  device/native Keychain snapshot.

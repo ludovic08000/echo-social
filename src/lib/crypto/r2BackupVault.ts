@@ -28,7 +28,7 @@ function isEnvelope(value: unknown): value is EncryptedAccountBackupEnvelope {
 
 async function readLocalBackup(
   userId: string,
-  backupType: 'account' | 'recovery' = 'account',
+  backupType: 'account' | 'recovery' = 'recovery',
 ): Promise<EncryptedAccountBackupEnvelope | null> {
   try {
     const { data, error } = await supabase
@@ -47,7 +47,7 @@ async function readLocalBackup(
 /** Mirror the already-encrypted Supabase backup into the private R2 vault. */
 export async function mirrorCurrentBackupToR2(
   userId: string,
-  backupType: 'account' | 'recovery' = 'account',
+  backupType: 'account' | 'recovery' = 'recovery',
 ): Promise<boolean> {
   if (!userId) return false;
   const backup = await readLocalBackup(userId, backupType);
@@ -73,7 +73,7 @@ export async function mirrorCurrentBackupToR2(
  */
 export function scheduleBackupMirrorToR2(
   userId: string,
-  backupType: 'account' | 'recovery' = 'account',
+  backupType: 'account' | 'recovery' = 'recovery',
 ): void {
   if (!userId || typeof window === 'undefined') return;
   const delays = [0, 2_000, 8_000];
@@ -95,7 +95,7 @@ export function scheduleBackupMirrorToR2(
  */
 export async function ensureBackupIndexedFromR2(
   userId: string,
-  backupType: 'account' | 'recovery' = 'account',
+  backupType: 'account' | 'recovery' = 'recovery',
 ): Promise<'present' | 'restored' | 'missing' | 'unavailable'> {
   if (!userId) return 'unavailable';
 
@@ -128,7 +128,7 @@ export async function ensureBackupIndexedFromR2(
 }
 
 export async function deleteBackupMirrorFromR2(
-  backupType: 'account' | 'recovery' = 'account',
+  backupType: 'account' | 'recovery' = 'recovery',
 ): Promise<boolean> {
   try {
     const { data, error } = await supabase.functions.invoke('e2ee-backup-vault', {

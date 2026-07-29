@@ -1,168 +1,35 @@
 name: E2EE CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
-    branches: [refactor/aegis-modular-architecture]
+    branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   verify:
-    if: github.event_name == 'pull_request' && github.head_ref == 'hardening/aegis-signal-audit-v2'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout hardening branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: hardening/aegis-signal-audit-v2
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
-
-      - name: Generate recovery-key-only vault
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path('scripts/apply_recovery_key_only_vault.py')
-          source = path.read_text(encoding='utf-8')
-
-          r2_old = '''# R2 and backup UI default exclusively to recovery envelopes.
-          replace_once(
-              'src/lib/crypto/r2BackupVault.ts',
-              "backupType: 'account' | 'recovery' = 'account'",
-              "backupType: 'account' | 'recovery' = 'recovery'",
-              'R2 read default recovery',
-          )
-          # The same default appears four times.
-          target = Path('src/lib/crypto/r2BackupVault.ts')
-          source = target.read_text(encoding='utf-8')
-          source = source.replace("backupType: 'account' | 'recovery' = 'account'", "backupType: 'account' | 'recovery' = 'recovery'")
-          target.write_text(source, encoding='utf-8')
-          '''
-          r2_new = '''# R2 and backup UI default exclusively to recovery envelopes.
-          target = Path('src/lib/crypto/r2BackupVault.ts')
-          source = target.read_text(encoding='utf-8')
-          marker = "backupType: 'account' | 'recovery' = 'account'"
-          count = source.count(marker)
-          if count != 5:
-              raise SystemExit(f'R2 recovery defaults: expected 5 occurrences, found {count}')
-          source = source.replace(marker, "backupType: 'account' | 'recovery' = 'recovery'")
-          target.write_text(source, encoding='utf-8')
-          '''
-          if r2_old not in source:
-              raise SystemExit('R2 generator patch target missing')
-          source = source.replace(r2_old, r2_new, 1)
-
-          label_pattern = re.compile(
-              r"replace_once\(\n"
-              r"    'src/components/KeyBackupPanel\.tsx',\n"
-              r"    \"\s+\{autoBackupOn \? 'Sauvegarde automatique active' : 'Reconnecte-toi pour activer la sauvegarde auto'\}\\n\",\n"
-              r"    \"\s+\{autoBackupOn \? 'Sauvegarde recovery active pour cette session' : 'Crée ou saisis ta clé de récupération pour synchroniser'\}\\n\",\n"
-              r"    'backup status label',\n"
-              r"\)"
-          )
-          label_replacement = '''target = Path('src/components/KeyBackupPanel.tsx')
-          ui_source = target.read_text(encoding='utf-8')
-          old_label = "{autoBackupOn ? 'Sauvegarde automatique active' : 'Reconnecte-toi pour activer la sauvegarde auto'}"
-          new_label = "{autoBackupOn ? 'Sauvegarde recovery active pour cette session' : 'Crée ou saisis ta clé de récupération pour synchroniser'}"
-          count = ui_source.count(old_label)
-          if count != 1:
-              raise SystemExit(f'backup status label: expected 1 occurrence, found {count}')
-          target.write_text(ui_source.replace(old_label, new_label, 1), encoding='utf-8')'''
-          source, count = label_pattern.subn(label_replacement, source, count=1)
-          if count != 1:
-              raise SystemExit(f'backup status generator patch: expected 1 block, found {count}')
-
-          path.write_text(source, encoding='utf-8')
-          PY
-          python3 scripts/apply_recovery_key_only_vault.py
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('src/lib/crypto/accountKeyBackup.ts')
-          source = path.read_text(encoding='utf-8')
-          old = "await supabase.from('backup_pin_state' as any).delete().eq('user_id', userId).catch(() => undefined);"
-          new = "await supabase.from('backup_pin_state' as any).delete().eq('user_id', userId);"
-          count = source.count(old)
-          if count != 1:
-              raise SystemExit(f'PostgREST cleanup repair: expected 1 occurrence, found {count}')
-          path.write_text(source.replace(old, new, 1), encoding='utf-8')
-          PY
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
 
-      - name: Recovery and regression tests
-        run: >-
-          npx vitest run
-          src/lib/crypto/__tests__/recoveryKeyOnlyPolicy.test.ts
-          src/hooks/__tests__/useChatPinLocal.test.ts
-          src/lib/crypto/__tests__/backup.test.ts
-          src/lib/messaging/archive/__tests__/archiveKey.test.ts
-          src/lib/calls/__tests__/secureCallKeys.test.ts
-          src/lib/calls/__tests__/secureCallSourcePolicy.test.ts
-          src/lib/messaging/__tests__/aegisWire.test.ts
-          src/lib/crypto/__tests__/multiDeviceIntegration.test.ts
+      - name: Test
+        run: npm run test
 
       - name: Build
         run: npm run build
-
-      - name: Restore normal CI and commit validated backup hardening
-        run: |
-          git checkout -- public/version.json 2>/dev/null || true
-          rm -f scripts/apply_recovery_key_only_vault.py
-          cat > .github/workflows/e2ee-ci.yml <<'EOF'
-          name: E2EE CI
-
-          on:
-            push:
-              branches: [main]
-            pull_request:
-              branches: [main]
-            workflow_dispatch:
-
-          jobs:
-            verify:
-              runs-on: ubuntu-latest
-              timeout-minutes: 20
-
-              steps:
-                - name: Checkout
-                  uses: actions/checkout@v4
-
-                - name: Setup Node
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-                    cache: npm
-
-                - name: Install dependencies
-                  run: npm ci
-
-                - name: Lint
-                  run: npm run lint
-
-                - name: Test
-                  run: npm run test
-
-                - name: Build
-                  run: npm run build
-          EOF
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "security(backup): require 256-bit recovery key"
-          git push origin HEAD:hardening/aegis-signal-audit-v2

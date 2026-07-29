@@ -202,71 +202,17 @@ async function adoptRawMasterKey(userId: string, raw: Uint8Array, source: string
  * replacing this device's own identity/ratchet stores.
  */
 export async function initializeArchiveMasterKeyFromPassword(
-  password: string,
+  _password: string,
   userId: string,
 ): Promise<ArchiveMasterInitStatus> {
-  if (!password || !userId) return 'blocked';
-  if (sessionUserId === userId && sessionKey) return 'restored';
-  if (initInFlight) return initInFlight;
-
-  initInFlight = (async () => {
-    try {
-      const { data, error } = await supabase
-        .from('user_backups' as any)
-        .select('salt, wrapped_master_key, master_key_iv, version')
-        .eq('user_id', userId)
-        .eq('backup_type', 'account')
-        .maybeSingle();
-
-      if (error) return 'blocked';
-      if (!data) return 'no_backup';
-
-      const backup = data as unknown as AccountBackupWrap;
-      if (
-        backup.version < 5 ||
-        !backup.salt ||
-        !backup.wrapped_master_key ||
-        !backup.master_key_iv
-      ) {
-        return 'blocked';
-      }
-
-      const salt = new Uint8Array(base64ToBuffer(backup.salt));
-      const wrappingKey = await deriveWrappingKey(passwordSecret(password, userId), salt);
-      const aad = backup.version >= 6 ? buildBackupAAD(userId, backup.version) : undefined;
-      const raw = await unwrapMasterKey(
-        backup.wrapped_master_key,
-        backup.master_key_iv,
-        wrappingKey,
-        aad,
-      );
-      await adoptRawMasterKey(userId, raw, 'password_backup');
-      raw.fill(0);
-      return 'restored';
-    } catch {
-      // Existing backup + failed unwrap must never fall through to key creation.
-      return 'blocked';
-    }
-  })();
-
-  try {
-    return await initInFlight;
-  } finally {
-    initInFlight = null;
-  }
+  return (await getArchiveMasterKey(userId)) ? 'restored' : 'no_backup';
 }
 
 export async function initializeArchiveMasterKeyAfterBackupCreation(
-  password: string,
+  _password: string,
   userId: string,
 ): Promise<ArchiveMasterInitStatus> {
-  const delays = [0, 400, 1_200, 3_000];
-  for (const delay of delays) {
-    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-    const status = await initializeArchiveMasterKeyFromPassword(password, userId);
-    if (status !== 'no_backup') return status;
-  }
-  return 'no_backup';
+  return (await getArchiveMasterKey(userId)) ? 'restored' : 'no_backup';
 }
 
 export async function getArchiveMasterKey(userId: string): Promise<CryptoKey | null> {

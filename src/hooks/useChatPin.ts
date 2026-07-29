@@ -1,9 +1,8 @@
 /**
  * Aegis messaging PIN gate.
  *
- * The PIN itself never leaves the device. Supabase stores only a salt and the
- * Aegis master key wrapped by a key derived from that PIN. This lets a browser
- * recover the gate after cache loss without exposing the PIN or ratchet state.
+ * The PIN itself never leaves the device and only unlocks a local verifier.
+ * It is not a recovery secret and never wraps the Aegis Master Key on a server.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -16,11 +15,6 @@ import {
   secureRemoveSecret,
   secureSetSecret,
 } from '@/lib/secureStore';
-import {
-  hasBackupPin,
-  restoreWithBackupPin,
-} from '@/lib/crypto/accountKeyBackup';
-import { setupPersistentBackupPin } from '@/lib/aegis/recovery';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
@@ -269,11 +263,10 @@ export function useChatPin() {
 
     const refresh = async (unlockCurrentOpen = false) => {
       const record = await loadLocalPin(user.id);
-      const serverHasPin = record ? false : await hasBackupPin(user.id);
       if (cancelled) return;
       const mode = localMode(user.id);
       const sessionUnlocked = storageGet(sessionStorage, SESSION_KEY) === user.id;
-      const hasPin = Boolean(record) || serverHasPin;
+      const hasPin = Boolean(record);
       const unlocked = Boolean(record) && (
         unlockCurrentOpen || (mode !== 'every_open' && sessionUnlocked)
       );
@@ -359,15 +352,6 @@ export function useChatPin() {
         pinMode: 'every_open',
       });
 
-      void setupPersistentBackupPin(pin, user.id)
-        .then((result) => {
-          if (result !== 'ok') {
-            console.warn('[LOCAL-PIN] initial server backup deferred', { result });
-          }
-        })
-        .catch((error) => {
-          console.warn('[LOCAL-PIN] initial server backup failed', error);
-        });
 
       // This creates only an email-reset ticket. The PIN itself is deliberately
       // absent from the request and cannot be verified by the server.
@@ -405,28 +389,14 @@ export function useChatPin() {
         processing: false,
         error: null,
       }));
-      void setupPersistentBackupPin(pin, user.id)
-        .then((result) => {
-          if (result !== 'ok') {
-            console.warn('[LOCAL-PIN] background server backup upgrade deferred', { result });
-          }
-        })
-        .catch((error) => {
-          console.warn('[LOCAL-PIN] background server backup upgrade failed', error);
-        });
       return true;
     } else {
-      const restored = await restoreWithBackupPin(pin, user.id);
-      if (restored.status !== 'restored') {
-        const error = restored.status === 'locked'
-          ? 'Trop de tentatives. Réessayez plus tard.'
-          : restored.status === 'wrong_pin'
-            ? 'PIN incorrect'
-            : 'Sauvegarde PIN Aegis indisponible';
-        setState((current) => ({ ...current, processing: false, error }));
-        return false;
-      }
-      await saveLocalPin(user.id, pin);
+      setState((current) => ({
+        ...current,
+        processing: false,
+        error: 'PIN local indisponible. Utilise la clé de récupération E2EE.',
+      }));
+      return false;
     }
     announceUnlock(user.id);
     setState((current) => ({ ...current, unlocked: true, processing: false, error: null }));

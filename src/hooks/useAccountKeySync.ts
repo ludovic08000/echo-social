@@ -14,7 +14,6 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   clearAccountKeySession,
   hasLocalKeys,
-  restoreAccountKeysFromActiveSession,
   restoreKeysFromKeychainSnapshot,
   syncKeychainSnapshotFromLocal,
   restoreFromInMemoryMasterKey,
@@ -120,17 +119,7 @@ export function useAccountKeySync() {
           return;
         }
 
-        const restoreStatus = await restoreAccountKeysFromActiveSession(user.id);
-        if (cancelled) return;
-
-        console.log('[messaging] active-session restore status:', restoreStatus);
-
-        if (restoreStatus === 'restored') {
-          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-            detail: { status: 'restored_active_session' },
-          }));
-          return;
-        }
+        const restoreStatus: 'unavailable' = 'unavailable';
 
         // Cold-start path (iOS/Android most often): no in-memory password,
         // IndexedDB empty. Use the secure sentinel to detect a server backup
@@ -145,7 +134,7 @@ export function useAccountKeySync() {
               .from('user_backups')
               .select('id, version, backup_type, created_at')
               .eq('user_id', user.id)
-              .eq('backup_type', 'account')
+              .eq('backup_type', 'recovery')
               .maybeSingle();
 
             if (cancelled) return;
@@ -227,13 +216,6 @@ export function useAccountKeySync() {
               // Continue with the next silent restore source.
             }
           }
-          if (!recovered) {
-            try {
-              recovered = (await restoreAccountKeysFromActiveSession(user.id)) === 'restored';
-            } catch {
-              // The watchdog will retry while the app remains active.
-            }
-          }
           if (recovered) {
             console.log('[AccountKeySync] watchdog: silent re-hydration succeeded');
             window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
@@ -286,18 +268,6 @@ export function useAccountKeySync() {
         }
       } catch {
         // Continue with the authenticated password session.
-      }
-      // 3) In-memory password session
-      try {
-        const p = await restoreAccountKeysFromActiveSession(user.id);
-        if (p === 'restored') {
-          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-            detail: { status: `restored_from_password_${origin}` },
-          }));
-          return true;
-        }
-      } catch {
-        // Silent restore is retried on the next resume.
       }
       return false;
     };

@@ -13,7 +13,6 @@ import { isAutoBackupActive, syncBackupToServer, hasLocalKeys } from '@/lib/cryp
 import { resyncE2EE, type ResyncReport } from '@/lib/crypto/resyncE2EE';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
-import { BackupPinSection } from '@/components/BackupPinSection';
 
 export function KeyBackupPanel() {
   const backup = useSecureBackup();
@@ -139,7 +138,7 @@ export function KeyBackupPanel() {
           Coffre E2EE — Sauvegarde & Transfert
         </CardTitle>
         <CardDescription className="text-xs">
-          Tes clés de chiffrement sont automatiquement sauvegardées avec ton compte. Si tu changes d'appareil ou vides ton cache, elles seront restaurées à la connexion.
+          Sauvegarde facultative chiffrée par une clé de récupération de 256 bits. Sans cette clé, le serveur ne peut pas restaurer tes données E2EE.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -159,7 +158,7 @@ export function KeyBackupPanel() {
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${autoBackupOn ? 'bg-green-500' : 'bg-yellow-500'}`} />
                 <span className="text-xs font-medium">
-                  {autoBackupOn ? 'Sauvegarde automatique active' : 'Reconnecte-toi pour activer la sauvegarde auto'}
+                  {autoBackupOn ? 'Sauvegarde recovery active pour cette session' : 'Crée ou saisis ta clé de récupération pour synchroniser'}
                 </span>
               </div>
 
@@ -323,19 +322,16 @@ export function KeyBackupPanel() {
               </div>
             )}
 
-            {/* L5 — WhatsApp-style 6-digit PIN backup */}
-            <BackupPinSection />
-
             {/* Info */}
             <div className="p-3 bg-primary/5 rounded-lg space-y-1">
               <p className="text-xs font-medium flex items-center gap-1">
                 <Cloud className="h-3 w-3 text-primary" /> Comment ça marche ?
               </p>
               <ul className="text-[10px] text-muted-foreground space-y-1 list-disc pl-4">
-                <li>Tes clés sont chiffrées avec un dérivé de ton mot de passe (jamais stocké en clair)</li>
-                <li>À chaque connexion, tes clés sont restaurées automatiquement si absentes localement</li>
-                <li>Les modifications de clés sont synchronisées en arrière-plan</li>
-                <li>Si tu changes ton mot de passe, la sauvegarde sera mise à jour à la prochaine connexion</li>
+                <li>Une clé aléatoire de 256 bits chiffre la Master Key ; elle n’est jamais envoyée au serveur</li>
+                <li>Le mot de passe du compte et le PIN local ne peuvent pas restaurer la sauvegarde</li>
+                <li>Sur mobile, la clé peut rester dans le Keychain/Keystore de cet appareil</li>
+                <li>Sans clé de récupération ni appareil lié, la restauration est volontairement impossible</li>
               </ul>
             </div>
           </TabsContent>

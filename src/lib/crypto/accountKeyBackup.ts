@@ -39,6 +39,8 @@ const BACKUP_VERSION = 7;
 const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
 const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
+const RECOVERY_SECRET_PREFIX = 'forsure-e2ee-recovery-secret-v1:';
+export const RECOVERY_KEY_ONLY_VAULT = true;
 
 /** Domain-separated AAD bound to userId|backupType|version (Signal SVR / WA backup style). */
 function buildBackupAAD(userId: string, backupType: 'account' | 'recovery', version: number): Uint8Array {
@@ -54,7 +56,8 @@ function recoverySecret(recoveryKey: string, userId: string): string {
 // ── Session State (volatile, never persisted) ──
 let _sessionMasterKey: CryptoKey | null = null;
 let _sessionRawMasterKey: Uint8Array | null = null; // raw bytes for re-wrapping
-let _sessionPassword: string | null = null;
+let _sessionPassword: string | null = null; // legacy field, never used for server recovery
+let _sessionRecoverySecret: string | null = null;
 let _sessionUserId: string | null = null;
 
 // ── Crypto Primitives ──
@@ -141,6 +144,58 @@ async function decryptWithMasterKey(encrypted: string, iv: string, masterKey: Cr
 /** Generate a fresh random Master Key */
 function generateMasterKey(): Uint8Array {
   return hardCrypto.getRandomValues(new Uint8Array(MASTER_KEY_LENGTH));
+}
+
+async function persistRecoverySecretLocally(userId: string, normalizedRecoveryKey: string): Promise<void> {
+  _sessionRecoverySecret = recoverySecret(normalizedRecoveryKey, userId);
+  _sessionUserId = userId;
+  await secureSetSecret(`${RECOVERY_SECRET_PREFIX}${userId}`, normalizedRecoveryKey).catch(() => false);
+}
+
+async function loadRecoverySecretFromNative(userId: string): Promise<string | null> {
+  const stored = await secureGetSecret(`${RECOVERY_SECRET_PREFIX}${userId}`).catch(() => null);
+  if (!stored) return null;
+  const { isValidRecoveryKey, normalizeRecoveryKey } = await import('@/lib/crypto/recoveryKey');
+  if (!isValidRecoveryKey(stored)) return null;
+  const normalized = normalizeRecoveryKey(stored);
+  _sessionRecoverySecret = recoverySecret(normalized, userId);
+  _sessionUserId = userId;
+  return _sessionRecoverySecret;
+}
+
+async function ensureStrictSessionMasterKey(userId: string): Promise<boolean> {
+  if (_sessionMasterKey && _sessionRawMasterKey && _sessionUserId === userId) return true;
+  if (!(await hasLocalKeys())) return false;
+
+  const archive = await import('@/lib/crypto/archiveMasterKey');
+  const existing = await archive.exportArchiveMasterKeyForDeviceLink(userId).catch(() => null);
+  let raw: Uint8Array;
+  if (existing) {
+    raw = new Uint8Array(base64ToBuffer(existing));
+    if (raw.byteLength !== MASTER_KEY_LENGTH) return false;
+  } else {
+    raw = generateMasterKey();
+    await archive.importArchiveMasterKeyFromDeviceLink(
+      bufferToBase64(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer),
+      userId,
+    );
+  }
+  _sessionRawMasterKey = raw.slice();
+  _sessionMasterKey = await importMasterKey(raw);
+  _sessionUserId = userId;
+  _sessionPassword = null;
+  dispatchSessionUnlocked(userId);
+  raw.fill(0);
+  return true;
+}
+
+async function purgeWeakServerBackups(userId: string): Promise<void> {
+  await Promise.allSettled([
+    supabase.from('user_backups' as any).delete().eq('user_id', userId).eq('backup_type', 'account'),
+    supabase.from('backup_pin_state' as any).delete().eq('user_id', userId),
+    import('@/lib/crypto/r2BackupVault').then(({ deleteBackupMirrorFromR2 }) =>
+      deleteBackupMirrorFromR2('account')),
+  ]);
 }
 
 // ── IndexedDB helpers (shared with collectAllKeys / restoreAllKeys) ──
@@ -679,88 +734,35 @@ async function downloadAndRestore(
 /**
  * Called at login time. Derives wrapping key from password, restores or creates Master Key.
  */
-export async function initAccountKeySync(password: string, userId: string): Promise<'restored' | 'local_ok' | 'no_backup' | 'error'> {
-  const t0 = performance.now();
+export async function initAccountKeySync(
+  _password: string,
+  userId: string,
+): Promise<'restored' | 'local_ok' | 'no_backup' | 'error'> {
   try {
-    _sessionPassword = password;
+    _sessionPassword = null;
     _sessionUserId = userId;
-    const secret = passwordSecret(password, userId);
+    await purgeWeakServerBackups(userId);
+    await loadRecoverySecretFromNative(userId);
 
-    const hasLocal = await hasLocalKeys();
-    if (hasLocal) {
-      console.log('[MasterKey] Local keys present');
-      logCryptoError({
-        severity: 'info', context: 'backup', errorCode: 'BACKUP_INIT_LOCAL_OK',
-        errorMessage: 'Local E2EE keys present, no restore needed',
-        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
-      });
-      // If we don't have a Master Key yet, generate one and upload
-      if (!_sessionMasterKey) {
-        const mkRaw = generateMasterKey();
-        const mk = await importMasterKey(mkRaw);
-        _sessionRawMasterKey = mkRaw;
-        _sessionMasterKey = mk;
-        dispatchSessionUnlocked(userId);
-        uploadBackup(mkRaw, mk, password, userId, 'account', secret).catch((e) => {
-          logCryptoException('backup', e, { severity: 'warning', metadata: { stage: 'first_upload', userId } });
-        });
-      }
+    if (await hasLocalKeys()) {
+      await ensureStrictSessionMasterKey(userId);
+      await writeKeychainSnapshot(userId);
       return 'local_ok';
     }
 
-    // No local keys — try restore from server
-    console.log('[MasterKey] No local keys, attempting restore...');
-    logCryptoError({
-      severity: 'info', context: 'restore', errorCode: 'RESTORE_ATTEMPT',
-      errorMessage: 'No local keys, attempting password-based restore',
-      metadata: { userId },
-    });
-    try {
-      const result = await downloadAndRestore(userId, 'account', secret);
-      if (result) {
-        // Post-restore validation: ensure local identity actually exists now
-        const validated = await hasLocalKeys();
-        if (!validated) {
-          console.error('[MasterKey] ⛔ Restore reported success but no local identity found — failing restore');
-          logCryptoError({
-            severity: 'critical', context: 'restore', errorCode: 'RESTORE_VALIDATION_FAILED',
-            errorMessage: 'Restore reported success but no local identity found',
-            metadata: { userId, durationMs: Math.round(performance.now() - t0) },
-          });
-          return 'error';
-        }
-        _sessionRawMasterKey = result.masterKeyRaw;
-        _sessionMasterKey = result.masterKey;
-        dispatchSessionUnlocked(userId);
-        await writeKeychainSnapshot(userId);
-        console.log('[MasterKey] ✅ Keys restored from server (validated)');
-        logCryptoError({
-          severity: 'info', context: 'restore', errorCode: 'RESTORE_SUCCESS',
-          errorMessage: 'E2EE keys restored from server backup',
-          metadata: { userId, durationMs: Math.round(performance.now() - t0) },
-        });
-        return 'restored';
-      }
-    } catch (e) {
-      console.warn('[MasterKey] Password-based restore failed:', e);
-      logCryptoException('restore', e, {
-        severity: 'error',
-        metadata: { stage: 'password_restore', userId, durationMs: Math.round(performance.now() - t0) },
-      });
+    const keychainStatus = await restoreKeysFromKeychainSnapshot(userId);
+    if (keychainStatus === 'restored') {
+      await ensureStrictSessionMasterKey(userId);
+      return 'restored';
     }
 
-    console.log('[MasterKey] No server backup found');
-    logCryptoError({
-      severity: 'warning', context: 'restore', errorCode: 'RESTORE_NO_BACKUP',
-      errorMessage: 'No server backup found for this account',
-      metadata: { userId },
-    });
+    // A server backup is intentionally unusable without the 256-bit recovery
+    // key. Authentication success alone never restores E2EE material.
     return 'no_backup';
-  } catch (err) {
-    console.error('[MasterKey] Init failed:', err);
-    logCryptoException('backup', err, {
-      severity: 'critical',
-      metadata: { stage: 'init', userId, durationMs: Math.round(performance.now() - t0) },
+  } catch (error) {
+    logCryptoException('backup', error, {
+      severity: 'error',
+      metadata: { stage: 'strict_recovery_init', userId },
     });
     return 'error';
   }
@@ -773,62 +775,14 @@ export async function initAccountKeySync(password: string, userId: string): Prom
  * It is intentionally unavailable after a full refresh because the password is
  * never persisted client-side.
  */
-export async function restoreAccountKeysFromActiveSession(userId?: string): Promise<'restored' | 'local_ok' | 'unavailable' | 'error'> {
+export async function restoreAccountKeysFromActiveSession(
+  userId?: string,
+): Promise<'restored' | 'local_ok' | 'unavailable' | 'error'> {
   const targetUserId = userId ?? _sessionUserId;
-  const t0 = performance.now();
-
-  try {
-    const hasLocal = await hasLocalKeys();
-    if (hasLocal) {
-      console.log('[MasterKey] Active-session restore skipped: local crypto already present');
-      return 'local_ok';
-    }
-
-    if (!_sessionPassword || !targetUserId || _sessionUserId !== targetUserId) {
-      console.warn('[MasterKey] Active-session restore unavailable: no in-memory password session');
-      return 'unavailable';
-    }
-
-    console.log('[MasterKey] Active-session restore attempting password-based recovery');
-    const secret = passwordSecret(_sessionPassword, targetUserId);
-    const result = await downloadAndRestore(targetUserId, 'account', secret);
-
-    if (!result) {
-      console.warn('[MasterKey] Active-session restore unavailable: no matching backup');
-      return 'unavailable';
-    }
-
-    const validated = await hasLocalKeys();
-    if (!validated) {
-      console.error('[MasterKey] ⛔ Active-session restore succeeded but no local identity was restored');
-      logCryptoError({
-        severity: 'critical', context: 'restore', errorCode: 'RESTORE_ACTIVE_SESSION_VALIDATION_FAILED',
-        errorMessage: 'Active-session restore succeeded but no local identity was restored',
-        metadata: { userId: targetUserId, durationMs: Math.round(performance.now() - t0) },
-      });
-      return 'error';
-    }
-
-    _sessionRawMasterKey = result.masterKeyRaw;
-    _sessionMasterKey = result.masterKey;
-    dispatchSessionUnlocked(targetUserId);
-    await writeKeychainSnapshot(targetUserId);
-    console.log('[MasterKey] ✅ Keys restored from active session');
-    logCryptoError({
-      severity: 'info', context: 'restore', errorCode: 'RESTORE_ACTIVE_SESSION_SUCCESS',
-      errorMessage: 'E2EE keys restored from active in-memory session',
-      metadata: { userId: targetUserId, durationMs: Math.round(performance.now() - t0) },
-    });
-    void runPostRestoreSync(targetUserId, 'password_active_session');
-    return 'restored';
-  } catch (err) {
-    console.error('[MasterKey] Active-session restore failed:', err);
-    logCryptoException('restore', err, {
-      severity: 'error',
-      metadata: { stage: 'active_session_restore', userId: targetUserId, durationMs: Math.round(performance.now() - t0) },
-    });
-    return 'error';
-  }
+  if (!targetUserId) return 'unavailable';
+  if (await hasLocalKeys()) return 'local_ok';
+  const keychain = await restoreKeysFromKeychainSnapshot(targetUserId);
+  return keychain === 'restored' ? 'restored' : keychain === 'error' ? 'error' : 'unavailable';
 }
 
 /**
@@ -850,14 +804,14 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
       .from('user_backups' as any)
       .select('encrypted_blob, iv, version, backup_type')
       .eq('user_id', targetUserId)
-      .eq('backup_type', 'account')
+      .eq('backup_type', 'recovery')
       .maybeSingle();
     if (!data) return 'unavailable';
 
     const backup = data as unknown as { encrypted_blob: string; iv: string; version: number };
     if (backup.version < 5) return 'unavailable';
 
-    const aad = backup.version >= 6 ? buildBackupAAD(targetUserId, 'account', backup.version) : undefined;
+    const aad = backup.version >= 6 ? buildBackupAAD(targetUserId, 'recovery', backup.version) : undefined;
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey, aad);
     await restoreAllKeys(json);
     if (!(await hasLocalKeys())) return 'error';
@@ -889,8 +843,10 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       errorMessage: 'Attempting recovery-key restore',
       metadata: { userId },
     });
+    const { normalizeRecoveryKey } = await import('@/lib/crypto/recoveryKey');
+    const normalizedRecoveryKey = normalizeRecoveryKey(recoveryKey);
     // v6+ uses recoverySecret(...) (domain-separated). Legacy v5 used the raw recovery key.
-    let result = await downloadAndRestore(userId, 'recovery', recoverySecret(recoveryKey, userId)).catch(() => null);
+    let result = await downloadAndRestore(userId, 'recovery', recoverySecret(normalizedRecoveryKey, userId)).catch(() => null);
     if (!result) {
       result = await downloadAndRestore(userId, 'recovery', recoveryKey).catch(() => null);
     }
@@ -906,17 +862,22 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
         });
         return false;
       }
-      _sessionRawMasterKey = result.masterKeyRaw;
+      _sessionRawMasterKey = result.masterKeyRaw.slice();
       _sessionMasterKey = result.masterKey;
+      _sessionUserId = userId;
+      _sessionPassword = null;
+      await persistRecoverySecretLocally(userId, normalizedRecoveryKey);
       dispatchSessionUnlocked(userId);
       await writeKeychainSnapshot(userId);
-      // Re-wrap with current password if available
-      if (_sessionPassword && _sessionUserId) {
-        const secret = passwordSecret(_sessionPassword, _sessionUserId);
-        await uploadBackup(result.masterKeyRaw, result.masterKey, _sessionPassword, _sessionUserId, 'account', secret).catch((e) => {
-          logCryptoException('backup', e, { severity: 'warning', metadata: { stage: 'rewrap_after_recovery', userId } });
-        });
-      }
+      const archive = await import('@/lib/crypto/archiveMasterKey');
+      await archive.importArchiveMasterKeyFromDeviceLink(
+        bufferToBase64(result.masterKeyRaw.buffer.slice(
+          result.masterKeyRaw.byteOffset,
+          result.masterKeyRaw.byteOffset + result.masterKeyRaw.byteLength,
+        ) as ArrayBuffer),
+        userId,
+      );
+      await purgeWeakServerBackups(userId);
       logCryptoError({
         severity: 'info', context: 'restore', errorCode: 'RESTORE_RECOVERY_SUCCESS',
         errorMessage: 'E2EE keys restored via recovery key',
@@ -946,20 +907,16 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
  * Returns the recovery key to show to user.
  */
 export async function createRecoveryKeyBackup(userId: string): Promise<string | null> {
-  if (!_sessionRawMasterKey || !_sessionMasterKey) {
-    // Generate Master Key if we don't have one
-    const mkRaw = generateMasterKey();
-    const mk = await importMasterKey(mkRaw);
-    _sessionRawMasterKey = mkRaw;
-    _sessionMasterKey = mk;
-  }
+  if (!(await ensureStrictSessionMasterKey(userId))) return null;
 
   const { generateRecoveryKey, normalizeRecoveryKey } = await import('@/lib/crypto/recoveryKey');
   const recoveryKey = generateRecoveryKey();
   const normalized = normalizeRecoveryKey(recoveryKey);
 
   try {
-    await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, _sessionPassword || '', userId, 'recovery', recoverySecret(normalized, userId));
+    await persistRecoverySecretLocally(userId, normalized);
+    await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, '', userId, 'recovery', _sessionRecoverySecret!);
+    await purgeWeakServerBackups(userId);
     logCryptoError({
       severity: 'info', context: 'backup', errorCode: 'RECOVERY_BACKUP_CREATED',
       errorMessage: 'Recovery-key wrapped backup created',
@@ -977,46 +934,29 @@ export async function createRecoveryKeyBackup(userId: string): Promise<string | 
  * Sync current E2EE state to server (auto-sync on changes).
  */
 export async function syncBackupToServer(): Promise<boolean> {
-  if (!_sessionPassword || !_sessionUserId || !_sessionRawMasterKey || !_sessionMasterKey) {
-    // Fallback: generate Master Key if session has password but no MK yet
-    if (_sessionPassword && _sessionUserId) {
-      const mkRaw = generateMasterKey();
-      const mk = await importMasterKey(mkRaw);
-      _sessionRawMasterKey = mkRaw;
-      _sessionMasterKey = mk;
-    } else {
-      return false;
-    }
-  }
-
+  if (!_sessionUserId || !_sessionRecoverySecret) return false;
+  if (!(await ensureStrictSessionMasterKey(_sessionUserId))) return false;
   try {
-    const secret = passwordSecret(_sessionPassword!, _sessionUserId!);
-    const ok = await uploadBackup(_sessionRawMasterKey!, _sessionMasterKey!, _sessionPassword!, _sessionUserId!, 'account', secret);
-    if (ok) {
-      console.log('[MasterKey] ✅ Backup synced');
-      logCryptoError({
-        severity: 'info', context: 'backup', errorCode: 'BACKUP_SYNCED',
-        errorMessage: 'Master Key backup synced to server',
-        metadata: { userId: _sessionUserId },
-      });
-    } else {
-      logCryptoError({
-        severity: 'warning', context: 'backup', errorCode: 'BACKUP_SYNC_NO_OP',
-        errorMessage: 'uploadBackup returned false',
-        metadata: { userId: _sessionUserId },
-      });
-    }
-    return ok;
-  } catch (err) {
-    console.warn('[MasterKey] Sync failed:', err);
-    logCryptoException('backup', err, { severity: 'error', metadata: { stage: 'sync', userId: _sessionUserId } });
+    return await uploadBackup(
+      _sessionRawMasterKey!,
+      _sessionMasterKey!,
+      '',
+      _sessionUserId,
+      'recovery',
+      _sessionRecoverySecret,
+    );
+  } catch (error) {
+    logCryptoException('backup', error, {
+      severity: 'error',
+      metadata: { stage: 'strict_recovery_sync', userId: _sessionUserId },
+    });
     return false;
   }
 }
 
-/** Check if auto-backup session is active */
+/** Check if recovery-key auto-backup is active in this client session. */
 export function isAutoBackupActive(): boolean {
-  return _sessionPassword !== null && _sessionUserId !== null;
+  return Boolean(_sessionRecoverySecret && _sessionUserId);
 }
 
 // ── Reactive background backup (WhatsApp-style) ──
@@ -1110,6 +1050,7 @@ export function clearAccountKeySession(): void {
   _sessionMasterKey = null;
   _sessionRawMasterKey = null;
   _sessionPassword = null;
+  _sessionRecoverySecret = null;
   _sessionUserId = null;
   // The sentinel is intentionally NOT cleared here — logout doesn't mean the
   // account is gone, and we want the next cold-start on the same device to
@@ -1148,7 +1089,10 @@ export function getSessionUserId(): string | null {
 /** Explicit per-device account unlink — wipes the secure sentinel. */
 export async function clearKeySentinelForAccount(): Promise<void> {
   if (_sessionUserId) {
-    await secureRemoveSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${_sessionUserId}`);
+    await Promise.all([
+      secureRemoveSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${_sessionUserId}`),
+      secureRemoveSecret(`${RECOVERY_SECRET_PREFIX}${_sessionUserId}`),
+    ]);
   }
   await clearKeySentinel();
 }
@@ -1186,64 +1130,21 @@ function isValidPin(pin: string): boolean {
  * Requires the Master Key to be loaded in session (user is signed in
  * and recently typed their password / unlocked via recovery key).
  */
-export async function setupBackupPin(pin: string, userId: string): Promise<'ok' | 'no_master_key' | 'invalid_pin' | 'error'> {
+export async function setupBackupPin(
+  pin: string,
+  userId: string,
+): Promise<'ok' | 'no_master_key' | 'invalid_pin' | 'error'> {
   if (!isValidPin(pin)) return 'invalid_pin';
-  if (!_sessionRawMasterKey) {
-    // Try to silently re-hydrate from snapshot on the rare path where we have
-    // local keys but lost the in-RAM raw bytes (e.g. tab restored).
-    return 'no_master_key';
-  }
-  try {
-    const salt = hardCrypto.getRandomValues(new Uint8Array(SALT_LENGTH));
-    const kek = await deriveWrappingKey(pinSecret(pin, userId), salt);
-    const aad = buildPinBackupAAD(userId, PIN_BACKUP_KDF_VERSION);
-    const { wrapped, iv } = await wrapMasterKey(_sessionRawMasterKey, kek, aad);
-
-    // Pack iv + ct in a single base64 blob so the DB stores one column.
-    const packed = `${iv}.${wrapped}`;
-
-    const { error } = await supabase
-      .from('backup_pin_state' as any)
-      .upsert({
-        user_id: userId,
-        salt: bufferToBase64(salt.buffer),
-        pin_wrap_master: packed,
-        kdf_version: PIN_BACKUP_KDF_VERSION,
-        attempts_count: 0,
-        attempts_window_start: new Date().toISOString(),
-        locked_until: null,
-      } as any, { onConflict: 'user_id' });
-    if (error) {
-      logCryptoError({
-        severity: 'error', context: 'backup', errorCode: 'PIN_BACKUP_UPSERT_FAILED',
-        errorMessage: error.message, metadata: { userId },
-      });
-      return 'error';
-    }
-    logCryptoError({
-      severity: 'info', context: 'backup', errorCode: 'PIN_BACKUP_SETUP',
-      errorMessage: 'PIN backup wrapped and stored',
-      metadata: { userId },
-    });
-    return 'ok';
-  } catch (e) {
-    logCryptoException('backup', e, { severity: 'error', metadata: { stage: 'pin_backup_setup', userId } });
-    return 'error';
-  }
+  await supabase.from('backup_pin_state' as any).delete().eq('user_id', userId);
+  return 'ok';
 }
 
-/** Returns true if this account has a 6-digit PIN backup configured. */
-export async function hasBackupPin(userId: string): Promise<boolean> {
-  try {
-    const { data, error } = await supabase.rpc('has_backup_pin' as any, { _user_id: userId } as any);
-    if (error) return false;
-    return data === true;
-  } catch {
-    return false;
-  }
+/** Server-side PIN recovery is disabled; the PIN is a local application lock. */
+export async function hasBackupPin(_userId: string): Promise<boolean> {
+  return false;
 }
 
-/** Remove the PIN backup. */
+/** Remove any legacy server PIN wrapper. */
 export async function deleteBackupPin(userId: string): Promise<boolean> {
   try {
     const { error } = await supabase.from('backup_pin_state' as any).delete().eq('user_id', userId);
@@ -1263,72 +1164,9 @@ export interface PinRestoreResult {
  * Restore E2EE keys using the 6-digit PIN.
  * Server gates the release with a hard rate-limit (10 / 24 h).
  */
-export async function restoreWithBackupPin(pin: string, userId: string): Promise<PinRestoreResult> {
-  if (!isValidPin(pin)) return { status: 'wrong_pin' };
-  const t0 = performance.now();
-  try {
-    const { data, error } = await supabase.rpc('release_backup_pin_blob' as any, { _user_id: userId } as any);
-    if (error) {
-      logCryptoError({
-        severity: 'error', context: 'restore', errorCode: 'PIN_RESTORE_RPC_ERROR',
-        errorMessage: error.message, metadata: { userId },
-      });
-      return { status: 'error' };
-    }
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row) return { status: 'no_backup' };
-
-    if (!row.allowed) {
-      if (row.locked_until) {
-        return { status: 'locked', lockedUntil: row.locked_until };
-      }
-      return { status: 'no_backup' };
-    }
-
-    if (!row.salt || !row.pin_wrap_master) return { status: 'no_backup' };
-
-    const salt = new Uint8Array(base64ToBuffer(row.salt));
-    const kek = await deriveWrappingKey(pinSecret(pin, userId), salt);
-    const [iv, wrapped] = String(row.pin_wrap_master).split('.');
-    if (!iv || !wrapped) return { status: 'error' };
-
-    let masterKeyRaw: Uint8Array;
-    try {
-      const aad = buildPinBackupAAD(userId, row.kdf_version || PIN_BACKUP_KDF_VERSION);
-      masterKeyRaw = await unwrapMasterKey(wrapped, iv, kek, aad);
-    } catch {
-      // PIN was wrong → AES-GCM tag check failed.
-      logCryptoError({
-        severity: 'warning', context: 'restore', errorCode: 'PIN_RESTORE_WRONG_PIN',
-        errorMessage: 'PIN unwrap failed (wrong PIN)',
-        metadata: { userId, attemptsRemaining: row.attempts_remaining },
-      });
-      return { status: 'wrong_pin', attemptsRemaining: row.attempts_remaining };
-    }
-
-    // Hydrate session and re-use the in-memory restore path which downloads
-    // the full encrypted state blob (account backup) and rehydrates everything.
-    _sessionRawMasterKey = masterKeyRaw;
-    _sessionMasterKey = await importMasterKey(masterKeyRaw);
-    _sessionUserId = userId;
-    dispatchSessionUnlocked(userId);
-
-
-    const result = await restoreFromInMemoryMasterKey(userId);
-    if (result === 'restored' || result === 'local_ok') {
-      // Reset the attempt counter on success.
-      try { await supabase.rpc('reset_backup_pin_attempts' as any, { _user_id: userId } as any); } catch {}
-      logCryptoError({
-        severity: 'info', context: 'restore', errorCode: 'PIN_RESTORE_SUCCESS',
-        errorMessage: 'E2EE keys restored via backup PIN',
-        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
-      });
-      void runPostRestoreSync(userId, 'pin_backup');
-      return { status: 'restored' };
-    }
-    return { status: 'error' };
-  } catch (e) {
-    logCryptoException('restore', e, { severity: 'error', metadata: { stage: 'pin_restore', userId } });
-    return { status: 'error' };
-  }
+export async function restoreWithBackupPin(
+  _pin: string,
+  _userId: string,
+): Promise<PinRestoreResult> {
+  return { status: 'no_backup' };
 }

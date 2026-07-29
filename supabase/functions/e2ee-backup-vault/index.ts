@@ -262,7 +262,11 @@ Deno.serve(async (req) => {
 
     const input = await req.json().catch(() => null) as Record<string, unknown> | null;
     const action = input?.action;
-    const backupType: BackupType = input?.backup_type === 'recovery' ? 'recovery' : 'account';
+    const requestedType = input?.backup_type;
+    const backupType: BackupType = requestedType === 'account' ? 'account' : 'recovery';
+    if (backupType === 'account' && action !== 'delete') {
+      return json(req, { error: 'Password-wrapped E2EE backups are disabled' }, 410);
+    }
     const namespace = await opaqueNamespace(userId, namespaceSecret);
     const objectKey = `e2ee-backups/v1/${namespace}/${backupType}/latest.enc`;
     const config = loadR2Config();
