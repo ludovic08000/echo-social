@@ -19,8 +19,8 @@ import {
 import {
   hasBackupPin,
   restoreWithBackupPin,
-  setupBackupPin,
 } from '@/lib/crypto/accountKeyBackup';
+import { setupPersistentBackupPin } from '@/lib/crypto/aegisPinBackup';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
@@ -344,7 +344,7 @@ export function useChatPin() {
     }
     setState((current) => ({ ...current, processing: true, error: null }));
     try {
-      const backupResult = await setupBackupPin(pin, user.id);
+      const backupResult = await setupPersistentBackupPin(pin, user.id);
       if (backupResult !== 'ok') {
         const message = backupResult === 'no_master_key'
           ? 'Clé Aegis indisponible. Reconnectez-vous puis réessayez.'
@@ -392,7 +392,7 @@ export function useChatPin() {
         return false;
       }
       // Upgrade PINs created by older clients to the server-wrapped backup.
-      await setupBackupPin(pin, user.id).catch(() => 'error');
+      await setupPersistentBackupPin(pin, user.id).catch(() => 'error');
     } else {
       const restored = await restoreWithBackupPin(pin, user.id);
       if (restored.status !== 'restored') {
