@@ -617,7 +617,7 @@ throw new Error(visibleMessage);
       console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
     });
     scheduleLightConversationRefresh(queryClient);
-  }, [user, conversationId, isEncryptionReady, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
+  }, [user, conversationId, _isEncryptionReady, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {
     if (!user) return;
