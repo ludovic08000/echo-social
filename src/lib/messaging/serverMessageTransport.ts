@@ -46,6 +46,48 @@ function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function userMessageForServerError(rawMessage: string, status: number): string {
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    status === 401
+    || normalized.includes('not_authenticated')
+    || normalized.includes('jwt')
+  ) {
+    return 'Session expirée — reconnectez-vous pour envoyer.';
+  }
+  if (
+    status === 403
+    || normalized.includes('sender_not_conversation_participant')
+    || normalized.includes('server_message_sender_not_participant')
+    || normalized.includes('server_message_sender_mismatch')
+  ) {
+    return 'Envoi refusé : vous ne faites plus partie de cette conversation.';
+  }
+  if (normalized.includes('message_rate_limited')) {
+    return 'Trop de messages envoyés. Patientez quelques secondes.';
+  }
+  if (normalized.includes('server_message_empty')) {
+    return 'Le message est vide.';
+  }
+  if (
+    normalized.includes('server_message_too_large')
+    || normalized.includes('server_message_metadata_too_large')
+  ) {
+    return 'Le message ou sa pièce jointe dépasse la taille autorisée.';
+  }
+  if (normalized.includes('message_id_conflict')) {
+    return 'Conflit d’envoi détecté. Créez un nouveau message.';
+  }
+  if (normalized.includes('could not find the function') || normalized.includes('pgrst202')) {
+    return 'Serveur de messagerie non mis à jour. La migration Supabase est requise.';
+  }
+  if (status >= 500) {
+    return 'Serveur temporairement indisponible. Le message sera réessayé.';
+  }
+  return rawMessage || `Envoi refusé par le serveur (${status}).`;
+}
+
 async function parseErrorResponse(response: Response): Promise<ServerMessageTransportError> {
   let payload: ErrorPayload = {};
   let raw = '';
@@ -56,16 +98,18 @@ async function parseErrorResponse(response: Response): Promise<ServerMessageTran
     payload = {};
   }
 
-  const message = stringValue(payload.message)
+  const serverMessage = stringValue(payload.message)
     ?? stringValue(payload.details)
     ?? raw
     ?? `Message transport rejected (${response.status})`;
 
   return new ServerMessageTransportError({
-    message,
+    message: userMessageForServerError(serverMessage, response.status),
     code: stringValue(payload.code),
     status: response.status,
-    details: stringValue(payload.details) ?? stringValue(payload.hint),
+    details: [serverMessage, stringValue(payload.details), stringValue(payload.hint)]
+      .filter((value): value is string => Boolean(value))
+      .join(' | ') || null,
   });
 }
 
@@ -90,7 +134,7 @@ function withResponseTimeout<T>(operation: Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {
       reject(new ServerMessageTransportError({
-        message: 'SERVER_MESSAGE_TRANSPORT_TIMEOUT',
+        message: 'Le serveur ne répond pas. Le message sera réessayé.',
         code: 'SERVER_MESSAGE_TRANSPORT_TIMEOUT',
       }));
     }, RESPONSE_TIMEOUT_MS);
@@ -165,7 +209,7 @@ function retryable(error: unknown): boolean {
 export async function sendServerMessage(input: ServerMessageInput): Promise<string> {
   if (!input.messageId || !input.conversationId) {
     throw new ServerMessageTransportError({
-      message: 'SERVER_MESSAGE_STABLE_UUID_REQUIRED',
+      message: 'Identifiant stable du message manquant.',
       code: 'SERVER_MESSAGE_STABLE_UUID_REQUIRED',
     });
   }
@@ -193,5 +237,5 @@ export async function sendServerMessage(input: ServerMessageInput): Promise<stri
 
   throw lastError instanceof Error
     ? lastError
-    : new ServerMessageTransportError({ message: 'SERVER_MESSAGE_SEND_FAILED' });
+    : new ServerMessageTransportError({ message: 'Échec de l’envoi.' });
 }
