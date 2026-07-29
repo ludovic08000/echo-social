@@ -86,6 +86,17 @@ jobs:
           path.write_text(source, encoding='utf-8')
           PY
           python3 scripts/apply_recovery_key_only_vault.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/lib/crypto/accountKeyBackup.ts')
+          source = path.read_text(encoding='utf-8')
+          old = "await supabase.from('backup_pin_state' as any).delete().eq('user_id', userId).catch(() => undefined);"
+          new = "await supabase.from('backup_pin_state' as any).delete().eq('user_id', userId);"
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'PostgREST cleanup repair: expected 1 occurrence, found {count}')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
 
       - name: Install dependencies
         run: npm ci
