@@ -18,6 +18,23 @@ function getRequestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+function getRequestSignal(input: RequestInfo | URL, init?: RequestInit): AbortSignal | null {
+  if (init?.signal) return init.signal;
+  if (typeof Request !== 'undefined' && input instanceof Request) return input.signal;
+  return null;
+}
+
+function isAbortFailure(error: unknown, signal: AbortSignal | null): boolean {
+  if (signal?.aborted) return true;
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+    return error.name === 'AbortError';
+  }
+  if (error && typeof error === 'object' && 'name' in error) {
+    return (error as { name?: unknown }).name === 'AbortError';
+  }
+  return false;
+}
+
 function definitiveRefreshFailure(error: unknown): boolean {
   if (!error) return false;
   const value = error as { code?: unknown; message?: unknown; status?: unknown };
@@ -116,6 +133,7 @@ function recoverSupabaseAuthAfter401(): void {
 
 const guardedFetch: typeof fetch = async (input, init) => {
   const url = getRequestUrl(input);
+  const signal = getRequestSignal(input, init);
   let response: Response;
 
   try {
@@ -123,6 +141,11 @@ const guardedFetch: typeof fetch = async (input, init) => {
     // is designed and tested around Fetch; XHR remains a compatibility fallback.
     response = await capturedFetch(input as RequestInfo | URL, init);
   } catch (error) {
+    // An aborted request is intentional cancellation, not a transport failure.
+    // Retrying it through XHR reuses the already-aborted signal and turns one
+    // cancellation into repeated RPC/key/fanout failures across the app.
+    if (isAbortFailure(error, signal)) throw error;
+
     console.warn('[Supabase] fetch failed; retrying once with XHR transport', {
       url,
       error,
