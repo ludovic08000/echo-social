@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Camera, Check, MessageCircle, Lock, FolderOpen, Newspaper, LogOut, Calendar, ShieldCheck, Image as ImageIcon, Move, X } from 'lucide-react';
+import { Camera, Check, MessageCircle, Lock, FolderOpen, Newspaper, LogOut, Calendar, ShieldCheck, Image as ImageIcon, Move, X, MapPin, Globe, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -12,10 +12,12 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-export function FeedProfileHeader() {
+export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const { data: profile } = useProfile();
+  const isOwn = !userId || userId === user?.id;
+  const targetId = userId || user?.id;
+  const { data: profile } = useProfile(targetId);
   const updateProfile = useUpdateProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -55,21 +57,21 @@ export function FeedProfileHeader() {
 
 
   const { data: counts } = useQuery({
-    queryKey: ['feed-header-counts', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['feed-header-counts', targetId],
+    enabled: !!targetId,
     staleTime: 60_000,
     queryFn: async () => {
-      if (!user?.id) return { posts: 0, friends: 0 };
+      if (!targetId) return { posts: 0, friends: 0 };
       const [postsRes, friendsRes] = await Promise.all([
         supabase
           .from('posts')
           .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id),
+          .eq('user_id', targetId),
         supabase
           .from('friendships')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'accepted')
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
+          .or(`requester_id.eq.${targetId},addressee_id.eq.${targetId}`),
       ]);
       return {
         posts: postsRes.count ?? 0,
@@ -78,7 +80,7 @@ export function FeedProfileHeader() {
     },
   });
 
-  if (!user) return null;
+  if (!targetId) return null;
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
