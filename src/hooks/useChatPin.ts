@@ -391,8 +391,25 @@ export function useChatPin() {
         setState((current) => ({ ...current, processing: false, error: 'PIN incorrect' }));
         return false;
       }
-      // Upgrade PINs created by older clients to the server-wrapped backup.
-      await setupPersistentBackupPin(pin, user.id).catch(() => 'error');
+      // A locally verified PIN opens messaging immediately. Server backup
+      // maintenance is optional and must never block the widget or full page.
+      announceUnlock(user.id);
+      setState((current) => ({
+        ...current,
+        unlocked: true,
+        processing: false,
+        error: null,
+      }));
+      void setupPersistentBackupPin(pin, user.id)
+        .then((result) => {
+          if (result !== 'ok') {
+            console.warn('[LOCAL-PIN] background server backup upgrade deferred', { result });
+          }
+        })
+        .catch((error) => {
+          console.warn('[LOCAL-PIN] background server backup upgrade failed', error);
+        });
+      return true;
     } else {
       const restored = await restoreWithBackupPin(pin, user.id);
       if (restored.status !== 'restored') {
