@@ -1,71 +1,35 @@
 name: E2EE CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  sync:
-    if: github.event_name == 'pull_request' && github.head_ref == 'refactor/aegis-modular-architecture'
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout refactor branch
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          ref: refactor/aegis-modular-architecture
-          fetch-depth: 0
+          node-version: 22
+          cache: npm
 
-      - name: Merge current main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git merge --no-edit origin/main
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Restore normal E2EE workflow
-        run: |
-          cat > .github/workflows/e2ee-ci.yml <<'EOF'
-          name: E2EE CI
+      - name: Lint
+        run: npm run lint
 
-          on:
-            push:
-              branches: [main]
-            pull_request:
-              branches: [main]
-            workflow_dispatch:
+      - name: Test
+        run: npm run test
 
-          jobs:
-            verify:
-              runs-on: ubuntu-latest
-              timeout-minutes: 20
-
-              steps:
-                - name: Checkout
-                  uses: actions/checkout@v4
-
-                - name: Setup Node
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-                    cache: npm
-
-                - name: Install dependencies
-                  run: npm ci
-
-                - name: Lint
-                  run: npm run lint
-
-                - name: Test
-                  run: npm run test
-
-                - name: Build
-                  run: npm run build
-          EOF
-          git add .github/workflows/e2ee-ci.yml
-          git commit -m "chore(aegis): restore standard E2EE workflow"
-          git push origin HEAD:refactor/aegis-modular-architecture
+      - name: Build
+        run: npm run build
