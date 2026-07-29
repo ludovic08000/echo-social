@@ -232,7 +232,7 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
             className="mt-3 text-3xl italic font-semibold tracking-tight"
             style={{ fontFamily: '"Playfair Display", serif' }}
           >
-            {profile?.name || 'Mon profil'}
+            {profile?.name || (isOwn ? 'Mon profil' : 'Profil')}
           </h2>
 
           {/* Mood + protected pill */}
