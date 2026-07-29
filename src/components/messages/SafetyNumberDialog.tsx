@@ -2,7 +2,7 @@
  * SafetyNumberDialog — Signal-style safety number verification with QR code.
  * Includes a key sync diagnostic tool that verifies both sides have matching keys.
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,11 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { bufferToBase64 } from '@/lib/crypto/utils';
+import {
+  buildAegisSafetyQrPayload,
+  deriveAegisSafetyNumber,
+} from '@/lib/crypto/safetyNumber';
+import { acceptPeerFingerprint } from '@/lib/crypto/fingerprintTracker';
 
 interface SafetyNumberDialogProps {
   open: boolean;
@@ -29,32 +34,6 @@ function formatFingerprint(fp: string): string {
   return clean.match(/.{1,5}/g)?.join(' ') ?? clean;
 }
 
-function buildSharedSafetyNumber(myFp: string, peerFp: string): string {
-  const ordered = [myFp.replace(/\s/g, ''), peerFp.replace(/\s/g, '')].sort();
-  const merged = `${ordered[0]}:${ordered[1]}`;
-  const bytes = new TextEncoder().encode(merged);
-  let hash = 2166136261;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 16777619);
-  }
-  const hex = (hash >>> 0).toString(16).padStart(8, '0').toUpperCase();
-  const repeated = `${hex}${ordered[0].slice(0, 16).toUpperCase()}${ordered[1].slice(0, 16).toUpperCase()}`;
-  return repeated.match(/.{1,5}/g)?.join(' ') ?? repeated;
-}
-
-/** Build a verification payload for QR scanning */
-function buildQRPayload(conversationId: string, myFp: string, peerFp: string): string {
-  const ordered = [myFp.replace(/\s/g, ''), peerFp.replace(/\s/g, '')].sort();
-  return JSON.stringify({
-    v: 2,
-    type: 'forsure-safety-number',
-    conv: conversationId,
-    fpA: ordered[0],
-    fpB: ordered[1],
-    safetyNumber: buildSharedSafetyNumber(myFp, peerFp),
-  });
-}
 
 // ─── Key Sync Diagnostic ───
 
@@ -183,7 +162,7 @@ async function runKeySyncDiagnostic(
   }
 
   // 5. Check shared safety number is consistent
-  const localSafety = buildSharedSafetyNumber(myFingerprint, peerFingerprint);
+  const localSafety = await deriveAegisSafetyNumber(myFingerprint, peerFingerprint);
   if (localSafety && localSafety.length > 0) {
     checks.push({ label: 'Numéro de sécurité', status: 'ok', detail: `Calculé : ${localSafety.slice(0, 20)}…` });
   }
@@ -206,10 +185,28 @@ export function SafetyNumberDialog({
   const [verified, setVerified] = useState(false);
   const [diagRunning, setDiagRunning] = useState(false);
   const [diagResults, setDiagResults] = useState<SyncCheck[] | null>(null);
+  const [sharedSafetyNumber, setSharedSafetyNumber] = useState('Calcul en cours…');
 
-  const sharedSafetyNumber = buildSharedSafetyNumber(myFingerprint, peerFingerprint);
+  useEffect(() => {
+    let cancelled = false;
+    void deriveAegisSafetyNumber(myFingerprint, peerFingerprint)
+      .then((value) => { if (!cancelled) setSharedSafetyNumber(value); })
+      .catch(() => { if (!cancelled) setSharedSafetyNumber('Indisponible'); });
+    return () => { cancelled = true; };
+  }, [myFingerprint, peerFingerprint]);
+
   const combinedFingerprint = `Numéro de sécurité partagé\n${sharedSafetyNumber}\n\nVotre clé\n${myFingerprint}\n\nClé de ${peerName}\n${peerFingerprint}`;
-  const qrPayload = buildQRPayload(conversationId, myFingerprint, peerFingerprint);
+  const qrPayload = useMemo(() => {
+    try {
+      return buildAegisSafetyQrPayload({
+        myFingerprint,
+        peerFingerprint,
+        safetyNumber: sharedSafetyNumber,
+      });
+    } catch {
+      return JSON.stringify({ protocol: 'forsure-aegis-safety-number-v1', version: 1 });
+    }
+  }, [myFingerprint, peerFingerprint, sharedSafetyNumber]);
 
   const handleCopy = async () => {
     try {
@@ -219,7 +216,22 @@ export function SafetyNumberDialog({
     } catch {}
   };
 
-  const handleMarkVerified = () => {
+  const handleMarkVerified = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: participants } = await supabase
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', conversationId)
+      .neq('user_id', user.id)
+      .limit(1);
+    const peerUserId = participants?.[0]?.user_id;
+    if (!peerUserId) return;
+    await acceptPeerFingerprint({
+      currentUserId: user.id,
+      peerUserId,
+      fingerprint: peerFingerprint,
+    });
     setVerified(true);
     onVerified?.();
     setTimeout(() => onOpenChange(false), 1500);

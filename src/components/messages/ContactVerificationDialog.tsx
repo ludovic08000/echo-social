@@ -8,8 +8,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ShieldAlert, ShieldCheck, Fingerprint, XCircle } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Fingerprint, XCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManager';
+import { fetchPeerPublicKeys } from '@/lib/crypto/peerKeyCache';
+import { acceptPeerFingerprint } from '@/lib/crypto/fingerprintTracker';
+import { deriveAegisSafetyNumber } from '@/lib/crypto/safetyNumber';
 
 interface VerificationRequest {
   conversationId?: string;
@@ -18,43 +23,23 @@ interface VerificationRequest {
   receivedAt: number;
 }
 
-const TRUST_STORE_KEY = 'forsure:e2ee:trusted-contact-changes:v1';
-
-function readTrustStore(): Record<string, { acceptedAt: number; reason?: string }> {
-  try {
-    const raw = localStorage.getItem(TRUST_STORE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Record<string, { acceptedAt: number; reason?: string }>;
-  } catch {
-    return {};
-  }
+interface ResolvedVerification {
+  currentUserId: string;
+  peerUserId: string;
+  myFingerprint: string;
+  peerFingerprint: string;
+  safetyNumber: string;
 }
 
-function writeTrustStore(store: Record<string, { acceptedAt: number; reason?: string }>) {
-  try {
-    localStorage.setItem(TRUST_STORE_KEY, JSON.stringify(store));
-  } catch {}
-}
-
-function trustKey(req: VerificationRequest): string {
-  return req.conversationId || 'global';
-}
-
-/**
- * ContactVerificationDialog
- *
- * Handles the Signal/WhatsApp-style safety-key warning emitted by the queue
- * when encryption refuses to continue because the peer identity/fingerprint
- * changed. This component deliberately does not auto-trust anything: it gives
- * the user a visible stop screen and only resumes retries after a manual
- * confirmation.
- */
 export function ContactVerificationDialog() {
   const [request, setRequest] = useState<VerificationRequest | null>(null);
+  const [resolved, setResolved] = useState<ResolvedVerification | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const onRequired = (event: Event) => {
       const detail = (event as CustomEvent<Partial<VerificationRequest>>).detail || {};
+      setResolved(null);
       setRequest({
         conversationId: detail.conversationId,
         localId: detail.localId,
@@ -62,51 +47,83 @@ export function ContactVerificationDialog() {
         receivedAt: Date.now(),
       });
     };
-
     window.addEventListener('forsure:e2ee-contact-verification-required', onRequired as EventListener);
     return () => window.removeEventListener('forsure:e2ee-contact-verification-required', onRequired as EventListener);
   }, []);
 
-  const safetyNumber = useMemo(() => {
-    if (!request) return '';
-    const seed = `${request.conversationId || ''}:${request.reason || ''}`;
-    let acc = 0;
-    for (let i = 0; i < seed.length; i++) acc = (acc * 31 + seed.charCodeAt(i)) >>> 0;
-    return Array.from({ length: 6 }, (_, i) => String((acc + i * 7919) % 100000).padStart(5, '0')).join(' ');
+  useEffect(() => {
+    if (!request?.conversationId) return;
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('NOT_AUTHENTICATED');
+      const { data: participants, error } = await supabase
+        .from('conversation_participants')
+        .select('user_id')
+        .eq('conversation_id', request.conversationId!);
+      if (error) throw error;
+      const peerUserId = participants
+        ?.map((entry) => entry.user_id)
+        .find((id): id is string => Boolean(id) && id !== user.id);
+      if (!peerUserId) throw new Error('PEER_NOT_FOUND');
+      const [mine, peer] = await Promise.all([
+        getOrCreateIdentityKeys(user.id),
+        fetchPeerPublicKeys(peerUserId, { forceRefresh: true }),
+      ]);
+      if (!peer) throw new Error('PEER_IDENTITY_UNAVAILABLE');
+      const safetyNumber = await deriveAegisSafetyNumber(mine.fingerprint, peer.fingerprint);
+      if (!cancelled) {
+        setResolved({
+          currentUserId: user.id,
+          peerUserId,
+          myFingerprint: mine.fingerprint,
+          peerFingerprint: peer.fingerprint,
+          safetyNumber,
+        });
+      }
+    })().catch((error) => {
+      console.error('[E2EE] Contact verification resolution failed', error);
+      if (!cancelled) toast.error('Impossible de charger les vraies clés de sécurité.');
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [request]);
 
-  const close = () => setRequest(null);
+  const formattedSafety = useMemo(() => resolved?.safetyNumber ?? '', [resolved]);
+  const close = () => {
+    setRequest(null);
+    setResolved(null);
+  };
 
-  const handleTrust = () => {
-    if (!request) return;
-    const store = readTrustStore();
-    store[trustKey(request)] = {
-      acceptedAt: Date.now(),
-      reason: request.reason,
-    };
-    writeTrustStore(store);
-
-    try {
-      window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verified', {
-        detail: {
-          conversationId: request.conversationId,
-          localId: request.localId,
-          acceptedAt: Date.now(),
-        },
-      }));
-      window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
-        detail: { source: 'contact-verification', conversationId: request.conversationId },
-      }));
-    } catch {}
-
-    toast.success('Identité validée. Vous pouvez réessayer l’envoi.');
+  const handleTrust = async () => {
+    if (!request || !resolved) return;
+    await acceptPeerFingerprint({
+      currentUserId: resolved.currentUserId,
+      peerUserId: resolved.peerUserId,
+      fingerprint: resolved.peerFingerprint,
+    });
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-contact-verified', {
+      detail: {
+        conversationId: request.conversationId,
+        localId: request.localId,
+        peerUserId: resolved.peerUserId,
+        fingerprint: resolved.peerFingerprint,
+        acceptedAt: Date.now(),
+      },
+    }));
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+      detail: { source: 'contact-verification', conversationId: request.conversationId },
+    }));
+    toast.success('Empreinte réelle validée. Vous pouvez réessayer l’envoi.');
     close();
   };
 
   if (!request) return null;
 
   return (
-    <Dialog open={!!request} onOpenChange={(open) => { if (!open) close(); }}>
+    <Dialog open={Boolean(request)} onOpenChange={(open) => { if (!open) close(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
@@ -114,40 +131,34 @@ export function ContactVerificationDialog() {
             <DialogTitle>Vérification de sécurité requise</DialogTitle>
           </div>
           <DialogDescription className="text-left pt-2 space-y-2">
-            <p>
-              La clé de sécurité de ce contact a changé. Par sécurité, l’envoi est bloqué
-              jusqu’à validation manuelle.
-            </p>
-            <p>
-              Cela peut arriver après une réinstallation, un nouveau téléphone, une restauration
-              de clés ou une rotation d’appareil. Ne validez que si vous reconnaissez ce changement.
-            </p>
+            <p>La clé d’identité stable du contact a changé. L’envoi reste bloqué jusqu’à comparaison par un autre canal sûr.</p>
+            <p>Ne validez pas uniquement parce que l’application affiche cette fenêtre.</p>
           </DialogDescription>
         </DialogHeader>
 
         <div className="rounded-xl border bg-muted/40 p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <Fingerprint className="w-4 h-4" />
-            Numéro de sécurité local
+            <Fingerprint className="w-4 h-4" /> Numéro de sécurité dérivé des deux clés
           </div>
-          <div className="font-mono text-sm break-words leading-relaxed select-all">
-            {safetyNumber}
-          </div>
-          {request.reason && (
-            <p className="text-xs text-muted-foreground break-words">
-              Diagnostic : {request.reason}
-            </p>
+          {loading && <Loader2 className="w-5 h-5 animate-spin" />}
+          {!loading && resolved && (
+            <>
+              <div className="font-mono text-sm break-words leading-relaxed select-all">{formattedSafety}</div>
+              <p className="text-[10px] text-muted-foreground break-all">Votre empreinte : {resolved.myFingerprint}</p>
+              <p className="text-[10px] text-muted-foreground break-all">Empreinte du contact : {resolved.peerFingerprint}</p>
+            </>
+          )}
+          {!loading && !resolved && (
+            <p className="text-sm text-destructive">Validation indisponible : aucune empreinte réelle n’a été chargée.</p>
           )}
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
           <Button variant="outline" onClick={close}>
-            <XCircle className="w-4 h-4 mr-2" />
-            Annuler
+            <XCircle className="w-4 h-4 mr-2" /> Annuler
           </Button>
-          <Button onClick={handleTrust}>
-            <ShieldCheck className="w-4 h-4 mr-2" />
-            Marquer comme fiable
+          <Button onClick={() => void handleTrust()} disabled={!resolved || loading}>
+            <ShieldCheck className="w-4 h-4 mr-2" /> J’ai comparé les deux valeurs
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -155,8 +166,7 @@ export function ContactVerificationDialog() {
   );
 }
 
-export function hasTrustedContactChange(conversationId?: string): boolean {
-  if (!conversationId) return false;
-  const store = readTrustStore();
-  return !!store[conversationId];
+/** Legacy callers must not bypass the fingerprint tracker. */
+export function hasTrustedContactChange(): boolean {
+  return false;
 }

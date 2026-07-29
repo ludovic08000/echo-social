@@ -1,37 +1,139 @@
 /**
  * Account-identity trust tracker.
  *
- * First contact uses TOFU. Once an account identity has been observed, every
- * change is fail-closed until the user explicitly accepts the new safety
- * number. Recovery markers only explain a change; they never auto-authorize it.
+ * Local continuity is authoritative. Server synchronization is accepted only
+ * when the trust row carries a valid Ed25519 signature from this account's own
+ * stable identity key. A server row can never replace an already-known local
+ * fingerprint.
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import { hardGlobals } from './cryptoIntegrity';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { getOrCreateIdentityKeys } from './keyManager';
+import {
+  base64ToBuffer,
+  bufferToBase64,
+  encodeString,
+} from './utils';
 import {
   fetchPeerPublicKeys,
   getCachedAuthUserId,
 } from './peerKeyCache';
 
 export const KNOWN_FP_KEY = 'forsure-known-fps';
+const SCOPED_FP_PREFIX = 'forsure-known-fps-v2:';
+const TRUST_PROTOCOL = 'forsure-aegis-known-fingerprint';
+const TRUST_VERSION = 1;
+const FINGERPRINT_RE = /^[0-9a-f ]{32,160}$/i;
 
 export type FingerprintCheckResult = {
   changed: boolean;
   previousFp: string | null;
+  source?: 'local' | 'signed_server' | 'first_contact';
 };
 
-export function getKnownFingerprints(): Record<string, string> {
+type SignedTrustRow = {
+  fingerprint: string;
+  acknowledged: boolean;
+  verified_manually: boolean;
+  trust_version: number | null;
+  observer_signature: string | null;
+};
+
+function normalizeFingerprint(value: string): string {
+  return value.replace(/\s+/g, '').toUpperCase();
+}
+
+function readJsonRecord(key: string): Record<string, string> {
   try {
-    return hardGlobals.jsonParse(localStorage.getItem(KNOWN_FP_KEY) || '{}');
+    const parsed = hardGlobals.jsonParse(localStorage.getItem(key) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, string> : {};
   } catch {
     return {};
   }
 }
 
-export function saveKnownFingerprint(userId: string, fingerprint: string): void {
-  const known = getKnownFingerprints();
-  known[userId] = fingerprint;
-  localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
+export function getKnownFingerprints(observerUserId?: string): Record<string, string> {
+  return readJsonRecord(observerUserId ? `${SCOPED_FP_PREFIX}${observerUserId}` : KNOWN_FP_KEY);
+}
+
+function getLegacyKnownFingerprint(peerUserId: string): string | null {
+  return getKnownFingerprints()[peerUserId] ?? null;
+}
+
+export function saveKnownFingerprint(
+  peerUserId: string,
+  fingerprint: string,
+  observerUserId?: string,
+): void {
+  const normalized = normalizeFingerprint(fingerprint);
+  if (!FINGERPRINT_RE.test(normalized)) throw new Error('INVALID_ACCOUNT_FINGERPRINT');
+  const key = observerUserId ? `${SCOPED_FP_PREFIX}${observerUserId}` : KNOWN_FP_KEY;
+  const known = readJsonRecord(key);
+  known[peerUserId] = normalized;
+  localStorage.setItem(key, hardGlobals.jsonStringify(known));
+}
+
+function canonicalTrustPayload(input: {
+  observerUserId: string;
+  peerUserId: string;
+  fingerprint: string;
+  acknowledged: boolean;
+  verifiedManually: boolean;
+}): string {
+  return JSON.stringify({
+    protocol: TRUST_PROTOCOL,
+    version: TRUST_VERSION,
+    observerUserId: input.observerUserId,
+    peerUserId: input.peerUserId,
+    fingerprint: normalizeFingerprint(input.fingerprint),
+    acknowledged: input.acknowledged,
+    verifiedManually: input.verifiedManually,
+  });
+}
+
+async function signTrustPayload(input: {
+  observerUserId: string;
+  peerUserId: string;
+  fingerprint: string;
+  acknowledged: boolean;
+  verifiedManually: boolean;
+}): Promise<string> {
+  const identity = await getOrCreateIdentityKeys(input.observerUserId);
+  return bufferToBase64(await hardCrypto.sign(
+    'Ed25519',
+    identity.signingPrivateKey,
+    encodeString(canonicalTrustPayload(input)),
+  ) as ArrayBuffer);
+}
+
+async function verifyTrustRow(input: {
+  observerUserId: string;
+  peerUserId: string;
+  row: SignedTrustRow;
+}): Promise<boolean> {
+  if (
+    input.row.trust_version !== TRUST_VERSION ||
+    !input.row.observer_signature ||
+    !FINGERPRINT_RE.test(normalizeFingerprint(input.row.fingerprint))
+  ) return false;
+  try {
+    const identity = await getOrCreateIdentityKeys(input.observerUserId);
+    return await hardCrypto.verify(
+      'Ed25519',
+      identity.signingPublicKey,
+      base64ToBuffer(input.row.observer_signature),
+      encodeString(canonicalTrustPayload({
+        observerUserId: input.observerUserId,
+        peerUserId: input.peerUserId,
+        fingerprint: input.row.fingerprint,
+        acknowledged: input.row.acknowledged,
+        verifiedManually: input.row.verified_manually,
+      })),
+    );
+  } catch {
+    return false;
+  }
 }
 
 const fingerprintCheckCache = new Map<
@@ -47,43 +149,84 @@ export function invalidateFingerprintCheckCache(peerUserId: string): void {
   }
 }
 
+async function readSignedServerTrust(
+  observerUserId: string,
+  peerUserId: string,
+): Promise<SignedTrustRow | null> {
+  try {
+    const { data, error } = await (supabase as any)
+      .from('user_known_fingerprints')
+      .select('fingerprint,acknowledged,verified_manually,trust_version,observer_signature')
+      .eq('user_id', observerUserId)
+      .eq('peer_user_id', peerUserId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as SignedTrustRow;
+    if (!await verifyTrustRow({ observerUserId, peerUserId, row })) {
+      console.warn('[E2EE] Ignoring unsigned or invalid server trust row', { peerUserId });
+      return null;
+    }
+    return row;
+  } catch {
+    return null;
+  }
+}
+
 export async function saveKnownFingerprintServer(
   peerUserId: string,
   fingerprint: string,
   verifiedByUser = false,
 ): Promise<void> {
-  const cacheKey = `${peerUserId}:${fingerprint}`;
+  const normalized = normalizeFingerprint(fingerprint);
+  if (!FINGERPRINT_RE.test(normalized)) throw new Error('INVALID_ACCOUNT_FINGERPRINT');
+  const cacheKey = `${peerUserId}:${normalized}:${verifiedByUser ? 'manual' : 'tofu'}`;
   const lastSavedAt = fingerprintSaveCache.get(cacheKey);
   if (!verifiedByUser && lastSavedAt && Date.now() - lastSavedAt < CACHE_TTL_MS) return;
 
   try {
-    const userId = await getCachedAuthUserId();
-    if (!userId) return;
+    const observerUserId = await getCachedAuthUserId();
+    if (!observerUserId) return;
+    const existing = await readSignedServerTrust(observerUserId, peerUserId);
+    if (
+      existing &&
+      normalizeFingerprint(existing.fingerprint) !== normalized &&
+      !verifiedByUser
+    ) {
+      // A passive observation can never replace a signed trust decision.
+      return;
+    }
+
+    const verifiedManually = verifiedByUser || Boolean(
+      existing?.verified_manually && normalizeFingerprint(existing.fingerprint) === normalized,
+    );
+    const acknowledged = verifiedManually || Boolean(
+      existing?.acknowledged && normalizeFingerprint(existing.fingerprint) === normalized,
+    );
+    const observerSignature = await signTrustPayload({
+      observerUserId,
+      peerUserId,
+      fingerprint: normalized,
+      acknowledged,
+      verifiedManually,
+    });
     const row = {
-      user_id: userId,
+      user_id: observerUserId,
       peer_user_id: peerUserId,
-      fingerprint,
+      fingerprint: normalized,
       last_seen_at: new Date().toISOString(),
-      acknowledged: verifiedByUser,
-      verified_manually: verifiedByUser,
+      acknowledged,
+      verified_manually: verifiedManually,
+      trust_version: TRUST_VERSION,
+      observer_signature: observerSignature,
     };
-    const { error } = verifiedByUser
-      ? await supabase
-        .from('user_known_fingerprints')
-        .upsert(row, { onConflict: 'user_id,peer_user_id' })
-      : await supabase
-        .from('user_known_fingerprints')
-        .upsert(row, {
-          onConflict: 'user_id,peer_user_id',
-          ignoreDuplicates: true,
-        });
+    const { error } = await (supabase as any)
+      .from('user_known_fingerprints')
+      .upsert(row, { onConflict: 'user_id,peer_user_id' });
     if (error) throw error;
-    // A passive TOFU observation must never downgrade a previous manual
-    // verification. Cache only a confirmed write so transient failures retry.
     fingerprintSaveCache.set(cacheKey, Date.now());
     invalidateFingerprintCheckCache(peerUserId);
   } catch (error) {
-    console.warn('[E2EE] Server fingerprint save failed', error);
+    console.warn('[E2EE] Signed server fingerprint save failed', error);
   }
 }
 
@@ -111,57 +254,91 @@ async function recordChange(input: {
   }
 }
 
-/** Check the composite X25519+Ed25519 fingerprint against local and server trust. */
+/** Local trust always wins; only a valid account-signed server row may seed a new device. */
 export async function checkFingerprintChangeWithServer(
   currentUserId: string,
   peerUserId: string,
   currentFingerprint: string,
 ): Promise<FingerprintCheckResult> {
-  const localPrevious = getKnownFingerprints()[peerUserId] ?? null;
-  const cacheKey = `${currentUserId}:${peerUserId}:${currentFingerprint}`;
+  const current = normalizeFingerprint(currentFingerprint);
+  if (!FINGERPRINT_RE.test(current)) throw new Error('INVALID_ACCOUNT_FINGERPRINT');
+  const scopedPrevious = getKnownFingerprints(currentUserId)[peerUserId] ?? null;
+  const legacyPrevious = scopedPrevious ? null : getLegacyKnownFingerprint(peerUserId);
+  const localPrevious = scopedPrevious ?? legacyPrevious;
+  const cacheKey = `${currentUserId}:${peerUserId}:${current}`;
   const cached = fingerprintCheckCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
 
-  let serverPrevious: string | null = null;
-  try {
-    const { data, error } = await supabase
-      .from('user_known_fingerprints')
-      .select('fingerprint')
-      .eq('user_id', currentUserId)
-      .eq('peer_user_id', peerUserId)
-      .maybeSingle();
-    if (error) throw error;
-    serverPrevious = data?.fingerprint ?? null;
-  } catch {
-    // Local trust remains authoritative while the server is temporarily
-    // unreachable. A missing local record is first contact, not a rotation.
-  }
+  const signedServer = await readSignedServerTrust(currentUserId, peerUserId);
+  const signedServerPrevious = signedServer
+    ? normalizeFingerprint(signedServer.fingerprint)
+    : null;
 
-  const previousFingerprint = serverPrevious ?? localPrevious;
-  if (previousFingerprint && previousFingerprint !== currentFingerprint) {
-    await recordChange({
-      observerUserId: currentUserId,
-      peerUserId,
-      previousFingerprint,
-      newFingerprint: currentFingerprint,
-    });
-    const result = { changed: true, previousFp: previousFingerprint };
+  if (localPrevious) {
+    const local = normalizeFingerprint(localPrevious);
+    if (local !== current) {
+      await recordChange({
+        observerUserId: currentUserId,
+        peerUserId,
+        previousFingerprint: local,
+        newFingerprint: current,
+      });
+      const result = { changed: true, previousFp: local, source: 'local' as const };
+      fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
+      return result;
+    }
+
+    if (!scopedPrevious) saveKnownFingerprint(peerUserId, current, currentUserId);
+    if (signedServerPrevious && signedServerPrevious !== local) {
+      console.warn('[E2EE] Signed trust store conflicts with local continuity; local value retained', {
+        peerUserId,
+      });
+    }
+    const result = { changed: false, previousFp: null, source: 'local' as const };
     fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
     return result;
   }
 
-  if (previousFingerprint === currentFingerprint && localPrevious !== currentFingerprint) {
-    saveKnownFingerprint(peerUserId, currentFingerprint);
+  if (signedServerPrevious && signedServerPrevious !== current) {
+    await recordChange({
+      observerUserId: currentUserId,
+      peerUserId,
+      previousFingerprint: signedServerPrevious,
+      newFingerprint: current,
+    });
+    const result = {
+      changed: true,
+      previousFp: signedServerPrevious,
+      source: 'signed_server' as const,
+    };
+    fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
+    return result;
   }
-  const result = { changed: false, previousFp: null };
+
+  saveKnownFingerprint(peerUserId, current, currentUserId);
+  const result = {
+    changed: false,
+    previousFp: null,
+    source: signedServerPrevious ? 'signed_server' as const : 'first_contact' as const,
+  };
   fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
   return result;
 }
 
-/**
- * Core transport gate. Background retries call this as well, so no UI race can
- * send after an account identity rotation that has not been acknowledged.
- */
+export async function acceptPeerFingerprint(input: {
+  currentUserId: string;
+  peerUserId: string;
+  fingerprint: string;
+}): Promise<void> {
+  const normalized = normalizeFingerprint(input.fingerprint);
+  saveKnownFingerprint(input.peerUserId, normalized, input.currentUserId);
+  // Keep the legacy local store updated for old UI components during rollout.
+  saveKnownFingerprint(input.peerUserId, normalized);
+  await saveKnownFingerprintServer(input.peerUserId, normalized, true);
+  invalidateFingerprintCheckCache(input.peerUserId);
+}
+
+/** Core transport gate: identity rotations fail closed until explicit acceptance. */
 export async function assertConversationFingerprintsTrusted(
   currentUserId: string,
   conversationId: string,
@@ -177,9 +354,9 @@ export async function assertConversationFingerprintsTrusted(
     .filter((userId): userId is string => Boolean(userId) && userId !== currentUserId)));
 
   await Promise.all(peerUserIds.map(async (peerUserId) => {
-    // The core send gate intentionally bypasses the performance cache. A
-    // two-minute cached identity would otherwise allow messages to leave after
-    // a peer account key changed.
+    const hadTrustedPrevious = Boolean(
+      getKnownFingerprints(currentUserId)[peerUserId] || getLegacyKnownFingerprint(peerUserId),
+    );
     const peerKeys = await fetchPeerPublicKeys(peerUserId, { forceRefresh: true });
     if (!peerKeys) throw new Error('PEER_IDENTITY_BINDING_UNAVAILABLE');
 
@@ -189,15 +366,27 @@ export async function assertConversationFingerprintsTrusted(
       peerKeys.fingerprint,
     );
     if (check.changed) throw new Error('FINGERPRINT_CHANGED');
-
-    if (!getKnownFingerprints()[peerUserId]) {
-      saveKnownFingerprint(peerUserId, peerKeys.fingerprint);
+    if (!hadTrustedPrevious) {
       await saveKnownFingerprintServer(peerUserId, peerKeys.fingerprint, false);
     }
   }));
 }
 
-export function checkFingerprintChange(userId: string, currentFingerprint: string): boolean {
-  const previousFingerprint = getKnownFingerprints()[userId];
-  return Boolean(previousFingerprint && previousFingerprint !== currentFingerprint);
+export function checkFingerprintChange(
+  peerUserId: string,
+  currentFingerprint: string,
+  observerUserId?: string,
+): boolean {
+  const previous = getKnownFingerprints(observerUserId)[peerUserId]
+    ?? (observerUserId ? getLegacyKnownFingerprint(peerUserId) : null);
+  return Boolean(previous && normalizeFingerprint(previous) !== normalizeFingerprint(currentFingerprint));
 }
+
+export const __test__ = {
+  canonicalTrustPayload,
+  normalizeFingerprint,
+  signTrustPayload,
+  verifyTrustRow,
+  trustProtocol: TRUST_PROTOCOL,
+  trustVersion: TRUST_VERSION,
+};

@@ -59,3 +59,21 @@ a database or object-store compromise. The strict vault now:
 - refuses automatic E2EE restore after ordinary account authentication;
 - makes recovery intentionally impossible without the recovery key or a linked
   device/native Keychain snapshot.
+
+
+## Signed identity continuity and real safety numbers
+
+The previous trust lookup allowed a server value to override local TOFU state,
+and one warning dialog displayed a number derived from conversation metadata
+rather than identity keys. The hardened path now:
+
+- scopes local known fingerprints by observer account;
+- treats local continuity as authoritative;
+- accepts cross-device server trust only when signed by the observer account's
+  stable Ed25519 key;
+- deletes unsigned legacy server trust rows during migration;
+- records manual acknowledgement inside the signed attestation;
+- derives a symmetric sixty-digit SHA-512 safety number solely from the two
+  stable account fingerprints;
+- refuses the confirmation button unless the actual local and peer identities
+  were loaded.
