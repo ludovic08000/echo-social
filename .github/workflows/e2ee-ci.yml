@@ -28,7 +28,39 @@ jobs:
           cache: npm
 
       - name: Generate recovery-key-only vault
-        run: python3 scripts/apply_recovery_key_only_vault.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply_recovery_key_only_vault.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''# R2 and backup UI default exclusively to recovery envelopes.
+          replace_once(
+              'src/lib/crypto/r2BackupVault.ts',
+              "backupType: 'account' | 'recovery' = 'account'",
+              "backupType: 'account' | 'recovery' = 'recovery'",
+              'R2 read default recovery',
+          )
+          # The same default appears four times.
+          target = Path('src/lib/crypto/r2BackupVault.ts')
+          source = target.read_text(encoding='utf-8')
+          source = source.replace("backupType: 'account' | 'recovery' = 'account'", "backupType: 'account' | 'recovery' = 'recovery'")
+          target.write_text(source, encoding='utf-8')
+          '''
+          new = '''# R2 and backup UI default exclusively to recovery envelopes.
+          target = Path('src/lib/crypto/r2BackupVault.ts')
+          source = target.read_text(encoding='utf-8')
+          marker = "backupType: 'account' | 'recovery' = 'account'"
+          count = source.count(marker)
+          if count != 5:
+              raise SystemExit(f'R2 recovery defaults: expected 5 occurrences, found {count}')
+          source = source.replace(marker, "backupType: 'account' | 'recovery' = 'recovery'")
+          target.write_text(source, encoding='utf-8')
+          '''
+          if old not in source:
+              raise SystemExit('R2 generator patch target missing')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 scripts/apply_recovery_key_only_vault.py
 
       - name: Install dependencies
         run: npm ci
