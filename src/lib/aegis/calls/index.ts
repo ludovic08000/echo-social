@@ -12,3 +12,14 @@ export const aegisCallsModule = {
 
 export type AegisCallsModule = typeof aegisCallsModule;
 export { encryptCallKey, decryptCallKey };
+export {
+  createSecureCallKeyCapsule,
+  decryptSecureCallKeyForCurrentDevice,
+  parseSecureCallKeyCapsule,
+  startSecureCall,
+} from '@/lib/calls/secureCallKeys';
+export type {
+  SecureCallKeyCapsule,
+  SecureCallStarted,
+  StartSecureCallInput,
+} from '@/lib/calls/secureCallKeys';

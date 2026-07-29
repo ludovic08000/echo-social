@@ -40,6 +40,8 @@ interface FanoutInput {
   conversationId: string;
   senderUserId: string;
   plaintext: string;
+  /** Optional exact user subset. Used for invited call participants only. */
+  recipientUserIds?: readonly string[];
 }
 
 interface DeviceEncryptTargetInput {
@@ -414,8 +416,12 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
   const senderDeviceId = getCurrentDeviceId();
 
   const route = await resolveFanoutRouteSnapshot(input.conversationId, input.senderUserId);
+  const recipientSet = input.recipientUserIds
+    ? new Set(input.recipientUserIds.filter(Boolean))
+    : null;
   const targets = route.targets
-    .filter(device => !isKnownInvalidDeviceId(device.deviceId));
+    .filter(device => !isKnownInvalidDeviceId(device.deviceId))
+    .filter(device => !recipientSet || recipientSet.has(device.userId));
   if (targets.length === 0) {
     // Registration/trust publication can finish between two outbox attempts;
     // never keep a negative route cached across the next bounded retry.

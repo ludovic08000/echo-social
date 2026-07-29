@@ -25,3 +25,21 @@ The repeated X3DH initial message continues to accompany initiation messages
 until the first ratchet response, matching Sesame's recovery guidance. Active
 and inactive device-pair sessions remain bounded and delayed messages may
 promote a valid inactive session.
+
+
+## Secure call-key transport
+
+The former group-call path wrote the raw LiveKit key to
+`active_calls.encrypted_call_key`. This is removed. New 1:1 and group calls:
+
+- create a fixed call UUID before signaling;
+- bind the 32-byte LiveKit key to call, conversation and caller identifiers;
+- fan the capsule out only to invited users' version-2 devices through the
+  existing X3DH/Double Ratchet device envelopes;
+- atomically insert the call and its exact device copies through a security
+  definer RPC;
+- fetch and decrypt one device copy only when the recipient accepts;
+- reject any future group row that attempts to store a non-null database key.
+
+A legacy wrapped-key fallback remains temporarily for old 1:1 callers during a
+rolling deployment. There is no legacy group fallback.

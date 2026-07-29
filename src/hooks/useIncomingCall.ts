@@ -1,7 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { decryptCallKey, encryptCallKey } from '@/lib/aegis/calls';
+import {
+  decryptCallKey,
+  decryptSecureCallKeyForCurrentDevice,
+  startSecureCall,
+} from '@/lib/aegis/calls';
 
 let sharedAudioContext: AudioContext | null = null;
 let audioPrimed = false;
@@ -156,7 +160,7 @@ export function useIncomingCall() {
    * SECURITY: The encrypted call key is stored in a volatile ref,
    * never in React state, and wiped after accept/decline.
    */
-  const encryptedCallKeyRef = useRef<string | null>(null);
+  const legacyEncryptedCallKeyRef = useRef<string | null>(null);
   const callConversationIdRef = useRef<string | null>(null);
 
   const handledCallIdsRef = useRef<Set<string>>(new Set());
@@ -200,8 +204,11 @@ export function useIncomingCall() {
           .eq('user_id', call.caller_id)
           .single();
 
-        // Store encrypted key in volatile ref — NEVER in React state
-        encryptedCallKeyRef.current = call.encrypted_call_key || null;
+        // Rolling compatibility: retain only a legacy 1:1 wrapped key.
+        // Group-call raw-key fallback is intentionally forbidden.
+        legacyEncryptedCallKeyRef.current = !call.is_group
+          ? call.encrypted_call_key || null
+          : null;
         callConversationIdRef.current = call.conversation_id;
 
         const incoming: IncomingCall = {
@@ -236,7 +243,7 @@ export function useIncomingCall() {
         p_call_id: callId,
         p_status: 'declined',
       });
-      encryptedCallKeyRef.current = null;
+      legacyEncryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
       callPhaseRef.current = 'ended';
@@ -249,7 +256,7 @@ export function useIncomingCall() {
     const clearCallState = () => {
       ringtoneRef.current.stop();
       setIncomingCall(null);
-      encryptedCallKeyRef.current = null;
+      legacyEncryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
       callPhaseRef.current = 'ended';
@@ -362,7 +369,7 @@ export function useIncomingCall() {
       supabase.removeChannel(channel);
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       ringtoneRef.current.stop();
-      encryptedCallKeyRef.current = null;
+      legacyEncryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
       callPhaseRef.current = 'idle';
@@ -381,10 +388,10 @@ export function useIncomingCall() {
     callPhaseRef.current = 'connecting';
 
     let decryptedCallKey: string | undefined;
-    const encKey = encryptedCallKeyRef.current;
+    const legacyEncryptedKey = legacyEncryptedCallKeyRef.current;
     const convId = callConversationIdRef.current;
-    if (!encKey || !convId) {
-      encryptedCallKeyRef.current = null;
+    if (!convId) {
+      legacyEncryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
       setIncomingCall(null);
@@ -392,23 +399,37 @@ export function useIncomingCall() {
       queueMicrotask(() => {
         callPhaseRef.current = 'idle';
       });
-      throw new Error('[CALL_E2EE] Missing encrypted call key payload');
+      throw new Error('[CALL_E2EE] Missing call context');
     }
 
     try {
-      // Group calls (D3): the call key is shared in clear via encrypted_call_key
-      // (per-recipient wrapping is planned for D4). Skip 1-to-1 decryption.
-      if (incomingCall.is_group) {
-        decryptedCallKey = encKey;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('Not authenticated');
+      decryptedCallKey = await decryptSecureCallKeyForCurrentDevice({
+        callId: incomingCall.id,
+        conversationId: convId,
+        currentUserId: currentUser.id,
+        expectedCallerId: incomingCall.caller_id,
+      });
+    } catch (secureDecryptError) {
+      // Rolling compatibility is allowed only for old 1:1 calls whose key was
+      // already encrypted. A group key is never read from active_calls.
+      if (!incomingCall.is_group && legacyEncryptedKey) {
+        try {
+          const { data: { user: currentUser } } = await supabase.auth.getUser();
+          if (!currentUser) throw new Error('Not authenticated');
+          decryptedCallKey = await decryptCallKey(
+            legacyEncryptedKey,
+            convId,
+            currentUser.id,
+            incomingCall.caller_id,
+          );
+        } catch (legacyDecryptError) {
+          console.error('[CALL] Legacy call-key decrypt failed:', legacyDecryptError);
+        }
       } else {
-        // Always pass user IDs for fresh session derivation
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (!currentUser) throw new Error('Not authenticated');
-        const peerId = incomingCall.caller_id;
-        decryptedCallKey = await decryptCallKey(encKey, convId, currentUser.id, peerId);
+        console.error('[CALL] Secure device call-key decrypt failed:', secureDecryptError);
       }
-    } catch (decryptError) {
-      console.error('[CALL] Aegis call-key decrypt failed:', decryptError);
     }
 
     if (!decryptedCallKey) {
@@ -417,7 +438,7 @@ export function useIncomingCall() {
         p_call_id: incomingCall.id,
         p_status: 'declined',
       });
-      encryptedCallKeyRef.current = null;
+      legacyEncryptedCallKeyRef.current = null;
       callConversationIdRef.current = null;
       activeCallIdRef.current = null;
       setIncomingCall(null);
@@ -434,7 +455,7 @@ export function useIncomingCall() {
       p_status: 'answered',
     });
 
-    encryptedCallKeyRef.current = null;
+    legacyEncryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
 
     const accepted: AcceptedCall = { ...incomingCall, decryptedCallKey };
@@ -455,7 +476,7 @@ export function useIncomingCall() {
       p_status: 'declined',
     });
 
-    encryptedCallKeyRef.current = null;
+    legacyEncryptedCallKeyRef.current = null;
     callConversationIdRef.current = null;
     activeCallIdRef.current = null;
     setIncomingCall(null);
@@ -483,29 +504,21 @@ export async function signalOutgoingCall(
   callType: 'audio' | 'video',
   callKeyB64?: string,
 ): Promise<string | null> {
-  let encryptedKey: string | undefined;
-
-  if (callKeyB64) {
-    encryptedKey = await encryptCallKey(callKeyB64, conversationId, callerId, calleeId);
-  }
-
-  const { data, error } = await supabase.rpc('call_signal', {
-    p_action: 'create',
-    p_conversation_id: conversationId,
-    p_caller_id: callerId,
-    p_callee_id: calleeId,
-    p_call_type: callType,
-    p_encrypted_call_key: encryptedKey ?? null,
-  });
-
-  if (error) {
-    console.error('Signal call error:', error);
+  if (!callKeyB64) throw new Error('[CALL_E2EE] Missing outgoing call key');
+  try {
+    const started = await startSecureCall({
+      conversationId,
+      callerUserId: callerId,
+      inviteeIds: [calleeId],
+      callType,
+      callKeyB64,
+      isGroup: false,
+    });
+    return started.callId;
+  } catch (error) {
+    console.error('[CALL] Secure call signal failed:', error);
     return null;
   }
-
-  const callId = (data as { id?: string } | null)?.id || null;
-
-  return callId;
 }
 
 /** Called when call ends to update the record */
