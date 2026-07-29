@@ -31,9 +31,12 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           path = Path('scripts/apply_recovery_key_only_vault.py')
           source = path.read_text(encoding='utf-8')
-          old = '''# R2 and backup UI default exclusively to recovery envelopes.
+
+          r2_old = '''# R2 and backup UI default exclusively to recovery envelopes.
           replace_once(
               'src/lib/crypto/r2BackupVault.ts',
               "backupType: 'account' | 'recovery' = 'account'",
@@ -46,7 +49,7 @@ jobs:
           source = source.replace("backupType: 'account' | 'recovery' = 'account'", "backupType: 'account' | 'recovery' = 'recovery'")
           target.write_text(source, encoding='utf-8')
           '''
-          new = '''# R2 and backup UI default exclusively to recovery envelopes.
+          r2_new = '''# R2 and backup UI default exclusively to recovery envelopes.
           target = Path('src/lib/crypto/r2BackupVault.ts')
           source = target.read_text(encoding='utf-8')
           marker = "backupType: 'account' | 'recovery' = 'account'"
@@ -56,9 +59,31 @@ jobs:
           source = source.replace(marker, "backupType: 'account' | 'recovery' = 'recovery'")
           target.write_text(source, encoding='utf-8')
           '''
-          if old not in source:
+          if r2_old not in source:
               raise SystemExit('R2 generator patch target missing')
-          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          source = source.replace(r2_old, r2_new, 1)
+
+          label_pattern = re.compile(
+              r"replace_once\(\n"
+              r"    'src/components/KeyBackupPanel\.tsx',\n"
+              r"    \"\s+\{autoBackupOn \? 'Sauvegarde automatique active' : 'Reconnecte-toi pour activer la sauvegarde auto'\}\\n\",\n"
+              r"    \"\s+\{autoBackupOn \? 'Sauvegarde recovery active pour cette session' : 'Crée ou saisis ta clé de récupération pour synchroniser'\}\\n\",\n"
+              r"    'backup status label',\n"
+              r"\)"
+          )
+          label_replacement = '''target = Path('src/components/KeyBackupPanel.tsx')
+          ui_source = target.read_text(encoding='utf-8')
+          old_label = "{autoBackupOn ? 'Sauvegarde automatique active' : 'Reconnecte-toi pour activer la sauvegarde auto'}"
+          new_label = "{autoBackupOn ? 'Sauvegarde recovery active pour cette session' : 'Crée ou saisis ta clé de récupération pour synchroniser'}"
+          count = ui_source.count(old_label)
+          if count != 1:
+              raise SystemExit(f'backup status label: expected 1 occurrence, found {count}')
+          target.write_text(ui_source.replace(old_label, new_label, 1), encoding='utf-8')'''
+          source, count = label_pattern.subn(label_replacement, source, count=1)
+          if count != 1:
+              raise SystemExit(f'backup status generator patch: expected 1 block, found {count}')
+
+          path.write_text(source, encoding='utf-8')
           PY
           python3 scripts/apply_recovery_key_only_vault.py
 
