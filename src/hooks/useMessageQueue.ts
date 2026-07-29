@@ -5,14 +5,15 @@ import {
   isRetryableOutboundStatus,
   scheduleAegisRetry,
 } from '@/lib/messaging/aegisConversationQueue';
+import { selectInitialDeliveryMode } from './useAegisMessageQueue';
 import {
-  useAegisMessageQueue,
-  selectInitialDeliveryMode,
+  useServerMessageQueue,
   type OutboundMessage,
-} from './useAegisMessageQueue';
+} from './useServerMessageQueue';
 
+// Kept only for older unit tests/imports while historical Aegis rows remain.
 export { selectInitialDeliveryMode };
-export type { OutboundMessage } from './useAegisMessageQueue';
+export type { OutboundMessage } from './useServerMessageQueue';
 
 type SendExtra = {
   view_once?: boolean;
@@ -25,36 +26,22 @@ type SendExtra = {
 /**
  * Stable message queue shared by the widget and full messenger surfaces.
  *
- * The public signature is kept for compatibility with the legacy Aegis reader,
- * but new outbound messages use the server transport. No identity, Signed
- * PreKey or device-route prewarm runs before Send.
+ * The public signature remains compatible with older callers, but runtime
+ * delivery is now a stable-UUID server transaction. Encryption readiness,
+ * peer keys and device routes are intentionally ignored for new messages.
  */
 export function useMessageQueue(
   conversationId: string,
   _encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
-  isEncryptionReady: boolean,
-  _isEncryptionActive: boolean,
-  onMessageSent?: (localId: string) => void | Promise<void>,
-  allowPlaintext = false,
+  _isEncryptionReady: boolean,
+  _hasLegacyEncryptedHistory: boolean,
+  _onMessageSent?: (localId: string) => void | Promise<void>,
+  _allowPlaintext = false,
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
 ) {
   const { user } = useAuth();
   const scheduledRetryKeysRef = useRef(new Set<string>());
-
-  const handleSent = useCallback(async (localId: string) => {
-    await onMessageSent?.(localId);
-  }, [onMessageSent]);
-
-  const queue = useAegisMessageQueue(
-    conversationId,
-    null,
-    isEncryptionReady,
-    handleSent,
-    allowPlaintext,
-    async (serverId, plaintext) => {
-      onPlaintextCached?.(serverId, plaintext);
-    },
-  );
+  const queue = useServerMessageQueue(conversationId, onPlaintextCached);
 
   const retryMessage = queue.retryMessage;
   const markRetryExhausted = queue.markRetryExhausted;
@@ -114,8 +101,8 @@ export function useMessageQueue(
     scheduledRetryKeysRef.current = activeRetryKeys;
   }, [queue.pendingMessages, scheduleRetryForMessage, user?.id]);
 
-  // A real reconnect may immediately resume a pending commit. Focus alone no
-  // longer starts device-route work or a second send storm.
+  // Only a real network reconnect starts an immediate retry. Focus and PIN
+  // events never create a duplicate send storm.
   useEffect(() => {
     const retryNow = () => {
       for (const message of queue.pendingMessages) {
