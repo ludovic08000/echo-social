@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { UserAvatar } from '@/components/UserAvatar';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
   const { user, signOut } = useAuth();
@@ -116,7 +117,7 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
     }
   };
 
-  const goFriends = () => navigate('/friends');
+  const goFriends = () => navigate(isOwn ? '/friends' : `/friends?user=${targetId}`);
   const memberSince = profile?.created_at
     ? format(new Date(profile.created_at), 'MMM yyyy', { locale: fr })
     : null;
@@ -155,7 +156,7 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
           )}
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-card/90" />
 
-          {adjusting ? (
+          {!isOwn ? null : adjusting ? (
             <div className="absolute inset-x-0 top-2 flex items-center justify-center gap-2">
               <span className="px-3 py-1 rounded-full text-[11px] bg-background/80 backdrop-blur-md border border-border/40">
                 Glisse pour cadrer
@@ -208,13 +209,13 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
                 <UserAvatar src={profile?.avatar_url} alt={profile?.name} size="xl" className="w-24 h-24" />
               </div>
             </div>
-            <button
+            {isOwn && <button
               onClick={() => fileInputRef.current?.click()}
               aria-label="Changer la photo"
               className="absolute -left-1 bottom-1 w-8 h-8 rounded-full bg-background/90 border border-border/40 flex items-center justify-center hover:bg-background transition-colors"
             >
               <Camera className="w-3.5 h-3.5 text-foreground" />
-            </button>
+            </button>}
             {profile?.age_verified && (
               <span
                 aria-label="Compte vérifié"
@@ -243,6 +244,21 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
             </span>
           </div>
 
+          {/* Ville / lien — masquable */}
+          <ProfileMeta
+            isOwn={isOwn}
+            city={profile?.city ?? null}
+            website={profile?.website_url ?? null}
+            visibility={profile?.field_visibility ?? null}
+            onToggle={async (next) => {
+              try {
+                await updateProfile.mutateAsync({ field_visibility: next as any });
+              } catch {
+                toast({ title: 'Erreur', variant: 'destructive' });
+              }
+            }}
+          />
+
           {/* Stats */}
           <div className="mt-4 w-full max-w-sm rounded-2xl border border-border/40 bg-secondary/30 grid grid-cols-3 divide-x divide-border/40 overflow-hidden">
             <StatCell label="POSTS" value={counts?.posts ?? 0} />
@@ -261,7 +277,7 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
           {/* Actions */}
           <div className="mt-4 flex items-center gap-2 w-full justify-center flex-wrap">
             <button
-              onClick={() => navigate('/messages')}
+              onClick={() => navigate(isOwn ? '/messages' : `/messages?user=${targetId}`)}
               className="inline-flex items-center gap-1.5 px-4 h-10 rounded-full bg-primary text-primary-foreground text-sm font-medium shadow-[0_8px_24px_-10px_hsl(var(--primary)/0.7)] hover:opacity-90 transition"
             >
               <MessageCircle className="w-4 h-4" />
@@ -274,19 +290,23 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
               <Lock className="w-3.5 h-3.5" />
               Tips bientôt
             </button>
-            <IconAction label="Albums" onClick={() => navigate('/settings?tab=albums')}>
-              <FolderOpen className="w-4 h-4" />
-            </IconAction>
-            <IconAction label="Mes posts" onClick={() => navigate('/feed')}>
-              <Newspaper className="w-4 h-4" />
-            </IconAction>
-            <IconAction
-              label="Déconnexion"
-              onClick={async () => { await signOut(); navigate('/'); }}
-              className="text-destructive border-destructive/30 hover:bg-destructive/10"
-            >
-              <LogOut className="w-4 h-4" />
-            </IconAction>
+            {isOwn && (
+              <>
+                <IconAction label="Albums" onClick={() => navigate('/settings?tab=albums')}>
+                  <FolderOpen className="w-4 h-4" />
+                </IconAction>
+                <IconAction label="Mes posts" onClick={() => navigate('/feed')}>
+                  <Newspaper className="w-4 h-4" />
+                </IconAction>
+                <IconAction
+                  label="Déconnexion"
+                  onClick={async () => { await signOut(); navigate('/'); }}
+                  className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                >
+                  <LogOut className="w-4 h-4" />
+                </IconAction>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -333,5 +353,86 @@ function IconAction({
     >
       {children}
     </button>
+  );
+}
+
+
+function ProfileMeta({
+  isOwn,
+  city,
+  website,
+  visibility,
+  onToggle,
+}: {
+  isOwn: boolean;
+  city: string | null;
+  website: string | null;
+  visibility: Record<string, string> | null;
+  onToggle: (next: Record<string, string>) => void;
+}) {
+  const cityHidden = (visibility?.city ?? 'public') === 'only_me';
+  const siteHidden = (visibility?.website_url ?? 'public') === 'only_me';
+
+  const showCity = !!city && (isOwn || !cityHidden);
+  const showSite = !!website && (isOwn || !siteHidden);
+  if (!showCity && !showSite) return null;
+
+  const toggle = (key: 'city' | 'website_url', hidden: boolean) =>
+    onToggle({ ...(visibility ?? {}), [key]: hidden ? 'public' : 'only_me' });
+
+  const host = (() => {
+    try { return new URL(website!).hostname.replace(/^www\./, ''); } catch { return website ?? ''; }
+  })();
+
+  return (
+    <div className="mt-2.5 flex items-center justify-center gap-2 flex-wrap text-xs">
+      {showCity && (
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/50 border border-border/30 text-muted-foreground',
+            isOwn && cityHidden && 'opacity-60',
+          )}
+        >
+          <MapPin className="w-3 h-3" />
+          {city}
+          {isOwn && (
+            <button
+              onClick={() => toggle('city', cityHidden)}
+              aria-label={cityHidden ? 'Afficher la ville' : 'Masquer la ville'}
+              className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {cityHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+            </button>
+          )}
+        </span>
+      )}
+      {showSite && (
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/50 border border-border/30',
+            isOwn && siteHidden && 'opacity-60',
+          )}
+        >
+          <Globe className="w-3 h-3 text-muted-foreground" />
+          <a
+            href={sanitizeUrl(website!)}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="text-primary hover:underline max-w-[180px] truncate"
+          >
+            {host}
+          </a>
+          {isOwn && (
+            <button
+              onClick={() => toggle('website_url', siteHidden)}
+              aria-label={siteHidden ? 'Afficher le lien' : 'Masquer le lien'}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {siteHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+            </button>
+          )}
+        </span>
+      )}
+    </div>
   );
 }
