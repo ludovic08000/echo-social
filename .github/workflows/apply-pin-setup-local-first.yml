@@ -1,0 +1,124 @@
+name: Apply PIN setup local-first hotfix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-pin-setup-local-first.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Make local PIN setup authoritative
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/hooks/useChatPin.ts')
+          source = path.read_text(encoding='utf-8')
+          old = """    try {
+                const backupResult = await setupPersistentBackupPin(pin, user.id);
+                if (backupResult !== 'ok') {
+                  const message = backupResult === 'no_master_key'
+                    ? 'Clé Aegis indisponible. Reconnectez-vous puis réessayez.'
+                    : 'Impossible d’enregistrer le PIN chiffré sur le serveur';
+                  setState((current) => ({ ...current, processing: false, error: message }));
+                  return false;
+                }
+                await saveLocalPin(user.id, pin);
+                // This creates only an email-reset ticket. The PIN itself is deliberately
+                // absent from the request and cannot be verified by the server.
+                void supabase.functions.invoke('verify-chat-pin', {
+                  body: { action: 'register-local-recovery' },
+                }).catch(() => undefined);
+                announceUnlock(user.id);
+                pinModeRef.current = 'every_open';
+                storageSet(localStorage, `${MODE_PREFIX}${user.id}`, 'every_open');
+                setState({
+                  loaded: true,
+                  hasPin: true,
+                  unlocked: true,
+                  error: null,
+                  processing: false,
+                  pinMode: 'every_open',
+                });
+                return true;
+              } catch (error) {
+          """
+          new = """    try {
+                // Local encrypted persistence is the authority for opening this device.
+                // Server recovery is useful, but must never block PIN creation or chat.
+                await saveLocalPin(user.id, pin);
+                announceUnlock(user.id);
+                pinModeRef.current = 'every_open';
+                storageSet(localStorage, `${MODE_PREFIX}${user.id}`, 'every_open');
+                setState({
+                  loaded: true,
+                  hasPin: true,
+                  unlocked: true,
+                  error: null,
+                  processing: false,
+                  pinMode: 'every_open',
+                });
+
+                void setupPersistentBackupPin(pin, user.id)
+                  .then((result) => {
+                    if (result !== 'ok') {
+                      console.warn('[LOCAL-PIN] initial server backup deferred', { result });
+                    }
+                  })
+                  .catch((error) => {
+                    console.warn('[LOCAL-PIN] initial server backup failed', error);
+                  });
+
+                // This creates only an email-reset ticket. The PIN itself is deliberately
+                // absent from the request and cannot be verified by the server.
+                void supabase.functions.invoke('verify-chat-pin', {
+                  body: { action: 'register-local-recovery' },
+                }).catch(() => undefined);
+                return true;
+              } catch (error) {
+          """
+
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one blocking setup block, found {count}')
+
+          path.write_text(source.replace(old, new), encoding='utf-8')
+
+      - name: Verify ordering
+        shell: python
+        run: |
+          from pathlib import Path
+          source = Path('src/hooks/useChatPin.ts').read_text(encoding='utf-8')
+          start = source.index('const setupPin = useCallback')
+          end = source.index('const verifyPin = useCallback')
+          block = source[start:end]
+          if block.index('await saveLocalPin') > block.index('void setupPersistentBackupPin'):
+              raise SystemExit('Server backup still precedes local PIN persistence')
+          if "unlocked: true" not in block:
+              raise SystemExit('Setup block does not unlock messaging')
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          if git diff --quiet -- src/hooks/useChatPin.ts; then
+            echo "No change produced" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/hooks/useChatPin.ts
+          git commit -m "fix(pin): create local PIN before server recovery"
+          git push origin HEAD:main
