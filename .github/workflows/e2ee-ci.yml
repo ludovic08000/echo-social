@@ -32,113 +32,8 @@ jobs:
       - name: Generate modular Aegis architecture
         run: python3 scripts/refactor_aegis_modular.py
 
-      - name: Tighten extracted module boundaries
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          transaction = Path('src/lib/aegis/core/AegisOutboundTransaction.ts')
-          source = transaction.read_text(encoding='utf-8')
-          source = source.replace(
-              "Partial<Parameters<typeof traceE2EE>[0]>",
-              "Partial<Parameters<AegisRuntimeDependencies['telemetry']['trace']>[0]>",
-          )
-          source = source.replace(
-              "Awaited<ReturnType<typeof sendMessageWithAegisRetry>>",
-              "Awaited<ReturnType<AegisRuntimeDependencies['transport']['sendWithRetry']>>",
-          )
-          transaction.write_text(source, encoding='utf-8')
-
-          device = Path('src/lib/aegis/device/index.ts')
-          device.write_text("""import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
-          import { assertConversationFingerprintsTrusted } from '@/lib/crypto/fingerprintTracker';
-
-          export const aegisDeviceModule = {
-            ensureReady: ensureAegisDeviceReady,
-            assertConversationTrusted: assertConversationFingerprintsTrusted,
-          } as const;
-
-          export type AegisDeviceModule = typeof aegisDeviceModule;
-
-          export {
-            ensureAegisDeviceReady,
-            assertConversationFingerprintsTrusted,
-          };
-          """.replace('          ', ''), encoding='utf-8')
-
-          recovery = Path('src/lib/aegis/recovery/index.ts')
-          recovery.write_text("""import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
-
-          export type SetupPinResult = 'ok' | 'no_master_key' | 'invalid_pin' | 'error';
-
-          export async function setupPersistentBackupPin(
-            pin: string,
-            userId: string,
-          ): Promise<SetupPinResult> {
-            const module = await import('@/lib/crypto/aegisPinBackup');
-            return module.setupPersistentBackupPin(pin, userId);
-          }
-
-          export async function prepareArchiveBody(input: {
-            plaintext: string;
-            conversationId: string;
-            userId: string;
-            messageId: string;
-          }): Promise<string | null> {
-            const { encryptArchive } = await import('@/lib/messaging/archive/archiveKey');
-            return encryptArchive(
-              input.plaintext,
-              input.conversationId,
-              input.userId,
-              input.messageId,
-            );
-          }
-
-          export async function archiveCommittedMessage(input: {
-            messageId: string;
-            conversationId: string;
-            userId: string;
-            plaintext: string;
-          }): Promise<boolean> {
-            const { archiveBubbleForUser } = await import('@/lib/messaging/archive/archiveKey');
-            return archiveBubbleForUser(input);
-          }
-
-          export const aegisRecoveryModule = {
-            isArchiveBackupEnabled,
-            prepareArchiveBody,
-            archiveCommittedMessage,
-          } as const;
-
-          export type AegisRecoveryModule = typeof aegisRecoveryModule;
-          export { isArchiveBackupEnabled };
-          """.replace('          ', ''), encoding='utf-8')
-
-          dependencies = Path('src/lib/aegis/core/dependencies.ts')
-          source = dependencies.read_text(encoding='utf-8')
-          source = source.replace(
-              "import { aegisCallsModule, type AegisCallsModule } from '@/lib/aegis/calls';\n",
-              '',
-          )
-          source = source.replace('  calls: AegisCallsModule;\n', '')
-          source = source.replace('  calls: aegisCallsModule,\n', '')
-          dependencies.write_text(source, encoding='utf-8')
-
-          boundaries = Path('src/lib/aegis/__tests__/moduleBoundaries.test.ts')
-          source = boundaries.read_text(encoding='utf-8')
-          source = source.replace(
-              "expect(cryptoSource).not.toMatch(/supabase/i);\n    expect(cryptoSource).not.toMatch(/react|toast/i);",
-              "expect(cryptoSource).not.toContain('@/integrations/supabase');\n"
-              "    expect(cryptoSource).not.toMatch(/from ['\\\"]react['\\\"]/);\n"
-              "    expect(cryptoSource).not.toMatch(/from ['\\\"][^'\\\"]*toast[^'\\\"]*['\\\"]/);",
-          )
-          source = source.replace(
-              "expect(callsSource).not.toMatch(/outbox|sendMessageWithAegisRetry/);",
-              "expect(callsSource).not.toMatch(/from ['\\\"][^'\\\"]*outbox[^'\\\"]*['\\\"]/);\n"
-              "    expect(callsSource).not.toContain('sendMessageWithAegisRetry');",
-          )
-          boundaries.write_text(source, encoding='utf-8')
-          PY
+      - name: Apply strict module boundaries
+        run: python3 scripts/refactor_aegis_postprocess.py
 
       - name: Install dependencies
         run: npm ci
@@ -162,7 +57,7 @@ jobs:
       - name: Restore normal CI and commit validated refactor
         run: |
           git checkout -- public/version.json 2>/dev/null || true
-          rm -f scripts/refactor_aegis_modular.py
+          rm -f scripts/refactor_aegis_modular.py scripts/refactor_aegis_postprocess.py
           cat > .github/workflows/e2ee-ci.yml <<'EOF'
           name: E2EE CI
 
