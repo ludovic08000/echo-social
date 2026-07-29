@@ -56,8 +56,8 @@ end;
 $$;
 
 -- Preserve strict validation for legacy Aegis rows while allowing the new
--- server mode. Direct peer inserts remain blocked by RLS; the RPC below is the
--- only authenticated peer-message writer.
+-- server mode. This trigger also protects direct REST inserts, so the same
+-- sender, membership, size and rate rules apply outside the RPC.
 create or replace function public.enforce_aegis_message_scope()
 returns trigger
 language plpgsql
@@ -66,6 +66,7 @@ set search_path = public, pg_temp
 as $$
 declare
   v_body jsonb;
+  v_uid uuid := auth.uid();
 begin
   if new.body_kind = 'system' then
     if not exists (
@@ -94,11 +95,20 @@ begin
   end if;
 
   if new.body_kind = 'server' then
+    if v_uid is null then
+      raise exception 'not_authenticated' using errcode = '42501';
+    end if;
+
+    if new.sender_id <> v_uid then
+      raise exception 'SERVER_MESSAGE_SENDER_MISMATCH'
+        using errcode = '42501';
+    end if;
+
     if not exists (
       select 1
       from public.conversation_participants sender_cp
       where sender_cp.conversation_id = new.conversation_id
-        and sender_cp.user_id = new.sender_id
+        and sender_cp.user_id = v_uid
     ) then
       raise exception 'SERVER_MESSAGE_SENDER_NOT_PARTICIPANT'
         using errcode = '42501';
@@ -116,6 +126,24 @@ begin
         using errcode = '22001';
     end if;
 
+    if length(coalesce(new.image_url, '')) > 4096
+       or length(coalesce(new.document_url, '')) > 4096
+       or length(coalesce(new.document_name, '')) > 512
+       or length(coalesce(new.document_mime, '')) > 255 then
+      raise exception 'SERVER_MESSAGE_METADATA_TOO_LARGE'
+        using errcode = '22001';
+    end if;
+
+    if not public.check_rate_limit(
+      'server-message:' || v_uid::text,
+      60,
+      60
+    ) then
+      raise exception 'MESSAGE_RATE_LIMITED'
+        using errcode = 'P0001';
+    end if;
+
+    new.status := 'delivered';
     new.aegis_route_version := null;
     return new;
   end if;
@@ -201,6 +229,8 @@ begin
       using errcode = '22001';
   end if;
 
+  -- Resolve an ambiguous retry before the rate-limited insert path. A caller
+  -- that lost the first HTTP response must always recover the same committed id.
   select * into v_existing
   from public.messages message
   where message.id = p_message_id;
