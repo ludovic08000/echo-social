@@ -15,6 +15,7 @@ import {
   ensureBackupIndexedFromR2,
   scheduleBackupMirrorToR2,
 } from '@/lib/crypto/r2BackupVault';
+import { primeAuthUserId } from '@/lib/crypto/peerKeyCache';
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
@@ -155,12 +156,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
 
     const applySessionState = (nextSession: Session | null) => {
+      primeAuthUserId(nextSession?.user?.id ?? null);
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       setLoading(false);
     };
 
     const clearSessionState = () => {
+      primeAuthUserId(null);
       stopSessionGuard();
       clearArchiveMasterKeySession();
       clearAccountKeySession();
@@ -227,19 +230,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-        if (!refreshError && refreshed.session) {
-          applySessionState(refreshed.session);
-          if (refreshed.session.user) void inspectCryptoReadiness(refreshed.session.user.id, 'session_restored');
+        // Supabase already owns token auto-refresh. Reading the persisted
+        // session first avoids competing refresh locks across Safari/PWA tabs.
+        const { data: current, error: currentError } = await supabase.auth.getSession();
+        if (!currentError && current.session) {
+          applySessionState(current.session);
+          if (current.session.user) void inspectCryptoReadiness(current.session.user.id, 'session_restored');
           return;
         }
 
-        const { data: current } = await supabase.auth.getSession();
-        applySessionState(current.session);
-        if (current.session?.user) void inspectCryptoReadiness(current.session.user.id, 'session_restored');
+        // Refresh only when no usable persisted session exists.
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        applySessionState(refreshed.session);
+        if (refreshed.session?.user) void inspectCryptoReadiness(refreshed.session.user.id, 'session_restored');
       } catch {
-        const { data: current } = await supabase.auth.getSession();
-        applySessionState(current.session);
+        // An auth-lock AbortError is transient. onAuthStateChange will deliver
+        // the restored session without starting another competing operation.
+        setLoading(false);
       }
     };
 

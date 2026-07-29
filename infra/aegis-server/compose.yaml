@@ -1,0 +1,19 @@
+services:
+  aegis-server:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: "8787"
+      SUPABASE_URL: "${SUPABASE_URL}"
+      SUPABASE_ANON_KEY: "${SUPABASE_ANON_KEY}"
+      AEGIS_ALLOWED_ORIGINS: "${AEGIS_ALLOWED_ORIGINS}"
+      AEGIS_MAX_BODY_BYTES: "1048576"
+    ports:
+      - "127.0.0.1:8787:8787"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

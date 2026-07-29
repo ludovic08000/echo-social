@@ -1,4 +1,3 @@
-import { supabase } from '@/integrations/supabase/client';
 import type { Json } from '@/integrations/supabase/types';
 import type { FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
 import { invalidateFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
@@ -7,6 +6,7 @@ import {
   commitFanoutSessionTransaction,
   rollbackFanoutSessionTransaction,
 } from '@/lib/messaging/fanoutSessionTransaction';
+import { callAegisServer } from '@/lib/messaging/aegisTransport';
 
 type RpcError = {
   code?: string | null;
@@ -106,7 +106,7 @@ async function callAuthoritative(
   });
 
   try {
-    const request = Promise.resolve(supabase.rpc('aegis_send_message', {
+    const request = callAegisServer<unknown>('aegis_send_message', {
       p_message_id: args.messageId,
       p_conversation_id: args.conversationId,
       p_body: args.body,
@@ -115,7 +115,7 @@ async function callAuthoritative(
       p_copies: copies as unknown as Json,
       p_sender_device_id: args.senderDeviceId,
       p_route_version: args.routeVersion,
-    })) as Promise<RpcResponse>;
+    }) as Promise<RpcResponse>;
     return await Promise.race([request, timeout]);
   } catch (error) {
     return { data: null, error: thrownRpcError(error) };

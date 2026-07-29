@@ -1,5 +1,4 @@
 import { safeUUID } from '@/e2ee-session';
-import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
 import { assertConversationFingerprintsTrusted } from '@/lib/crypto/fingerprintTracker';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
@@ -7,7 +6,7 @@ import {
   isAegisAmbiguousTransportFailure,
   sendMessageWithAegisRetry,
 } from '@/lib/messaging/aegisSendRpc';
-import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
 import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
 import {
   MAX_INLINE_MESSAGE_BODY_BYTES,
@@ -29,8 +28,6 @@ import {
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
-
-const IDENTITY_PREWARM_TIMEOUT_MS = 5_000;
 
 export interface AegisOutboundInput {
   conversationId: string;
@@ -110,18 +107,6 @@ function requestSenderTrustRepair(error: unknown): void {
   }
 }
 
-async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, code: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(code)), timeoutMs);
-  });
-  try {
-    return await Promise.race([operation, timeout]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-}
-
 /**
  * The only encrypted outbound engine.
  *
@@ -152,6 +137,8 @@ export async function sendAegisOutboundMessage(
     ...details,
   }, level);
   trace(resumed ? 'SEND_RESUME' : 'SEND_CREATED');
+  const readyDevice = await ensureAegisDeviceReady(input.senderUserId);
+  trace('DEVICE_READY', { deviceId: readyDevice.deviceId });
   let transportPlaintext = resumed?.transportPlaintext ?? input.plaintext;
   let parentBody = isMultiDeviceEnvelopeBody(resumed?.encryptedBody) && resumed?.keyCapsule
     ? resumed.encryptedBody
@@ -213,14 +200,6 @@ export async function sendAegisOutboundMessage(
       `${input.senderUserId}:${input.conversationId}:aegis-outbound`,
       async () => {
   trace('SEND_LOCK_ACQUIRED');
-  if (!parentBody) {
-    await withTimeout(
-      ensureUserE2EEIdentity(input.senderUserId, { waitForMaintenance: false }),
-      IDENTITY_PREWARM_TIMEOUT_MS,
-      'IDENTITY_PREWARM_TIMEOUT',
-    ).catch(() => undefined);
-  }
-
   // Re-check on every attempt, including a retry with durable ciphertext and
   // copies. Otherwise an identity rotation between preparation and retry could
   // bypass the transport gate.
@@ -351,7 +330,7 @@ export async function sendAegisOutboundMessage(
         archive_body: archiveBody,
       },
       senderUserId: input.senderUserId,
-      senderDeviceId: getCurrentDeviceId(),
+      senderDeviceId: readyDevice.deviceId,
       initialCopies: copies,
       routeVersion,
       rebuildCopies: buildCopies,

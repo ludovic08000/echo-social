@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  ensureIdentity: vi.fn(),
+  ensureDeviceReady: vi.fn(),
   savePlaintext: vi.fn(),
   savePlaintextForCiphertext: vi.fn(),
   rollback: vi.fn(),
@@ -17,8 +17,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/e2ee-session', () => ({ safeUUID: vi.fn(() => crypto.randomUUID()) }));
-vi.mock('@/lib/crypto/identityBootstrap', () => ({
-  ensureUserE2EEIdentity: mocks.ensureIdentity,
+vi.mock('@/lib/messaging/aegisDeviceRuntime', () => ({
+  ensureAegisDeviceReady: mocks.ensureDeviceReady,
 }));
 vi.mock('@/lib/crypto/fingerprintTracker', () => ({
   assertConversationFingerprintsTrusted: mocks.assertTrusted,
@@ -26,9 +26,6 @@ vi.mock('@/lib/crypto/fingerprintTracker', () => ({
 vi.mock('@/lib/crypto/plaintextStore', () => ({
   savePlaintext: mocks.savePlaintext,
   savePlaintextForCiphertext: mocks.savePlaintextForCiphertext,
-}));
-vi.mock('@/lib/messaging/currentDevice', () => ({
-  getCurrentDeviceId: vi.fn(() => 'sender-device'),
 }));
 vi.mock('@/lib/messaging/fanoutSessionTransaction', () => ({
   rollbackFanoutSessionTransaction: mocks.rollback,
@@ -78,7 +75,10 @@ const COPY = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.ensureIdentity.mockResolvedValue(undefined);
+  mocks.ensureDeviceReady.mockResolvedValue({
+    deviceId: 'sender-device',
+    userId: COPY.sender_user_id,
+  });
   mocks.savePlaintext.mockResolvedValue(undefined);
   mocks.savePlaintextForCiphertext.mockResolvedValue(undefined);
   mocks.rollback.mockResolvedValue(1);

@@ -7,8 +7,8 @@ const mocks = vi.hoisted(() => ({
   rollback: vi.fn(async () => 1),
 }));
 
-vi.mock('@/integrations/supabase/client', () => ({
-  supabase: { rpc: mocks.rpc },
+vi.mock('@/lib/messaging/aegisTransport', () => ({
+  callAegisServer: mocks.rpc,
 }));
 
 vi.mock('@/lib/messaging/fanoutRouteCache', () => ({

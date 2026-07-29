@@ -48,6 +48,7 @@ import {
 } from '@/lib/messaging/archive/archiveKey';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { acknowledgeAegisMessage } from '@/lib/messaging/aegisDeviceInbox';
 
 export interface DecryptionOutcome {
   text: string;
@@ -251,10 +252,22 @@ function cacheAndPersist(
   body: string,
   outcome: DecryptionOutcome,
   messageId?: string,
-): DecryptionOutcome {
+  currentUserId?: string | null,
+): Promise<DecryptionOutcome> {
   cache.set(key, outcome);
-  persistOutcome(body, outcome, messageId);
-  return outcome;
+  const persisted = outcome.mediaKeyB64
+    ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
+    : outcome.text;
+  rememberLastGoodOutcome(messageId, outcome, body);
+  return Promise.all([
+    messageId ? savePlaintext(messageId, persisted) : Promise.resolve(),
+    savePlaintextForCiphertext(body, persisted),
+  ]).then(async () => {
+    if (currentUserId && messageId) {
+      await acknowledgeAegisMessage(currentUserId, messageId).catch(() => undefined);
+    }
+    return outcome;
+  });
 }
 
 function stickyOrNull(messageId: string | undefined, body: string): DecryptionOutcome | null {
@@ -297,6 +310,11 @@ export async function resolvePlaintext(opts: {
   const cached = cache.get(key);
   if (cached) {
     trace('DECRYPT_MEMORY_CACHE_HIT');
+    if (messageId) {
+      void getCachedAuthUserId()
+        .then((userId) => userId && acknowledgeAegisMessage(userId, messageId))
+        .catch(() => undefined);
+    }
     return cached;
   }
 
@@ -304,6 +322,11 @@ export async function resolvePlaintext(opts: {
   if (persisted) {
     trace('DECRYPT_LOCAL_CACHE_HIT');
     cache.set(key, persisted);
+    if (messageId) {
+      void getCachedAuthUserId()
+        .then((userId) => userId && acknowledgeAegisMessage(userId, messageId))
+        .catch(() => undefined);
+    }
     return persisted;
   }
 
@@ -344,7 +367,7 @@ export async function resolvePlaintext(opts: {
                     plaintext,
                   }).catch(() => false);
                 }
-                return cacheAndPersist(key, body, outcome, messageId);
+                return cacheAndPersist(key, body, outcome, messageId, currentUserId);
               }
             }
           } catch {
@@ -366,7 +389,7 @@ export async function resolvePlaintext(opts: {
             ).catch(() => null);
             if (parentArchive !== null) {
               const outcome = await buildAuthenticatedOutcomeFromText(parentArchive, messageId);
-              return cacheAndPersist(key, body, outcome, messageId);
+              return cacheAndPersist(key, body, outcome, messageId, currentUserId);
             }
           }
 
@@ -377,7 +400,7 @@ export async function resolvePlaintext(opts: {
           }).catch(() => null);
           if (archived !== null) {
             const outcome = await buildAuthenticatedOutcomeFromText(archived, messageId);
-            return cacheAndPersist(key, body, outcome, messageId);
+            return cacheAndPersist(key, body, outcome, messageId, currentUserId);
           }
         }
       }

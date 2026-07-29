@@ -24,6 +24,7 @@ import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
+import { startAegisDeviceInbox } from "@/lib/messaging/aegisDeviceInbox";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -199,7 +200,11 @@ function AccountKeySyncRunner() {
   useEffect(() => {
     if (!user?.id) return;
     const stop = startRealtimeKeySync({ userId: user.id });
-    return () => stop();
+    const stopInbox = startAegisDeviceInbox(user.id);
+    return () => {
+      stop();
+      stopInbox();
+    };
   }, [user?.id]);
 
 

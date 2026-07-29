@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 
 export class DeviceSessionUnavailableError extends Error {
   constructor(message = 'DEVICE_SESSION_UNAVAILABLE') {
@@ -20,12 +21,18 @@ export async function requireAuthenticatedDeviceSession(
   expectedUserId: string,
   delaysMs: readonly number[] = [0, 250, 750, 1_500],
 ): Promise<void> {
+  // AuthProvider primes this cache from Supabase's authenticated callback.
+  // Do not acquire the GoTrue cross-tab lock again for every crypto worker.
+  const cachedUserId = await getCachedAuthUserId();
+  if (cachedUserId === expectedUserId) return;
+
   let lastError: unknown = null;
 
   for (const delay of delaysMs) {
     await sleep(delay);
     try {
-      let { data, error } = await supabase.auth.getSession();
+      const { data: sessionData, error } = await supabase.auth.getSession();
+      let data = sessionData;
       if (error) lastError = error;
 
       if (!data.session) {

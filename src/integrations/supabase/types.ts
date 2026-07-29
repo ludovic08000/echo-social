@@ -7930,6 +7930,36 @@ export type Database = {
           public_key: string
         }[]
       }
+      aegis_ack_device_messages: {
+        Args: {
+          p_device_id: string
+          p_mark_read?: boolean
+          p_message_ids: string[]
+        }
+        Returns: number
+      }
+      aegis_sync_device: {
+        Args: {
+          p_device_id: string
+          p_limit?: number
+        }
+        Returns: {
+          archive_body: string | null
+          conversation_id: string
+          copy_id: string
+          created_at: string
+          document_mime: string | null
+          document_name: string | null
+          document_size_bytes: number | null
+          document_url: string | null
+          encrypted_body: string
+          image_url: string | null
+          message_id: string
+          parent_body: string
+          sender_device_id: string
+          sender_user_id: string
+        }[]
+      }
       claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {
