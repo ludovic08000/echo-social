@@ -1,0 +1,122 @@
+name: Apply server message runtime cleanup
+
+on:
+  push:
+    branches:
+      - refactor/server-message-transport
+    paths:
+      - .github/workflows/apply-server-message-runtime-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/server-message-transport
+          fetch-depth: 0
+
+      - name: Remove obsolete device-route runtime work
+        shell: python
+        run: |
+          from pathlib import Path
+
+          app_path = Path('src/App.tsx')
+          app = app_path.read_text(encoding='utf-8')
+          removals = [
+              'import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";\n',
+              'import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";\n',
+              'import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";\n',
+              '  useCryptoMaintenance();\n',
+              '  useDeviceRegistration();\n',
+              '  useDeviceCopyRetryWorker();\n',
+          ]
+          for value in removals:
+              count = app.count(value)
+              if count != 1:
+                  raise SystemExit(f'Expected one App.tsx occurrence for {value!r}, found {count}')
+              app = app.replace(value, '', 1)
+          app_path.write_text(app, encoding='utf-8')
+
+          sync_path = Path('src/hooks/useAccountKeySync.ts')
+          sync = sync_path.read_text(encoding='utf-8')
+          export_marker = 'export function useAccountKeySync() {'
+          if sync.count(export_marker) != 1:
+              raise SystemExit('useAccountKeySync export marker mismatch')
+          sync = sync.replace(
+              export_marker,
+              '// Message delivery no longer uses per-device routes. Keep account-key\n'
+              '// restore for historical Aegis rows and LiveKit call-key wrapping only.\n'
+              'const LEGACY_DEVICE_ROUTE_SYNC_ENABLED = false;\n\n'
+              + export_marker,
+              1,
+          )
+
+          section = '  // Auto-trigger a full E2EE re-sync whenever keys have just been restored.'
+          section_at = sync.find(section)
+          if section_at < 0:
+              raise SystemExit('legacy route-sync section not found')
+          old_guard = '  useEffect(() => {\n    if (!user) return;'
+          guard_at = sync.find(old_guard, section_at)
+          if guard_at < 0:
+              raise SystemExit('legacy route-sync guard not found')
+          new_guard = (
+              '  useEffect(() => {\n'
+              '    if (!user || !LEGACY_DEVICE_ROUTE_SYNC_ENABLED) return;'
+          )
+          sync = sync[:guard_at] + sync[guard_at:].replace(old_guard, new_guard, 1)
+          sync_path.write_text(sync, encoding='utf-8')
+
+          queue_path = Path('src/lib/messaging/aegisConversationQueue.ts')
+          queue = queue_path.read_text(encoding='utf-8')
+          queue = queue.replace(
+              'const RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000] as const;',
+              'const RETRY_DELAYS_MS = [1_500, 5_000, 15_000] as const;',
+              1,
+          )
+          queue = queue.replace(
+              'Browser scheduler for the Aegis outbound transaction.',
+              'Browser scheduler for the stable outbound transaction.',
+              1,
+          )
+          queue = queue.replace(
+              'The transport and cryptography stay owned by Aegis. This module only gives',
+              'The transport owns idempotent server commits. This module only gives',
+              1,
+          )
+          queue_path.write_text(queue, encoding='utf-8')
+
+          hook_path = Path('src/hooks/useAegisMessageQueue.ts')
+          hook = hook_path.read_text(encoding='utf-8')
+          replacements = {
+              "trace('aegis_durability_delegated');": "trace('server_durability_delegated');",
+              "sendMethod = 'aegis_authoritative_rpc';": "sendMethod = 'server_authoritative_rpc';",
+              '// The Aegis engine owns local caches and archive writes. The queue only': '// The outbound engine owns the stable commit and local outbox. The queue only',
+          }
+          for old, new in replacements.items():
+              if old not in hook:
+                  raise SystemExit(f'useAegisMessageQueue marker missing: {old}')
+              hook = hook.replace(old, new, 1)
+          hook_path.write_text(hook, encoding='utf-8')
+
+      - name: Verify runtime cleanup
+        shell: bash
+        run: |
+          ! grep -q 'useDeviceCopyRetryWorker();' src/App.tsx
+          ! grep -q 'useDeviceRegistration();' src/App.tsx
+          ! grep -q 'useCryptoMaintenance();' src/App.tsx
+          grep -q 'LEGACY_DEVICE_ROUTE_SYNC_ENABLED = false' src/hooks/useAccountKeySync.ts
+          grep -q "server_authoritative_rpc" src/hooks/useAegisMessageQueue.ts
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/hooks/useAccountKeySync.ts src/lib/messaging/aegisConversationQueue.ts src/hooks/useAegisMessageQueue.ts
+          git commit -m "refactor(messages): stop legacy device-route runtime storms"
+          git push origin HEAD:refactor/server-message-transport
