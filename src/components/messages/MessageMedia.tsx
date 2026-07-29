@@ -31,12 +31,15 @@ export const MessageMedia = memo(function MessageMedia({
   messageId,
   cachedPlaintext,
 }: MessageMediaProps) {
+  const bodyEncrypted = looksEncryptedMessage(body);
   const inlineMedia = useMemo(() => {
-    const source = cachedPlaintext || (!isEncryptionActive ? body : '');
+    // New server-readable rows can coexist with historical Aegis rows in the
+    // same human conversation. Decide from the row itself, not from the global
+    // conversation encryption flag.
+    const source = cachedPlaintext || (!bodyEncrypted ? body : '');
     if (!source) return null;
     return parseMediaMessage(source);
-  }, [body, cachedPlaintext, isEncryptionActive]);
-  const bodyEncrypted = looksEncryptedMessage(body);
+  }, [body, bodyEncrypted, cachedPlaintext]);
 
   const initialCached = messageId ? getMediaKey(messageId) : undefined;
   const [mediaKey, setMediaKey] = useState<string | null>(
@@ -46,7 +49,7 @@ export const MessageMedia = memo(function MessageMedia({
     initialCached?.isVideo ?? (inlineMedia ? isVideoMediaLabel(inlineMedia.label) : false),
   );
   const [resolved, setResolved] = useState<boolean>(
-    !(isEncryptionActive || bodyEncrypted) || Boolean(initialCached || inlineMedia),
+    !bodyEncrypted || Boolean(initialCached || inlineMedia),
   );
   const [retryTick, setRetryTick] = useState(0);
   const mediaKeyRef = useRef<string | null>(mediaKey);
@@ -58,7 +61,7 @@ export const MessageMedia = memo(function MessageMedia({
       if (target && messageId && target !== messageId) return;
 
       const cached = messageId ? getMediaKey(messageId) : undefined;
-      if (!cached && !mediaKeyRef.current) setResolved(false);
+      if (!cached && !mediaKeyRef.current && bodyEncrypted) setResolved(false);
       setRetryTick((tick) => tick + 1);
     };
     window.addEventListener('forsure-decrypt-retry', handler);
@@ -67,7 +70,7 @@ export const MessageMedia = memo(function MessageMedia({
       window.removeEventListener('forsure-decrypt-retry', handler);
       window.removeEventListener('forsure-keys-unlocked', handler);
     };
-  }, [messageId]);
+  }, [bodyEncrypted, messageId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,7 +107,7 @@ export const MessageMedia = memo(function MessageMedia({
       });
     }
 
-    if (!(isEncryptionActive || bodyEncrypted) || !bodyEncrypted) {
+    if (!bodyEncrypted) {
       setResolved(true);
       return () => { cancelled = true; unsubscribe(); };
     }
@@ -157,7 +160,7 @@ export const MessageMedia = memo(function MessageMedia({
     );
   }
 
-  if (isEncryptionActive || bodyEncrypted) {
+  if (bodyEncrypted) {
     return (
       <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 min-h-[72px] min-w-[180px] max-w-full">
         <Lock className="w-4 h-4 text-muted-foreground" />
