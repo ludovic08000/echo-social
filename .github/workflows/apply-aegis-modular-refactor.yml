@@ -1,0 +1,69 @@
+name: Apply Aegis modular refactor
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-aegis-modular-refactor.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-aegis-modular-refactor
+  cancel-in-progress: false
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout isolated refactor branch
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-modular-architecture
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Generate modular architecture
+        run: python3 scripts/refactor_aegis_modular.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run focused Aegis tests
+        run: >-
+          npx vitest run
+          src/lib/aegis/__tests__
+          src/lib/messaging/__tests__/aegisOutboundEngine.test.ts
+          src/lib/messaging/__tests__/aegisDeviceRuntime.test.ts
+          src/lib/messaging/__tests__/aegisSendRpc.test.ts
+          src/lib/messaging/__tests__/messageCompatibility.test.ts
+          src/lib/crypto/__tests__/multiDeviceIntegration.test.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit validated refactor
+        run: |
+          git checkout -- public/version.json 2>/dev/null || true
+          rm -f scripts/refactor_aegis_modular.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 1
+          fi
+          git commit -m "refactor(aegis): split runtime into maintainable modules"
+          git push origin HEAD:refactor/aegis-modular-architecture
