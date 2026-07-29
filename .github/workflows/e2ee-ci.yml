@@ -28,7 +28,9 @@ jobs:
           cache: npm
 
       - name: Generate Signal hardening phase 1
-        run: python3 scripts/apply_aegis_signal_hardening_v2.py
+        run: |
+          python3 scripts/apply_aegis_signal_hardening_v2.py
+          python3 scripts/update_aegis_signal_fixtures.py
 
       - name: Install dependencies
         run: npm ci
@@ -55,7 +57,7 @@ jobs:
       - name: Restore normal CI and commit validated hardening
         run: |
           git checkout -- public/version.json 2>/dev/null || true
-          rm -f scripts/apply_aegis_signal_hardening_v2.py
+          rm -f scripts/apply_aegis_signal_hardening_v2.py scripts/update_aegis_signal_fixtures.py
           cat > .github/workflows/e2ee-ci.yml <<'EOF'
           name: E2EE CI
 
