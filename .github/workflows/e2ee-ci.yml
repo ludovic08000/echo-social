@@ -32,6 +32,23 @@ jobs:
       - name: Generate modular Aegis architecture
         run: python3 scripts/refactor_aegis_modular.py
 
+      - name: Repair extracted type references
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/lib/aegis/core/AegisOutboundTransaction.ts')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace(
+              "Partial<Parameters<typeof traceE2EE>[0]>",
+              "Partial<Parameters<AegisRuntimeDependencies['telemetry']['trace']>[0]>",
+          )
+          source = source.replace(
+              "Awaited<ReturnType<typeof sendMessageWithAegisRetry>>",
+              "Awaited<ReturnType<AegisRuntimeDependencies['transport']['sendWithRetry']>>",
+          )
+          path.write_text(source, encoding='utf-8')
+          PY
+
       - name: Install dependencies
         run: npm ci
 
