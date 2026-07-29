@@ -344,20 +344,9 @@ export function useChatPin() {
     }
     setState((current) => ({ ...current, processing: true, error: null }));
     try {
-      const backupResult = await setupPersistentBackupPin(pin, user.id);
-      if (backupResult !== 'ok') {
-        const message = backupResult === 'no_master_key'
-          ? 'Clé Aegis indisponible. Reconnectez-vous puis réessayez.'
-          : 'Impossible d’enregistrer le PIN chiffré sur le serveur';
-        setState((current) => ({ ...current, processing: false, error: message }));
-        return false;
-      }
+      // Local encrypted persistence is the authority for opening this device.
+      // Server recovery is useful, but must never block PIN creation or chat.
       await saveLocalPin(user.id, pin);
-      // This creates only an email-reset ticket. The PIN itself is deliberately
-      // absent from the request and cannot be verified by the server.
-      void supabase.functions.invoke('verify-chat-pin', {
-        body: { action: 'register-local-recovery' },
-      }).catch(() => undefined);
       announceUnlock(user.id);
       pinModeRef.current = 'every_open';
       storageSet(localStorage, `${MODE_PREFIX}${user.id}`, 'every_open');
@@ -369,6 +358,22 @@ export function useChatPin() {
         processing: false,
         pinMode: 'every_open',
       });
+
+      void setupPersistentBackupPin(pin, user.id)
+        .then((result) => {
+          if (result !== 'ok') {
+            console.warn('[LOCAL-PIN] initial server backup deferred', { result });
+          }
+        })
+        .catch((error) => {
+          console.warn('[LOCAL-PIN] initial server backup failed', error);
+        });
+
+      // This creates only an email-reset ticket. The PIN itself is deliberately
+      // absent from the request and cannot be verified by the server.
+      void supabase.functions.invoke('verify-chat-pin', {
+        body: { action: 'register-local-recovery' },
+      }).catch(() => undefined);
       return true;
     } catch (error) {
       console.warn('[LOCAL-PIN] setup failed', error);
