@@ -23,6 +23,10 @@ import { hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { isNativePlatform } from '@/lib/nativeStore';
 import { transition, withEnsureLock, getSnapshot } from '@/lib/crypto/CryptoStateMachine';
 
+// Message delivery no longer uses per-device routes. Keep account-key
+// restore for historical Aegis rows and LiveKit call-key wrapping only.
+const LEGACY_DEVICE_ROUTE_SYNC_ENABLED = false;
+
 export function useAccountKeySync() {
   const { user } = useAuth();
 
@@ -350,7 +354,7 @@ export function useAccountKeySync() {
   //   3) safety net that runs a resync once per session if the device id is
   //      not yet registered server-side (covers the "no event ever fired" case)
   useEffect(() => {
-    if (!user) return;
+    if (!user || !LEGACY_DEVICE_ROUTE_SYNC_ENABLED) return;
     let cancelled = false;
     let inFlight = false;
 

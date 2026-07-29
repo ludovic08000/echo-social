@@ -43,7 +43,7 @@ import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
-import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
+import { EncryptionBadge } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
 import { ConversationPreviewText } from '@/components/messages/ConversationPreviewText';
 import { setMediaKey } from '@/components/messages/mediaKeyCache';
@@ -399,11 +399,11 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const negotiationProduct = chatState.negotiationProduct;
 
-  // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
+  // Keep the legacy decryptor mounted for historical Aegis rows and for
+  // account identity used by LiveKit call-key wrapping. New text messages
+  // use the authenticated server transport and never wait for peer devices.
   const e2ee = useE2EE(conversationId, peerUserId);
-  // Policy, not readiness: every human conversation is always Aegis. During
-  // cold key hydration the outbox waits; it must never fall back to plaintext.
-  const isEncryptionActive = !isZeusConversation;
+  const hasLegacyEncryptedHistory = !isZeusConversation;
   const { peerTyping, notifyTyping, notifyStopped } = useTypingPresence(
     conversationId,
     user?.id,
@@ -460,9 +460,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
   const queue = useMessageQueue(
     conversationId,
-    e2ee.encrypt,
-    e2ee.isReady(),
-    isEncryptionActive,
+    null,
+    true,
+    hasLegacyEncryptedHistory,
     e2ee.acknowledgeSentPayload,
     isZeusConversation,
     cachePlaintext,
@@ -666,7 +666,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     bucket: 'post-images',
   });
 
-  // Wrap upload: encrypt media before upload when E2EE is active
+  // Media blobs remain encrypted before upload. Their key travels inside
+  // the authenticated server message, so this is storage protection rather
+  // than end-to-end secrecy from ForSure.
   const handleMediaFile = useCallback(async (file: File) => {
     if (!file || file.size === 0) {
       toast.error('Fichier invalide ou vide');
@@ -683,10 +685,6 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     if (isDoc) {
       if (file.size > 100 * 1024 * 1024) {
         toast.error('Document trop volumineux (max 100 Mo)');
-        return;
-      }
-      if (!isZeusConversation && e2ee.peerKeyMissing) {
-        toast.error('Clés du contact indisponibles.');
         return;
       }
       try {
@@ -773,7 +771,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
       logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type } });
       toast.error(err instanceof Error ? `Erreur : ${err.message}` : 'Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.peerKeyMissing, viewOnceArmed]);
+  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, viewOnceArmed]);
 
   useEffect(() => {
     lastScrollSigRef.current = '';
@@ -875,7 +873,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     if (isZeusConversation) {
       sendMessage.mutate({ conversationId, body });
     } else {
-      // Fire-and-forget: queue handles retry/encryption in background
+      // Fire-and-forget: the queue owns durable, idempotent server retry.
       queue.sendMessage(body).catch(err => {
         toast.error(err instanceof Error ? err.message : 'Erreur envoi');
       });
@@ -1140,7 +1138,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         </div>
       </div>
 
-      {/* E2EE Status bar removed per user request — encryption is silent */}
+      {/* Text messages use authenticated server transport. LiveKit calls
+          keep their independent E2EE indicator inside CallOverlay. */}
 
       {/* Signal-style "safety number changed" warning — real MITM signal,
           must stay visible and require an explicit user action. */}
@@ -1151,8 +1150,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
         />
       )}
 
-      {/* Identity and route preparation stay silent. Aegis retries its
-          encrypted device-copy outbox when peer keys become available. */}
+      {/* Historical Aegis rows can still be decrypted locally. New sends do
+          not prepare device routes or wait for peer keys. */}
 
       {/* Pending message request banner */}
       {hasPending && (
@@ -1490,7 +1489,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                             <DecryptedMessageBody
                               body={msg.body}
                               decrypt={e2ee.decrypt}
-                              isEncryptionActive={isEncryptionActive}
+                              isEncryptionActive={hasLegacyEncryptedHistory}
                               onDecrypted={(text) => onDecrypted(msg.id, text)}
                               isMe={isMe}
                               cachedPlaintext={decryptedCacheRef.current.get(msg.id)}

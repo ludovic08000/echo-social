@@ -229,7 +229,7 @@ function toOutboundMessage(payload: OutboxPayload): OutboundMessage {
 export function useAegisMessageQueue(
   conversationId: string,
   _encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
-  isEncryptionReady: boolean,
+  _isEncryptionReady: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
   allowPlaintext = false,
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
@@ -325,8 +325,7 @@ export function useAegisMessageQueue(
         traceId,
         conversationId,
         userId: user.id,
-        encryptionWasRequested: !allowPlaintext,
-        isEncryptionReady,
+        serverTransport: !allowPlaintext,
         hasMedia: !!imageUrl,
         resumed: Boolean(resumePayload),
         ...traceExtra,
@@ -388,9 +387,9 @@ export function useAegisMessageQueue(
       isSpecial,
     });
 
-    // Plaintext is a policy exception reserved for Zeus. Readiness flags are
-    // deliberately ignored here: a cold peer route must wait in the encrypted
-    // outbox and can never downgrade the request body sent to the server.
+    // Zeus keeps its existing system-message path. Every human conversation
+    // uses the idempotent authenticated server RPC. Compatibility names stay
+    // in place only while historical Aegis rows remain readable.
     const encryptionWasRequired = !allowPlaintext;
 
     if (!encryptionWasRequired) {
@@ -408,7 +407,7 @@ export function useAegisMessageQueue(
         throw error instanceof Error ? error : new Error(message);
       }
     } else {
-      trace('aegis_durability_delegated');
+      trace('server_durability_delegated');
     }
 
     updatePending({
@@ -436,8 +435,7 @@ export function useAegisMessageQueue(
     let retriedStaleRoute = false;
 
     if (deliveryMode === 'plaintext') {
-      // The Zeus exception keeps its own durable outbox lifecycle. Encrypted
-      // peer traffic is persisted exclusively by the Aegis engine below.
+      // Zeus keeps its existing system-message lifecycle.
       await persistOutbox({ status: 'sending', lastError: null });
       let insertResponse: { data: unknown; error: unknown };
       try {
@@ -558,8 +556,8 @@ throw new Error(visibleMessage);
         data = { id: sent.id };
         bodyToStore = sent.parentBody;
         fanoutRows = sent.copies;
-        encryptedSuccessfully = true;
-        sendMethod = 'aegis_authoritative_rpc';
+        encryptedSuccessfully = false;
+        sendMethod = 'server_authoritative_rpc';
         retriedStaleRoute = sent.retriedStaleRoute;
       } catch (error) {
         const failure = classifyOutboundFailure(error);
@@ -582,7 +580,7 @@ throw new Error(visibleMessage);
     if (!isSpecial) recordSentMessage(sanitized);
     onPlaintextCached?.(data.id, sanitized);
     if (encryptedSuccessfully) {
-      // The Aegis engine owns local caches and archive writes. The queue only
+      // The outbound engine owns the stable commit and local outbox. The queue only
       // wakes mounted bubbles after the authoritative commit.
       dispatchDecryptRetry(data.id);
     }
@@ -619,7 +617,7 @@ throw new Error(visibleMessage);
       console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
     });
     scheduleLightConversationRefresh(queryClient);
-  }, [user, conversationId, isEncryptionReady, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
+  }, [user, conversationId, _isEncryptionReady, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {
     if (!user) return;
