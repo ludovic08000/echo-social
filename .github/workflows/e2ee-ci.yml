@@ -81,6 +81,20 @@ jobs:
               raise SystemExit('negative obsolete-wire test must remain')
           test.write_text(text)
 
+          integration = Path('src/lib/crypto/__tests__/multiDeviceIntegration.test.ts')
+          text = integration.read_text()
+          import_marker = "import { bufferToBase64, randomBytes } from '../utils';\n"
+          wire_import = "import { createAegisSessionId } from '../aegisDeviceWire';\n"
+          if wire_import not in text:
+              if import_marker not in text:
+                  raise SystemExit('multi-device fixture import marker not found')
+              text = text.replace(import_marker, import_marker + wire_import, 1)
+          old_session = '''  const sessionId = bufferToBase64(randomBytes(8).buffer as ArrayBuffer)\n    .replace(/[+/=]/g, '')\n    .slice(0, 12);'''
+          if old_session not in text:
+              raise SystemExit('obsolete integration session id fixture not found')
+          text = text.replace(old_session, '  const sessionId = createAegisSessionId();', 1)
+          integration.write_text(text)
+
           types = Path('src/integrations/supabase/types.ts')
           text = types.read_text()
           replacements = {
