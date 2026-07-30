@@ -1,0 +1,27 @@
+name: Aegis step 3 snapshot
+
+on:
+  push:
+    branches: [refactor/aegis-clean-rebuild]
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+      - name: Export exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit
+          tar --exclude='.git' --exclude='node_modules' --exclude='dist' -czf audit/step3-source.tar.gz \
+            src supabase .github scripts package.json package-lock.json tsconfig*.json vite.config.ts vitest.config.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aegis-step3-source
+          path: audit/step3-source.tar.gz
+          retention-days: 1
