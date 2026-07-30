@@ -7,9 +7,11 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   finalize-stage3:
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -25,28 +27,22 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Reconstruct verified stage 3 source
+      - name: Download verified stage 3 source
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          cat \
-            .github/aegis-stage3-payload/p00 \
-            .github/aegis-stage3-payload/p01 \
-            .github/aegis-stage3-payload/p02 \
-            .github/aegis-stage3-payload/p03 \
-            .github/aegis-stage3-payload/p04 \
-            .github/aegis-stage3-payload/p05 \
-            .github/aegis-stage3-payload/p06 \
-            .github/aegis-stage3-payload/p07 \
-            .github/aegis-stage3-payload/p08 \
-            .github/aegis-stage3-payload/t00 \
-            .github/aegis-stage3-payload/t01 \
-            .github/aegis-stage3-payload/t02 \
-            .github/aegis-stage3-payload/t03 \
-            .github/aegis-stage3-payload/t04 > /tmp/aegis-stage3.b64
-          base64 --decode /tmp/aegis-stage3.b64 > /tmp/aegis-stage3.tar.gz
-          echo "e37732ec8cf93a8a8552048ef4fd0d63de5bd3ab9bf750509b014fa6b77ebf26  /tmp/aegis-stage3.tar.gz" | sha256sum --check
-          tar -xzf /tmp/aegis-stage3.tar.gz -C .
+          curl --fail --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8751136572/zip" \
+            --output /tmp/aegis-stage3-source.zip
+          mkdir -p /tmp/aegis-stage3-source
+          unzip -q /tmp/aegis-stage3-source.zip -d /tmp/aegis-stage3-source
+          echo "e37732ec8cf93a8a8552048ef4fd0d63de5bd3ab9bf750509b014fa6b77ebf26  /tmp/aegis-stage3-source/aegis-stage3.tar.gz" | sha256sum --check
+          tar -xzf /tmp/aegis-stage3-source/aegis-stage3.tar.gz -C .
 
       - name: Align generated types and executable fixtures
         shell: bash
@@ -54,6 +50,22 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+
+          envelope = Path('src/lib/messaging/repeatablePreKeyEnvelope.ts')
+          text = envelope.read_text()
+          if 'async function readSession(' not in text:
+              marker = 'async function readInitiating(key: string): Promise<InitiatingEnvelopeRecord | null> {'
+              reader = '''async function readSession(key: string): Promise<StoredSessionRecord | null> {
+            const value = await runTxOn('device-sessions', [SESSION_STORE], 'readonly', (tx) =>
+              reqToPromise(tx.objectStore(SESSION_STORE).get(key) as IDBRequest<StoredSessionRecord | undefined>),
+            );
+            return value ?? null;
+          }
+
+          '''
+              if marker not in text:
+                  raise SystemExit('repeatable pre-key session insertion point not found')
+              envelope.write_text(text.replace(marker, reader + marker, 1))
 
           send_test = Path('src/lib/messaging/__tests__/aegisSendRpc.test.ts')
           text = send_test.read_text()
@@ -80,8 +92,8 @@ jobs:
                   raise SystemExit('fanout fixture import marker not found')
               text = text.replace(marker, marker + session_import, 1)
           old_session = """  const sessionId = bufferToBase64(randomBytes(8).buffer as ArrayBuffer)
-    .replace(/[+/=]/g, '')
-    .slice(0, 12);"""
+            .replace(/[+/=]/g, '')
+            .slice(0, 12);"""
           if old_session not in text:
               raise SystemExit('obsolete short session fixture not found')
           fanout_test.write_text(text.replace(old_session, '  const sessionId = createAegisSessionId();', 1))
@@ -109,35 +121,35 @@ jobs:
               text = text.replace(old, new)
 
           old_rpc = '''      register_user_device_safe: {
-        Args: {
-          p_device_fingerprint: string
-          p_device_id: string
-          p_device_name: string
-          p_device_public_key: string
-          p_platform: string
-          p_user_agent: string
-          p_user_id: string
-        }
-        Returns: Json
-      }'''
+            Args: {
+              p_device_fingerprint: string
+              p_device_id: string
+              p_device_name: string
+              p_device_public_key: string
+              p_platform: string
+              p_user_agent: string
+              p_user_id: string
+            }
+            Returns: Json
+          }'''
           new_rpc = '''      register_user_device_safe: {
-        Args: {
-          p_account_binding_signature: string
-          p_account_fingerprint: string
-          p_account_identity_key: string
-          p_account_signing_key: string
-          p_device_authorization_signature: string
-          p_device_fingerprint: string
-          p_device_id: string
-          p_device_name: string
-          p_device_public_key: string
-          p_device_signing_key: string
-          p_platform: string
-          p_user_agent: string
-          p_user_id: string
-        }
-        Returns: Json
-      }'''
+            Args: {
+              p_account_binding_signature: string
+              p_account_fingerprint: string
+              p_account_identity_key: string
+              p_account_signing_key: string
+              p_device_authorization_signature: string
+              p_device_fingerprint: string
+              p_device_id: string
+              p_device_name: string
+              p_device_public_key: string
+              p_device_signing_key: string
+              p_platform: string
+              p_user_agent: string
+              p_user_id: string
+            }
+            Returns: Json
+          }'''
           if old_rpc not in text:
               raise SystemExit('register_user_device_safe generated type block not found')
           text = text.replace(old_rpc, new_rpc, 1)
@@ -180,8 +192,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git checkout -- public/version.json 2>/dev/null || true
           rm -rf .github/aegis-stage3-payload
           rm -f .github/workflows/finalize-aegis-stage3.yml
+          rm -f .github/workflows/export-aegis-stage3.yml
+          rm -f .github/workflows/apply-aegis-stage3.yml
           cat > .github/workflows/e2ee-ci.yml <<'YAML'
           name: E2EE CI
 
