@@ -42,5 +42,6 @@ Every routable installation is authorized by the account identity before it can 
 - Stages 1, 2 and 3 are complete and validated.
 - Typecheck, targeted protocol tests, the full test suite, the build and the Crypto Test Suite passed for stage 3.
 - Temporary payloads and one-shot workflows have been removed.
+- Stage 4 is the next implementation target.
 - The pull request remains draft and unmerged.
 - No Supabase migration from this rebuild has been applied.
