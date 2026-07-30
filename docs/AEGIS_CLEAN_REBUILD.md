@@ -22,7 +22,7 @@ There is no production compatibility requirement. Test messages, obsolete schema
 2. ✅ Idempotent message transaction and authoritative send receipt.
 3. ✅ Device identity, X3DH, Double Ratchet and complete fan-out.
 4. ✅ Cross-tab locking and durable encrypted outbox.
-5. Call-scoped LiveKit rooms, invitations and per-device call-key delivery.
+5. ⏳ Call-scoped LiveKit rooms, invitations and per-device call-key delivery — implementation complete, validation pending.
 6. Recovery vault and non-destructive key restore.
 7. View-once consumption, deletion and local-cache cleanup.
 8. Privacy boundaries for logs, push notifications and server functions.

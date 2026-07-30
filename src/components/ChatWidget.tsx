@@ -967,7 +967,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                 const callId = await signalOutgoingCall(conversationId, user.id, peerId, type, callKey);
                 if (!callId) { toast.error("Impossible de signaler l'appel."); return; }
                 activeCallIdRef.current = callId;
-                await call.startCall(conversationId, type, callKey);
+                await call.startCall(callId, type, callKey);
               } catch (err) {
                 toast.error(err instanceof Error ? err.message : "Appel impossible");
               } finally {
@@ -984,9 +984,9 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           onClose={() => setShowGroupCallSheet(false)}
           conversationId={conversationId}
           prefilled={conversation?.participant?.user_id ? [conversation.participant.user_id] : []}
-          onCallStarted={async (_callId, _roomId, callKey, callType) => {
+          onCallStarted={async (callId, _roomId, callKey, callType) => {
             try {
-              await call.startCall(conversationId, callType, callKey);
+              await call.startCall(callId, callType, callKey);
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Impossible de rejoindre l'appel");
             }
@@ -1065,7 +1065,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   return;
                 }
                 activeCallIdRef.current = callId;
-                await call.startCall(conversationId, 'audio', callKey);
+                await call.startCall(callId, 'audio', callKey);
               } catch (err) {
                 console.error('[ChatWidget] audio call failed', err);
                 toast.error(err instanceof Error ? `Appel impossible : ${err.message}` : "Appel impossible");
@@ -1095,7 +1095,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   return;
                 }
                 activeCallIdRef.current = callId;
-                await call.startCall(conversationId, 'video', callKey);
+                await call.startCall(callId, 'video', callKey);
               } catch (err) {
                 console.error('[ChatWidget] video call failed', err);
                 toast.error(err instanceof Error ? `Visio impossible : ${err.message}` : "Visio impossible");
