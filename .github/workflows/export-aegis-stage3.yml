@@ -1,0 +1,44 @@
+name: Export Aegis stage 3 payload
+
+on:
+  push:
+    branches: [refactor/aegis-clean-rebuild]
+  workflow_dispatch:
+
+jobs:
+  export:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+      - name: Reconstruct stage 3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            .github/aegis-stage3-payload/p00 \
+            .github/aegis-stage3-payload/p01 \
+            .github/aegis-stage3-payload/p02 \
+            .github/aegis-stage3-payload/p03 \
+            .github/aegis-stage3-payload/p04 \
+            .github/aegis-stage3-payload/p05 \
+            .github/aegis-stage3-payload/p06 \
+            .github/aegis-stage3-payload/p07 \
+            .github/aegis-stage3-payload/p08 \
+            .github/aegis-stage3-payload/t00 \
+            .github/aegis-stage3-payload/t01 \
+            .github/aegis-stage3-payload/t02 \
+            .github/aegis-stage3-payload/t03 \
+            .github/aegis-stage3-payload/t04 > /tmp/aegis-stage3.b64
+          base64 --decode /tmp/aegis-stage3.b64 > /tmp/aegis-stage3.tar.gz
+          echo "e37732ec8cf93a8a8552048ef4fd0d63de5bd3ab9bf750509b014fa6b77ebf26  /tmp/aegis-stage3.tar.gz" | sha256sum --check
+          mkdir -p export
+          cp /tmp/aegis-stage3.tar.gz export/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aegis-stage3-source
+          path: export/aegis-stage3.tar.gz
+          retention-days: 1
