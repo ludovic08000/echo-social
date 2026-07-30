@@ -1,0 +1,610 @@
+name: Apply Aegis step 3 final hardening
+
+on:
+  push:
+    branches: [refactor/aegis-clean-rebuild]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply all-or-nothing routing and relationship-bound OPKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected block not found in {path}')
+              p.write_text(text.replace(old, new, 1))
+
+          # Never build a partial cryptographic route. A failed/missing device
+          # registry must stop before any Ratchet state or OPK is consumed.
+          replace_exact(
+              'src/e2ee-session/deviceRegistry.ts',
+              """    if (verified.signedListPresent) {
+      if (verified.trusted.length === 0 && typeof console !== 'undefined') {
+        console.warn('[A1] signed device list present but no device verified; refusing raw fallback', {
+          userId,
+          rejected: verified.verifications.length,
+        });
+      }
+      return hygieneFilterDevices(
+        verified.trusted
+          .filter(t => !!t.devicePublicKey)
+          .map(t => ({
+            userId,
+            deviceId: t.deviceId,
+            devicePublicKey: t.devicePublicKey,
+            lastSeen: normalizeLastSeen(t.lastSeenAt ?? undefined),
+          })),
+        options,
+      );
+    }
+  } catch (e) {
+    if (typeof console !== 'undefined') {
+      console.warn('[A1] signed device list fetch failed; refusing raw fallback', e);
+    }
+    return [];
+  }
+""",
+              """    if (verified.signedListPresent) {
+      const rejected = verified.verifications.filter((entry) => !entry.ok);
+      if (
+        rejected.length > 0 ||
+        verified.trusted.length !== verified.verifications.length
+      ) {
+        if (typeof console !== 'undefined') {
+          console.warn('[A1] canonical device registry contains an invalid authorization', {
+            userId,
+            total: verified.verifications.length,
+            rejected: rejected.map((entry) => ({
+              deviceId: entry.deviceId,
+              reason: entry.reason ?? 'UNKNOWN',
+            })),
+          });
+        }
+        throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
+      }
+      return hygieneFilterDevices(
+        verified.trusted
+          .filter(t => !!t.devicePublicKey)
+          .map(t => ({
+            userId,
+            deviceId: t.deviceId,
+            devicePublicKey: t.devicePublicKey,
+            lastSeen: normalizeLastSeen(t.lastSeenAt ?? undefined),
+          })),
+        options,
+      );
+    }
+  } catch (e) {
+    if (typeof console !== 'undefined') {
+      console.warn('[A1] signed device list fetch failed; refusing raw fallback', e);
+    }
+    if (e instanceof Error && e.message === 'E2EE_DEVICE_REGISTRY_INVALID') throw e;
+    throw new Error('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
+  }
+""",
+          )
+
+          replace_exact(
+              'src/e2ee-session/deviceRegistry.ts',
+              """  const userIds = Array.from(new Set([...recipientUserIds, senderUserId]));
+  const lists = await Promise.all(userIds.map(userId => listDevicesForUser(userId, options)));
+  return lists.flat();
+""",
+              """  const userIds = Array.from(new Set([...recipientUserIds, senderUserId]));
+  const lists = await Promise.all(userIds.map(userId => listDevicesForUser(userId, options)));
+  const unroutable = userIds.filter((_, index) => lists[index].length === 0);
+  if (unroutable.length > 0) {
+    throw new Error(`E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:${unroutable.join(',')}`);
+  }
+  return lists.flat();
+""",
+          )
+
+          # OPKs may only be consumed in the conversation that is about to send
+          # the message. Calls without a conversation deliberately use SPK-only X3DH.
+          replace_exact(
+              'src/lib/crypto/x3dh.ts',
+              """  claimOneTimePrekey?: boolean;
+}
+""",
+              """  claimOneTimePrekey?: boolean;
+  /** Conversation whose participants authorize this destructive OPK claim. */
+  conversationId?: string;
+}
+""",
+          )
+          replace_exact(
+              'src/lib/crypto/x3dh.ts',
+              """async function claimPeerDeviceOPK(peerUserId: string, peerDeviceId: string): Promise<{ opkId: number; publicKey: string } | null> {
+  try {
+    const { data, error } = await supabase.rpc('claim_device_one_time_prekey', { p_user_id: peerUserId, p_device_id: peerDeviceId });
+""",
+              """async function claimPeerDeviceOPK(
+  peerUserId: string,
+  peerDeviceId: string,
+  conversationId: string,
+): Promise<{ opkId: number; publicKey: string } | null> {
+  try {
+    const { data, error } = await supabase.rpc('claim_device_one_time_prekey', {
+      p_user_id: peerUserId,
+      p_device_id: peerDeviceId,
+      p_conversation_id: conversationId,
+    });
+""",
+          )
+          replace_exact(
+              'src/lib/crypto/x3dh.ts',
+              """  const opk = options.claimOneTimePrekey === false
+    ? null
+    : await claimPeerDeviceOPK(peerUserId, peerDeviceId);
+""",
+              """  const shouldClaimOpk = options.claimOneTimePrekey !== false && Boolean(options.conversationId);
+  const opk = shouldClaimOpk
+    ? await claimPeerDeviceOPK(peerUserId, peerDeviceId, options.conversationId!)
+    : null;
+""",
+          )
+
+          replace_exact(
+              'src/lib/messaging/repeatablePreKeyEnvelope.ts',
+              """  recipientDeviceId: string;
+  useOneTimePrekey?: boolean;
+}): Promise<string | null> {
+""",
+              """  recipientDeviceId: string;
+  conversationId?: string;
+  useOneTimePrekey?: boolean;
+}): Promise<string | null> {
+""",
+          )
+          replace_exact(
+              'src/lib/messaging/repeatablePreKeyEnvelope.ts',
+              """    const bundle = await fetchPrekeyBundleForDevice(args.recipientUserId, args.recipientDeviceId, {
+      claimOneTimePrekey: args.useOneTimePrekey !== false,
+    });
+""",
+              """    const bundle = await fetchPrekeyBundleForDevice(args.recipientUserId, args.recipientDeviceId, {
+      claimOneTimePrekey: args.useOneTimePrekey !== false,
+      conversationId: args.conversationId,
+    });
+""",
+          )
+
+          replace_exact(
+              'src/lib/messaging/multiDeviceFanout.ts',
+              """  recipientUserId: string,
+  recipientDeviceId: string,
+  options: { useOneTimePrekey?: boolean } = {},
+): Promise<string | null> {
+""",
+              """  recipientUserId: string,
+  recipientDeviceId: string,
+  conversationId?: string,
+  options: { useOneTimePrekey?: boolean } = {},
+): Promise<string | null> {
+""",
+          )
+          replace_exact(
+              'src/lib/messaging/multiDeviceFanout.ts',
+              """      recipientUserId,
+      recipientDeviceId,
+      useOneTimePrekey: options.useOneTimePrekey,
+""",
+              """      recipientUserId,
+      recipientDeviceId,
+      conversationId,
+      useOneTimePrekey: options.useOneTimePrekey,
+""",
+          )
+          replace_exact(
+              'src/lib/messaging/multiDeviceFanout.ts',
+              """  encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
+""",
+              """  encrypted = await x3dhWrapForDevice(
+    input.plaintext,
+    input.senderUserId,
+    senderDeviceId,
+    input.recipientUserId,
+    input.recipientDeviceId,
+    input.conversationId,
+    { useOneTimePrekey: input.useOneTimePrekey },
+  );
+""",
+          )
+
+          # The destructive OPK RPC is relationship-bound and the publisher must
+          # still be an approved device.
+          migration = Path('supabase/migrations/20260730020000_aegis_account_authorized_devices.sql')
+          sql = migration.read_text()
+          old_claim = """drop function if exists public.claim_device_one_time_prekey(uuid,text);
+create function public.claim_device_one_time_prekey(
+  p_user_id uuid,
+  p_device_id text
+)
+returns table (opk_id integer, public_key text)
+language plpgsql
+volatile
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if auth.uid() is null then
+    return;
+  end if;
+  if not exists (
+    select 1
+    from public.get_sesame_device_list(p_user_id) device
+    where device.device_id = trim(p_device_id)
+  ) then
+    return;
+  end if;
+
+  return query
+"""
+          new_claim = """drop function if exists public.claim_device_one_time_prekey(uuid,text);
+drop function if exists public.claim_device_one_time_prekey(uuid,text,uuid);
+create function public.claim_device_one_time_prekey(
+  p_user_id uuid,
+  p_device_id text,
+  p_conversation_id uuid
+)
+returns table (opk_id integer, public_key text)
+language plpgsql
+volatile
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null or p_conversation_id is null then
+    return;
+  end if;
+  if not exists (
+    select 1 from public.conversation_participants participant
+    where participant.conversation_id = p_conversation_id
+      and participant.user_id = v_uid
+  ) or not exists (
+    select 1 from public.conversation_participants participant
+    where participant.conversation_id = p_conversation_id
+      and participant.user_id = p_user_id
+  ) then
+    return;
+  end if;
+  if not exists (
+    select 1
+    from public.get_sesame_device_list(p_user_id) device
+    where device.device_id = trim(p_device_id)
+  ) then
+    return;
+  end if;
+
+  return query
+"""
+          if old_claim not in sql:
+              raise SystemExit('claim_device_one_time_prekey block not found')
+          sql = sql.replace(old_claim, new_claim, 1)
+          sql = sql.replace(
+              'revoke all on function public.claim_device_one_time_prekey(uuid,text) from public, anon;\ngrant execute on function public.claim_device_one_time_prekey(uuid,text) to authenticated;',
+              'revoke all on function public.claim_device_one_time_prekey(uuid,text,uuid) from public, anon;\ngrant execute on function public.claim_device_one_time_prekey(uuid,text,uuid) to authenticated;',
+              1,
+          )
+          approval_old = """      and device.is_active = true
+      and device.revoked_at is null
+      and device.routing_status = 'ready'
+      and nullif(trim(device.device_authorization_signature), '') is not null
+"""
+          approval_new = """      and device.is_active = true
+      and device.revoked_at is null
+      and coalesce(device.approval_status, 'approved') = 'approved'
+      and device.routing_status = 'ready'
+      and nullif(trim(device.device_authorization_signature), '') is not null
+"""
+          if approval_old not in sql:
+              raise SystemExit('OPK publisher authorization block not found')
+          sql = sql.replace(approval_old, approval_new, 1)
+          migration.write_text(sql)
+
+          # Generated Supabase contract follows the one active RPC signature.
+          replace_exact(
+              'src/integrations/supabase/types.ts',
+              """      claim_device_one_time_prekey: {
+        Args: { p_device_id: string; p_user_id: string }
+""",
+              """      claim_device_one_time_prekey: {
+        Args: {
+          p_conversation_id: string
+          p_device_id: string
+          p_user_id: string
+        }
+""",
+          )
+
+          # Remove the stale self-authenticated description. The implementation
+          # verifies the account root, device authorization and current SPK.
+          trust = Path('src/lib/crypto/deviceLinkTrust.ts')
+          trust_text = trust.read_text()
+          trust_text = trust_text.replace(
+              """ * Sesame trust is per DeviceID. Registration publishes a self-authenticated
+ * Ed25519/X25519 binding, and SPK validation proves the route is usable.
+ * There is no account root, primary device, or companion-signing repair pass.
+""",
+              """ * Aegis trust is rooted in the stable account Ed25519 key. Registration
+ * authorizes this DeviceID's Ed25519/X25519 keys, and SPK validation proves
+ * that the authorized route can complete a fresh X3DH bootstrap.
+""",
+          )
+          trust.write_text(trust_text)
+
+          docs = Path('docs/AEGIS_CLEAN_REBUILD.md')
+          docs_text = docs.read_text()
+          docs_text = docs_text.replace(
+              'Fan-out is complete or the message transaction is rejected.',
+              'The complete registry is validated before any Ratchet or OPK mutation; fan-out is complete or the message transaction is rejected. Destructive OPK claims are restricted to authenticated participants of the sending conversation.',
+          )
+          docs.write_text(docs_text)
+          PY
+
+          cat > src/lib/crypto/__tests__/x3dhOpkClaim.test.ts <<'EOF'
+          import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+          const mocks = vi.hoisted(() => ({
+            rpc: vi.fn(),
+            verify: vi.fn(),
+            fetchVerifiedDeviceIdentity: vi.fn(),
+          }));
+
+          vi.mock('@/integrations/supabase/client', () => ({
+            supabase: { rpc: mocks.rpc },
+          }));
+
+          vi.mock('@/lib/crypto/cryptoIntegrity', () => ({
+            hardCrypto: { verify: mocks.verify },
+            hardGlobals: { TextEncoder, TextDecoder },
+          }));
+
+          vi.mock('@/lib/crypto/utils', () => ({
+            bufferToBase64: vi.fn(() => 'AA=='),
+            base64ToBuffer: vi.fn(() => new Uint8Array([0]).buffer),
+            concatBuffers: vi.fn(() => new ArrayBuffer(0)),
+            encodeString: vi.fn(() => new Uint8Array()),
+            importKeyFromJWK: vi.fn(),
+            importOkpPublicKeyFromBase64: vi.fn(async () => ({})),
+          }));
+
+          vi.mock('@/lib/crypto/keyManager', () => ({
+            exportPublicKeyRaw: vi.fn(),
+          }));
+
+          vi.mock('@/lib/crypto/signedDeviceList', () => ({
+            fetchVerifiedDeviceIdentity: mocks.fetchVerifiedDeviceIdentity,
+          }));
+
+          import { fetchPrekeyBundleForDevice } from '@/lib/crypto/x3dh';
+
+          function installPrekeyResponses() {
+            mocks.fetchVerifiedDeviceIdentity.mockResolvedValue({
+              deviceId: 'peer-device',
+              devicePublicKey: 'AA==',
+              deviceSigningKey: 'AA==',
+            });
+            mocks.rpc.mockImplementation(async (name: string) => {
+              if (name === 'get_device_prekey_bundle') {
+                return { data: [{ spk_id: 7, public_key: 'AA==', signature: 'AA==' }], error: null };
+              }
+              if (name === 'claim_device_one_time_prekey') {
+                return { data: [{ opk_id: 42, public_key: 'AA==' }], error: null };
+              }
+              throw new Error(`Unexpected RPC: ${name}`);
+            });
+          }
+
+          describe('fetchPrekeyBundleForDevice OPK claiming', () => {
+            beforeEach(() => {
+              vi.clearAllMocks();
+              mocks.verify.mockResolvedValue(true);
+              installPrekeyResponses();
+            });
+
+            it('does not claim a one-time prekey when explicitly disabled', async () => {
+              const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device', {
+                claimOneTimePrekey: false,
+                conversationId: '11111111-1111-4111-8111-111111111111',
+              });
+              expect(bundle).toMatchObject({ signedPrekeyId: 7 });
+              expect(bundle?.oneTimePrekey).toBeUndefined();
+              expect(mocks.rpc).not.toHaveBeenCalledWith('claim_device_one_time_prekey', expect.anything());
+            });
+
+            it('uses SPK-only X3DH when no sending conversation authorizes a claim', async () => {
+              const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device');
+              expect(bundle?.oneTimePrekeyId).toBeUndefined();
+              expect(mocks.rpc).not.toHaveBeenCalledWith('claim_device_one_time_prekey', expect.anything());
+            });
+
+            it('binds a destructive OPK claim to the sending conversation', async () => {
+              const conversationId = '11111111-1111-4111-8111-111111111111';
+              const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device', {
+                conversationId,
+              });
+              expect(bundle?.oneTimePrekeyId).toBe(42);
+              expect(mocks.rpc).toHaveBeenCalledWith('claim_device_one_time_prekey', {
+                p_user_id: 'peer-user',
+                p_device_id: 'peer-device',
+                p_conversation_id: conversationId,
+              });
+            });
+          });
+          EOF
+
+          mkdir -p src/e2ee-session/__tests__
+          cat > src/e2ee-session/__tests__/deviceRegistryFailClosed.test.ts <<'EOF'
+          import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+          const mocks = vi.hoisted(() => ({
+            fetchVerifiedDeviceList: vi.fn(),
+            peekDeviceSignedPrekey: vi.fn(),
+          }));
+
+          vi.mock('@/lib/messaging/currentDevice', () => ({
+            getCurrentDeviceId: () => 'sender-device',
+            isDeviceIdTemporary: () => false,
+          }));
+          vi.mock('@/lib/crypto/signedDeviceList', () => ({
+            fetchVerifiedDeviceList: mocks.fetchVerifiedDeviceList,
+          }));
+          vi.mock('@/lib/crypto/x3dh', () => ({
+            peekDeviceSignedPrekey: mocks.peekDeviceSignedPrekey,
+          }));
+
+          import {
+            invalidateVerifiedDeviceCache,
+            listFanoutTargets,
+          } from '@/e2ee-session/deviceRegistry';
+
+          function validRegistry(userId: string, deviceId = `${userId}-device`) {
+            return {
+              signedListPresent: true,
+              trusted: [{
+                deviceId,
+                devicePublicKey: 'A'.repeat(44),
+                lastSeenAt: null,
+              }],
+              verifications: [{ deviceId, ok: true, reason: 'VALID' }],
+            };
+          }
+
+          describe('device registry all-or-nothing fan-out gate', () => {
+            beforeEach(() => {
+              vi.clearAllMocks();
+              invalidateVerifiedDeviceCache();
+              mocks.peekDeviceSignedPrekey.mockResolvedValue({ signedPrekeyId: 1 });
+            });
+
+            it('rejects the complete route before encryption when one authorization is invalid', async () => {
+              mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
+                if (userId !== 'peer') return validRegistry(userId);
+                return {
+                  signedListPresent: true,
+                  trusted: [{ deviceId: 'peer-valid', devicePublicKey: 'A'.repeat(44), lastSeenAt: null }],
+                  verifications: [
+                    { deviceId: 'peer-valid', ok: true, reason: 'VALID' },
+                    { deviceId: 'peer-invalid', ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
+                  ],
+                };
+              });
+
+              await expect(
+                listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
+              ).rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
+            });
+
+            it('rejects the complete route when any participant has no authorized device', async () => {
+              mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) =>
+                userId === 'peer'
+                  ? { signedListPresent: false, trusted: [], verifications: [] }
+                  : validRegistry(userId));
+
+              await expect(
+                listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
+              ).rejects.toThrow('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:peer');
+            });
+
+            it('does not downgrade a registry fetch failure into a partial route', async () => {
+              mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
+                if (userId === 'peer') throw new Error('network');
+                return validRegistry(userId);
+              });
+
+              await expect(
+                listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
+              ).rejects.toThrow('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
+            });
+
+            it('returns every device only after every participant registry verifies', async () => {
+              mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => validRegistry(userId));
+              const targets = await listFanoutTargets('sender', ['peer'], { verifyPrekeys: false });
+              expect(targets.map((target) => target.userId).sort()).toEqual(['peer', 'sender']);
+            });
+          });
+          EOF
+
+          cat > src/lib/messaging/__tests__/aegisStage3RouteGuards.test.ts <<'EOF'
+          import { readFileSync } from 'node:fs';
+          import { resolve } from 'node:path';
+          import { describe, expect, it } from 'vitest';
+
+          const migration = readFileSync(
+            resolve(process.cwd(), 'supabase/migrations/20260730020000_aegis_account_authorized_devices.sql'),
+            'utf8',
+          ).toLowerCase();
+          const registry = readFileSync(
+            resolve(process.cwd(), 'src/e2ee-session/deviceRegistry.ts'),
+            'utf8',
+          );
+
+          describe('Aegis stage 3 route guards', () => {
+            it('binds destructive OPK claims to both conversation participants', () => {
+              expect(migration).toContain('p_conversation_id uuid');
+              expect(migration).toContain('participant.user_id = v_uid');
+              expect(migration).toContain('participant.user_id = p_user_id');
+              expect(migration).toContain('claim_device_one_time_prekey(uuid,text,uuid)');
+            });
+
+            it('requires an approved device before publishing OPKs', () => {
+              const start = migration.indexOf('create or replace function public.publish_device_one_time_prekeys');
+              const end = migration.indexOf('create function public.claim_device_one_time_prekey', start);
+              expect(migration.slice(start, end)).toContain("coalesce(device.approval_status, 'approved') = 'approved'");
+            });
+
+            it('rejects partial registries before fan-out mutation', () => {
+              expect(registry).toContain('E2EE_DEVICE_REGISTRY_INVALID');
+              expect(registry).toContain('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
+              expect(registry).toContain('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE');
+            });
+          });
+          EOF
+
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Targeted stage 3 tests
+        run: npx vitest run src/e2ee-session/__tests__/deviceRegistryFailClosed.test.ts src/lib/crypto/__tests__/x3dhOpkClaim.test.ts src/lib/messaging/__tests__/aegisStage3Architecture.test.ts src/lib/messaging/__tests__/aegisStage3RouteGuards.test.ts src/lib/crypto/__tests__/deviceRatchet.test.ts src/lib/crypto/__tests__/multiDeviceFanoutOutOfOrder.test.ts src/lib/crypto/__tests__/multiDeviceIntegration.test.ts
+      - name: Full test suite
+        run: npm run test
+      - name: Build
+        run: npm run build
+      - name: Commit validated step 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f .github/workflows/apply-aegis-step3-final-hardening.yml
+          git add -A
+          git commit -m 'fix(aegis): close final stage 3 route gaps'
+          git push origin HEAD:refactor/aegis-clean-rebuild
