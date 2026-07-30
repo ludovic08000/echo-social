@@ -56,15 +56,12 @@ async function repairConversationHiddenMessages(
     .in('message_id', ids);
 
   if (error) {
-    console.warn('[messaging] failed to repair hidden conversation messages:', error.message);
+    console.warn('[messaging] hidden-message repair failed', { code: error.code ?? 'DB_ERROR' });
     return false;
   }
 
   ids.forEach((id) => hiddenIds.delete(id));
-  console.warn('[messaging] restored hidden messages after session return', {
-    conversationId,
-    count: ids.length,
-  });
+  console.warn('[messaging] restored hidden messages after session return', { count: ids.length });
   return true;
 }
 
@@ -228,7 +225,7 @@ export function useConversations() {
     queryKey: ['conversations', user?.id ?? 'anon'],
     queryFn: async () => {
       if (!user) return [];
-      console.log('[messaging] fetching conversations for', user.id);
+      console.info('[messaging] fetching conversations');
 
       // ── Single RPC: conversations + participants + last message + unread ──
       try {
@@ -381,7 +378,7 @@ export function useMessages(conversationId: string) {
           const newMsg = payload.new as MessageRow;
           const isViewOnce = newMsg.view_once === true;
           if (isUnsupportedEncryptedBody(newMsg.body)) {
-            console.warn('[messaging] ignoring unsupported encrypted message without hiding it', newMsg.id);
+            console.warn('[messaging] ignoring unsupported encrypted message without hiding it');
             return;
           }
 
@@ -579,7 +576,7 @@ export function useMessages(conversationId: string) {
     queryKey: ['messages', conversationId, user?.id ?? 'anon'],
     queryFn: async () => {
       if (!conversationId || !user) return [];
-      console.log('[messaging] fetching messages for conversation', conversationId);
+      console.info('[messaging] fetching messages');
 
       // Get hidden message IDs for this user
       const { data: deletions } = await supabase
@@ -600,7 +597,7 @@ export function useMessages(conversationId: string) {
         .limit(120);
 
       if (error) {
-        console.error('[messaging] message fetch failed:', error.message);
+        console.error('[messaging] message fetch failed', { code: error.code ?? 'DB_ERROR' });
         throw error;
       }
       console.log('[messaging] loaded', messages.length, 'messages from server');

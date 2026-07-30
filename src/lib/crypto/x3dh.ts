@@ -145,11 +145,7 @@ function validatePayloadForDB(payload: Record<string, unknown>, tableName: 'devi
 }
 
 function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys', payload: Record<string, unknown>) {
-  console.log('[X3DH][DB][UPSERT_PAYLOAD]', {
-    table,
-    payload_keys: Object.keys(payload),
-    fields: sanitizeDBPayload(payload),
-  });
+  console.info('[X3DH][DB][UPSERT]', { table, field_count: Object.keys(payload).length });
 }
 
 function logDBUpsertError(
@@ -168,15 +164,10 @@ function logDBUpsertError(
   const diagnostic = {
     table,
     step,
-    code: error?.code,
-    message: error?.message,
-    details: error?.details,
-    hint: error?.hint,
-    constraint_violated: violatedConstraint ?? 'unknown_from_supabase_error',
-    rejected_column: rejectedColumn ?? 'unknown_from_supabase_error',
-    rejected_value: rejectedColumn ? describeDBValue(rejectedColumn, payload[rejectedColumn]) : undefined,
-    payload_keys: Object.keys(payload),
-    payload: sanitizeDBPayload(payload),
+    code: error?.code ?? 'DB_ERROR',
+    constraint_violated: violatedConstraint ?? 'unknown',
+    rejected_column: rejectedColumn ?? 'unknown',
+    field_count: Object.keys(payload).length,
   };
   console.error('[X3DH][DB][UPSERT_FAIL]', diagnostic);
   return diagnostic;

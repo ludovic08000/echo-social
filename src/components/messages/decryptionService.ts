@@ -430,18 +430,7 @@ export async function resolvePlaintext(opts: {
         }
       }
 
-      if (typeof console !== 'undefined') {
-        trace('DEVICE_COPY_UNAVAILABLE', {
-          conversationId: aegisEnvelope.conversationId,
-        }, 'warn');
-        console.warn('[DECRYPT-FAIL] Aegis device key capsule unavailable', {
-          messageId,
-          kind: 'aegis-v1',
-          isMe: opts.isMe === true,
-          senderId: senderId ? String(senderId).slice(0, 8) : null,
-          stickyAvailable: Boolean(readLastGoodOutcome(messageId, body)),
-        });
-      }
+      trace('DEVICE_COPY_UNAVAILABLE', {}, 'warn');
       negCache.set(key, Date.now());
       return stickyOrNull(messageId, body);
     })();

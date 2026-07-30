@@ -183,11 +183,7 @@ function inferViolatedConstraint(error: unknown): string | undefined {
 }
 
 function logPayloadBeforeUpsert(table: DBTableName, payload: DBPayload) {
-  console.log('[E2EE][DB][UPSERT_PAYLOAD]', {
-    table,
-    payload_keys: Object.keys(payload),
-    fields: sanitizePayloadForLog(payload),
-  });
+  console.info('[E2EE][DB][UPSERT]', { table, field_count: Object.keys(payload).length });
 }
 
 async function ensureRepublishableDeviceId(
@@ -369,13 +365,8 @@ async function republishDeviceIdentity(
   // transaction. Direct root upserts are forbidden because they could race a
   // device registration or silently rotate the account identity.
 
-  console.log('[resync] user_devices.upsert payload', {
-    user_id: payload.user_id,
-    device_id: payload.device_id,
+  console.info('[resync] user device registration prepared', {
     device_id_len: payload.device_id.length,
-    platform: payload.platform,
-    device_name: payload.device_name,
-    device_public_key_type: typeof payload.device_public_key,
     device_public_key_len: payload.device_public_key.length,
     user_agent_len: payload.user_agent?.length ?? 0,
   });

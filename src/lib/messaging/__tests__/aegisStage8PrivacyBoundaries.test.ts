@@ -1,6 +1,4 @@
 import fs from 'node:fs';
-
-fs.writeFileSync('src/lib/messaging/__tests__/aegisStage8PrivacyBoundaries.test.ts', `import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   buildPrivacySafePushPayload,
@@ -88,4 +86,3 @@ describe('Aegis stage 8 privacy boundaries', () => {
     expect(read('supabase/functions/livekit-token/index.ts')).not.toContain('LiveKit token error:');
   });
 });
-`);

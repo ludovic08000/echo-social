@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AccessToken } from "npm:livekit-server-sdk@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
+import { safeServerErrorMeta, safeServerLog } from "../_shared/aegis-privacy.ts";
 
 type Role = "viewer" | "host" | "moderator";
 
@@ -176,7 +177,7 @@ Deno.serve(async (req) => {
       role,
     });
   } catch (error) {
-    console.error("LiveKit token error:", error);
+    safeServerLog("livekit-token", "UNHANDLED", safeServerErrorMeta(error));
     return json(corsHeaders, 500, { error: "Internal server error" });
   }
 });

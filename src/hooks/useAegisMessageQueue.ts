@@ -19,6 +19,7 @@ import {
   type OutboxPayload,
 } from '@/lib/messaging/outboxVault';
 import { runAegisOutboxJob } from '@/lib/messaging/aegisConversationQueue';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 export interface OutboundMessage {
   localId: string;
@@ -355,18 +356,14 @@ export function useAegisMessageQueue(
     const serverMessageId = resumePayload?.reservedServerId ?? safeUUID();
     const trace = (stage: string, traceExtra: Record<string, unknown> = {}) => {
       const elapsedMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceStartedAt);
-      console.info('[MSG_TRACE]', {
+      traceE2EE({
+        direction: 'send',
         stage,
         elapsedMs,
-        localId,
-        traceId,
-        conversationId,
-        userId: user.id,
-        encryptionWasRequested: !allowPlaintext,
-        isEncryptionReady,
-        hasMedia: !!imageUrl,
-        resumed: Boolean(resumePayload),
-        ...traceExtra,
+        targetCount: typeof traceExtra.targetCount === 'number' ? traceExtra.targetCount : undefined,
+        copyCount: typeof traceExtra.copyCount === 'number' ? traceExtra.copyCount : undefined,
+        retryCount: typeof traceExtra.retryCount === 'number' ? traceExtra.retryCount : undefined,
+        errorCode: typeof traceExtra.errorCode === 'string' ? traceExtra.errorCode : undefined,
       });
     };
 

@@ -25,7 +25,7 @@ There is no production compatibility requirement. Test messages, obsolete schema
 5. ✅ Call-scoped LiveKit rooms, invitations and per-device call-key delivery.
 6. ✅ Recovery vault and non-destructive key restore.
 7. ✅ View-once consumption, deletion and local-cache cleanup.
-8. Privacy boundaries for logs, push notifications and server functions.
+8. ✅ Privacy boundaries for logs, push notifications and server functions.
 9. One clean SQL reset for development data and obsolete Aegis objects.
 10. Full CI and manual two-account, multi-device and group-call verification.
 
@@ -53,10 +53,14 @@ The recovery vault contains only the portable X25519 and Ed25519 account identit
 
 A view-once media message is removed from the normal message and device-copy read paths before it becomes visible. The server stores one sealed payload per recipient account and grants a short claim only to an authorized device. The encrypted media is downloaded before the addressed Double Ratchet capsule is opened, and the recipient payload is destroyed only after an exact idempotent consumption receipt. The sender never archives or plaintext-caches a view-once message, the recipient never routes it through ordinary decrypt or media caches, and a temporarily ambiguous commit retains the opened blob in RAM only so confirmation can be retried without replaying the Ratchet. User deletion and remote deletion purge plaintext indexes, capsules, media keys, decrypted object URLs and in-memory decrypt outcomes.
 
+## Stage 8 invariant
+
+Push notifications are content-blind: clients select a bounded event kind and the server constructs a fixed generic title, body, route and tag. Peer-message plaintext is never accepted by moderation, AI, logging or notification functions. Persistent crypto diagnostics contain only bounded error codes, stages, booleans and counters; raw exceptions, stacks, UUIDs, user agents, URLs, ciphertext, keys and arbitrary metadata are discarded. In-memory E2EE traces apply the same identifier-free contract. Messaging, Sealed Sender and call functions log only stable diagnostic codes and numeric status metadata.
+
 ## Current checkpoint
 
-- Stages 1, 2, 3, 4, 5, 6 and 7 are complete and validated.
-- Stage 7 passed its exact claim/commit receipt tests, UUID and metadata binding tests, architecture checks, typecheck, the full test suite and the production build.
+- Stages 1, 2, 3, 4, 5, 6, 7 and 8 are complete and validated.
+- Stage 8 passed its generic-push, server-error redaction, crypto-log redaction, identifier-free trace and architecture tests, typecheck, the full test suite and the production build.
 - Realtime insert, cross-device consumption and remote deletion paths fail closed and purge local state.
 - View-once documents are rejected; only encrypted photos and videos use the one-time path.
 - Temporary payloads and one-shot workflows have been removed.
