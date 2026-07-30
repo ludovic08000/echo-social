@@ -1,8 +1,8 @@
 name: Aegis step 3 snapshot
 
 on:
-  push:
-    branches: [refactor/aegis-clean-rebuild]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -11,8 +11,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: refactor/aegis-clean-rebuild
       - name: Export exact source
         shell: bash
         run: |
