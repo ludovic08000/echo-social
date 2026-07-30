@@ -1,0 +1,61 @@
+name: Aegis step 9 schema audit
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    if: github.head_ref == 'refactor/aegis-clean-rebuild'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Inventory Aegis SQL objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="docs/AEGIS_STAGE9_SCHEMA_AUDIT.txt"
+          migrations=(
+            supabase/migrations/20260730010000_aegis_clean_transport.sql
+            supabase/migrations/20260730020000_aegis_account_authorized_devices.sql
+            supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql
+            supabase/migrations/20260730040000_aegis_recovery_vault.sql
+            supabase/migrations/20260730050000_aegis_view_once_consumption.sql
+          )
+          {
+            echo "AEGIS STAGE 9 SCHEMA AUDIT"
+            echo "HEAD=$(git rev-parse HEAD)"
+            echo
+            echo "=== CURRENT AEGIS MIGRATIONS ==="
+            printf '%s\n' "${migrations[@]}"
+            echo
+            echo "=== OBJECT DEFINITIONS IN CURRENT MIGRATIONS ==="
+            grep -HnEi '^[[:space:]]*(create|alter|drop)[[:space:]]+(or[[:space:]]+replace[[:space:]]+)?(table|function|trigger|constraint[[:space:]]+trigger|policy|index|unique[[:space:]]+index|extension)' "${migrations[@]}" || true
+            echo
+            echo "=== AEGIS / CRYPTO OBJECT REFERENCES IN ALL MIGRATIONS ==="
+            grep -RInE --include='*.sql' '(aegis_|message_device_copies|device_signed_prekeys|device_one_time_prekeys|user_public_keys|user_devices|active_calls|encrypted_call_key|message_archives|archive_body|aegis_route_version|body_kind|view_once)' supabase/migrations || true
+            echo
+            echo "=== CLIENT RPC AND TABLE REFERENCES ==="
+            grep -RInE --include='*.ts' --include='*.tsx' "(rpc\(['\"]|from\(['\"])(aegis_|write_aegis|begin_aegis|commit_aegis|release_aegis|delete_aegis|register_user_device_safe|publish_device_signed_prekey|claim_device_one_time_prekey|get_sesame_device_list|message_device_copies|aegis_call_invitations|aegis_recovery_vaults|aegis_view_once_)" src supabase/functions || true
+            echo
+            echo "=== LEGACY / TEST DATA MARKERS ==="
+            grep -RInE --include='*.sql' '(legacy|test|fixture|seed|demo|temporary|obsolete|deprecated|old_|v[0-9]+_backup)' supabase/migrations || true
+            echo
+            echo "=== TABLE DELETE / TRUNCATE STATEMENTS ==="
+            grep -RInE --include='*.sql' '^[[:space:]]*(delete[[:space:]]+from|truncate[[:space:]])' supabase/migrations || true
+          } > "$report"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/aegis-step9-audit.yml
+          git add "$report" .github/workflows/aegis-step9-audit.yml
+          git commit -m "chore(aegis): capture stage 9 schema inventory"
+          git push origin HEAD:refactor/aegis-clean-rebuild
