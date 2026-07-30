@@ -66,7 +66,7 @@ The five staged migrations are replaced by one transactional, destructive develo
 - Stages 1, 2, 3, 4, 5, 6, 7, 8 and 9 are complete and validated.
 - Stage 8 passed its generic-push, server-error redaction, crypto-log redaction, identifier-free trace and architecture tests, typecheck, the full test suite and the production build.
 - Stage 9 passed its single-migration, destructive-reset, obsolete-object, raw-call-key and generated-type architecture checks.
-- The clean Stage 8 implementation commit is `0443d5a`.
+- The clean Stage 9 implementation commit is `17dbbcd`.
 - Realtime insert, cross-device consumption and remote deletion paths fail closed and purge local state.
 - View-once documents are rejected; only encrypted photos and videos use the one-time path.
 - Temporary payloads and one-shot workflows have been removed.
