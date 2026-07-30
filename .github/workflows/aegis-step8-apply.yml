@@ -26,7 +26,9 @@ jobs:
       - run: npm ci
 
       - name: Apply stage 8 integration
-        run: node scripts/aegis-step8-apply.mjs
+        run: |
+          node scripts/aegis-step8-apply.mjs
+          node scripts/aegis-step8-fix-test.mjs
 
       - name: Verify privacy architecture
         shell: bash
@@ -67,6 +69,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -f scripts/aegis-step8-apply.mjs
+          rm -f scripts/aegis-step8-fix-test.mjs
           rm -f docs/AEGIS_STAGE8_AUDIT.txt
           rm -f .github/workflows/aegis-step8-apply.yml
           git add -A
