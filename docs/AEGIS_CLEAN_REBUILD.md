@@ -61,6 +61,7 @@ Push notifications are content-blind: clients select a bounded event kind and th
 
 - Stages 1, 2, 3, 4, 5, 6, 7 and 8 are complete and validated.
 - Stage 8 passed its generic-push, server-error redaction, crypto-log redaction, identifier-free trace and architecture tests, typecheck, the full test suite and the production build.
+- The clean Stage 8 implementation commit is `0443d5a`.
 - Realtime insert, cross-device consumption and remote deletion paths fail closed and purge local state.
 - View-once documents are rejected; only encrypted photos and videos use the one-time path.
 - Temporary payloads and one-shot workflows have been removed.
