@@ -1,0 +1,33 @@
+name: Aegis step 5 apply
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: node scripts/aegis-stage5-wire.mjs
+      - run: npm ci
+      - run: npx vitest run src/lib/calls/__tests__/aegisCallProtocol.test.ts
+      - run: npm run typecheck
+      - name: Commit wiring
+        run: |
+          rm scripts/aegis-stage5-wire.mjs
+          rm .github/workflows/aegis-step5-apply.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'refactor(aegis): bind calls to call-scoped rooms'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
