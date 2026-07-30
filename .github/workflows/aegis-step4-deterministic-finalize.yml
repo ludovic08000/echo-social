@@ -54,6 +54,14 @@ jobs:
                   raise SystemExit(f'expected exactly one deterministic test replacement: {old!r}')
               source = source.replace(old, new)
           path.write_text(source)
+
+          compatibility_path = Path('src/lib/messaging/__tests__/aegisCrossPlatformDeviceCopy.test.ts')
+          compatibility = compatibility_path.read_text()
+          old = "  hardGlobals: { TextEncoder, TextDecoder },"
+          new = "  hardGlobals: {\n    TextEncoder,\n    TextDecoder,\n    idbOpen: indexedDB.open.bind(indexedDB),\n  },"
+          if compatibility.count(old) != 1:
+              raise SystemExit('expected exactly one cryptoIntegrity compatibility mock')
+          compatibility_path.write_text(compatibility.replace(old, new))
           PY
           cat > /tmp/aegis-stage4-files.sha256 <<'AEGIS_STAGE4_SHA256'
           a8a9f7f56ce764c971b061de4821ed62679e92322550cc1b137aa49810ab1751  docs/AEGIS_CLEAN_REBUILD.md
@@ -71,6 +79,7 @@ jobs:
           f0f00f3c36b8872804279e9d3bfaf1e4421ffc00e15e09e42bfdcf3623fed0a6  src/lib/messaging/__tests__/aegisConversationQueue.test.ts
           4c2d495a4a0434ce579607b71df0546555eef184031aa734bfe6668fa5f8da57  src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts
           f422c1a35d3dc28cb25694ab7e09e5df9b1b40f04b69f0a496230d2ba13f076c  src/lib/messaging/__tests__/outboxVault.test.ts
+          896b3c59112f5db1ff4a8799b43544c8b6ed8f5ef5ab2e8f8b536505ce8a7b68  src/lib/messaging/__tests__/aegisCrossPlatformDeviceCopy.test.ts
           AEGIS_STAGE4_SHA256
           sha256sum --check /tmp/aegis-stage4-files.sha256
 
@@ -97,6 +106,7 @@ jobs:
               'src/lib/messaging/__tests__/aegisConversationQueue.test.ts',
               'src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts',
               'src/lib/messaging/__tests__/outboxVault.test.ts',
+              'src/lib/messaging/__tests__/aegisCrossPlatformDeviceCopy.test.ts',
           }
           changed = {line.strip() for line in subprocess.check_output(
               ['git', 'diff', '--name-only'], text=True
@@ -115,6 +125,7 @@ jobs:
           src/lib/messaging/__tests__/outboxVault.test.ts
           src/lib/messaging/__tests__/aegisConversationQueue.test.ts
           src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts
+          src/lib/messaging/__tests__/aegisCrossPlatformDeviceCopy.test.ts
 
       - name: Typecheck
         run: npm run typecheck
@@ -134,12 +145,12 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .aegis-stage4
+          rm -rf .aegis-step4
           rm -f .github/workflows/aegis-step4-implement.yml
           rm -f .github/workflows/aegis-step4-finalize.yml
           rm -f .github/workflows/aegis-step4-recover.yml
           rm -f .github/workflows/aegis-step4-deterministic-finalize.yml
           rm -f .github/workflows/aegis-tree-sha.yml
-          rm -rf .aegis-step4
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
