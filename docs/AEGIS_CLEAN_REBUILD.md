@@ -20,7 +20,7 @@ There is no production compatibility requirement. Test messages, obsolete schema
 
 1. ✅ Baseline architecture and executable protocol tests.
 2. ✅ Idempotent message transaction and authoritative send receipt.
-3. Device identity, X3DH, Double Ratchet and complete fan-out.
+3. 🚧 Device identity, X3DH, Double Ratchet and complete fan-out.
 4. Cross-tab locking and durable encrypted outbox.
 5. Call-scoped LiveKit rooms, invitations and per-device call-key delivery.
 6. Recovery vault and non-destructive key restore.
@@ -32,3 +32,13 @@ There is no production compatibility requirement. Test messages, obsolete schema
 ## Stage 2 invariant
 
 One stable message UUID identifies one immutable encrypted request. Calls for that UUID are serialized in PostgreSQL. A timeout or malformed success response keeps the Ratchet and encrypted outbox pending; only an exact authoritative commit receipt clears them. An explicit rejection may rewind state only after the serialized server call has finished.
+
+## Current checkpoint
+
+Saved on 2026-07-30 before functional work on stage 3.
+
+- Stage 1 is complete and validated.
+- Stage 2 is complete and validated by the Crypto Test Suite and E2EE CI.
+- Stage 3 is started as an audit/coding task, but no stage-3 implementation is considered complete yet.
+- The pull request remains draft and unmerged.
+- No Supabase migration from this rebuild has been applied to production.
