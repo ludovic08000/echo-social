@@ -22,7 +22,7 @@ There is no production compatibility requirement. Test messages, obsolete schema
 2. ✅ Idempotent message transaction and authoritative send receipt.
 3. ✅ Device identity, X3DH, Double Ratchet and complete fan-out.
 4. ✅ Cross-tab locking and durable encrypted outbox.
-5. ⏳ Call-scoped LiveKit rooms, invitations and per-device call-key delivery — implementation complete, validation pending.
+5. ✅ Call-scoped LiveKit rooms, invitations and per-device call-key delivery.
 6. Recovery vault and non-destructive key restore.
 7. View-once consumption, deletion and local-cache cleanup.
 8. Privacy boundaries for logs, push notifications and server functions.
@@ -41,10 +41,15 @@ Every routable installation is authorized by the account identity before it can 
 
 The complete immutable encrypted request is durable before network delivery and remains stored until an exact authoritative receipt or an explicit user deletion. Pending and unreadable rows are never silently pruned. Every outbox row, conversation send and device-session mutation is single-flight across tabs through Web Locks or a renewable IndexedDB lease, and concurrent first-run key creation converges on one non-extractable local AES key.
 
+## Stage 5 invariant
+
+Each call owns one immutable UUID and one LiveKit room named from that UUID, never from a conversation identifier. The call key is encrypted independently for every routable account-authorized device with an ephemeral X25519 exchange and AES-GCM metadata binding. The server stores only per-device envelopes and issues a call token only to the authorized device named by the caller record or an active invitation. Missing, revoked or unmatched devices fail closed.
+
 ## Current checkpoint
 
-- Stages 1, 2, 3 and 4 are complete and validated.
-- Stage 4 passed its targeted concurrency, crash-recovery, durable-outbox and device-copy tests, typecheck, lint, the full 379-test suite and the production build.
+- Stages 1, 2, 3, 4 and 5 are complete and validated.
+- Stage 5 passed its call-scoped-room, complete device fan-out and fail-closed tests, typecheck, the full test suite and the production build.
+- E2EE CI and the Crypto Test Suite passed on the validated stage 5 implementation.
 - Temporary payloads and one-shot workflows have been removed.
 - The pull request remains draft and unmerged.
 - No Supabase migration from this rebuild has been applied.
