@@ -1,0 +1,23 @@
+name: Aegis step 3 source export
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export current source
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --exclude='.git' --exclude='node_modules' --exclude='dist' -czf /tmp/aegis-step3-source.tar.gz \
+            src supabase docs package.json package-lock.json tsconfig*.json vite.config.ts vitest.config.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aegis-step3-current-source
+          path: /tmp/aegis-step3-source.tar.gz
+          retention-days: 1
