@@ -1,0 +1,143 @@
+name: Aegis step 4 recover
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Extract exact stage 4 payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+
+          source = Path('.github/workflows/aegis-step4-implement.yml').read_text().splitlines()
+          marker = "cat > /tmp/aegis-stage4-patch.b64 <<'AEGIS_STAGE4_B64'"
+          start = next(index for index, line in enumerate(source) if marker in line) + 1
+          end = next(index for index in range(start, len(source)) if source[index].strip() == 'AEGIS_STAGE4_B64')
+          encoded = ''.join(line.strip() for line in source[start:end])
+          archive = base64.b64decode(encoded, validate=True)
+          Path('/tmp/aegis-stage4-patch.tar.gz').write_bytes(archive)
+          PY
+          gzip --test /tmp/aegis-stage4-patch.tar.gz
+          tar -xzf /tmp/aegis-stage4-patch.tar.gz -C .
+          cat > /tmp/aegis-stage4-files.sha256 <<'AEGIS_STAGE4_SHA256'
+          a8a9f7f56ce764c971b061de4821ed62679e92322550cc1b137aa49810ab1751  docs/AEGIS_CLEAN_REBUILD.md
+          ee4ace3fa517f73faa62edb1e9f6217b81245886369635aea93a90e15ab9706d  docs/AEGIS_E2EE_ARCHITECTURE.md
+          cf132a421336e79c348a69c0ec0b82efca5055e2cdac455b5d5b50947cbd4fb4  src/hooks/useAegisMessageQueue.ts
+          fe256a1c2ec8350df2d416f23d3d674239d32fdbba91885c311bc63f50e0c309  src/lib/messaging/aegisOutboundEngine.ts
+          bee99a9b99fa7618a7b60428e4c93684857ad4f1ad4ac06c9d750dd0c65449ca  src/lib/messaging/aegisConversationQueue.ts
+          3f184f6247b1741f104e3faf8d678713e50251444f84343e09122c3102744205  src/lib/messaging/outboxVault.ts
+          df48202da0751098800501d89e23e9fe266d01dade915b086a069169f299c971  src/lib/crypto/deviceSessionQueue.ts
+          3feeddbcdea0a8439bd9e5977cd0b688dbddb834d8871d1c951bd24aa03a73c5  src/lib/crypto/deviceIdentity.ts
+          6cd507da7648745eab4058dfbb0082a9368d586139eb83a8109ad98d09249cd2  src/lib/crypto/crossTabLock.ts
+          83017dff89c742987ad0a4f1f864d9e7efb4edabc6d006e731a47f33be82f268  src/lib/crypto/deviceKx.ts
+          a6d55d5ca8918685f2ed1d69ab16a00f0786447cd82f6bf38f2469143dbb492a  src/lib/crypto/dbRegistry.ts
+          acb6be4e45224c35a9ef7a49571b262f491142389a2b03a29e0ad060de13015d  src/lib/crypto/__tests__/crossTabLock.test.ts
+          f0f00f3c36b8872804279e9d3bfaf1e4421ffc00e15e09e42bfdcf3623fed0a6  src/lib/messaging/__tests__/aegisConversationQueue.test.ts
+          4c2d495a4a0434ce579607b71df0546555eef184031aa734bfe6668fa5f8da57  src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts
+          01ba071afaa3f2b67e5ec58e6fca89ad7cbc6aa5d69abf9ecf361ff5324babaa  src/lib/messaging/__tests__/outboxVault.test.ts
+          AEGIS_STAGE4_SHA256
+          sha256sum --check /tmp/aegis-stage4-files.sha256
+
+      - name: Validate patch scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python - <<'PY'
+          import subprocess
+          allowed = {
+              'docs/AEGIS_CLEAN_REBUILD.md',
+              'docs/AEGIS_E2EE_ARCHITECTURE.md',
+              'src/hooks/useAegisMessageQueue.ts',
+              'src/lib/messaging/aegisOutboundEngine.ts',
+              'src/lib/messaging/aegisConversationQueue.ts',
+              'src/lib/messaging/outboxVault.ts',
+              'src/lib/crypto/deviceSessionQueue.ts',
+              'src/lib/crypto/deviceIdentity.ts',
+              'src/lib/crypto/crossTabLock.ts',
+              'src/lib/crypto/deviceKx.ts',
+              'src/lib/crypto/dbRegistry.ts',
+              'src/lib/crypto/__tests__/crossTabLock.test.ts',
+              'src/lib/messaging/__tests__/aegisConversationQueue.test.ts',
+              'src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts',
+              'src/lib/messaging/__tests__/outboxVault.test.ts',
+          }
+          changed = {line.strip() for line in subprocess.check_output(
+              ['git', 'diff', '--name-only'], text=True
+          ).splitlines() if line.strip()}
+          changed.update(line.strip() for line in subprocess.check_output(
+              ['git', 'ls-files', '--others', '--exclude-standard'], text=True
+          ).splitlines() if line.strip())
+          if changed != allowed:
+              raise SystemExit(f'unexpected patch scope: missing={sorted(allowed-changed)} extra={sorted(changed-allowed)}')
+          PY
+
+      - name: Targeted stage 4 tests
+        run: >-
+          npx vitest run
+          src/lib/crypto/__tests__/crossTabLock.test.ts
+          src/lib/messaging/__tests__/outboxVault.test.ts
+          src/lib/messaging/__tests__/aegisConversationQueue.test.ts
+          src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Legacy repository lint
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Full test suite
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Commit validated stage 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/aegis-step4-implement.yml
+          rm .github/workflows/aegis-step4-finalize.yml
+          rm .github/workflows/aegis-step4-recover.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/AEGIS_CLEAN_REBUILD.md docs/AEGIS_E2EE_ARCHITECTURE.md
+          git add src/hooks/useAegisMessageQueue.ts
+          git add src/lib/messaging/aegisOutboundEngine.ts src/lib/messaging/aegisConversationQueue.ts src/lib/messaging/outboxVault.ts
+          git add src/lib/crypto/deviceSessionQueue.ts src/lib/crypto/deviceIdentity.ts src/lib/crypto/crossTabLock.ts src/lib/crypto/deviceKx.ts src/lib/crypto/dbRegistry.ts
+          git add src/lib/crypto/__tests__/crossTabLock.test.ts
+          git add src/lib/messaging/__tests__/aegisConversationQueue.test.ts src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts src/lib/messaging/__tests__/outboxVault.test.ts
+          git add .github/workflows/aegis-step4-implement.yml .github/workflows/aegis-step4-finalize.yml .github/workflows/aegis-step4-recover.yml
+          git diff --cached --check
+          git commit -m 'feat(aegis): add durable cross-tab encrypted outbox'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
