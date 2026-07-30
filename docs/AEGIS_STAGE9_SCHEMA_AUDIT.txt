@@ -1,0 +1,1290 @@
+AEGIS STAGE 9 SCHEMA AUDIT
+HEAD=00880c22e4f26712b2075012d4513344a3e53304
+
+=== CURRENT AEGIS MIGRATIONS ===
+supabase/migrations/20260730010000_aegis_clean_transport.sql
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql
+supabase/migrations/20260730040000_aegis_recovery_vault.sql
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql
+
+=== OBJECT DEFINITIONS IN CURRENT MIGRATIONS ===
+supabase/migrations/20260730010000_aegis_clean_transport.sql:9:create extension if not exists pgcrypto with schema extensions;
+supabase/migrations/20260730010000_aegis_clean_transport.sql:11:alter table public.messages
+supabase/migrations/20260730010000_aegis_clean_transport.sql:17:drop function if exists public.aegis_send_message(
+supabase/migrations/20260730010000_aegis_clean_transport.sql:21:create function public.aegis_send_message(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:3:create extension if not exists pgcrypto;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:7:alter table public.user_devices
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:12:drop function if exists public.get_signed_device_list(uuid) cascade;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:17:drop function if exists public.get_sesame_device_list(uuid);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:18:drop function if exists public.register_user_device_safe(uuid,text,text,text,text,text,text);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:19:drop function if exists public.register_user_device_safe(uuid,text,text,text,text,text,text,text,text,integer);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:20:drop function if exists public.register_user_device_safe(uuid,text,text,text,text,text,text,text,text,text,text,text,text);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:21:drop function if exists public.mark_current_device_route_ready(text);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:22:drop function if exists public.approve_user_device(text);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:23:drop trigger if exists bump_aegis_device_route on public.user_devices;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:24:drop function if exists public.trg_bump_aegis_device_route();
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:26:alter table public.user_devices
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:40:create or replace function public.trg_bump_aegis_device_route()
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:75:create trigger bump_aegis_device_route
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:79:create function public.get_sesame_device_list(p_user_id uuid)
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:136:create function public.register_user_device_safe(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:291:create or replace function public.publish_device_signed_prekey(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:380:create or replace function public.publish_device_one_time_prekeys(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:464:drop function if exists public.claim_device_one_time_prekey(uuid,text);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:465:drop function if exists public.claim_device_one_time_prekey(uuid,text,uuid,text);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:466:create function public.claim_device_one_time_prekey(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:534:create or replace function public.count_device_one_time_prekeys(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:560:create or replace function public.get_device_prekey_bundle(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:589:create or replace function public.get_device_copies_for_messages(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:625:create function public.mark_current_device_route_ready(p_device_id text)
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:676:create function public.approve_user_device(p_device_id text)
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:3:create extension if not exists pgcrypto;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:5:alter table public.active_calls
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:14:alter table public.active_calls
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:17:create unique index if not exists active_calls_room_name_uidx
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:20:create table if not exists public.aegis_call_invitations (
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:35:create index if not exists aegis_call_invitations_recipient_idx
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:38:alter table public.aegis_call_invitations enable row level security;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:43:drop policy if exists aegis_call_invitation_recipient_read on public.aegis_call_invitations;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:44:create policy aegis_call_invitation_recipient_read
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:50:create or replace function public.aegis_call_create(
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:244:create or replace function public.aegis_call_get_invitation(
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:280:create or replace function public.aegis_call_latest_for_device(p_device_id text)
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:318:create or replace function public.aegis_call_update_status(
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:3:create table if not exists public.aegis_recovery_vaults (
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:15:alter table public.aegis_recovery_vaults enable row level security;
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:20:drop policy if exists aegis_recovery_vault_select_own on public.aegis_recovery_vaults;
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:21:create policy aegis_recovery_vault_select_own
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:27:create or replace function public.write_aegis_recovery_vault(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:11:create extension if not exists pgcrypto with schema extensions;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:13:create table if not exists public.aegis_view_once_payloads (
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:28:create table if not exists public.aegis_view_once_consumptions (
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:37:alter table public.aegis_view_once_payloads enable row level security;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:38:alter table public.aegis_view_once_consumptions enable row level security;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:44:drop policy if exists aegis_view_once_consumption_select_own on public.aegis_view_once_consumptions;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:45:create policy aegis_view_once_consumption_select_own
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:51:create or replace function public.stage_aegis_view_once_payload()
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:122:drop trigger if exists aegis_stage_view_once_payload on public.messages;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:123:create constraint trigger aegis_stage_view_once_payload
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:130:create or replace function public.begin_aegis_view_once_consume(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:246:create or replace function public.commit_aegis_view_once_consume(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:320:create or replace function public.release_aegis_view_once_claim(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:347:create or replace function public.delete_aegis_message_for_me(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:387:create or replace function public.delete_aegis_message_for_everyone(
+
+=== AEGIS / CRYPTO OBJECT REFERENCES IN ALL MIGRATIONS ===
+supabase/migrations/20260525140000_quarantine_invalid_e2ee_devices.sql:43:update public.user_devices ud
+supabase/migrations/20260525140000_quarantine_invalid_e2ee_devices.sql:52:update public.device_signed_prekeys dsp
+supabase/migrations/20260525140000_quarantine_invalid_e2ee_devices.sql:79:  from public.user_devices ud
+supabase/migrations/20260525140000_quarantine_invalid_e2ee_devices.sql:112:  from public.device_signed_prekeys dsp
+supabase/migrations/20260525140000_quarantine_invalid_e2ee_devices.sql:113:  join public.user_devices ud
+supabase/migrations/20260525140000_quarantine_invalid_e2ee_devices.sql:159:  update public.user_devices
+supabase/migrations/20260525140000_quarantine_invalid_e2ee_devices.sql:164:  update public.device_signed_prekeys
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:1:-- Add group call columns to active_calls
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:2:ALTER TABLE public.active_calls
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:8:CREATE INDEX IF NOT EXISTS idx_active_calls_caller_ids ON public.active_calls USING GIN(caller_ids);
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:18:DROP POLICY IF EXISTS "Group invitees can view active calls" ON public.active_calls;
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:20:  ON public.active_calls
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:29:DROP POLICY IF EXISTS "Group invitees can update active calls" ON public.active_calls;
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:31:  ON public.active_calls
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:61:DROP TRIGGER IF EXISTS trg_auto_end_declined_group_call ON public.active_calls;
+supabase/migrations/20260507105711_a79486e8-1e48-43bd-b161-8c354a7e7de0.sql:63:  BEFORE UPDATE ON public.active_calls
+supabase/migrations/20260525150000_disable_unreliable_opk_claiming.sql:33:delete from public.device_one_time_prekeys;
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:5:alter table public.user_devices
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:10:alter table public.user_devices
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:11:  drop constraint if exists user_devices_device_identity_version_check;
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:12:alter table public.user_devices
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:13:  add constraint user_devices_device_identity_version_check
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:43:  v_existing public.user_devices%rowtype;
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:59:  from public.user_devices
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:80:  insert into public.user_devices (
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:102:      approved_at = coalesce(public.user_devices.approved_at, v_now),
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:103:      approved_by = coalesce(public.user_devices.approved_by, v_uid),
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:108:  where public.user_devices.revoked_at is null
+supabase/migrations/20260729154000_repair_register_user_device_safe.sql:109:    and coalesce(public.user_devices.approval_status, 'approved') <> 'rejected';
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:5:alter table public.active_calls
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:10:update public.active_calls
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:14:alter table public.active_calls
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:17:create unique index if not exists active_calls_room_name_uidx
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:18:  on public.active_calls(room_name);
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:20:create table if not exists public.aegis_call_invitations (
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:21:  call_id uuid not null references public.active_calls(id) on delete cascade,
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:24:  encrypted_call_key text not null,
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:32:  check (encrypted_call_key like 'aegis-call-v1.%')
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:35:create index if not exists aegis_call_invitations_recipient_idx
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:36:  on public.aegis_call_invitations(recipient_user_id, recipient_device_id, status, created_at desc);
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:38:alter table public.aegis_call_invitations enable row level security;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:40:revoke all on table public.aegis_call_invitations from public, anon;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:41:grant select on table public.aegis_call_invitations to authenticated;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:43:drop policy if exists aegis_call_invitation_recipient_read on public.aegis_call_invitations;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:44:create policy aegis_call_invitation_recipient_read
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:45:on public.aegis_call_invitations
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:50:create or replace function public.aegis_call_create(
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:124:    select 1 from public.user_devices device
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:138:    from public.user_devices device
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:150:      entry->>'encrypted_call_key' as encrypted_call_key
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:163:      from public.user_devices device
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:175:        entry->>'encrypted_call_key' as encrypted_call_key
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:193:       or coalesce(entry->>'encrypted_call_key', '') not like 'aegis-call-v1.%'
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:199:  if exists (select 1 from public.active_calls where id = p_call_id) then
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:205:  insert into public.active_calls (
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:208:    call_type, status, encrypted_call_key
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:216:  insert into public.aegis_call_invitations (
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:217:    call_id, recipient_user_id, recipient_device_id, encrypted_call_key
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:223:    entry->>'encrypted_call_key'
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:241:revoke all on function public.aegis_call_create(uuid,uuid,text,text,uuid[],jsonb) from public, anon;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:242:grant execute on function public.aegis_call_create(uuid,uuid,text,text,uuid[],jsonb) to authenticated;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:244:create or replace function public.aegis_call_get_invitation(
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:263:      'encrypted_call_key', invitation.encrypted_call_key,
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:266:    from public.aegis_call_invitations invitation
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:267:    join public.active_calls call on call.id = invitation.call_id
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:277:revoke all on function public.aegis_call_get_invitation(uuid,text) from public, anon;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:278:grant execute on function public.aegis_call_get_invitation(uuid,text) to authenticated;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:280:create or replace function public.aegis_call_latest_for_device(p_device_id text)
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:301:      from public.aegis_call_invitations invitation
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:302:      join public.active_calls call on call.id = invitation.call_id
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:315:revoke all on function public.aegis_call_latest_for_device(text) from public, anon;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:316:grant execute on function public.aegis_call_latest_for_device(text) to authenticated;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:318:create or replace function public.aegis_call_update_status(
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:330:  v_call public.active_calls%rowtype;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:339:  select * into v_call from public.active_calls where id = p_call_id for update;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:351:    update public.active_calls
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:358:  update public.aegis_call_invitations
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:371:    update public.active_calls
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:376:    select 1 from public.aegis_call_invitations
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:379:    update public.active_calls
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:389:revoke all on function public.aegis_call_update_status(uuid,text,text) from public, anon;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:390:grant execute on function public.aegis_call_update_status(uuid,text,text) to authenticated;
+supabase/migrations/20260505085249_f98999e1-0e7d-4269-b457-efb078fa47fa.sql:15:  FROM public.user_devices d
+supabase/migrations/20260505014500_stale_user_devices.sql:7:ALTER TABLE public.user_devices
+supabase/migrations/20260505014500_stale_user_devices.sql:12:CREATE INDEX IF NOT EXISTS idx_user_devices_lifecycle
+supabase/migrations/20260505014500_stale_user_devices.sql:13:  ON public.user_devices (user_id, is_active, revoked_at, last_seen_at DESC);
+supabase/migrations/20260505014500_stale_user_devices.sql:45:DROP TRIGGER IF EXISTS trg_guard_user_device_lifecycle ON public.user_devices;
+supabase/migrations/20260505014500_stale_user_devices.sql:47:  BEFORE UPDATE ON public.user_devices
+supabase/migrations/20260505014500_stale_user_devices.sql:51:DROP FUNCTION IF EXISTS public.cleanup_stale_user_devices(interval, interval);
+supabase/migrations/20260505014500_stale_user_devices.sql:53:CREATE FUNCTION public.cleanup_stale_user_devices(
+supabase/migrations/20260505014500_stale_user_devices.sql:74:    UPDATE public.user_devices d
+supabase/migrations/20260505014500_stale_user_devices.sql:90:    UPDATE public.user_devices d
+supabase/migrations/20260505014500_stale_user_devices.sql:107:GRANT EXECUTE ON FUNCTION public.cleanup_stale_user_devices(interval, interval)
+supabase/migrations/20260505014500_stale_user_devices.sql:123:  FROM public.user_devices d
+supabase/migrations/20260505014500_stale_user_devices.sql:158:  FROM public.device_signed_prekeys sp
+supabase/migrations/20260505014500_stale_user_devices.sql:159:  JOIN public.user_devices d
+supabase/migrations/20260505014500_stale_user_devices.sql:176:DROP POLICY IF EXISTS "Sender can insert device copies" ON public.message_device_copies;
+supabase/migrations/20260505014500_stale_user_devices.sql:179:  ON public.message_device_copies FOR INSERT
+supabase/migrations/20260505014500_stale_user_devices.sql:187:       AND sender_participant.user_id = public.message_device_copies.sender_user_id
+supabase/migrations/20260505014500_stale_user_devices.sql:190:       AND recipient_participant.user_id = public.message_device_copies.recipient_user_id
+supabase/migrations/20260505014500_stale_user_devices.sql:191:      JOIN public.user_devices recipient_device
+supabase/migrations/20260505014500_stale_user_devices.sql:192:        ON recipient_device.user_id = public.message_device_copies.recipient_user_id
+supabase/migrations/20260505014500_stale_user_devices.sql:193:       AND recipient_device.device_id = public.message_device_copies.recipient_device_id
+supabase/migrations/20260505014500_stale_user_devices.sql:197:      WHERE m.id = public.message_device_copies.message_id
+supabase/migrations/20260505014500_stale_user_devices.sql:198:        AND m.sender_id = public.message_device_copies.sender_user_id
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:28:  v_existing public.user_devices%rowtype;
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:41:  from public.user_devices
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:57:  insert into public.user_devices (
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:99:        public.user_devices.approval_requested_at,
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:102:      approved_at = coalesce(public.user_devices.approved_at, v_now),
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:103:      approved_by = coalesce(public.user_devices.approved_by, v_uid),
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:105:  where public.user_devices.revoked_at is null
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:106:    and coalesce(public.user_devices.approval_status, 'approved') <> 'rejected';
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:138:create or replace function public.trg_aegis_require_all_device_copies()
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:146:  v_body_kind text;
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:150:  select m.conversation_id, m.body_kind
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:151:    into v_conversation_id, v_body_kind
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:155:  if not found or v_body_kind <> 'multi_device' then
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:175:    from public.message_device_copies actual
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:194:  from public.message_device_copies actual
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:217:revoke all on function public.trg_aegis_require_all_device_copies()
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:220:drop trigger if exists aegis_require_all_device_copies
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:221:on public.message_device_copies;
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:223:create constraint trigger aegis_require_all_device_copies
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:224:after insert on public.message_device_copies
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:227:execute function public.trg_aegis_require_all_device_copies();
+supabase/migrations/20260720223000_aegis_all_device_delivery_and_auto_enrollment.sql:233:comment on function public.aegis_send_message(
+supabase/migrations/20260507131748_bd668721-f45d-4ac3-9aa6-fb31275d8177.sql:5:ALTER TABLE public.user_devices
+supabase/migrations/20260507131748_bd668721-f45d-4ac3-9aa6-fb31275d8177.sql:9:CREATE UNIQUE INDEX IF NOT EXISTS user_devices_one_primary_per_user
+supabase/migrations/20260507131748_bd668721-f45d-4ac3-9aa6-fb31275d8177.sql:10:  ON public.user_devices (user_id)
+supabase/migrations/20260507131748_bd668721-f45d-4ac3-9aa6-fb31275d8177.sql:86:  FROM public.user_devices d
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:8:  p_encrypted_call_key text DEFAULT NULL,
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:18:  v_row public.active_calls%ROWTYPE;
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:32:    INSERT INTO public.active_calls (
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:38:      encrypted_call_key
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:45:      p_encrypted_call_key
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:51:    FROM public.active_calls
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:64:    UPDATE public.active_calls
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:76:    UPDATE public.active_calls
+supabase/migrations/20260525132000_quarantine_invalid_device_spk.sql:31:  update public.device_signed_prekeys
+supabase/migrations/20260525132000_quarantine_invalid_device_spk.sql:40:  update public.user_devices
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:12:update public.user_devices
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:26:using public.user_devices device
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:35:create or replace function public.cleanup_stale_user_devices()
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:49:create or replace function public.cleanup_stale_user_devices(
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:111:  update public.device_signed_prekeys
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:156:-- Enforce the policy even if an old client or RPC tries to mutate user_devices
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:196:on public.user_devices;
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:198:before update on public.user_devices
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:202:revoke all on function public.cleanup_stale_user_devices()
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:204:revoke all on function public.cleanup_stale_user_devices(interval, interval)
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:208:grant execute on function public.cleanup_stale_user_devices()
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:210:grant execute on function public.cleanup_stale_user_devices(interval, interval)
+supabase/migrations/20260422012048_f0af66b0-68d1-4850-8efc-e36c61b98463.sql:13:  FROM public.user_devices
+supabase/migrations/20260422012048_f0af66b0-68d1-4850-8efc-e36c61b98463.sql:41:DROP TRIGGER IF EXISTS trg_notify_new_device ON public.user_devices;
+supabase/migrations/20260422012048_f0af66b0-68d1-4850-8efc-e36c61b98463.sql:43:AFTER INSERT ON public.user_devices
+supabase/migrations/20260622144000_pending_devices_inactive_constraint.sql:10:    where conname = 'user_devices_pending_inactive_chk'
+supabase/migrations/20260622144000_pending_devices_inactive_constraint.sql:12:    alter table public.user_devices
+supabase/migrations/20260622144000_pending_devices_inactive_constraint.sql:13:      add constraint user_devices_pending_inactive_chk
+supabase/migrations/20260604111836_ef857c2e-0c4e-40d8-a0e4-8ffcb8387843.sql:4:UPDATE public.device_signed_prekeys
+supabase/migrations/20260604111836_ef857c2e-0c4e-40d8-a0e4-8ffcb8387843.sql:10:DELETE FROM public.device_signed_prekeys
+supabase/migrations/20260503093000_harden_message_device_copies.sql:5:DROP POLICY IF EXISTS "Recipient can read own device copy" ON public.message_device_copies;
+supabase/migrations/20260503093000_harden_message_device_copies.sql:6:DROP POLICY IF EXISTS "Sender can read copies they sent" ON public.message_device_copies;
+supabase/migrations/20260503093000_harden_message_device_copies.sql:7:DROP POLICY IF EXISTS "Sender can insert device copies" ON public.message_device_copies;
+supabase/migrations/20260503093000_harden_message_device_copies.sql:8:DROP POLICY IF EXISTS "Recipient can mark delivered/read" ON public.message_device_copies;
+supabase/migrations/20260503093000_harden_message_device_copies.sql:11:  ON public.message_device_copies FOR SELECT
+supabase/migrations/20260503093000_harden_message_device_copies.sql:17:      WHERE m.id = public.message_device_copies.message_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:18:        AND m.sender_id = public.message_device_copies.sender_user_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:23:  ON public.message_device_copies FOR SELECT
+supabase/migrations/20260503093000_harden_message_device_copies.sql:29:      WHERE m.id = public.message_device_copies.message_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:30:        AND m.sender_id = public.message_device_copies.sender_user_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:35:  ON public.message_device_copies FOR INSERT
+supabase/migrations/20260503093000_harden_message_device_copies.sql:43:       AND sender_participant.user_id = public.message_device_copies.sender_user_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:46:       AND recipient_participant.user_id = public.message_device_copies.recipient_user_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:47:      JOIN public.user_devices recipient_device
+supabase/migrations/20260503093000_harden_message_device_copies.sql:48:        ON recipient_device.user_id = public.message_device_copies.recipient_user_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:49:       AND recipient_device.device_id = public.message_device_copies.recipient_device_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:51:      WHERE m.id = public.message_device_copies.message_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:52:        AND m.sender_id = public.message_device_copies.sender_user_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:57:  ON public.message_device_copies FOR UPDATE
+supabase/migrations/20260503093000_harden_message_device_copies.sql:63:      WHERE m.id = public.message_device_copies.message_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:64:        AND m.sender_id = public.message_device_copies.sender_user_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:72:      WHERE m.id = public.message_device_copies.message_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:73:        AND m.sender_id = public.message_device_copies.sender_user_id
+supabase/migrations/20260503093000_harden_message_device_copies.sql:100:  FROM public.message_device_copies mdc
+supabase/migrations/20260503093000_harden_message_device_copies.sql:131:  FROM public.message_device_copies mdc
+supabase/migrations/20260604103733_16f4a46f-2c55-421c-929f-4ffcc28408b3.sql:17:  FROM public.user_devices ud
+supabase/migrations/20260607005117_b4364167-3429-44c4-a543-b9df27d2c618.sql:57:    SELECT 1 FROM public.user_devices
+supabase/migrations/20260607005117_b4364167-3429-44c4-a543-b9df27d2c618.sql:71:  FROM public.user_devices
+supabase/migrations/20260607005117_b4364167-3429-44c4-a543-b9df27d2c618.sql:82:    FROM public.user_devices
+supabase/migrations/20260607005117_b4364167-3429-44c4-a543-b9df27d2c618.sql:87:    UPDATE public.user_devices
+supabase/migrations/20260607005117_b4364167-3429-44c4-a543-b9df27d2c618.sql:102:    UPDATE public.device_signed_prekeys
+supabase/migrations/20260607005117_b4364167-3429-44c4-a543-b9df27d2c618.sql:125:DROP TRIGGER IF EXISTS trg_handle_primary_device_loss ON public.user_devices;
+supabase/migrations/20260607005117_b4364167-3429-44c4-a543-b9df27d2c618.sql:127:AFTER UPDATE OF is_active, is_primary, revoked_at ON public.user_devices
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:13:create table if not exists public.aegis_view_once_payloads (
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:28:create table if not exists public.aegis_view_once_consumptions (
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:37:alter table public.aegis_view_once_payloads enable row level security;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:38:alter table public.aegis_view_once_consumptions enable row level security;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:40:revoke all on table public.aegis_view_once_payloads from public, anon, authenticated;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:41:revoke all on table public.aegis_view_once_consumptions from public, anon, authenticated;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:42:grant select on table public.aegis_view_once_consumptions to authenticated;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:44:drop policy if exists aegis_view_once_consumption_select_own on public.aegis_view_once_consumptions;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:45:create policy aegis_view_once_consumption_select_own
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:46:  on public.aegis_view_once_consumptions
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:51:create or replace function public.stage_aegis_view_once_payload()
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:60:  if new.view_once is not true then
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:63:  if new.body_kind is distinct from 'multi_device'
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:64:     or new.aegis_request_digest is null
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:70:  insert into public.aegis_view_once_payloads (
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:94:  from public.message_device_copies copy
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:104:  delete from public.message_device_copies where message_id = new.id;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:105:  delete from public.message_archives where message_id = new.id;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:109:         body_kind = 'view_once',
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:115:         archive_body = null
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:122:drop trigger if exists aegis_stage_view_once_payload on public.messages;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:123:create constraint trigger aegis_stage_view_once_payload
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:127:  when (new.view_once is true)
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:128:  execute function public.stage_aegis_view_once_payload();
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:130:create or replace function public.begin_aegis_view_once_consume(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:153:  select id, conversation_id, sender_id, view_once
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:158:  if not found or v_message.view_once is not true then
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:180:    select 1 from public.aegis_view_once_consumptions consumed
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:189:    from public.aegis_view_once_payloads payload
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:222:    update public.aegis_view_once_payloads
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:246:create or replace function public.commit_aegis_view_once_consume(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:269:    from public.aegis_view_once_consumptions consumed
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:288:    from public.aegis_view_once_payloads payload
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:300:  insert into public.aegis_view_once_consumptions (
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:306:  delete from public.aegis_view_once_payloads
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:320:create or replace function public.release_aegis_view_once_claim(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:335:  update public.aegis_view_once_payloads
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:347:create or replace function public.delete_aegis_message_for_me(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:377:  delete from public.aegis_view_once_payloads
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:379:  delete from public.aegis_view_once_consumptions
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:381:  delete from public.message_archives
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:387:create or replace function public.delete_aegis_message_for_everyone(
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:409:  delete from public.message_archives where message_id = p_message_id;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:415:revoke all on function public.begin_aegis_view_once_consume(uuid, text) from public, anon;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:416:revoke all on function public.commit_aegis_view_once_consume(uuid, text, uuid) from public, anon;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:417:revoke all on function public.release_aegis_view_once_claim(uuid, text, uuid) from public, anon;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:418:revoke all on function public.delete_aegis_message_for_me(uuid) from public, anon;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:419:revoke all on function public.delete_aegis_message_for_everyone(uuid) from public, anon;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:421:grant execute on function public.begin_aegis_view_once_consume(uuid, text) to authenticated;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:422:grant execute on function public.commit_aegis_view_once_consume(uuid, text, uuid) to authenticated;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:423:grant execute on function public.release_aegis_view_once_claim(uuid, text, uuid) to authenticated;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:424:grant execute on function public.delete_aegis_message_for_me(uuid) to authenticated;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:425:grant execute on function public.delete_aegis_message_for_everyone(uuid) to authenticated;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:427:comment on table public.aegis_view_once_payloads is
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:429:comment on function public.commit_aegis_view_once_consume(uuid, text, uuid) is
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:434:  alter publication supabase_realtime add table public.aegis_view_once_consumptions;
+supabase/migrations/20260727090000_explicit_identity_root_rotation.sql:48:    from public.user_devices ud
+supabase/migrations/20260727090000_explicit_identity_root_rotation.sql:81:  update public.user_devices
+supabase/migrations/20260727090000_explicit_identity_root_rotation.sql:87:  update public.user_devices
+supabase/migrations/20260525132500_quarantine_known_invalid_devices.sql:11:update public.device_signed_prekeys
+supabase/migrations/20260525132500_quarantine_known_invalid_devices.sql:23:update public.user_devices
+supabase/migrations/20260505084704_32497ac6-a17e-4c03-bc91-f78657e3bd9f.sql:4:UPDATE public.user_devices
+supabase/migrations/20260715190000_fix_signed_device_list_primary_root.sql:25:    from public.user_devices ud
+supabase/migrations/20260505000405_06d5ee1d-ad05-4eee-a02d-50a012ed7539.sql:13:    FROM public.user_devices
+supabase/migrations/20260505000405_06d5ee1d-ad05-4eee-a02d-50a012ed7539.sql:44:DROP TRIGGER IF EXISTS trg_notify_new_device ON public.user_devices;
+supabase/migrations/20260505000405_06d5ee1d-ad05-4eee-a02d-50a012ed7539.sql:46:  AFTER INSERT ON public.user_devices
+supabase/migrations/20260624090000_message_archives_per_recipient.sql:4:-- La colonne messages.archive_body (write-once) n'est écrivable que par
+supabase/migrations/20260624090000_message_archives_per_recipient.sql:14:CREATE TABLE IF NOT EXISTS public.message_archives (
+supabase/migrations/20260624090000_message_archives_per_recipient.sql:17:  archive_body text NOT NULL,
+supabase/migrations/20260624090000_message_archives_per_recipient.sql:22:ALTER TABLE public.message_archives ENABLE ROW LEVEL SECURITY;
+supabase/migrations/20260624090000_message_archives_per_recipient.sql:24:DROP POLICY IF EXISTS "ma_select_own" ON public.message_archives;
+supabase/migrations/20260624090000_message_archives_per_recipient.sql:25:CREATE POLICY "ma_select_own" ON public.message_archives
+supabase/migrations/20260624090000_message_archives_per_recipient.sql:28:DROP POLICY IF EXISTS "ma_insert_own" ON public.message_archives;
+supabase/migrations/20260624090000_message_archives_per_recipient.sql:29:CREATE POLICY "ma_insert_own" ON public.message_archives
+supabase/migrations/20260505084536_8c5d66d5-3621-4bd5-9837-258ee6c366cc.sql:27:      FROM public.user_devices
+supabase/migrations/20260505084536_8c5d66d5-3621-4bd5-9837-258ee6c366cc.sql:44:    FROM public.user_devices
+supabase/migrations/20260403232233_fb7b69dd-9956-45dc-99c8-64941b6205c1.sql:41:REVOKE ALL ON public.active_calls FROM anon;
+supabase/migrations/20260403232233_fb7b69dd-9956-45dc-99c8-64941b6205c1.sql:49:REVOKE ALL ON public.user_public_keys FROM anon;
+supabase/migrations/20260611085033_bd00a998-dbf4-4aef-9ec4-22c39808533f.sql:22:  FROM public.user_public_keys
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:29:ALTER TABLE public.user_devices
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:33:COMMENT ON COLUMN public.user_devices.identity_signing_key IS
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:35:COMMENT ON COLUMN public.user_devices.identity_fingerprint IS
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:38:CREATE INDEX IF NOT EXISTS idx_user_devices_identity_fp
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:39:  ON public.user_devices(user_id, identity_fingerprint)
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:59:  FROM public.user_devices d
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:99:--   INSERT INTO public.user_devices AS d (
+supabase/migrations/20260415153457_0a393fdd-b848-44f6-bc20-92bddeec07e0.sql:3:COMMENT ON TABLE public.active_calls IS 'Call signaling table';
+supabase/migrations/20260415153457_0a393fdd-b848-44f6-bc20-92bddeec07e0.sql:6:GRANT SELECT, INSERT, UPDATE ON public.active_calls TO authenticated;
+supabase/migrations/20260415153457_0a393fdd-b848-44f6-bc20-92bddeec07e0.sql:7:GRANT SELECT ON public.active_calls TO anon;
+supabase/migrations/20260415153457_0a393fdd-b848-44f6-bc20-92bddeec07e0.sql:10:ALTER TABLE public.active_calls REPLICA IDENTITY FULL;
+supabase/migrations/20260715210000_canonical_user_identity_root.sql:52:    from public.user_devices ud
+supabase/migrations/20260715210000_canonical_user_identity_root.sql:123:    from public.user_devices ud
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:37:-- Add archive_body column to messages (nullable for backward compat)
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:39:  ADD COLUMN IF NOT EXISTS archive_body text;
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:41:-- Make archive_body immutable after first set (prevent tampering)
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:42:CREATE OR REPLACE FUNCTION public.protect_message_archive_body()
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:45:  IF OLD.archive_body IS NOT NULL AND NEW.archive_body IS DISTINCT FROM OLD.archive_body THEN
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:46:    RAISE EXCEPTION 'archive_body is immutable once set';
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:52:DROP TRIGGER IF EXISTS protect_archive_body ON public.messages;
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:53:CREATE TRIGGER protect_archive_body
+supabase/migrations/20260602095839_8711af55-4f58-478c-ba29-3d547ad20f17.sql:56:  EXECUTE FUNCTION public.protect_message_archive_body();
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:24:    from public.user_devices ud
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:109:  v_body_kind text;
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:315:    v_body_kind := 'multi_device';
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:317:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:321:    id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:322:    view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:323:    document_size_bytes, archive_body
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:330:    v_body_kind,
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:331:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:337:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:342:    insert into public.message_device_copies (
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:9:create or replace function public.is_supported_aegis_device_copy(p_body text)
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:21:revoke all on function public.is_supported_aegis_device_copy(text)
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:23:grant execute on function public.is_supported_aegis_device_copy(text)
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:27:delete from public.message_device_copies
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:28:where not public.is_supported_aegis_device_copy(encrypted_body);
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:30:alter table public.message_device_copies
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:31:  drop constraint if exists message_device_copies_sesame_lite_wire_check;
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:32:alter table public.message_device_copies
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:33:  drop constraint if exists message_device_copies_aegis_v1_wire_check;
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:34:alter table public.message_device_copies
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:35:  add constraint message_device_copies_aegis_v1_wire_check
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:36:  check (public.is_supported_aegis_device_copy(encrypted_body));
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:41:on public.message_device_copies;
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:42:revoke insert on public.message_device_copies from anon, authenticated;
+supabase/migrations/20260525120000_fix_revoked_device_registration.sql:19:    from public.user_devices ud
+supabase/migrations/20260525120000_fix_revoked_device_registration.sql:62:  insert into public.user_devices (
+supabase/migrations/20260525120000_fix_revoked_device_registration.sql:92:  where public.user_devices.is_active = true;
+supabase/migrations/20260516100623_ede29c93-ddb7-4864-90c9-339fb3d519ae.sql:1:ALTER TABLE public.device_signed_prekeys
+supabase/migrations/20260516100623_ede29c93-ddb7-4864-90c9-339fb3d519ae.sql:4:UPDATE public.device_signed_prekeys
+supabase/migrations/20260516100623_ede29c93-ddb7-4864-90c9-339fb3d519ae.sql:26:  UPDATE public.device_signed_prekeys
+supabase/migrations/20260516100623_ede29c93-ddb7-4864-90c9-339fb3d519ae.sql:63:  FROM public.device_signed_prekeys sp
+supabase/migrations/20260516100623_ede29c93-ddb7-4864-90c9-339fb3d519ae.sql:64:  JOIN public.user_devices d
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:15:    SELECT 1 FROM public.user_devices
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:27:  FROM public.user_devices
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:40:  UPDATE public.user_devices
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:46:  UPDATE public.device_signed_prekeys
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:63:-- 2. Trigger: after any insert/update on user_devices, ensure the user still has a primary.
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:76:DROP TRIGGER IF EXISTS ensure_primary_after_device_change ON public.user_devices;
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:79:ON public.user_devices
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:90:    FROM public.user_devices ud
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:95:        SELECT 1 FROM public.user_devices p
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:33:drop trigger if exists clear_stale_device_on_activity on public.user_devices;
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:36:on public.user_devices
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:42:update public.user_devices
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:61:    from public.user_devices ud
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:75:  from public.user_devices ud
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:90:  join public.user_public_keys upk
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:117:create or replace function public.aegis_send_message(
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:184:      id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:185:      view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:186:      document_size_bytes, archive_body
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:194:      coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:200:      nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:205:  if not public.is_supported_aegis_message(p_body, 'multi_device') then
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:319:    id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:320:    view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:321:    document_size_bytes, archive_body
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:329:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:335:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:338:  insert into public.message_device_copies (
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:360:revoke all on function public.aegis_send_message(
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:363:grant execute on function public.aegis_send_message(
+supabase/migrations/20260719220000_aegis_resilient_device_routes.sql:367:comment on function public.aegis_send_message(
+supabase/migrations/20260604102957_f4506bfb-69ab-4758-b0f1-968f072c1609.sql:2:UPDATE public.user_devices
+supabase/migrations/20260604102957_f4506bfb-69ab-4758-b0f1-968f072c1609.sql:27:    FROM public.user_devices ud
+supabase/migrations/20260604102957_f4506bfb-69ab-4758-b0f1-968f072c1609.sql:30:      AND NOT EXISTS (SELECT 1 FROM public.device_signed_prekeys dsp
+supabase/migrations/20260604102957_f4506bfb-69ab-4758-b0f1-968f072c1609.sql:32:      AND NOT EXISTS (SELECT 1 FROM public.device_one_time_prekeys opk
+supabase/migrations/20260604102957_f4506bfb-69ab-4758-b0f1-968f072c1609.sql:44:    FROM public.user_devices ud
+supabase/migrations/20260604102957_f4506bfb-69ab-4758-b0f1-968f072c1609.sql:47:      AND NOT EXISTS (SELECT 1 FROM public.device_one_time_prekeys opk
+supabase/migrations/20260604102957_f4506bfb-69ab-4758-b0f1-968f072c1609.sql:59:  -- Soft-revoke at user_devices layer too
+supabase/migrations/20260604102957_f4506bfb-69ab-4758-b0f1-968f072c1609.sql:60:  UPDATE public.user_devices ud
+supabase/migrations/20260720163000_aegis_single_outbound_engine.sql:40:drop policy if exists "devices owner manage" on public.user_devices;
+supabase/migrations/20260720163000_aegis_single_outbound_engine.sql:41:drop policy if exists "Users can register their own devices" on public.user_devices;
+supabase/migrations/20260720163000_aegis_single_outbound_engine.sql:42:drop policy if exists "Users can update their own devices" on public.user_devices;
+supabase/migrations/20260720163000_aegis_single_outbound_engine.sql:43:drop policy if exists "Users can delete their own devices" on public.user_devices;
+supabase/migrations/20260720163000_aegis_single_outbound_engine.sql:45:revoke insert, update, delete on table public.user_devices from anon, authenticated;
+supabase/migrations/20260720163000_aegis_single_outbound_engine.sql:46:grant select on table public.user_devices to authenticated;
+supabase/migrations/20260720163000_aegis_single_outbound_engine.sql:65:  update public.user_devices
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:5:    WHERE table_name = 'messages' AND column_name = 'archive_body'
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:7:    ALTER TABLE public.messages ADD COLUMN archive_body text NULL;
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:11:CREATE OR REPLACE FUNCTION public.set_message_archive_body(
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:13:  p_archive_body text
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:28:  IF p_archive_body IS NULL OR length(trim(p_archive_body)) = 0 THEN
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:33:  SET archive_body = p_archive_body
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:36:    AND archive_body IS NULL
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:37:    AND coalesce(view_once, false) = false;
+supabase/migrations/20260607012147_fa35fb72-001c-4cda-b139-2f045c5746ad.sql:44:GRANT EXECUTE ON FUNCTION public.set_message_archive_body(uuid, text) TO authenticated;
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:19:  v_body_kind text;
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:26:    v_body_kind := 'multi_device';
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:28:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:37:    body_kind,
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:38:    view_once,
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:44:    archive_body
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:51:    v_body_kind,
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:52:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:58:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:63:    insert into public.message_device_copies (
+supabase/migrations/20260525152000_hard_cleanup_invalid_e2ee_devices.sql:29:delete from public.device_one_time_prekeys opk
+supabase/migrations/20260525152000_hard_cleanup_invalid_e2ee_devices.sql:35:update public.device_signed_prekeys spk
+supabase/migrations/20260525152000_hard_cleanup_invalid_e2ee_devices.sql:43:update public.user_devices ud
+supabase/migrations/20260525152000_hard_cleanup_invalid_e2ee_devices.sql:61:  from public.user_devices ud
+supabase/migrations/20260525152000_hard_cleanup_invalid_e2ee_devices.sql:88:  from public.user_devices ud
+supabase/migrations/20260525152000_hard_cleanup_invalid_e2ee_devices.sql:115:  from public.device_signed_prekeys spk
+supabase/migrations/20260525152000_hard_cleanup_invalid_e2ee_devices.sql:116:  join public.user_devices ud
+supabase/migrations/20260622143500_register_device_pending_gate.sql:28:  from public.user_devices
+supabase/migrations/20260622143500_register_device_pending_gate.sql:34:    from public.user_devices
+supabase/migrations/20260622143500_register_device_pending_gate.sql:47:      update public.user_devices
+supabase/migrations/20260622143500_register_device_pending_gate.sql:62:    update public.user_devices
+supabase/migrations/20260622143500_register_device_pending_gate.sql:80:    insert into public.user_devices (
+supabase/migrations/20260622143500_register_device_pending_gate.sql:114:      approval_requested_at = coalesce(public.user_devices.approval_requested_at, excluded.approval_requested_at);
+supabase/migrations/20260622143500_register_device_pending_gate.sql:119:  insert into public.user_devices (
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:48:  join public.user_devices d on d.user_id = cp.user_id
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:87:  v_body_kind text;
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:116:    v_body_kind := 'multi_device';
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:118:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:180:         select 1 from public.user_devices d
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:205:      join public.user_devices d on d.user_id = cp.user_id
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:248:    id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:249:    view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:250:    document_size_bytes, archive_body
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:257:    v_body_kind,
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:258:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:264:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:269:    insert into public.message_device_copies (
+supabase/migrations/20260507095457_effe5626-38bc-4af8-a593-741dc62c65fb.sql:53:    INSERT INTO public.messages (conversation_id, sender_id, body, body_kind, status)
+supabase/migrations/20260505083018_5d0223c3-b0da-4210-8c67-b672c788ec13.sql:1:ALTER TABLE public.user_devices
+supabase/migrations/20260505083018_5d0223c3-b0da-4210-8c67-b672c788ec13.sql:4:CREATE INDEX IF NOT EXISTS idx_user_devices_user_fingerprint
+supabase/migrations/20260505083018_5d0223c3-b0da-4210-8c67-b672c788ec13.sql:5:  ON public.user_devices(user_id, device_fingerprint)
+supabase/migrations/20260505083018_5d0223c3-b0da-4210-8c67-b672c788ec13.sql:16:  FROM public.user_devices
+supabase/migrations/20260517214012_cae11265-5518-4913-9187-bf047feec77b.sql:1:ALTER TABLE public.device_signed_prekeys REPLICA IDENTITY FULL;
+supabase/migrations/20260517214012_cae11265-5518-4913-9187-bf047feec77b.sql:2:ALTER PUBLICATION supabase_realtime ADD TABLE public.device_signed_prekeys;
+supabase/migrations/20260505003000_device_copy_retry_requests.sql:95:    FROM public.user_devices d
+supabase/migrations/20260505003000_device_copy_retry_requests.sql:179:  JOIN public.user_devices d
+supabase/migrations/20260505003000_device_copy_retry_requests.sql:241:    JOIN public.user_devices requester_device
+supabase/migrations/20260505003000_device_copy_retry_requests.sql:251:  INSERT INTO public.message_device_copies (
+supabase/migrations/20260505003000_device_copy_retry_requests.sql:288:  SET body_kind = 'multi_device'
+supabase/migrations/20260507115057_3e51f7ed-83ea-4ff2-9aca-fe0cc48851a7.sql:3:ALTER TABLE public.device_signed_prekeys
+supabase/migrations/20260507115057_3e51f7ed-83ea-4ff2-9aca-fe0cc48851a7.sql:6:ALTER TABLE public.device_one_time_prekeys
+supabase/migrations/20260507115057_3e51f7ed-83ea-4ff2-9aca-fe0cc48851a7.sql:8:ALTER TABLE public.device_one_time_prekeys
+supabase/migrations/20260507115057_3e51f7ed-83ea-4ff2-9aca-fe0cc48851a7.sql:23:    DELETE FROM public.device_one_time_prekeys
+supabase/migrations/20260507115057_3e51f7ed-83ea-4ff2-9aca-fe0cc48851a7.sql:25:      SELECT id FROM public.device_one_time_prekeys
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:7:CREATE TABLE IF NOT EXISTS public.user_devices (
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:19:  CONSTRAINT user_devices_unique_per_user UNIQUE (user_id, device_id)
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:22:CREATE INDEX IF NOT EXISTS idx_user_devices_user_active
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:23:  ON public.user_devices (user_id, is_active, last_seen_at DESC);
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:25:ALTER TABLE public.user_devices ENABLE ROW LEVEL SECURITY;
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:29:  ON public.user_devices FOR SELECT
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:33:  ON public.user_devices FOR INSERT
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:37:  ON public.user_devices FOR UPDATE
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:41:  ON public.user_devices FOR DELETE
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:44:CREATE TRIGGER trg_user_devices_updated_at
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:45:  BEFORE UPDATE ON public.user_devices
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:49:-- 2) Colonne body_kind sur messages (nullable, défaut 'legacy')
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:51:  ADD COLUMN IF NOT EXISTS body_kind text NOT NULL DEFAULT 'legacy';
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:53:COMMENT ON COLUMN public.messages.body_kind IS
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:54:  'Type de body: legacy (single-device) | multi_device (fan-out via message_device_copies) | system';
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:58:CREATE TABLE IF NOT EXISTS public.message_device_copies (
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:73:  ON public.message_device_copies (recipient_user_id, recipient_device_id, created_at DESC);
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:76:  ON public.message_device_copies (message_id);
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:78:ALTER TABLE public.message_device_copies ENABLE ROW LEVEL SECURITY;
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:82:  ON public.message_device_copies FOR SELECT
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:87:  ON public.message_device_copies FOR SELECT
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:92:  ON public.message_device_copies FOR INSERT
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:97:  ON public.message_device_copies FOR UPDATE
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:115:  FROM public.user_devices d
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:139:  FROM public.message_device_copies mdc
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:25:  v_body_kind text;
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:54:    v_body_kind := 'multi_device';
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:56:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:119:         select 1 from public.user_devices d
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:139:    id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:140:    view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:141:    document_size_bytes, archive_body
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:148:    v_body_kind,
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:149:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:155:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:160:    insert into public.message_device_copies (
+supabase/migrations/20260604111005_50fb9326-cc04-4eac-93f3-b4700563c190.sql:8:      AND tablename = 'message_device_copies'
+supabase/migrations/20260604111005_50fb9326-cc04-4eac-93f3-b4700563c190.sql:10:    ALTER PUBLICATION supabase_realtime ADD TABLE public.message_device_copies;
+supabase/migrations/20260711150000_e2ee_message_edits.sql:10:  archive_body text,
+supabase/migrations/20260711150000_e2ee_message_edits.sql:40:  archive_body text not null check (char_length(archive_body) between 1 and 262144),
+supabase/migrations/20260711150000_e2ee_message_edits.sql:120:  p_archive_body text default null,
+supabase/migrations/20260711150000_e2ee_message_edits.sql:187:     or coalesce(v_message.view_once, false)
+supabase/migrations/20260711150000_e2ee_message_edits.sql:208:    archive_body
+supabase/migrations/20260711150000_e2ee_message_edits.sql:216:    nullif(p_archive_body, '')
+supabase/migrations/20260711150000_e2ee_message_edits.sql:252:      from public.user_devices ud
+supabase/migrations/20260711150000_e2ee_message_edits.sql:288:        select 1 from public.user_devices ud
+supabase/migrations/20260411075536_5b97ec69-3d7e-406b-8cb2-ff1574157dc4.sql:1:ALTER TABLE public.active_calls ADD COLUMN IF NOT EXISTS e2ee_key text;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:11:alter table public.user_public_keys
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:15:alter table public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:20:alter table public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:21:  drop constraint if exists user_devices_routing_status_check;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:22:alter table public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:23:  add constraint user_devices_routing_status_check
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:27:  add column if not exists aegis_route_version text;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:30:update public.user_devices device
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:36:         from public.device_signed_prekeys spk
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:48:        from public.device_signed_prekeys spk
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:57:create table if not exists public.aegis_user_route_versions (
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:63:alter table public.aegis_user_route_versions enable row level security;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:64:revoke all on table public.aegis_user_route_versions
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:67:insert into public.aegis_user_route_versions (user_id, route_version)
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:69:from public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:72:create or replace function public.bump_aegis_user_route_version(p_user_id uuid)
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:83:  insert into public.aegis_user_route_versions (
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:88:  set route_version = public.aegis_user_route_versions.route_version + 1,
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:93:revoke all on function public.bump_aegis_user_route_version(uuid)
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:96:create or replace function public.trg_bump_aegis_device_route()
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:128:    perform public.bump_aegis_user_route_version(v_user_id);
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:138:drop trigger if exists bump_aegis_device_route on public.user_devices;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:139:create trigger bump_aegis_device_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:140:after insert or update or delete on public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:141:for each row execute function public.trg_bump_aegis_device_route();
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:143:create or replace function public.trg_bump_aegis_signature_route()
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:158:  perform public.bump_aegis_user_route_version(v_user_id);
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:167:drop trigger if exists bump_aegis_signature_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:169:create trigger bump_aegis_signature_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:171:for each row execute function public.trg_bump_aegis_signature_route();
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:173:drop trigger if exists bump_aegis_signed_prekey_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:174:on public.device_signed_prekeys;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:175:create trigger bump_aegis_signed_prekey_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:176:after insert or update or delete on public.device_signed_prekeys
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:177:for each row execute function public.trg_bump_aegis_signature_route();
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:179:drop trigger if exists bump_aegis_root_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:181:create trigger bump_aegis_root_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:183:for each row execute function public.trg_bump_aegis_signature_route();
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:185:drop trigger if exists bump_aegis_public_identity_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:186:on public.user_public_keys;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:187:create trigger bump_aegis_public_identity_route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:188:after insert or update or delete on public.user_public_keys
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:189:for each row execute function public.trg_bump_aegis_signature_route();
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:210:    from public.user_devices device
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:220:    from public.user_devices device
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:229:        from public.device_signed_prekeys spk
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:240:    join public.user_public_keys identity
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:287:create or replace function public.get_aegis_conversation_route_version(
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:321:  left join public.aegis_user_route_versions route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:333:revoke all on function public.get_aegis_conversation_route_version(uuid)
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:335:grant execute on function public.get_aegis_conversation_route_version(uuid)
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:351:  from public.user_devices device
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:398:  v_existing public.user_devices%rowtype;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:414:  from public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:439:  insert into public.user_devices (
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:462:      approved_at = coalesce(public.user_devices.approved_at, v_now),
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:463:      approved_by = coalesce(public.user_devices.approved_by, v_uid),
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:466:        when public.user_devices.device_public_key =
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:468:         and public.user_devices.routing_status = 'ready'
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:473:        when public.user_devices.device_public_key =
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:475:         and public.user_devices.routing_status = 'ready'
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:480:  where public.user_devices.revoked_at is null
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:481:    and coalesce(public.user_devices.approval_status, 'approved')
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:497:      from public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:531:    from public.device_signed_prekeys spk
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:536:    update public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:548:  update public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:588:  update public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:632:  update public.device_signed_prekeys
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:643:  update public.user_devices
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:662:drop trigger if exists aegis_require_exact_device_copies
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:664:drop function if exists public.trg_aegis_require_exact_device_copies();
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:665:drop trigger if exists aegis_require_all_device_copies
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:666:on public.message_device_copies;
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:667:drop function if exists public.trg_aegis_require_all_device_copies();
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:669:drop function if exists public.aegis_send_message(
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:673:create function public.aegis_send_message(
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:734:  if not public.is_supported_aegis_message(p_body, 'multi_device') then
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:752:  insert into public.aegis_user_route_versions (user_id, route_version)
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:759:  from public.aegis_user_route_versions route
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:767:    public.get_aegis_conversation_route_version(p_conversation_id);
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:898:    id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:899:    view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:900:    document_size_bytes, archive_body, aegis_route_version
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:910:      (coalesce(p_extra, '{}'::jsonb)->>'view_once')::boolean,
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:924:    nullif(coalesce(p_extra, '{}'::jsonb)->>'archive_body', ''),
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:928:  insert into public.message_device_copies (
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:950:revoke all on function public.aegis_send_message(
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:953:grant execute on function public.aegis_send_message(
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:957:comment on function public.aegis_send_message(
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:963:create or replace function public.trg_aegis_require_pinned_device_copies()
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:976:  if new.body_kind <> 'multi_device' then
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:981:    public.get_aegis_conversation_route_version(new.conversation_id);
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:982:  if new.aegis_route_version is null
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:983:     or new.aegis_route_version is distinct from v_current_route_version then
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:992:  from public.message_device_copies copy
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:1007:  from public.message_device_copies copy
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:1028:    from public.message_device_copies actual
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:1051:  from public.message_device_copies actual
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:1080:revoke all on function public.trg_aegis_require_pinned_device_copies()
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:1083:drop trigger if exists aegis_require_pinned_device_copies
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:1086:create constraint trigger aegis_require_pinned_device_copies
+supabase/migrations/20260726120000_aegis_identity_route_stabilization.sql:1090:execute function public.trg_aegis_require_pinned_device_copies();
+supabase/migrations/20260505085150_6055019a-c21f-41bb-bfe8-cd8bab80f591.sql:15:    UPDATE public.user_devices
+supabase/migrations/20260505085150_6055019a-c21f-41bb-bfe8-cd8bab80f591.sql:28:DROP TRIGGER IF EXISTS trg_dedupe_devices_by_fingerprint ON public.user_devices;
+supabase/migrations/20260505085150_6055019a-c21f-41bb-bfe8-cd8bab80f591.sql:30:AFTER INSERT OR UPDATE OF device_fingerprint, is_active ON public.user_devices
+supabase/migrations/20260505085150_6055019a-c21f-41bb-bfe8-cd8bab80f591.sql:55:      FROM public.user_devices
+supabase/migrations/20260505085150_6055019a-c21f-41bb-bfe8-cd8bab80f591.sql:68:    FROM public.user_devices
+supabase/migrations/20260505085150_6055019a-c21f-41bb-bfe8-cd8bab80f591.sql:91:  FROM public.user_devices
+supabase/migrations/20260505085150_6055019a-c21f-41bb-bfe8-cd8bab80f591.sql:97:UPDATE public.user_devices
+supabase/migrations/20260505085150_6055019a-c21f-41bb-bfe8-cd8bab80f591.sql:106:UPDATE public.user_devices
+supabase/migrations/20260505213514_69bee852-019f-4dd1-99fc-d9a0b25e3cbf.sql:60:    SELECT 1 FROM public.user_devices d
+supabase/migrations/20260505213514_69bee852-019f-4dd1-99fc-d9a0b25e3cbf.sql:93:  JOIN public.user_devices d
+supabase/migrations/20260505213514_69bee852-019f-4dd1-99fc-d9a0b25e3cbf.sql:117:  INSERT INTO public.message_device_copies (
+supabase/migrations/20260505213514_69bee852-019f-4dd1-99fc-d9a0b25e3cbf.sql:134:  UPDATE public.messages SET body_kind = 'multi_device' WHERE id = v_req.message_id;
+supabase/migrations/20260604105850_479bb9b3-9c68-4e4d-8546-9c44cb7bba12.sql:43:  JOIN public.user_devices d
+supabase/migrations/20260604105850_479bb9b3-9c68-4e4d-8546-9c44cb7bba12.sql:95:  INSERT INTO public.message_device_copies (
+supabase/migrations/20260604105850_479bb9b3-9c68-4e4d-8546-9c44cb7bba12.sql:129:  SET body_kind = 'multi_device'
+supabase/migrations/20260525131000_device_copy_retry_rpc_compat.sql:42:  join public.user_devices ud
+supabase/migrations/20260525131000_device_copy_retry_rpc_compat.sql:84:  insert into public.message_device_copies (
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:35:    from public.user_devices ud
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:133:  drop constraint if exists messages_aegis_v1_body_check;
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:137:create or replace function public.is_supported_aegis_message(
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:139:  p_body_kind text
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:148:  if p_body_kind = 'system' then
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:152:  if p_body_kind <> 'multi_device' then
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:180:  add constraint messages_aegis_v1_body_check
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:181:  check (public.is_supported_aegis_message(body, body_kind));
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:184:drop trigger if exists trg_enforce_aegis_message_scope on public.messages;
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:187:create or replace function public.enforce_aegis_message_scope()
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:196:  if new.body_kind = 'system' then
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:222:  if not public.is_supported_aegis_message(new.body, new.body_kind) then
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:242:create trigger trg_enforce_aegis_message_scope
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:243:before insert or update of id, conversation_id, sender_id, body, body_kind
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:245:for each row execute function public.enforce_aegis_message_scope();
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:247:revoke all on function public.enforce_aegis_message_scope() from public;
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:248:revoke all on function public.is_supported_aegis_message(text, text) from public;
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:249:grant execute on function public.is_supported_aegis_message(text, text) to authenticated;
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:251:alter table public.message_device_copies
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:252:  drop constraint if exists message_device_copies_sesame_lite_wire_check;
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:254:alter table public.message_device_copies
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:255:  drop constraint if exists message_device_copies_aegis_v1_wire_check;
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:257:alter table public.message_device_copies
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:258:  add constraint message_device_copies_aegis_v1_wire_check
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:275:drop function if exists public.aegis_send_message(
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:279:create function public.aegis_send_message(
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:351:      id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:352:      view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:353:      document_size_bytes, archive_body
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:361:      coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:367:      nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:372:  if not public.is_supported_aegis_message(p_body, 'multi_device') then
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:507:    id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:508:    view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:509:    document_size_bytes, archive_body
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:517:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:523:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:526:  insert into public.message_device_copies (
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:548:revoke all on function public.aegis_send_message(
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:551:grant execute on function public.aegis_send_message(
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:565:  and body_kind = 'system'
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:589:comment on function public.aegis_send_message(
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:593:do $aegis_comment$
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:600:$aegis_comment$;
+supabase/migrations/20260525123000_harden_device_registration_rpc.sql:26:    from public.user_devices ud
+supabase/migrations/20260525123000_harden_device_registration_rpc.sql:78:  insert into public.user_devices (
+supabase/migrations/20260525123000_harden_device_registration_rpc.sql:108:  where public.user_devices.user_id = auth.uid()
+supabase/migrations/20260525123000_harden_device_registration_rpc.sql:109:    and public.user_devices.is_active = true;
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:3:-- Aegis Server durable inbox. The existing aegis_send_message RPC atomically
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:4:-- creates one encrypted message_device_copies row per active device. These
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:7:create index if not exists idx_mdc_aegis_pending_device
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:8:on public.message_device_copies (
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:16:create or replace function public.aegis_sync_device(
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:33:  archive_body text,
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:51:    from public.user_devices device
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:61:  update public.user_devices device
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:81:    message.archive_body,
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:83:  from public.message_device_copies copy
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:88:    and message.body_kind = 'multi_device'
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:94:revoke all on function public.aegis_sync_device(text, integer)
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:96:grant execute on function public.aegis_sync_device(text, integer)
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:99:create or replace function public.aegis_ack_device_messages(
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:125:    from public.user_devices device
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:135:  update public.message_device_copies copy
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:150:revoke all on function public.aegis_ack_device_messages(text, uuid[], boolean)
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:152:grant execute on function public.aegis_ack_device_messages(text, uuid[], boolean)
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:157:create or replace function public.aegis_prune_device_inbox()
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:170:  delete from public.message_device_copies copy
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:178:revoke all on function public.aegis_prune_device_inbox()
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:180:grant execute on function public.aegis_prune_device_inbox()
+supabase/migrations/20260309020248_b50541fc-aec9-4cca-9ab9-0d3c8cce4cfc.sql:3:CREATE TABLE public.active_calls (
+supabase/migrations/20260309020248_b50541fc-aec9-4cca-9ab9-0d3c8cce4cfc.sql:16:ALTER TABLE public.active_calls ENABLE ROW LEVEL SECURITY;
+supabase/migrations/20260309020248_b50541fc-aec9-4cca-9ab9-0d3c8cce4cfc.sql:20:  ON public.active_calls
+supabase/migrations/20260309020248_b50541fc-aec9-4cca-9ab9-0d3c8cce4cfc.sql:28:  ON public.active_calls
+supabase/migrations/20260309020248_b50541fc-aec9-4cca-9ab9-0d3c8cce4cfc.sql:35:ALTER PUBLICATION supabase_realtime ADD TABLE public.active_calls;
+supabase/migrations/20260309020248_b50541fc-aec9-4cca-9ab9-0d3c8cce4cfc.sql:38:CREATE INDEX idx_active_calls_status ON public.active_calls(status, created_at);
+supabase/migrations/20260412013811_e8cac56a-d084-45e7-b49a-8e693275a54a.sql:1:ALTER TABLE public.active_calls ADD COLUMN IF NOT EXISTS encrypted_call_key text;
+supabase/migrations/20260412013811_e8cac56a-d084-45e7-b49a-8e693275a54a.sql:3:UPDATE public.active_calls
+supabase/migrations/20260412013811_e8cac56a-d084-45e7-b49a-8e693275a54a.sql:4:SET encrypted_call_key = e2ee_key
+supabase/migrations/20260412013811_e8cac56a-d084-45e7-b49a-8e693275a54a.sql:5:WHERE encrypted_call_key IS NULL
+supabase/migrations/20260412013811_e8cac56a-d084-45e7-b49a-8e693275a54a.sql:8:ALTER TABLE public.active_calls DROP COLUMN IF EXISTS e2ee_key;
+supabase/migrations/20260415151002_eb2e7f55-2388-47fc-bdfe-b10b24ebd4b6.sql:1:ALTER TABLE public.active_calls REPLICA IDENTITY FULL;
+supabase/migrations/20260505215501_1b23a2f0-6554-4dba-b8ac-3562f5f33fa1.sql:3:-- 1) cleanup_stale_user_devices
+supabase/migrations/20260505215501_1b23a2f0-6554-4dba-b8ac-3562f5f33fa1.sql:6:CREATE OR REPLACE FUNCTION public.cleanup_stale_user_devices()
+supabase/migrations/20260505215501_1b23a2f0-6554-4dba-b8ac-3562f5f33fa1.sql:21:  UPDATE public.user_devices d
+supabase/migrations/20260505215501_1b23a2f0-6554-4dba-b8ac-3562f5f33fa1.sql:32:  UPDATE public.user_devices d
+supabase/migrations/20260505215501_1b23a2f0-6554-4dba-b8ac-3562f5f33fa1.sql:44:GRANT EXECUTE ON FUNCTION public.cleanup_stale_user_devices() TO authenticated;
+supabase/migrations/20260415225614_e55fc15f-7169-43f0-8ad1-b1059e743376.sql:19:  FROM public.user_public_keys
+supabase/migrations/20260322010810_8de2f5a2-dc7f-4566-ac53-59e9f2720af2.sql:3:CREATE TABLE public.user_public_keys (
+supabase/migrations/20260322010810_8de2f5a2-dc7f-4566-ac53-59e9f2720af2.sql:18:ALTER TABLE public.user_public_keys ENABLE ROW LEVEL SECURITY;
+supabase/migrations/20260322010810_8de2f5a2-dc7f-4566-ac53-59e9f2720af2.sql:22:ON public.user_public_keys FOR SELECT
+supabase/migrations/20260322010810_8de2f5a2-dc7f-4566-ac53-59e9f2720af2.sql:28:ON public.user_public_keys FOR INSERT
+supabase/migrations/20260322010810_8de2f5a2-dc7f-4566-ac53-59e9f2720af2.sql:33:ON public.user_public_keys FOR UPDATE
+supabase/migrations/20260322010810_8de2f5a2-dc7f-4566-ac53-59e9f2720af2.sql:39:CREATE INDEX idx_user_public_keys_user_active ON public.user_public_keys (user_id, is_active) WHERE is_active = true;
+supabase/migrations/20260322010810_8de2f5a2-dc7f-4566-ac53-59e9f2720af2.sql:42:ALTER PUBLICATION supabase_realtime ADD TABLE public.user_public_keys;
+supabase/migrations/20260525143000_signed_device_list_foundation.sql:96:  from public.user_devices ud
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:3:create table if not exists public.aegis_recovery_vaults (
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:15:alter table public.aegis_recovery_vaults enable row level security;
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:17:revoke all on table public.aegis_recovery_vaults from anon, authenticated;
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:18:grant select on table public.aegis_recovery_vaults to authenticated;
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:20:drop policy if exists aegis_recovery_vault_select_own on public.aegis_recovery_vaults;
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:21:create policy aegis_recovery_vault_select_own
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:22:  on public.aegis_recovery_vaults
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:27:create or replace function public.write_aegis_recovery_vault(
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:63:    from public.aegis_recovery_vaults
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:75:  insert into public.aegis_recovery_vaults (
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:109:revoke all on function public.write_aegis_recovery_vault(smallint, bigint, text, text, text, text) from public, anon;
+supabase/migrations/20260730040000_aegis_recovery_vault.sql:110:grant execute on function public.write_aegis_recovery_vault(smallint, bigint, text, text, text, text) to authenticated;
+supabase/migrations/20260507103457_71a29d05-a1b0-45a8-96e0-9844e441491f.sql:2:-- 1. Add room_id to active_calls (for group calls; NULL = 1-1 derives from conv id)
+supabase/migrations/20260507103457_71a29d05-a1b0-45a8-96e0-9844e441491f.sql:3:ALTER TABLE public.active_calls
+supabase/migrations/20260507103457_71a29d05-a1b0-45a8-96e0-9844e441491f.sql:32:-- 3. Auto-log trigger: when active_calls reaches a terminal status, copy to history
+supabase/migrations/20260507103457_71a29d05-a1b0-45a8-96e0-9844e441491f.sql:53:  -- Tolerate text conv ids (active_calls.conversation_id is text)
+supabase/migrations/20260507103457_71a29d05-a1b0-45a8-96e0-9844e441491f.sql:79:DROP TRIGGER IF EXISTS trg_log_call_history ON public.active_calls;
+supabase/migrations/20260507103457_71a29d05-a1b0-45a8-96e0-9844e441491f.sql:81:  AFTER UPDATE ON public.active_calls
+supabase/migrations/20260507103457_71a29d05-a1b0-45a8-96e0-9844e441491f.sql:132:DROP TRIGGER IF EXISTS trg_notify_incoming_call_push ON public.active_calls;
+supabase/migrations/20260507103457_71a29d05-a1b0-45a8-96e0-9844e441491f.sql:134:  AFTER INSERT ON public.active_calls
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:8:  p_encrypted_call_key text DEFAULT NULL,
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:18:  v_row public.active_calls%ROWTYPE;
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:32:    INSERT INTO public.active_calls (
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:38:      encrypted_call_key
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:46:      p_encrypted_call_key
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:53:    FROM public.active_calls
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:66:    UPDATE public.active_calls
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:78:    UPDATE public.active_calls
+supabase/migrations/20260507130911_68f143be-4c68-40fc-acb9-6efba6a71dec.sql:62:ALTER TABLE public.device_signed_prekeys
+supabase/migrations/20260507130911_68f143be-4c68-40fc-acb9-6efba6a71dec.sql:70:  ON public.device_signed_prekeys (user_id, device_id, is_last_resort)
+supabase/migrations/20260730010000_aegis_clean_transport.sql:12:  add column if not exists aegis_request_digest text;
+supabase/migrations/20260730010000_aegis_clean_transport.sql:14:comment on column public.messages.aegis_request_digest is
+supabase/migrations/20260730010000_aegis_clean_transport.sql:17:drop function if exists public.aegis_send_message(
+supabase/migrations/20260730010000_aegis_clean_transport.sql:21:create function public.aegis_send_message(
+supabase/migrations/20260730010000_aegis_clean_transport.sql:116:  select message.sender_id, message.aegis_request_digest
+supabase/migrations/20260730010000_aegis_clean_transport.sql:145:  if not public.is_supported_aegis_message(p_body, 'multi_device') then
+supabase/migrations/20260730010000_aegis_clean_transport.sql:162:  insert into public.aegis_user_route_versions (user_id, route_version)
+supabase/migrations/20260730010000_aegis_clean_transport.sql:169:  from public.aegis_user_route_versions route
+supabase/migrations/20260730010000_aegis_clean_transport.sql:177:    public.get_aegis_conversation_route_version(p_conversation_id);
+supabase/migrations/20260730010000_aegis_clean_transport.sql:305:    id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260730010000_aegis_clean_transport.sql:306:    view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260730010000_aegis_clean_transport.sql:307:    document_size_bytes, archive_body, aegis_route_version,
+supabase/migrations/20260730010000_aegis_clean_transport.sql:308:    aegis_request_digest
+supabase/migrations/20260730010000_aegis_clean_transport.sql:317:    coalesce((coalesce(p_extra, '{}'::jsonb)->>'view_once')::boolean, false),
+supabase/migrations/20260730010000_aegis_clean_transport.sql:323:    nullif(coalesce(p_extra, '{}'::jsonb)->>'archive_body', ''),
+supabase/migrations/20260730010000_aegis_clean_transport.sql:328:  insert into public.message_device_copies (
+supabase/migrations/20260730010000_aegis_clean_transport.sql:355:revoke all on function public.aegis_send_message(
+supabase/migrations/20260730010000_aegis_clean_transport.sql:358:grant execute on function public.aegis_send_message(
+supabase/migrations/20260730010000_aegis_clean_transport.sql:362:comment on function public.aegis_send_message(
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:16:  v_body_kind text;
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:23:    v_body_kind := 'multi_device';
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:25:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:33:    body_kind,
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:34:    view_once,
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:40:    archive_body
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:46:    v_body_kind,
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:47:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:53:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:58:    insert into public.message_device_copies (
+supabase/migrations/20260421001210_9eb93385-9740-4a6d-980d-e5f42245d009.sql:6:CREATE TABLE IF NOT EXISTS public.device_one_time_prekeys (
+supabase/migrations/20260421001210_9eb93385-9740-4a6d-980d-e5f42245d009.sql:17:  ON public.device_one_time_prekeys (user_id, device_id, created_at);
+supabase/migrations/20260421001210_9eb93385-9740-4a6d-980d-e5f42245d009.sql:19:ALTER TABLE public.device_one_time_prekeys ENABLE ROW LEVEL SECURITY;
+supabase/migrations/20260421001210_9eb93385-9740-4a6d-980d-e5f42245d009.sql:23:  ON public.device_one_time_prekeys
+supabase/migrations/20260421001210_9eb93385-9740-4a6d-980d-e5f42245d009.sql:46:    FROM public.device_one_time_prekeys o
+supabase/migrations/20260421001210_9eb93385-9740-4a6d-980d-e5f42245d009.sql:54:    DELETE FROM public.device_one_time_prekeys o
+supabase/migrations/20260421001210_9eb93385-9740-4a6d-980d-e5f42245d009.sql:63:CREATE OR REPLACE FUNCTION public.count_device_one_time_prekeys(
+supabase/migrations/20260421001210_9eb93385-9740-4a6d-980d-e5f42245d009.sql:74:  FROM public.device_one_time_prekeys
+supabase/migrations/20260602094916_a7275e9a-8674-40f9-b7bf-ab042d4d4065.sql:13:    FROM public.user_devices ud
+supabase/migrations/20260602094916_a7275e9a-8674-40f9-b7bf-ab042d4d4065.sql:16:      AND NOT EXISTS (SELECT 1 FROM public.device_signed_prekeys dsp
+supabase/migrations/20260602094916_a7275e9a-8674-40f9-b7bf-ab042d4d4065.sql:18:      AND NOT EXISTS (SELECT 1 FROM public.device_one_time_prekeys opk
+supabase/migrations/20260602094916_a7275e9a-8674-40f9-b7bf-ab042d4d4065.sql:30:  -- Soft-revoke at user_devices layer too
+supabase/migrations/20260602094916_a7275e9a-8674-40f9-b7bf-ab042d4d4065.sql:31:  UPDATE public.user_devices ud
+supabase/migrations/20260505220254_03400f54-e7e1-42b5-9ee1-b9e1ad3abdf6.sql:1:DROP TRIGGER IF EXISTS trg_notify_new_device ON public.user_devices;
+supabase/migrations/20260505220254_03400f54-e7e1-42b5-9ee1-b9e1ad3abdf6.sql:10:  -- Commercial UX: device continuity is handled silently by user_devices,
+supabase/migrations/20260525130000_stabilize_device_spk_and_retry.sql:4:-- 1) Old devices can remain active while their device_signed_prekeys were
+supabase/migrations/20260525130000_stabilize_device_spk_and_retry.sql:217:  from public.user_devices ud
+supabase/migrations/20260525130000_stabilize_device_spk_and_retry.sql:249:  update public.user_devices
+supabase/migrations/20260525130000_stabilize_device_spk_and_retry.sql:259:  update public.device_signed_prekeys dsp
+supabase/migrations/20260525130000_stabilize_device_spk_and_retry.sql:266:      from public.user_devices ud
+supabase/migrations/20260201000100_e2ee_advanced_architecture.sql:15:alter table public.user_public_keys
+supabase/migrations/20260201000100_e2ee_advanced_architecture.sql:18:create table if not exists public.user_devices (
+supabase/migrations/20260201000100_e2ee_advanced_architecture.sql:76:create index if not exists idx_user_devices_user_active on public.user_devices(user_id, revoked_at, last_seen_at desc);
+supabase/migrations/20260201000100_e2ee_advanced_architecture.sql:82:alter table public.user_devices enable row level security;
+supabase/migrations/20260201000100_e2ee_advanced_architecture.sql:99:  create policy "devices owner manage" on public.user_devices
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:30:UPDATE public.user_devices ud SET is_active = false
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:32:UPDATE public.device_signed_prekeys dsp SET is_active=false, is_last_resort=false
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:34:DELETE FROM public.device_one_time_prekeys opk
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:121:  RETURN EXISTS (SELECT 1 FROM public.user_devices ud
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:143:  INSERT INTO public.user_devices (user_id, device_id, device_name, device_public_key,
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:151:  WHERE public.user_devices.user_id=auth.uid() AND public.user_devices.is_active=true;
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:161:  SELECT ud.device_id FROM public.user_devices ud
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:178:  FROM public.user_devices ud
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:194:  FROM public.device_signed_prekeys dsp
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:195:  JOIN public.user_devices ud ON ud.user_id=dsp.user_id AND ud.device_id=dsp.device_id
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:215:  UPDATE public.user_devices SET is_active=false WHERE user_id=v_user AND device_id=p_device_id;
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:216:  UPDATE public.device_signed_prekeys SET is_active=false, is_last_resort=false
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:230:  UPDATE public.device_signed_prekeys SET is_active=false, is_last_resort=false
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:234:  UPDATE public.user_devices SET is_active=false, updated_at=now()
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:324:  SELECT ud.user_id, ud.device_id, ud.device_public_key FROM public.user_devices ud
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:336:  UPDATE public.user_devices SET is_active=false, updated_at=coalesce(updated_at, now())
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:340:  UPDATE public.device_signed_prekeys dsp SET is_active=false, is_last_resort=false
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:342:    AND EXISTS (SELECT 1 FROM public.user_devices ud
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:393:DELETE FROM public.device_one_time_prekeys;
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:3:alter table public.user_devices
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:8:alter table public.user_devices
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:9:  drop constraint if exists user_devices_device_identity_version_check;
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:10:alter table public.user_devices
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:11:  add constraint user_devices_device_identity_version_check
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:16:create or replace function public.trg_bump_aegis_device_route()
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:47:    perform public.bump_aegis_user_route_version(v_user_id);
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:53:drop trigger if exists bump_aegis_device_route on public.user_devices;
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:54:create trigger bump_aegis_device_route
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:55:after insert or update or delete on public.user_devices
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:56:for each row execute function public.trg_bump_aegis_device_route();
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:79:  from public.user_devices device
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:91:      from public.device_signed_prekeys spk
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:161:  v_existing public.user_devices%rowtype;
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:176:  from public.user_devices
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:196:  insert into public.user_devices (
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:218:      approved_at = coalesce(public.user_devices.approved_at, v_now),
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:219:      approved_by = coalesce(public.user_devices.approved_by, v_uid),
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:224:  where public.user_devices.revoked_at is null
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:225:    and coalesce(public.user_devices.approval_status, 'approved') <> 'rejected';
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:254:  update public.user_devices device
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:268:      select 1 from public.device_signed_prekeys spk
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:287:    execute 'drop trigger if exists bump_aegis_root_route on public.user_identity_roots';
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:290:    execute 'drop trigger if exists bump_aegis_signature_route on public.user_device_signatures';
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:298:drop trigger if exists trg_aegis_reconcile_device_root on public.user_devices;
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:299:drop function if exists public.trg_aegis_reconcile_device_root();
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:301:alter table public.user_devices drop column if exists is_primary cascade;
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:316:  update public.user_devices device
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:360:  update public.user_devices device
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:405:drop trigger if exists trg_guard_user_device_lifecycle on public.user_devices;
+supabase/migrations/20260728100000_sesame_per_device_identity.sql:407:before update on public.user_devices
+supabase/migrations/20260604105209_55d0c68f-3460-4e54-a0b3-e0fc1c4cf60d.sql:4:DELETE FROM public.user_devices
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:1:CREATE OR REPLACE FUNCTION public.call_signal(p_action text, p_call_id uuid DEFAULT NULL::uuid, p_conversation_id text DEFAULT NULL::text, p_caller_id uuid DEFAULT NULL::uuid, p_callee_id uuid DEFAULT NULL::uuid, p_call_type text DEFAULT 'audio'::text, p_encrypted_call_key text DEFAULT NULL::text, p_status text DEFAULT NULL::text)
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:9:  v_row public.active_calls%ROWTYPE;
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:33:    INSERT INTO public.active_calls (
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:39:      encrypted_call_key
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:46:      p_encrypted_call_key
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:52:    FROM public.active_calls
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:65:    UPDATE public.active_calls
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:77:    UPDATE public.active_calls
+supabase/migrations/20260602094111_967eb04e-be39-49e7-b98f-26a241b56057.sql:1:ALTER TABLE public.user_devices
+supabase/migrations/20260602094111_967eb04e-be39-49e7-b98f-26a241b56057.sql:6:CREATE INDEX IF NOT EXISTS idx_user_devices_crypto_invalid_at
+supabase/migrations/20260602094111_967eb04e-be39-49e7-b98f-26a241b56057.sql:7:  ON public.user_devices (crypto_invalid_at)
+supabase/migrations/20260602094111_967eb04e-be39-49e7-b98f-26a241b56057.sql:10:CREATE INDEX IF NOT EXISTS idx_user_devices_prekey_repair_requested_at
+supabase/migrations/20260602094111_967eb04e-be39-49e7-b98f-26a241b56057.sql:11:  ON public.user_devices (prekey_repair_requested_at)
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:7:alter table public.user_devices
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:23:drop trigger if exists bump_aegis_device_route on public.user_devices;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:24:drop function if exists public.trg_bump_aegis_device_route();
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:26:alter table public.user_devices
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:27:  drop constraint if exists user_devices_device_identity_version_check,
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:33:update public.user_devices
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:40:create or replace function public.trg_bump_aegis_device_route()
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:69:    perform public.bump_aegis_user_route_version(v_user_id);
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:75:create trigger bump_aegis_device_route
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:76:after insert or update or delete on public.user_devices
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:77:for each row execute function public.trg_bump_aegis_device_route();
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:117:  from public.user_devices device
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:118:  join public.user_public_keys account
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:159:  v_existing_device public.user_devices%rowtype;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:160:  v_existing_account public.user_public_keys%rowtype;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:180:  from public.user_public_keys
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:192:    update public.user_public_keys
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:197:    insert into public.user_public_keys (
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:209:  from public.user_devices
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:229:  insert into public.user_devices (
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:251:      approved_at = coalesce(public.user_devices.approved_at, v_now),
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:252:      approved_by = coalesce(public.user_devices.approved_by, v_uid),
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:258:          select 1 from public.device_signed_prekeys spk
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:266:          select 1 from public.device_signed_prekeys spk
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:273:  where public.user_devices.revoked_at is null
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:274:    and coalesce(public.user_devices.approval_status, 'approved') <> 'rejected';
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:305:  v_existing public.device_signed_prekeys%rowtype;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:316:    select 1 from public.user_devices device
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:330:  from public.device_signed_prekeys
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:340:  update public.device_signed_prekeys
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:348:  insert into public.device_signed_prekeys (
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:358:      expires_at = greatest(public.device_signed_prekeys.expires_at, now() + interval '30 days');
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:360:  update public.user_devices
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:380:create or replace function public.publish_device_one_time_prekeys(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:419:    select 1 from public.user_devices device
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:435:  join public.device_one_time_prekeys existing
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:444:  insert into public.device_one_time_prekeys (user_id, device_id, opk_id, public_key)
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:461:revoke all on function public.publish_device_one_time_prekeys(text,jsonb) from public, anon;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:462:grant execute on function public.publish_device_one_time_prekeys(text,jsonb) to authenticated;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:515:    from public.device_one_time_prekeys item
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:522:    delete from public.device_one_time_prekeys item
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:534:create or replace function public.count_device_one_time_prekeys(
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:550:    from public.device_one_time_prekeys
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:557:revoke all on function public.count_device_one_time_prekeys(uuid,text) from public, anon;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:558:grant execute on function public.count_device_one_time_prekeys(uuid,text) to authenticated;
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:571:  from public.device_signed_prekeys spk
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:613:  from public.message_device_copies copy
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:638:  update public.user_devices device
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:652:      select 1 from public.user_public_keys account
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:659:      select 1 from public.device_signed_prekeys spk
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:690:  update public.user_devices device
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:727:    'public.aegis_send_message(uuid,uuid,text,text,jsonb,jsonb,text,text)'
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:24:  p_body_kind text
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:33:  if p_body_kind = 'system' then
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:37:  if p_body_kind <> 'multi_device' then
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:59:  check (public.is_supported_sesame_lite_message(body, body_kind));
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:71:  if new.body_kind = 'system' then
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:101:before insert or update of conversation_id, sender_id, body_kind
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:107:alter table public.message_device_copies
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:108:  drop constraint if exists message_device_copies_sesame_lite_wire_check;
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:110:alter table public.message_device_copies
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:111:  add constraint message_device_copies_sesame_lite_wire_check
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:137:  and body_kind = 'system'
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:5:CREATE TABLE IF NOT EXISTS public.device_signed_prekeys (
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:19:  ON public.device_signed_prekeys (user_id, device_id, is_active, created_at DESC);
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:21:ALTER TABLE public.device_signed_prekeys ENABLE ROW LEVEL SECURITY;
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:25:  ON public.device_signed_prekeys
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:33:  ON public.device_signed_prekeys
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:61:  FROM public.device_signed_prekeys sp
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:62:  JOIN public.user_devices d
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:82:  DELETE FROM public.device_signed_prekeys
+supabase/migrations/20260622143000_device_approval_status.sql:3:-- First deployment step only: add approval states to user_devices.
+supabase/migrations/20260622143000_device_approval_status.sql:7:alter table public.user_devices
+supabase/migrations/20260622143000_device_approval_status.sql:21:    where conname = 'user_devices_approval_status_chk'
+supabase/migrations/20260622143000_device_approval_status.sql:23:    alter table public.user_devices
+supabase/migrations/20260622143000_device_approval_status.sql:24:      add constraint user_devices_approval_status_chk
+supabase/migrations/20260622143000_device_approval_status.sql:29:update public.user_devices
+supabase/migrations/20260622143000_device_approval_status.sql:36:create index if not exists idx_user_devices_approval_status
+supabase/migrations/20260622143000_device_approval_status.sql:37:  on public.user_devices(user_id, approval_status, is_active);
+supabase/migrations/20260720200000_aegis_core_finalization.sql:9:drop trigger if exists trg_handle_primary_device_loss on public.user_devices;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:10:drop trigger if exists ensure_primary_after_device_change on public.user_devices;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:21:  v_primary public.user_devices%rowtype;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:22:  v_candidate public.user_devices%rowtype;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:32:  from public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:38:  from public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:69:  from public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:83:  update public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:89:  update public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:104:  update public.device_signed_prekeys
+supabase/migrations/20260720200000_aegis_core_finalization.sql:112:  from public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:127:    p_user_id, 'aegis_primary_rotated', v_candidate_ids
+supabase/migrations/20260720200000_aegis_core_finalization.sql:139:create or replace function public.trg_aegis_reconcile_device_root()
+supabase/migrations/20260720200000_aegis_core_finalization.sql:151:drop trigger if exists aegis_reconcile_device_root on public.user_devices;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:152:create trigger aegis_reconcile_device_root
+supabase/migrations/20260720200000_aegis_core_finalization.sql:155:on public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:157:execute function public.trg_aegis_reconcile_device_root();
+supabase/migrations/20260720200000_aegis_core_finalization.sql:159:revoke all on function public.trg_aegis_reconcile_device_root()
+supabase/migrations/20260720200000_aegis_core_finalization.sql:173:  v_row public.user_devices%rowtype;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:183:  from public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:198:  update public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:240:  v_target public.user_devices%rowtype;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:251:  from public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:272:    from public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:285:    update public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:291:    update public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:305:    update public.device_signed_prekeys
+supabase/migrations/20260720200000_aegis_core_finalization.sql:319:      v_uid, 'aegis_primary_rotated', array[v_replacement_id]
+supabase/migrations/20260720200000_aegis_core_finalization.sql:327:  update public.user_devices
+supabase/migrations/20260720200000_aegis_core_finalization.sql:351:create or replace function public.enforce_aegis_metadata_minimization()
+supabase/migrations/20260720200000_aegis_core_finalization.sql:357:  if new.body_kind = 'multi_device' then
+supabase/migrations/20260720200000_aegis_core_finalization.sql:366:drop trigger if exists enforce_aegis_metadata_minimization on public.messages;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:367:create trigger enforce_aegis_metadata_minimization
+supabase/migrations/20260720200000_aegis_core_finalization.sql:368:before insert or update of body_kind, document_name, document_mime, document_size_bytes
+supabase/migrations/20260720200000_aegis_core_finalization.sql:371:execute function public.enforce_aegis_metadata_minimization();
+supabase/migrations/20260720200000_aegis_core_finalization.sql:373:revoke all on function public.enforce_aegis_metadata_minimization()
+supabase/migrations/20260720200000_aegis_core_finalization.sql:377:-- authority left is public.aegis_send_message(...).
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:28:  v_existing public.user_devices%rowtype;
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:41:  from public.user_devices
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:57:  insert into public.user_devices (
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:99:        public.user_devices.approval_requested_at,
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:102:      approved_at = coalesce(public.user_devices.approved_at, v_now),
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:103:      approved_by = coalesce(public.user_devices.approved_by, v_uid),
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:105:  where public.user_devices.revoked_at is null
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:106:    and coalesce(public.user_devices.approval_status, 'approved') <> 'rejected';
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:138:create or replace function public.trg_aegis_require_all_device_copies()
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:146:  v_body_kind text;
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:150:  select m.conversation_id, m.body_kind
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:151:    into v_conversation_id, v_body_kind
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:155:  if not found or v_body_kind <> 'multi_device' then
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:175:    from public.message_device_copies actual
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:194:  from public.message_device_copies actual
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:217:revoke all on function public.trg_aegis_require_all_device_copies()
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:220:drop trigger if exists aegis_require_all_device_copies
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:221:on public.message_device_copies;
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:223:create constraint trigger aegis_require_all_device_copies
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:224:after insert on public.message_device_copies
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:227:execute function public.trg_aegis_require_all_device_copies();
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:233:comment on function public.aegis_send_message(
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:249:update public.user_devices
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:263:using public.user_devices device
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:272:create or replace function public.cleanup_stale_user_devices()
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:286:create or replace function public.cleanup_stale_user_devices(
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:348:  update public.device_signed_prekeys
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:393:-- Enforce the policy even if an old client or RPC tries to mutate user_devices
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:433:on public.user_devices;
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:435:before update on public.user_devices
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:439:revoke all on function public.cleanup_stale_user_devices()
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:441:revoke all on function public.cleanup_stale_user_devices(interval, interval)
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:445:grant execute on function public.cleanup_stale_user_devices()
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:447:grant execute on function public.cleanup_stale_user_devices(interval, interval)
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:459:-- message_device_copies never fires when a buggy/old sender inserts zero rows.
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:462:drop trigger if exists aegis_require_all_device_copies
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:463:on public.message_device_copies;
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:465:create or replace function public.trg_aegis_require_exact_device_copies()
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:477:  if new.body_kind <> 'multi_device' then
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:483:  from public.message_device_copies c
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:495:  from public.message_device_copies c
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:515:    from public.message_device_copies actual
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:537:  from public.message_device_copies actual
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:567:revoke all on function public.trg_aegis_require_exact_device_copies()
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:570:drop trigger if exists aegis_require_exact_device_copies
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:573:create constraint trigger aegis_require_exact_device_copies
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:577:execute function public.trg_aegis_require_exact_device_copies();
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:579:comment on function public.trg_aegis_require_exact_device_copies() is
+supabase/migrations/20260403150720_636cf5f2-2cac-4d60-9a4c-97589d1f2074.sql:37:-- Attach trigger to active_calls table
+supabase/migrations/20260403150720_636cf5f2-2cac-4d60-9a4c-97589d1f2074.sql:38:DROP TRIGGER IF EXISTS trg_validate_call_participants ON public.active_calls;
+supabase/migrations/20260403150720_636cf5f2-2cac-4d60-9a4c-97589d1f2074.sql:40:  BEFORE INSERT ON public.active_calls
+supabase/migrations/20260422061151_260e3e98-f452-4600-9751-6da43494a572.sql:17:  FROM public.message_device_copies mdc
+supabase/migrations/20260505072906_c1a4ab0e-af99-44d6-b6eb-ef87e8ef4b17.sql:1:ALTER TABLE public.user_devices
+supabase/migrations/20260505072906_c1a4ab0e-af99-44d6-b6eb-ef87e8ef4b17.sql:6:CREATE INDEX IF NOT EXISTS idx_user_devices_lifecycle
+supabase/migrations/20260505072906_c1a4ab0e-af99-44d6-b6eb-ef87e8ef4b17.sql:7:  ON public.user_devices (user_id, is_active, revoked_at, last_seen_at DESC);
+supabase/migrations/20260505072906_c1a4ab0e-af99-44d6-b6eb-ef87e8ef4b17.sql:17:    RAISE EXCEPTION 'USER_DEVICES_REACTIVATION_BLOCKED table=user_devices column=is_active value=true constraint=revoked_device_cannot_be_reactivated device_id=%', OLD.device_id
+supabase/migrations/20260505072906_c1a4ab0e-af99-44d6-b6eb-ef87e8ef4b17.sql:31:DROP TRIGGER IF EXISTS trg_guard_user_device_lifecycle ON public.user_devices;
+supabase/migrations/20260505072906_c1a4ab0e-af99-44d6-b6eb-ef87e8ef4b17.sql:33:  BEFORE UPDATE ON public.user_devices
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:29:    from public.user_devices
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:46:  update public.user_devices
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:85:  update public.user_devices
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:129:  v_existing public.user_devices%rowtype;
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:147:    from public.user_devices
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:155:      from public.user_devices
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:168:      update public.user_devices
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:189:    update public.user_devices
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:213:    insert into public.user_devices (
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:247:  insert into public.user_devices (
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:3:  ADD COLUMN IF NOT EXISTS view_once boolean NOT NULL DEFAULT false,
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:12:CREATE OR REPLACE FUNCTION public.scrub_view_once_on_view()
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:19:  IF NEW.view_once = true
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:34:DROP TRIGGER IF EXISTS trg_scrub_view_once ON public.messages;
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:35:CREATE TRIGGER trg_scrub_view_once
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:37:FOR EACH ROW EXECUTE FUNCTION public.scrub_view_once_on_view();
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:41:CREATE POLICY "msg_update_view_once_viewer"
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:44:  view_once = true
+supabase/migrations/20260507101232_be49de15-c40b-44be-8814-06596be77368.sql:50:  view_once = true
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:5:  add column if not exists archive_body text;
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:23:  v_body_kind text;
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:54:    v_body_kind := 'multi_device';
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:56:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:116:         from public.user_devices d
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:140:    body_kind,
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:141:    view_once,
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:147:    archive_body
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:154:    v_body_kind,
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:155:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:161:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:166:    insert into public.message_device_copies (
+supabase/migrations/20260623112000_enforce_complete_device_bundle.sql:18:  FROM public.user_devices ud
+supabase/migrations/20260623112000_enforce_complete_device_bundle.sql:28:      FROM public.device_signed_prekeys dsp
+supabase/migrations/20260623112000_enforce_complete_device_bundle.sql:58:  FROM public.device_signed_prekeys dsp
+supabase/migrations/20260623112000_enforce_complete_device_bundle.sql:59:  JOIN public.user_devices ud
+supabase/migrations/20260623112000_enforce_complete_device_bundle.sql:88:UPDATE public.user_devices ud
+supabase/migrations/20260623112000_enforce_complete_device_bundle.sql:93:    FROM public.device_signed_prekeys dsp
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:20:  v_body_kind text;
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:46:    v_body_kind := 'multi_device';
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:48:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:98:         select 1 from public.user_devices d
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:117:    id, conversation_id, sender_id, body, image_url, body_kind,
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:118:    view_once, expires_at, document_url, document_name, document_mime,
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:119:    document_size_bytes, archive_body
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:126:    v_body_kind,
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:127:    coalesce((p_extra->>'view_once')::boolean, false),
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:133:    nullif(p_extra->>'archive_body', '')
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:138:    insert into public.message_device_copies (
+
+=== CLIENT RPC AND TABLE REFERENCES ===
+src/hooks/useDeviceRegistration.ts:352:          const { data: rpcResult, error: rpcErr } = await supabase.rpc('register_user_device_safe', {
+src/hooks/useMessages.ts:661:          .from('aegis_view_once_consumptions' as never)
+src/hooks/useMessages.ts:843:      const { data, error } = await supabase.rpc('delete_aegis_message_for_me' as never, {
+src/hooks/useMessages.ts:890:      const { data, error } = await supabase.rpc('delete_aegis_message_for_everyone' as never, {
+src/lib/crypto/recoveryManager.ts:31:        .from('aegis_recovery_vaults' as never)
+src/lib/crypto/x3dh.ts:254:    const { data, error } = await (supabase as any).rpc('publish_device_signed_prekey', {
+src/lib/crypto/x3dh.ts:409:    const { data, error } = await supabase.rpc('claim_device_one_time_prekey', {
+src/lib/crypto/signedDeviceList.ts:47:  const { data, error } = await (supabase as any).rpc('get_sesame_device_list', {
+src/lib/crypto/resyncE2EE.ts:380:    const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe', {
+src/lib/crypto/aegisRecoveryVault.ts:157:  const { data, error } = await supabase.rpc('write_aegis_recovery_vault' as never, {
+src/lib/calls/aegisCallProtocol.ts:255:  const { data, error } = await (supabase as any).rpc('aegis_call_create', {
+src/lib/calls/aegisCallProtocol.ts:274:  const { data, error } = await (supabase as any).rpc('aegis_call_get_invitation', {
+src/lib/calls/aegisCallProtocol.ts:303:  const { data, error } = await (supabase as any).rpc('aegis_call_update_status', {
+src/lib/calls/aegisCallProtocol.ts:314:  const { data, error } = await (supabase as any).rpc('aegis_call_latest_for_device', {
+src/lib/messaging/aegisViewOnce.ts:54:  await rpc('release_aegis_view_once_claim', {
+src/lib/messaging/aegisViewOnce.ts:63:    const response = await rpc('commit_aegis_view_once_consume', {
+src/lib/messaging/aegisViewOnce.ts:127:  const begin = await rpc('begin_aegis_view_once_consume', {
+src/lib/messaging/__tests__/aegisStage3Architecture.test.ts:49:    expect(fanout).not.toContain(".from('message_device_copies')");
+supabase/functions/livekit-token/index.ts:92:          .from("aegis_call_invitations")
+
+=== LEGACY / TEST DATA MARKERS ===
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:11:set room_name = 'legacy-call-' || id::text
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:280:create or replace function public.aegis_call_latest_for_device(p_device_id text)
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:315:revoke all on function public.aegis_call_latest_for_device(text) from public, anon;
+supabase/migrations/20260730030000_aegis_call_scoped_livekit.sql:316:grant execute on function public.aegis_call_latest_for_device(text) to authenticated;
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:49:  ELSIF p_action = 'latest_for_callee' THEN
+supabase/migrations/20260415152555_8c4a6428-6905-485c-b1ac-38b935ec996e.sql:63:  ELSIF p_action = 'expire_old_for_callee' THEN
+supabase/migrations/20260622144000_pending_devices_inactive_constraint.sql:2:-- This blocks legacy client upsert paths from accidentally activating an
+supabase/migrations/20260308211200_5653e245-f988-4c38-892f-d68d11d12f3c.sql:3:CREATE OR REPLACE FUNCTION public.cleanup_old_fingerprints()
+supabase/migrations/20260607005117_b4364167-3429-44c4-a543-b9df27d2c618.sql:103:       SET keys_epoch = greatest(keys_epoch + 1, spk_id + 1)
+supabase/migrations/20260716020000_x3dh_replay_two_phase.sql:34:  v_ttl integer := greatest(30, least(coalesce(p_ttl_seconds, 120), 600));
+supabase/migrations/20260422052252_4a975c01-1e7b-490d-81bb-3ebe7b833cde.sql:124:CREATE OR REPLACE FUNCTION public.cleanup_old_login_attempts()
+supabase/migrations/20260515114712_e4f20c77-716c-4f87-a5cb-c889b5eda34b.sql:79:      penalty_level = greatest(coalesce(penalty_level, 0), case when ban_minutes >= 60 then 4 else 3 end),
+supabase/migrations/20260515114712_e4f20c77-716c-4f87-a5cb-c889b5eda34b.sql:80:      blocked_until = greatest(coalesce(blocked_until, now()), now() + make_interval(mins => ban_minutes)),
+supabase/migrations/20260515114712_e4f20c77-716c-4f87-a5cb-c889b5eda34b.sql:114:      'temporary_ip_throttle',
+supabase/migrations/20260312105825_27b56870-270d-4ad1-b271-19256ff77d63.sql:21:  old_value JSONB,
+supabase/migrations/20260422030303_19a23803-d2ae-42ff-b6f0-23d43cbe29c8.sql:45:CREATE OR REPLACE FUNCTION public.ml_cold_start_feed(p_user_id uuid, p_limit integer DEFAULT 25)
+supabase/migrations/20260422030303_19a23803-d2ae-42ff-b6f0-23d43cbe29c8.sql:83:CREATE OR REPLACE FUNCTION public.ml_is_cold_start(p_user_id uuid)
+supabase/migrations/20260403232233_fb7b69dd-9956-45dc-99c8-64941b6205c1.sql:36:REVOKE ALL ON public.ab_tests FROM anon;
+supabase/migrations/20260512003436_566c7e85-3b9d-492e-86d1-f6bca470b488.sql:72:CREATE OR REPLACE FUNCTION public.purge_old_threat_decisions()
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:23:--   - (future) KT verifier                     -> kt_get_inclusion_proof / kt_latest_head
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:123:DROP FUNCTION IF EXISTS public.kt_latest_head();
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:125:CREATE FUNCTION public.kt_latest_head()
+supabase/migrations/20260703000000_per_device_signing_keys_and_kt_read.sql:145:GRANT EXECUTE ON FUNCTION public.kt_latest_head() TO authenticated;
+supabase/migrations/20260716013000_sesame_authoritative_device_route.sql:317:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:26:-- The user explicitly chose a hard cutover with no legacy-message retention.
+supabase/migrations/20260310191949_afe7f75b-b0c8-4698-9d2c-dc7c46afd40b.sql:1:CREATE OR REPLACE FUNCTION public.cleanup_old_fingerprints()
+supabase/migrations/20260516100623_ede29c93-ddb7-4864-90c9-339fb3d519ae.sql:5:SET keys_epoch = greatest(keys_epoch, spk_id)
+supabase/migrations/20260516100623_ede29c93-ddb7-4864-90c9-339fb3d519ae.sql:27:  SET keys_epoch = greatest(keys_epoch + 1, spk_id + 1)
+supabase/migrations/20260607212512_4207103d-a212-4da9-9a8f-530ba970c88f.sql:47:     SET keys_epoch = greatest(keys_epoch + 1, spk_id + 1)
+supabase/migrations/20260619174456_93680c8f-eea6-409a-8427-5fe75c323af5.sql:28:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260623024244_10cebd25-cbd0-49bb-b737-8752708e2126.sql:118:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260505003000_device_copy_retry_requests.sql:186:  LIMIT greatest(1, least(coalesce(p_limit, 20), 50));
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:49:-- 2) Colonne body_kind sur messages (nullable, défaut 'legacy')
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:51:  ADD COLUMN IF NOT EXISTS body_kind text NOT NULL DEFAULT 'legacy';
+supabase/migrations/20260420095343_51748c7e-0a41-49f0-97fd-5e5ad4c9c425.sql:54:  'Type de body: legacy (single-device) | multi_device (fan-out via message_device_copies) | system';
+supabase/migrations/20260309051250_9e5c4da9-e913-49e4-a6e2-9d5c11d095b2.sql:2:CREATE TABLE public.ab_tests (
+supabase/migrations/20260309051250_9e5c4da9-e913-49e4-a6e2-9d5c11d095b2.sql:6:  test_type TEXT NOT NULL DEFAULT 'feed', -- 'feed', 'moderation', 'ui'
+supabase/migrations/20260309051250_9e5c4da9-e913-49e4-a6e2-9d5c11d095b2.sql:22:ALTER TABLE public.ab_tests ENABLE ROW LEVEL SECURITY;
+supabase/migrations/20260309051250_9e5c4da9-e913-49e4-a6e2-9d5c11d095b2.sql:24:CREATE POLICY "Authenticated users can view ab_tests"
+supabase/migrations/20260309051250_9e5c4da9-e913-49e4-a6e2-9d5c11d095b2.sql:25:  ON public.ab_tests FOR SELECT TO authenticated
+supabase/migrations/20260309051250_9e5c4da9-e913-49e4-a6e2-9d5c11d095b2.sql:28:CREATE POLICY "Authenticated users can manage ab_tests"
+supabase/migrations/20260309051250_9e5c4da9-e913-49e4-a6e2-9d5c11d095b2.sql:29:  ON public.ab_tests FOR ALL TO authenticated
+supabase/migrations/20260622162000_reject_empty_multi_device_parent.sql:56:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260505213514_69bee852-019f-4dd1-99fc-d9a0b25e3cbf.sql:97:  LIMIT greatest(1, least(coalesce(p_limit, 20), 50));
+supabase/migrations/20260604105850_479bb9b3-9c68-4e4d-8546-9c44cb7bba12.sql:53:  LIMIT greatest(1, least(coalesce(p_limit, 20), 50));
+supabase/migrations/20260525131000_device_copy_retry_rpc_compat.sql:50:  limit greatest(1, least(coalesce(p_limit, 20), 200));
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:4:-- production and retaining an ambiguous legacy wire format would create more
+supabase/migrations/20260518012628_ae226393-b3d2-47ba-bcf0-90f8aa2fb5c8.sql:50:CREATE OR REPLACE FUNCTION public.purge_old_recovery_events()
+supabase/migrations/20260518012628_ae226393-b3d2-47ba-bcf0-90f8aa2fb5c8.sql:63:DROP TRIGGER IF EXISTS trg_purge_old_recovery_events ON public.user_recovery_events;
+supabase/migrations/20260518012628_ae226393-b3d2-47ba-bcf0-90f8aa2fb5c8.sql:64:CREATE TRIGGER trg_purge_old_recovery_events
+supabase/migrations/20260518012628_ae226393-b3d2-47ba-bcf0-90f8aa2fb5c8.sql:67:EXECUTE FUNCTION public.purge_old_recovery_events();
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:43:  v_limit integer := least(greatest(coalesce(p_limit, 100), 1), 250);
+supabase/migrations/20260705120000_ml_embeddings_hnsw_unified.sql:5:-- ⚠️  RELIRE AVANT D'APPLIQUER. Écrite hors-ligne, NON testée contre la DB.
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:51:  ELSIF p_action = 'latest_for_callee' THEN
+supabase/migrations/20260415152355_82d8b7df-dbfe-498e-8989-cb10934893a9.sql:65:  ELSIF p_action = 'expire_old_for_callee' THEN
+supabase/migrations/20260619174405_6f250d25-617f-45f9-aa21-d25ac44ab3a2.sql:25:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260511223839_2492eda5-af42-4f02-b478-d9b06005c592.sql:50:CREATE OR REPLACE FUNCTION public.purge_old_ai_engine_events()
+supabase/migrations/20260327052055_75afa12e-37ea-4b02-abb6-f99d4f86ac05.sql:46:CREATE OR REPLACE FUNCTION public.purge_old_audit_logs()
+supabase/migrations/20260704120000_recsys_v8_embedding_retrieval_rerank.sql:709:  cold_start AS (
+supabase/migrations/20260704120000_recsys_v8_embedding_retrieval_rerank.sql:712:      'cold_start'::text AS retrieval_source,
+supabase/migrations/20260704120000_recsys_v8_embedding_retrieval_rerank.sql:729:    UNION ALL SELECT * FROM cold_start
+supabase/migrations/20260525130000_stabilize_device_spk_and_retry.sql:153:  limit greatest(1, least(coalesce(p_limit, 50), 200));
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:297:  LIMIT greatest(1, least(coalesce(p_limit,50), 200));
+supabase/migrations/20260602093034_7926922c-1772-4f35-9a30-26a4a3bb0590.sql:387:    LIMIT greatest(1, least(coalesce(p_limit,50), 200))
+supabase/migrations/20260419151710_83f579f6-2fc1-4144-bd71-cb99b1b3efbd.sql:10:-- 2) Drop legacy one-time prekey RPC + table
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:50:  ELSIF p_action = 'latest_for_callee' THEN
+supabase/migrations/20260415172553_02598634-dd80-4ef3-aaba-382123820ae9.sql:64:  ELSIF p_action = 'expire_old_for_callee' THEN
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:14:-- Remove callable objects that depend on the obsolete self-authorization
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:358:      expires_at = greatest(public.device_signed_prekeys.expires_at, now() + interval '30 days');
+supabase/migrations/20260624103000_recsys_v7_feed_live_video.sql:41:    "cold_start_boost": 0.10,
+supabase/migrations/20260624103000_recsys_v7_feed_live_video.sql:175:      END AS cold_start,
+supabase/migrations/20260624103000_recsys_v7_feed_live_video.sql:195:        + s.cold_start * 100
+supabase/migrations/20260624103000_recsys_v7_feed_live_video.sql:208:            + s.cold_start * 100
+supabase/migrations/20260624103000_recsys_v7_feed_live_video.sql:217:        WHEN s.cold_start > 0 THEN 'cold_start_exploration'
+supabase/migrations/20260624103000_recsys_v7_feed_live_video.sql:450:      CASE WHEN b.age_h < 12 AND (b.view_count + b.like_count) < 20 THEN 0.10 ELSE 0 END AS cold_start,
+supabase/migrations/20260624103000_recsys_v7_feed_live_video.sql:463:      + s.cold_start
+supabase/migrations/20260415155058_c3228c4e-8502-4e73-94e4-bd51ba9dc37e.sql:29:CREATE OR REPLACE FUNCTION public.cleanup_old_behavior_signals()
+supabase/migrations/20260422013334_6a18c1cf-c949-42d0-918a-407ba8228481.sql:53:CREATE OR REPLACE FUNCTION public.purge_old_crypto_error_logs()
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:2:-- Strategy: shared identity key per user (legacy compatible), but each device has its own SPK + ratchets.
+supabase/migrations/20260421000455_50a03955-e592-4170-b8bf-f5333312e675.sql:3:-- 100% additive: legacy `user_signed_prekeys` (per-user) keeps working unchanged.
+supabase/migrations/20260720200000_aegis_core_finalization.sql:105:  set keys_epoch = greatest(keys_epoch + 1, spk_id + 1)
+supabase/migrations/20260720200000_aegis_core_finalization.sql:306:    set keys_epoch = greatest(keys_epoch + 1, spk_id + 1)
+supabase/migrations/20260720200000_aegis_core_finalization.sql:376:-- Remove every obsolete send/edit entry point. The only peer-message write
+supabase/migrations/20260511221635_c30695e7-1ab1-40e6-b3f7-c638298c98ab.sql:186:CREATE OR REPLACE FUNCTION public.purge_old_feed_score_tamper_events()
+supabase/migrations/20260201120000_security_monitor_cron_and_mitigation.sql:93:      penalty_level = greatest(coalesce(penalty_level, 0), case when ban_minutes >= 60 then 4 else 3 end),
+supabase/migrations/20260201120000_security_monitor_cron_and_mitigation.sql:94:      blocked_until = greatest(coalesce(blocked_until, now()), now() + make_interval(mins => ban_minutes)),
+supabase/migrations/20260201120000_security_monitor_cron_and_mitigation.sql:129:      'temporary_ip_throttle',
+supabase/migrations/20260622151500_approve_reject_user_devices.sql:6:--   - pending/rejected devices must never become active through legacy upserts.
+supabase/migrations/20260622011500_harden_send_message_with_device_copies.sql:56:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+supabase/migrations/20260309051303_e9c8dff4-80c1-4814-a7cc-99539d5d8a7f.sql:1:-- Tighten RLS: only admin role can manage ab_tests
+supabase/migrations/20260309051303_e9c8dff4-80c1-4814-a7cc-99539d5d8a7f.sql:2:DROP POLICY "Authenticated users can manage ab_tests" ON public.ab_tests;
+supabase/migrations/20260309051303_e9c8dff4-80c1-4814-a7cc-99539d5d8a7f.sql:4:CREATE POLICY "Admin can manage ab_tests"
+supabase/migrations/20260309051303_e9c8dff4-80c1-4814-a7cc-99539d5d8a7f.sql:5:  ON public.ab_tests FOR ALL TO authenticated
+supabase/migrations/20260622091517_8c40978f-0f41-476a-bb42-b9970efe3dc0.sql:48:    v_body_kind := coalesce(nullif(p_extra->>'body_kind', ''), 'legacy');
+
+=== TABLE DELETE / TRUNCATE STATEMENTS ===
+supabase/migrations/20260525150000_disable_unreliable_opk_claiming.sql:33:delete from public.device_one_time_prekeys;
+supabase/migrations/20260722120000_manual_device_revocation_only.sql:25:delete from public.invalid_e2ee_devices bad
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:104:  delete from public.message_device_copies where message_id = new.id;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:105:  delete from public.message_archives where message_id = new.id;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:306:  delete from public.aegis_view_once_payloads
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:377:  delete from public.aegis_view_once_payloads
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:379:  delete from public.aegis_view_once_consumptions
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:381:  delete from public.message_archives
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:409:  delete from public.message_archives where message_id = p_message_id;
+supabase/migrations/20260730050000_aegis_view_once_consumption.sql:410:  delete from public.messages where id = p_message_id;
+supabase/migrations/20260716020000_x3dh_replay_two_phase.sql:43:  delete from public.x3dh_initial_reservations r
+supabase/migrations/20260716020000_x3dh_replay_two_phase.sql:125:  delete from public.x3dh_initial_reservations r
+supabase/migrations/20260720213000_aegis_device_copy_wire_repair.sql:27:delete from public.message_device_copies
+supabase/migrations/20260720163000_aegis_single_outbound_engine.sql:79:  delete from public.user_device_signatures
+supabase/migrations/20260525152000_hard_cleanup_invalid_e2ee_devices.sql:29:delete from public.device_one_time_prekeys opk
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:99:truncate table public.messages cascade;
+supabase/migrations/20260719190000_aegis_v1_cutover.sql:102:truncate table public.user_chat_pins;
+supabase/migrations/20260728150000_aegis_durable_device_inbox.sql:170:  delete from public.message_device_copies copy
+supabase/migrations/20260730020000_aegis_account_authorized_devices.sql:522:    delete from public.device_one_time_prekeys item
+supabase/migrations/20260718090000_sesame_lite_protocol_cutover.sql:3:truncate table public.messages cascade;
+supabase/migrations/20260720200000_aegis_core_finalization.sql:61:      delete from public.user_device_signatures
+supabase/migrations/20260720200000_aegis_core_finalization.sql:101:  delete from public.user_device_signatures
+supabase/migrations/20260720200000_aegis_core_finalization.sql:302:    delete from public.user_device_signatures
+supabase/migrations/20260720200000_aegis_core_finalization.sql:322:    delete from public.user_device_signatures
+supabase/migrations/20260723120000_aegis_server_alignment_and_exact_delivery.sql:262:delete from public.invalid_e2ee_devices bad
