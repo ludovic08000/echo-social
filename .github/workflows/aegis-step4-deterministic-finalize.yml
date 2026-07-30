@@ -39,6 +39,22 @@ jobs:
           echo '9f31fc2c4ea4c41846238e8951fa3b3d16bb1b177ca61d65f54e5ba9259b293c  /tmp/aegis-stage4-patch.tar.gz' | sha256sum --check -
           gzip --test /tmp/aegis-stage4-patch.tar.gz
           tar -xzf /tmp/aegis-stage4-patch.tar.gz -C .
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/lib/messaging/__tests__/outboxVault.test.ts')
+          source = path.read_text()
+          replacements = {
+              "afterEach(() => {\n  vi.useRealTimers();\n});": "afterEach(() => {\n  vi.useRealTimers();\n  vi.restoreAllMocks();\n});",
+              "    vi.useFakeTimers();\n    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));": "    const now = vi.spyOn(Date, 'now');\n    now.mockReturnValue(new Date('2026-01-01T00:00:00Z').getTime());",
+              "    vi.setSystemTime(new Date('2026-02-01T00:00:00Z'));": "    now.mockReturnValue(new Date('2026-02-01T00:00:00Z').getTime());",
+          }
+          for old, new in replacements.items():
+              if source.count(old) != 1:
+                  raise SystemExit(f'expected exactly one deterministic test replacement: {old!r}')
+              source = source.replace(old, new)
+          path.write_text(source)
+          PY
           cat > /tmp/aegis-stage4-files.sha256 <<'AEGIS_STAGE4_SHA256'
           a8a9f7f56ce764c971b061de4821ed62679e92322550cc1b137aa49810ab1751  docs/AEGIS_CLEAN_REBUILD.md
           ee4ace3fa517f73faa62edb1e9f6217b81245886369635aea93a90e15ab9706d  docs/AEGIS_E2EE_ARCHITECTURE.md
@@ -54,7 +70,7 @@ jobs:
           acb6be4e45224c35a9ef7a49571b262f491142389a2b03a29e0ad060de13015d  src/lib/crypto/__tests__/crossTabLock.test.ts
           f0f00f3c36b8872804279e9d3bfaf1e4421ffc00e15e09e42bfdcf3623fed0a6  src/lib/messaging/__tests__/aegisConversationQueue.test.ts
           4c2d495a4a0434ce579607b71df0546555eef184031aa734bfe6668fa5f8da57  src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts
-          01ba071afaa3f2b67e5ec58e6fca89ad7cbc6aa5d69abf9ecf361ff5324babaa  src/lib/messaging/__tests__/outboxVault.test.ts
+          f422c1a35d3dc28cb25694ab7e09e5df9b1b40f04b69f0a496230d2ba13f076c  src/lib/messaging/__tests__/outboxVault.test.ts
           AEGIS_STAGE4_SHA256
           sha256sum --check /tmp/aegis-stage4-files.sha256
 
@@ -123,6 +139,7 @@ jobs:
           rm -f .github/workflows/aegis-step4-recover.yml
           rm -f .github/workflows/aegis-step4-deterministic-finalize.yml
           rm -f .github/workflows/aegis-tree-sha.yml
+          rm -rf .aegis-step4
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
