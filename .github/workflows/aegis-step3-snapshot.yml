@@ -1,25 +1,42 @@
-name: Aegis step 3 snapshot
+name: Aegis step 3 map
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [refactor/aegis-clean-rebuild]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  snapshot:
+  map:
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Export exact source
+        with:
+          ref: refactor/aegis-clean-rebuild
+          fetch-depth: 0
+      - name: Build exact step 3 map
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p audit
-          tar --exclude='.git' --exclude='node_modules' --exclude='dist' -czf audit/step3-source.tar.gz \
-            src supabase .github scripts package.json package-lock.json tsconfig*.json vite.config.ts vitest.config.ts
-      - uses: actions/upload-artifact@v4
-        with:
-          name: aegis-step3-source
-          path: audit/step3-source.tar.gz
-          retention-days: 1
+          {
+            echo '# SQL definitions'
+            grep -RInE --include='*.sql' 'create( or replace)? function public\.(register_user_device_safe|get_sesame_device_list|publish_device_signed_prekey|publish_device_one_time_prekeys|claim_device_one_time_prekey|get_device_prekey_bundle|mark_current_device_route_ready)|device_authorization_signature|account_binding_signature' supabase/migrations || true
+            echo
+            echo '# Active runtime calls'
+            grep -RInE --include='*.ts' --include='*.tsx' 'register_user_device_safe|get_sesame_device_list|publish_device_signed_prekey|publish_device_one_time_prekeys|claim_device_one_time_prekey|get_device_prekey_bundle|mark_current_device_route_ready|fetchVerifiedDeviceIdentity|establishDeviceSession|ratchetDecryptWithSession|buildFanout' src || true
+            echo
+            echo '# Legacy or parallel trust markers'
+            grep -RInE --include='*.ts' --include='*.tsx' --include='*.sql' 'device_identity_version|self.author|self_author|device_identity_signature|get_signed_device_list\(' src supabase/migrations || true
+            echo
+            echo '# Skipped crypto/fanout tests'
+            grep -RInE --include='*.ts' --include='*.tsx' '(it|test|describe)\.skip|skip:[[:space:]]*true' src/lib/crypto src/lib/messaging src/hooks || true
+          } > docs/aegis-step3-map.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/aegis-step3-map.txt
+          git commit -m 'chore(aegis): map active step 3 trust paths'
+          git push origin HEAD:refactor/aegis-clean-rebuild
