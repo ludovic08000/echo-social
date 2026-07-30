@@ -21,16 +21,16 @@ jobs:
             find src supabase .github -type f | sort | grep -Ei 'aegis|e2ee|ratchet|x3dh|device|prekey|message|call|livekit|backup|recovery|fingerprint|view.once' || true
             echo
             echo '# SQL Aegis functions and objects'
-            rg -n --glob '*.sql' 'aegis_send_message|register_user_device_safe|get_signed_device_list|message_device_copies|active_calls|call_invites|livekit|backup_pin_state|user_backups' supabase/migrations || true
+            grep -RInE --include='*.sql' 'aegis_send_message|register_user_device_safe|get_signed_device_list|message_device_copies|active_calls|call_invites|livekit|backup_pin_state|user_backups' supabase/migrations || true
             echo
             echo '# Skipped tests'
-            rg -n '\b(it|test|describe)\.skip\b|\bskip:\s*true\b' src || true
+            grep -RInE --include='*.ts' --include='*.tsx' '(it|test|describe)\.skip|skip:[[:space:]]*true' src || true
             echo
             echo '# Aegis imports and runtime entry points'
-            rg -n "from ['\"]@/lib/(messaging|crypto|aegis)|sendAegisOutboundMessage|useAegisMessageQueue|useMessageQueue|startGroupCall|signalOutgoingCall|getLiveKitToken" src || true
+            grep -RInE --include='*.ts' --include='*.tsx' "sendAegisOutboundMessage|useAegisMessageQueue|useMessageQueue|startGroupCall|signalOutgoingCall|getLiveKitToken|@/lib/aegis|@/lib/messaging|@/lib/crypto" src || true
             echo
-            echo '# Direct message writes'
-            rg -n "from\(['\"]messages['\"]\).*(insert|upsert|update|delete)|\.from\(['\"]messages['\"]\)" src supabase/functions || true
+            echo '# Direct message table access'
+            grep -RInE --include='*.ts' --include='*.tsx' "from\(['\"]messages['\"]\)|\.from\(['\"]messages['\"]\)" src supabase/functions || true
             echo
             echo '# Migrations ordered'
             find supabase/migrations -maxdepth 1 -type f -printf '%f\n' | sort
