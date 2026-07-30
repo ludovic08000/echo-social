@@ -1,0 +1,67 @@
+name: Aegis step 8 audit portable
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    if: github.head_ref == 'refactor/aegis-clean-rebuild'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate portable privacy audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="docs/AEGIS_STAGE8_AUDIT.txt"
+          grep_tree() {
+            local pattern="$1"
+            shift
+            grep -RInE \
+              --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git \
+              --include='*.ts' --include='*.tsx' --include='*.js' --include='*.mjs' \
+              --include='*.sql' --include='*.json' --include='*.html' \
+              "$pattern" "$@" || true
+          }
+          {
+            echo "AEGIS STAGE 8 PRIVACY AUDIT"
+            echo "HEAD=$(git rev-parse HEAD)"
+            echo
+            echo "=== EDGE FUNCTIONS ==="
+            find supabase/functions -maxdepth 2 -type f 2>/dev/null | sort || true
+            echo
+            echo "=== PUSH / NOTIFICATION REFERENCES ==="
+            grep_tree '(showNotification|pushManager|push_subscription|webpush|firebase.*messaging|fcm|apns|onesignal|send[-_ ]?push|notification)' src public supabase
+            echo
+            echo "=== SENSITIVE LOG CANDIDATES ==="
+            grep_tree '(console\.(log|warn|error|info|debug)|logger\.(log|warn|error|info|debug))' src public supabase \
+              | grep -Ei '(body|plaintext|content|message|payload|key|token|secret|cipher|archive|media|url|device|session|authorization|email|phone)' || true
+            echo
+            echo "=== SERVER-SIDE SENSITIVE FIELD REFERENCES ==="
+            grep_tree '(plaintext|message_body|encrypted_body|archive_body|call_key|media_key|recovery_key|access_token|refresh_token|authorization|body|content|caption|preview|payload)' supabase/functions
+            echo
+            echo "=== SERVER EXTERNAL REQUESTS ==="
+            grep_tree '(fetch\(|Deno\.serve|serve\()' supabase/functions
+            echo
+            echo "=== MESSAGE / NOTIFICATION SQL ==="
+            grep_tree '(notification|push|message|plaintext|content|preview|body)' supabase/migrations
+            echo
+            echo "=== CLIENT TELEMETRY / ERROR REPORTING ==="
+            grep_tree '(sentry|posthog|analytics|telemetry|trackEvent|captureException|captureMessage|logCrypto)' src supabase/functions
+          } > "$report"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/aegis-step8-audit2.yml
+          git add "$report" .github/workflows/aegis-step8-audit2.yml
+          git commit -m "chore(aegis): refresh stage 8 privacy audit"
+          git push origin HEAD:refactor/aegis-clean-rebuild
