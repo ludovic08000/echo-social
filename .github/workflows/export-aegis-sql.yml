@@ -1,15 +1,15 @@
 name: Export Aegis SQL
 
 on:
-  push:
-    branches: [refactor/aegis-clean-rebuild]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
   export:
-    if: github.ref == 'refs/heads/refactor/aegis-clean-rebuild'
+    if: github.head_ref == 'refactor/aegis-clean-rebuild'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
