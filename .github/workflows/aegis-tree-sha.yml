@@ -1,0 +1,18 @@
+name: Aegis tree SHA
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  tree:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 1
+      - name: Print exact tree
+        run: echo "AEGIS_TREE_SHA=$(git rev-parse 'HEAD^{tree}')"
