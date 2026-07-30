@@ -1,0 +1,42 @@
+name: Aegis architecture map
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build audit map
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit
+          {
+            echo '# Aegis repository files'
+            find src supabase .github -type f | sort | grep -Ei 'aegis|e2ee|ratchet|x3dh|device|prekey|message|call|livekit|backup|recovery|fingerprint|view.once' || true
+            echo
+            echo '# SQL Aegis functions and objects'
+            rg -n --glob '*.sql' 'aegis_send_message|register_user_device_safe|get_signed_device_list|message_device_copies|active_calls|call_invites|livekit|backup_pin_state|user_backups' supabase/migrations || true
+            echo
+            echo '# Skipped tests'
+            rg -n '\b(it|test|describe)\.skip\b|\bskip:\s*true\b' src || true
+            echo
+            echo '# Aegis imports and runtime entry points'
+            rg -n "from ['\"]@/lib/(messaging|crypto|aegis)|sendAegisOutboundMessage|useAegisMessageQueue|useMessageQueue|startGroupCall|signalOutgoingCall|getLiveKitToken" src || true
+            echo
+            echo '# Direct message writes'
+            rg -n "from\(['\"]messages['\"]\).*(insert|upsert|update|delete)|\.from\(['\"]messages['\"]\)" src supabase/functions || true
+            echo
+            echo '# Migrations ordered'
+            find supabase/migrations -maxdepth 1 -type f -printf '%f\n' | sort
+          } > audit/aegis-map.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aegis-architecture-map
+          path: audit/aegis-map.txt
+          retention-days: 1
