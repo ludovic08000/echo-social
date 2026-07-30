@@ -23,7 +23,7 @@ There is no production compatibility requirement. Test messages, obsolete schema
 3. ✅ Device identity, X3DH, Double Ratchet and complete fan-out.
 4. ✅ Cross-tab locking and durable encrypted outbox.
 5. ✅ Call-scoped LiveKit rooms, invitations and per-device call-key delivery.
-6. Recovery vault and non-destructive key restore.
+6. ✅ Recovery vault and non-destructive key restore.
 7. View-once consumption, deletion and local-cache cleanup.
 8. Privacy boundaries for logs, push notifications and server functions.
 9. One clean SQL reset for development data and obsolete Aegis objects.
@@ -45,11 +45,15 @@ The complete immutable encrypted request is durable before network delivery and 
 
 Each call owns one immutable UUID and one LiveKit room named from that UUID, never from a conversation identifier. The call key is encrypted independently for every routable account-authorized device with an ephemeral X25519 exchange and AES-GCM metadata binding. The server stores only per-device envelopes and issues a call token only to the authorized device named by the caller record or an active invitation. Missing, revoked or unmatched devices fail closed.
 
+## Stage 6 invariant
+
+The recovery vault contains only the portable X25519 and Ed25519 account identity. It never contains or replaces a device identifier, device private key, prekey, Double Ratchet state, outbox row or decrypted-message cache. The vault is encrypted locally with a random 256-bit recovery key through HKDF-SHA-256 and AES-GCM metadata binding. A restore installs the identity only when no local identity exists and the vault fingerprint is compatible with the active server identity; every mismatch fails closed without modifying local state. Vault generations increase exactly by one under a serialized server transaction. Rotation is explicit, the new key is displayed once, and no background process can silently revoke the user's saved key.
+
 ## Current checkpoint
 
-- Stages 1, 2, 3, 4 and 5 are complete and validated.
-- Stage 5 passed its call-scoped-room, complete device fan-out and fail-closed tests, typecheck, the full test suite and the production build.
-- E2EE CI and the Crypto Test Suite passed on the validated stage 5 implementation.
+- Stages 1, 2, 3, 4, 5 and 6 are complete and validated.
+- Stage 6 passed its vault round-trip, wrong-key, metadata-tampering, identity-conflict and monotonic-rotation tests, typecheck, the full test suite and the production build.
+- The active recovery-key UI and recovery manager use one Aegis vault path; no active caller uses the former recovery-key backup functions.
 - Temporary payloads and one-shot workflows have been removed.
 - The pull request remains draft and unmerged.
 - No Supabase migration from this rebuild has been applied.
