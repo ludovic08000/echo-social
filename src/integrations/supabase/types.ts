@@ -7921,7 +7921,12 @@ export type Database = {
         Returns: boolean
       }
       claim_device_one_time_prekey: {
-        Args: { p_device_id: string; p_user_id: string }
+        Args: {
+          p_conversation_id: string
+          p_device_id: string
+          p_sender_device_id: string
+          p_user_id: string
+        }
         Returns: {
           opk_id: number
           public_key: string

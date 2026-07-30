@@ -103,8 +103,6 @@ export {
 
 export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
 
-export { fetchPrekeyBundle } from './x3dhBundleRouter';
-
 export {
   x3dhInitiate,
   refreshDeviceSignedPrekeyIfNeeded,

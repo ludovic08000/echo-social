@@ -40,7 +40,7 @@ describe('Lot A1 — trust-gated device list', () => {
   it('returns only signed devices and ignores rogue raw entries', async () => {
     fetchVerifiedMock.mockResolvedValue({
       signedListPresent: true,
-      trusted: [{ deviceId: 'dev-good', devicePublicKey: 'PUB_GOOD' }],
+      trusted: [{ deviceId: 'dev-good', devicePublicKey: 'PUB_GOOD', isRoutable: true }],
       verifications: [{ deviceId: 'dev-good', ok: true, reason: 'VALID' }],
     });
     // Even if the raw RPC has a rogue entry, the trust path wins.
@@ -72,11 +72,10 @@ describe('Lot A1 — trust-gated device list', () => {
     expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
-  it('returns [] when both paths fail', async () => {
+  it('throws when the canonical registry cannot be verified', async () => {
     fetchVerifiedMock.mockRejectedValue(new Error('rpc down'));
     (supabase.rpc as any).mockResolvedValue({ data: null, error: new Error('also down') });
-    const out = await listDevicesForUser('user-789');
-    expect(out).toEqual([]);
+    await expect(listDevicesForUser('user-789')).rejects.toThrow('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
     expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
   });
 
@@ -84,8 +83,8 @@ describe('Lot A1 — trust-gated device list', () => {
     fetchVerifiedMock.mockResolvedValue({
       signedListPresent: true,
       trusted: [
-        { deviceId: 'dev-a', devicePublicKey: 'PUB_A' },
-        { deviceId: 'dev-b', devicePublicKey: '' },
+        { deviceId: 'dev-a', devicePublicKey: 'PUB_A', isRoutable: true },
+        { deviceId: 'dev-b', devicePublicKey: '', isRoutable: true },
       ],
       verifications: [
         { deviceId: 'dev-a', ok: true, reason: 'VALID' },
@@ -107,9 +106,25 @@ describe('Lot A1 — trust-gated device list', () => {
       error: null,
     });
 
-    const out = await listDevicesForUser('user-signed-bad');
-
-    expect(out).toEqual([]);
+    await expect(listDevicesForUser('user-signed-bad')).rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
     expect(supabase.rpc).not.toHaveBeenCalledWith('list_active_devices_for_user', expect.anything());
   });
+
+  it('keeps a revoked identity verifiable but excludes it from the current route', async () => {
+    fetchVerifiedMock.mockResolvedValue({
+      signedListPresent: true,
+      trusted: [
+        { deviceId: 'dev-current', devicePublicKey: 'PUB_CURRENT', isRoutable: true },
+        { deviceId: 'dev-revoked', devicePublicKey: 'PUB_OLD', isRoutable: false },
+      ],
+      verifications: [
+        { deviceId: 'dev-current', ok: true, reason: 'VALID' },
+        { deviceId: 'dev-revoked', ok: true, reason: 'VALID' },
+      ],
+    });
+
+    const out = await listDevicesForUser('user-history', { verifyPrekeys: false });
+    expect(out.map((device) => device.deviceId)).toEqual(['dev-current']);
+  });
+
 });

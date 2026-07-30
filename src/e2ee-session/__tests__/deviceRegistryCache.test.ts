@@ -38,6 +38,7 @@ describe('verified device routing cache', () => {
         primaryPubB64: 'root',
         signatureB64: null,
         signedAt: null,
+        isRoutable: true,
       }],
       verifications: [{ deviceId: 'device-a', ok: true, reason: 'PRIMARY' }],
     });
@@ -58,11 +59,11 @@ describe('verified device routing cache', () => {
     }]);
   });
 
-  it('remains fail-closed when signed routing cannot be verified', async () => {
+  it('surfaces canonical registry verification failures', async () => {
     mocks.fetchVerifiedDeviceList.mockRejectedValueOnce(new Error('network'));
 
     await expect(listDevicesForUser('user-b', { verifyPrekeys: false }))
-      .resolves.toEqual([]);
+      .rejects.toThrow('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
   });
 
   it('does not cache a stale in-flight empty list after invalidation', async () => {
@@ -86,6 +87,7 @@ describe('verified device routing cache', () => {
         primaryPubB64: 'root',
         signatureB64: null,
         signedAt: null,
+        isRoutable: true,
       }],
       verifications: [{ deviceId: 'device-c', ok: true, reason: 'PRIMARY' }],
     });

@@ -336,6 +336,7 @@ export async function createRepeatablePreKeyEnvelope(args: {
   senderDeviceId: string;
   recipientUserId: string;
   recipientDeviceId: string;
+  conversationId?: string;
   useOneTimePrekey?: boolean;
 }): Promise<string | null> {
   const key = pairKey(args.senderUserId, args.senderDeviceId, args.recipientUserId, args.recipientDeviceId);
@@ -343,6 +344,8 @@ export async function createRepeatablePreKeyEnvelope(args: {
   try {
     const bundle = await fetchPrekeyBundleForDevice(args.recipientUserId, args.recipientDeviceId, {
       claimOneTimePrekey: args.useOneTimePrekey !== false,
+      conversationId: args.conversationId,
+      senderDeviceId: args.senderDeviceId,
     });
     if (!bundle) return null;
 

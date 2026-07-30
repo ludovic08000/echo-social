@@ -13,6 +13,8 @@ export interface SignedDeviceEntry {
   accountFingerprint: string;
   accountBindingSignature: string;
   accountBindingVersion: number;
+  /** Current route eligibility. False entries remain valid historical identities. */
+  isRoutable: boolean;
 }
 
 export interface DeviceVerificationResult {
@@ -37,6 +39,7 @@ type SesameDeviceRow = {
   account_fingerprint: string;
   account_binding_signature: string;
   account_binding_version: number;
+  is_routable: boolean;
 };
 
 export async function fetchSignedDeviceList(userId: string): Promise<SignedDeviceEntry[]> {
@@ -57,6 +60,7 @@ export async function fetchSignedDeviceList(userId: string): Promise<SignedDevic
     accountFingerprint: row.account_fingerprint,
     accountBindingSignature: row.account_binding_signature,
     accountBindingVersion: Number(row.account_binding_version),
+    isRoutable: row.is_routable === true,
   }));
 }
 

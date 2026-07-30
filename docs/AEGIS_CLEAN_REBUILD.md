@@ -35,7 +35,7 @@ One stable message UUID identifies one immutable encrypted request. Calls for th
 
 ## Stage 3 invariant
 
-Every routable installation is authorized by the account identity before it can publish prekeys or receive a device copy. X3DH verifies the account binding, the device authorization and the signed prekey before establishing a session. Each sender-device/recipient-device pair owns an independent Double Ratchet session, including bounded skipped keys, replay rejection and delivery out of order. Fan-out is complete or the message transaction is rejected.
+Every installation is authorized by the stable account identity. The canonical registry retains revoked identities only to verify delayed initial messages, while `is_routable` is required for new sends, prekey claims and device copies. X3DH verifies the account binding, device authorization and signed prekey before establishing a session. Destructive one-time-prekey claims require both conversation participants and the current authorized sender device. Each device pair owns an independent Double Ratchet session with bounded skipped keys, replay rejection and out-of-order delivery. The complete registry is verified before any fan-out mutation, and fan-out is complete or rejected.
 
 ## Current checkpoint
 

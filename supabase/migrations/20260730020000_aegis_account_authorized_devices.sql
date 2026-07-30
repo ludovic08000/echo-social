@@ -7,51 +7,9 @@ create extension if not exists pgcrypto;
 alter table public.user_devices
   add column if not exists device_authorization_signature text;
 
--- Preserve the function identity consumed by the atomic send RPC while
--- removing its dependency on the obsolete Sesame projection. This prevents
--- the transport RPC from being dropped when the old projection is replaced.
-create or replace function public.get_signed_device_list(p_user_id uuid)
-returns table (
-  device_id text,
-  device_public_key text,
-  is_primary boolean,
-  primary_device_id text,
-  primary_pub_b64 text,
-  signature_b64 text,
-  signed_at timestamptz
-)
-language sql
-security definer
-stable
-set search_path = public, pg_temp
-as $$
-  select
-    device.device_id,
-    device.device_public_key,
-    false,
-    null::text,
-    account.signing_key,
-    device.device_authorization_signature,
-    device.last_seen_at
-  from public.user_devices device
-  join public.user_public_keys account
-    on account.user_id = device.user_id
-   and account.is_active = true
-  where device.user_id = p_user_id
-    and device.is_active = true
-    and coalesce(device.approval_status, 'approved') = 'approved'
-    and device.revoked_at is null
-    and coalesce(device.routing_status, 'repairing') <> 'unavailable'
-    and nullif(trim(device.device_public_key), '') is not null
-    and nullif(trim(device.device_signing_key), '') is not null
-    and nullif(trim(device.device_authorization_signature), '') is not null
-    and nullif(trim(account.identity_key), '') is not null
-    and nullif(trim(account.signing_key), '') is not null
-    and nullif(trim(account.fingerprint), '') is not null
-    and account.identity_binding_version = 1
-    and nullif(trim(account.identity_binding_signature), '') is not null
-  order by device.device_id;
-$$;
+-- The stage-2 transport reads the canonical account-authorized registry
+-- directly. Remove the old projection rather than retaining a wrapper.
+drop function if exists public.get_signed_device_list(uuid) cascade;
 
 -- Remove callable objects that depend on the obsolete self-authorization
 -- columns before dropping those columns. No CASCADE is used: an unknown
@@ -129,7 +87,9 @@ returns table (
   account_signing_key text,
   account_fingerprint text,
   account_binding_signature text,
-  account_binding_version integer
+  account_binding_version integer,
+  is_routable boolean,
+  revoked_at timestamptz
 )
 language sql
 security definer
@@ -146,16 +106,19 @@ as $$
     account.signing_key,
     account.fingerprint,
     account.identity_binding_signature,
-    account.identity_binding_version
+    account.identity_binding_version,
+    (
+      device.is_active = true
+      and coalesce(device.approval_status, 'approved') = 'approved'
+      and device.revoked_at is null
+      and coalesce(device.routing_status, 'repairing') <> 'unavailable'
+    ) as is_routable,
+    device.revoked_at
   from public.user_devices device
   join public.user_public_keys account
     on account.user_id = device.user_id
    and account.is_active = true
   where device.user_id = p_user_id
-    and device.is_active = true
-    and coalesce(device.approval_status, 'approved') = 'approved'
-    and device.revoked_at is null
-    and coalesce(device.routing_status, 'repairing') <> 'unavailable'
     and nullif(trim(device.device_public_key), '') is not null
     and nullif(trim(device.device_signing_key), '') is not null
     and nullif(trim(device.device_authorization_signature), '') is not null
@@ -169,8 +132,6 @@ $$;
 
 revoke all on function public.get_sesame_device_list(uuid) from public, anon;
 grant execute on function public.get_sesame_device_list(uuid) to authenticated;
-revoke all on function public.get_signed_device_list(uuid) from public, anon;
-grant execute on function public.get_signed_device_list(uuid) to authenticated;
 
 create function public.register_user_device_safe(
   p_user_id uuid,
@@ -460,6 +421,7 @@ begin
       and device.device_id = v_device_id
       and device.is_active = true
       and device.revoked_at is null
+      and coalesce(device.approval_status, 'approved') = 'approved'
       and device.routing_status = 'ready'
       and nullif(trim(device.device_authorization_signature), '') is not null
   ) then
@@ -500,9 +462,12 @@ revoke all on function public.publish_device_one_time_prekeys(text,jsonb) from p
 grant execute on function public.publish_device_one_time_prekeys(text,jsonb) to authenticated;
 
 drop function if exists public.claim_device_one_time_prekey(uuid,text);
+drop function if exists public.claim_device_one_time_prekey(uuid,text,uuid,text);
 create function public.claim_device_one_time_prekey(
   p_user_id uuid,
-  p_device_id text
+  p_device_id text,
+  p_conversation_id uuid,
+  p_sender_device_id text
 )
 returns table (opk_id integer, public_key text)
 language plpgsql
@@ -510,14 +475,36 @@ volatile
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_uid uuid := auth.uid();
 begin
-  if auth.uid() is null then
+  if v_uid is null or p_conversation_id is null then
+    return;
+  end if;
+  if not exists (
+    select 1 from public.conversation_participants participant
+    where participant.conversation_id = p_conversation_id
+      and participant.user_id = v_uid
+  ) or not exists (
+    select 1 from public.conversation_participants participant
+    where participant.conversation_id = p_conversation_id
+      and participant.user_id = p_user_id
+  ) then
+    return;
+  end if;
+  if not exists (
+    select 1
+    from public.get_sesame_device_list(v_uid) sender_device
+    where sender_device.device_id = trim(p_sender_device_id)
+      and sender_device.is_routable = true
+  ) then
     return;
   end if;
   if not exists (
     select 1
     from public.get_sesame_device_list(p_user_id) device
     where device.device_id = trim(p_device_id)
+      and device.is_routable = true
   ) then
     return;
   end if;
@@ -541,8 +528,8 @@ begin
 end;
 $$;
 
-revoke all on function public.claim_device_one_time_prekey(uuid,text) from public, anon;
-grant execute on function public.claim_device_one_time_prekey(uuid,text) to authenticated;
+revoke all on function public.claim_device_one_time_prekey(uuid,text,uuid,text) from public, anon;
+grant execute on function public.claim_device_one_time_prekey(uuid,text,uuid,text) to authenticated;
 
 create or replace function public.count_device_one_time_prekeys(
   p_user_id uuid,
@@ -590,6 +577,7 @@ as $$
       select 1
       from public.get_sesame_device_list(p_user_id) device
       where device.device_id = trim(p_device_id)
+        and device.is_routable = true
     )
   order by spk.created_at desc, spk.spk_id desc
   limit 1;

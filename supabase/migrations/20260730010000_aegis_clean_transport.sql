@@ -150,8 +150,9 @@ begin
   end if;
   if not exists (
     select 1
-    from public.get_signed_device_list(v_uid) own_device
+    from public.get_sesame_device_list(v_uid) own_device
     where own_device.device_id = trim(p_sender_device_id)
+      and own_device.is_routable = true
   ) then
     raise exception 'E2EE_SENDER_DEVICE_NOT_TRUSTED'
       using errcode = '23514';
@@ -241,7 +242,8 @@ begin
   ) peer
   where not exists (
     select 1
-    from public.get_signed_device_list(peer.user_id)
+    from public.get_sesame_device_list(peer.user_id) device
+    where device.is_routable = true
   );
 
   if v_unroutable_participants > 0 then
@@ -254,8 +256,9 @@ begin
       participant.user_id as recipient_user_id,
       device.device_id as recipient_device_id
     from public.conversation_participants participant
-    cross join lateral public.get_signed_device_list(participant.user_id) device
+    cross join lateral public.get_sesame_device_list(participant.user_id) device
     where participant.conversation_id = p_conversation_id
+      and device.is_routable = true
       and not (
         participant.user_id = v_uid
         and device.device_id = trim(p_sender_device_id)

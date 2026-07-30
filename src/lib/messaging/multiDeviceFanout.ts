@@ -221,6 +221,7 @@ async function x3dhWrapForDevice(
   senderDeviceId: string,
   recipientUserId: string,
   recipientDeviceId: string,
+  conversationId?: string,
   options: { useOneTimePrekey?: boolean } = {},
 ): Promise<string | null> {
   try {
@@ -230,6 +231,7 @@ async function x3dhWrapForDevice(
       senderDeviceId,
       recipientUserId,
       recipientDeviceId,
+      conversationId,
       useOneTimePrekey: options.useOneTimePrekey,
     });
   } catch (error) {
@@ -362,7 +364,15 @@ async function encryptPlaintextForDeviceTargetUnlocked(
 
   // Sesame keeps an established Double Ratchet active across Signed PreKey
   // rotations. X3DH/SPK lookup is only used when no active session can encrypt.
-  encrypted = await x3dhWrapForDevice(input.plaintext, input.senderUserId, senderDeviceId, input.recipientUserId, input.recipientDeviceId, { useOneTimePrekey: input.useOneTimePrekey });
+  encrypted = await x3dhWrapForDevice(
+    input.plaintext,
+    input.senderUserId,
+    senderDeviceId,
+    input.recipientUserId,
+    input.recipientDeviceId,
+    input.conversationId,
+    { useOneTimePrekey: input.useOneTimePrekey },
+  );
 
   if (!encrypted) {
     logCryptoError({
@@ -504,7 +514,7 @@ function requestCurrentDeviceRouteRepair(userId: string, deviceId: string): void
   deviceRouteHealthInFlight = import('@/lib/crypto/signedDeviceList')
     .then(({ fetchVerifiedDeviceList }) => fetchVerifiedDeviceList(userId))
     .then((verified) => {
-      if (verified.trusted.some((entry) => entry.deviceId === deviceId)) return;
+      if (verified.trusted.some((entry) => entry.deviceId === deviceId && entry.isRoutable)) return;
       try {
         window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
           detail: {

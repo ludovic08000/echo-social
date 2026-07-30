@@ -118,15 +118,26 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
       });
     }
     if (verified.signedListPresent) {
-      if (verified.trusted.length === 0 && typeof console !== 'undefined') {
-        console.warn('[A1] signed device list present but no device verified; refusing raw fallback', {
-          userId,
-          rejected: verified.verifications.length,
-        });
+      const rejected = verified.verifications.filter((entry) => !entry.ok);
+      if (
+        rejected.length > 0 ||
+        verified.trusted.length !== verified.verifications.length
+      ) {
+        if (typeof console !== 'undefined') {
+          console.warn('[A1] canonical device registry contains an invalid authorization', {
+            userId,
+            total: verified.verifications.length,
+            rejected: rejected.map((entry) => ({
+              deviceId: entry.deviceId,
+              reason: entry.reason ?? 'UNKNOWN',
+            })),
+          });
+        }
+        throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
       }
       return hygieneFilterDevices(
         verified.trusted
-          .filter(t => !!t.devicePublicKey)
+          .filter(t => t.isRoutable && !!t.devicePublicKey)
           .map(t => ({
             userId,
             deviceId: t.deviceId,
@@ -140,7 +151,8 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
     if (typeof console !== 'undefined') {
       console.warn('[A1] signed device list fetch failed; refusing raw fallback', e);
     }
-    return [];
+    if (e instanceof Error && e.message === 'E2EE_DEVICE_REGISTRY_INVALID') throw e;
+    throw new Error('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
   }
 
   // Signal-style trust is fail-closed: an unsigned server device list is not
@@ -217,5 +229,9 @@ export async function listFanoutTargets(
 ): Promise<DeviceDescriptor[]> {
   const userIds = Array.from(new Set([...recipientUserIds, senderUserId]));
   const lists = await Promise.all(userIds.map(userId => listDevicesForUser(userId, options)));
+  const unroutable = userIds.filter((_, index) => lists[index].length === 0);
+  if (unroutable.length > 0) {
+    throw new Error(`E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:${unroutable.join(',')}`);
+  }
   return lists.flat();
 }

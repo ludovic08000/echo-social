@@ -61,19 +61,32 @@ describe('fetchPrekeyBundleForDevice OPK claiming', () => {
   it('does not claim a one-time prekey when explicitly disabled', async () => {
     const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device', {
       claimOneTimePrekey: false,
+      conversationId: '11111111-1111-4111-8111-111111111111',
+      senderDeviceId: 'sender-device',
     });
     expect(bundle).toMatchObject({ signedPrekeyId: 7 });
     expect(bundle?.oneTimePrekey).toBeUndefined();
+    expect(mocks.rpc).not.toHaveBeenCalledWith('claim_device_one_time_prekey', expect.anything());
+  });
+
+  it('uses SPK-only X3DH when no sending relationship authorizes a claim', async () => {
+    const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device');
     expect(bundle?.oneTimePrekeyId).toBeUndefined();
     expect(mocks.rpc).not.toHaveBeenCalledWith('claim_device_one_time_prekey', expect.anything());
   });
 
-  it('claims an OPK by default for a normal X3DH bootstrap', async () => {
-    const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device');
+  it('binds a destructive OPK claim to the conversation and sender device', async () => {
+    const conversationId = '11111111-1111-4111-8111-111111111111';
+    const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device', {
+      conversationId,
+      senderDeviceId: 'sender-device',
+    });
     expect(bundle?.oneTimePrekeyId).toBe(42);
     expect(mocks.rpc).toHaveBeenCalledWith('claim_device_one_time_prekey', {
       p_user_id: 'peer-user',
       p_device_id: 'peer-device',
+      p_conversation_id: conversationId,
+      p_sender_device_id: 'sender-device',
     });
   });
 });

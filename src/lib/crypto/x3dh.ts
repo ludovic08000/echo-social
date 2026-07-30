@@ -43,6 +43,10 @@ export interface FetchDevicePrekeyBundleOptions {
    * consumed and then discarded.
    */
   claimOneTimePrekey?: boolean;
+  /** Conversation authorizing this destructive OPK claim. */
+  conversationId?: string;
+  /** Current authorized installation performing the claim. */
+  senderDeviceId?: string;
 }
 
 export interface X3DHResult {
@@ -404,9 +408,19 @@ export async function refillDeviceOneTimePrekeysIfNeeded(userId: string, deviceI
     .map((row) => deleteDeviceOPKPrivate(userId, deviceId, row.opk_id)));
 }
 
-async function claimPeerDeviceOPK(peerUserId: string, peerDeviceId: string): Promise<{ opkId: number; publicKey: string } | null> {
+async function claimPeerDeviceOPK(
+  peerUserId: string,
+  peerDeviceId: string,
+  conversationId: string,
+  senderDeviceId: string,
+): Promise<{ opkId: number; publicKey: string } | null> {
   try {
-    const { data, error } = await supabase.rpc('claim_device_one_time_prekey', { p_user_id: peerUserId, p_device_id: peerDeviceId });
+    const { data, error } = await supabase.rpc('claim_device_one_time_prekey', {
+      p_user_id: peerUserId,
+      p_device_id: peerDeviceId,
+      p_conversation_id: conversationId,
+      p_sender_device_id: senderDeviceId,
+    });
     if (error || !data || data.length === 0) return null;
     const row = data[0];
     return { opkId: row.opk_id, publicKey: row.public_key };
@@ -475,9 +489,17 @@ export async function fetchPrekeyBundleForDevice(
     console.warn('[X3DH-DEV] device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false });
     throw new DevicePrekeyBundleError('DEVICE_SPK_SIGNATURE_INVALID', peerUserId, peerDeviceId, material.spkId);
   }
-  const opk = options.claimOneTimePrekey === false
-    ? null
-    : await claimPeerDeviceOPK(peerUserId, peerDeviceId);
+  const shouldClaimOpk = options.claimOneTimePrekey !== false &&
+    Boolean(options.conversationId) &&
+    Boolean(options.senderDeviceId);
+  const opk = shouldClaimOpk
+    ? await claimPeerDeviceOPK(
+      peerUserId,
+      peerDeviceId,
+      options.conversationId!,
+      options.senderDeviceId!,
+    )
+    : null;
   return { identityKey: material.identityKey, signingKey: material.signingKey, signedPrekey: material.publicKey, signedPrekeySignature: material.signature, signedPrekeyId: material.spkId, oneTimePrekey: opk?.publicKey, oneTimePrekeyId: opk?.opkId };
 }
 

@@ -24,6 +24,7 @@ export async function inspectDeviceHealth(
     peekDeviceSignedPrekey(userId, deviceId).catch(() => null),
   ]);
   const current = verified.verifications.find((entry) => entry.deviceId === deviceId);
+  const currentIdentity = verified.trusted.find((entry) => entry.deviceId === deviceId);
   const rejectionReasons: Record<string, number> = {};
   for (const result of verified.verifications) {
     if (!result.ok) {
@@ -31,7 +32,7 @@ export async function inspectDeviceHealth(
       rejectionReasons[reason] = (rejectionReasons[reason] ?? 0) + 1;
     }
   }
-  const trusted = current?.ok === true;
+  const trusted = current?.ok === true && currentIdentity?.isRoutable === true;
   const hasSignedPrekey = Boolean(spk);
   return {
     userId,
@@ -39,7 +40,7 @@ export async function inspectDeviceHealth(
     lifecycle: lifecycle.state,
     trusted,
     hasSignedPrekey,
-    trustedCount: verified.trusted.length,
+    trustedCount: verified.trusted.filter((entry) => entry.isRoutable).length,
     totalCount: verified.verifications.length,
     rejectionReasons,
     ready: lifecycle.state === 'approved' && trusted && hasSignedPrekey,

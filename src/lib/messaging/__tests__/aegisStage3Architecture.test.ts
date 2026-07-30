@@ -31,17 +31,19 @@ describe('Aegis stage 3 architecture', () => {
     expect(migration).toContain('device_authorization_signature');
     expect(migration).toContain('account_identity_mismatch');
     expect(migration).not.toContain('p_device_identity_version');
-    expect(migration).not.toContain('drop function if exists public.get_signed_device_list(uuid) cascade');
+    expect(migration).toContain('drop function if exists public.get_signed_device_list(uuid) cascade');
     expect(migration).toContain('aegis_send_rpc_was_removed');
   });
 
-  it('keeps every authorized device in the canonical fan-out even during prekey repair', () => {
-    const signedStart = migration.indexOf('create or replace function public.get_signed_device_list');
-    const signedEnd = migration.indexOf('drop function if exists public.get_sesame_device_list', signedStart);
-    const signedRoute = migration.slice(signedStart, signedEnd);
-    expect(signedRoute).toContain('device_authorization_signature');
-    expect(signedRoute).not.toContain('device_signed_prekeys spk');
-    expect(signedRoute).not.toContain("device.routing_status = 'ready'");
+  it('keeps one canonical identity registry and marks only current routes eligible', () => {
+    const sesameStart = migration.indexOf('create function public.get_sesame_device_list');
+    const sesameEnd = migration.indexOf('revoke all on function public.get_sesame_device_list', sesameStart);
+    const registrySql = migration.slice(sesameStart, sesameEnd);
+    expect(registrySql).toContain('device_authorization_signature');
+    expect(registrySql).toContain('is_routable boolean');
+    expect(registrySql).toContain('device.revoked_at');
+    expect(registrySql).not.toContain('device_signed_prekeys spk');
+    expect(migration).not.toContain('create or replace function public.get_signed_device_list');
     expect(migration).toContain('create or replace function public.get_device_copies_for_messages');
     expect(fanout).toContain("rpc('get_device_copies_for_messages'");
     expect(fanout).not.toContain(".from('message_device_copies')");
