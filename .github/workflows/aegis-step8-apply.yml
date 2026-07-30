@@ -1,0 +1,74 @@
+name: Aegis step 8 apply
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'refactor/aegis-clean-rebuild'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply stage 8 integration
+        run: node scripts/aegis-step8-apply.mjs
+
+      - name: Verify privacy architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "E2EE_MESSAGE_CONTENT_UNAVAILABLE" supabase/functions/message-moderation/index.ts
+          ! grep -q "messageBody" supabase/functions/message-moderation/index.ts
+          ! grep -q "sanitizeForAI" supabase/functions/message-moderation/index.ts
+          ! grep -q "ai.gateway" supabase/functions/message-moderation/index.ts
+          grep -q "buildPrivacySafePushPayload" supabase/functions/push-notify/index.ts
+          ! grep -q "body: msgBody" supabase/functions/push-notify/index.ts
+          ! grep -q "res.text()" supabase/functions/push-notify/index.ts
+          ! grep -q "console.info('\[MSG_TRACE\]'" src/hooks/useAegisMessageQueue.ts
+          ! grep -q "UPSERT_PAYLOAD" src/lib/crypto/x3dh.ts
+          ! grep -q "UPSERT_PAYLOAD" src/lib/crypto/resyncE2EE.ts
+          ! grep -q "LiveKit token error:" supabase/functions/livekit-token/index.ts
+          ! grep -q 'console.error("\[sealed-relay\]' supabase/functions/sealed-relay/index.ts
+          ! grep -q 'console.error("\[sealed-mint\]' supabase/functions/sealed-mint-token/index.ts
+          grep -q "sanitizeE2EETraceEvent" src/lib/messaging/e2eeTrace.ts
+          grep -q "sanitizeCryptoMetadata" src/lib/crypto/errorLogger.ts
+
+      - name: Run stage 8 tests
+        run: npx vitest run src/lib/messaging/__tests__/aegisStage8PrivacyBoundaries.test.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Full test suite
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Publish validated stage 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f scripts/aegis-step8-apply.mjs
+          rm -f docs/AEGIS_STAGE8_AUDIT.txt
+          rm -f .github/workflows/aegis-step8-apply.yml
+          git add -A
+          git commit -m "feat(aegis): enforce stage 8 privacy boundaries"
+          git push origin HEAD:refactor/aegis-clean-rebuild
