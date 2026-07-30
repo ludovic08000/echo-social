@@ -429,5 +429,14 @@ comment on table public.aegis_view_once_payloads is
 comment on function public.commit_aegis_view_once_consume(uuid, text, uuid) is
   'Authoritatively records one consumption and cryptographically erases the recipient payload.';
 
+do $$
+begin
+  alter publication supabase_realtime add table public.aegis_view_once_consumptions;
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end;
+$$;
+
 notify pgrst, 'reload schema';
 commit;
