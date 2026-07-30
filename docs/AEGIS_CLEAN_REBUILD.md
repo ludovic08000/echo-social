@@ -21,7 +21,7 @@ There is no production compatibility requirement. Test messages, obsolete schema
 1. ✅ Baseline architecture and executable protocol tests.
 2. ✅ Idempotent message transaction and authoritative send receipt.
 3. ✅ Device identity, X3DH, Double Ratchet and complete fan-out.
-4. ⏳ Cross-tab locking and durable encrypted outbox — implementation complete, validation pending.
+4. ✅ Cross-tab locking and durable encrypted outbox.
 5. Call-scoped LiveKit rooms, invitations and per-device call-key delivery.
 6. Recovery vault and non-destructive key restore.
 7. View-once consumption, deletion and local-cache cleanup.
@@ -43,9 +43,8 @@ The complete immutable encrypted request is durable before network delivery and 
 
 ## Current checkpoint
 
-- Stages 1, 2 and 3 are complete and validated.
-- Typecheck, targeted protocol tests, the full test suite, the build and the Crypto Test Suite passed for stage 3.
+- Stages 1, 2, 3 and 4 are complete and validated.
+- Stage 4 passed its targeted concurrency, crash-recovery, durable-outbox and device-copy tests, typecheck, lint, the full 379-test suite and the production build.
 - Temporary payloads and one-shot workflows have been removed.
-- Stage 4 implementation is complete locally and awaiting exact-head CI validation.
 - The pull request remains draft and unmerged.
 - No Supabase migration from this rebuild has been applied.
