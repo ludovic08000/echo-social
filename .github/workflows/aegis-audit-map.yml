@@ -35,8 +35,17 @@ jobs:
             echo '# Migrations ordered'
             find supabase/migrations -maxdepth 1 -type f -printf '%f\n' | sort
           } > audit/aegis-map.txt
+          tar --exclude='.git' --exclude='node_modules' --exclude='dist' -czf audit/echo-social-source.tar.gz \
+            src supabase .github scripts package.json package-lock.json tsconfig*.json vite.config.ts vitest.config.ts 2>/dev/null || \
+          tar --exclude='.git' --exclude='node_modules' --exclude='dist' -czf audit/echo-social-source.tar.gz \
+            src supabase .github scripts package.json package-lock.json tsconfig*.json vite.config.ts
       - uses: actions/upload-artifact@v4
         with:
           name: aegis-architecture-map
           path: audit/aegis-map.txt
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: echo-social-source-snapshot
+          path: audit/echo-social-source.tar.gz
           retention-days: 1
