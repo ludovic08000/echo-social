@@ -1,0 +1,104 @@
+name: Aegis step 9 apply
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'refactor/aegis-clean-rebuild'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply stage 9 consolidation
+        run: node scripts/aegis-step9-apply.mjs
+
+      - name: Parse final PostgreSQL migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pglast
+          python - <<'PY'
+          from pathlib import Path
+          from pglast import parse_sql
+          migration = Path('supabase/migrations/20260730090000_aegis_clean_rebuild.sql')
+          sql = migration.read_text(encoding='utf-8')
+          statements = parse_sql(sql)
+          if len(statements) < 20:
+              raise SystemExit(f'Unexpectedly small migration: {len(statements)} statements')
+          print(f'Parsed {len(statements)} PostgreSQL statements')
+          PY
+
+      - name: Verify final schema architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          final='supabase/migrations/20260730090000_aegis_clean_rebuild.sql'
+          test -f "$final"
+          test "$(find supabase/migrations -maxdepth 1 -type f -name '20260730*aegis*.sql' | wc -l)" -eq 1
+          for old in \
+            20260730010000_aegis_clean_transport.sql \
+            20260730020000_aegis_account_authorized_devices.sql \
+            20260730030000_aegis_call_scoped_livekit.sql \
+            20260730040000_aegis_recovery_vault.sql \
+            20260730050000_aegis_view_once_consumption.sql; do
+            test ! -e "supabase/migrations/$old"
+          done
+          test "$(grep -c '^begin;$' "$final")" -eq 1
+          test "$(grep -c '^commit;$' "$final")" -eq 1
+          test "$(grep -c "notify pgrst, 'reload schema';" "$final")" -eq 1
+          grep -q 'truncate table public.messages cascade' "$final"
+          grep -q 'drop column if exists encrypted_call_key cascade' "$final"
+          ! grep -q 'legacy-call-' "$final"
+          ! grep -q 'p_encrypted_call_key' src/integrations/supabase/types.ts
+          ! grep -q '      call_signal: {' src/integrations/supabase/types.ts
+          ! grep -q '      aegis_sync_device: {' src/integrations/supabase/types.ts
+          grep -q '      aegis_call_invitations: {' src/integrations/supabase/types.ts
+          grep -q 'aegis_request_digest: string | null' src/integrations/supabase/types.ts
+
+      - name: Run stage 9 targeted tests
+        run: >-
+          npx vitest run
+          src/lib/messaging/__tests__/aegisStage9FinalMigration.test.ts
+          src/lib/messaging/__tests__/aegisCleanTransportMigration.test.ts
+          src/lib/messaging/__tests__/aegisStage3Architecture.test.ts
+          src/lib/calls/__tests__/aegisCallProtocol.test.ts
+          src/lib/messaging/__tests__/aegisViewOnceProtocol.test.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Full test suite
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Publish validated stage 9
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f scripts/aegis-step9-apply.mjs
+          rm -f docs/AEGIS_STAGE9_SCHEMA_AUDIT.txt
+          rm -f .github/workflows/aegis-step9-apply.yml
+          git add -A
+          git commit -m "feat(aegis): consolidate stage 9 schema reset"
+          git push origin HEAD:refactor/aegis-clean-rebuild
