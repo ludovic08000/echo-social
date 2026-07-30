@@ -1,21 +1,19 @@
 /**
- * Device-pair Double Ratchet — unit tests.
+ * Device-pair Double Ratchet tests.
  *
- * Validates the senior-engineer fixes:
- *  - Aegis priming: initiator AND responder can encrypt without a fresh X3DH burst.
- *  - Defensive IV/CT copy in `trySkippedKeys` survives WebCrypto buffer detachment.
- *  - Out-of-order delivery via skipped-key cache.
- *  - `listKnownSessionIds` enumerates only the current self-device.
+ * These tests exercise the real bootstrap contract used by X3DH: the initiator
+ * creates one session id and the responder installs the same id from the
+ * initial pre-key envelope. No test injects an already-advanced receive chain.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  establishDeviceSession,
-  ratchetEncrypt,
-  ratchetDecrypt,
-  listKnownSessionIds,
-  invalidateDeviceSession,
-  clearAllDeviceSessions,
   AEGIS_RATCHET_PREFIX,
+  clearAllDeviceSessions,
+  establishDeviceSession,
+  invalidateDeviceSession,
+  listKnownSessionIds,
+  ratchetDecrypt,
+  ratchetEncrypt,
 } from '@/lib/crypto/deviceRatchet';
 
 const A_USER = 'user-alice';
@@ -23,20 +21,17 @@ const A_DEV = 'dev-alice-1';
 const B_USER = 'user-bob';
 const B_DEV = 'dev-bob-1';
 
-/**
- * Build a fresh, deterministic-ish 32-byte shared secret. We use random bytes
- * (the X3DH KDF output in real life) — both sides must seed identical material.
- */
 function makeSharedSecret(seed: number): ArrayBuffer {
   const buf = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) buf[i] = (seed * 31 + i) & 0xff;
+  for (let i = 0; i < 32; i += 1) buf[i] = (seed * 31 + i) & 0xff;
   return buf.buffer;
 }
 
-/** Generate a real X25519 keypair (used as the "peer SPK" for priming). */
 async function generateX25519(): Promise<{ pubB64: string; privJwk: JsonWebKey }> {
   const kp = (await crypto.subtle.generateKey(
-    { name: 'X25519' } as any, true, ['deriveBits'],
+    { name: 'X25519' } as Algorithm,
+    true,
+    ['deriveBits'],
   )) as CryptoKeyPair;
   const raw = await crypto.subtle.exportKey('raw', kp.publicKey);
   const jwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
@@ -46,149 +41,139 @@ async function generateX25519(): Promise<{ pubB64: string; privJwk: JsonWebKey }
   };
 }
 
-describe('deviceRatchet — Aegis priming + Double Ratchet', () => {
+async function establishPair(seed: number, peerSpkId = 1): Promise<string> {
+  const sharedSecret = makeSharedSecret(seed);
+  const responderPreKey = await generateX25519();
+  const sessionId = await establishDeviceSession(
+    A_USER,
+    A_DEV,
+    B_USER,
+    B_DEV,
+    sharedSecret,
+    undefined,
+    {
+      isInitiator: true,
+      peerInitialDhPubB64: responderPreKey.pubB64,
+      peerSpkId,
+    },
+  );
+
+  await establishDeviceSession(
+    B_USER,
+    B_DEV,
+    A_USER,
+    A_DEV,
+    sharedSecret,
+    sessionId,
+    {
+      isInitiator: false,
+      peerSpkId,
+      selfInitialDhPrivJwk: responderPreKey.privJwk,
+      selfInitialDhPubB64: responderPreKey.pubB64,
+    },
+  );
+  return sessionId;
+}
+
+describe('deviceRatchet — real bootstrap and Double Ratchet', () => {
   beforeEach(async () => {
     await clearAllDeviceSessions();
   });
 
-  it('initiator can encrypt the first message immediately after establish', async () => {
-    const ss = makeSharedSecret(1);
-    const peerSpk = await generateX25519();
+  it('initiator can encrypt the first message immediately after bootstrap', async () => {
+    const sessionId = await establishPair(1, 42);
+    const ciphertext = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'hello bob');
 
-    const sessionId = await establishDeviceSession(
-      A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
-      { isInitiator: true, peerInitialDhPubB64: peerSpk.pubB64, peerSpkId: 42 },
-    );
-    expect(typeof sessionId).toBe('string');
-    expect(sessionId.length).toBeGreaterThan(0);
-
-    const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'hello bob');
-    expect(ct).not.toBeNull();
-    expect(ct!.startsWith(AEGIS_RATCHET_PREFIX)).toBe(true);
-    // Header carries: sessionId.dhPub.Ns.PN.iv.ct
-    const parts = ct!.slice(AEGIS_RATCHET_PREFIX.length).split('.');
+    expect(ciphertext).not.toBeNull();
+    expect(ciphertext!.startsWith(AEGIS_RATCHET_PREFIX)).toBe(true);
+    const parts = ciphertext!.slice(AEGIS_RATCHET_PREFIX.length).split('.');
     expect(parts).toHaveLength(6);
     expect(parts[0]).toBe(sessionId);
-    expect(parts[2]).toBe('0'); // Ns
+    expect(parts[2]).toBe('0');
   });
 
-  // TODO(crypto): Aegis priming round-trip — symmetric KDF derivation needs
-  // deeper investigation. The fix #3 establishes the session correctly, but
-  // first-message decryption still returns null in jsdom WebCrypto. Real-device
-  // traces show the path works in production; tracking separately.
-  it.skip('responder primed with an SPK keypair can decrypt the first Aegis message', async () => {
-    const ss = makeSharedSecret(2);
-    const spk = await generateX25519();
+  it('responder decrypts the first message from the transmitted session id', async () => {
+    await establishPair(2, 7);
+    const ciphertext = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'first inbound');
 
-    // 1) Initiator side
-    await establishDeviceSession(
-      A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
-      { isInitiator: true, peerInitialDhPubB64: spk.pubB64, peerSpkId: 7 },
-    );
-    const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'first inbound');
-    expect(ct).not.toBeNull();
-
-    // 2) Responder side (Bob), seeded with the SPK keypair (the priming fix #3)
-    await establishDeviceSession(
-      B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
-      {
-        isInitiator: false,
-        peerSpkId: 7,
-        selfInitialDhPrivJwk: spk.privJwk,
-        selfInitialDhPubB64: spk.pubB64,
-      },
-    );
-
-    const pt = await ratchetDecrypt(B_USER, B_DEV, ct!);
-    expect(pt).toBe('first inbound');
+    expect(ciphertext).not.toBeNull();
+    await expect(ratchetDecrypt(B_USER, B_DEV, ciphertext!)).resolves.toBe('first inbound');
   });
 
-  it.skip('round-trip: bidirectional conversation with multiple messages', async () => {
-    const ss = makeSharedSecret(3);
-    const spk = await generateX25519();
+  it('supports a bidirectional conversation after the first inbound message', async () => {
+    await establishPair(3);
 
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
-      { isInitiator: true, peerInitialDhPubB64: spk.pubB64, peerSpkId: 1 });
-    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
-      { isInitiator: false, peerSpkId: 1, selfInitialDhPrivJwk: spk.privJwk, selfInitialDhPubB64: spk.pubB64 });
-
-    // Alice → Bob ×3
-    for (let i = 0; i < 3; i++) {
-      const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, `msg-A-${i}`);
-      const pt = await ratchetDecrypt(B_USER, B_DEV, ct!);
-      expect(pt).toBe(`msg-A-${i}`);
+    for (let index = 0; index < 3; index += 1) {
+      const ciphertext = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, `msg-A-${index}`);
+      await expect(ratchetDecrypt(B_USER, B_DEV, ciphertext!)).resolves.toBe(`msg-A-${index}`);
     }
 
-    // Bob → Alice (now Bob has a populated send chain after first inbound)
     const reply = await ratchetEncrypt(B_USER, B_DEV, A_USER, A_DEV, 'reply from bob');
     expect(reply).not.toBeNull();
-    const decoded = await ratchetDecrypt(A_USER, A_DEV, reply!);
-    expect(decoded).toBe('reply from bob');
+    await expect(ratchetDecrypt(A_USER, A_DEV, reply!)).resolves.toBe('reply from bob');
   });
 
-  it.skip('out-of-order delivery: skipped keys cached & resolved (defensive IV copy)', async () => {
-    const ss = makeSharedSecret(4);
-    const spk = await generateX25519();
+  it('decrypts out-of-order messages through the bounded skipped-key cache', async () => {
+    await establishPair(4, 9);
 
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
-      { isInitiator: true, peerInitialDhPubB64: spk.pubB64, peerSpkId: 9 });
-    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
-      { isInitiator: false, peerSpkId: 9, selfInitialDhPrivJwk: spk.privJwk, selfInitialDhPubB64: spk.pubB64 });
+    const ciphertext0 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm0');
+    const ciphertext1 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm1');
+    const ciphertext2 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm2');
 
-    const ct0 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm0');
-    const ct1 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm1');
-    const ct2 = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'm2');
-
-    // Receive out of order: m2, then m0, then m1 — all must succeed.
-    expect(await ratchetDecrypt(B_USER, B_DEV, ct2!)).toBe('m2');
-    expect(await ratchetDecrypt(B_USER, B_DEV, ct0!)).toBe('m0');
-    expect(await ratchetDecrypt(B_USER, B_DEV, ct1!)).toBe('m1');
+    await expect(ratchetDecrypt(B_USER, B_DEV, ciphertext2!)).resolves.toBe('m2');
+    await expect(ratchetDecrypt(B_USER, B_DEV, ciphertext0!)).resolves.toBe('m0');
+    await expect(ratchetDecrypt(B_USER, B_DEV, ciphertext1!)).resolves.toBe('m1');
   });
 
-  it('encrypt returns null when no session exists (caller must run X3DH)', async () => {
-    const ct = await ratchetEncrypt('ghost', 'ghost-dev', B_USER, B_DEV, 'no session');
-    expect(ct).toBeNull();
+  it('rejects replay of an already consumed message key', async () => {
+    await establishPair(5);
+    const ciphertext = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'once');
+
+    await expect(ratchetDecrypt(B_USER, B_DEV, ciphertext!)).resolves.toBe('once');
+    await expect(ratchetDecrypt(B_USER, B_DEV, ciphertext!)).resolves.toBeNull();
   });
 
-  it.skip('decrypt returns null for tampered ciphertext (no false positives)', async () => {
-    const ss = makeSharedSecret(5);
-    const spk = await generateX25519();
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
-      { isInitiator: true, peerInitialDhPubB64: spk.pubB64, peerSpkId: 1 });
-    await establishDeviceSession(B_USER, B_DEV, A_USER, A_DEV, ss, undefined,
-      { isInitiator: false, peerSpkId: 1, selfInitialDhPrivJwk: spk.privJwk, selfInitialDhPubB64: spk.pubB64 });
+  it('rejects ciphertext or authenticated-header tampering', async () => {
+    await establishPair(6);
+    const ciphertext = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'authenticate me');
+    expect(ciphertext).not.toBeNull();
 
-    const ct = await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'auth me');
-    // Flip last char of ciphertext (corrupts AES-GCM tag)
-    const tampered = ct!.slice(0, -2) + (ct!.slice(-2) === 'AA' ? 'BB' : 'AA');
-    const pt = await ratchetDecrypt(B_USER, B_DEV, tampered);
-    expect(pt).toBeNull();
+    const bodyTampered = `${ciphertext!.slice(0, -2)}${ciphertext!.slice(-2) === 'AA' ? 'BB' : 'AA'}`;
+    await expect(ratchetDecrypt(B_USER, B_DEV, bodyTampered)).resolves.toBeNull();
+
+    const parts = ciphertext!.slice(AEGIS_RATCHET_PREFIX.length).split('.');
+    parts[2] = String(Number(parts[2]) + 1);
+    const headerTampered = `${AEGIS_RATCHET_PREFIX}${parts.join('.')}`;
+    await expect(ratchetDecrypt(B_USER, B_DEV, headerTampered)).resolves.toBeNull();
   });
 
-  it('listKnownSessionIds enumerates only sessions for the queried self-device', async () => {
-    const ss = makeSharedSecret(6);
-    const spk = await generateX25519();
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, 'sess-AB', {
-      isInitiator: true, peerInitialDhPubB64: spk.pubB64,
+  it('returns null when no session exists', async () => {
+    await expect(ratchetEncrypt('ghost', 'ghost-dev', B_USER, B_DEV, 'no session')).resolves.toBeNull();
+  });
+
+  it('lists only sessions for the requested local device', async () => {
+    const sharedSecret = makeSharedSecret(7);
+    const peerPreKey = await generateX25519();
+    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, sharedSecret, 'session-ab', {
+      isInitiator: true,
+      peerInitialDhPubB64: peerPreKey.pubB64,
     });
-    await establishDeviceSession(A_USER, 'dev-alice-other', B_USER, B_DEV, ss, 'sess-other', {
-      isInitiator: true, peerInitialDhPubB64: spk.pubB64,
+    await establishDeviceSession(A_USER, 'dev-alice-other', B_USER, B_DEV, sharedSecret, 'session-other', {
+      isInitiator: true,
+      peerInitialDhPubB64: peerPreKey.pubB64,
     });
 
     const known = await listKnownSessionIds(A_USER, A_DEV);
-    const ids = known.map(s => s.sessionId);
-    expect(ids).toContain('sess-AB');
-    expect(ids).not.toContain('sess-other');
+    const ids = known.map((session) => session.sessionId);
+    expect(ids).toContain('session-ab');
+    expect(ids).not.toContain('session-other');
   });
 
-  it('invalidateDeviceSession drops the session (forces re-X3DH on next send)', async () => {
-    const ss = makeSharedSecret(7);
-    const spk = await generateX25519();
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, ss, undefined,
-      { isInitiator: true, peerInitialDhPubB64: spk.pubB64 });
+  it('invalidating a device session forces a new X3DH bootstrap', async () => {
+    await establishPair(8);
+    await expect(ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'before')).resolves.not.toBeNull();
 
-    expect(await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'pre')).not.toBeNull();
     await invalidateDeviceSession(A_USER, A_DEV, B_USER, B_DEV);
-    expect(await ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'post')).toBeNull();
+    await expect(ratchetEncrypt(A_USER, A_DEV, B_USER, B_DEV, 'after')).resolves.toBeNull();
   });
 });
