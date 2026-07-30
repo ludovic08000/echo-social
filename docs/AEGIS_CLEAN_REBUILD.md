@@ -18,8 +18,8 @@ There is no production compatibility requirement. Test messages, obsolete schema
 
 ## Ordered stages
 
-1. Baseline architecture and executable protocol tests.
-2. Idempotent message transaction and authoritative send status.
+1. ✅ Baseline architecture and executable protocol tests.
+2. ✅ Idempotent message transaction and authoritative send receipt.
 3. Device identity, X3DH, Double Ratchet and complete fan-out.
 4. Cross-tab locking and durable encrypted outbox.
 5. Call-scoped LiveKit rooms, invitations and per-device call-key delivery.
@@ -28,3 +28,7 @@ There is no production compatibility requirement. Test messages, obsolete schema
 8. Privacy boundaries for logs, push notifications and server functions.
 9. One clean SQL reset for development data and obsolete Aegis objects.
 10. Full CI and manual two-account, multi-device and group-call verification.
+
+## Stage 2 invariant
+
+One stable message UUID identifies one immutable encrypted request. Calls for that UUID are serialized in PostgreSQL. A timeout or malformed success response keeps the Ratchet and encrypted outbox pending; only an exact authoritative commit receipt clears them. An explicit rejection may rewind state only after the serialized server call has finished.
