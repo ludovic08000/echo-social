@@ -15,10 +15,17 @@ jobs:
       - run: npm ci
       - name: Verify recovery architecture
         run: |
+          test -f src/lib/crypto/aegisRecoveryProtocol.ts
           test -f src/lib/crypto/aegisRecoveryVault.ts
+          test -f src/components/AegisRecoveryKeySection.tsx
           test -f supabase/migrations/20260730040000_aegis_recovery_vault.sql
-          ! grep -R "from '@/lib/crypto/accountKeyBackup'.*restoreWithRecoveryKey" -n src || false
-          ! grep -R "putAllInStore.*restore" -n src/lib/crypto/aegisRecoveryVault.ts
+          legacy=$(grep -R -nE 'restoreWithRecoveryKey|createRecoveryKeyBackup' src --exclude='accountKeyBackup.ts' || true)
+          if [ -n "$legacy" ]; then
+            echo "$legacy"
+            exit 1
+          fi
+          ! grep -R -nE 'putAllInStore|putAllInSideDB|\.clear\(' src/lib/crypto/aegisRecoveryVault.ts
+          grep -q '<AegisRecoveryKeySection />' src/components/KeyBackupPanel.tsx
       - run: npx vitest run src/lib/crypto/__tests__/aegisRecoveryProtocol.test.ts
       - run: npm run typecheck
       - run: npm run test
