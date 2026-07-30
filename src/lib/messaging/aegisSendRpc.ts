@@ -175,7 +175,7 @@ function committedMessageId(response: RpcResponse, expectedMessageId: string): s
 /**
  * One immutable Aegis transaction per stable message UUID.
  *
- * The server serializes calls for the same UUID and returns a signed-by-state
+ * The server serializes calls for the same UUID and returns an authoritative
  * commit receipt containing the exact stored request digest. A timeout therefore
  * never authorizes a local rollback. The same encrypted request is submitted
  * again and either confirms the committed transaction or returns an explicit

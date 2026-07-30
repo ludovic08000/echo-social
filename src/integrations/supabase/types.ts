@@ -7853,7 +7853,7 @@ export type Database = {
           p_route_version: string
           p_sender_device_id: string
         }
-        Returns: string
+        Returns: Json
       }
       ai_engine_module_stats: {
         Args: { p_window_minutes?: number }
