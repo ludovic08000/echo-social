@@ -1,9 +1,12 @@
 import { loadIdentityKeys, type IdentityKeyPair } from './keyManager';
+import type { AegisRecoveryVaultPayload } from './aegisRecoveryProtocol';
 import {
   createOrRotateAegisRecoveryVault,
   hasAegisRecoveryVault,
   restoreAegisRecoveryVault,
 } from './aegisRecoveryVault';
+
+export type SecureBackupVaultPayload = AegisRecoveryVaultPayload;
 
 export interface CreatedSecureBackupVault {
   recoveryKey: string;
