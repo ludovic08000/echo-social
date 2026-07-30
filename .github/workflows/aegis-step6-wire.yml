@@ -1,0 +1,33 @@
+name: Aegis step 6 wire
+on:
+  push:
+    branches: [refactor/aegis-clean-rebuild]
+permissions:
+  contents: write
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: node scripts/aegis-stage6-wire.mjs
+      - run: npm ci
+      - run: npx vitest run src/lib/crypto/__tests__/aegisRecoveryProtocol.test.ts
+      - run: npm run typecheck
+      - name: Commit wiring
+        run: |
+          rm scripts/aegis-stage6-wire.mjs
+          rm .github/workflows/aegis-step6-wire.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(aegis): expose recovery key rotation'
+          git push origin HEAD:refactor/aegis-clean-rebuild
