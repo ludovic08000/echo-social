@@ -21,8 +21,19 @@ export type OpenViewOnceResult =
 
 type RpcResult = { data: unknown; error: { message?: string | null; code?: string | null } | null };
 
+interface PendingOpenedViewOnce {
+  blob: Blob;
+  isVideo: boolean;
+  label: string;
+  deviceId: string;
+  claimToken: string;
+  parentBody: string;
+  imageUrl: string;
+}
+
 const COMMIT_ATTEMPTS = 3;
 const COMMIT_RETRY_MS = 250;
+const pendingOpened = new Map<string, PendingOpenedViewOnce>();
 const channel = typeof BroadcastChannel !== 'undefined'
   ? new BroadcastChannel('aegis-view-once-v1')
   : null;
@@ -66,19 +77,51 @@ async function commitConsumption(messageId: string, deviceId: string, claimToken
   return false;
 }
 
+async function finalizePending(
+  messageId: string,
+  pending: PendingOpenedViewOnce,
+): Promise<OpenViewOnceResult> {
+  const committed = await commitConsumption(messageId, pending.deviceId, pending.claimToken);
+  if (!committed) return { status: 'error', reason: 'VIEW_ONCE_COMMIT_UNCONFIRMED' };
+
+  pendingOpened.delete(messageId);
+  await purgeMessageLocalState({
+    messageId,
+    body: pending.parentBody,
+    imageUrl: pending.imageUrl,
+  });
+  channel?.postMessage({ type: 'consumed', messageId });
+  return {
+    status: 'opened',
+    blob: pending.blob,
+    isVideo: pending.isVideo,
+    label: pending.label,
+  };
+}
+
 /**
  * Opens one view-once media item without touching the normal plaintext, archive,
  * media-key or decrypted-blob caches.
  *
  * The encrypted R2 object is downloaded before the device copy is decrypted, so
  * a transient network failure cannot advance the Double Ratchet and strand the
- * only readable capsule.
+ * only readable capsule. If the authoritative commit is temporarily ambiguous,
+ * the decrypted blob remains only in RAM and a second click retries that commit
+ * without replaying the Ratchet message.
  */
 export async function openAegisViewOnce(messageId: string): Promise<OpenViewOnceResult> {
   const userId = await getCachedAuthUserId().catch(() => null);
   const deviceId = getCurrentDeviceId();
   if (!userId || isDeviceIdTemporary() || !messageId) {
     return { status: 'error', reason: 'VIEW_ONCE_DEVICE_NOT_READY' };
+  }
+
+  const pending = pendingOpened.get(messageId);
+  if (pending) {
+    if (pending.deviceId !== deviceId) {
+      return { status: 'error', reason: 'VIEW_ONCE_PENDING_ON_ANOTHER_DEVICE' };
+    }
+    return finalizePending(messageId, pending);
   }
 
   const begin = await rpc('begin_aegis_view_once_consume', {
@@ -132,26 +175,20 @@ export async function openAegisViewOnce(messageId: string): Promise<OpenViewOnce
     const key = await importMediaKey(media.keyB64);
     const decrypted = await decryptMediaWithMetadata(encryptedMedia, key);
     const mime = decrypted.mimeType || (isVideoMediaLabel(media.label) ? 'video/mp4' : 'image/jpeg');
-    const blob = new Blob([decrypted.data], { type: mime });
-
-    const committed = await commitConsumption(messageId, deviceId, claim.claimToken);
-    if (!committed) throw new Error('VIEW_ONCE_COMMIT_UNCONFIRMED');
-
-    await purgeMessageLocalState({
-      messageId,
-      body: claim.parentBody,
-      imageUrl: claim.imageUrl,
-    });
-    channel?.postMessage({ type: 'consumed', messageId });
-    return {
-      status: 'opened',
-      blob,
+    const pendingResult: PendingOpenedViewOnce = {
+      blob: new Blob([decrypted.data], { type: mime }),
       isVideo: mime.startsWith('video/') || isVideoMediaLabel(media.label),
       label: media.label,
+      deviceId,
+      claimToken: claim.claimToken,
+      parentBody: claim.parentBody,
+      imageUrl: claim.imageUrl,
     };
+    pendingOpened.set(messageId, pendingResult);
+    return finalizePending(messageId, pendingResult);
   } catch (error) {
-    // Do not release after ratchet decryption. The claim remains bound to this
-    // device until expiry, preventing another device from racing a consumed key.
+    // Do not release after Ratchet decryption. The claim stays bound to this
+    // device and any decrypted result remains memory-only until commit succeeds.
     return { status: 'error', reason: error instanceof Error ? error.message : String(error) };
   }
 }
