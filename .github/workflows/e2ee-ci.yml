@@ -95,6 +95,18 @@ jobs:
           text = text.replace(old_session, '  const sessionId = createAegisSessionId();', 1)
           integration.write_text(text)
 
+          fanout = Path('src/lib/crypto/__tests__/multiDeviceFanoutOutOfOrder.test.ts')
+          text = fanout.read_text()
+          fanout_marker = "import { bufferToBase64, randomBytes } from '../utils';\n"
+          if wire_import not in text:
+              if fanout_marker not in text:
+                  raise SystemExit('fan-out fixture import marker not found')
+              text = text.replace(fanout_marker, fanout_marker + wire_import, 1)
+          if old_session not in text:
+              raise SystemExit('obsolete fan-out session id fixture not found')
+          text = text.replace(old_session, '  const sessionId = createAegisSessionId();', 1)
+          fanout.write_text(text)
+
           types = Path('src/integrations/supabase/types.ts')
           text = types.read_text()
           replacements = {
@@ -125,6 +137,14 @@ jobs:
                   raise SystemExit('repeatable session insertion marker not found')
               text = text.replace(insertion, helper + insertion, 1)
           envelope.write_text(text)
+
+          x3dh = Path('src/lib/crypto/x3dh.ts')
+          text = x3dh.read_text()
+          old_repair = '''    if (!signatureValid || !local || local.publicKeyBase64 !== data.public_key) {\n      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);\n      return;\n    }'''
+          new_repair = '''    if (!signatureValid) {\n      try {\n        await (supabase as any).rpc('quarantine_own_invalid_device_spk', {\n          p_device_id: deviceId,\n          p_spk_id: data.spk_id,\n          p_reason: 'own_device_spk_signature_invalid',\n        });\n      } catch (error) {\n        console.warn('[X3DH-DEV] invalid SPK repair marker failed:', error);\n      }\n      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);\n      return;\n    }\n    if (!local || local.publicKeyBase64 !== data.public_key) {\n      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);\n      return;\n    }'''
+          if old_repair not in text:
+              raise SystemExit('stage 3 SPK repair block not found')
+          x3dh.write_text(text.replace(old_repair, new_repair, 1))
           PY
 
       - name: Install dependencies
@@ -142,9 +162,11 @@ jobs:
             src/lib/crypto/__tests__/deviceRatchet.test.ts \
             src/lib/crypto/__tests__/signalProtocolHardening.test.ts \
             src/lib/crypto/__tests__/multiDeviceIntegration.test.ts \
+            src/lib/crypto/__tests__/multiDeviceFanoutOutOfOrder.test.ts \
             src/lib/messaging/__tests__/repeatablePreKeyEnvelope.test.ts \
             src/lib/messaging/__tests__/messageCompatibility.test.ts \
             src/lib/messaging/__tests__/aegisStage3Architecture.test.ts \
+            src/lib/messaging/__tests__/manualDeviceRevocationPolicy.test.ts \
             src/lib/messaging/__tests__/aegisCrossPlatformDeviceCopy.test.ts \
             src/lib/messaging/__tests__/aegisOutboundEngine.test.ts \
             src/lib/messaging/__tests__/aegisSendRpc.test.ts
@@ -161,6 +183,48 @@ jobs:
           set -euo pipefail
           rm -rf .github/aegis-stage3-payload
           rm -f .github/workflows/apply-aegis-stage3.yml
+          git checkout -- public/version.json || true
+          cat > .github/workflows/e2ee-ci.yml <<'YAML'
+          name: E2EE CI
+
+          on:
+            push:
+              branches: [main]
+            pull_request:
+              branches: [main]
+            workflow_dispatch:
+
+          jobs:
+            verify:
+              runs-on: ubuntu-latest
+              timeout-minutes: 30
+
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@v4
+
+                - name: Setup Node
+                  uses: actions/setup-node@v4
+                  with:
+                    node-version: 22
+                    cache: npm
+
+                - name: Install dependencies
+                  run: npm ci
+
+                - name: Legacy repository lint
+                  continue-on-error: true
+                  run: npm run lint
+
+                - name: Typecheck
+                  run: npm run typecheck
+
+                - name: Test
+                  run: npm run test
+
+                - name: Build
+                  run: npm run build
+          YAML
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
