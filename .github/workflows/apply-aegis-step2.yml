@@ -1,0 +1,48 @@
+name: Apply Aegis step 2
+
+on:
+  push:
+    branches: [refactor/aegis-clean-rebuild]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/aegis-clean-rebuild
+          fetch-depth: 0
+
+      - name: Apply exact idempotent transport patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f supabase/migrations/20260730010000_aegis_clean_transport.sql ]; then
+            echo "Aegis step 2 is already applied."
+            exit 0
+          fi
+          cat .github/aegis-step2-payload/aa \
+              .github/aegis-step2-payload/ab \
+              .github/aegis-step2-payload/ac \
+              .github/aegis-step2-payload/ad \
+              .github/aegis-step2-payload/ae > /tmp/aegis-step2.b64
+          base64 --decode /tmp/aegis-step2.b64 > /tmp/aegis-step2.tar.gz
+          echo "5cb47d0b41146782d71d936d6b341992767fb32981bac27134851f6a76d55333  /tmp/aegis-step2.tar.gz" | sha256sum --check
+          tar -xzf /tmp/aegis-step2.tar.gz -C .
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            src/lib/messaging/aegisSendRpc.ts \
+            src/lib/messaging/__tests__/aegisSendRpc.test.ts \
+            src/hooks/useAegisMessageQueue.ts \
+            src/lib/messaging/__tests__/aegisCleanTransportMigration.test.ts \
+            src/lib/messaging/__tests__/aegisOutboxAuthoritativeReceiptPolicy.test.ts \
+            supabase/migrations/20260730010000_aegis_clean_transport.sql
+          git commit -m "feat(aegis): make transport exactly idempotent"
+          git push origin HEAD:refactor/aegis-clean-rebuild
