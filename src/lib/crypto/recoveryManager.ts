@@ -70,7 +70,11 @@ export async function attemptRecovery(
       if (restored.status === 'restored' || restored.status === 'already_present') {
         return finishSuccessfulRecovery(userId, 'recovery_key');
       }
-      return { ok: false, source: 'recovery_key', reason: restored.reason ?? restored.status };
+      return {
+        ok: false,
+        source: 'recovery_key',
+        reason: 'reason' in restored && restored.reason ? restored.reason : restored.status,
+      };
     }
 
     const mod = await import('./passkeyVault');
