@@ -57,6 +57,7 @@ import { useTypingPresence } from '@/hooks/useTypingPresence';
 import { ForwardMessageDialog } from '@/components/messages/ForwardMessageDialog';
 import { ShareContentPicker } from '@/components/messages/ShareContentPicker';
 import { DisappearingMessagesDialog } from '@/components/messages/DisappearingMessagesDialog';
+import { ViewOnceMessage } from '@/components/messages/ViewOnceMessage';
 
 // ─── Utils ───────────────────────────────────────────────
 function formatMessageTime(dateStr: string) {
@@ -681,6 +682,10 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
     // Documents path (PDF/Office/zip ≤100 Mo)
     if (isDoc) {
+      if (armedVO) {
+        toast.error('La vue unique est réservée aux photos et vidéos.');
+        return;
+      }
       if (file.size > 100 * 1024 * 1024) {
         toast.error('Document trop volumineux (max 100 Mo)');
         return;
@@ -1230,6 +1235,37 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
                   const reactions = reactionsByMessage[msg.id] || [];
                    const isBigEmoji = isSingleEmoji(msg.body);
                    const isNegotiationMsg = msg.body.startsWith('💰 OFFRE:') || msg.body.startsWith('✅ OFFRE') || msg.body.startsWith('❌ OFFRE') || msg.body.startsWith('🔄 CONTRE') || msg.body.startsWith('✅ CONTRE');
+
+                  if (msg.view_once) {
+                    return (
+                      <div
+                        key={msg.id}
+                        className={cn('flex gap-1.5 relative group', isFirstInGroup ? 'mt-2' : 'mt-0.5')}
+                      >
+                        <div className="w-6 flex-shrink-0">
+                          {isLastInGroup && <UserAvatar src={msg.profile.avatar_url} alt={msg.profile.name} size="xs" />}
+                        </div>
+                        <div className="max-w-[80%] flex flex-col items-start">
+                          <ViewOnceMessage
+                            messageId={msg.id}
+                            isMe={isMe}
+                            state={msg.view_once_state}
+                          />
+                          <div className="flex items-center gap-1 mt-0.5 px-0.5">
+                            <span className="text-[8px] text-muted-foreground">{format(new Date(msg.created_at), 'HH:mm')}</span>
+                            {isMe && <CheckCheck className="w-2.5 h-2.5 text-primary/60" />}
+                            <button
+                              type="button"
+                              onClick={() => deleteForMe.mutate({ messageId: msg.id, conversationId })}
+                              className="text-[8px] text-muted-foreground hover:text-destructive"
+                            >
+                              Supprimer
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div

@@ -250,6 +250,19 @@ export async function removePlaintext(messageId: string): Promise<void> {
   }
 }
 
+export async function removePlaintextForCiphertext(ciphertextBody: string): Promise<void> {
+  if (!ciphertextBody) return;
+  try {
+    const id = await toCiphertextLookupKey(ciphertextBody);
+    volatileMirror.delete(id);
+    await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', (tx) => {
+      tx.objectStore(STORE_MESSAGES).delete(id);
+    });
+  } catch (error) {
+    warnOnce('[plaintextStore] remove ciphertext lookup skipped safely', error);
+  }
+}
+
 export async function wipePlaintextStore(): Promise<void> {
   volatileMirror.clear();
 

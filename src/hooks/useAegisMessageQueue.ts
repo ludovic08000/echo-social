@@ -54,6 +54,8 @@ type SentMessageSnapshot = {
   conversation_id: string;
   sender_id: string;
   body: string;
+  body_kind?: string | null;
+  view_once?: boolean;
   image_url: string | null;
   created_at: string;
   status: 'delivered';
@@ -622,12 +624,15 @@ throw new Error(visibleMessage);
       dispatchDecryptRetry(data.id);
     }
 
+    const isViewOnce = Boolean(extra?.view_once);
     const sentMessage: SentMessageSnapshot = {
       id: data.id,
       conversation_id: conversationId,
       sender_id: user.id,
-      body: bodyToStore,
-      image_url: imageUrl || null,
+      body: isViewOnce ? '🔒 Vue unique' : bodyToStore,
+      body_kind: isViewOnce ? 'view_once' : (encryptedSuccessfully ? 'multi_device' : 'system'),
+      view_once: isViewOnce,
+      image_url: isViewOnce ? null : imageUrl || null,
       created_at: new Date().toISOString(),
       status: 'delivered',
       profile: {

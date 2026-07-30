@@ -165,6 +165,17 @@ export function forgetDecryptedMedia(cacheKey: string): void {
   retireEntry(entry);
 }
 
+export function forgetDecryptedMediaByUrl(encryptedUrl: string): void {
+  if (!encryptedUrl) return;
+  const prefix = `${encryptedUrl}\x00`;
+  for (const [cacheKey, entry] of Array.from(store.entries())) {
+    if (!cacheKey.startsWith(prefix)) continue;
+    store.delete(cacheKey);
+    cloneInflight.delete(cacheKey);
+    retireEntry(entry);
+  }
+}
+
 export function clearDecryptedMediaCache(): void {
   for (const entry of store.values()) retireEntry(entry);
   store.clear();

@@ -89,6 +89,8 @@ const cache = new LruMap<string, DecryptionOutcome>(CACHE_CAP);
 type LastGoodEntry = { body: string; outcome: DecryptionOutcome };
 const lastGoodByMessage = new LruMap<string, LastGoodEntry>(CACHE_CAP);
 const inflight = new Map<string, Promise<DecryptionOutcome | null>>();
+const purgedMessageIds = new Set<string>();
+const PURGED_MESSAGE_CAP = 2_000;
 
 export function readLastGoodOutcome(
   messageId?: string,
@@ -104,7 +106,7 @@ export function rememberLastGoodOutcome(
   outcome: DecryptionOutcome,
   body?: string,
 ): void {
-  if (!messageId || body === undefined || outcome.hidden || outcome.text === '') return;
+  if (!messageId || purgedMessageIds.has(messageId) || body === undefined || outcome.hidden || outcome.text === '') return;
   lastGoodByMessage.set(messageId, { body, outcome });
 }
 
@@ -193,6 +195,24 @@ export function dropCache(messageId: string | undefined, body: string): void {
   cache.delete(cacheKey(messageId, body));
 }
 
+export function purgeDecryptionStateForMessage(messageId: string, body?: string): void {
+  if (!messageId) return;
+  purgedMessageIds.add(messageId);
+  while (purgedMessageIds.size > PURGED_MESSAGE_CAP) {
+    const oldest = purgedMessageIds.values().next().value as string | undefined;
+    if (!oldest) break;
+    purgedMessageIds.delete(oldest);
+  }
+  if (body !== undefined) {
+    const key = cacheKey(messageId, body);
+    cache.delete(key);
+    inflight.delete(key);
+  }
+  clearLastGoodOutcome(messageId);
+  clearNegativeCacheForMessage(messageId);
+  senderCache.delete(messageId);
+}
+
 export function buildOutcomeFromText(text: string): DecryptionOutcome {
   if (hasMediaKey(text)) {
     const parsed = parseMediaMessage(text);
@@ -219,6 +239,7 @@ export function persistOutcome(body: string, outcome: DecryptionOutcome, message
   const persisted = outcome.mediaKeyB64
     ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
     : outcome.text;
+  if (messageId && purgedMessageIds.has(messageId)) return persisted;
   rememberLastGoodOutcome(messageId, outcome, body);
   if (messageId) void savePlaintext(messageId, persisted);
   void savePlaintextForCiphertext(body, persisted);
@@ -254,6 +275,7 @@ function cacheAndPersist(
   messageId?: string,
   currentUserId?: string | null,
 ): Promise<DecryptionOutcome> {
+  if (messageId && purgedMessageIds.has(messageId)) return Promise.resolve(outcome);
   cache.set(key, outcome);
   const persisted = outcome.mediaKeyB64
     ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
@@ -283,6 +305,9 @@ export async function resolvePlaintext(opts: {
   decrypt: (body: string) => Promise<DecryptResult>;
 }): Promise<DecryptionOutcome | null> {
   const { body, messageId, decrypt } = opts;
+  if (messageId && purgedMessageIds.has(messageId)) {
+    return { text: '', mediaKeyB64: null, hidden: true };
+  }
   const traceStartedAt = Date.now();
   const trace = (
     stage: string,

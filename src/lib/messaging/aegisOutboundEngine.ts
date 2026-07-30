@@ -28,6 +28,7 @@ import {
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { purgeMessageLocalState } from '@/lib/messaging/messageLocalCleanup';
 
 export interface AegisOutboundInput {
   conversationId: string;
@@ -145,8 +146,10 @@ export async function sendAegisOutboundMessage(
     : null;
   let keyCapsule = parentBody ? resumed?.keyCapsule ?? null : null;
   let archiveBody = resumed?.archiveBody ?? null;
-  const archiveBackupEnabled =
-    resumed?.archiveBackupEnabled ?? isArchiveBackupEnabled();
+  const isViewOnce = Boolean(input.extra?.view_once ?? resumed?.extra?.view_once);
+  const archiveBackupEnabled = !isViewOnce && (
+    resumed?.archiveBackupEnabled ?? isArchiveBackupEnabled()
+  );
   let copies = parentBody
     ? (resumed?.preparedCopies ?? []).filter((copy) =>
         copy.message_id === messageId && isAegisDeviceCopyWire(copy.encrypted_body),
@@ -187,7 +190,7 @@ export async function sendAegisOutboundMessage(
 
   await Promise.all([
     persist(),
-    savePlaintext(messageId, input.plaintext),
+    isViewOnce ? Promise.resolve() : savePlaintext(messageId, input.plaintext),
   ]);
   trace('OUTBOX_DURABLE');
 
@@ -239,7 +242,7 @@ export async function sendAegisOutboundMessage(
       });
       parentBody = preparedMessage.body;
       keyCapsule = preparedMessage.keyCapsule;
-      await savePlaintext(`aegis-capsule:${messageId}`, keyCapsule);
+      if (!isViewOnce) await savePlaintext(`aegis-capsule:${messageId}`, keyCapsule);
       copies = [];
       routeVersion = null;
       await persist({
@@ -327,7 +330,7 @@ export async function sendAegisOutboundMessage(
       extra: {
         ...(input.extra ?? resumed?.extra ?? {}),
         body_kind: 'multi_device',
-        archive_body: archiveBody,
+        archive_body: isViewOnce ? null : archiveBody,
       },
       senderUserId: input.senderUserId,
       senderDeviceId: readyDevice.deviceId,
@@ -370,7 +373,9 @@ export async function sendAegisOutboundMessage(
   // The stable message UUID was cached before the transaction. Only add the
   // ciphertext index after commit; writing the same plaintext row twice wastes
   // IndexedDB work on resource-constrained mobile browsers.
-  void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
+  if (!isViewOnce) {
+    void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
+  }
   if (archiveBackupEnabled) {
     void import('@/lib/messaging/archive/archiveKey').then(({ archiveBubbleForUser }) =>
       archiveBubbleForUser({
@@ -382,6 +387,13 @@ export async function sendAegisOutboundMessage(
     ).catch(() => false);
   }
   await deleteOutboxPayload(localId).catch(() => undefined);
+  if (isViewOnce) {
+    await purgeMessageLocalState({
+      messageId: committedId,
+      body: parentBody,
+      imageUrl: input.imageUrl ?? resumed?.imageUrl ?? null,
+    });
+  }
   trace('SEND_COMPLETE', { copyCount: copies.length });
 
   return {
