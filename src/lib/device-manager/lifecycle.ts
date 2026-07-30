@@ -1,9 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
-import {
-  getOrCreateDeviceIdentity,
-  signDeviceIdentityBinding,
-} from '@/lib/crypto/deviceIdentity';
+import { prepareDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
 import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
@@ -59,19 +56,13 @@ async function registerMissingStableDevice(
   userId: string,
   deviceId: string,
 ): Promise<void> {
-  const [deviceKx, deviceIdentity, fingerprint] = await Promise.all([
+  const [deviceKx, fingerprint] = await Promise.all([
     getOrCreateDeviceKxKey(deviceId, userId),
-    getOrCreateDeviceIdentity(userId, deviceId),
     getDeviceFingerprint().catch(() => null),
   ]);
   const devicePublicKey = deviceKx.publicB64;
   if (!devicePublicKey) throw new Error('DEVICE_REGISTRATION_PUBLIC_KEY_MISSING');
-  const deviceIdentitySignature = await signDeviceIdentityBinding({
-    userId,
-    deviceId,
-    devicePublicKey,
-    identity: deviceIdentity,
-  });
+  const authorization = await prepareDeviceAuthorization(userId, deviceId, deviceKx);
 
   const args = {
     p_user_id: userId,
@@ -81,9 +72,12 @@ async function registerMissingStableDevice(
     p_device_fingerprint: fingerprint,
     p_platform: getCurrentPlatform(),
     p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
-    p_device_signing_key: deviceIdentity.publicB64,
-    p_device_identity_signature: deviceIdentitySignature,
-    p_device_identity_version: 1,
+    p_device_signing_key: authorization.deviceSigning.publicB64,
+    p_device_authorization_signature: authorization.authorizationSignature,
+    p_account_identity_key: authorization.account.identityKey,
+    p_account_signing_key: authorization.account.signingKey,
+    p_account_fingerprint: authorization.account.fingerprint,
+    p_account_binding_signature: authorization.account.bindingSignature,
   };
 
   const { data: rpcData, error: rpcError } = await supabase.rpc(

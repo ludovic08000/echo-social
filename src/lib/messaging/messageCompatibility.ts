@@ -4,6 +4,7 @@ import {
   parseAegisMessageEnvelope,
   type AegisMessageEnvelope,
 } from '@/lib/messaging/aegisEnvelope';
+import { parseAegisInitialPayload, parseAegisRatchetPayload } from '@/lib/crypto/aegisDeviceWire';
 
 export const AEGIS_PROTOCOL = AEGIS_MESSAGE_PROTOCOL;
 export const AEGIS_VERSION = AEGIS_WIRE_VERSION;
@@ -30,8 +31,8 @@ export function isMultiDeviceEnvelopeBody(body: string | null | undefined): body
 /** Exact device-copy formats accepted by both Aegis clients and SQL. */
 export function isAegisDeviceCopyWire(body: string | null | undefined): body is string {
   return typeof body === 'string' && (
-    body.startsWith(AEGIS_DEVICE_COPY_RATCHET_PREFIX) ||
-    body.startsWith(AEGIS_DEVICE_COPY_INIT_PREFIX)
+    parseAegisRatchetPayload(body) !== null ||
+    parseAegisInitialPayload(body) !== null
   );
 }
 

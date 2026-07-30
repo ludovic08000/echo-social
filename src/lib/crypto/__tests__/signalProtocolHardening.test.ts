@@ -59,7 +59,7 @@ describe('Signal protocol hardening', () => {
     );
 
     const encrypted = await ratchetEncrypt(ALICE, ALICE_DEVICE, BOB, BOB_DEVICE, 'bonjour');
-    expect(encrypted).toMatch(/^aegis1\.ratchet\.s6/);
+    expect(encrypted).toMatch(/^aegis1\.ratchet\.s_[A-Za-z0-9_-]{22}\./);
 
     const parts = encrypted!.split('.');
     parts[4] = String(Number(parts[4]) + 1);

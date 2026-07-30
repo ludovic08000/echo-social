@@ -11,7 +11,6 @@ import { fetchVerifiedDeviceList } from '@/lib/crypto/signedDeviceList';
 import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
-const MAX_DEVICE_STALE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 // A send may need the sender and recipient device lists. Re-verifying both over
 // the network before every message dominated warm-message latency. Keep only a
 // very short RAM cache; verification remains fail-closed and is refreshed often.
@@ -63,10 +62,6 @@ function normalizeLastSeen(raw?: string): number | undefined {
   return Number.isFinite(ts) ? ts : undefined;
 }
 
-function isDeviceTooOld(lastSeen?: number): boolean {
-  if (!lastSeen) return false;
-  return (Date.now() - lastSeen) > MAX_DEVICE_STALE_MS;
-}
 
 async function hygieneFilterDevices(devices: DeviceDescriptor[], options: DeviceListOptions = {}): Promise<DeviceDescriptor[]> {
   const deduped = new Map<string, DeviceDescriptor>();
@@ -80,8 +75,7 @@ async function hygieneFilterDevices(devices: DeviceDescriptor[], options: Device
     }
   }
 
-  const candidates = Array.from(deduped.values())
-    .filter(device => !isDeviceTooOld(device.lastSeen));
+  const candidates = Array.from(deduped.values());
 
   if (options.verifyPrekeys === false) return candidates;
 
@@ -137,7 +131,7 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
             userId,
             deviceId: t.deviceId,
             devicePublicKey: t.devicePublicKey,
-            lastSeen: undefined,
+            lastSeen: normalizeLastSeen(t.lastSeenAt ?? undefined),
           })),
         options,
       );

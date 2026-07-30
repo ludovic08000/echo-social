@@ -15,6 +15,7 @@ import {
   ratchetDecrypt,
   ratchetEncrypt,
 } from '@/lib/crypto/deviceRatchet';
+import { VALID_AEGIS_SESSION_ID } from '@/test/aegisWireFixtures';
 
 const A_USER = 'user-alice';
 const A_DEV = 'dev-alice-1';
@@ -154,19 +155,19 @@ describe('deviceRatchet — real bootstrap and Double Ratchet', () => {
   it('lists only sessions for the requested local device', async () => {
     const sharedSecret = makeSharedSecret(7);
     const peerPreKey = await generateX25519();
-    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, sharedSecret, 'session-ab', {
+    await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, sharedSecret, VALID_AEGIS_SESSION_ID, {
       isInitiator: true,
       peerInitialDhPubB64: peerPreKey.pubB64,
     });
-    await establishDeviceSession(A_USER, 'dev-alice-other', B_USER, B_DEV, sharedSecret, 'session-other', {
+    await establishDeviceSession(A_USER, 'dev-alice-other', B_USER, B_DEV, sharedSecret, 's_BBBBBBBBBBBBBBBBBBBBBB', {
       isInitiator: true,
       peerInitialDhPubB64: peerPreKey.pubB64,
     });
 
     const known = await listKnownSessionIds(A_USER, A_DEV);
     const ids = known.map((session) => session.sessionId);
-    expect(ids).toContain('session-ab');
-    expect(ids).not.toContain('session-other');
+    expect(ids).toContain(VALID_AEGIS_SESSION_ID);
+    expect(ids).not.toContain('s_BBBBBBBBBBBBBBBBBBBBBB');
   });
 
   it('invalidating a device session forces a new X3DH bootstrap', async () => {

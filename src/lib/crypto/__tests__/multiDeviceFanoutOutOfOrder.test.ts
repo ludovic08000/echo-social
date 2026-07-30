@@ -32,6 +32,7 @@ import {
 } from '../deviceRatchet';
 import { hardCrypto } from '../cryptoIntegrity';
 import { bufferToBase64, randomBytes } from '../utils';
+import { createAegisSessionId } from '../aegisDeviceWire';
 
 // ─── Session seeding (copy of helpers from multiDeviceIntegration) ─────────
 const DB_NAME = 'forsure-device-sessions';
@@ -120,9 +121,7 @@ async function seedSession(
   const initiatorRatchet = await genX25519();
   const dh1 = await dh(initiatorRatchet.privJwk, peerInitial.pubB64);
   const r1 = await kdfRK(sharedSecret, dh1);
-  const sessionId = bufferToBase64(randomBytes(8).buffer as ArrayBuffer)
-    .replace(/[+/=]/g, '')
-    .slice(0, 12);
+  const sessionId = createAegisSessionId();
 
   await putSession({
     id: `${from.user}::${from.device}::${to.user}::${to.device}`,

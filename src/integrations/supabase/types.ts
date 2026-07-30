@@ -6716,8 +6716,7 @@ export type Database = {
           crypto_invalid_reason: string | null
           device_fingerprint: string | null
           device_id: string
-          device_identity_signature: string | null
-          device_identity_version: number
+          device_authorization_signature: string | null
           device_name: string | null
           device_public_key: string
           device_signing_key: string | null
@@ -6750,8 +6749,7 @@ export type Database = {
           crypto_invalid_reason?: string | null
           device_fingerprint?: string | null
           device_id: string
-          device_identity_signature?: string | null
-          device_identity_version?: number
+          device_authorization_signature?: string | null
           device_name?: string | null
           device_public_key: string
           device_signing_key?: string | null
@@ -6784,8 +6782,7 @@ export type Database = {
           crypto_invalid_reason?: string | null
           device_fingerprint?: string | null
           device_id?: string
-          device_identity_signature?: string | null
-          device_identity_version?: number
+          device_authorization_signature?: string | null
           device_name?: string | null
           device_public_key?: string
           device_signing_key?: string | null
@@ -8643,10 +8640,16 @@ export type Database = {
       }
       register_user_device_safe: {
         Args: {
+          p_account_binding_signature: string
+          p_account_fingerprint: string
+          p_account_identity_key: string
+          p_account_signing_key: string
+          p_device_authorization_signature: string
           p_device_fingerprint: string
           p_device_id: string
           p_device_name: string
           p_device_public_key: string
+          p_device_signing_key: string
           p_platform: string
           p_user_agent: string
           p_user_id: string

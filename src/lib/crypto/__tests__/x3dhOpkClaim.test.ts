@@ -1,22 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  from: vi.fn(),
   rpc: vi.fn(),
   verify: vi.fn(),
+  fetchVerifiedDeviceIdentity: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
-  supabase: {
-    from: mocks.from,
-    rpc: mocks.rpc,
-  },
+  supabase: { rpc: mocks.rpc },
 }));
 
 vi.mock('@/lib/crypto/cryptoIntegrity', () => ({
-  hardCrypto: {
-    verify: mocks.verify,
-  },
+  hardCrypto: { verify: mocks.verify },
   hardGlobals: { TextEncoder, TextDecoder },
 }));
 
@@ -31,47 +26,26 @@ vi.mock('@/lib/crypto/utils', () => ({
 
 vi.mock('@/lib/crypto/keyManager', () => ({
   exportPublicKeyRaw: vi.fn(),
-  verifyPublicIdentityBinding: vi.fn(async () => true),
 }));
 
-vi.mock('@/lib/crypto/deviceIdentity', () => ({
-  verifyDeviceIdentityBinding: vi.fn(async () => true),
+vi.mock('@/lib/crypto/signedDeviceList', () => ({
+  fetchVerifiedDeviceIdentity: mocks.fetchVerifiedDeviceIdentity,
 }));
 
 import { fetchPrekeyBundleForDevice } from '@/lib/crypto/x3dh';
 
 function installPrekeyResponses() {
-  mocks.from.mockImplementation((table: string) => {
-    if (table !== 'user_devices') throw new Error(`Unexpected table: ${table}`);
-    const query = {
-      select: () => query,
-      eq: () => query,
-      is: () => query,
-      maybeSingle: async () => ({
-        data: {
-          device_public_key: 'AA==',
-          device_signing_key: 'AA==',
-          device_identity_signature: 'AA==',
-          device_identity_version: 1,
-        },
-        error: null,
-      }),
-    };
-    return query;
+  mocks.fetchVerifiedDeviceIdentity.mockResolvedValue({
+    deviceId: 'peer-device',
+    devicePublicKey: 'AA==',
+    deviceSigningKey: 'AA==',
   });
-
   mocks.rpc.mockImplementation(async (name: string) => {
     if (name === 'get_device_prekey_bundle') {
-      return {
-        data: [{ spk_id: 7, public_key: 'AA==', signature: 'AA==' }],
-        error: null,
-      };
+      return { data: [{ spk_id: 7, public_key: 'AA==', signature: 'AA==' }], error: null };
     }
     if (name === 'claim_device_one_time_prekey') {
-      return {
-        data: [{ opk_id: 42, public_key: 'AA==' }],
-        error: null,
-      };
+      return { data: [{ opk_id: 42, public_key: 'AA==' }], error: null };
     }
     throw new Error(`Unexpected RPC: ${name}`);
   });
@@ -88,19 +62,14 @@ describe('fetchPrekeyBundleForDevice OPK claiming', () => {
     const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device', {
       claimOneTimePrekey: false,
     });
-
     expect(bundle).toMatchObject({ signedPrekeyId: 7 });
     expect(bundle?.oneTimePrekey).toBeUndefined();
     expect(bundle?.oneTimePrekeyId).toBeUndefined();
-    expect(mocks.rpc).not.toHaveBeenCalledWith(
-      'claim_device_one_time_prekey',
-      expect.anything(),
-    );
+    expect(mocks.rpc).not.toHaveBeenCalledWith('claim_device_one_time_prekey', expect.anything());
   });
 
-  it('keeps claiming an OPK by default for normal X3DH bootstraps', async () => {
+  it('claims an OPK by default for a normal X3DH bootstrap', async () => {
     const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device');
-
     expect(bundle?.oneTimePrekeyId).toBe(42);
     expect(mocks.rpc).toHaveBeenCalledWith('claim_device_one_time_prekey', {
       p_user_id: 'peer-user',

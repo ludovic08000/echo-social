@@ -29,10 +29,7 @@ import {
   refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto/x3dh';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
-import {
-  getOrCreateDeviceIdentity,
-  signDeviceIdentityBinding,
-} from '@/lib/crypto/deviceIdentity';
+import { prepareDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
 import { clearAllDeviceSessions } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
@@ -312,7 +309,6 @@ async function republishDeviceIdentity(
   }
 
   let devicePublicKeyB64: string;
-  const deviceIdentity = await getOrCreateDeviceIdentity(userId, deviceId);
   try {
     diag?.push('identity', 'info', 'stage device_kx');
     const kx = await getOrCreateDeviceKxKey(deviceId, userId);
@@ -351,19 +347,17 @@ async function republishDeviceIdentity(
     // Fingerprint metadata is optional; the device public key is authoritative.
   }
 
+  const authorization = await prepareDeviceAuthorization(userId, deviceId);
+  if (authorization.deviceKx.publicB64 !== devicePublicKeyB64) {
+    throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
+  }
   const payload = {
     user_id: userId,
     device_id: deviceId,
     device_name: deviceName,
     device_public_key: devicePublicKeyB64,
-    device_signing_key: deviceIdentity.publicB64,
-    device_identity_signature: await signDeviceIdentityBinding({
-      userId,
-      deviceId,
-      devicePublicKey: devicePublicKeyB64,
-      identity: deviceIdentity,
-    }),
-    device_identity_version: 1,
+    device_signing_key: authorization.deviceSigning.publicB64,
+    device_authorization_signature: authorization.authorizationSignature,
     platform,
     user_agent: userAgent,
     is_active: true,
@@ -371,46 +365,9 @@ async function republishDeviceIdentity(
     device_fingerprint: deviceFingerprint,
   };
 
-  const publicPayload = {
-    user_id: userId,
-    identity_key: bundle.identityKey,
-    signing_key: bundle.signingKey,
-    fingerprint: bundle.fingerprint,
-    identity_binding_version: bundle.bindingVersion,
-    identity_binding_signature: bundle.bindingSignature,
-    kem_type: 'X25519',
-    is_active: true,
-    updated_at: new Date().toISOString(),
-  };
-
-  validatePayloadForDB(publicPayload, 'user_public_keys');
-  logPayloadBeforeUpsert('user_public_keys', publicPayload);
-
-  validatePayloadForDB(payload, 'user_devices');
-  logPayloadBeforeUpsert('user_devices', payload);
-
-  // Diagnostic log — NEVER log private key material.
-  diag?.push('identity', 'info', 'stage user_public_keys.upsert', {
-    identityKeyLen: bundle.identityKey.length,
-    signingKeyLen: bundle.signingKey.length,
-    fingerprint: bundle.fingerprint,
-  });
-  try {
-    const { error: pubErr } = await supabase
-      .from('user_public_keys')
-      .upsert(publicPayload, { onConflict: 'user_id,is_active' });
-    if (pubErr) {
-      const dbDiag = formatSupabaseError('user_public_keys', 'user_public_keys_upsert', pubErr, publicPayload);
-      throw new Error(`E2EE_DB_UPSERT_FAILED table=user_public_keys step=user_public_keys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
-    }
-  } catch (e) {
-    console.error('[E2EE][IDENTITY][FAIL]', {
-      step: 'user_public_keys_upsert',
-      error: e,
-      payload: sanitizePayloadForLog(publicPayload),
-    });
-    throw e;
-  }
+  // The registration RPC pins the account root and device authorization in one
+  // transaction. Direct root upserts are forbidden because they could race a
+  // device registration or silently rotate the account identity.
 
   console.log('[resync] user_devices.upsert payload', {
     user_id: payload.user_id,
@@ -438,8 +395,11 @@ async function republishDeviceIdentity(
       p_platform: payload.platform,
       p_user_agent: payload.user_agent,
       p_device_signing_key: payload.device_signing_key,
-      p_device_identity_signature: payload.device_identity_signature,
-      p_device_identity_version: payload.device_identity_version,
+      p_device_authorization_signature: payload.device_authorization_signature,
+      p_account_identity_key: authorization.account.identityKey,
+      p_account_signing_key: authorization.account.signingKey,
+      p_account_fingerprint: authorization.account.fingerprint,
+      p_account_binding_signature: authorization.account.bindingSignature,
     });
     const registerResult = registerData as {
       ok?: boolean;
@@ -478,7 +438,7 @@ async function republishDeviceIdentity(
   }
 
   try {
-    await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, deviceIdentity.privateKey);
+    await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, authorization.deviceSigning.privateKey);
     result.spk = true;
   } catch (e) {
     console.warn('[resync] device SPK refresh failed:', e);

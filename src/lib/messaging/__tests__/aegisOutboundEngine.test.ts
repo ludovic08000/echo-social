@@ -63,6 +63,7 @@ import { AEGIS_MESSAGE_PROTOCOL, parseAegisKeyCapsule } from '@/lib/messaging/ae
 import {
   isMultiDeviceEnvelopeBody,
 } from '@/lib/messaging/messageCompatibility';
+import { VALID_RATCHET_COPY } from '@/test/aegisWireFixtures';
 
 const COPY = {
   message_id: '11111111-1111-4111-8111-111111111111',
@@ -70,7 +71,7 @@ const COPY = {
   recipient_device_id: 'recipient-device',
   sender_user_id: '33333333-3333-4333-8333-333333333333',
   sender_device_id: 'sender-device',
-  encrypted_body: 'aegis1.ratchet.session.dh.0.0.iv.ct',
+  encrypted_body: VALID_RATCHET_COPY,
 };
 
 beforeEach(() => {

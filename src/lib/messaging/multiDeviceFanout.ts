@@ -13,6 +13,7 @@ import {
   ratchetDecryptWithSession,
   AEGIS_RATCHET_PREFIX,
 } from '@/lib/crypto/deviceRatchet';
+import { parseAegisRatchetPayload } from '@/lib/crypto/aegisDeviceWire';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 import {
@@ -133,12 +134,10 @@ export async function preloadDeviceCopies(messageIds: string[]): Promise<void> {
   const task = (async () => {
     for (let offset = 0; offset < missing.length; offset += 100) {
       const batch = missing.slice(offset, offset + 100);
-      const { data, error } = await supabase
-        .from('message_device_copies')
-        .select('message_id,encrypted_body,sender_user_id,sender_device_id,recipient_device_id')
-        .in('message_id', batch)
-        .eq('recipient_user_id', userId)
-        .eq('recipient_device_id', myDeviceId);
+      const { data, error } = await (supabase as any).rpc('get_device_copies_for_messages', {
+        p_message_ids: batch,
+        p_device_id: myDeviceId,
+      });
       if (error) throw error;
       for (const messageId of batch) {
         const cacheKey = copyCacheKey(userId, myDeviceId, messageId);
@@ -161,7 +160,7 @@ export async function preloadDeviceCopies(messageIds: string[]): Promise<void> {
 
 function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
   if (isRepeatablePreKeyEnvelope(body)) return 'aegis1.init.v1';
-  if (body.startsWith(AEGIS_RATCHET_PREFIX)) return 'aegis1.ratchet';
+  if (parseAegisRatchetPayload(body)) return 'aegis1.ratchet';
   return 'unsupported';
 }
 
@@ -224,7 +223,6 @@ async function x3dhWrapForDevice(
   recipientDeviceId: string,
   options: { useOneTimePrekey?: boolean } = {},
 ): Promise<string | null> {
-  if (isKnownInvalidDeviceId(recipientDeviceId)) return null;
   try {
     return await createRepeatablePreKeyEnvelope({
       plaintext,
@@ -414,8 +412,7 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
   const senderDeviceId = getCurrentDeviceId();
 
   const route = await resolveFanoutRouteSnapshot(input.conversationId, input.senderUserId);
-  const targets = route.targets
-    .filter(device => !isKnownInvalidDeviceId(device.deviceId));
+  const targets = route.targets;
   if (targets.length === 0) {
     // Registration/trust publication can finish between two outbox attempts;
     // never keep a negative route cached across the next bounded retry.
@@ -424,7 +421,7 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
   }
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
-    if (!dev.devicePublicKey || isKnownInvalidDeviceId(dev.deviceId)) return null;
+    if (!dev.devicePublicKey) return null;
 
     try {
       const encrypted = await encryptPlaintextForDeviceTarget({
@@ -527,35 +524,19 @@ function requestCurrentDeviceRouteRepair(userId: string, deviceId: string): void
 
 async function loadDeviceCopyRows(
   messageId: string,
-  userId: string,
+  _userId: string,
   deviceId: string,
 ): Promise<CopyRow[]> {
   const rpcResult = await supabase.rpc('get_device_copy_for_message', {
     p_message_id: messageId,
     p_device_id: deviceId,
   });
-  if (!rpcResult.error) {
-    return ((rpcResult.data ?? []) as CopyRow[])
-      .map((row) => ({ ...row, recipient_device_id: row.recipient_device_id ?? deviceId }));
-  }
-
-  // A deployment can briefly serve the new client before PostgREST refreshes
-  // the RPC schema. The exact RLS-filtered table lookup keeps delivery working
-  // during that window and, unlike the old code, never converts a 401/42883
-  // into a false "capsule absent" result.
-  const fallback = await supabase
-    .from('message_device_copies')
-    .select('message_id,encrypted_body,sender_user_id,sender_device_id,recipient_device_id')
-    .eq('message_id', messageId)
-    .eq('recipient_user_id', userId)
-    .eq('recipient_device_id', deviceId);
-  if (fallback.error) {
+  if (rpcResult.error) {
     throw new Error(
-      `AEGIS_DEVICE_COPY_LOOKUP_FAILED:${rpcResult.error.code ?? 'RPC'}:${fallback.error.code ?? 'RLS'}`,
+      `AEGIS_DEVICE_COPY_LOOKUP_FAILED:${rpcResult.error.code ?? 'RPC'}:${rpcResult.error.message}`,
     );
   }
-
-  return ((fallback.data ?? []) as CopyRow[])
+  return ((rpcResult.data ?? []) as CopyRow[])
     .map((row) => ({ ...row, recipient_device_id: row.recipient_device_id ?? deviceId }));
 }
 
@@ -675,31 +656,15 @@ async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
     if (prefix === 'aegis1.init.v1') {
-      const { data: senderDevice } = await supabase
-        .from('user_devices')
-        .select('device_public_key, device_signing_key, device_identity_signature, device_identity_version')
-        .eq('user_id', row.sender_user_id)
-        .eq('device_id', row.sender_device_id)
-        .eq('is_active', true)
-        .eq('approval_status', 'approved')
-        .is('revoked_at', null)
-        .maybeSingle();
-      const { verifyDeviceIdentityBinding } = await import('@/lib/crypto/deviceIdentity');
-      if (
-        !senderDevice?.device_public_key ||
-        !senderDevice.device_signing_key ||
-        !senderDevice.device_identity_signature ||
-        !await verifyDeviceIdentityBinding({
-          userId: row.sender_user_id,
-          deviceId: row.sender_device_id,
-          devicePublicKey: senderDevice.device_public_key,
-          signingPublicKey: senderDevice.device_signing_key,
-          signature: senderDevice.device_identity_signature,
-        })
-      ) {
-        return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_identity_key_missing' };
+      const { fetchVerifiedDeviceIdentity } = await import('@/lib/crypto/signedDeviceList');
+      const senderDevice = await fetchVerifiedDeviceIdentity(
+        row.sender_user_id,
+        row.sender_device_id,
+      );
+      if (!senderDevice) {
+        return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_device_not_authorized' };
       }
-      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderDevice.device_public_key, row.sender_user_id, row.sender_device_id);
+      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderDevice.devicePublicKey, row.sender_user_id, row.sender_device_id);
       return {
         plaintext,
         attemptedSupportedEnvelope: true,

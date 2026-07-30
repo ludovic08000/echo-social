@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { VALID_INIT_COPY, VALID_RATCHET_COPY } from '@/test/aegisWireFixtures';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -29,13 +30,13 @@ const INITIAL: FanoutCopyRow[] = [{
   recipient_device_id: 'device-old-12345678',
   sender_user_id: '33333333-3333-4333-8333-333333333333',
   sender_device_id: 'sender-device-12345678',
-  encrypted_body: 'aegis1.ratchet.session.dh.0.0.iv.ct',
+  encrypted_body: VALID_RATCHET_COPY,
 }];
 
 const REBUILT: FanoutCopyRow[] = [{
   ...INITIAL[0],
   recipient_device_id: 'device-new-12345678',
-  encrypted_body: 'aegis1.init.v1.payload',
+  encrypted_body: VALID_INIT_COPY,
 }];
 
 const INITIAL_ROUTE_VERSION = 'route-version-initial';
