@@ -1,0 +1,25 @@
+name: Aegis step 6 check
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify recovery architecture
+        run: |
+          test -f src/lib/crypto/aegisRecoveryVault.ts
+          test -f supabase/migrations/20260730040000_aegis_recovery_vault.sql
+          ! grep -R "from '@/lib/crypto/accountKeyBackup'.*restoreWithRecoveryKey" -n src || false
+          ! grep -R "putAllInStore.*restore" -n src/lib/crypto/aegisRecoveryVault.ts
+      - run: npx vitest run src/lib/crypto/__tests__/aegisRecoveryProtocol.test.ts
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
