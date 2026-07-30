@@ -1,6 +1,8 @@
 name: Export Aegis stage 3 payload
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [refactor/aegis-clean-rebuild]
   workflow_dispatch:
