@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const sql = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260730010000_aegis_clean_transport.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20260730090000_aegis_clean_rebuild.sql'),
   'utf8',
 ).toLowerCase();
 

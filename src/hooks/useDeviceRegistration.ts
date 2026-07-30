@@ -398,7 +398,7 @@ export function useDeviceRegistration() {
                 window.dispatchEvent(new CustomEvent('forsure:e2ee-server-schema-outdated', {
                   detail: {
                     rpc: 'register_user_device_safe',
-                    migration: '20260730020000_aegis_account_authorized_devices.sql',
+                    migration: '20260730090000_aegis_clean_rebuild.sql',
                   },
                 }));
               } catch {

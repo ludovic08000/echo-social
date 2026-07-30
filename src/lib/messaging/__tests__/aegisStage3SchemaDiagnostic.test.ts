@@ -10,7 +10,7 @@ describe('Aegis stage 3 schema diagnostic', () => {
     );
 
     expect(registration).toContain(
-      "migration: '20260730020000_aegis_account_authorized_devices.sql'",
+      "migration: '20260730090000_aegis_clean_rebuild.sql'",
     );
     expect(registration).not.toContain(
       "migration: '20260728100000_sesame_per_device_identity.sql'",

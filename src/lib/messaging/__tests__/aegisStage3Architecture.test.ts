@@ -6,7 +6,7 @@ function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
-const migration = source('supabase/migrations/20260730020000_aegis_account_authorized_devices.sql').toLowerCase();
+const migration = source('supabase/migrations/20260730090000_aegis_clean_rebuild.sql').toLowerCase();
 const identity = source('src/lib/crypto/deviceIdentity.ts');
 const signedList = source('src/lib/crypto/signedDeviceList.ts');
 const fanout = source('src/lib/messaging/multiDeviceFanout.ts');

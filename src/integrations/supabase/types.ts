@@ -155,16 +155,18 @@ export type Database = {
           answered_at: string | null
           call_type: string
           callee_id: string
+          caller_device_id: string | null
           caller_id: string
           caller_ids: string[] | null
           conversation_id: string
           created_at: string
           declined_by: string[] | null
-          encrypted_call_key: string | null
           ended_at: string | null
           id: string
           is_group: boolean
+          protocol_version: number
           room_id: string | null
+          room_name: string
           status: string
         }
         Insert: {
@@ -172,16 +174,18 @@ export type Database = {
           answered_at?: string | null
           call_type?: string
           callee_id: string
+          caller_device_id?: string | null
           caller_id: string
           caller_ids?: string[] | null
           conversation_id: string
           created_at?: string
           declined_by?: string[] | null
-          encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
           is_group?: boolean
+          protocol_version?: number
           room_id?: string | null
+          room_name: string
           status?: string
         }
         Update: {
@@ -189,19 +193,177 @@ export type Database = {
           answered_at?: string | null
           call_type?: string
           callee_id?: string
+          caller_device_id?: string | null
           caller_id?: string
           caller_ids?: string[] | null
           conversation_id?: string
           created_at?: string
           declined_by?: string[] | null
-          encrypted_call_key?: string | null
           ended_at?: string | null
           id?: string
           is_group?: boolean
+          protocol_version?: number
           room_id?: string | null
+          room_name?: string
           status?: string
         }
         Relationships: []
+      }
+      aegis_call_invitations: {
+        Row: {
+          call_id: string
+          created_at: string
+          encrypted_call_key: string
+          recipient_device_id: string
+          recipient_user_id: string
+          responded_at: string | null
+          status: string
+        }
+        Insert: {
+          call_id: string
+          created_at?: string
+          encrypted_call_key: string
+          recipient_device_id: string
+          recipient_user_id: string
+          responded_at?: string | null
+          status?: string
+        }
+        Update: {
+          call_id?: string
+          created_at?: string
+          encrypted_call_key?: string
+          recipient_device_id?: string
+          recipient_user_id?: string
+          responded_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aegis_call_invitations_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "active_calls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      aegis_recovery_vaults: {
+        Row: {
+          ciphertext: string
+          created_at: string
+          generation: number
+          identity_fingerprint: string
+          kdf_salt: string
+          nonce: string
+          protocol_version: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ciphertext: string
+          created_at?: string
+          generation: number
+          identity_fingerprint: string
+          kdf_salt: string
+          nonce: string
+          protocol_version: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ciphertext?: string
+          created_at?: string
+          generation?: number
+          identity_fingerprint?: string
+          kdf_salt?: string
+          nonce?: string
+          protocol_version?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      aegis_view_once_consumptions: {
+        Row: {
+          claim_token: string
+          consumed_at: string
+          device_id: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          claim_token: string
+          consumed_at?: string
+          device_id: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          claim_token?: string
+          consumed_at?: string
+          device_id?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aegis_view_once_consumptions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      aegis_view_once_payloads: {
+        Row: {
+          claim_expires_at: string | null
+          claim_token: string | null
+          claimed_device_id: string | null
+          conversation_id: string
+          created_at: string
+          device_copies: Json
+          image_url: string
+          message_id: string
+          parent_body: string
+          recipient_user_id: string
+          sender_user_id: string
+        }
+        Insert: {
+          claim_expires_at?: string | null
+          claim_token?: string | null
+          claimed_device_id?: string | null
+          conversation_id: string
+          created_at?: string
+          device_copies: Json
+          image_url: string
+          message_id: string
+          parent_body: string
+          recipient_user_id: string
+          sender_user_id: string
+        }
+        Update: {
+          claim_expires_at?: string | null
+          claim_token?: string | null
+          claimed_device_id?: string | null
+          conversation_id?: string
+          created_at?: string
+          device_copies?: Json
+          image_url?: string
+          message_id?: string
+          parent_body?: string
+          recipient_user_id?: string
+          sender_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aegis_view_once_payloads_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ad_campaigns: {
         Row: {
@@ -3550,6 +3712,7 @@ export type Database = {
       }
       messages: {
         Row: {
+          aegis_request_digest: string | null
           aegis_route_version: string | null
           archive_body: string | null
           body: string
@@ -3569,6 +3732,7 @@ export type Database = {
           viewed_at: string | null
         }
         Insert: {
+          aegis_request_digest?: string | null
           aegis_route_version?: string | null
           archive_body?: string | null
           body: string
@@ -3588,6 +3752,7 @@ export type Database = {
           viewed_at?: string | null
         }
         Update: {
+          aegis_request_digest?: string | null
           aegis_route_version?: string | null
           archive_body?: string | null
           body?: string
@@ -7852,6 +8017,60 @@ export type Database = {
         }
         Returns: Json
       }
+      aegis_call_create: {
+        Args: {
+          p_call_id: string
+          p_call_type: string
+          p_caller_device_id: string
+          p_conversation_id: string
+          p_invitations: Json
+          p_invitee_ids: string[]
+        }
+        Returns: Json
+      }
+      aegis_call_get_invitation: {
+        Args: { p_call_id: string; p_device_id: string }
+        Returns: Json
+      }
+      aegis_call_latest_for_device: {
+        Args: { p_device_id: string }
+        Returns: Json
+      }
+      aegis_call_update_status: {
+        Args: { p_call_id: string; p_device_id: string; p_status: string }
+        Returns: Json
+      }
+      begin_aegis_view_once_consume: {
+        Args: { p_device_id: string; p_message_id: string }
+        Returns: Json
+      }
+      commit_aegis_view_once_consume: {
+        Args: { p_claim_token: string; p_device_id: string; p_message_id: string }
+        Returns: Json
+      }
+      delete_aegis_message_for_everyone: {
+        Args: { p_message_id: string }
+        Returns: boolean
+      }
+      delete_aegis_message_for_me: {
+        Args: { p_message_id: string }
+        Returns: boolean
+      }
+      release_aegis_view_once_claim: {
+        Args: { p_claim_token: string; p_device_id: string; p_message_id: string }
+        Returns: boolean
+      }
+      write_aegis_recovery_vault: {
+        Args: {
+          p_ciphertext: string
+          p_generation: number
+          p_identity_fingerprint: string
+          p_kdf_salt: string
+          p_nonce: string
+          p_protocol_version: number
+        }
+        Returns: number
+      }
       ai_engine_module_stats: {
         Args: { p_window_minutes?: number }
         Returns: {
@@ -7879,19 +8098,6 @@ export type Database = {
       bump_device_keys_epoch: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
-      }
-      call_signal: {
-        Args: {
-          p_action: string
-          p_call_id?: string
-          p_call_type?: string
-          p_callee_id?: string
-          p_caller_id?: string
-          p_conversation_id?: string
-          p_encrypted_call_key?: string
-          p_status?: string
-        }
-        Returns: Json
       }
       can_view_order: {
         Args: { _buyer_id: string; _order_id: string }
@@ -7930,36 +8136,6 @@ export type Database = {
         Returns: {
           opk_id: number
           public_key: string
-        }[]
-      }
-      aegis_ack_device_messages: {
-        Args: {
-          p_device_id: string
-          p_mark_read?: boolean
-          p_message_ids: string[]
-        }
-        Returns: number
-      }
-      aegis_sync_device: {
-        Args: {
-          p_device_id: string
-          p_limit?: number
-        }
-        Returns: {
-          archive_body: string | null
-          conversation_id: string
-          copy_id: string
-          created_at: string
-          document_mime: string | null
-          document_name: string | null
-          document_size_bytes: number | null
-          document_url: string | null
-          encrypted_body: string
-          image_url: string | null
-          message_id: string
-          parent_body: string
-          sender_device_id: string
-          sender_user_id: string
         }[]
       }
       claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
