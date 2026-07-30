@@ -21,7 +21,7 @@ There is no production compatibility requirement. Test messages, obsolete schema
 1. ✅ Baseline architecture and executable protocol tests.
 2. ✅ Idempotent message transaction and authoritative send receipt.
 3. ✅ Device identity, X3DH, Double Ratchet and complete fan-out.
-4. Cross-tab locking and durable encrypted outbox.
+4. ⏳ Cross-tab locking and durable encrypted outbox — implementation complete, validation pending.
 5. Call-scoped LiveKit rooms, invitations and per-device call-key delivery.
 6. Recovery vault and non-destructive key restore.
 7. View-once consumption, deletion and local-cache cleanup.
@@ -35,13 +35,17 @@ One stable message UUID identifies one immutable encrypted request. Calls for th
 
 ## Stage 3 invariant
 
-Every installation is authorized by the stable account identity. The canonical registry retains revoked identities only to verify delayed initial messages, while `is_routable` is required for new sends, prekey claims and device copies. X3DH verifies the account binding, device authorization and signed prekey before establishing a session. Destructive one-time-prekey claims require both conversation participants and the current authorized sender device. Each device pair owns an independent Double Ratchet session with bounded skipped keys, replay rejection and out-of-order delivery. The complete registry is verified before any fan-out mutation, and fan-out is complete or rejected.
+Every routable installation is authorized by the account identity before it can publish prekeys or receive a device copy. X3DH verifies the account binding, the device authorization and the signed prekey before establishing a session. Each sender-device/recipient-device pair owns an independent Double Ratchet session, including bounded skipped keys, replay rejection and delivery out of order. Fan-out is complete or the message transaction is rejected.
+
+## Stage 4 invariant
+
+The complete immutable encrypted request is durable before network delivery and remains stored until an exact authoritative receipt or an explicit user deletion. Pending and unreadable rows are never silently pruned. Every outbox row, conversation send and device-session mutation is single-flight across tabs through Web Locks or a renewable IndexedDB lease, and concurrent first-run key creation converges on one non-extractable local AES key.
 
 ## Current checkpoint
 
 - Stages 1, 2 and 3 are complete and validated.
 - Typecheck, targeted protocol tests, the full test suite, the build and the Crypto Test Suite passed for stage 3.
 - Temporary payloads and one-shot workflows have been removed.
-- Stage 4 is the next implementation target.
+- Stage 4 implementation is complete locally and awaiting exact-head CI validation.
 - The pull request remains draft and unmerged.
 - No Supabase migration from this rebuild has been applied.

@@ -2,13 +2,14 @@ import {
   reqToPromise,
   runTxOn,
 } from '@/lib/crypto/indexedDbTx';
+import { runCrossTabExclusive } from '@/lib/crypto/crossTabLock';
 
 const OUTBOX_STORE = 'outbound';
 const OUTBOX_KEY_STORE = 'device-keys';
 const OUTBOX_KEY_PREFIX = 'outbox-vault-key::';
 const OUTBOX_AAD_PREFIX = 'FORSURE-OUTBOX-v1|';
-const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const OUTBOX_MAX_ENTRIES = 100;
+const OUTBOX_SENT_RETENTION_MS = 24 * 60 * 60 * 1000;
+const OUTBOX_CHANNEL_NAME = 'forsure:aegis-outbox:v1';
 
 export type OutboxStatus =
   | 'draft'
@@ -69,6 +70,14 @@ export interface OutboxPayload {
   reservedServerId: string | null;
 }
 
+export interface OutboxChangeEvent {
+  action: 'put' | 'delete';
+  localId: string;
+  userId: string;
+  conversationId: string;
+  updatedAt: number;
+}
+
 interface OutboxKeyRecord {
   id: string;
   key: CryptoKey;
@@ -79,6 +88,8 @@ interface StoredOutboxRecord {
   localId: string;
   userId: string;
   conversationId: string;
+  status: OutboxStatus;
+  createdAt: number;
   updatedAt: number;
   iv: ArrayBuffer;
   ciphertext: ArrayBuffer;
@@ -86,12 +97,60 @@ interface StoredOutboxRecord {
 }
 
 const keyPromises = new Map<string, Promise<CryptoKey>>();
-const writeChains = new Map<string, Promise<void>>();
+let outboxChannel: BroadcastChannel | null | undefined;
 
 function aadFor(userId: string, conversationId: string, localId: string): Uint8Array {
   return new TextEncoder().encode(
     `${OUTBOX_AAD_PREFIX}${userId}|${conversationId}|${localId}`,
   );
+}
+
+function rowLockName(localId: string): string {
+  return `aegis:outbox-row:${localId}`;
+}
+
+function getOutboxChannel(): BroadcastChannel | null {
+  if (outboxChannel !== undefined) return outboxChannel;
+  if (typeof window === 'undefined' || typeof window.BroadcastChannel === 'undefined') {
+    outboxChannel = null;
+    return null;
+  }
+  try {
+    outboxChannel = new window.BroadcastChannel(OUTBOX_CHANNEL_NAME);
+  } catch {
+    outboxChannel = null;
+  }
+  return outboxChannel;
+}
+
+function notifyOutboxChange(change: OutboxChangeEvent): void {
+  try {
+    getOutboxChannel()?.postMessage(change);
+  } catch {
+    // Cross-tab UI refresh is best-effort. IndexedDB remains authoritative.
+  }
+}
+
+export function subscribeOutboxChanges(
+  listener: (change: OutboxChangeEvent) => void,
+): () => void {
+  const channel = getOutboxChannel();
+  if (!channel) return () => undefined;
+  const onMessage = (event: MessageEvent<OutboxChangeEvent>) => {
+    const change = event.data;
+    if (
+      !change ||
+      (change.action !== 'put' && change.action !== 'delete') ||
+      typeof change.localId !== 'string' ||
+      typeof change.userId !== 'string' ||
+      typeof change.conversationId !== 'string'
+    ) {
+      return;
+    }
+    listener(change);
+  };
+  channel.addEventListener('message', onMessage);
+  return () => channel.removeEventListener('message', onMessage);
 }
 
 function localGet<T>(storeName: string, key: IDBValidKey): Promise<T | undefined> {
@@ -102,21 +161,13 @@ function localGet<T>(storeName: string, key: IDBValidKey): Promise<T | undefined
 
 function localPut<T>(storeName: string, value: T): Promise<void> {
   return runTxOn('msg-queue', [storeName], 'readwrite', (tx) =>
-    new Promise<void>((resolve, reject) => {
-      const request = tx.objectStore(storeName).put(value as object);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    }),
+    reqToPromise(tx.objectStore(storeName).put(value as object)).then(() => undefined),
   );
 }
 
 function localDelete(storeName: string, key: IDBValidKey): Promise<void> {
   return runTxOn('msg-queue', [storeName], 'readwrite', (tx) =>
-    new Promise<void>((resolve, reject) => {
-      const request = tx.objectStore(storeName).delete(key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    }),
+    reqToPromise(tx.objectStore(storeName).delete(key)).then(() => undefined),
   );
 }
 
@@ -126,22 +177,33 @@ function localGetAll<T>(storeName: string): Promise<T[]> {
   );
 }
 
+/**
+ * The final read and insert happen in one IndexedDB readwrite transaction.
+ * Two tabs may generate candidates concurrently, but only the first committed
+ * key is stored and every contender returns that same non-extractable key.
+ */
 async function createOrLoadOutboxKey(userId: string): Promise<CryptoKey> {
   const id = `${OUTBOX_KEY_PREFIX}${userId}`;
   const existing = await localGet<OutboxKeyRecord>(OUTBOX_KEY_STORE, id);
   if (existing?.key) return existing.key;
 
-  const key = await crypto.subtle.generateKey(
+  const candidate = await crypto.subtle.generateKey(
     { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt', 'decrypt'],
   );
 
-  const raced = await localGet<OutboxKeyRecord>(OUTBOX_KEY_STORE, id);
-  if (raced?.key) return raced.key;
+  return runTxOn('msg-queue', [OUTBOX_KEY_STORE], 'readwrite', async (tx) => {
+    const store = tx.objectStore(OUTBOX_KEY_STORE);
+    const raced = await reqToPromise(
+      store.get(id) as IDBRequest<OutboxKeyRecord | undefined>,
+    );
+    if (raced?.key) return raced.key;
 
-  await localPut(OUTBOX_KEY_STORE, { id, key, createdAt: Date.now() } satisfies OutboxKeyRecord);
-  return key;
+    const record = { id, key: candidate, createdAt: Date.now() } satisfies OutboxKeyRecord;
+    await reqToPromise(store.add(record));
+    return candidate;
+  });
 }
 
 async function getOrCreateOutboxKey(userId: string): Promise<CryptoKey> {
@@ -154,22 +216,6 @@ async function getOrCreateOutboxKey(userId: string): Promise<CryptoKey> {
     keyPromises.set(userId, promise);
   }
   return promise;
-}
-
-function enqueueWrite(localId: string, operation: () => Promise<void>): Promise<void> {
-  const previous = writeChains.get(localId) ?? Promise.resolve();
-  const next = previous
-    .catch(() => {})
-    .then(operation)
-    .finally(() => {
-      if (writeChains.get(localId) === next) writeChains.delete(localId);
-    });
-  writeChains.set(localId, next);
-  return next;
-}
-
-async function waitForPendingWrite(localId: string): Promise<void> {
-  await (writeChains.get(localId) ?? Promise.resolve()).catch(() => {});
 }
 
 async function encryptPayload(userId: string, payload: OutboxPayload): Promise<StoredOutboxRecord> {
@@ -191,6 +237,8 @@ async function encryptPayload(userId: string, payload: OutboxPayload): Promise<S
     localId: payload.localId,
     userId,
     conversationId: payload.conversationId,
+    status: payload.status,
+    createdAt: payload.createdAt,
     updatedAt: payload.updatedAt,
     iv: iv.buffer.slice(iv.byteOffset, iv.byteOffset + iv.byteLength) as ArrayBuffer,
     ciphertext,
@@ -226,16 +274,26 @@ async function decryptRecord(userId: string, record: StoredOutboxRecord): Promis
   }
 }
 
-export function putOutboxPayload(userId: string, payload: OutboxPayload): Promise<void> {
-  if (!userId || !payload.localId || payload.senderId !== userId) return Promise.resolve();
+export async function putOutboxPayload(userId: string, payload: OutboxPayload): Promise<void> {
+  if (!userId || !payload.localId || payload.senderId !== userId) return;
   const normalized: OutboxPayload = {
     ...payload,
     updatedAt: Date.now(),
   };
 
-  return enqueueWrite(payload.localId, async () => {
-    await localPut(OUTBOX_STORE, await encryptPayload(userId, normalized));
-    void pruneOutbox(userId).catch(() => {});
+  await runCrossTabExclusive(
+    rowLockName(payload.localId),
+    async () => {
+      await localPut(OUTBOX_STORE, await encryptPayload(userId, normalized));
+    },
+    { waitTimeoutMs: 15_000, leaseMs: 45_000 },
+  );
+  notifyOutboxChange({
+    action: 'put',
+    localId: normalized.localId,
+    userId,
+    conversationId: normalized.conversationId,
+    updatedAt: normalized.updatedAt,
   });
 }
 
@@ -244,41 +302,50 @@ export async function patchOutboxPayload(
   localId: string,
   patch: Partial<OutboxPayload>,
 ): Promise<OutboxPayload | null> {
-  await waitForPendingWrite(localId);
-  const current = await getOutboxPayload(userId, localId);
-  if (!current) return null;
-  const next: OutboxPayload = {
-    ...current,
-    ...patch,
-    localId: current.localId,
-    conversationId: current.conversationId,
-    senderId: current.senderId,
-    updatedAt: Date.now(),
-  };
-  await putOutboxPayload(userId, next);
-  return next;
+  return runCrossTabExclusive(
+    rowLockName(localId),
+    async () => {
+      const record = await localGet<StoredOutboxRecord>(OUTBOX_STORE, localId);
+      if (!record) return null;
+      const current = await decryptRecord(userId, record);
+      if (!current) return null;
+      const next: OutboxPayload = {
+        ...current,
+        ...patch,
+        localId: current.localId,
+        conversationId: current.conversationId,
+        senderId: current.senderId,
+        updatedAt: Date.now(),
+      };
+      await localPut(OUTBOX_STORE, await encryptPayload(userId, next));
+      notifyOutboxChange({
+        action: 'put',
+        localId,
+        userId,
+        conversationId: next.conversationId,
+        updatedAt: next.updatedAt,
+      });
+      return next;
+    },
+    { waitTimeoutMs: 15_000, leaseMs: 45_000 },
+  );
 }
 
 export async function getOutboxPayload(
   userId: string,
   localId: string,
 ): Promise<OutboxPayload | null> {
-  await waitForPendingWrite(localId);
   const record = await localGet<StoredOutboxRecord>(OUTBOX_STORE, localId);
   if (!record) return null;
-  const payload = await decryptRecord(userId, record);
-  if (!payload) {
-    await enqueueWrite(localId, () => localDelete(OUTBOX_STORE, localId)).catch(() => {});
-  }
-  return payload;
+  // Never delete an unreadable durable row automatically. A later key recovery
+  // or browser repair may make it readable again; explicit cleanup owns loss.
+  return decryptRecord(userId, record);
 }
 
 export async function listOutboxPayloads(
   userId: string,
   conversationId?: string,
 ): Promise<OutboxPayload[]> {
-  await Promise.all([...writeChains.values()].map((promise) => promise.catch(() => {})));
-
   let records: StoredOutboxRecord[];
   if (conversationId) {
     records = await runTxOn('msg-queue', [OUTBOX_STORE], 'readonly', (tx) => {
@@ -294,33 +361,54 @@ export async function listOutboxPayloads(
     records = await localGetAll<StoredOutboxRecord>(OUTBOX_STORE);
   }
 
-  const decrypted = await Promise.all(
-    records
-      .filter((record) =>
-        record.userId === userId && (!conversationId || record.conversationId === conversationId),
-      )
-      .map((record) => decryptRecord(userId, record)),
+  const candidates = records.filter((record) =>
+    record.userId === userId && (!conversationId || record.conversationId === conversationId),
   );
+  const decrypted = await Promise.all(candidates.map((record) => decryptRecord(userId, record)));
 
   return decrypted
     .filter((payload): payload is OutboxPayload => payload !== null)
     .sort((a, b) => a.createdAt - b.createdAt || a.localId.localeCompare(b.localId));
 }
 
-export function deleteOutboxPayload(localId: string): Promise<void> {
-  return enqueueWrite(localId, () => localDelete(OUTBOX_STORE, localId));
+export async function deleteOutboxPayload(localId: string): Promise<void> {
+  await runCrossTabExclusive(
+    rowLockName(localId),
+    async () => {
+      const record = await localGet<StoredOutboxRecord>(OUTBOX_STORE, localId);
+      if (!record) return;
+      await localDelete(OUTBOX_STORE, localId);
+      notifyOutboxChange({
+        action: 'delete',
+        localId,
+        userId: record.userId,
+        conversationId: record.conversationId,
+        updatedAt: Date.now(),
+      });
+    },
+    { waitTimeoutMs: 15_000, leaseMs: 45_000 },
+  );
 }
 
+/**
+ * Pending encrypted jobs are never age- or count-pruned. Only rows already
+ * marked `sent` may be garbage-collected, and normal authoritative delivery
+ * deletes those immediately.
+ */
 export async function pruneOutbox(userId: string): Promise<void> {
   const now = Date.now();
-  const mine = (await localGetAll<StoredOutboxRecord>(OUTBOX_STORE))
-    .filter((record) => record.userId === userId)
-    .sort((a, b) => b.updatedAt - a.updatedAt);
-
-  const expired = mine.filter((record, index) =>
-    now - record.updatedAt > OUTBOX_MAX_AGE_MS || index >= OUTBOX_MAX_ENTRIES,
+  const records = (await localGetAll<StoredOutboxRecord>(OUTBOX_STORE))
+    .filter((record) => record.userId === userId);
+  const acknowledged = records.filter((record) =>
+    record.status === 'sent' && now - record.updatedAt > OUTBOX_SENT_RETENTION_MS,
   );
-  await Promise.all(expired.map((record) => deleteOutboxPayload(record.localId)));
+  await Promise.all(acknowledged.map((record) => deleteOutboxPayload(record.localId)));
 }
 
-export const __test__ = { aadFor };
+export const __test__ = {
+  aadFor,
+  createOrLoadOutboxKey,
+  clearKeyCache(): void {
+    keyPromises.clear();
+  },
+};

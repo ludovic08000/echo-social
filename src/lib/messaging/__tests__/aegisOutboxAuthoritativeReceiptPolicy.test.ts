@@ -16,6 +16,20 @@ describe('Aegis outbox authoritative receipt policy', () => {
     expect(source).not.toContain('const delivered = new Set<string>()');
   });
 
+  it('re-reads and mutates one durable row only inside the cross-tab single-flight lock', () => {
+    const retryStart = source.indexOf('const retryMessage = useCallback');
+    const removeStart = source.indexOf('const removeMessage = useCallback');
+    const retrySource = source.slice(retryStart, removeStart);
+    expect(retrySource.indexOf('runAegisOutboxJob')).toBeGreaterThanOrEqual(0);
+    expect(retrySource.indexOf('getOutboxPayload')).toBeGreaterThan(
+      retrySource.indexOf('runAegisOutboxJob'),
+    );
+
+    const terminalSource = source.slice(removeStart);
+    expect(terminalSource).toContain('runAegisOutboxJob(`${user.id}:${localId}`');
+    expect(terminalSource).toContain('await deleteOutboxPayload(localId)');
+  });
+
   it('resubmits encrypted retries through the exact authoritative RPC path', () => {
     const retryStart = source.indexOf('const retryMessage = useCallback');
     const retrySource = source.slice(retryStart);

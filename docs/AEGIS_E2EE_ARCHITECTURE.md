@@ -44,6 +44,22 @@ The content ciphertext does not change when a ratchet advances. A ratchet
 failure can delay one key capsule, but it cannot turn an already authenticated
 bubble into a different or empty message.
 
+## Durable browser transaction
+
+The outbox payload is AES-256-GCM encrypted with one non-extractable device-local
+key per account. First-run key creation is atomic in IndexedDB, so concurrent
+tabs cannot overwrite each other with different vault keys. Only routing and
+retry metadata remain indexable outside the ciphertext.
+
+A pending, retrying, failed or unreadable row is never deleted by age or count.
+It remains durable until the coordinator returns the exact authoritative receipt
+or the user explicitly removes it. Every row retry/deletion, conversation send
+and device-session mutation is exclusive across tabs. Browsers use Web Locks
+when available and a renewable IndexedDB lease otherwise; a second tab always
+re-reads the row after acquiring ownership before it can send or delete it.
+BroadcastChannel carries metadata-only refresh notifications and never carries
+message plaintext, ciphertext or keys.
+
 ## Receive flow
 
 1. Load recent device copies in one bounded query.

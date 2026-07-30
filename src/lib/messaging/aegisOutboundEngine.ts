@@ -396,7 +396,7 @@ export async function sendAegisOutboundMessage(
       },
     );
   } catch (error) {
-    // This also covers a Web Lock acquisition timeout, which happens before
+    // This also covers a cross-tab lock acquisition timeout, which happens before
     // the transaction callback can persist its own failure state.
     await persist({
       status: failureStatus(error),

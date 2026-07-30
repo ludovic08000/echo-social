@@ -85,7 +85,11 @@ vi.mock('@/lib/crypto/signedDeviceList', () => ({
 
 vi.mock('@/lib/crypto/cryptoIntegrity', () => ({
   hardCrypto: globalThis.crypto,
-  hardGlobals: { TextEncoder, TextDecoder },
+  hardGlobals: {
+    TextEncoder,
+    TextDecoder,
+    idbOpen: indexedDB.open.bind(indexedDB),
+  },
 }));
 
 vi.mock('@/lib/crypto/utils', () => ({

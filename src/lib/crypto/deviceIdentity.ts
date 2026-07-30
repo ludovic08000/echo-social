@@ -1,6 +1,7 @@
 import { SIG_KEY_PARAMS, STORE_KEYS } from './constants';
 import { hardCrypto } from './cryptoIntegrity';
 import { runTx, reqToPromise } from './indexedDbTx';
+import { runCrossTabExclusive } from './crossTabLock';
 import {
   base64ToBuffer,
   bufferToBase64,
@@ -152,10 +153,11 @@ async function createDeviceIdentityUnderLock(
     return { publicKey: generated.publicKey, privateKey, publicB64 };
   };
 
-  if (typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function') {
-    return navigator.locks.request(`forsure:device-identity:${id}`, { mode: 'exclusive' }, create);
-  }
-  return create();
+  return runCrossTabExclusive(
+    `forsure:device-identity:${id}`,
+    create,
+    { waitTimeoutMs: 12_000, leaseMs: 60_000 },
+  );
 }
 
 export async function signDeviceAuthorization(args: {

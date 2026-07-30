@@ -1,4 +1,8 @@
-const localChains = new Map<string, Promise<void>>();
+import {
+  CrossTabLockTimeoutError,
+  runCrossTabExclusive,
+} from './crossTabLock';
+
 const LOCK_WAIT_TIMEOUT_MS = 12_000;
 
 export class DeviceSessionLockTimeoutError extends Error {
@@ -10,32 +14,10 @@ export class DeviceSessionLockTimeoutError extends Error {
   }
 }
 
-function hasWebLocks(): boolean {
-  return typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function';
-}
-
-async function runWithLocalQueue<T>(key: string, task: () => Promise<T>): Promise<T> {
-  const previous = localChains.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const tail = previous.catch(() => undefined).then(() => gate);
-  localChains.set(key, tail);
-
-  await previous.catch(() => undefined);
-  try {
-    return await task();
-  } finally {
-    release();
-    if (localChains.get(key) === tail) localChains.delete(key);
-  }
-}
-
 /**
  * Serializes every mutation of one device-pair state. The scope separates the
  * complete X3DH/initiating-envelope operation from the nested ratchet writes,
- * while each scope remains exclusive across tabs through Web Locks.
+ * while each scope remains exclusive across tabs even when Web Locks is absent.
  */
 export async function runDeviceSessionJob<T>(
   scope: 'route' | 'ratchet',
@@ -43,34 +25,23 @@ export async function runDeviceSessionJob<T>(
   task: () => Promise<T>,
 ): Promise<T> {
   const key = `${scope}:${pairKey}`;
-  if (!hasWebLocks()) return runWithLocalQueue(key, task);
-
-  const controller = new AbortController();
-  let acquired = false;
-  const timer = setTimeout(() => {
-    if (!acquired) controller.abort();
-  }, LOCK_WAIT_TIMEOUT_MS);
-
   try {
-    return await navigator.locks.request(
+    return await runCrossTabExclusive(
       `aegis:device-session:${key}`,
-      { mode: 'exclusive', signal: controller.signal },
-      async () => {
-        acquired = true;
-        clearTimeout(timer);
-        return task();
-      },
+      task,
+      { waitTimeoutMs: LOCK_WAIT_TIMEOUT_MS, leaseMs: 60_000 },
     );
   } catch (error) {
-    if (controller.signal.aborted && !acquired) throw new DeviceSessionLockTimeoutError();
+    if (error instanceof CrossTabLockTimeoutError) {
+      throw new DeviceSessionLockTimeoutError();
+    }
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
 export const __test__ = {
   reset(): void {
-    localChains.clear();
+    // Cross-tab lock state is released by each critical section. Kept for API
+    // compatibility with existing tests.
   },
 };

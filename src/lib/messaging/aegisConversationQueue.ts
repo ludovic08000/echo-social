@@ -6,12 +6,16 @@
  * The transport and cryptography stay owned by Aegis. This module only gives
  * the web client the queue guarantees that matter for stable delivery:
  *   - one active send/retry per conversation;
- *   - cross-tab exclusion through the Web Locks API when available;
+ *   - cross-tab exclusion through Web Locks or a renewable IndexedDB lease;
  *   - bounded retry with increasing delay;
  *   - idempotent timer registration.
  */
 
-const conversationChains = new Map<string, Promise<void>>();
+import {
+  CrossTabLockTimeoutError,
+  runCrossTabExclusive,
+} from '@/lib/crypto/crossTabLock';
+
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const retryAttempts = new Map<string, number>();
 const retryInflight = new Set<string>();
@@ -30,55 +34,49 @@ export class AegisConversationLockTimeoutError extends Error {
   }
 }
 
-function lockName(conversationKey: string): string {
+function conversationLockName(conversationKey: string): string {
   return `aegis:message-send:${conversationKey}`;
 }
 
-function hasWebLocks(): boolean {
-  return typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function';
+function outboxJobLockName(jobKey: string): string {
+  return `aegis:outbox-job:${jobKey}`;
 }
 
-async function runWithMemoryLock<T>(conversationKey: string, task: () => Promise<T>): Promise<T> {
-  const previous = conversationChains.get(conversationKey) ?? Promise.resolve();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const tail = previous.catch(() => undefined).then(() => gate);
-  conversationChains.set(conversationKey, tail);
-
-  await previous.catch(() => undefined);
+async function translateLockTimeout<T>(task: () => Promise<T>): Promise<T> {
   try {
     return await task();
-  } finally {
-    release();
-    if (conversationChains.get(conversationKey) === tail) {
-      conversationChains.delete(conversationKey);
+  } catch (error) {
+    if (error instanceof CrossTabLockTimeoutError) {
+      throw new AegisConversationLockTimeoutError();
     }
+    throw error;
   }
 }
 
-export async function runAegisConversationJob<T>(
+export function runAegisConversationJob<T>(
   conversationKey: string,
   task: () => Promise<T>,
 ): Promise<T> {
-  if (hasWebLocks()) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), LOCK_ACQUIRE_TIMEOUT_MS);
-    try {
-      return await navigator.locks.request(
-        lockName(conversationKey),
-        { mode: 'exclusive', signal: controller.signal },
-        task,
-      );
-    } catch (error) {
-      if (controller.signal.aborted) throw new AegisConversationLockTimeoutError();
-      throw error;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  return runWithMemoryLock(conversationKey, task);
+  return translateLockTimeout(() => runCrossTabExclusive(
+    conversationLockName(conversationKey),
+    task,
+    { waitTimeoutMs: LOCK_ACQUIRE_TIMEOUT_MS, leaseMs: 90_000 },
+  ));
+}
+
+/**
+ * Single-flight guard for one durable outbox row. All tabs may observe and
+ * schedule the same retry, but only one tab may restore/send/delete that row.
+ */
+export function runAegisOutboxJob<T>(
+  jobKey: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  return translateLockTimeout(() => runCrossTabExclusive(
+    outboxJobLockName(jobKey),
+    task,
+    { waitTimeoutMs: LOCK_ACQUIRE_TIMEOUT_MS, leaseMs: 90_000 },
+  ));
 }
 
 export function retryDelayMs(attempt: number): number {
@@ -176,7 +174,6 @@ export function isRetryableOutboundStatus(status: string, lastError?: string | n
 export const __test__ = {
   reset(): void {
     for (const timer of retryTimers.values()) clearTimeout(timer);
-    conversationChains.clear();
     retryTimers.clear();
     retryAttempts.clear();
     retryInflight.clear();

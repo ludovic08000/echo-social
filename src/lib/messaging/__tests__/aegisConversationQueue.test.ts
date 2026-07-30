@@ -1,16 +1,24 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import 'fake-indexeddb/auto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __test__,
   cancelAegisRetry,
   isRetryableOutboundStatus,
   retryDelayMs,
   runAegisConversationJob,
+  runAegisOutboxJob,
   scheduleAegisRetry,
 } from '../aegisConversationQueue';
+import { __test__ as crossTabTest } from '@/lib/crypto/crossTabLock';
 
-afterEach(() => {
+beforeEach(async () => {
+  await crossTabTest.clearLeases();
+});
+
+afterEach(async () => {
   __test__.reset();
   vi.useRealTimers();
+  await crossTabTest.clearLeases();
 });
 
 describe('Aegis conversation queue', () => {
@@ -31,8 +39,37 @@ describe('Aegis conversation queue', () => {
       events.push('second:end');
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
+    while (!events.includes('first:start')) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(events).toEqual(['first:start']);
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(events).toEqual(['first:start', 'first:end', 'second:start', 'second:end']);
+  });
+
+  it('single-flights one durable outbox row', async () => {
+    const events: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const first = runAegisOutboxJob('user:local-id', async () => {
+      events.push('first:start');
+      await firstGate;
+      events.push('first:end');
+    });
+    while (!events.includes('first:start')) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    const second = runAegisOutboxJob('user:local-id', async () => {
+      events.push('second:start');
+      events.push('second:end');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(events).toEqual(['first:start']);
 
     releaseFirst();
