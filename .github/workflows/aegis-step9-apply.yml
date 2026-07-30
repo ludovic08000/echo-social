@@ -27,7 +27,9 @@ jobs:
       - run: npm ci
 
       - name: Apply stage 9 consolidation
-        run: node scripts/aegis-step9-apply.mjs
+        run: |
+          node scripts/aegis-step9-apply.mjs
+          node scripts/aegis-step9-fix-tests.mjs
 
       - name: Parse final PostgreSQL migration
         shell: bash
@@ -78,6 +80,7 @@ jobs:
           src/lib/messaging/__tests__/aegisStage9FinalMigration.test.ts
           src/lib/messaging/__tests__/aegisCleanTransportMigration.test.ts
           src/lib/messaging/__tests__/aegisStage3Architecture.test.ts
+          src/lib/messaging/__tests__/aegisStage3RouteGuards.test.ts
           src/lib/calls/__tests__/aegisCallProtocol.test.ts
           src/lib/messaging/__tests__/aegisViewOnceProtocol.test.ts
 
@@ -97,6 +100,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -f scripts/aegis-step9-apply.mjs
+          rm -f scripts/aegis-step9-fix-tests.mjs
           rm -f docs/AEGIS_STAGE9_SCHEMA_AUDIT.txt
           rm -f .github/workflows/aegis-step9-apply.yml
           git add -A
