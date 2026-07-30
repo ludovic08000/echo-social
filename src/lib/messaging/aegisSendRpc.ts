@@ -20,6 +20,13 @@ type RpcResponse = {
   error: RpcError;
 };
 
+type AegisCommitReceipt = {
+  state: 'committed';
+  message_id: string;
+  request_digest: string;
+  existing: boolean;
+};
+
 const SEND_TRANSPORT_TIMEOUT_MS = 15_000;
 const SEND_CONFIRM_TIMEOUT_MS = 6_000;
 
@@ -74,7 +81,16 @@ function isExplicitProtocolFailure(error: RpcError): boolean {
 }
 
 export function isAegisAmbiguousTransportFailure(error: RpcError): boolean {
-  if (!error || isExplicitProtocolFailure(error)) return false;
+  if (!error) return false;
+  const code = String(error.code ?? '').toUpperCase();
+  if (
+    code === 'AEGIS_GATEWAY_UNREACHABLE' ||
+    code === 'AEGIS_COMMIT_RECEIPT_UNVERIFIED' ||
+    code === 'NETWORK_TRANSPORT_TIMEOUT'
+  ) {
+    return true;
+  }
+  if (isExplicitProtocolFailure(error)) return false;
   const text = errorText(error);
   return (
     !error.code ||
@@ -82,14 +98,41 @@ export function isAegisAmbiguousTransportFailure(error: RpcError): boolean {
     text.includes('networkerror') ||
     text.includes('load failed') ||
     text.includes('timeout') ||
-    text.includes('connection')
+    text.includes('connection') ||
+    text.includes('aborterror') ||
+    text.includes('aborted')
   );
 }
 
 function thrownRpcError(error: unknown): RpcError {
+  const message = error instanceof Error ? error.message : String(error ?? 'RPC transport failed');
   return {
-    code: null,
-    message: error instanceof Error ? error.message : String(error ?? 'RPC transport failed'),
+    code: message === 'NETWORK_TRANSPORT_TIMEOUT' ? 'NETWORK_TRANSPORT_TIMEOUT' : null,
+    message,
+    details: null,
+    hint: null,
+  };
+}
+
+function parseCommitReceipt(data: unknown, expectedMessageId: string): AegisCommitReceipt | null {
+  if (!data || typeof data !== 'object') return null;
+  const value = data as Partial<AegisCommitReceipt>;
+  if (
+    value.state !== 'committed' ||
+    value.message_id !== expectedMessageId ||
+    typeof value.request_digest !== 'string' ||
+    !/^[a-f0-9]{64}$/i.test(value.request_digest) ||
+    typeof value.existing !== 'boolean'
+  ) {
+    return null;
+  }
+  return value as AegisCommitReceipt;
+}
+
+function unverifiedReceiptError(): RpcError {
+  return {
+    code: 'AEGIS_COMMIT_RECEIPT_UNVERIFIED',
+    message: 'The server response did not contain a verifiable Aegis commit receipt.',
     details: null,
     hint: null,
   };
@@ -124,13 +167,19 @@ async function callAuthoritative(
   }
 }
 
+function committedMessageId(response: RpcResponse, expectedMessageId: string): string | null {
+  if (response.error) return null;
+  return parseCommitReceipt(response.data, expectedMessageId)?.message_id ?? null;
+}
+
 /**
- * Aegis atomic send:
- * - the server is authoritative for the current device set;
- * - a stale route is rebuilt and retried exactly once with the same message id;
- * - explicit rejection restores every ratchet snapshot from this attempt;
- * - ambiguous network failures are confirmed once idempotently before returning
- *   and never trigger a blind rollback that could desynchronise a committed send.
+ * One immutable Aegis transaction per stable message UUID.
+ *
+ * The server serializes calls for the same UUID and returns a signed-by-state
+ * commit receipt containing the exact stored request digest. A timeout therefore
+ * never authorizes a local rollback. The same encrypted request is submitted
+ * again and either confirms the committed transaction or returns an explicit
+ * rejection after the original database transaction has finished.
  */
 export async function sendMessageWithAegisRetry(
   args: SendArguments,
@@ -150,7 +199,7 @@ export async function sendMessageWithAegisRetry(
       data: null,
       error: {
         code: 'AEGIS_CLIENT_DEVICE_COPY_WIRE_REJECTED',
-        message: 'Prepared device copy does not use the Aegis v1 wire format.',
+        message: 'Prepared device copy does not use the active Aegis wire format.',
       },
       copies: [],
       retriedStaleRoute: false,
@@ -160,11 +209,12 @@ export async function sendMessageWithAegisRetry(
 
   for (let staleAttempt = 0; staleAttempt < 2; staleAttempt += 1) {
     const response = await callAuthoritative(args, copies, SEND_TRANSPORT_TIMEOUT_MS);
+    const committedId = committedMessageId(response, args.messageId);
 
-    if (!response.error) {
+    if (committedId) {
       commitFanoutSessionTransaction(args.messageId);
       return {
-        data: (response.data as unknown as string | null) ?? args.messageId,
+        data: committedId,
         error: null,
         copies,
         retriedStaleRoute,
@@ -172,10 +222,11 @@ export async function sendMessageWithAegisRetry(
       };
     }
 
-    // A stale/missing route rejection is explicit even when a proxy strips the
-    // SQLSTATE. Refresh once: registration or root repair may have completed
-    // between local preparation and the atomic RPC.
-    if (isAegisDeviceListStale(response.error)) {
+    const responseError = response.error ?? unverifiedReceiptError();
+
+    // Route rejection is authoritative only because the server serializes the
+    // UUID. It cannot race a still-running call for the same message.
+    if (isAegisDeviceListStale(responseError)) {
       await rollbackFanoutSessionTransaction(args.messageId);
       if (staleAttempt === 0) {
         retriedStaleRoute = true;
@@ -188,42 +239,36 @@ export async function sendMessageWithAegisRetry(
       }
       return {
         data: null,
-        error: response.error,
+        error: responseError,
         copies,
         retriedStaleRoute: true,
         routeVersion,
       };
     }
 
-    if (isAegisAmbiguousTransportFailure(response.error)) {
-      // Confirm the same UUID once. The server RPC is idempotent, so this does
-      // not duplicate a message if the first response was merely lost.
+    if (isAegisAmbiguousTransportFailure(responseError)) {
       const confirmation = await callAuthoritative(args, copies, SEND_CONFIRM_TIMEOUT_MS);
-      if (!confirmation.error) {
+      const confirmedId = committedMessageId(confirmation, args.messageId);
+      if (confirmedId) {
         commitFanoutSessionTransaction(args.messageId);
         return {
-          data: (confirmation.data as unknown as string | null) ?? args.messageId,
+          data: confirmedId,
           error: null,
           copies,
           retriedStaleRoute,
           routeVersion,
         };
       }
-      // A second, explicit server rejection resolves the original transport
-      // doubt: the idempotent same-UUID confirmation would have returned the
-      // committed message if the first call had succeeded. Restore the
-      // Ratchet snapshot instead of retaining ciphertext that the server has
-      // definitively refused.
-      if (!isAegisAmbiguousTransportFailure(confirmation.error)) {
+
+      const confirmationError = confirmation.error ?? unverifiedReceiptError();
+      if (!isAegisAmbiguousTransportFailure(confirmationError)) {
+        // The server-side UUID lock guarantees that this rejection happened
+        // after any earlier call completed or rolled back.
         await rollbackFanoutSessionTransaction(args.messageId);
       }
-      // Delivery is now ambiguous. Keep the advanced local state and outbox so
-      // a later same-message-id confirmation can resolve it safely. Explicit
-      // confirmation failures were rolled back above and are discarded by the
-      // outbound engine.
       return {
         data: null,
-        error: confirmation.error,
+        error: confirmationError,
         copies,
         retriedStaleRoute,
         routeVersion,
@@ -233,7 +278,7 @@ export async function sendMessageWithAegisRetry(
     await rollbackFanoutSessionTransaction(args.messageId);
     return {
       data: null,
-      error: response.error,
+      error: responseError,
       copies,
       retriedStaleRoute,
       routeVersion,
@@ -251,3 +296,7 @@ export async function sendMessageWithAegisRetry(
     routeVersion,
   };
 }
+
+export const __test__ = {
+  parseCommitReceipt,
+};

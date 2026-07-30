@@ -245,14 +245,18 @@ export function useAegisMessageQueue(
 
     void (async () => {
       const payloads = await listOutboxPayloads(user.id, conversationId);
-      const reservedIds = payloads
+      // Encrypted Aegis jobs are never reconciled from parent-row existence
+      // alone. They must resubmit their exact immutable request so the RPC can
+      // verify the stored request digest and return an authoritative receipt.
+      const plaintextReservedIds = payloads
+        .filter((payload) => !isMultiDeviceEnvelopeBody(payload.encryptedBody))
         .map((payload) => payload.reservedServerId)
         .filter((id): id is string => Boolean(id));
-      const delivered = new Set<string>();
+      const deliveredPlaintext = new Set<string>();
 
-      if (reservedIds.length > 0) {
-        const { data } = await supabase.from('messages').select('id').in('id', reservedIds);
-        for (const row of data ?? []) delivered.add(row.id);
+      if (plaintextReservedIds.length > 0) {
+        const { data } = await supabase.from('messages').select('id').in('id', plaintextReservedIds);
+        for (const row of data ?? []) deliveredPlaintext.add(row.id);
       }
 
       const restored: OutboundMessage[] = [];
@@ -261,10 +265,11 @@ export function useAegisMessageQueue(
           await deleteOutboxPayload(payload.localId).catch(() => {});
           continue;
         }
-        if (payload.reservedServerId && delivered.has(payload.reservedServerId)) {
-          // The authoritative RPC commits the parent and every expected device
-          // copy in one transaction. A visible parent therefore proves delivery;
-          // rebuilding copies here would advance the local ratchet a second time.
+        if (
+          !isMultiDeviceEnvelopeBody(payload.encryptedBody) &&
+          payload.reservedServerId &&
+          deliveredPlaintext.has(payload.reservedServerId)
+        ) {
           await deleteOutboxPayload(payload.localId).catch(() => {});
           dispatchDecryptRetry(payload.reservedServerId);
           continue;
@@ -626,15 +631,16 @@ throw new Error(visibleMessage);
     const payload = await getOutboxPayload(user.id, localId);
     if (!payload) return;
 
-    if (payload.reservedServerId) {
+    if (
+      payload.reservedServerId &&
+      !isMultiDeviceEnvelopeBody(payload.encryptedBody)
+    ) {
       const { data } = await supabase
         .from('messages')
         .select('id')
         .eq('id', payload.reservedServerId)
         .maybeSingle();
       if (data?.id) {
-        // Parent + copies are atomic in the authoritative RPC. Do not rebuild or
-        // re-encrypt a message that the server has already committed.
         await deleteOutboxPayload(localId).catch(() => {});
         setPendingMessages(prev => prev.filter(message => message.localId !== localId));
         dispatchDecryptRetry(data.id);
