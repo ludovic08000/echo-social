@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import 'fake-indexeddb/auto';
 import {
+  clearAllDeviceSessions,
   establishDeviceSession,
   ratchetDecryptWithSession,
   ratchetEncrypt,
-  clearAllDeviceSessions,
 } from '../deviceRatchet';
 import { bufferToBase64 } from '../utils';
 
@@ -22,34 +22,53 @@ describe('Signal protocol hardening', () => {
     await clearAllDeviceSessions();
   });
 
-  it('authenticates the complete device ratchet header for new sessions', async () => {
+  it('authenticates the complete device ratchet header without advancing state on failure', async () => {
     const sharedSecret = crypto.getRandomValues(new Uint8Array(32)).buffer;
     const bobInitial = await crypto.subtle.generateKey(
-      { name: 'X25519' } as any,
+      { name: 'X25519' } as Algorithm,
       true,
       ['deriveBits'],
     ) as CryptoKeyPair;
     const bobPrivateJwk = await crypto.subtle.exportKey('jwk', bobInitial.privateKey);
     const bobPublic = await rawPublic(bobInitial.publicKey);
 
-    await establishDeviceSession(ALICE, ALICE_DEVICE, BOB, BOB_DEVICE, sharedSecret, undefined, {
-      isInitiator: true,
-      peerInitialDhPubB64: bobPublic,
-    });
-    await establishDeviceSession(BOB, BOB_DEVICE, ALICE, ALICE_DEVICE, sharedSecret, undefined, {
-      isInitiator: false,
-      selfInitialDhPrivJwk: bobPrivateJwk,
-      selfInitialDhPubB64: bobPublic,
-    });
+    const sessionId = await establishDeviceSession(
+      ALICE,
+      ALICE_DEVICE,
+      BOB,
+      BOB_DEVICE,
+      sharedSecret,
+      undefined,
+      {
+        isInitiator: true,
+        peerInitialDhPubB64: bobPublic,
+      },
+    );
+    await establishDeviceSession(
+      BOB,
+      BOB_DEVICE,
+      ALICE,
+      ALICE_DEVICE,
+      sharedSecret,
+      sessionId,
+      {
+        isInitiator: false,
+        selfInitialDhPrivJwk: bobPrivateJwk,
+        selfInitialDhPubB64: bobPublic,
+      },
+    );
 
     const encrypted = await ratchetEncrypt(ALICE, ALICE_DEVICE, BOB, BOB_DEVICE, 'bonjour');
-    expect(encrypted).toMatch(/^aegis1\.ratchet\.s6/);
+    expect(encrypted).toMatch(/^aegis1\.ratchet\.s_[A-Za-z0-9_-]{22}\./);
 
     const parts = encrypted!.split('.');
-    parts[4] = String(Number(parts[4]) + 1); // PN is header metadata, not ciphertext.
-    expect(await ratchetDecryptWithSession(BOB, BOB_DEVICE, ALICE, ALICE_DEVICE, parts.join('.'))).toBeNull();
+    parts[4] = String(Number(parts[4]) + 1);
+    await expect(
+      ratchetDecryptWithSession(BOB, BOB_DEVICE, ALICE, ALICE_DEVICE, parts.join('.')),
+    ).resolves.toBeNull();
 
-    // Authentication failure must not advance the receiving ratchet state.
-    expect(await ratchetDecryptWithSession(BOB, BOB_DEVICE, ALICE, ALICE_DEVICE, encrypted!)).toBe('bonjour');
+    await expect(
+      ratchetDecryptWithSession(BOB, BOB_DEVICE, ALICE, ALICE_DEVICE, encrypted!),
+    ).resolves.toBe('bonjour');
   });
 });

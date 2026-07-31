@@ -1,6 +1,7 @@
 import { SIG_KEY_PARAMS, STORE_KEYS } from './constants';
 import { hardCrypto } from './cryptoIntegrity';
 import { runTx, reqToPromise } from './indexedDbTx';
+import { runCrossTabExclusive } from './crossTabLock';
 import {
   base64ToBuffer,
   bufferToBase64,
@@ -8,11 +9,24 @@ import {
   exportKeyToJWK,
   importKeyFromJWK,
 } from './utils';
+import {
+  exportPublicKeyBundle,
+  getOrCreateIdentityKeys,
+  type PublicIdentityBundle,
+} from './keyManager';
+import { getOrCreateDeviceKxKey, type DeviceKxKey } from './deviceKx';
 
 export interface DeviceIdentityKey {
   publicKey: CryptoKey;
   privateKey: CryptoKey;
   publicB64: string;
+}
+
+export interface PreparedDeviceAuthorization {
+  account: PublicIdentityBundle;
+  deviceKx: DeviceKxKey;
+  deviceSigning: DeviceIdentityKey;
+  authorizationSignature: string;
 }
 
 interface StoredDeviceIdentity {
@@ -47,25 +61,30 @@ async function publicKeyToBase64(publicKey: CryptoKey): Promise<string> {
     return bufferToBase64(await hardCrypto.exportKey('raw', publicKey) as ArrayBuffer);
   } catch {
     const jwk = await hardCrypto.exportKey('jwk', publicKey) as JsonWebKey;
-    if (!jwk.x) throw new Error('DEVICE_IDENTITY_PUBLIC_EXPORT_FAILED');
+    if (!jwk.x) throw new Error('DEVICE_SIGNING_PUBLIC_EXPORT_FAILED');
     const value = jwk.x.replace(/-/g, '+').replace(/_/g, '/');
     return value + '='.repeat((4 - value.length % 4) % 4);
   }
 }
 
-export function canonicalDeviceIdentityPayload(args: {
+/**
+ * One canonical authorization statement. The stable account Ed25519 key is
+ * the authority; a device never authorizes itself.
+ */
+export function canonicalDeviceAuthorizationPayload(args: {
   userId: string;
   deviceId: string;
+  accountFingerprint: string;
   devicePublicKey: string;
-  signingPublicKey: string;
+  deviceSigningKey: string;
 }): string {
   return JSON.stringify({
-    protocol: 'forsure-sesame-device',
-    version: 1,
+    protocol: 'forsure-aegis-device-authorization',
     userId: args.userId,
     deviceId: args.deviceId,
+    accountFingerprint: args.accountFingerprint,
     devicePublicKey: args.devicePublicKey,
-    signingPublicKey: args.signingPublicKey,
+    deviceSigningKey: args.deviceSigningKey,
   });
 }
 
@@ -134,42 +153,41 @@ async function createDeviceIdentityUnderLock(
     return { publicKey: generated.publicKey, privateKey, publicB64 };
   };
 
-  if (typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function') {
-    return navigator.locks.request(`forsure:device-identity:${id}`, { mode: 'exclusive' }, create);
-  }
-  return create();
+  return runCrossTabExclusive(
+    `forsure:device-identity:${id}`,
+    create,
+    { waitTimeoutMs: 12_000, leaseMs: 60_000 },
+  );
 }
 
-export async function signDeviceIdentityBinding(args: {
+export async function signDeviceAuthorization(args: {
   userId: string;
   deviceId: string;
+  accountFingerprint: string;
   devicePublicKey: string;
-  identity: DeviceIdentityKey;
+  deviceSigningKey: string;
+  accountSigningPrivateKey: CryptoKey;
 }): Promise<string> {
-  const payload = canonicalDeviceIdentityPayload({
-    userId: args.userId,
-    deviceId: args.deviceId,
-    devicePublicKey: args.devicePublicKey,
-    signingPublicKey: args.identity.publicB64,
-  });
   return bufferToBase64(await hardCrypto.sign(
     'Ed25519',
-    args.identity.privateKey,
-    encodeString(payload),
+    args.accountSigningPrivateKey,
+    encodeString(canonicalDeviceAuthorizationPayload(args)),
   ) as ArrayBuffer);
 }
 
-export async function verifyDeviceIdentityBinding(args: {
+export async function verifyDeviceAuthorization(args: {
   userId: string;
   deviceId: string;
+  accountFingerprint: string;
+  accountSigningKey: string;
   devicePublicKey: string;
-  signingPublicKey: string;
-  signature: string;
+  deviceSigningKey: string;
+  authorizationSignature: string;
 }): Promise<boolean> {
   try {
     const publicKey = await hardCrypto.importKey(
       'raw',
-      base64ToBuffer(args.signingPublicKey),
+      base64ToBuffer(args.accountSigningKey),
       { name: 'Ed25519' } as Algorithm,
       false,
       ['verify'],
@@ -177,10 +195,35 @@ export async function verifyDeviceIdentityBinding(args: {
     return await hardCrypto.verify(
       'Ed25519',
       publicKey,
-      base64ToBuffer(args.signature),
-      encodeString(canonicalDeviceIdentityPayload(args)),
+      base64ToBuffer(args.authorizationSignature),
+      encodeString(canonicalDeviceAuthorizationPayload(args)),
     );
   } catch {
     return false;
   }
 }
+
+export async function prepareDeviceAuthorization(
+  userId: string,
+  deviceId: string,
+  existingDeviceKx?: DeviceKxKey | null,
+): Promise<PreparedDeviceAuthorization> {
+  const accountKeys = await getOrCreateIdentityKeys(userId);
+  const [account, deviceKx, deviceSigning] = await Promise.all([
+    exportPublicKeyBundle(accountKeys),
+    existingDeviceKx ? Promise.resolve(existingDeviceKx) : getOrCreateDeviceKxKey(deviceId, userId),
+    getOrCreateDeviceIdentity(userId, deviceId),
+  ]);
+  const authorizationSignature = await signDeviceAuthorization({
+    userId,
+    deviceId,
+    accountFingerprint: account.fingerprint,
+    devicePublicKey: deviceKx.publicB64,
+    deviceSigningKey: deviceSigning.publicB64,
+    accountSigningPrivateKey: accountKeys.signingPrivateKey,
+  });
+  return { account, deviceKx, deviceSigning, authorizationSignature };
+}
+
+// Old self-authorization names are intentionally not exported. There is one
+// authority model: the stable account identity authorizes every device.

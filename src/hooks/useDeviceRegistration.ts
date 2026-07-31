@@ -33,7 +33,7 @@ import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import {
   getOrCreateDeviceIdentity,
-  signDeviceIdentityBinding,
+  prepareDeviceAuthorization,
 } from '@/lib/crypto/deviceIdentity';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
@@ -147,24 +147,6 @@ export function useDeviceRegistration() {
           privateKey: deviceIdentity.privateKey,
           signingPrivateKey: deviceIdentity.privateKey,
         };
-        const bundle = {
-          identityKey: deviceIdentity.publicB64,
-          signingKey: deviceIdentity.publicB64,
-        };
-
-        // Validation: ensure the shared identity is fully restored before publishing
-        // anything that other users will pin against. Publishing a half-initialised
-        // bundle would let peers cache a wrong identity key for this account.
-        if (!bundle?.identityKey || !bundle?.signingKey) {
-          console.warn('[useDeviceRegistration] identity bundle incomplete — abort device publish');
-          ranRef.current = false; // allow a retry on next mount
-          return;
-        }
-        if (!keys?.privateKey || !keys?.signingPrivateKey) {
-          console.warn('[useDeviceRegistration] identity private keys missing — abort device publish');
-          ranRef.current = false;
-          return;
-        }
 
         // Per-device dedicated X25519 key (TRUE cryptographic isolation per device).
         //
@@ -353,12 +335,14 @@ export function useDeviceRegistration() {
           is_active: true,
           last_seen_at: new Date().toISOString(),
         };
-        const deviceIdentitySignature = await signDeviceIdentityBinding({
-          userId: user.id,
-          deviceId,
-          devicePublicKey: devicePublicKeyB64,
-          identity: deviceIdentity,
-        });
+        if (!localKx) throw new Error('DEVICE_KX_MISSING_AFTER_ENROLLMENT');
+        const authorization = await prepareDeviceAuthorization(user.id, deviceId, localKx);
+        if (
+          authorization.deviceSigning.publicB64 !== deviceIdentity.publicB64 ||
+          authorization.deviceKx.publicB64 !== devicePublicKeyB64
+        ) {
+          throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
+        }
 
         // 1. Register the device.
         // The authenticated RPC is the only registration path. Direct upsert
@@ -373,9 +357,12 @@ export function useDeviceRegistration() {
             p_device_fingerprint: payload.device_fingerprint,
             p_platform: payload.platform,
             p_user_agent: payload.user_agent,
-            p_device_signing_key: deviceIdentity.publicB64,
-            p_device_identity_signature: deviceIdentitySignature,
-            p_device_identity_version: 1,
+            p_device_signing_key: authorization.deviceSigning.publicB64,
+            p_device_authorization_signature: authorization.authorizationSignature,
+            p_account_identity_key: authorization.account.identityKey,
+            p_account_signing_key: authorization.account.signingKey,
+            p_account_fingerprint: authorization.account.fingerprint,
+            p_account_binding_signature: authorization.account.bindingSignature,
           });
           const registrationResult = rpcResult as DeviceRegistrationRpcResult | null;
 
@@ -411,7 +398,7 @@ export function useDeviceRegistration() {
                 window.dispatchEvent(new CustomEvent('forsure:e2ee-server-schema-outdated', {
                   detail: {
                     rpc: 'register_user_device_safe',
-                    migration: '20260728100000_sesame_per_device_identity.sql',
+                    migration: '20260730090000_aegis_clean_rebuild.sql',
                   },
                 }));
               } catch {

@@ -97,7 +97,7 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
   },
   'msg-queue': {
     name: 'forsure-msg-queue',
-    version: 3,
+    version: 4,
     stores: [
       {
         name: 'outbound',
@@ -112,6 +112,13 @@ const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
       {
         name: 'device-keys',
         keyPath: 'id',
+      },
+      {
+        name: 'leases',
+        keyPath: 'name',
+        indexes: [
+          { name: 'by-expiry', keyPath: 'expiresAt' },
+        ],
       },
     ],
   },

@@ -11,6 +11,7 @@ import {
   preloadDeviceCopies,
 } from '@/lib/messaging/multiDeviceFanout';
 import type { Database } from '@/integrations/supabase/types';
+import { purgeMessageLocalState } from '@/lib/messaging/messageLocalCleanup';
 
 type MessageRow = Database['public']['Tables']['messages']['Row'];
 type MessageDeviceCopyRow = Database['public']['Tables']['message_device_copies']['Row'];
@@ -55,15 +56,12 @@ async function repairConversationHiddenMessages(
     .in('message_id', ids);
 
   if (error) {
-    console.warn('[messaging] failed to repair hidden conversation messages:', error.message);
+    console.warn('[messaging] hidden-message repair failed', { code: error.code ?? 'DB_ERROR' });
     return false;
   }
 
   ids.forEach((id) => hiddenIds.delete(id));
-  console.warn('[messaging] restored hidden messages after session return', {
-    conversationId,
-    count: ids.length,
-  });
+  console.warn('[messaging] restored hidden messages after session return', { count: ids.length });
   return true;
 }
 
@@ -168,6 +166,8 @@ export interface Message {
   body_kind?: string | null;
   archive_body?: string | null;
   aegis_route_version?: string | null;
+  view_once?: boolean;
+  view_once_state?: 'pending' | 'consumed' | 'sent';
   image_url: string | null;
   created_at: string;
   status: 'delivered' | 'pending' | 'blocked';
@@ -225,7 +225,7 @@ export function useConversations() {
     queryKey: ['conversations', user?.id ?? 'anon'],
     queryFn: async () => {
       if (!user) return [];
-      console.log('[messaging] fetching conversations for', user.id);
+      console.info('[messaging] fetching conversations');
 
       // ── Single RPC: conversations + participants + last message + unread ──
       try {
@@ -376,8 +376,9 @@ export function useMessages(conversationId: string) {
         },
         async (payload) => {
           const newMsg = payload.new as MessageRow;
+          const isViewOnce = newMsg.view_once === true;
           if (isUnsupportedEncryptedBody(newMsg.body)) {
-            console.warn('[messaging] ignoring unsupported encrypted message without hiding it', newMsg.id);
+            console.warn('[messaging] ignoring unsupported encrypted message without hiding it');
             return;
           }
 
@@ -394,6 +395,13 @@ export function useMessages(conversationId: string) {
 
           const enriched: Message = {
             ...newMsg,
+            body: isViewOnce ? '🔒 Vue unique' : newMsg.body,
+            body_kind: isViewOnce ? 'view_once' : newMsg.body_kind,
+            image_url: isViewOnce ? null : newMsg.image_url,
+            archive_body: isViewOnce ? null : newMsg.archive_body,
+            view_once_state: isViewOnce
+              ? (newMsg.sender_id === user.id ? 'sent' : 'pending')
+              : undefined,
             status: newMsg.status as Message['status'],
             profile: {
               name: newMsg.sender_id === ZEUS_BOT_ID ? (await getCompanionName(user?.id)) : (profile?.name || 'Unknown'),
@@ -423,7 +431,7 @@ export function useMessages(conversationId: string) {
           // this device. The sibling realtime subscription below wakes the
           // bubble if websocket events from the same transaction arrive out
           // of order, so no polling loop or legacy router is needed here.
-          if (user && isMultiDeviceMessageRow(newMsg)) {
+          if (user && !isViewOnce && isMultiDeviceMessageRow(newMsg)) {
             void resolvePlaintext({
               body: newMsg.body,
               messageId: newMsg.id,
@@ -465,6 +473,33 @@ export function useMessages(conversationId: string) {
       .on(
         'postgres_changes',
         {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'aegis_view_once_consumptions',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const messageId = (payload.new as { message_id?: string }).message_id;
+          if (!messageId) return;
+          const key = messagesKey(conversationId, user.id);
+          const existing = queryClient.getQueryData<Message[]>(key)?.find((message) => message.id === messageId);
+          queryClient.setQueryData<Message[]>(key, (old) => old?.map((message) =>
+            message.id === messageId
+              ? { ...message, view_once_state: 'consumed', body: '🔒 Vue unique', image_url: null }
+              : message
+          ) || []);
+          if (existing) {
+            void purgeMessageLocalState({
+              messageId,
+              body: existing.body,
+              imageUrl: existing.image_url,
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
           event: 'DELETE',
           schema: 'public',
           table: 'messages',
@@ -473,10 +508,19 @@ export function useMessages(conversationId: string) {
         (payload) => {
           const deletedId = (payload.old as Partial<MessageRow>).id;
           if (deletedId) {
+            const key = messagesKey(conversationId, user?.id);
+            const existing = queryClient.getQueryData<Message[]>(key)?.find((message) => message.id === deletedId);
             queryClient.setQueryData<Message[]>(
-              messagesKey(conversationId, user?.id),
+              key,
               (old) => old?.filter(m => m.id !== deletedId) || []
             );
+            if (existing) {
+              void purgeMessageLocalState({
+                messageId: deletedId,
+                body: existing.body,
+                imageUrl: existing.image_url,
+              });
+            }
           }
         }
       )
@@ -532,7 +576,7 @@ export function useMessages(conversationId: string) {
     queryKey: ['messages', conversationId, user?.id ?? 'anon'],
     queryFn: async () => {
       if (!conversationId || !user) return [];
-      console.log('[messaging] fetching messages for conversation', conversationId);
+      console.info('[messaging] fetching messages');
 
       // Get hidden message IDs for this user
       const { data: deletions } = await supabase
@@ -553,7 +597,7 @@ export function useMessages(conversationId: string) {
         .limit(120);
 
       if (error) {
-        console.error('[messaging] message fetch failed:', error.message);
+        console.error('[messaging] message fetch failed', { code: error.code ?? 'DB_ERROR' });
         throw error;
       }
       console.log('[messaging] loaded', messages.length, 'messages from server');
@@ -580,7 +624,7 @@ export function useMessages(conversationId: string) {
       if (user) {
         const recentEncrypted = compatibleMessages
           .slice(-24)
-          .filter(isMultiDeviceMessageRow);
+          .filter((message) => !message.view_once && isMultiDeviceMessageRow(message));
         await preloadDeviceCopies(recentEncrypted.map((message) => message.id)).catch(() => undefined);
 
         const decryptTasks = recentEncrypted
@@ -608,6 +652,21 @@ export function useMessages(conversationId: string) {
         }
       }
 
+      const viewOnceIds = compatibleMessages
+        .filter((message) => message.view_once === true && message.sender_id !== user.id)
+        .map((message) => message.id);
+      const consumedViewOnceIds = new Set<string>();
+      if (viewOnceIds.length > 0) {
+        const { data: consumedRows } = await supabase
+          .from('aegis_view_once_consumptions' as never)
+          .select('message_id')
+          .eq('user_id', user.id)
+          .in('message_id', viewOnceIds);
+        for (const row of (consumedRows ?? []) as unknown as Array<{ message_id: string }>) {
+          consumedViewOnceIds.add(row.message_id);
+        }
+      }
+
       const senderIds = [...new Set(compatibleMessages.map(m => m.sender_id))];
       const { data: profiles } = await supabase
         .from('profiles')
@@ -621,6 +680,11 @@ export function useMessages(conversationId: string) {
 
       return compatibleMessages.map(msg => ({
         ...msg,
+        view_once_state: msg.view_once === true
+          ? (msg.sender_id === user.id
+              ? 'sent'
+              : consumedViewOnceIds.has(msg.id) ? 'consumed' : 'pending')
+          : undefined,
         profile: {
           name: msg.sender_id === ZEUS_BOT_ID ? companionDisplayName : (profileMap.get(msg.sender_id)?.name || 'Unknown'),
           avatar_url: profileMap.get(msg.sender_id)?.avatar_url || null,
@@ -758,22 +822,28 @@ export function useDeleteMessageForMe() {
       await queryClient.cancelQueries({ queryKey: key });
       const previousMessages = queryClient.getQueryData<Message[]>(key);
 
+      const removedMessage = previousMessages?.find((message) => message.id === messageId);
       queryClient.setQueryData<Message[]>(
         key,
         (old) => old?.filter(m => m.id !== messageId) || []
       );
+      if (removedMessage) {
+        void purgeMessageLocalState({
+          messageId,
+          body: removedMessage.body,
+          imageUrl: removedMessage.image_url,
+        });
+      }
 
       return { previousMessages, conversationId };
     },
     mutationFn: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
       if (!user) throw new Error('Not authenticated');
 
-      const { error } = await supabase
-        .from('message_deletions')
-        .insert({ message_id: messageId, user_id: user.id });
-
-      // Déjà supprimé côté utilisateur -> considérer comme succès idempotent
-      if (error && error.code !== '23505') throw error;
+      const { data, error } = await supabase.rpc('delete_aegis_message_for_me' as never, {
+        p_message_id: messageId,
+      } as never);
+      if (error || data !== true) throw error ?? new Error('MESSAGE_DELETE_FOR_ME_UNCONFIRMED');
       return conversationId;
     },
     onError: (_err, _vars, context) => {
@@ -799,23 +869,28 @@ export function useDeleteMessageForEveryone() {
       await queryClient.cancelQueries({ queryKey: key });
       const previousMessages = queryClient.getQueryData<Message[]>(key);
 
+      const removedMessage = previousMessages?.find((message) => message.id === messageId);
       queryClient.setQueryData<Message[]>(
         key,
         (old) => old?.filter(m => m.id !== messageId) || []
       );
+      if (removedMessage) {
+        void purgeMessageLocalState({
+          messageId,
+          body: removedMessage.body,
+          imageUrl: removedMessage.image_url,
+        });
+      }
 
       return { previousMessages, conversationId };
     },
     mutationFn: async ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
       if (!user) throw new Error('Not authenticated');
 
-      const { error } = await supabase
-        .from('messages')
-        .delete()
-        .eq('id', messageId)
-        .eq('sender_id', user.id);
-
-      if (error) throw error;
+      const { data, error } = await supabase.rpc('delete_aegis_message_for_everyone' as never, {
+        p_message_id: messageId,
+      } as never);
+      if (error || data !== true) throw error ?? new Error('MESSAGE_DELETE_FOR_EVERYONE_UNCONFIRMED');
       return conversationId;
     },
     onError: (_err, _vars, context) => {

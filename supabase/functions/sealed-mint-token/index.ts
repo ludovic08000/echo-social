@@ -9,6 +9,7 @@
 // auth.uid() or service-role audit logs.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { safeServerErrorMeta, safeServerLog } from "../_shared/aegis-privacy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -96,7 +97,7 @@ Deno.serve(async (req) => {
         expires_at: new Date(expiresAt).toISOString(),
       });
     if (insErr) {
-      console.error("[sealed-mint] insert failed", insErr);
+      safeServerLog("sealed-mint", "STORE_FAILED", safeServerErrorMeta(insErr));
       return new Response(JSON.stringify({ error: "store_failed" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -107,7 +108,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("[sealed-mint] error", e);
+    safeServerLog("sealed-mint", "UNHANDLED", safeServerErrorMeta(e));
     return new Response(JSON.stringify({ error: "internal" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

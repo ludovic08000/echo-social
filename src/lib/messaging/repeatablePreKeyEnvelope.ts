@@ -6,8 +6,12 @@ import {
   invalidateDeviceSession,
   ratchetDecryptWithSession,
   ratchetEncrypt,
-  AEGIS_RATCHET_PREFIX,
 } from '@/lib/crypto/deviceRatchet';
+import {
+  AEGIS_INIT_PREFIX,
+  parseAegisInitialPayload,
+  parseAegisRatchetPayload,
+} from '@/lib/crypto/aegisDeviceWire';
 import {
   fetchPrekeyBundleForDevice,
   x3dhInitiate,
@@ -16,7 +20,7 @@ import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 
 const SESSION_STORE = 'sessions';
 const INITIATING_STORE = 'initiating-sessions';
-const PREFIX = 'aegis1.init.v1.';
+const PREFIX = AEGIS_INIT_PREFIX;
 const MAC_INFO = 'ForSure-Aegis-device-init-v1';
 const INITIATING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_INITIATING_MESSAGES = 100;
@@ -70,10 +74,7 @@ function pairKey(
 }
 
 function parseRatchetSessionId(payload: string): string | null {
-  if (!payload.startsWith(AEGIS_RATCHET_PREFIX)) return null;
-  const parts = payload.slice(AEGIS_RATCHET_PREFIX.length).split('.');
-  if (parts.length !== 6 || !parts[0]) return null;
-  return parts[0];
+  return parseAegisRatchetPayload(payload)?.sessionId ?? null;
 }
 
 function utf8ToBase64(value: string): string {
@@ -208,38 +209,21 @@ function encodeEnvelope(record: InitiatingEnvelopeRecord, innerRatchet: string, 
 }
 
 export function isRepeatablePreKeyEnvelope(payload: string): boolean {
-  return payload.startsWith(PREFIX);
+  return parseAegisInitialPayload(payload) !== null;
 }
 
 export function parseRepeatablePreKeyEnvelope(payload: string): ParsedRepeatablePreKeyEnvelope | null {
-  if (!isRepeatablePreKeyEnvelope(payload)) return null;
-  const parts = payload.slice(PREFIX.length).split('.');
-  if (parts.length !== 8) return null;
-
-  const [sessionId, ekB64, spkIdRaw, opkIdRaw, senderIdentityKeyB64, recipientIdentityKeyB64, innerB64, tagB64] = parts;
-  const spkId = Number.parseInt(spkIdRaw, 10);
-  const opkId = opkIdRaw === '0' ? undefined : Number.parseInt(opkIdRaw, 10);
-  if (!sessionId || !ekB64 || !senderIdentityKeyB64 || !recipientIdentityKeyB64 || !innerB64 || !tagB64) return null;
-  if (!Number.isInteger(spkId) || spkId <= 0) return null;
-  if (opkIdRaw !== '0' && (!Number.isInteger(opkId) || (opkId as number) <= 0)) return null;
-
-  let innerRatchet: string;
-  try {
-    innerRatchet = base64ToUtf8(innerB64);
-  } catch {
-    return null;
-  }
-  if (parseRatchetSessionId(innerRatchet) !== sessionId) return null;
-
+  const parsed = parseAegisInitialPayload(payload);
+  if (!parsed) return null;
   return {
-    sessionId,
-    ekB64,
-    spkId,
-    opkId,
-    senderIdentityKeyB64,
-    recipientIdentityKeyB64,
-    innerRatchet,
-    tagB64,
+    sessionId: parsed.sessionId,
+    ekB64: parsed.ephemeralKeyB64,
+    spkId: parsed.signedPrekeyId,
+    opkId: parsed.oneTimePrekeyId,
+    senderIdentityKeyB64: parsed.senderIdentityKeyB64,
+    recipientIdentityKeyB64: parsed.recipientIdentityKeyB64,
+    innerRatchet: parsed.innerRatchet,
+    tagB64: parsed.tagB64,
   };
 }
 
@@ -352,6 +336,7 @@ export async function createRepeatablePreKeyEnvelope(args: {
   senderDeviceId: string;
   recipientUserId: string;
   recipientDeviceId: string;
+  conversationId?: string;
   useOneTimePrekey?: boolean;
 }): Promise<string | null> {
   const key = pairKey(args.senderUserId, args.senderDeviceId, args.recipientUserId, args.recipientDeviceId);
@@ -359,12 +344,14 @@ export async function createRepeatablePreKeyEnvelope(args: {
   try {
     const bundle = await fetchPrekeyBundleForDevice(args.recipientUserId, args.recipientDeviceId, {
       claimOneTimePrekey: args.useOneTimePrekey !== false,
+      conversationId: args.conversationId,
+      senderDeviceId: args.senderDeviceId,
     });
     if (!bundle) return null;
 
     const myKeys = await getOrCreateDeviceKxKey(args.senderDeviceId, args.senderUserId);
     const senderIdentityKeyB64 = myKeys.publicB64;
-    const result = await x3dhInitiate(myKeys as never, bundle);
+    const result = await x3dhInitiate(myKeys, bundle);
     const sessionId = await establishDeviceSession(
       args.senderUserId,
       args.senderDeviceId,
@@ -461,7 +448,7 @@ export async function unwrapRepeatablePreKeyEnvelope(args: {
   let replayReservation: unknown;
   try {
     const runtime = await import('@/lib/crypto/x3dh');
-    const response = await runtime.x3dhRespondForDevice(myKeys as never, args.recipientUserId, args.recipientDeviceId, {
+    const response = await runtime.x3dhRespondForDevice(myKeys, args.recipientUserId, args.recipientDeviceId, {
       ik: parsed.senderIdentityKeyB64,
       ek: parsed.ekB64,
       spkId: parsed.spkId,

@@ -13,6 +13,7 @@ import { KX_KEY_PARAMS, STORE_KEYS } from './constants';
 import { exportKeyToJWK, importKeyFromJWK, bufferToBase64 } from './utils';
 import { hardCrypto } from './cryptoIntegrity';
 import { runTx, reqToPromise } from './indexedDbTx';
+import { runCrossTabExclusive } from './crossTabLock';
 
 export interface DeviceKxKey {
   publicKey: CryptoKey;
@@ -132,10 +133,11 @@ export async function getOrCreateDeviceKxKey(deviceId: string, userId: string): 
       const existing = await loadDeviceKxKey(deviceId, userId);
       return existing ?? generateDeviceKxKey(deviceId, userId);
     };
-    if (typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function') {
-      return navigator.locks.request(`forsure:device-kx:${id}`, { mode: 'exclusive' }, create);
-    }
-    return create();
+    return runCrossTabExclusive(
+      `forsure:device-kx:${id}`,
+      create,
+      { waitTimeoutMs: 12_000, leaseMs: 60_000 },
+    );
   })().finally(() => {
     if (creationJobs.get(id) === job) creationJobs.delete(id);
   });

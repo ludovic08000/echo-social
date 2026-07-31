@@ -7,6 +7,7 @@
 // and an opaque anonymous_sender_tag chosen by the sender.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { safeServerErrorMeta, safeServerLog } from "../_shared/aegis-privacy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -124,7 +125,7 @@ Deno.serve(async (req) => {
       .select("id")
       .single();
     if (insErr) {
-      console.error("[sealed-relay] insert failed", insErr);
+      safeServerLog("sealed-relay", "STORE_FAILED", safeServerErrorMeta(insErr));
       return new Response(JSON.stringify({ error: "store_failed" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -143,7 +144,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("[sealed-relay] error", e);
+    safeServerLog("sealed-relay", "UNHANDLED", safeServerErrorMeta(e));
     return new Response(JSON.stringify({ error: "internal" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

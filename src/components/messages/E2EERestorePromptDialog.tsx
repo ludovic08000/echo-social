@@ -1,15 +1,3 @@
-/**
- * E2EERestorePromptDialog
- *
- * Inspired by Signal "Restore from backup" / WhatsApp "Encrypted backup" flow.
- *
- * Three restoration paths:
- *   1. Account password   (always available if a v5+ backup exists)
- *   2. 64-hex recovery key (if generated from Settings → Security)
- *   3. 6-digit backup PIN (L5 — WhatsApp-style, server-rate-limited 10/24h)
- *
- * Triggered by the `forsure:e2ee-restore-needed` window event.
- */
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
@@ -28,11 +16,11 @@ import { Loader2, KeyRound, Lock, ShieldCheck, Hash } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   initAccountKeySync,
-  restoreWithRecoveryKey,
   restoreWithBackupPin,
   hasBackupPin,
   hasLocalKeys,
 } from '@/lib/crypto/accountKeyBackup';
+import { restoreAegisRecoveryVault } from '@/lib/crypto/aegisRecoveryVault';
 
 export function E2EERestorePromptDialog() {
   const { user } = useAuth();
@@ -45,15 +33,20 @@ export function E2EERestorePromptDialog() {
   const [pinAvailable, setPinAvailable] = useState(false);
 
   useEffect(() => {
-    const onNeeded = async (ev: Event) => {
-      const detail = (ev as CustomEvent).detail || {};
+    const onNeeded = async (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
       try {
         if (await hasLocalKeys()) return;
-      } catch {}
+      } catch {
+        // The dialog remains available if local storage inspection fails.
+      }
       console.warn('[E2EERestore] prompting user to restore keys', detail);
-      // Probe whether a PIN backup exists so we show the tab.
       if (user?.id) {
-        try { setPinAvailable(await hasBackupPin(user.id)); } catch { setPinAvailable(false); }
+        try {
+          setPinAvailable(await hasBackupPin(user.id));
+        } catch {
+          setPinAvailable(false);
+        }
       }
       setOpen(true);
     };
@@ -65,7 +58,9 @@ export function E2EERestorePromptDialog() {
     if (!open) return;
     const onRestored = () => {
       setOpen(false);
-      setPassword(''); setRecoveryKey(''); setPin('');
+      setPassword('');
+      setRecoveryKey('');
+      setPin('');
       toast.success('Messages déverrouillés');
     };
     window.addEventListener('forsure-keys-restored', onRestored);
@@ -74,7 +69,9 @@ export function E2EERestorePromptDialog() {
 
   const finish = (origin: string) => {
     setOpen(false);
-    setPassword(''); setRecoveryKey(''); setPin('');
+    setPassword('');
+    setRecoveryKey('');
+    setPin('');
     window.dispatchEvent(new CustomEvent('forsure-keys-unlocked', { detail: { origin } }));
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { origin } }));
     window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { status: origin } }));
@@ -93,8 +90,8 @@ export function E2EERestorePromptDialog() {
       } else {
         toast.error('Mot de passe incorrect ou sauvegarde illisible');
       }
-    } catch (e) {
-      console.error('[E2EERestore] password restore failed', e);
+    } catch (error) {
+      console.error('[E2EERestore] password restore failed', error);
       toast.error('Échec de la restauration');
     } finally {
       setBusy(false);
@@ -105,11 +102,18 @@ export function E2EERestorePromptDialog() {
     if (!user?.id || !recoveryKey.trim()) return;
     setBusy(true);
     try {
-      const ok = await restoreWithRecoveryKey(recoveryKey.trim(), user.id);
-      if (ok) finish('recovery_restore');
-      else toast.error('Clé de récupération invalide');
-    } catch (e) {
-      console.error('[E2EERestore] recovery restore failed', e);
+      const result = await restoreAegisRecoveryVault(user.id, recoveryKey.trim());
+      if (result.status === 'restored' || result.status === 'already_present') {
+        finish('recovery_restore');
+      } else if (result.status === 'conflict') {
+        toast.error('Conflit d’identité : les clés locales ont été conservées');
+      } else if (result.status === 'not_found') {
+        toast.error('Aucun coffre de récupération trouvé');
+      } else {
+        toast.error('Clé de récupération invalide ou coffre illisible');
+      }
+    } catch (error) {
+      console.error('[E2EERestore] recovery restore failed', error);
       toast.error('Échec de la restauration');
     } finally {
       setBusy(false);
@@ -134,8 +138,8 @@ export function E2EERestorePromptDialog() {
       } else {
         toast.error('Échec de la restauration par PIN');
       }
-    } catch (e) {
-      console.error('[E2EERestore] pin restore failed', e);
+    } catch (error) {
+      console.error('[E2EERestore] pin restore failed', error);
       toast.error('Échec de la restauration');
     } finally {
       setBusy(false);
@@ -143,7 +147,7 @@ export function E2EERestorePromptDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!busy) setOpen(v); }}>
+    <Dialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
@@ -156,13 +160,13 @@ export function E2EERestorePromptDialog() {
               navigateur a été vidé, vos clés locales ont disparu.
             </p>
             <p>
-              Une sauvegarde chiffrée existe sur nos serveurs (style Signal / WhatsApp).
-              Choisissez une méthode pour la déverrouiller.
+              Le coffre restaure uniquement votre identité de compte. Les clés propres à cet appareil
+              seront recréées après validation, sans écraser une identité locale différente.
             </p>
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+        <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
           <TabsList className={`grid w-full ${pinAvailable ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <TabsTrigger value="password">
               <Lock className="w-4 h-4 mr-1" /> Mot de passe
@@ -184,10 +188,10 @@ export function E2EERestorePromptDialog() {
               type="password"
               autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) => setPassword(event.target.value)}
               placeholder="••••••••"
               disabled={busy}
-              onKeyDown={(e) => { if (e.key === 'Enter') handlePassword(); }}
+              onKeyDown={(event) => { if (event.key === 'Enter') void handlePassword(); }}
             />
             <Button onClick={handlePassword} disabled={busy || !password} className="w-full">
               {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
@@ -200,15 +204,15 @@ export function E2EERestorePromptDialog() {
             <Input
               id="restore-recovery"
               value={recoveryKey}
-              onChange={(e) => setRecoveryKey(e.target.value)}
-              placeholder="xxxx-xxxx-xxxx-xxxx"
+              onChange={(event) => setRecoveryKey(event.target.value)}
+              placeholder="XXXX-XXXX-XXXX-XXXX-…"
               disabled={busy}
               autoComplete="off"
               spellCheck={false}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleRecovery(); }}
+              onKeyDown={(event) => { if (event.key === 'Enter') void handleRecovery(); }}
             />
             <p className="text-xs text-muted-foreground">
-              Utilisez la clé sauvegardée depuis Réglages → Sécurité.
+              La clé reste locale. Une rotation invalide immédiatement l’ancienne génération.
             </p>
             <Button onClick={handleRecovery} disabled={busy || !recoveryKey.trim()} className="w-full">
               {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
@@ -226,15 +230,15 @@ export function E2EERestorePromptDialog() {
                 pattern="[0-9]*"
                 maxLength={6}
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="••••••"
                 disabled={busy}
                 autoComplete="off"
                 className="text-center tracking-[0.5em] text-xl"
-                onKeyDown={(e) => { if (e.key === 'Enter' && pin.length === 6) handlePin(); }}
+                onKeyDown={(event) => { if (event.key === 'Enter' && pin.length === 6) void handlePin(); }}
               />
               <p className="text-xs text-muted-foreground">
-                Limité à 10 essais par 24 h. Si vous l'oubliez, utilisez votre mot de passe ou la clé de récupération.
+                Limité à 10 essais par 24 h. Si vous l’oubliez, utilisez votre mot de passe ou la clé de récupération.
               </p>
               <Button onClick={handlePin} disabled={busy || pin.length !== 6} className="w-full">
                 {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
@@ -245,7 +249,7 @@ export function E2EERestorePromptDialog() {
         </Tabs>
 
         <DialogFooter className="text-xs text-muted-foreground">
-          Aucune donnée n'est envoyée en clair. Le déchiffrement se fait localement.
+          Aucune clé privée ni clé de récupération n’est envoyée en clair.
         </DialogFooter>
       </DialogContent>
     </Dialog>

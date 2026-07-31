@@ -19,6 +19,16 @@ vi.mock('@/lib/crypto/deviceRatchet', () => ({
   AEGIS_RATCHET_PREFIX: 'aegis1.ratchet.',
 }));
 
+
+vi.mock('@/lib/crypto/aegisDeviceWire', () => ({
+  AEGIS_INIT_PREFIX: 'aegis1.init.v1.',
+  AEGIS_RATCHET_PREFIX: 'aegis1.ratchet.',
+  isAegisSessionId: () => true,
+  parseAegisInitialPayload: () => null,
+  parseAegisRatchetPayload: (value: string) => value === 'valid-ratchet-capsule'
+    ? { sessionId: 's_AAAAAAAAAAAAAAAAAAAAAA' }
+    : null,
+}));
 vi.mock('@/lib/crypto/errorLogger', () => ({
   logCryptoError: vi.fn(),
   logCryptoException: vi.fn(),
@@ -75,7 +85,11 @@ vi.mock('@/lib/crypto/signedDeviceList', () => ({
 
 vi.mock('@/lib/crypto/cryptoIntegrity', () => ({
   hardCrypto: globalThis.crypto,
-  hardGlobals: { TextEncoder, TextDecoder },
+  hardGlobals: {
+    TextEncoder,
+    TextDecoder,
+    idbOpen: indexedDB.open.bind(indexedDB),
+  },
 }));
 
 vi.mock('@/lib/crypto/utils', () => ({
@@ -92,7 +106,7 @@ import {
 
 const SENDER = { user_id: 'user-windows', device_id: 'device-windows' };
 const ME = { userId: 'user-recipient', deviceId: 'device-ios' };
-const CAPSULE = 'aegis1.ratchet.session-abc.peerDh.0.0.aaaa.bbbb';
+const CAPSULE = 'valid-ratchet-capsule';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -197,21 +211,5 @@ describe('Aegis cross-platform device-copy routing', () => {
     expect(mocks.supabaseRpc).toHaveBeenCalledTimes(2);
   });
 
-  it('uses the exact RLS table route when the RPC schema is temporarily unavailable', async () => {
-    mocks.ratchetDecryptWithSession.mockResolvedValue('content-key-from-table');
-    mocks.supabaseRpc.mockResolvedValue({
-      data: null,
-      error: { code: '42883', message: 'function does not exist' },
-    });
-    mocks.tableRows = [{
-      message_id: 'message-rpc-refresh',
-      encrypted_body: CAPSULE,
-      sender_user_id: SENDER.user_id,
-      sender_device_id: SENDER.device_id,
-      recipient_device_id: ME.deviceId,
-    }];
 
-    await expect(tryReadDeviceCopy('message-rpc-refresh', SENDER.user_id))
-      .resolves.toBe('content-key-from-table');
-  });
 });

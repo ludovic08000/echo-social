@@ -14,16 +14,16 @@ import {
   encodeString,
   importKeyFromJWK,
   importOkpPublicKeyFromBase64,
+  randomBytes,
 } from './utils';
 import {
   KX_KEY_PARAMS, SIG_KEY_PARAMS, HKDF_HASH,
   AES_ALGO, AES_KEY_LENGTH,
 } from './constants';
 import { supabase } from '@/integrations/supabase/client';
-import {
-  type IdentityKeyPair,
-  exportPublicKeyRaw,
-} from './keyManager';
+import { exportPublicKeyRaw } from './keyManager';
+import type { DeviceKxKey } from './deviceKx';
+import { fetchVerifiedDeviceIdentity } from './signedDeviceList';
 
 export interface X3DHPrekeyBundle {
   identityKey: string;
@@ -43,6 +43,10 @@ export interface FetchDevicePrekeyBundleOptions {
    * consumed and then discarded.
    */
   claimOneTimePrekey?: boolean;
+  /** Conversation authorizing this destructive OPK claim. */
+  conversationId?: string;
+  /** Current authorized installation performing the claim. */
+  senderDeviceId?: string;
 }
 
 export interface X3DHResult {
@@ -141,11 +145,7 @@ function validatePayloadForDB(payload: Record<string, unknown>, tableName: 'devi
 }
 
 function logDBPayloadBeforeUpsert(table: 'device_signed_prekeys', payload: Record<string, unknown>) {
-  console.log('[X3DH][DB][UPSERT_PAYLOAD]', {
-    table,
-    payload_keys: Object.keys(payload),
-    fields: sanitizeDBPayload(payload),
-  });
+  console.info('[X3DH][DB][UPSERT]', { table, field_count: Object.keys(payload).length });
 }
 
 function logDBUpsertError(
@@ -164,15 +164,10 @@ function logDBUpsertError(
   const diagnostic = {
     table,
     step,
-    code: error?.code,
-    message: error?.message,
-    details: error?.details,
-    hint: error?.hint,
-    constraint_violated: violatedConstraint ?? 'unknown_from_supabase_error',
-    rejected_column: rejectedColumn ?? 'unknown_from_supabase_error',
-    rejected_value: rejectedColumn ? describeDBValue(rejectedColumn, payload[rejectedColumn]) : undefined,
-    payload_keys: Object.keys(payload),
-    payload: sanitizeDBPayload(payload),
+    code: error?.code ?? 'DB_ERROR',
+    constraint_violated: violatedConstraint ?? 'unknown',
+    rejected_column: rejectedColumn ?? 'unknown',
+    field_count: Object.keys(payload).length,
   };
   console.error('[X3DH][DB][UPSERT_FAIL]', diagnostic);
   return diagnostic;
@@ -203,86 +198,140 @@ async function loadDeviceSPKRecord(userId: string, deviceId: string, spkId: numb
   } catch { return null; }
 }
 
-async function getNextDeviceSPKId(userId: string, deviceId: string): Promise<number> {
-  try {
-    const allKeys = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) => reqToPromise<IDBValidKey[]>(tx.objectStore(SPK_STORE).getAllKeys()));
-    const prefix = `${userId}::dev::${deviceId}::`;
-    let maxId = 0;
-    for (const key of allKeys) {
-      const k = String(key);
-      if (k.startsWith(prefix)) {
-        const id = parseInt(k.slice(prefix.length), 10);
-        if (!Number.isNaN(id) && id > maxId) maxId = id;
-      }
+async function deleteDeviceSPKPrivate(userId: string, deviceId: string, spkId: number): Promise<void> {
+  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+    tx.objectStore(SPK_STORE).delete(deviceSpkKey(userId, deviceId, spkId));
+  }).catch(() => undefined);
+}
+
+function randomPositiveId(): number {
+  const bytes = randomBytes(4);
+  const value = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0) & 0x7fffffff;
+  return value === 0 ? 1 : value;
+}
+
+async function pruneOldDeviceSPKs(userId: string, deviceId: string, activeSpkId: number): Promise<void> {
+  const prefix = `${userId}::dev::${deviceId}::`;
+  const now = Date.now();
+  const maxAgeMs = 45 * 24 * 60 * 60 * 1000;
+  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) =>
+    new Promise<void>((resolve, reject) => {
+      const store = tx.objectStore(SPK_STORE);
+      const request = store.getAll();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const records = (request.result as StoredSPK[])
+          .filter((record) => record.id.startsWith(prefix) && !record.id.includes('::opk::'))
+          .sort((a, b) => b.createdAt - a.createdAt);
+        records.forEach((record, index) => {
+          if (record.spkId !== activeSpkId && (index >= 4 || now - record.createdAt > maxAgeMs)) {
+            store.delete(record.id);
+          }
+        });
+        resolve();
+      };
+    }),
+  );
+}
+
+export async function generateAndUploadDeviceSignedPrekey(
+  userId: string,
+  deviceId: string,
+  signingPrivateKey: CryptoKey,
+): Promise<{ spkId: number; publicKey: string; signature: string }> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const spkId = randomPositiveId();
+    const spkPair = await hardCrypto.generateKey(KX_KEY_PARAMS, true, ['deriveBits']) as CryptoKeyPair;
+    const publicRaw = await exportPublicKeyRaw(spkPair.publicKey);
+    const publicBase64 = bufferToBase64(publicRaw);
+    const signatureBase64 = bufferToBase64(await hardCrypto.sign(
+      'Ed25519',
+      signingPrivateKey,
+      publicRaw,
+    ) as ArrayBuffer);
+    await saveDeviceSPKPrivate(userId, deviceId, spkId, spkPair.privateKey, publicBase64);
+
+    const { data, error } = await (supabase as any).rpc('publish_device_signed_prekey', {
+      p_device_id: deviceId,
+      p_spk_id: spkId,
+      p_public_key: publicBase64,
+      p_signature: signatureBase64,
+    });
+    const result = data as { ok?: boolean; code?: string } | null;
+    if (!error && result?.ok === true) {
+      await pruneOldDeviceSPKs(userId, deviceId, spkId).catch(() => undefined);
+      return { spkId, publicKey: publicBase64, signature: signatureBase64 };
     }
-    return maxId + 1;
-  } catch { return 1; }
-}
 
-export async function generateAndUploadDeviceSignedPrekey(userId: string, deviceId: string, signingPrivateKey: CryptoKey): Promise<{ spkId: number; publicKey: string; signature: string }> {
-  const spkId = await getNextDeviceSPKId(userId, deviceId);
-  const spkPair = await hardCrypto.generateKey(KX_KEY_PARAMS, true, ['deriveBits']) as CryptoKeyPair;
-  const publicRaw = await exportPublicKeyRaw(spkPair.publicKey);
-  const publicBase64 = bufferToBase64(publicRaw);
-  const signature = await hardCrypto.sign('Ed25519', signingPrivateKey, publicRaw);
-  const signatureBase64 = bufferToBase64(signature);
-  await saveDeviceSPKPrivate(userId, deviceId, spkId, spkPair.privateKey, publicBase64);
-  const payload = { user_id: userId, device_id: deviceId, spk_id: spkId, public_key: publicBase64, signature: signatureBase64, is_active: true };
-  validatePayloadForDB(payload, 'device_signed_prekeys');
-  logDBPayloadBeforeUpsert('device_signed_prekeys', payload);
-  const { error } = await supabase.from('device_signed_prekeys').upsert(payload, { onConflict: 'user_id,device_id,spk_id' });
-  if (error) {
-    const dbDiag = logDBUpsertError('device_signed_prekeys', 'device_signed_prekeys_upsert', error, payload);
-    throw new Error(`X3DH_DB_UPSERT_FAILED table=device_signed_prekeys step=device_signed_prekeys_upsert code=${dbDiag.code ?? 'n/a'} rejected_column=${dbDiag.rejected_column} details=${dbDiag.details ?? 'n/a'} hint=${dbDiag.hint ?? 'n/a'} supabase_message=${dbDiag.message ?? 'n/a'}`);
+    await deleteDeviceSPKPrivate(userId, deviceId, spkId);
+    const code = String(result?.code ?? error?.message ?? 'UNKNOWN');
+    if (!/SPK_ID_CONFLICT/i.test(code)) {
+      throw new Error(`X3DH_SPK_PUBLISH_FAILED:${code}`);
+    }
   }
-  await supabase.from('device_signed_prekeys').update({ is_last_resort: false }).eq('user_id', userId).eq('device_id', deviceId).eq('is_last_resort', true);
-  await supabase.from('device_signed_prekeys').update({ is_active: false, is_last_resort: true }).eq('user_id', userId).eq('device_id', deviceId).eq('is_active', true).neq('spk_id', spkId);
-  console.log(`[X3DH-DEV] ✅ device SPK #${spkId} for ${deviceId.slice(0, 8)}… uploaded`);
-  return { spkId, publicKey: publicBase64, signature: signatureBase64 };
+  throw new Error('X3DH_SPK_ID_ALLOCATION_EXHAUSTED');
 }
 
-export async function refreshDeviceSignedPrekeyIfNeeded(userId: string, deviceId: string, signingPrivateKey: CryptoKey): Promise<void> {
+export async function refreshDeviceSignedPrekeyIfNeeded(
+  userId: string,
+  deviceId: string,
+  signingPrivateKey: CryptoKey,
+): Promise<void> {
   try {
-    const { data } = await supabase.from('device_signed_prekeys').select('created_at, expires_at, spk_id, public_key, signature').eq('user_id', userId).eq('device_id', deviceId).eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (!data) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
-    const { data: pubKeyData, error: pubKeyErr } = await supabase
-      .from('user_devices')
-      .select('device_public_key, device_signing_key')
+    const { data, error } = await supabase
+      .from('device_signed_prekeys')
+      .select('created_at,expires_at,spk_id,public_key,signature')
       .eq('user_id', userId)
       .eq('device_id', deviceId)
       .eq('is_active', true)
-      .is('revoked_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
-    if (pubKeyErr || !pubKeyData?.device_signing_key) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
-    const currentSignatureValid = await verifySignedPrekey(pubKeyData.device_signing_key, data.public_key, data.signature, { source: 'refreshDeviceSignedPrekeyIfNeeded.current_device_spk', identityKeyB64: pubKeyData.device_public_key, userId, deviceId, spkId: data.spk_id });
-    if (!currentSignatureValid) {
-      // Quarantine only the invalid SPK. The authenticated DeviceID remains
-      // connected until the user explicitly revokes it from the device menu.
+    if (error || !data) {
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
+    const { getOrCreateDeviceIdentity } = await import('./deviceIdentity');
+    const localIdentity = await getOrCreateDeviceIdentity(userId, deviceId);
+    const signatureValid = await verifySignedPrekey(
+      localIdentity.publicB64,
+      data.public_key,
+      data.signature,
+      { source: 'refreshDeviceSignedPrekeyIfNeeded', userId, deviceId, spkId: data.spk_id },
+    );
+    const local = await loadDeviceSPKRecord(userId, deviceId, data.spk_id);
+    if (!signatureValid) {
       try {
-        await supabase.rpc('quarantine_own_invalid_device_spk', {
+        await (supabase as any).rpc('quarantine_own_invalid_device_spk', {
           p_device_id: deviceId,
           p_spk_id: data.spk_id,
           p_reason: 'own_device_spk_signature_invalid',
         });
-      } catch (qErr) {
-        console.warn('[X3DH-DEV] quarantine_own_invalid_device_spk failed (non-fatal):', qErr);
+      } catch (error) {
+        console.warn('[X3DH-DEV] invalid SPK repair marker failed:', error);
       }
-      try {
-        await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
-      } catch (regenErr) {
-        console.warn('[X3DH-DEV] SPK regeneration deferred; DeviceID remains connected:', regenErr);
-      }
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
       return;
     }
-    const local = await loadDeviceSPKRecord(userId, deviceId, data.spk_id);
-    if (!local) { await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey); return; }
+    if (!local || local.publicKeyBase64 !== data.public_key) {
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+      return;
+    }
+
     const now = Date.now();
     const ageMs = now - new Date(data.created_at).getTime();
     const expiresAtMs = data.expires_at ? new Date(data.expires_at).getTime() : Infinity;
-    const expiresInMs = expiresAtMs - now;
-    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-    if (ageMs > SPK_ROTATION_DAYS * 24 * 60 * 60 * 1000 || expiresInMs < SEVEN_DAYS_MS) await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
-  } catch (e) { console.warn('[X3DH-DEV] device SPK refresh failed (non-fatal):', e); }
+    if (
+      ageMs > SPK_ROTATION_DAYS * 24 * 60 * 60 * 1000 ||
+      expiresAtMs - now < 7 * 24 * 60 * 60 * 1000
+    ) {
+      await generateAndUploadDeviceSignedPrekey(userId, deviceId, signingPrivateKey);
+    }
+  } catch (error) {
+    console.warn('[X3DH-DEV] device SPK refresh failed:', error);
+    throw error;
+  }
 }
 
 const OPK_BATCH_SIZE = 100;
@@ -313,104 +362,87 @@ async function deleteDeviceOPKPrivate(userId: string, deviceId: string, opkId: n
   }
 }
 
-async function getNextDeviceOPKBaseId(userId: string, deviceId: string): Promise<number> {
-  let localMax = 0;
-  try {
-    const allKeys = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) => reqToPromise<IDBValidKey[]>(tx.objectStore(SPK_STORE).getAllKeys()));
-    const prefix = `${userId}::dev::${deviceId}::opk::`;
-    for (const key of allKeys) {
-      const k = String(key);
-      if (k.startsWith(prefix)) {
-        const id = parseInt(k.slice(prefix.length), 10);
-        if (!Number.isNaN(id) && id > localMax) localMax = id;
-      }
-    }
-  } catch {
-    // Continue with the authoritative server maximum.
-  }
-
-  let serverMax = 0;
-  try {
-    const { data } = await supabase
-      .from('device_one_time_prekeys')
-      .select('opk_id')
-      .eq('user_id', userId)
-      .eq('device_id', deviceId)
-      .order('opk_id', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (data?.opk_id && Number.isFinite(data.opk_id)) serverMax = Number(data.opk_id);
-  } catch {
-    // Local maximum still prevents ordinary OPK id reuse.
-  }
-
-  return Math.max(localMax, serverMax) + 1;
-}
-
 export async function refillDeviceOneTimePrekeysIfNeeded(userId: string, deviceId: string): Promise<void> {
-  try {
-    const { data: count, error: countErr } = await supabase.rpc('count_device_one_time_prekeys', { p_user_id: userId, p_device_id: deviceId });
-    if (countErr) { console.warn('[X3DH-OPK] count failed:', countErr.message); return; }
-    const available = (count as unknown as number) ?? 0;
-    if (available >= OPK_LOW_THRESHOLD) return;
-    console.log(`[X3DH-OPK] pool low (${available}/${OPK_LOW_THRESHOLD}) → refilling +${OPK_BATCH_SIZE}`);
-    const baseId = await getNextDeviceOPKBaseId(userId, deviceId);
-    const rows: Array<{ user_id: string; device_id: string; opk_id: number; public_key: string }> = [];
-    for (let i = 0; i < OPK_BATCH_SIZE; i++) {
-      const opkId = baseId + i;
-      const pair = await hardCrypto.generateKey(KX_KEY_PARAMS, true, ['deriveBits']) as CryptoKeyPair;
-      const pubRaw = await exportPublicKeyRaw(pair.publicKey);
-      const pubB64 = bufferToBase64(pubRaw);
-      await saveDeviceOPKPrivate(userId, deviceId, opkId, pair.privateKey, pubB64);
-      rows.push({ user_id: userId, device_id: deviceId, opk_id: opkId, public_key: pubB64 });
-    }
-    const { error: insErr } = await supabase.from('device_one_time_prekeys').upsert(rows, { onConflict: 'user_id,device_id,opk_id', ignoreDuplicates: true });
-    if (insErr) { console.warn('[X3DH-OPK] batch upsert failed:', insErr.message); return; }
-    console.log(`[X3DH-OPK] ✅ ${OPK_BATCH_SIZE} new OPKs published for ${deviceId.slice(0, 8)}…`);
-  } catch (e) { console.warn('[X3DH-OPK] refill failed (non-fatal):', e); }
+  const { data: count, error: countError } = await (supabase as any).rpc(
+    'count_device_one_time_prekeys',
+    { p_user_id: userId, p_device_id: deviceId },
+  );
+  if (countError) throw countError;
+  const available = Number(count ?? 0);
+  if (available >= OPK_LOW_THRESHOLD) return;
+
+  const rows: Array<{ opk_id: number; public_key: string }> = [];
+  const allocated = new Set<number>();
+  while (rows.length < OPK_BATCH_SIZE) {
+    const opkId = randomPositiveId();
+    if (allocated.has(opkId)) continue;
+    allocated.add(opkId);
+    const pair = await hardCrypto.generateKey(KX_KEY_PARAMS, true, ['deriveBits']) as CryptoKeyPair;
+    const publicKey = bufferToBase64(await exportPublicKeyRaw(pair.publicKey));
+    await saveDeviceOPKPrivate(userId, deviceId, opkId, pair.privateKey, publicKey);
+    rows.push({ opk_id: opkId, public_key: publicKey });
+  }
+
+  const { data, error } = await (supabase as any).rpc('publish_device_one_time_prekeys', {
+    p_device_id: deviceId,
+    p_prekeys: rows,
+  });
+  const result = data as { ok?: boolean; accepted_ids?: number[]; code?: string } | null;
+  if (error || result?.ok !== true) {
+    await Promise.all(rows.map((row) => deleteDeviceOPKPrivate(userId, deviceId, row.opk_id)));
+    throw new Error(`X3DH_OPK_PUBLISH_FAILED:${result?.code ?? error?.message ?? 'UNKNOWN'}`);
+  }
+
+  const accepted = new Set((result.accepted_ids ?? []).map(Number));
+  await Promise.all(rows
+    .filter((row) => !accepted.has(row.opk_id))
+    .map((row) => deleteDeviceOPKPrivate(userId, deviceId, row.opk_id)));
 }
 
-async function claimPeerDeviceOPK(peerUserId: string, peerDeviceId: string): Promise<{ opkId: number; publicKey: string } | null> {
+async function claimPeerDeviceOPK(
+  peerUserId: string,
+  peerDeviceId: string,
+  conversationId: string,
+  senderDeviceId: string,
+): Promise<{ opkId: number; publicKey: string } | null> {
   try {
-    const { data, error } = await supabase.rpc('claim_device_one_time_prekey', { p_user_id: peerUserId, p_device_id: peerDeviceId });
+    const { data, error } = await supabase.rpc('claim_device_one_time_prekey', {
+      p_user_id: peerUserId,
+      p_device_id: peerDeviceId,
+      p_conversation_id: conversationId,
+      p_sender_device_id: senderDeviceId,
+    });
     if (error || !data || data.length === 0) return null;
     const row = data[0];
     return { opkId: row.opk_id, publicKey: row.public_key };
   } catch { return null; }
 }
 
-async function fetchDevicePrekeyMaterial(peerUserId: string, peerDeviceId: string): Promise<{ identityKey: string; signingKey: string; spkId: number; publicKey: string; signature: string } | null> {
-  const { data: device } = await supabase
-    .from('user_devices')
-    .select('device_public_key, device_signing_key, device_identity_signature, device_identity_version')
-    .eq('user_id', peerUserId)
-    .eq('device_id', peerDeviceId)
-    .eq('is_active', true)
-    .eq('approval_status', 'approved')
-    .eq('routing_status', 'ready')
-    .is('revoked_at', null)
-    .maybeSingle();
-  if (!device?.device_public_key || !device.device_signing_key || !device.device_identity_signature) return null;
-  const { verifyDeviceIdentityBinding } = await import('./deviceIdentity');
-  const identityBindingValid = await verifyDeviceIdentityBinding({
-    userId: peerUserId,
-    deviceId: peerDeviceId,
-    devicePublicKey: device.device_public_key,
-    signingPublicKey: device.device_signing_key,
-    signature: device.device_identity_signature,
-  });
-  if (!identityBindingValid) {
+async function fetchDevicePrekeyMaterial(
+  peerUserId: string,
+  peerDeviceId: string,
+): Promise<{ identityKey: string; signingKey: string; spkId: number; publicKey: string; signature: string } | null> {
+  const device = await fetchVerifiedDeviceIdentity(peerUserId, peerDeviceId);
+  if (!device) {
     throw new DevicePrekeyBundleError(
       'ACCOUNT_IDENTITY_BINDING_INVALID',
       peerUserId,
       peerDeviceId,
-      undefined,
     );
   }
-  const { data: spkRows, error } = await supabase.rpc('get_device_prekey_bundle', { p_user_id: peerUserId, p_device_id: peerDeviceId });
+  const { data: spkRows, error } = await (supabase as any).rpc('get_device_prekey_bundle', {
+    p_user_id: peerUserId,
+    p_device_id: peerDeviceId,
+  });
   if (error || !spkRows || spkRows.length === 0) return null;
   const spk = spkRows[0] as { spk_id: number; public_key: string; signature: string };
-  return { identityKey: device.device_public_key, signingKey: device.device_signing_key, spkId: spk.spk_id, publicKey: spk.public_key, signature: spk.signature };
+  return {
+    identityKey: device.devicePublicKey,
+    signingKey: device.deviceSigningKey,
+    spkId: Number(spk.spk_id),
+    publicKey: spk.public_key,
+    signature: spk.signature,
+  };
 }
 
 function safeBase64BytesLength(value: string): number | 'invalid_base64' { try { return base64ToBuffer(value).byteLength; } catch { return 'invalid_base64'; } }
@@ -448,13 +480,21 @@ export async function fetchPrekeyBundleForDevice(
     console.warn('[X3DH-DEV] device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false });
     throw new DevicePrekeyBundleError('DEVICE_SPK_SIGNATURE_INVALID', peerUserId, peerDeviceId, material.spkId);
   }
-  const opk = options.claimOneTimePrekey === false
-    ? null
-    : await claimPeerDeviceOPK(peerUserId, peerDeviceId);
+  const shouldClaimOpk = options.claimOneTimePrekey !== false &&
+    Boolean(options.conversationId) &&
+    Boolean(options.senderDeviceId);
+  const opk = shouldClaimOpk
+    ? await claimPeerDeviceOPK(
+      peerUserId,
+      peerDeviceId,
+      options.conversationId!,
+      options.senderDeviceId!,
+    )
+    : null;
   return { identityKey: material.identityKey, signingKey: material.signingKey, signedPrekey: material.publicKey, signedPrekeySignature: material.signature, signedPrekeyId: material.spkId, oneTimePrekey: opk?.publicKey, oneTimePrekeyId: opk?.opkId };
 }
 
-export async function x3dhInitiate(myKeys: IdentityKeyPair, bundle: X3DHPrekeyBundle): Promise<X3DHResult> {
+export async function x3dhInitiate(myKeys: Pick<DeviceKxKey, 'privateKey'>, bundle: X3DHPrekeyBundle): Promise<X3DHResult> {
   const sigValid = await verifySignedPrekey(bundle.signingKey, bundle.signedPrekey, bundle.signedPrekeySignature, { source: 'x3dhInitiate.bundle_double_check', identityKeyB64: bundle.identityKey, spkId: bundle.signedPrekeyId });
   if (!sigValid) throw new Error(`X3DH: Signed prekey signature verification FAILED`);
   const peerIK = await importX25519Public(bundle.identityKey);
@@ -476,7 +516,7 @@ export async function x3dhInitiate(myKeys: IdentityKeyPair, bundle: X3DHPrekeyBu
   return { sharedSecret, ephemeralKey, usedOTPKId: bundle.oneTimePrekeyId, usedSPKId: bundle.signedPrekeyId };
 }
 
-export async function x3dhRespondForDevice(myKeys: IdentityKeyPair, myUserId: string, myDeviceId: string, initialMessage: X3DHInitialMessage): Promise<{
+export async function x3dhRespondForDevice(myKeys: Pick<DeviceKxKey, 'privateKey'>, myUserId: string, myDeviceId: string, initialMessage: X3DHInitialMessage): Promise<{
   sharedSecret: ArrayBuffer;
   spkKeyPair: CryptoKeyPair;
   replayReservation: import('./aegisReplayGuard').AegisReplayReservation;

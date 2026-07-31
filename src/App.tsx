@@ -152,7 +152,7 @@ function IncomingCallHandler() {
       if (!accepted) return;
       activeIncomingCallIdRef.current = accepted.id;
       activeIncomingConversationIdRef.current = accepted.conversation_id;
-      call.startCall(accepted.conversation_id, accepted.call_type, accepted.decryptedCallKey);
+      call.startCall(accepted.id, accepted.call_type, accepted.decryptedCallKey);
     } catch (err) {
       console.error('[CALL] Failed to accept call:', err);
       toast.error("Impossible d'accepter l'appel — réessayez");

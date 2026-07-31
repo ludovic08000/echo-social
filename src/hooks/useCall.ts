@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Room, RoomEvent, Track, ExternalE2EEKeyProvider, isE2EESupported, ConnectionQuality } from 'livekit-client';
 import { getLiveKitToken } from '@/lib/livekit';
+import { getCurrentDeviceId, hydrateDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { requestMediaPermissions, acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
 import { toast } from 'sonner';
 
@@ -179,7 +180,7 @@ export function useCall(options?: UseCallOptions) {
     onCallConnectedRef.current?.();
   }, []);
 
-  const startCall = useCallback(async (conversationId: string, type: CallType, e2eeKeyB64: string) => {
+  const startCall = useCallback(async (callId: string, type: CallType, e2eeKeyB64: string) => {
     if (connectingRef.current) {
       console.warn('[CALL] startCall ignored — already connecting');
       return;
@@ -207,7 +208,7 @@ export function useCall(options?: UseCallOptions) {
     setIsCameraOff(false);
     setIsE2eeActive(false);
 
-    console.info(`[CALL] starting ${type} call for conversation ${conversationId}`);
+    console.info(`[CALL] starting ${type} call ${callId}`);
 
     try {
       if (!e2eeKeyB64) {
@@ -232,8 +233,12 @@ export function useCall(options?: UseCallOptions) {
 
       await acquireWakeLock();
 
-      const roomName = `call-${conversationId}`;
-      const { token, url } = await getLiveKitToken(roomName, true);
+      const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
+      if (!deviceId || isDeviceIdTemporary()) {
+        throw new Error('Current device is not ready for a secure call');
+      }
+      const roomName = `call-${callId}`;
+      const { token, url } = await getLiveKitToken(roomName, true, deviceId);
 
       let e2eeKeyProvider: ExternalE2EEKeyProvider | undefined;
       let e2eeWorker: Worker | undefined;

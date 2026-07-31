@@ -1,18 +1,8 @@
 /**
- * Crypto Error Logger
+ * Privacy-bounded crypto diagnostics.
  *
- * Centralised, persistent diagnostic trail for every encryption-related
- * failure (handshake, ratchet encrypt/decrypt, fanout, queue handlers,
- * key rotation, etc.).
- *
- * Design:
- *  - Logs are batched in-memory and flushed to `crypto_error_logs` every
- *    2s (or when buffer hits 20 entries). Network failures keep the buffer
- *    around for the next flush — never throws into the crypto path.
- *  - Plaintext is NEVER logged: we only record metadata, error codes and
- *    stack traces.
- *  - In dev, every entry is also mirrored to `console.warn` for fast
- *    feedback.
+ * Raw exception messages, stacks, identifiers, plaintext, ciphertext, URLs,
+ * tokens and key material are never persisted or mirrored to the console.
  */
 
 import { supabase } from '@/integrations/supabase/client';
@@ -50,9 +40,16 @@ export interface CryptoErrorEntry {
   metadata?: Record<string, unknown> | null;
 }
 
-const BUFFER: Array<CryptoErrorEntry & { ts: string }> = [];
+type BufferedEntry = CryptoErrorEntry & { ts: string };
+
+const BUFFER: BufferedEntry[] = [];
 const MAX_BUFFER = 20;
 const FLUSH_INTERVAL_MS = 2_000;
+const SAFE_TOKEN = /^[A-Za-z0-9_.:/-]{1,96}$/;
+const FORBIDDEN_KEY = /(plain|body|content|cipher|secret|token|key|url|email|phone|user|device|peer|conversation|message|archive|payload|session|trace|localid)/i;
+const SAFE_STRING_KEY = /^(stage|action|status|kind|reason|context|mimeType|platform|transport|errorCode)$/;
+const SAFE_NUMBER_KEY = /(count|size|bytes|length|duration|elapsed|retry|attempt|index|version|status)$/i;
+const SAFE_BOOLEAN_KEY = /(active|enabled|verified|encrypted|ready|resumed|available|success|video)$/i;
 
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushing = false;
@@ -65,35 +62,67 @@ function isDev(): boolean {
   }
 }
 
-function safeUserAgent(): string | null {
-  try {
-    return typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null;
-  } catch {
-    return null;
-  }
+function safeCode(value: unknown): string {
+  return typeof value === 'string' && SAFE_TOKEN.test(value) ? value : 'E_UNKNOWN';
 }
 
-/**
- * Best-effort error → code normaliser. Keeps codes short and grep-friendly
- * in the admin dashboard.
- */
-export function classifyCryptoError(err: unknown): { code: string; message: string; stack?: string } {
-  if (err instanceof Error) {
-    const msg = err.message || 'unknown';
-    let code = 'E_UNKNOWN';
-    if (/not active/i.test(msg)) code = 'E_NOT_ACTIVE';
-    else if (/initializ/i.test(msg)) code = 'E_INITIALIZING';
-    else if (/no session/i.test(msg) || /session.*not.*found/i.test(msg)) code = 'E_NO_SESSION';
-    else if (/handler.*missing/i.test(msg)) code = 'E_NO_HANDLER';
-    else if (/x3dh/i.test(msg)) code = 'E_X3DH';
-    else if (/ratchet/i.test(msg)) code = 'E_RATCHET';
-    else if (/decrypt/i.test(msg)) code = 'E_DECRYPT';
-    else if (/encrypt/i.test(msg)) code = 'E_ENCRYPT';
-    else if (/key/i.test(msg)) code = 'E_KEY';
-    else if (/network|fetch|503|502|429/i.test(msg)) code = 'E_NETWORK';
-    return { code, message: msg.slice(0, 1000), stack: err.stack?.slice(0, 2000) };
+function genericMessage(code: string): string {
+  return `CRYPTO_DIAGNOSTIC_${safeCode(code)}`;
+}
+
+export function sanitizeCryptoMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!metadata) return null;
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (FORBIDDEN_KEY.test(key)) continue;
+    if (typeof value === 'number' && Number.isFinite(value) && SAFE_NUMBER_KEY.test(key)) {
+      safe[key] = value;
+      continue;
+    }
+    if (typeof value === 'boolean' && SAFE_BOOLEAN_KEY.test(key)) {
+      safe[key] = value;
+      continue;
+    }
+    if (typeof value === 'string' && SAFE_STRING_KEY.test(key) && SAFE_TOKEN.test(value)) {
+      safe[key] = value;
+    }
   }
-  return { code: 'E_UNKNOWN', message: String(err).slice(0, 1000) };
+  return Object.keys(safe).length > 0 ? safe : null;
+}
+
+/** Inspect locally only to derive a bounded code; never return raw text or stack. */
+export function classifyCryptoError(err: unknown): { code: string; message: string; stack?: string } {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  let code = 'E_UNKNOWN';
+  if (/not active/i.test(msg)) code = 'E_NOT_ACTIVE';
+  else if (/initializ/i.test(msg)) code = 'E_INITIALIZING';
+  else if (/no session/i.test(msg) || /session.*not.*found/i.test(msg)) code = 'E_NO_SESSION';
+  else if (/handler.*missing/i.test(msg)) code = 'E_NO_HANDLER';
+  else if (/x3dh/i.test(msg)) code = 'E_X3DH';
+  else if (/ratchet/i.test(msg)) code = 'E_RATCHET';
+  else if (/decrypt/i.test(msg)) code = 'E_DECRYPT';
+  else if (/encrypt/i.test(msg)) code = 'E_ENCRYPT';
+  else if (/key/i.test(msg)) code = 'E_KEY';
+  else if (/network|fetch|503|502|429|timeout/i.test(msg)) code = 'E_NETWORK';
+  return { code, message: genericMessage(code) };
+}
+
+function sanitizeEntry(entry: CryptoErrorEntry): CryptoErrorEntry {
+  const code = safeCode(entry.errorCode);
+  return {
+    severity: entry.severity,
+    context: entry.context,
+    errorCode: code,
+    errorMessage: genericMessage(code),
+    conversationId: null,
+    myDeviceId: null,
+    peerUserId: null,
+    peerDeviceId: null,
+    stack: null,
+    metadata: sanitizeCryptoMetadata(entry.metadata),
+  };
 }
 
 async function flushNow(): Promise<void> {
@@ -103,33 +132,24 @@ async function flushNow(): Promise<void> {
   try {
     const { data: sess } = await supabase.auth.getSession();
     const userId = sess.session?.user?.id;
-    if (!userId) {
-      // Not authenticated — drop silently (RLS would reject anyway).
-      return;
-    }
-    const ua = safeUserAgent();
-    const rows = batch.map(e => ({
+    if (!userId) return;
+    const rows = batch.map((entry) => ({
       user_id: userId,
-      severity: e.severity,
-      context: e.context,
-      error_code: e.errorCode,
-      error_message: e.errorMessage,
-      conversation_id: e.conversationId ?? null,
-      my_device_id: e.myDeviceId ?? null,
-      peer_user_id: e.peerUserId ?? null,
-      peer_device_id: e.peerDeviceId ?? null,
-      stack: e.stack ?? null,
-      user_agent: ua,
-      metadata: (e.metadata ?? null) as never,
-      created_at: e.ts,
+      severity: entry.severity,
+      context: entry.context,
+      error_code: entry.errorCode,
+      error_message: entry.errorMessage,
+      conversation_id: null,
+      my_device_id: null,
+      peer_user_id: null,
+      peer_device_id: null,
+      stack: null,
+      user_agent: null,
+      metadata: (entry.metadata ?? null) as never,
+      created_at: entry.ts,
     }));
     const { error } = await supabase.from('crypto_error_logs').insert(rows);
-    if (error) {
-      // Re-queue for next attempt (cap to MAX_BUFFER * 2 to bound memory)
-      if (BUFFER.length < MAX_BUFFER * 2) {
-        BUFFER.unshift(...batch);
-      }
-    }
+    if (error && BUFFER.length < MAX_BUFFER * 2) BUFFER.unshift(...batch);
   } catch {
     if (BUFFER.length < MAX_BUFFER * 2) BUFFER.unshift(...batch);
   } finally {
@@ -137,7 +157,7 @@ async function flushNow(): Promise<void> {
   }
 }
 
-function scheduleFlush() {
+function scheduleFlush(): void {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
@@ -145,39 +165,23 @@ function scheduleFlush() {
   }, FLUSH_INTERVAL_MS);
 }
 
-/**
- * Record a crypto-related incident. Never throws.
- */
 export function logCryptoError(entry: CryptoErrorEntry): void {
   try {
-    const enriched = { ...entry, ts: new Date().toISOString() };
-    BUFFER.push(enriched);
+    const sanitized = sanitizeEntry(entry);
+    BUFFER.push({ ...sanitized, ts: new Date().toISOString() });
     if (isDev()) {
-      // eslint-disable-next-line no-console
       console.warn(
-        `[CRYPTO ${entry.severity.toUpperCase()}][${entry.context}] ${entry.errorCode}: ${entry.errorMessage}`,
-        {
-          conv: entry.conversationId,
-          myDev: entry.myDeviceId,
-          peer: entry.peerUserId,
-          peerDev: entry.peerDeviceId,
-          meta: entry.metadata,
-        },
+        `[CRYPTO ${sanitized.severity.toUpperCase()}][${sanitized.context}] ${sanitized.errorCode}`,
+        sanitized.metadata ?? {},
       );
     }
-    if (BUFFER.length >= MAX_BUFFER) {
-      void flushNow();
-    } else {
-      scheduleFlush();
-    }
+    if (BUFFER.length >= MAX_BUFFER) void flushNow();
+    else scheduleFlush();
   } catch {
-    /* swallow — logging must never break crypto */
+    // Diagnostics must never alter cryptographic control flow.
   }
 }
 
-/**
- * Convenience wrapper: classify and log an unknown error.
- */
 export function logCryptoException(
   context: CryptoErrorContext,
   err: unknown,
@@ -185,13 +189,12 @@ export function logCryptoException(
     severity?: CryptoErrorSeverity;
   } = {},
 ): void {
-  const { code, message, stack } = classifyCryptoError(err);
+  const classified = classifyCryptoError(err);
   logCryptoError({
     severity: extra.severity ?? 'error',
     context,
-    errorCode: code,
-    errorMessage: message,
-    stack,
+    errorCode: classified.code,
+    errorMessage: classified.message,
     conversationId: extra.conversationId,
     myDeviceId: extra.myDeviceId,
     peerUserId: extra.peerUserId,
@@ -200,7 +203,6 @@ export function logCryptoException(
   });
 }
 
-/** Force a synchronous flush (useful on logout / before unload). */
 export async function flushCryptoErrors(): Promise<void> {
   if (flushTimer) {
     clearTimeout(flushTimer);
@@ -209,12 +211,11 @@ export async function flushCryptoErrors(): Promise<void> {
   await flushNow();
 }
 
-// Auto-flush on tab close
 if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => {
-    void flushNow();
-  });
+  window.addEventListener('beforeunload', () => void flushNow());
   window.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') void flushNow();
   });
 }
+
+export const __test__ = { sanitizeEntry, safeCode, genericMessage };

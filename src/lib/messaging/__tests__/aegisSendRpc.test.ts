@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { VALID_INIT_COPY, VALID_RATCHET_COPY } from '@/test/aegisWireFixtures';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -29,17 +30,26 @@ const INITIAL: FanoutCopyRow[] = [{
   recipient_device_id: 'device-old-12345678',
   sender_user_id: '33333333-3333-4333-8333-333333333333',
   sender_device_id: 'sender-device-12345678',
-  encrypted_body: 'aegis1.ratchet.session.dh.0.0.iv.ct',
+  encrypted_body: VALID_RATCHET_COPY,
 }];
 
 const REBUILT: FanoutCopyRow[] = [{
   ...INITIAL[0],
   recipient_device_id: 'device-new-12345678',
-  encrypted_body: 'aegis1.init.v1.payload',
+  encrypted_body: VALID_INIT_COPY,
 }];
 
 const INITIAL_ROUTE_VERSION = 'route-version-initial';
 const REBUILT_ROUTE_VERSION = 'route-version-rebuilt';
+
+function receipt(existing = false) {
+  return {
+    state: 'committed',
+    message_id: INITIAL[0].message_id,
+    request_digest: 'a'.repeat(64),
+    existing,
+  };
+}
 
 function args(rebuildCopies = vi.fn(async () => ({
   copies: REBUILT,
@@ -68,7 +78,7 @@ describe('sendMessageWithAegisRetry', () => {
   it('rebuilds a stale route exactly once and commits the same message id', async () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'E2EE_DEVICE_LIST_STALE' } })
-      .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
+      .mockResolvedValueOnce({ data: receipt(), error: null });
     const rebuild = vi.fn(async () => ({
       copies: REBUILT,
       routeVersion: REBUILT_ROUTE_VERSION,
@@ -124,7 +134,7 @@ describe('sendMessageWithAegisRetry', () => {
   it('confirms an ambiguous transport failure idempotently without blind rollback', async () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: null, error: { message: 'Failed to fetch' } })
-      .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
+      .mockResolvedValueOnce({ data: receipt(), error: null });
 
     const result = await sendMessageWithAegisRetry(args());
 
@@ -167,7 +177,7 @@ describe('sendMessageWithAegisRetry', () => {
         data: null,
         error: { code: '23514', message: 'E2EE_PARTICIPANT_ROUTE_UNAVAILABLE' },
       })
-      .mockResolvedValueOnce({ data: INITIAL[0].message_id, error: null });
+      .mockResolvedValueOnce({ data: receipt(), error: null });
     const rebuild = vi.fn(async () => ({
       copies: REBUILT,
       routeVersion: REBUILT_ROUTE_VERSION,
@@ -225,6 +235,44 @@ describe('sendMessageWithAegisRetry', () => {
     expect(result.error?.code).toBe('42883');
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.rpc.mock.calls[0][1]).toHaveProperty('p_sender_device_id');
+  });
+
+  it('keeps state pending when a 200 response has no exact commit receipt', async () => {
+    mocks.rpc.mockResolvedValue({ data: INITIAL[0].message_id, error: null });
+
+    const result = await sendMessageWithAegisRetry(args());
+
+    expect(result.error?.code).toBe('AEGIS_COMMIT_RECEIPT_UNVERIFIED');
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rollback).not.toHaveBeenCalled();
+    expect(mocks.commit).not.toHaveBeenCalled();
+  });
+
+  it('rejects a commit receipt for another message without rewinding the Ratchet', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { ...receipt(), message_id: '99999999-9999-4999-8999-999999999999' },
+      error: null,
+    });
+
+    const result = await sendMessageWithAegisRetry(args());
+
+    expect(result.error?.code).toBe('AEGIS_COMMIT_RECEIPT_UNVERIFIED');
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rollback).not.toHaveBeenCalled();
+    expect(mocks.commit).not.toHaveBeenCalled();
+  });
+
+  it('treats an aborted gateway request as ambiguous', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'AEGIS_GATEWAY_UNREACHABLE', message: 'AbortError' },
+    });
+
+    const result = await sendMessageWithAegisRetry(args());
+
+    expect(result.error?.code).toBe('AEGIS_GATEWAY_UNREACHABLE');
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rollback).not.toHaveBeenCalled();
   });
 
   it('rejects an obsolete prepared copy before any server write', async () => {

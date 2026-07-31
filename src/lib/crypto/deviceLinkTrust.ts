@@ -2,9 +2,9 @@ import { fetchVerifiedDeviceList } from './signedDeviceList';
 import { peekDeviceSignedPrekey } from './x3dh';
 
 /**
- * Sesame trust is per DeviceID. Registration publishes a self-authenticated
- * Ed25519/X25519 binding, and SPK validation proves the route is usable.
- * There is no account root, primary device, or companion-signing repair pass.
+ * Aegis trust is rooted in the stable account Ed25519 key. Registration
+ * authorizes this DeviceID's Ed25519/X25519 keys, and SPK validation proves
+ * that the authorized route can complete a fresh X3DH bootstrap.
  */
 export async function ensureApprovedDeviceTrust(
   userId: string,
@@ -16,9 +16,11 @@ export async function ensureApprovedDeviceTrust(
     peekDeviceSignedPrekey(userId, deviceId).catch(() => null),
   ]);
   const result = verified.verifications.find((entry) => entry.deviceId === deviceId);
+  const device = verified.trusted.find((entry) => entry.deviceId === deviceId);
   if (!result?.ok) {
     throw new Error(`DEVICE_IDENTITY_UNVERIFIED:${result?.reason ?? 'MISSING'}`);
   }
+  if (!device?.isRoutable) throw new Error('DEVICE_ROUTE_NOT_AUTHORIZED');
   if (!spk) throw new Error('DEVICE_SIGNED_PREKEY_UNAVAILABLE');
   return 0;
 }

@@ -14,6 +14,7 @@ import { resyncE2EE, type ResyncReport } from '@/lib/crypto/resyncE2EE';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { BackupPinSection } from '@/components/BackupPinSection';
+import { AegisRecoveryKeySection } from '@/components/AegisRecoveryKeySection';
 
 export function KeyBackupPanel() {
   const backup = useSecureBackup();
@@ -322,6 +323,8 @@ export function KeyBackupPanel() {
                 )}
               </div>
             )}
+
+            <AegisRecoveryKeySection />
 
             {/* L5 — WhatsApp-style 6-digit PIN backup */}
             <BackupPinSection />

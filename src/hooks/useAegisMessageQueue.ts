@@ -14,9 +14,12 @@ import {
   getOutboxPayload,
   listOutboxPayloads,
   putOutboxPayload,
+  subscribeOutboxChanges,
   type OutboxExtra,
   type OutboxPayload,
 } from '@/lib/messaging/outboxVault';
+import { runAegisOutboxJob } from '@/lib/messaging/aegisConversationQueue';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 export interface OutboundMessage {
   localId: string;
@@ -52,6 +55,8 @@ type SentMessageSnapshot = {
   conversation_id: string;
   sender_id: string;
   body: string;
+  body_kind?: string | null;
+  view_once?: boolean;
   image_url: string | null;
   created_at: string;
   status: 'delivered';
@@ -245,14 +250,18 @@ export function useAegisMessageQueue(
 
     void (async () => {
       const payloads = await listOutboxPayloads(user.id, conversationId);
-      const reservedIds = payloads
+      // Encrypted Aegis jobs are never reconciled from parent-row existence
+      // alone. They must resubmit their exact immutable request so the RPC can
+      // verify the stored request digest and return an authoritative receipt.
+      const plaintextReservedIds = payloads
+        .filter((payload) => !isMultiDeviceEnvelopeBody(payload.encryptedBody))
         .map((payload) => payload.reservedServerId)
         .filter((id): id is string => Boolean(id));
-      const delivered = new Set<string>();
+      const deliveredPlaintext = new Set<string>();
 
-      if (reservedIds.length > 0) {
-        const { data } = await supabase.from('messages').select('id').in('id', reservedIds);
-        for (const row of data ?? []) delivered.add(row.id);
+      if (plaintextReservedIds.length > 0) {
+        const { data } = await supabase.from('messages').select('id').in('id', plaintextReservedIds);
+        for (const row of data ?? []) deliveredPlaintext.add(row.id);
       }
 
       const restored: OutboundMessage[] = [];
@@ -261,10 +270,11 @@ export function useAegisMessageQueue(
           await deleteOutboxPayload(payload.localId).catch(() => {});
           continue;
         }
-        if (payload.reservedServerId && delivered.has(payload.reservedServerId)) {
-          // The authoritative RPC commits the parent and every expected device
-          // copy in one transaction. A visible parent therefore proves delivery;
-          // rebuilding copies here would advance the local ratchet a second time.
+        if (
+          !isMultiDeviceEnvelopeBody(payload.encryptedBody) &&
+          payload.reservedServerId &&
+          deliveredPlaintext.has(payload.reservedServerId)
+        ) {
           await deleteOutboxPayload(payload.localId).catch(() => {});
           dispatchDecryptRetry(payload.reservedServerId);
           continue;
@@ -290,6 +300,34 @@ export function useAegisMessageQueue(
     });
 
     return () => { cancelled = true; };
+  }, [allowPlaintext, conversationId, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+    return subscribeOutboxChanges((change) => {
+      if (change.userId !== user.id || change.conversationId !== conversationId) return;
+      if (change.action === 'delete') {
+        setPendingMessages((current) => current.filter((message) => message.localId !== change.localId));
+        return;
+      }
+
+      void getOutboxPayload(user.id, change.localId)
+        .then((payload) => {
+          if (!payload) return;
+          if (!allowPlaintext && payload.encryptedBody && !isMultiDeviceEnvelopeBody(payload.encryptedBody)) {
+            return;
+          }
+          const restored = toOutboundMessage(payload);
+          setPendingMessages((current) => {
+            const byId = new Map(current.map((message) => [message.localId, message]));
+            byId.set(restored.localId, restored);
+            return [...byId.values()].sort(
+              (a, b) => a.createdAt - b.createdAt || a.localId.localeCompare(b.localId),
+            );
+          });
+        })
+        .catch(() => undefined);
+    });
   }, [allowPlaintext, conversationId, user?.id]);
 
   const sendMessage = useCallback(async (
@@ -318,18 +356,14 @@ export function useAegisMessageQueue(
     const serverMessageId = resumePayload?.reservedServerId ?? safeUUID();
     const trace = (stage: string, traceExtra: Record<string, unknown> = {}) => {
       const elapsedMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - traceStartedAt);
-      console.info('[MSG_TRACE]', {
+      traceE2EE({
+        direction: 'send',
         stage,
         elapsedMs,
-        localId,
-        traceId,
-        conversationId,
-        userId: user.id,
-        encryptionWasRequested: !allowPlaintext,
-        isEncryptionReady,
-        hasMedia: !!imageUrl,
-        resumed: Boolean(resumePayload),
-        ...traceExtra,
+        targetCount: typeof traceExtra.targetCount === 'number' ? traceExtra.targetCount : undefined,
+        copyCount: typeof traceExtra.copyCount === 'number' ? traceExtra.copyCount : undefined,
+        retryCount: typeof traceExtra.retryCount === 'number' ? traceExtra.retryCount : undefined,
+        errorCode: typeof traceExtra.errorCode === 'string' ? traceExtra.errorCode : undefined,
       });
     };
 
@@ -587,12 +621,15 @@ throw new Error(visibleMessage);
       dispatchDecryptRetry(data.id);
     }
 
+    const isViewOnce = Boolean(extra?.view_once);
     const sentMessage: SentMessageSnapshot = {
       id: data.id,
       conversation_id: conversationId,
       sender_id: user.id,
-      body: bodyToStore,
-      image_url: imageUrl || null,
+      body: isViewOnce ? '🔒 Vue unique' : bodyToStore,
+      body_kind: isViewOnce ? 'view_once' : (encryptedSuccessfully ? 'multi_device' : 'system'),
+      view_once: isViewOnce,
+      image_url: isViewOnce ? null : imageUrl || null,
       created_at: new Date().toISOString(),
       status: 'delivered',
       profile: {
@@ -623,50 +660,80 @@ throw new Error(visibleMessage);
 
   const retryMessage = useCallback(async (localId: string) => {
     if (!user) return;
-    const payload = await getOutboxPayload(user.id, localId);
-    if (!payload) return;
-
-    if (payload.reservedServerId) {
-      const { data } = await supabase
-        .from('messages')
-        .select('id')
-        .eq('id', payload.reservedServerId)
-        .maybeSingle();
-      if (data?.id) {
-        // Parent + copies are atomic in the authoritative RPC. Do not rebuild or
-        // re-encrypt a message that the server has already committed.
-        await deleteOutboxPayload(localId).catch(() => {});
+    await runAegisOutboxJob(`${user.id}:${localId}`, async () => {
+      // Re-read only after acquiring the cross-tab single-flight lock. Another
+      // tab may already have received the authoritative receipt and deleted it.
+      const payload = await getOutboxPayload(user.id, localId);
+      if (!payload) {
         setPendingMessages(prev => prev.filter(message => message.localId !== localId));
-        dispatchDecryptRetry(data.id);
         return;
       }
-    }
 
-    await sendMessage(payload.plaintext, payload.imageUrl, payload.extra, payload);
+      if (
+        payload.reservedServerId &&
+        !isMultiDeviceEnvelopeBody(payload.encryptedBody)
+      ) {
+        const { data } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('id', payload.reservedServerId)
+          .maybeSingle();
+        if (data?.id) {
+          await deleteOutboxPayload(localId).catch(() => {});
+          setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+          dispatchDecryptRetry(data.id);
+          return;
+        }
+      }
+
+      await sendMessage(payload.plaintext, payload.imageUrl, payload.extra, payload);
+    });
   }, [sendMessage, user]);
 
   const removeMessage = useCallback(async (localId: string) => {
-    await deleteOutboxPayload(localId).catch(() => {});
-    setPendingMessages(prev => prev.filter(message => message.localId !== localId));
-  }, []);
+    if (!user) return;
+    try {
+      await runAegisOutboxJob(`${user.id}:${localId}`, async () => {
+        await deleteOutboxPayload(localId);
+        setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+      });
+    } catch (error) {
+      console.warn('[OUTBOX] explicit removal deferred while another tab owns the job', {
+        localId,
+        error,
+      });
+    }
+  }, [user]);
 
   const markRetryExhausted = useCallback(async (localId: string) => {
-    const lastError = 'Envoi interrompu après plusieurs tentatives. Appuyez sur Réessayer.';
-    const updatedAt = Date.now();
-    setPendingMessages(prev => prev.map(message =>
-      message.localId === localId
-        ? { ...message, status: 'failed_visible', lastError, updatedAt }
-        : message,
-    ));
     if (!user) return;
-    const payload = await getOutboxPayload(user.id, localId).catch(() => null);
-    if (!payload) return;
-    await putOutboxPayload(user.id, {
-      ...payload,
-      status: 'failed_visible',
-      lastError,
-      updatedAt,
-    }).catch(() => undefined);
+    const lastError = 'Envoi interrompu après plusieurs tentatives. Appuyez sur Réessayer.';
+    try {
+      await runAegisOutboxJob(`${user.id}:${localId}`, async () => {
+        const payload = await getOutboxPayload(user.id, localId);
+        if (!payload) {
+          setPendingMessages(prev => prev.filter(message => message.localId !== localId));
+          return;
+        }
+        const updatedAt = Date.now();
+        await putOutboxPayload(user.id, {
+          ...payload,
+          status: 'failed_visible',
+          lastError,
+          updatedAt,
+        });
+        setPendingMessages(prev => prev.map(message =>
+          message.localId === localId
+            ? { ...message, status: 'failed_visible', lastError, updatedAt }
+            : message,
+        ));
+      });
+    } catch (error) {
+      console.warn('[OUTBOX] terminal retry state deferred while another tab owns the job', {
+        localId,
+        error,
+      });
+    }
   }, [user]);
 
   return {
