@@ -358,7 +358,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   const sendMessage = useSendMessage();
   const deleteForMe = useDeleteMessageForMe();
   const deleteForEveryone = useDeleteMessageForEveryone();
-  const markRead = useMarkConversationRead();
+  const { mutate: markConversationRead } = useMarkConversationRead();
   const { data: hasPending } = useHasPendingMessages(conversationId);
   const acceptRequest = useAcceptMessageRequest();
   const rejectRequest = useRejectMessageRequest();
@@ -838,8 +838,8 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
   }, [messages, bumpCache]);
 
   useEffect(() => {
-    if (conversationId) markRead.mutate(conversationId);
-  }, [conversationId, markRead]);
+    if (conversationId) markConversationRead(conversationId);
+  }, [conversationId, markConversationRead]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1192,7 +1192,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           </div>
-        ) : messages?.length === 0 ? (
+        ) : (messages?.length ?? 0) === 0 && queue.pendingMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 gap-2">
             <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
               <Send className="w-5 h-5 text-primary" />
@@ -1594,7 +1594,7 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
 
           {/* Pending outbound messages (local queue) */}
           {queue.pendingMessages.map(pm => (
-            <div key={pm.localId} className="flex justify-start mt-1 px-2">
+            <div key={pm.localId} className="flex justify-end mt-1 px-2">
               <div className="max-w-[78%]">
               {(() => {
                 const text = pm.plaintext || '';

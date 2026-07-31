@@ -77,13 +77,16 @@ function isMultiDeviceMessageRow(message: { body?: string | null; body_kind?: st
 
 let keysRestoredConversationRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 
-function scheduleKeysRestoredConversationRefetch(queryClient: QueryClient) {
+function scheduleKeysRestoredConversationRefetch(queryClient: QueryClient, userId: string) {
   if (keysRestoredConversationRefetchTimer) return;
   keysRestoredConversationRefetchTimer = setTimeout(() => {
     keysRestoredConversationRefetchTimer = null;
     console.log('[messaging] keys restored - refetch conversations');
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-  }, 350);
+    void queryClient.invalidateQueries({
+      queryKey: ['conversations', userId],
+      exact: true,
+    });
+  }, 500);
 }
 
 // Helper to get the user's custom AI companion name
@@ -206,18 +209,16 @@ export function useConversations() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // Force a refetch whenever the auth user changes (login, refresh, multi-tab).
-  // Without this, a first run while user=null caches an empty list under the
-  // shared key ['conversations'] and the UI stays empty forever.
-  useEffect(() => {
-    if (!user?.id) return;
-    const onRestored = () => {
-      scheduleKeysRestoredConversationRefetch(queryClient);
-    };
-    window.addEventListener('forsure-keys-restored', onRestored);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    return () => window.removeEventListener('forsure-keys-restored', onRestored);
-  }, [user?.id, queryClient]);
+// A second widget mount must not invalidate the same user cache.
+useEffect(() => {
+  if (!user?.id) return;
+  const userId = user.id;
+  const onRestored = () => {
+    scheduleKeysRestoredConversationRefetch(queryClient, userId);
+  };
+  window.addEventListener('forsure-keys-restored', onRestored);
+  return () => window.removeEventListener('forsure-keys-restored', onRestored);
+}, [user?.id, queryClient]);
 
   return useQuery({
     // Scope the cache to the user id so a stale empty list from a logged-out
@@ -349,10 +350,9 @@ export function useConversations() {
     enabled: !!user,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
-    // Force a refetch on mount + when the network reconnects so a returning
-    // user always sees the server-side truth, never an old cached empty list.
-    refetchOnMount: 'always',
-    refetchOnReconnect: 'always',
+    // Explicit Aegis and realtime events refresh this user-scoped cache.
+    refetchOnMount: false,
+    refetchOnReconnect: true,
     refetchOnWindowFocus: false,
   });
 }
@@ -962,17 +962,30 @@ export function useMarkConversationRead() {
   return useMutation({
     mutationFn: async (conversationId: string) => {
       if (!user) throw new Error('Not authenticated');
-
       const { error } = await supabase
         .from('conversation_participants')
         .update({ last_read_at: new Date().toISOString() })
         .eq('conversation_id', conversationId)
         .eq('user_id', user.id);
-
       if (error) throw error;
+      return conversationId;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    onMutate: async (conversationId) => {
+      if (!user?.id) return;
+      const key = ['conversations', user.id] as const;
+      await queryClient.cancelQueries({ queryKey: key, exact: true });
+      const previous = queryClient.getQueryData<Conversation[]>(key);
+      queryClient.setQueryData<Conversation[]>(key, (current) =>
+        current?.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, unread_count: 0 }
+            : conversation
+        ) ?? [],
+      );
+      return { key, previous };
+    },
+    onError: (_error, _conversationId, context) => {
+      if (context?.previous) queryClient.setQueryData(context.key, context.previous);
     },
   });
 }
