@@ -6,6 +6,7 @@ const read = (path: string) => readFileSync(path, 'utf8');
 describe('Aegis UI and final schema compatibility', () => {
   it('uses only the final device-copy RPC path', () => {
     const source = read('src/lib/messaging/aegisDeviceInbox.ts');
+    expect(source).toContain(".from('message_device_copies')");
     expect(source).toContain('get_device_copies_for_messages');
     expect(source).not.toContain("'aegis_sync_device'");
     expect(source).not.toContain("'aegis_ack_device_messages'");
