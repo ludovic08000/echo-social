@@ -209,162 +209,6 @@ export type Database = {
         }
         Relationships: []
       }
-      aegis_call_invitations: {
-        Row: {
-          call_id: string
-          created_at: string
-          encrypted_call_key: string
-          recipient_device_id: string
-          recipient_user_id: string
-          responded_at: string | null
-          status: string
-        }
-        Insert: {
-          call_id: string
-          created_at?: string
-          encrypted_call_key: string
-          recipient_device_id: string
-          recipient_user_id: string
-          responded_at?: string | null
-          status?: string
-        }
-        Update: {
-          call_id?: string
-          created_at?: string
-          encrypted_call_key?: string
-          recipient_device_id?: string
-          recipient_user_id?: string
-          responded_at?: string | null
-          status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "aegis_call_invitations_call_id_fkey"
-            columns: ["call_id"]
-            isOneToOne: false
-            referencedRelation: "active_calls"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      aegis_recovery_vaults: {
-        Row: {
-          ciphertext: string
-          created_at: string
-          generation: number
-          identity_fingerprint: string
-          kdf_salt: string
-          nonce: string
-          protocol_version: number
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          ciphertext: string
-          created_at?: string
-          generation: number
-          identity_fingerprint: string
-          kdf_salt: string
-          nonce: string
-          protocol_version: number
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          ciphertext?: string
-          created_at?: string
-          generation?: number
-          identity_fingerprint?: string
-          kdf_salt?: string
-          nonce?: string
-          protocol_version?: number
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      aegis_view_once_consumptions: {
-        Row: {
-          claim_token: string
-          consumed_at: string
-          device_id: string
-          message_id: string
-          user_id: string
-        }
-        Insert: {
-          claim_token: string
-          consumed_at?: string
-          device_id: string
-          message_id: string
-          user_id: string
-        }
-        Update: {
-          claim_token?: string
-          consumed_at?: string
-          device_id?: string
-          message_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "aegis_view_once_consumptions_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      aegis_view_once_payloads: {
-        Row: {
-          claim_expires_at: string | null
-          claim_token: string | null
-          claimed_device_id: string | null
-          conversation_id: string
-          created_at: string
-          device_copies: Json
-          image_url: string
-          message_id: string
-          parent_body: string
-          recipient_user_id: string
-          sender_user_id: string
-        }
-        Insert: {
-          claim_expires_at?: string | null
-          claim_token?: string | null
-          claimed_device_id?: string | null
-          conversation_id: string
-          created_at?: string
-          device_copies: Json
-          image_url: string
-          message_id: string
-          parent_body: string
-          recipient_user_id: string
-          sender_user_id: string
-        }
-        Update: {
-          claim_expires_at?: string | null
-          claim_token?: string | null
-          claimed_device_id?: string | null
-          conversation_id?: string
-          created_at?: string
-          device_copies?: Json
-          image_url?: string
-          message_id?: string
-          parent_body?: string
-          recipient_user_id?: string
-          sender_user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "aegis_view_once_payloads_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       ad_campaigns: {
         Row: {
           advertiser_id: string
@@ -682,6 +526,80 @@ export type Database = {
           },
         ]
       }
+      aegis_call_invitations: {
+        Row: {
+          call_id: string
+          created_at: string
+          encrypted_call_key: string
+          recipient_device_id: string
+          recipient_user_id: string
+          responded_at: string | null
+          status: string
+        }
+        Insert: {
+          call_id: string
+          created_at?: string
+          encrypted_call_key: string
+          recipient_device_id: string
+          recipient_user_id: string
+          responded_at?: string | null
+          status?: string
+        }
+        Update: {
+          call_id?: string
+          created_at?: string
+          encrypted_call_key?: string
+          recipient_device_id?: string
+          recipient_user_id?: string
+          responded_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aegis_call_invitations_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "active_calls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      aegis_recovery_vaults: {
+        Row: {
+          ciphertext: string
+          created_at: string
+          generation: number
+          identity_fingerprint: string
+          kdf_salt: string
+          nonce: string
+          protocol_version: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ciphertext: string
+          created_at?: string
+          generation: number
+          identity_fingerprint: string
+          kdf_salt: string
+          nonce: string
+          protocol_version: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ciphertext?: string
+          created_at?: string
+          generation?: number
+          identity_fingerprint?: string
+          kdf_salt?: string
+          nonce?: string
+          protocol_version?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       aegis_user_route_versions: {
         Row: {
           route_version: number
@@ -699,6 +617,88 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      aegis_view_once_consumptions: {
+        Row: {
+          claim_token: string
+          consumed_at: string
+          device_id: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          claim_token: string
+          consumed_at?: string
+          device_id: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          claim_token?: string
+          consumed_at?: string
+          device_id?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aegis_view_once_consumptions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      aegis_view_once_payloads: {
+        Row: {
+          claim_expires_at: string | null
+          claim_token: string | null
+          claimed_device_id: string | null
+          conversation_id: string
+          created_at: string
+          device_copies: Json
+          image_url: string
+          message_id: string
+          parent_body: string
+          recipient_user_id: string
+          sender_user_id: string
+        }
+        Insert: {
+          claim_expires_at?: string | null
+          claim_token?: string | null
+          claimed_device_id?: string | null
+          conversation_id: string
+          created_at?: string
+          device_copies: Json
+          image_url: string
+          message_id: string
+          parent_body: string
+          recipient_user_id: string
+          sender_user_id: string
+        }
+        Update: {
+          claim_expires_at?: string | null
+          claim_token?: string | null
+          claimed_device_id?: string | null
+          conversation_id?: string
+          created_at?: string
+          device_copies?: Json
+          image_url?: string
+          message_id?: string
+          parent_body?: string
+          recipient_user_id?: string
+          sender_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aegis_view_once_payloads_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ai_agent_conversations: {
         Row: {
@@ -6879,9 +6879,9 @@ export type Database = {
           created_at: string
           crypto_invalid_at: string | null
           crypto_invalid_reason: string | null
+          device_authorization_signature: string | null
           device_fingerprint: string | null
           device_id: string
-          device_authorization_signature: string | null
           device_name: string | null
           device_public_key: string
           device_signing_key: string | null
@@ -6912,9 +6912,9 @@ export type Database = {
           created_at?: string
           crypto_invalid_at?: string | null
           crypto_invalid_reason?: string | null
+          device_authorization_signature?: string | null
           device_fingerprint?: string | null
           device_id: string
-          device_authorization_signature?: string | null
           device_name?: string | null
           device_public_key: string
           device_signing_key?: string | null
@@ -6945,9 +6945,9 @@ export type Database = {
           created_at?: string
           crypto_invalid_at?: string | null
           crypto_invalid_reason?: string | null
+          device_authorization_signature?: string | null
           device_fingerprint?: string | null
           device_id?: string
-          device_authorization_signature?: string | null
           device_name?: string | null
           device_public_key?: string
           device_signing_key?: string | null
@@ -8004,19 +8004,6 @@ export type Database = {
         Args: { _expected_step: number; _user_id: string }
         Returns: number
       }
-      aegis_send_message: {
-        Args: {
-          p_body: string
-          p_conversation_id: string
-          p_copies: Json
-          p_extra: Json
-          p_image_url: string
-          p_message_id: string
-          p_route_version: string
-          p_sender_device_id: string
-        }
-        Returns: Json
-      }
       aegis_call_create: {
         Args: {
           p_call_id: string
@@ -8040,36 +8027,18 @@ export type Database = {
         Args: { p_call_id: string; p_device_id: string; p_status: string }
         Returns: Json
       }
-      begin_aegis_view_once_consume: {
-        Args: { p_device_id: string; p_message_id: string }
-        Returns: Json
-      }
-      commit_aegis_view_once_consume: {
-        Args: { p_claim_token: string; p_device_id: string; p_message_id: string }
-        Returns: Json
-      }
-      delete_aegis_message_for_everyone: {
-        Args: { p_message_id: string }
-        Returns: boolean
-      }
-      delete_aegis_message_for_me: {
-        Args: { p_message_id: string }
-        Returns: boolean
-      }
-      release_aegis_view_once_claim: {
-        Args: { p_claim_token: string; p_device_id: string; p_message_id: string }
-        Returns: boolean
-      }
-      write_aegis_recovery_vault: {
+      aegis_send_message: {
         Args: {
-          p_ciphertext: string
-          p_generation: number
-          p_identity_fingerprint: string
-          p_kdf_salt: string
-          p_nonce: string
-          p_protocol_version: number
+          p_body: string
+          p_conversation_id: string
+          p_copies: Json
+          p_extra: Json
+          p_image_url: string
+          p_message_id: string
+          p_route_version: string
+          p_sender_device_id: string
         }
-        Returns: number
+        Returns: Json
       }
       ai_engine_module_stats: {
         Args: { p_window_minutes?: number }
@@ -8091,6 +8060,10 @@ export type Database = {
         Returns: boolean
       }
       approve_user_device: { Args: { p_device_id: string }; Returns: Json }
+      begin_aegis_view_once_consume: {
+        Args: { p_device_id: string; p_message_id: string }
+        Returns: Json
+      }
       bump_aegis_user_route_version: {
         Args: { p_user_id: string }
         Returns: undefined
@@ -8166,6 +8139,14 @@ export type Database = {
               device_id: string
             }[]
           }
+      commit_aegis_view_once_consume: {
+        Args: {
+          p_claim_token: string
+          p_device_id: string
+          p_message_id: string
+        }
+        Returns: Json
+      }
       complete_device_copy_retry: {
         Args: {
           p_encrypted_body: string
@@ -8229,6 +8210,14 @@ export type Database = {
       ddos_cleanup: { Args: never; Returns: undefined }
       decrement_product_stock: {
         Args: { p_product_id: string; p_quantity: number }
+        Returns: boolean
+      }
+      delete_aegis_message_for_everyone: {
+        Args: { p_message_id: string }
+        Returns: boolean
+      }
+      delete_aegis_message_for_me: {
+        Args: { p_message_id: string }
         Returns: boolean
       }
       delete_email: {
@@ -8322,6 +8311,17 @@ export type Database = {
           other_name: string
           other_user_id: string
           unread_count: number
+        }[]
+      }
+      get_device_copies_for_messages: {
+        Args: { p_device_id: string; p_message_ids: string[] }
+        Returns: {
+          created_at: string
+          encrypted_body: string
+          message_id: string
+          recipient_device_id: string
+          sender_device_id: string
+          sender_user_id: string
         }[]
       }
       get_device_copies_for_user: {
@@ -8483,16 +8483,21 @@ export type Database = {
           viewer_count: number
         }[]
       }
-      get_signed_device_list: {
+      get_sesame_device_list: {
         Args: { p_user_id: string }
         Returns: {
+          account_binding_signature: string
+          account_binding_version: number
+          account_fingerprint: string
+          account_identity_key: string
+          account_signing_key: string
+          device_authorization_signature: string
           device_id: string
           device_public_key: string
-          is_primary: boolean
-          primary_device_id: string
-          primary_pub_b64: string
-          signature_b64: string
-          signed_at: string
+          device_signing_key: string
+          is_routable: boolean
+          last_seen_at: string
+          revoked_at: string
         }[]
       }
       get_signed_prekey: {
@@ -8763,6 +8768,19 @@ export type Database = {
         }
         Returns: number
       }
+      publish_device_one_time_prekeys: {
+        Args: { p_device_id: string; p_prekeys: Json }
+        Returns: Json
+      }
+      publish_device_signed_prekey: {
+        Args: {
+          p_device_id: string
+          p_public_key: string
+          p_signature: string
+          p_spk_id: number
+        }
+        Returns: Json
+      }
       publish_user_identity_root: {
         Args: { p_identity_pub_b64: string; p_primary_device_id: string }
         Returns: Json
@@ -8836,6 +8854,14 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      release_aegis_view_once_claim: {
+        Args: {
+          p_claim_token: string
+          p_device_id: string
+          p_message_id: string
+        }
+        Returns: boolean
       }
       release_backup_master_key: {
         Args: { _backup_type: string; _user_id: string }
@@ -8984,6 +9010,17 @@ export type Database = {
           video_id: string
           wellbeing_score: number
         }[]
+      }
+      write_aegis_recovery_vault: {
+        Args: {
+          p_ciphertext: string
+          p_generation: number
+          p_identity_fingerprint: string
+          p_kdf_salt: string
+          p_nonce: string
+          p_protocol_version: number
+        }
+        Returns: number
       }
     }
     Enums: {
