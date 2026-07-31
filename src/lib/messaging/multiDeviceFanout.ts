@@ -537,8 +537,8 @@ async function loadDeviceCopyRows(
   _userId: string,
   deviceId: string,
 ): Promise<CopyRow[]> {
-  const rpcResult = await supabase.rpc('get_device_copy_for_message', {
-    p_message_id: messageId,
+  const rpcResult = await supabase.rpc('get_device_copies_for_messages', {
+    p_message_ids: [messageId],
     p_device_id: deviceId,
   });
   if (rpcResult.error) {

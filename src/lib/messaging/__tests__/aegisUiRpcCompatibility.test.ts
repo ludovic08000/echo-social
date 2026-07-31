@@ -1,15 +1,32 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { extname, join, normalize } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(path, 'utf8');
+const generatedSupabaseTypes = normalize(join('src', 'integrations', 'supabase', 'types.ts'));
+
+function readRuntimeSources(root: string): string {
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.name !== '__tests__')
+    .map((entry) => {
+      const path = join(root, entry.name);
+      if (entry.isDirectory()) return readRuntimeSources(path);
+      if (normalize(path) === generatedSupabaseTypes) return '';
+      return ['.ts', '.tsx'].includes(extname(entry.name)) ? read(path) : '';
+    })
+    .join(String.fromCharCode(10));
+}
 
 describe('Aegis UI and final schema compatibility', () => {
-  it('uses only the final device-copy RPC path', () => {
-    const source = read('src/lib/messaging/aegisDeviceInbox.ts');
-    expect(source).toContain(".from('message_device_copies')");
-    expect(source).toContain('get_device_copies_for_messages');
-    expect(source).not.toContain("'aegis_sync_device'");
-    expect(source).not.toContain("'aegis_ack_device_messages'");
+  it('uses only RPC names supported by the final Aegis runtime contract', () => {
+    const runtime = readRuntimeSources('src');
+    expect(runtime).toContain('get_device_copies_for_messages');
+    expect(runtime).not.toContain("'aegis_sync_device'");
+    expect(runtime).not.toContain("'aegis_ack_device_messages'");
+    expect(runtime).not.toContain("'get_device_copy_for_message'");
+    expect(runtime).not.toContain("'send_message_with_device_copies'");
+    expect(runtime).not.toContain("'insert_message_with_device_copies'");
+    expect(runtime).not.toContain("'call_signal'");
   });
 
   it('renders a pending bubble before the first server message exists', () => {
