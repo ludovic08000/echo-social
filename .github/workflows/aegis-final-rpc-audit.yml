@@ -45,10 +45,11 @@ jobs:
 
           test_path = Path('src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts')
           test_path.write_text("""import { readFileSync, readdirSync } from 'node:fs';
-          import { extname, join } from 'node:path';
+          import { extname, join, normalize } from 'node:path';
           import { describe, expect, it } from 'vitest';
 
           const read = (path: string) => readFileSync(path, 'utf8');
+          const generatedSupabaseTypes = normalize(join('src', 'integrations', 'supabase', 'types.ts'));
 
           function readRuntimeSources(root: string): string {
             return readdirSync(root, { withFileTypes: true })
@@ -56,13 +57,14 @@ jobs:
               .map((entry) => {
                 const path = join(root, entry.name);
                 if (entry.isDirectory()) return readRuntimeSources(path);
+                if (normalize(path) === generatedSupabaseTypes) return '';
                 return ['.ts', '.tsx'].includes(extname(entry.name)) ? read(path) : '';
               })
               .join(String.fromCharCode(10));
           }
 
           describe('Aegis UI and final schema compatibility', () => {
-            it('uses only the verified final device-copy RPC in the runtime', () => {
+            it('uses only the verified final device-copy RPC in executable runtime code', () => {
               const runtime = readRuntimeSources('src');
               expect(runtime).toContain('get_device_copies_for_messages');
               expect(runtime).not.toContain("'aegis_sync_device'");
