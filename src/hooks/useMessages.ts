@@ -209,16 +209,16 @@ export function useConversations() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-// A second widget mount must not invalidate the same user cache.
-useEffect(() => {
-  if (!user?.id) return;
-  const userId = user.id;
-  const onRestored = () => {
-    scheduleKeysRestoredConversationRefetch(queryClient, userId);
-  };
-  window.addEventListener('forsure-keys-restored', onRestored);
-  return () => window.removeEventListener('forsure-keys-restored', onRestored);
-}, [user?.id, queryClient]);
+  // A second widget mount must not invalidate the same user cache.
+  useEffect(() => {
+    if (!user?.id) return;
+    const userId = user.id;
+    const onRestored = () => {
+      scheduleKeysRestoredConversationRefetch(queryClient, userId);
+    };
+    window.addEventListener('forsure-keys-restored', onRestored);
+    return () => window.removeEventListener('forsure-keys-restored', onRestored);
+  }, [user?.id, queryClient]);
 
   return useQuery({
     // Scope the cache to the user id so a stale empty list from a logged-out
