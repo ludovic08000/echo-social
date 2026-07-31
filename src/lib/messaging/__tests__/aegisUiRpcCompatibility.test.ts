@@ -30,10 +30,17 @@ describe('Aegis UI and final schema compatibility', () => {
     expect(source).not.toContain('[conversationId, markRead]');
   });
 
-  it('does not force conversation refetch on every widget mount', () => {
+  it('does not force the conversations query to refetch on every widget mount', () => {
     const source = read('src/hooks/useMessages.ts');
+    const start = source.indexOf('export function useConversations()');
+    const end = source.indexOf('export function useMessages(');
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+
+    const conversationSource = source.slice(start, end);
+    expect(conversationSource).toContain("queryKey: ['conversations', user?.id ?? 'anon']");
     expect(source).toContain("queryKey: ['conversations', userId]");
-    expect(source).toContain('refetchOnMount: false');
-    expect(source).not.toContain("refetchOnMount: 'always'");
+    expect(conversationSource).toContain('refetchOnMount: false');
+    expect(conversationSource).not.toContain("refetchOnMount: 'always'");
   });
 });
