@@ -1,21 +1,18 @@
-name: Aegis final RPC audit
+name: Aegis final RPC diagnostic
 
 on:
   push:
     branches:
       - agent/aegis-ui-rpc-logic-fix
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: write
 
 jobs:
-  patch-test-commit:
+  diagnose:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -23,14 +20,14 @@ jobs:
           ref: agent/aegis-ui-rpc-logic-fix
           fetch-depth: 0
 
-      - name: Align the primary decrypt lookup with the verified final RPC
+      - name: Produce deterministic compatibility report
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          fanout_path = Path('src/lib/messaging/multiDeviceFanout.ts')
-          source = fanout_path.read_text()
+          fanout = Path('src/lib/messaging/multiDeviceFanout.ts')
+          source = fanout.read_text()
           old = """  const rpcResult = await supabase.rpc('get_device_copy_for_message', {
               p_message_id: messageId,
               p_device_id: deviceId,
@@ -39,104 +36,84 @@ jobs:
               p_message_ids: [messageId],
               p_device_id: deviceId,
             });"""
-          if source.count(old) != 1:
-              raise SystemExit('Expected exactly one legacy singular device-copy lookup')
-          fanout_path.write_text(source.replace(old, new))
+          replacement_count = source.count(old)
+          patched = source.replace(old, new)
+          fanout.write_text(patched)
 
-          test_path = Path('src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts')
-          test_path.write_text("""import { readFileSync, readdirSync } from 'node:fs';
-          import { extname, join, normalize } from 'node:path';
-          import { describe, expect, it } from 'vitest';
-
-          const read = (path: string) => readFileSync(path, 'utf8');
-          const generatedSupabaseTypes = normalize(join('src', 'integrations', 'supabase', 'types.ts'));
-
-          function readRuntimeSources(root: string): string {
-            return readdirSync(root, { withFileTypes: true })
-              .filter((entry) => entry.name !== '__tests__')
-              .map((entry) => {
-                const path = join(root, entry.name);
-                if (entry.isDirectory()) return readRuntimeSources(path);
-                if (normalize(path) === generatedSupabaseTypes) return '';
-                return ['.ts', '.tsx'].includes(extname(entry.name)) ? read(path) : '';
-              })
-              .join(String.fromCharCode(10));
+          excluded = {
+              Path('src/integrations/supabase/types.ts'),
           }
+          runtime_files = []
+          for path in Path('src').rglob('*'):
+              if not path.is_file() or path.suffix not in {'.ts', '.tsx'}:
+                  continue
+              if '__tests__' in path.parts or path in excluded:
+                  continue
+              runtime_files.append(path)
 
-          describe('Aegis UI and final schema compatibility', () => {
-            it('uses only the verified final device-copy RPC in executable runtime code', () => {
-              const runtime = readRuntimeSources('src');
-              expect(runtime).toContain('get_device_copies_for_messages');
-              expect(runtime).not.toContain("'aegis_sync_device'");
-              expect(runtime).not.toContain("'aegis_ack_device_messages'");
-              expect(runtime).not.toContain("'get_device_copy_for_message'");
-              expect(runtime).not.toContain("'send_message_with_device_copies'");
-              expect(runtime).not.toContain("'insert_message_with_device_copies'");
-              expect(runtime).not.toContain("'call_signal'");
-            });
+          forbidden = [
+              "'aegis_sync_device'",
+              "'aegis_ack_device_messages'",
+              "'get_device_copy_for_message'",
+              "'send_message_with_device_copies'",
+              "'insert_message_with_device_copies'",
+              "'call_signal'",
+          ]
 
-            it('renders a pending bubble before the first server message exists', () => {
-              const source = read('src/components/ChatWidget.tsx');
-              expect(source).toContain(
-                '(messages?.length ?? 0) === 0 && queue.pendingMessages.length === 0',
-              );
-              expect(source).toContain(
-                'key={pm.localId} className=\"flex justify-end mt-1 px-2\"',
-              );
-            });
+          report = []
+          report.append(f'replacement_count={replacement_count}')
+          report.append(f'runtime_file_count={len(runtime_files)}')
+          report.append('')
+          report.append('[forbidden runtime matches]')
+          total_matches = 0
+          for needle in forbidden:
+              matches = []
+              for path in runtime_files:
+                  text = path.read_text(errors='replace')
+                  for line_no, line in enumerate(text.splitlines(), 1):
+                      if needle in line:
+                          matches.append(f'{path}:{line_no}:{line.strip()}')
+              total_matches += len(matches)
+              report.append(f'{needle}: {len(matches)}')
+              report.extend(f'  {match}' for match in matches)
+          report.append(f'total_forbidden_matches={total_matches}')
 
-            it('does not bind mark-read to an unstable mutation result object', () => {
-              const source = read('src/components/ChatWidget.tsx');
-              expect(source).toContain(
-                'const { mutate: markConversationRead } = useMarkConversationRead();',
-              );
-              expect(source).toContain('[conversationId, markConversationRead]');
-              expect(source).not.toContain('[conversationId, markRead]');
-            });
+          chat = Path('src/components/ChatWidget.tsx').read_text()
+          hooks = Path('src/hooks/useMessages.ts').read_text()
+          start = hooks.find('export function useConversations()')
+          end = hooks.find('export function useMessages(')
+          conversation = hooks[start:end] if start >= 0 and end > start else ''
 
-            it('does not force the conversations query to refetch on every widget mount', () => {
-              const source = read('src/hooks/useMessages.ts');
-              const start = source.indexOf('export function useConversations()');
-              const end = source.indexOf('export function useMessages(');
-              expect(start).toBeGreaterThanOrEqual(0);
-              expect(end).toBeGreaterThan(start);
+          checks = {
+              'pending_empty_condition': '(messages?.length ?? 0) === 0 && queue.pendingMessages.length === 0' in chat,
+              'pending_bubble_right': 'key={pm.localId} className="flex justify-end mt-1 px-2"' in chat,
+              'stable_mark_read_destructure': 'const { mutate: markConversationRead } = useMarkConversationRead();' in chat,
+              'stable_mark_read_dependency': '[conversationId, markConversationRead]' in chat,
+              'old_mark_read_dependency_absent': '[conversationId, markRead]' not in chat,
+              'use_conversations_found': start >= 0,
+              'use_messages_found_after': end > start >= 0,
+              'scoped_conversation_key': "queryKey: ['conversations', user?.id ?? 'anon']" in conversation,
+              'restored_scoped_key': "queryKey: ['conversations', userId]" in hooks,
+              'refetch_mount_false': 'refetchOnMount: false' in conversation,
+              'refetch_mount_always_absent': "refetchOnMount: 'always'" not in conversation,
+              'batch_rpc_after_patch': "'get_device_copies_for_messages'" in patched,
+              'singular_rpc_after_patch_absent': "'get_device_copy_for_message'" not in patched,
+          }
+          report.append('')
+          report.append('[ui and RPC checks]')
+          for name, value in checks.items():
+              report.append(f'{name}={value}')
 
-              const conversationSource = source.slice(start, end);
-              expect(conversationSource).toContain("queryKey: ['conversations', user?.id ?? 'anon']");
-              expect(source).toContain("queryKey: ['conversations', userId]");
-              expect(conversationSource).toContain('refetchOnMount: false');
-              expect(conversationSource).not.toContain("refetchOnMount: 'always'");
-            });
-          });
-          """)
+          report_path = Path('.github/aegis-final-rpc-diagnostic.txt')
+          report_path.write_text('\n'.join(report) + '\n')
+          print(report_path.read_text())
           PY
 
-          git checkout origin/main -- public/version.json
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: RPC compatibility tests
-        run: npx vitest run src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts src/lib/messaging/__tests__/aegisDeviceInbox.test.ts
-      - name: Full tests
-        run: npm test -- --run
-      - name: Build
-        run: npm run build
-
-      - name: Commit validated cleanup
+      - name: Commit diagnostic report only
         shell: bash
         run: |
-          rm -f .github/workflows/aegis-final-rpc-audit.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src/lib/messaging/multiDeviceFanout.ts \
-                  src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts \
-                  public/version.json \
-                  .github/workflows/aegis-final-rpc-audit.yml
-          git commit -m "fix(aegis): use verified batch device-copy RPC"
+          git add .github/aegis-final-rpc-diagnostic.txt
+          git commit -m "chore(aegis): record final RPC diagnostic"
           git push origin HEAD:agent/aegis-ui-rpc-logic-fix
