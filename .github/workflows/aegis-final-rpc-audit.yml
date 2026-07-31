@@ -58,7 +58,7 @@ jobs:
                 if (entry.isDirectory()) return readRuntimeSources(path);
                 return ['.ts', '.tsx'].includes(extname(entry.name)) ? read(path) : '';
               })
-              .join('\n');
+              .join(String.fromCharCode(10));
           }
 
           describe('Aegis UI and final schema compatibility', () => {
@@ -120,7 +120,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: RPC compatibility tests
-        run: npx vitest run src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts src/lib/messaging/__tests__/aegisDeviceInbox.test.ts src/lib/messaging/__tests__/multiDeviceFanoutRpc.test.ts
+        run: npx vitest run src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts src/lib/messaging/__tests__/aegisDeviceInbox.test.ts
       - name: Full tests
         run: npm test -- --run
       - name: Build
