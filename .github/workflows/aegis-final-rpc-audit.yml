@@ -1,9 +1,9 @@
 name: Aegis final RPC correction
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/aegis-ui-rpc-logic-fix
+      - main
 
 permissions:
   contents: write
@@ -24,32 +24,41 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import re
           from pathlib import Path
 
           fanout_path = Path('src/lib/messaging/multiDeviceFanout.ts')
           fanout = fanout_path.read_text()
-          old_lookup = """  const rpcResult = await supabase.rpc('get_device_copy_for_message', {
-              p_message_id: messageId,
-              p_device_id: deviceId,
-            });"""
+          lookup_pattern = re.compile(
+              r"  const rpcResult = await supabase\.rpc\('get_device_copy_for_message', \{\n"
+              r"\s+p_message_id: messageId,\n"
+              r"\s+p_device_id: deviceId,\n"
+              r"\s+\}\);"
+          )
           new_lookup = """  const rpcResult = await supabase.rpc('get_device_copies_for_messages', {
               p_message_ids: [messageId],
               p_device_id: deviceId,
             });"""
-          if fanout.count(old_lookup) != 1:
-              raise SystemExit('Expected exactly one singular device-copy lookup')
-          fanout_path.write_text(fanout.replace(old_lookup, new_lookup))
+          fanout, lookup_count = lookup_pattern.subn(new_lookup, fanout)
+          if lookup_count != 1:
+              raise SystemExit(f'Expected one singular device-copy lookup, found {lookup_count}')
+          fanout_path.write_text(fanout)
 
           transport_path = Path('src/lib/messaging/aegisTransport.ts')
           transport = transport_path.read_text()
-          old_names = """type AegisRpcName =
-            | 'aegis_ack_device_messages'
-            | 'aegis_send_message'
-            | 'aegis_sync_device';"""
-          new_names = """type AegisRpcName = 'aegis_send_message';"""
-          if transport.count(old_names) != 1:
-              raise SystemExit('Expected exactly one obsolete Aegis RPC union')
-          transport_path.write_text(transport.replace(old_names, new_names))
+          names_pattern = re.compile(
+              r"type AegisRpcName =\n"
+              r"\s+\| 'aegis_ack_device_messages'\n"
+              r"\s+\| 'aegis_send_message'\n"
+              r"\s+\| 'aegis_sync_device';"
+          )
+          transport, names_count = names_pattern.subn(
+              "type AegisRpcName = 'aegis_send_message';",
+              transport,
+          )
+          if names_count != 1:
+              raise SystemExit(f'Expected one obsolete RPC union, found {names_count}')
+          transport_path.write_text(transport)
 
           test_path = Path('src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts')
           test_path.write_text("""import { readFileSync, readdirSync } from 'node:fs';
