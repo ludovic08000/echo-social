@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// Scan executable TypeScript only; generated Supabase declarations are not runtime calls.
 const read = (path: string) => readFileSync(path, 'utf8');
 const generatedSupabaseTypes = normalize(join('src', 'integrations', 'supabase', 'types.ts'));
 
