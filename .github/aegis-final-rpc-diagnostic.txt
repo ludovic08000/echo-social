@@ -1,0 +1,28 @@
+replacement_count=1
+runtime_file_count=549
+
+[forbidden runtime matches]
+'aegis_sync_device': 1
+  src/lib/messaging/aegisTransport.ts:18:| 'aegis_sync_device';
+'aegis_ack_device_messages': 1
+  src/lib/messaging/aegisTransport.ts:16:| 'aegis_ack_device_messages'
+'get_device_copy_for_message': 0
+'send_message_with_device_copies': 0
+'insert_message_with_device_copies': 0
+'call_signal': 0
+total_forbidden_matches=2
+
+[ui and RPC checks]
+pending_empty_condition=True
+pending_bubble_right=True
+stable_mark_read_destructure=True
+stable_mark_read_dependency=True
+old_mark_read_dependency_absent=True
+use_conversations_found=True
+use_messages_found_after=True
+scoped_conversation_key=True
+restored_scoped_key=True
+refetch_mount_false=True
+refetch_mount_always_absent=True
+batch_rpc_after_patch=True
+singular_rpc_after_patch_absent=True
