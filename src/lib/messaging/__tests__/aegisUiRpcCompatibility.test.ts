@@ -53,7 +53,9 @@ describe('Aegis UI and final schema compatibility', () => {
     expect(source).toContain(
       'const { mutate: markConversationRead } = useMarkConversationRead();',
     );
-    expect(source).toContain('[conversationId, markConversationRead]');
+    expect(source).toContain(
+      '[conversationId, latestIncomingMessageId, markConversationRead]',
+    );
     expect(source).not.toContain('[conversationId, markRead]');
   });
 
