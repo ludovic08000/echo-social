@@ -30,6 +30,14 @@ describe('Aegis UI and final schema compatibility', () => {
     expect(runtime).not.toContain("'call_signal'");
   });
 
+  it('discovers inbox candidates through RLS-visible messages only', () => {
+    const source = read('src/lib/messaging/aegisDeviceInbox.ts');
+    expect(source).toContain(".from('messages')");
+    expect(source).toContain("table: 'messages'");
+    expect(source).not.toContain(".from('message_device_copies')");
+    expect(source).toContain("supabase.rpc('get_device_copies_for_messages'");
+  });
+
   it('renders a pending bubble before the first server message exists', () => {
     const source = read('src/components/ChatWidget.tsx');
     expect(source).toContain(
