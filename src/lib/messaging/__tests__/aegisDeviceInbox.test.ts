@@ -49,6 +49,7 @@ vi.mock('@/lib/messaging/e2eeTrace', () => ({
 
 import {
   acknowledgeAegisMessage,
+  formatAegisInboxError,
   syncAegisDeviceInbox,
 } from '@/lib/messaging/aegisDeviceInbox';
 
@@ -103,6 +104,19 @@ describe('Aegis final-schema device inbox client', () => {
     });
     expect(listener).toHaveBeenCalledTimes(1);
     window.removeEventListener('forsure-decrypt-retry', listener);
+  });
+
+  it('preserves PostgREST error details instead of reporting E_UNKNOWN', () => {
+    expect(formatAegisInboxError({
+      code: 'PGRST202',
+      message: 'Could not find the function in the schema cache',
+      details: 'Reload the PostgREST schema',
+    })).toBe(
+      'PGRST202: Could not find the function in the schema cache: Reload the PostgREST schema',
+    );
+    expect(formatAegisInboxError(new Error('offline'))).toBe('offline');
+    expect(formatAegisInboxError('network aborted')).toBe('network aborted');
+    expect(formatAegisInboxError(null)).toBe('UNKNOWN');
   });
 
   it('deduplicates a local authenticated-decryption acknowledgement', async () => {
