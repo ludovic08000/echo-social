@@ -7,9 +7,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -40,52 +37,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-  harden-aegis-rpc-logic:
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-
-    steps:
-      - name: Checkout branch
-        uses: actions/checkout@v4
-        with:
-          ref: agent/aegis-ui-rpc-logic-fix
-          fetch-depth: 0
-
-      - name: Apply deterministic hardening patch
-        run: python scripts/aegis_rpc_logic_hardening.py
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Typecheck patched tree
-        run: npm run typecheck
-
-      - name: Targeted Aegis logic tests
-        run: npx vitest run src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts src/lib/messaging/__tests__/aegisDeviceInbox.test.ts src/lib/messaging/__tests__/multiDeviceFanoutRpc.test.ts
-
-      - name: Full tests
-        run: npm test -- --run
-
-      - name: Build
-        run: npm run build
-
-      - name: Commit validated hardening
-        shell: bash
-        run: |
-          git checkout origin/main -- .github/workflows/e2ee-ci.yml public/version.json || true
-          rm -f .github/workflows/aegis-rpc-logic-hardening.yml
-          rm -f .github/aegis-rpc-hardening-trigger.txt
-          rm -f scripts/aegis_rpc_logic_hardening.py
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          git commit -m "fix(aegis): harden device-copy RPC and UI state logic"
-          git push origin HEAD:agent/aegis-ui-rpc-logic-fix

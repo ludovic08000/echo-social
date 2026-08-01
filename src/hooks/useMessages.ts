@@ -77,6 +77,13 @@ function isMultiDeviceMessageRow(message: { body?: string | null; body_kind?: st
 
 let keysRestoredConversationRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 
+function invalidateUserConversations(queryClient: QueryClient, userId: string): void {
+  void queryClient.invalidateQueries({
+    queryKey: ['conversations', userId],
+    exact: true,
+  });
+}
+
 function scheduleKeysRestoredConversationRefetch(queryClient: QueryClient, userId: string) {
   if (keysRestoredConversationRefetchTimer) return;
   keysRestoredConversationRefetchTimer = setTimeout(() => {
@@ -425,7 +432,7 @@ export function useMessages(conversationId: string) {
           );
 
           // Update conversation last_updated (lightweight)
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          if (user?.id) invalidateUserConversations(queryClient, user.id);
 
           // Aegis has one receive path: resolve the capsule addressed to
           // this device. The sibling realtime subscription below wakes the
@@ -538,7 +545,7 @@ export function useMessages(conversationId: string) {
       const detail = (event as CustomEvent<{ conversationId?: string }>).detail;
       if (detail?.conversationId !== conversationId) return;
       queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     };
 
     window.addEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
@@ -612,7 +619,7 @@ export function useMessages(conversationId: string) {
         hiddenIds,
       );
       if (repairedHiddenRows) {
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        if (user?.id) invalidateUserConversations(queryClient, user.id);
       }
 
       // Filter out hidden + incompatible messages locally — no DB writes here.
@@ -760,7 +767,7 @@ export function useSendMessage() {
         .eq('id', conversationId);
 
       queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
       return {
         id: sent.id,
         conversation_id: conversationId,
@@ -806,7 +813,7 @@ export function useSendMessage() {
     },
     onSettled: (_, __, variables) => {
       queryClient.invalidateQueries({ queryKey: ['messages', variables.conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }
@@ -853,7 +860,7 @@ export function useDeleteMessageForMe() {
     },
     onSuccess: (conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }
@@ -900,7 +907,7 @@ export function useDeleteMessageForEveryone() {
     },
     onSuccess: (conversationId) => {
       queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }
@@ -926,7 +933,7 @@ export function useCreateConversation() {
       return { id: data as string };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }
@@ -950,7 +957,7 @@ export function useCreateGroupConversation() {
       return { id: data as string };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }
@@ -1016,6 +1023,7 @@ export function useHasPendingMessages(conversationId: string) {
 // Accept a message request (deliver all pending messages)
 export function useAcceptMessageRequest() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async (conversationId: string) => {
@@ -1027,7 +1035,7 @@ export function useAcceptMessageRequest() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
       queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
     },
   });
@@ -1036,6 +1044,7 @@ export function useAcceptMessageRequest() {
 // Reject a message request (block all pending messages)
 export function useRejectMessageRequest() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async (conversationId: string) => {
@@ -1047,7 +1056,7 @@ export function useRejectMessageRequest() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
       queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
     },
   });
@@ -1071,7 +1080,7 @@ export function useDeleteConversation() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }
@@ -1091,13 +1100,14 @@ export function useLeaveGroup() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }
 
 export function useAddGroupMembers() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ conversationId, memberIds }: { conversationId: string; memberIds: string[] }) => {
@@ -1109,13 +1119,14 @@ export function useAddGroupMembers() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }
 
 export function useRemoveGroupMember() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ conversationId, userId }: { conversationId: string; userId: string }) => {
@@ -1127,7 +1138,7 @@ export function useRemoveGroupMember() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      if (user?.id) invalidateUserConversations(queryClient, user.id);
     },
   });
 }

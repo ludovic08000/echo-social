@@ -11,7 +11,7 @@ export type AegisInboxRow = {
   created_at: string;
 };
 
-let syncInflight: Promise<AegisInboxRow[]> | null = null;
+const syncInflight = new Map<string, Promise<AegisInboxRow[]>>();
 const acknowledged = new Set<string>();
 const delivered = new Set<string>();
 const MAX_LOCAL_CACHE = 1_000;
@@ -75,10 +75,16 @@ function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
  * message_device_copies table directly.
  */
 export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRow[]> {
-  if (syncInflight) return syncInflight;
+  const ready = await ensureAegisDeviceReady(userId);
+  if (ready.userId !== userId) {
+    throw new Error('AEGIS_DEVICE_USER_MISMATCH');
+  }
 
-  syncInflight = (async () => {
-    const ready = await ensureAegisDeviceReady(userId);
+  const syncKey = `${userId}:${ready.deviceId}`;
+  const active = syncInflight.get(syncKey);
+  if (active) return active;
+
+  const operation = (async () => {
     const { data: references, error: referenceError } = await supabase
       .from('messages')
       .select('id')
@@ -103,11 +109,14 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
     const rows = (data ?? []) as AegisInboxRow[];
     for (const row of rows) dispatchInboxRow(row, ready.deviceId);
     return rows;
-  })().finally(() => {
-    syncInflight = null;
-  });
+  })();
 
-  return syncInflight;
+  syncInflight.set(syncKey, operation);
+  try {
+    return await operation;
+  } finally {
+    if (syncInflight.get(syncKey) === operation) syncInflight.delete(syncKey);
+  }
 }
 
 /**

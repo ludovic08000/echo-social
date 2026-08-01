@@ -163,4 +163,45 @@ describe('Aegis final-schema device inbox client', () => {
     expect(mocks.limit).toHaveBeenCalledTimes(2);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+
+  it('does not share an in-flight synchronization across users or devices', async () => {
+    mocks.ensureReady.mockImplementation(async (userId: string) => ({
+      deviceId: `device-${userId}`,
+      expiresAt: Date.now() + 30_000,
+      userId,
+    }));
+    mocks.limit.mockResolvedValue({
+      data: [{ id: 'message-scoped' }],
+      error: null,
+    });
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+
+    await Promise.all([
+      syncAegisDeviceInbox('user-one'),
+      syncAegisDeviceInbox('user-two'),
+    ]);
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc).toHaveBeenCalledWith('get_device_copies_for_messages', {
+      p_message_ids: ['message-scoped'],
+      p_device_id: 'device-user-one',
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('get_device_copies_for_messages', {
+      p_message_ids: ['message-scoped'],
+      p_device_id: 'device-user-two',
+    });
+  });
+
+  it('rejects a device runtime resolved for another user', async () => {
+    mocks.ensureReady.mockResolvedValue({
+      deviceId: 'device-other',
+      expiresAt: Date.now() + 30_000,
+      userId: 'user-other',
+    });
+
+    await expect(syncAegisDeviceInbox('user-one'))
+      .rejects.toThrow('AEGIS_DEVICE_USER_MISMATCH');
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
 });

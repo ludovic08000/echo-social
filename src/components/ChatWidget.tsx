@@ -837,9 +837,14 @@ function WidgetChatView({ conversationId }: { conversationId: string }) {
     return () => { cancelled = true; };
   }, [messages, bumpCache]);
 
+  const latestIncomingMessageId = messages?.reduce<string | undefined>(
+    (latest, message) => message.sender_id !== user?.id ? message.id : latest,
+    undefined,
+  );
+
   useEffect(() => {
     if (conversationId) markConversationRead(conversationId);
-  }, [conversationId, markConversationRead]);
+  }, [conversationId, latestIncomingMessageId, markConversationRead]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
