@@ -70,7 +70,7 @@ beforeEach(() => {
 describe('Aegis final-schema device inbox client', () => {
   it('shares one synchronization and wakes the matching bubble', async () => {
     mocks.limit.mockResolvedValue({
-      data: [{ message_id: 'message-one' }],
+      data: [{ id: 'message-one' }],
       error: null,
     });
     mocks.rpc.mockResolvedValue({
@@ -93,7 +93,9 @@ describe('Aegis final-schema device inbox client', () => {
     ]);
 
     expect(first).toEqual(second);
-    expect(mocks.from).toHaveBeenCalledWith('message_device_copies');
+    expect(mocks.from).toHaveBeenCalledWith('messages');
+    expect(mocks.query.select).toHaveBeenCalledWith('id');
+    expect(mocks.query.eq).toHaveBeenCalledWith('body_kind', 'multi_device');
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.rpc).toHaveBeenCalledWith('get_device_copies_for_messages', {
       p_message_ids: ['message-one'],
