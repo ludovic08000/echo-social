@@ -2,8 +2,9 @@ from pathlib import Path
 
 
 def replace_once(source: str, old: str, new: str, label: str) -> str:
-    if source.count(old) != 1:
-        raise SystemExit(f"{label}: expected exactly one match, found {source.count(old)}")
+    count = source.count(old)
+    if count != 1:
+        raise SystemExit(f"{label}: expected exactly one match, found {count}")
     return source.replace(old, new)
 
 
@@ -25,6 +26,21 @@ function invalidateUserConversations(queryClient: QueryClient, userId: string): 
 function scheduleKeysRestoredConversationRefetch""",
     "conversation invalidation helper",
 )
+
+for hook_name in (
+    "useAcceptMessageRequest",
+    "useRejectMessageRequest",
+    "useAddGroupMembers",
+    "useRemoveGroupMember",
+):
+    marker = f"export function {hook_name}() {{\n  const queryClient = useQueryClient();"
+    replacement = (
+        f"export function {hook_name}() {{\n"
+        "  const queryClient = useQueryClient();\n"
+        "  const { user } = useAuth();"
+    )
+    messages = replace_once(messages, marker, replacement, f"auth context for {hook_name}")
+
 legacy = "queryClient.invalidateQueries({ queryKey: ['conversations'] });"
 legacy_count = messages.count(legacy)
 if legacy_count < 1:
