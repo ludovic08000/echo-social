@@ -25,6 +25,28 @@ function rememberBounded(cache: Set<string>, key: string): void {
   }
 }
 
+export function formatAegisInboxError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.slice(0, 120) || error.name.slice(0, 120) || 'UNKNOWN';
+  }
+  if (typeof error === 'string') {
+    return error.trim().slice(0, 120) || 'UNKNOWN';
+  }
+  if (error && typeof error === 'object') {
+    const candidate = error as {
+      code?: unknown;
+      message?: unknown;
+      details?: unknown;
+      hint?: unknown;
+    };
+    const parts = [candidate.code, candidate.message, candidate.details, candidate.hint]
+      .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+      .map((part) => part.trim());
+    if (parts.length > 0) return parts.join(': ').slice(0, 120);
+  }
+  return 'UNKNOWN';
+}
+
 function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
   const deliveryKey = `${deviceId}:${row.message_id}`;
   if (delivered.has(deliveryKey)) return;
@@ -120,7 +142,7 @@ export function startAegisDeviceInbox(userId: string): () => void {
       traceE2EE({
         direction: 'receive',
         stage: 'SERVER_INBOX_SYNC_FAILED',
-        errorCode: error instanceof Error ? error.message.slice(0, 120) : 'UNKNOWN',
+        errorCode: formatAegisInboxError(error),
       }, 'warn');
     });
   };
