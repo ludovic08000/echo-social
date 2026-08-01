@@ -47,9 +47,10 @@ function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
 /**
  * Catch up the current authorized device with the final Aegis schema.
  *
- * The clean migration removes the legacy inbox and acknowledgement RPCs. The
- * canonical server path is get_device_copies_for_messages over the authorized
- * rows in message_device_copies.
+ * Message identifiers come from the normal RLS-protected conversation view.
+ * The security-definer RPC then returns only capsules addressed to the current
+ * authenticated user and authorized device. The client never reads the sealed
+ * message_device_copies table directly.
  */
 export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRow[]> {
   if (syncInflight) return syncInflight;
@@ -57,16 +58,16 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
   syncInflight = (async () => {
     const ready = await ensureAegisDeviceReady(userId);
     const { data: references, error: referenceError } = await supabase
-      .from('message_device_copies')
-      .select('message_id')
-      .eq('recipient_user_id', userId)
+      .from('messages')
+      .select('id')
+      .eq('body_kind', 'multi_device')
       .order('created_at', { ascending: false })
       .limit(100);
     if (referenceError) throw referenceError;
 
     const messageIds = Array.from(new Set(
       (references ?? [])
-        .map((row) => row.message_id)
+        .map((row) => row.id)
         .filter((id): id is string => typeof id === 'string' && id.length > 0),
     ));
     if (messageIds.length === 0) return [];
@@ -131,8 +132,7 @@ export function startAegisDeviceInbox(userId: string): () => void {
       {
         event: 'INSERT',
         schema: 'public',
-        table: 'message_device_copies',
-        filter: `recipient_user_id=eq.${userId}`,
+        table: 'messages',
       },
       sync,
     )
