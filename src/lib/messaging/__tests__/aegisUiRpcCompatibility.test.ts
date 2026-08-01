@@ -85,6 +85,14 @@ describe('Aegis UI and final schema compatibility', () => {
     expect(source).toContain('[conversationId, latestIncomingMessageId, markConversationRead]');
   });
 
+  it('isolates inbox synchronization by authenticated user and device', () => {
+    const source = read('src/lib/messaging/aegisDeviceInbox.ts');
+    expect(source).toContain('const syncInflight = new Map<string, Promise<AegisInboxRow[]>>();');
+    expect(source).toContain('const syncKey = `${userId}:${ready.deviceId}`;');
+    expect(source).toContain("throw new Error('AEGIS_DEVICE_USER_MISMATCH')");
+    expect(source).not.toContain('let syncInflight: Promise<AegisInboxRow[]> | null = null;');
+  });
+
   it('hardens the device-copy RPC around membership, active device and bounded input', () => {
     const migration = read('supabase/migrations/20260801142000_harden_device_copy_lookup.sql');
     expect(migration).toContain('join public.conversation_participants participant');
@@ -93,5 +101,4 @@ describe('Aegis UI and final schema compatibility', () => {
     expect(migration).toContain('device.revoked_at is null');
     expect(migration).toContain("grant execute on function public.get_device_copies_for_messages(uuid[],text) to authenticated");
   });
-
 });
