@@ -27,7 +27,7 @@ describe('Aegis transport boundary', () => {
   it('uses direct Supabase RPC when no VPS gateway is configured', async () => {
     mocks.rpc.mockResolvedValue({ data: 3, error: null });
 
-    await expect(callAegisServer<number>('aegis_ack_device_messages', {
+    await expect(callAegisServer<number>('aegis_send_message', {
       p_device_id: 'device-one',
       p_message_ids: ['message-one'],
     })).resolves.toEqual({ data: 3, error: null });
@@ -48,14 +48,14 @@ describe('Aegis transport boundary', () => {
       }),
     );
 
-    await expect(callAegisServer<number>('aegis_ack_device_messages', {
+    await expect(callAegisServer<number>('aegis_send_message', {
       p_device_id: 'device-one',
       p_message_ids: ['message-one'],
     })).resolves.toEqual({ data: 1, error: null });
 
     expect(getAegisTransportKind()).toBe('gateway');
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://aegis.example.test/v1/rpc/aegis_ack_device_messages',
+      'https://aegis.example.test/v1/rpc/aegis_send_message',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
