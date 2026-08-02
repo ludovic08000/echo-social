@@ -106,8 +106,9 @@ async function inspectCryptoReadiness(userId: string | undefined, reason: 'sessi
 
 async function runPostSignInSetup(password: string, userId: string): Promise<void> {
   try {
-    // R2 and E2EE restoration are deliberately detached from authentication.
-    // A slow backup provider must never keep the Login button spinning.
+    // R2, the account backup and the archive use separate recovery domains.
+    // Failure to unlock the optional archive must never prevent the password
+    // session from loading the account Master Key used by PIN backup/restore.
     const r2IndexStatus = await ensureBackupIndexedFromR2(userId);
     console.log(`[AUTH][E2EE] R2 backup index status=${r2IndexStatus}`);
 
@@ -115,23 +116,33 @@ async function runPostSignInSetup(password: string, userId: string): Promise<voi
     const archiveStatus = await initializeArchiveMasterKeyFromPassword(password, userId);
     console.log(`[AUTH][E2EE] archive master status=${archiveStatus}`);
 
+    const accountStatus = await initAccountKeySync(password, userId);
+    console.log(`[AUTH][E2EE] initAccountKeySync status=${accountStatus}`);
+
+    if (accountStatus === 'restored') {
+      try {
+        window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+          detail: { status: 'restored_from_password_sign_in' },
+        }));
+      } catch { /* browser event delivery is best-effort */ }
+    }
+
     if (localKeysPresent && archiveStatus === 'restored') {
       console.log('[AUTH][E2EE] local device keys kept; convergent archive key reused');
-    } else if (localKeysPresent && archiveStatus === 'blocked') {
+    }
+
+    if (archiveStatus === 'blocked') {
       console.warn('[AUTH][E2EE] existing archive key could not be unlocked; backup preserved');
       try {
         window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
           detail: { userId, reason: 'archive_master_unlock_failed' },
         }));
       } catch { /* browser event delivery is best-effort */ }
-    } else {
-      const status = await initAccountKeySync(password, userId);
-      console.log(`[AUTH][E2EE] initAccountKeySync status=${status}`);
+    }
 
-      if (archiveStatus === 'no_backup') {
-        const postCreateStatus = await initializeArchiveMasterKeyAfterBackupCreation(password, userId);
-        console.log(`[AUTH][E2EE] archive master after backup=${postCreateStatus}`);
-      }
+    if (archiveStatus === 'no_backup') {
+      const postCreateStatus = await initializeArchiveMasterKeyAfterBackupCreation(password, userId);
+      console.log(`[AUTH][E2EE] archive master after backup=${postCreateStatus}`);
     }
   } catch (syncError) {
     console.warn('[AUTH][E2EE] key initialization failed:', syncError);
