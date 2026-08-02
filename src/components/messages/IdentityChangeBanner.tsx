@@ -70,11 +70,16 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
     if (!observerUserId || !peerUserId) return;
     setBusy(true);
     try {
-      // This user action is the trust decision. Updating only the audit ledger
-      // is insufficient: the transport gate reads user_known_fingerprints and
-      // the local fingerprint cache before every encrypted send.
+      // The server trust record is the cross-device authority. Commit it first;
+      // do not clear the warning or enable the route after a failed write.
+      const persisted = await saveKnownFingerprintServer(
+        peerUserId,
+        latest.newFingerprint,
+        true,
+      );
+      if (!persisted) throw new Error('FINGERPRINT_ACK_PERSISTENCE_FAILED');
+
       saveKnownFingerprint(peerUserId, latest.newFingerprint);
-      await saveKnownFingerprintServer(peerUserId, latest.newFingerprint, true);
       invalidateFingerprintCheckCache(peerUserId);
       await acknowledgeAllForPeer(observerUserId, peerUserId);
       setEvents([]);
