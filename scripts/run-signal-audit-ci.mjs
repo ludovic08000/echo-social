@@ -45,6 +45,16 @@ hook = hook.replace(
 );
 write(hookPath, hook);
 
+const continuityTestPath = 'src/lib/crypto/__tests__/aegisPinRecoveryContinuity.test.ts';
+let continuityTest = read(continuityTestPath);
+const oldLocalCommit = "const localCommit = banner.indexOf('saveKnownFingerprint(peerUserId, latest.newFingerprint)');";
+const newLocalCommit = "const localCommit = banner.indexOf('saveKnownFingerprint(observerUserId, peerUserId, latest.newFingerprint)');";
+if ((continuityTest.split(oldLocalCommit).length - 1) !== 1) {
+  throw new Error('Expected one legacy continuity assertion');
+}
+continuityTest = continuityTest.replace(oldLocalCommit, newLocalCommit);
+write(continuityTestPath, continuityTest);
+
 unlinkSync('.github/aegis-signal-audit-trigger');
 
 write('.github/workflows/crypto-tests.yml', `name: Crypto Test Suite
