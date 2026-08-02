@@ -51,14 +51,14 @@ export async function saveKnownFingerprintServer(
   peerUserId: string,
   fingerprint: string,
   verifiedByUser = false,
-): Promise<void> {
+): Promise<boolean> {
   const cacheKey = `${peerUserId}:${fingerprint}`;
   const lastSavedAt = fingerprintSaveCache.get(cacheKey);
-  if (!verifiedByUser && lastSavedAt && Date.now() - lastSavedAt < CACHE_TTL_MS) return;
+  if (!verifiedByUser && lastSavedAt && Date.now() - lastSavedAt < CACHE_TTL_MS) return true;
 
   try {
     const userId = await getCachedAuthUserId();
-    if (!userId) return;
+    if (!userId) return false;
     const row = {
       user_id: userId,
       peer_user_id: peerUserId,
@@ -82,8 +82,10 @@ export async function saveKnownFingerprintServer(
     // verification. Cache only a confirmed write so transient failures retry.
     fingerprintSaveCache.set(cacheKey, Date.now());
     invalidateFingerprintCheckCache(peerUserId);
+    return true;
   } catch (error) {
     console.warn('[E2EE] Server fingerprint save failed', error);
+    return false;
   }
 }
 
