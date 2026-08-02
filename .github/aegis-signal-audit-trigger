@@ -1,2 +1,2 @@
 Trigger the guarded Signal/Sesame audit migration on PR #53.
-Run: observer-scoped continuity assertion corrected; execute typecheck, all tests and production build.
+Run: exact-fingerprint assertion aligned; execute typecheck, crypto tests, full suite and production build.
