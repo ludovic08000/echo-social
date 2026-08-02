@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { setupBackupPin, syncBackupToServer } from '@/lib/crypto/accountKeyBackup';
+import { setupBackupPin } from '@/lib/crypto/accountKeyBackup';
 import { exportArchiveMasterKeyForDeviceLink } from '@/lib/crypto/archiveMasterKey';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
@@ -174,15 +174,9 @@ async function setupFromAccountMasterKey(pin: string, userId: string): Promise<S
   let result = await setupBackupPin(pin, userId);
   if (result !== 'no_master_key') return result;
 
-  // Login and PIN setup can finish in adjacent tasks. Give the password-backed
-  // account session a bounded opportunity to create/upload its Master Key,
-  // then wrap that exact key with the PIN. This never creates an account
-  // identity and never overwrites an existing fingerprint.
-  const delays = [0, 150, 350, 750, 1_500];
+  const delays = [150, 350, 750, 1_500, 3_000];
   for (const delay of delays) {
-    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-    const synchronized = await syncBackupToServer().catch(() => false);
-    if (!synchronized) continue;
+    await new Promise((resolve) => setTimeout(resolve, delay));
     result = await setupBackupPin(pin, userId);
     if (result !== 'no_master_key') return result;
   }

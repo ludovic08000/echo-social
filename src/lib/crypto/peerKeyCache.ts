@@ -66,8 +66,11 @@ export async function fetchPeerPublicKeys(
   const inflightKey = `fetch:${peerUserId}`;
   const inflight = _peerSyncPromise.get(inflightKey);
   if (inflight) {
-    await inflight;
-    return _peerKeyCache.get(peerUserId)?.data ?? null;
+    const previousTimestamp = cached?.ts ?? 0;
+    await inflight.catch(() => undefined);
+    const refreshed = _peerKeyCache.get(peerUserId);
+    if (options?.forceRefresh && (!refreshed || refreshed.ts <= previousTimestamp)) return null;
+    return refreshed?.data ?? null;
   }
 
   const p = (async () => {
@@ -87,6 +90,7 @@ export async function fetchPeerPublicKeys(
         peerUserId,
         error: error.message,
       });
+      if (options?.forceRefresh) _peerKeyCache.delete(peerUserId);
       return false;
     }
 

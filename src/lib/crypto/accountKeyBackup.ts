@@ -30,6 +30,7 @@ import {
   type PlaintextCacheExportEntry,
 } from '@/lib/crypto/plaintextStore';
 import { runPostRestoreSync, type RestoreReason } from '@/lib/crypto/postRestoreSync';
+import { createSingleFlightByKey } from '@/lib/crypto/aegisContinuityGuards';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -56,6 +57,9 @@ let _sessionMasterKey: CryptoKey | null = null;
 let _sessionRawMasterKey: Uint8Array | null = null; // raw bytes for re-wrapping
 let _sessionPassword: string | null = null;
 let _sessionUserId: string | null = null;
+
+type AccountKeyInitStatus = 'restored' | 'local_ok' | 'no_backup' | 'error';
+const runAccountKeyInitSingleFlight = createSingleFlightByKey<AccountKeyInitStatus>();
 
 // ── Crypto Primitives ──
 
@@ -616,13 +620,14 @@ async function downloadAndRestore(
   backupType: 'account' | 'recovery',
   wrappingSecret: string,
 ): Promise<{ masterKeyRaw: Uint8Array; masterKey: CryptoKey } | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('user_backups' as any)
     .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, version, backup_type')
     .eq('user_id', userId)
     .eq('backup_type', backupType)
     .maybeSingle();
 
+  if (error) throw error;
   if (!data) return null;
 
   const backup = data as unknown as BackupRow;
@@ -676,86 +681,77 @@ async function downloadAndRestore(
 
 // ── Public API ──
 
-/**
- * Called at login time. Derives wrapping key from password, restores or creates Master Key.
- */
-export async function initAccountKeySync(password: string, userId: string): Promise<'restored' | 'local_ok' | 'no_backup' | 'error'> {
+async function hasLocalAccountIdentity(userId: string): Promise<boolean> {
+  const { loadIdentityKeys } = await import('@/lib/crypto/keyManager');
+  return Boolean(await loadIdentityKeys(userId));
+}
+
+async function initAccountKeySyncOnce(
+  password: string,
+  userId: string,
+): Promise<AccountKeyInitStatus> {
   const t0 = performance.now();
   try {
+    if (_sessionUserId && _sessionUserId !== userId) {
+      _sessionMasterKey = null;
+      _sessionRawMasterKey = null;
+    }
     _sessionPassword = password;
     _sessionUserId = userId;
     const secret = passwordSecret(password, userId);
+    const localIdentityBefore = await hasLocalAccountIdentity(userId);
 
-    const hasLocal = await hasLocalKeys();
-    if (hasLocal) {
-      console.log('[MasterKey] Local keys present');
-      logCryptoError({
-        severity: 'info', context: 'backup', errorCode: 'BACKUP_INIT_LOCAL_OK',
-        errorMessage: 'Local E2EE keys present, no restore needed',
-        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
-      });
-      // If we don't have a Master Key yet, generate one and upload
-      if (!_sessionMasterKey) {
-        const mkRaw = generateMasterKey();
-        const mk = await importMasterKey(mkRaw);
-        _sessionRawMasterKey = mkRaw;
-        _sessionMasterKey = mk;
-        dispatchSessionUnlocked(userId);
-        uploadBackup(mkRaw, mk, password, userId, 'account', secret).catch((e) => {
-          logCryptoException('backup', e, { severity: 'warning', metadata: { stage: 'first_upload', userId } });
-        });
-      }
+    if (_sessionMasterKey && _sessionRawMasterKey && localIdentityBefore) {
+      dispatchSessionUnlocked(userId);
       return 'local_ok';
     }
 
-    // No local keys — try restore from server
-    console.log('[MasterKey] No local keys, attempting restore...');
-    logCryptoError({
-      severity: 'info', context: 'restore', errorCode: 'RESTORE_ATTEMPT',
-      errorMessage: 'No local keys, attempting password-based restore',
-      metadata: { userId },
-    });
+    let restored: Awaited<ReturnType<typeof downloadAndRestore>>;
     try {
-      const result = await downloadAndRestore(userId, 'account', secret);
-      if (result) {
-        // Post-restore validation: ensure local identity actually exists now
-        const validated = await hasLocalKeys();
-        if (!validated) {
-          console.error('[MasterKey] ⛔ Restore reported success but no local identity found — failing restore');
-          logCryptoError({
-            severity: 'critical', context: 'restore', errorCode: 'RESTORE_VALIDATION_FAILED',
-            errorMessage: 'Restore reported success but no local identity found',
-            metadata: { userId, durationMs: Math.round(performance.now() - t0) },
-          });
-          return 'error';
-        }
-        _sessionRawMasterKey = result.masterKeyRaw;
-        _sessionMasterKey = result.masterKey;
-        dispatchSessionUnlocked(userId);
-        await writeKeychainSnapshot(userId);
-        console.log('[MasterKey] ✅ Keys restored from server (validated)');
-        logCryptoError({
-          severity: 'info', context: 'restore', errorCode: 'RESTORE_SUCCESS',
-          errorMessage: 'E2EE keys restored from server backup',
-          metadata: { userId, durationMs: Math.round(performance.now() - t0) },
-        });
-        return 'restored';
-      }
-    } catch (e) {
-      console.warn('[MasterKey] Password-based restore failed:', e);
-      logCryptoException('restore', e, {
+      restored = await downloadAndRestore(userId, 'account', secret);
+    } catch (error) {
+      logCryptoException('restore', error, {
         severity: 'error',
-        metadata: { stage: 'password_restore', userId, durationMs: Math.round(performance.now() - t0) },
+        metadata: { stage: 'authoritative_master_key_restore', userId },
       });
+      return 'error';
     }
 
-    console.log('[MasterKey] No server backup found');
-    logCryptoError({
-      severity: 'warning', context: 'restore', errorCode: 'RESTORE_NO_BACKUP',
-      errorMessage: 'No server backup found for this account',
-      metadata: { userId },
-    });
-    return 'no_backup';
+    if (restored) {
+      if (!(await hasLocalAccountIdentity(userId))) {
+        logCryptoError({
+          severity: 'critical', context: 'restore', errorCode: 'RESTORE_VALIDATION_FAILED',
+          errorMessage: 'Master Key restored but account identity is still absent',
+          metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+        });
+        return 'error';
+      }
+
+      _sessionRawMasterKey = restored.masterKeyRaw;
+      _sessionMasterKey = restored.masterKey;
+      dispatchSessionUnlocked(userId);
+      await writeKeychainSnapshot(userId);
+      void runPostRestoreSync(userId, 'password_sign_in');
+      return 'restored';
+    }
+
+    if (!localIdentityBefore) {
+      return 'no_backup';
+    }
+
+    const mkRaw = generateMasterKey();
+    const mk = await importMasterKey(mkRaw);
+    const uploaded = await uploadBackup(mkRaw, mk, password, userId, 'account', secret);
+    if (!uploaded) {
+      mkRaw.fill(0);
+      return 'error';
+    }
+
+    _sessionRawMasterKey = mkRaw;
+    _sessionMasterKey = mk;
+    dispatchSessionUnlocked(userId);
+    await writeKeychainSnapshot(userId);
+    return 'local_ok';
   } catch (err) {
     console.error('[MasterKey] Init failed:', err);
     logCryptoException('backup', err, {
@@ -764,6 +760,17 @@ export async function initAccountKeySync(password: string, userId: string): Prom
     });
     return 'error';
   }
+}
+
+/**
+ * Called at login time. Restores the authoritative account Master Key or,
+ * only for a verified first backup, creates exactly one key per account.
+ */
+export function initAccountKeySync(
+  password: string,
+  userId: string,
+): Promise<AccountKeyInitStatus> {
+  return runAccountKeyInitSingleFlight(userId, () => initAccountKeySyncOnce(password, userId));
 }
 
 /**
@@ -946,12 +953,9 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
  * Returns the recovery key to show to user.
  */
 export async function createRecoveryKeyBackup(userId: string): Promise<string | null> {
-  if (!_sessionRawMasterKey || !_sessionMasterKey) {
-    // Generate Master Key if we don't have one
-    const mkRaw = generateMasterKey();
-    const mk = await importMasterKey(mkRaw);
-    _sessionRawMasterKey = mkRaw;
-    _sessionMasterKey = mk;
+  if (!_sessionRawMasterKey || !_sessionMasterKey || _sessionUserId !== userId) {
+    console.warn('[MasterKey] Recovery backup refused: authoritative account Master Key is unavailable');
+    return null;
   }
 
   const { generateRecoveryKey, normalizeRecoveryKey } = await import('@/lib/crypto/recoveryKey');
@@ -978,15 +982,8 @@ export async function createRecoveryKeyBackup(userId: string): Promise<string | 
  */
 export async function syncBackupToServer(): Promise<boolean> {
   if (!_sessionPassword || !_sessionUserId || !_sessionRawMasterKey || !_sessionMasterKey) {
-    // Fallback: generate Master Key if session has password but no MK yet
-    if (_sessionPassword && _sessionUserId) {
-      const mkRaw = generateMasterKey();
-      const mk = await importMasterKey(mkRaw);
-      _sessionRawMasterKey = mkRaw;
-      _sessionMasterKey = mk;
-    } else {
-      return false;
-    }
+    console.warn('[MasterKey] Sync refused: authoritative account Master Key session is unavailable');
+    return false;
   }
 
   try {

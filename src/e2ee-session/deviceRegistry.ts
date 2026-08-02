@@ -120,16 +120,25 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
     }
 
     if (verified.signedListPresent) {
-      const rejected = verified.verifications.filter((entry) => !entry.ok);
+      const rejectedRoutable = verified.verifications.filter(
+        (entry) => !entry.ok && entry.isRoutable,
+      );
+      const quarantinedHistorical = verified.verifications.filter(
+        (entry) => !entry.ok && !entry.isRoutable,
+      );
       const trustedRoutable = verified.trusted.filter(
         entry => entry.isRoutable && Boolean(entry.devicePublicKey),
       );
 
-      if (rejected.length > 0 && typeof console !== 'undefined') {
-        console.warn('[A1] quarantining invalid device authorizations', {
+      if (rejectedRoutable.length > 0) {
+        throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
+      }
+
+      if (quarantinedHistorical.length > 0 && typeof console !== 'undefined') {
+        console.warn('[A1] quarantining invalid historical device authorizations', {
           userId: String(userId).slice(0, 8),
           total: verified.verifications.length,
-          quarantined: rejected.map((entry) => ({
+          quarantined: quarantinedHistorical.map((entry) => ({
             deviceId: String(entry.deviceId).slice(0, 8),
             reason: entry.reason ?? 'UNKNOWN',
           })),
@@ -137,8 +146,6 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
         });
       }
 
-      // Fail closed only when no cryptographically verified current route
-      // remains. A rejected row is excluded; it is never accepted as fallback.
       if (trustedRoutable.length === 0) {
         throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
       }

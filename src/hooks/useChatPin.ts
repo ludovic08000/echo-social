@@ -494,6 +494,15 @@ export function useChatPin() {
         return false;
       }
 
+      const backupResult = await setupPersistentBackupPin(pin, user.id);
+      if (backupResult !== 'ok') {
+        const error = backupResult === 'no_master_key'
+          ? 'La clé principale du compte n’est pas encore restaurée. Aucun PIN n’a été créé.'
+          : 'La sauvegarde sécurisée du PIN a échoué. Aucun PIN n’a été créé.';
+        setState((current) => ({ ...current, processing: false, unlocked: false, error }));
+        return false;
+      }
+
       await saveLocalPin(user.id, pin);
       announceUnlock(user.id);
       pinModeRef.current = 'every_open';
@@ -506,16 +515,6 @@ export function useChatPin() {
         processing: false,
         pinMode: 'every_open',
       });
-
-      void setupPersistentBackupPin(pin, user.id)
-        .then((result) => {
-          if (result !== 'ok') {
-            console.warn('[LOCAL-PIN] initial server backup deferred', { result });
-          }
-        })
-        .catch((error) => {
-          console.warn('[LOCAL-PIN] initial server backup failed', error);
-        });
 
       // This creates only an email-reset ticket. The PIN itself is deliberately
       // absent from the request and cannot be verified by the server.
@@ -545,6 +544,30 @@ export function useChatPin() {
         setState((current) => ({ ...current, processing: false, error: 'PIN incorrect' }));
         return false;
       }
+      const localIdentity = await loadIdentityKeys(user.id).catch(() => null);
+      if (!localIdentity) {
+        const restored = await restoreWithBackupPin(pin, user.id);
+        if (restored.status !== 'restored') {
+          const error = restored.status === 'locked'
+            ? 'Trop de tentatives. Réessayez plus tard.'
+            : restored.status === 'wrong_pin'
+              ? 'PIN incorrect'
+              : 'Identité sécurisée absente : restauration impossible avant déverrouillage.';
+          setState((current) => ({ ...current, processing: false, unlocked: false, error }));
+          return false;
+        }
+        const recoveredIdentity = await loadIdentityKeys(user.id).catch(() => null);
+        if (!recoveredIdentity) {
+          setState((current) => ({
+            ...current,
+            processing: false,
+            unlocked: false,
+            error: 'La restauration n’a pas rétabli l’identité sécurisée.',
+          }));
+          return false;
+        }
+      }
+
       announceUnlock(user.id);
       setState((current) => ({
         ...current,

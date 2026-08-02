@@ -32,6 +32,9 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(pin).toContain(".from('user_public_keys')");
     expect(pin).toContain(".from('user_backups')");
     expect(pin).toContain("supabase.rpc('has_backup_pin'");
+    expect(pin).toContain('const backupResult = await setupPersistentBackupPin');
+    expect(pin).toContain('const localIdentity = await loadIdentityKeys');
+    expect(pin).not.toContain('initial server backup deferred');
   });
 
   it('initializes the account Master Key even when R2 or archive initialization fails', () => {
@@ -65,8 +68,23 @@ describe('Aegis PIN recovery and identity continuity', () => {
   it('quarantines invalid historical devices while retaining verified routes', () => {
     const registry = source('src/e2ee-session/deviceRegistry.ts');
     expect(registry).toContain('trustedRoutable');
-    expect(registry).toContain('quarantining invalid device authorizations');
+    expect(registry).toContain('rejectedRoutable');
+    expect(registry).toContain('quarantining invalid historical device authorizations');
     expect(registry).toContain("throw new Error('E2EE_DEVICE_REGISTRY_INVALID')");
     expect(registry).toContain('refusing raw fallback');
+  });
+
+  it('does not generate a Master Key from sync or PIN setup fallback paths', () => {
+    const accountBackup = source('src/lib/crypto/accountKeyBackup.ts');
+    const pinBackup = source('src/lib/crypto/aegisPinBackup.ts');
+    expect(accountBackup).toContain('runAccountKeyInitSingleFlight');
+    expect(accountBackup).toContain('hasLocalAccountIdentity');
+    expect(accountBackup).toContain('Sync refused: authoritative account Master Key session is unavailable');
+    expect(pinBackup).not.toContain('syncBackupToServer');
+  });
+
+  it('does not reuse a stale peer key after a failed forced refresh', () => {
+    const peerCache = source('src/lib/crypto/peerKeyCache.ts');
+    expect(peerCache).toContain("if (options?.forceRefresh) _peerKeyCache.delete(peerUserId)");
   });
 });

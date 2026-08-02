@@ -30,7 +30,7 @@ function validRegistry(userId: string, deviceId = `${userId}-device`) {
       lastSeenAt: null,
       isRoutable: true,
     }],
-    verifications: [{ deviceId, ok: true, reason: 'VALID' }],
+    verifications: [{ deviceId, isRoutable: true, ok: true, reason: 'VALID' }],
   };
 }
 
@@ -48,8 +48,8 @@ describe('device registry fail-closed fan-out gate', () => {
         signedListPresent: true,
         trusted: [{ deviceId: 'peer-valid', devicePublicKey: 'A'.repeat(44), lastSeenAt: null, isRoutable: true }],
         verifications: [
-          { deviceId: 'peer-valid', ok: true, reason: 'VALID' },
-          { deviceId: 'peer-invalid', ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
+          { deviceId: 'peer-valid', isRoutable: true, ok: true, reason: 'VALID' },
+          { deviceId: 'peer-invalid', isRoutable: false, ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
         ],
       };
     });
@@ -62,6 +62,24 @@ describe('device registry fail-closed fan-out gate', () => {
     expect(targets.some((target) => target.deviceId === 'peer-invalid')).toBe(false);
   });
 
+  it('fails closed when an invalid authorization is still server-routable, even if another route is valid', async () => {
+    mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
+      if (userId !== 'peer') return validRegistry(userId);
+      return {
+        signedListPresent: true,
+        trusted: [{ deviceId: 'peer-valid', devicePublicKey: 'A'.repeat(44), lastSeenAt: null, isRoutable: true }],
+        verifications: [
+          { deviceId: 'peer-valid', isRoutable: true, ok: true, reason: 'VALID' },
+          { deviceId: 'peer-invalid', isRoutable: true, ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
+        ],
+      };
+    });
+
+    await expect(
+      listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
+    ).rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
+  });
+
   it('fails closed when a signed registry contains no valid route', async () => {
     mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
       if (userId !== 'peer') return validRegistry(userId);
@@ -69,7 +87,7 @@ describe('device registry fail-closed fan-out gate', () => {
         signedListPresent: true,
         trusted: [],
         verifications: [
-          { deviceId: 'peer-invalid', ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
+          { deviceId: 'peer-invalid', isRoutable: true, ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
         ],
       };
     });
@@ -85,7 +103,7 @@ describe('device registry fail-closed fan-out gate', () => {
         ? {
           signedListPresent: true,
           trusted: [{ deviceId: 'peer-old', devicePublicKey: 'A'.repeat(44), lastSeenAt: null, isRoutable: false }],
-          verifications: [{ deviceId: 'peer-old', ok: true, reason: 'VALID' }],
+          verifications: [{ deviceId: 'peer-old', isRoutable: false, ok: true, reason: 'VALID' }],
         }
         : validRegistry(userId));
 
