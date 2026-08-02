@@ -105,47 +105,67 @@ async function inspectCryptoReadiness(userId: string | undefined, reason: 'sessi
 }
 
 async function runPostSignInSetup(password: string, userId: string): Promise<void> {
+  // These are independent recovery domains. Each block is isolated so a
+  // network/CORS failure in R2 or an incompatible archive password can never
+  // prevent restoration of the account Master Key used by PIN backup.
+  let localKeysPresent = false;
   try {
-    // R2, the account backup and the archive use separate recovery domains.
-    // Failure to unlock the optional archive must never prevent the password
-    // session from loading the account Master Key used by PIN backup/restore.
+    localKeysPresent = await hasLocalKeys();
+  } catch (error) {
+    console.warn('[AUTH][E2EE] local-key inspection failed:', error);
+  }
+
+  try {
     const r2IndexStatus = await ensureBackupIndexedFromR2(userId);
     console.log(`[AUTH][E2EE] R2 backup index status=${r2IndexStatus}`);
+  } catch (error) {
+    console.warn('[AUTH][E2EE] R2 backup index unavailable; continuing with account backup:', error);
+  }
 
-    const localKeysPresent = await hasLocalKeys();
-    const archiveStatus = await initializeArchiveMasterKeyFromPassword(password, userId);
-    console.log(`[AUTH][E2EE] archive master status=${archiveStatus}`);
-
-    const accountStatus = await initAccountKeySync(password, userId);
+  let accountStatus = 'unavailable';
+  try {
+    accountStatus = await initAccountKeySync(password, userId);
     console.log(`[AUTH][E2EE] initAccountKeySync status=${accountStatus}`);
+  } catch (error) {
+    console.warn('[AUTH][E2EE] account Master Key initialization failed:', error);
+  }
 
-    if (accountStatus === 'restored') {
-      try {
-        window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-          detail: { status: 'restored_from_password_sign_in' },
-        }));
-      } catch { /* browser event delivery is best-effort */ }
-    }
+  if (accountStatus === 'restored') {
+    try {
+      window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+        detail: { status: 'restored_from_password_sign_in' },
+      }));
+    } catch { /* browser event delivery is best-effort */ }
+  }
 
-    if (localKeysPresent && archiveStatus === 'restored') {
-      console.log('[AUTH][E2EE] local device keys kept; convergent archive key reused');
-    }
+  let archiveStatus = 'unavailable';
+  try {
+    archiveStatus = await initializeArchiveMasterKeyFromPassword(password, userId);
+    console.log(`[AUTH][E2EE] archive master status=${archiveStatus}`);
+  } catch (error) {
+    console.warn('[AUTH][E2EE] archive Master Key initialization failed:', error);
+  }
 
-    if (archiveStatus === 'blocked') {
-      console.warn('[AUTH][E2EE] existing archive key could not be unlocked; backup preserved');
-      try {
-        window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
-          detail: { userId, reason: 'archive_master_unlock_failed' },
-        }));
-      } catch { /* browser event delivery is best-effort */ }
-    }
+  if (localKeysPresent && archiveStatus === 'restored') {
+    console.log('[AUTH][E2EE] local device keys kept; convergent archive key reused');
+  }
 
-    if (archiveStatus === 'no_backup') {
+  if (archiveStatus === 'blocked') {
+    console.warn('[AUTH][E2EE] existing archive key could not be unlocked; backup preserved');
+    try {
+      window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+        detail: { userId, reason: 'archive_master_unlock_failed' },
+      }));
+    } catch { /* browser event delivery is best-effort */ }
+  }
+
+  if (archiveStatus === 'no_backup') {
+    try {
       const postCreateStatus = await initializeArchiveMasterKeyAfterBackupCreation(password, userId);
       console.log(`[AUTH][E2EE] archive master after backup=${postCreateStatus}`);
+    } catch (error) {
+      console.warn('[AUTH][E2EE] archive post-backup initialization failed:', error);
     }
-  } catch (syncError) {
-    console.warn('[AUTH][E2EE] key initialization failed:', syncError);
   }
 
   scheduleBackupMirrorToR2(userId);
