@@ -40,6 +40,10 @@ jobs:
           source, count = pattern.subn('\n', source, count=1)
           if count != 1:
               raise SystemExit(f'expected one obsolete guard, found {count}')
+          source = source.replace(
+              "expect(backup).toContain('device-signing::${userId}::${currentDeviceId}');",
+              "expect(backup).toContain('device-signing::\\${userId}::\\${currentDeviceId}');",
+          )
           path.write_text(source)
           PY
           node scripts/apply-signal-audit-fixes.mjs
