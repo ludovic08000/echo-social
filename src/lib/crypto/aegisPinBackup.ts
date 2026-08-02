@@ -198,9 +198,10 @@ export async function setupPersistentBackupPin(pin: string, userId: string): Pro
   if (accountResult === 'ok' || accountResult === 'invalid_pin') return accountResult;
 
   if (accountResult === 'error') {
-    const alreadyStored = await pinBackupExists(userId);
-    if (alreadyStored === true) return 'ok';
-
+    // The mere existence of a server-side PIN backup does not prove that this
+    // specific PIN was persisted. It may belong to an older setup or have been
+    // created concurrently by another device. Never convert a failed write
+    // into success based only on has_backup_pin.
     const { error: refreshError } = await supabase.auth.refreshSession();
     if (!refreshError) {
       accountResult = await setupFromAccountMasterKey(pin, userId);
@@ -210,8 +211,6 @@ export async function setupPersistentBackupPin(pin: string, userId: string): Pro
     }
 
     if (accountResult === 'error') {
-      const afterRetry = await pinBackupExists(userId);
-      if (afterRetry === true) return 'ok';
       console.warn('[AEGIS-PIN] account PIN backup failed after authenticated retry');
       return 'error';
     }
