@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { setupBackupPin } from '@/lib/crypto/accountKeyBackup';
+import { setupBackupPin, syncBackupToServer } from '@/lib/crypto/accountKeyBackup';
 import { exportArchiveMasterKeyForDeviceLink } from '@/lib/crypto/archiveMasterKey';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
@@ -170,6 +170,26 @@ async function setupFromArchiveMasterKey(pin: string, userId: string): Promise<S
   }
 }
 
+async function setupFromAccountMasterKey(pin: string, userId: string): Promise<SetupPinResult> {
+  let result = await setupBackupPin(pin, userId);
+  if (result !== 'no_master_key') return result;
+
+  // Login and PIN setup can finish in adjacent tasks. Give the password-backed
+  // account session a bounded opportunity to create/upload its Master Key,
+  // then wrap that exact key with the PIN. This never creates an account
+  // identity and never overwrites an existing fingerprint.
+  const delays = [0, 150, 350, 750, 1_500];
+  for (const delay of delays) {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    const synchronized = await syncBackupToServer().catch(() => false);
+    if (!synchronized) continue;
+    result = await setupBackupPin(pin, userId);
+    if (result !== 'no_master_key') return result;
+  }
+
+  return result;
+}
+
 /**
  * Persist the PIN backup without depending on which Aegis session currently
  * owns the already-restored account Master Key.
@@ -178,27 +198,27 @@ export async function setupPersistentBackupPin(pin: string, userId: string): Pro
   if (!isValidPin(pin)) return 'invalid_pin';
   if (!(await ensureAuthenticatedSession(userId))) return 'error';
 
-  // Prefer the established account-key path. If a transient auth race made the
-  // first write fail, refresh once and retry before falling back.
-  let legacyResult = await setupBackupPin(pin, userId);
-  if (legacyResult === 'ok' || legacyResult === 'invalid_pin') return legacyResult;
+  // Prefer the account-key path. If a transient auth/session race made the
+  // first write fail, refresh once and retry before the archive fallback.
+  let accountResult = await setupFromAccountMasterKey(pin, userId);
+  if (accountResult === 'ok' || accountResult === 'invalid_pin') return accountResult;
 
-  if (legacyResult === 'error') {
+  if (accountResult === 'error') {
     const alreadyStored = await pinBackupExists(userId);
     if (alreadyStored === true) return 'ok';
 
     const { error: refreshError } = await supabase.auth.refreshSession();
     if (!refreshError) {
-      legacyResult = await setupBackupPin(pin, userId);
-      if (legacyResult === 'ok') return 'ok';
+      accountResult = await setupFromAccountMasterKey(pin, userId);
+      if (accountResult === 'ok') return 'ok';
     } else {
       logServerError('session refresh before PIN retry failed', refreshError);
     }
 
-    if (legacyResult === 'error') {
+    if (accountResult === 'error') {
       const afterRetry = await pinBackupExists(userId);
       if (afterRetry === true) return 'ok';
-      console.warn('[AEGIS-PIN] legacy PIN backup failed after authenticated retry');
+      console.warn('[AEGIS-PIN] account PIN backup failed after authenticated retry');
       return 'error';
     }
   }
