@@ -24,7 +24,25 @@ jobs:
 
       - name: Apply audited Signal identity fixes
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/aegis-pin-recovery-continuity-fix'
-        run: node scripts/apply-signal-audit-fixes.mjs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('scripts/apply-signal-audit-fixes.mjs')
+          source = path.read_text()
+          pattern = re.compile(
+              r"\nreplaceExact\(\n  'src/lib/crypto/accountKeyBackup\.ts',\n"
+              r"  `async function hasLocalAccountIdentity\(userId: string\): Promise<boolean>`,\n"
+              r"  `export async function hasLocalAccountIdentity\(userId: string\): Promise<boolean>`,\n"
+              r"  0,\n\);\n"
+          )
+          source, count = pattern.subn('\n', source, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one obsolete guard, found {count}')
+          path.write_text(source)
+          PY
+          node scripts/apply-signal-audit-fixes.mjs
 
       - name: Setup Node
         uses: actions/setup-node@v4
