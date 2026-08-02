@@ -1,9 +1,10 @@
 /**
  * Account-identity trust tracker.
  *
- * First contact uses TOFU. Once an account identity has been observed, every
- * change is fail-closed until the user explicitly accepts the new safety
- * number. Recovery markers only explain a change; they never auto-authorize it.
+ * First contact uses TOFU. Before an explicit user decision, identity changes
+ * fail closed. Once the user selects "Je fais confiance", trust becomes a
+ * persistent contact-level decision: later key rotations update the observed
+ * fingerprint but do not block messaging again.
  */
 
 import { supabase } from '@/integrations/supabase/client';
@@ -14,6 +15,7 @@ import {
 } from './peerKeyCache';
 
 export const KNOWN_FP_KEY = 'forsure-known-fps';
+export const MANUAL_TRUST_CONTACTS_KEY = 'forsure-manual-trust-contacts';
 
 export type FingerprintCheckResult = {
   changed: boolean;
@@ -34,20 +36,48 @@ export function saveKnownFingerprint(userId: string, fingerprint: string): void 
   localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
 }
 
+export function getManuallyTrustedContacts(): Record<string, true> {
+  try {
+    const parsed = hardGlobals.jsonParse(
+      localStorage.getItem(MANUAL_TRUST_CONTACTS_KEY) || '{}',
+    ) as Record<string, unknown>;
+    const trusted: Record<string, true> = {};
+    for (const [key, value] of Object.entries(parsed ?? {})) {
+      if (value === true) trusted[key] = true;
+    }
+    return trusted;
+  } catch {
+    return {};
+  }
+}
+
 const fingerprintCheckCache = new Map<
   string,
   { result: FingerprintCheckResult; timestamp: number }
 >();
 const fingerprintSaveCache = new Map<string, number>();
-// Read-after-write priority for an explicit user acknowledgement. This cache is
-// only populated after the verified server upsert succeeds. It bridges delayed
-// replicas or stale browser reads without weakening fail-closed identity checks:
-// a different fingerprint never inherits the override.
-const manualTrustPriority = new Map<string, string>();
 const CACHE_TTL_MS = 60_000;
 
 function manualTrustKey(currentUserId: string, peerUserId: string): string {
   return `${currentUserId}:${peerUserId}`;
+}
+
+function saveManualTrustContact(currentUserId: string, peerUserId: string): void {
+  const trusted = getManuallyTrustedContacts();
+  trusted[manualTrustKey(currentUserId, peerUserId)] = true;
+  localStorage.setItem(
+    MANUAL_TRUST_CONTACTS_KEY,
+    hardGlobals.jsonStringify(trusted),
+  );
+}
+
+function isManuallyTrustedContact(currentUserId: string, peerUserId: string): boolean {
+  return getManuallyTrustedContacts()[manualTrustKey(currentUserId, peerUserId)] === true;
+}
+
+function isPeerManuallyTrustedOnDevice(peerUserId: string): boolean {
+  const suffix = `:${peerUserId}`;
+  return Object.keys(getManuallyTrustedContacts()).some((key) => key.endsWith(suffix));
 }
 
 export function invalidateFingerprintCheckCache(peerUserId: string): void {
@@ -93,11 +123,10 @@ export async function saveKnownFingerprintServer(
     fingerprintSaveCache.set(cacheKey, Date.now());
 
     if (verifiedByUser) {
-      // "Je fais confiance" is authoritative for this exact fingerprint as
-      // soon as its server write succeeds. Persist locally and give it priority
-      // over stale check caches or delayed read replicas in the current session.
+      // The user's decision applies to the contact, not only to the current
+      // key fingerprint. Persist the policy only after the server confirms it.
       saveKnownFingerprint(peerUserId, fingerprint);
-      manualTrustPriority.set(manualTrustKey(userId, peerUserId), fingerprint);
+      saveManualTrustContact(userId, peerUserId);
     }
 
     invalidateFingerprintCheckCache(peerUserId);
@@ -140,13 +169,11 @@ export async function checkFingerprintChangeWithServer(
 ): Promise<FingerprintCheckResult> {
   const localPrevious = getKnownFingerprints()[peerUserId] ?? null;
   const cacheKey = `${currentUserId}:${peerUserId}:${currentFingerprint}`;
-  const priorityKey = manualTrustKey(currentUserId, peerUserId);
-  const manuallyTrusted = manualTrustPriority.get(priorityKey);
 
-  // Explicit trust wins over stale local/check caches and delayed server reads,
-  // but only for the exact fingerprint the user accepted. Any later rotation
-  // clears the priority and goes through the normal fail-closed path.
-  if (manuallyTrusted === currentFingerprint) {
+  // Once manually trusted, the contact remains trusted across future key
+  // rotations. The latest fingerprint is refreshed locally without reopening
+  // the warning or blocking the transport.
+  if (isManuallyTrustedContact(currentUserId, peerUserId)) {
     if (localPrevious !== currentFingerprint) {
       saveKnownFingerprint(peerUserId, currentFingerprint);
     }
@@ -154,26 +181,43 @@ export async function checkFingerprintChangeWithServer(
     fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
     return result;
   }
-  if (manuallyTrusted && manuallyTrusted !== currentFingerprint) {
-    manualTrustPriority.delete(priorityKey);
-  }
 
   const cached = fingerprintCheckCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
+  // A previous allow may be reused. A previous block must re-check the server
+  // so a manual trust decision made in another tab/device takes effect.
+  if (
+    cached &&
+    !cached.result.changed &&
+    Date.now() - cached.timestamp < CACHE_TTL_MS
+  ) {
+    return cached.result;
+  }
 
   let serverPrevious: string | null = null;
+  let serverManuallyTrusted = false;
   try {
     const { data, error } = await supabase
       .from('user_known_fingerprints')
-      .select('fingerprint')
+      .select('fingerprint, verified_manually')
       .eq('user_id', currentUserId)
       .eq('peer_user_id', peerUserId)
       .maybeSingle();
     if (error) throw error;
     serverPrevious = data?.fingerprint ?? null;
+    serverManuallyTrusted = data?.verified_manually === true;
   } catch {
     // Local trust remains authoritative while the server is temporarily
     // unreachable. A missing local record is first contact, not a rotation.
+  }
+
+  if (serverManuallyTrusted) {
+    saveManualTrustContact(currentUserId, peerUserId);
+    if (localPrevious !== currentFingerprint) {
+      saveKnownFingerprint(peerUserId, currentFingerprint);
+    }
+    const result = { changed: false, previousFp: null };
+    fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
+    return result;
   }
 
   const previousFingerprint = serverPrevious ?? localPrevious;
@@ -199,7 +243,7 @@ export async function checkFingerprintChangeWithServer(
 
 /**
  * Core transport gate. Background retries call this as well, so no UI race can
- * send after an account identity rotation that has not been acknowledged.
+ * send after an untrusted account identity rotation.
  */
 export async function assertConversationFingerprintsTrusted(
   currentUserId: string,
@@ -217,8 +261,7 @@ export async function assertConversationFingerprintsTrusted(
 
   await Promise.all(peerUserIds.map(async (peerUserId) => {
     // The core send gate intentionally bypasses the performance cache. A
-    // two-minute cached identity would otherwise allow messages to leave after
-    // a peer account key changed.
+    // cached identity must not hide a rotation for contacts not manually trusted.
     const peerKeys = await fetchPeerPublicKeys(peerUserId, { forceRefresh: true });
     if (!peerKeys) throw new Error('PEER_IDENTITY_BINDING_UNAVAILABLE');
 
@@ -237,6 +280,7 @@ export async function assertConversationFingerprintsTrusted(
 }
 
 export function checkFingerprintChange(userId: string, currentFingerprint: string): boolean {
+  if (isPeerManuallyTrustedOnDevice(userId)) return false;
   const previousFingerprint = getKnownFingerprints()[userId];
   return Boolean(previousFingerprint && previousFingerprint !== currentFingerprint);
 }
