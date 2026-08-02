@@ -7,74 +7,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout PR branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-          fetch-depth: 0
-
-      - name: Apply audited Signal identity fixes
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/aegis-pin-recovery-continuity-fix'
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          path = Path('scripts/apply-signal-audit-fixes.mjs')
-          source = path.read_text()
-          pattern = re.compile(
-              r"\nreplaceExact\(\n  'src/lib/crypto/accountKeyBackup\.ts',\n"
-              r"  `async function hasLocalAccountIdentity\(userId: string\): Promise<boolean>`,\n"
-              r"  `export async function hasLocalAccountIdentity\(userId: string\): Promise<boolean>`,\n"
-              r"  0,\n\);\n"
-          )
-          source, count = pattern.subn('\n', source, count=1)
-          if count != 1:
-              raise SystemExit(f'expected one obsolete guard, found {count}')
-          source = source.replace(
-              "expect(backup).toContain('device-signing::${userId}::${currentDeviceId}');",
-              "expect(backup).toContain('device-signing::\\${userId}::\\${currentDeviceId}');",
-          )
-          path.write_text(source)
-          PY
-          node scripts/apply-signal-audit-fixes.mjs
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('src/hooks/useE2EE.ts')
-          source = path.read_text()
-          first = "saveKnownFingerprint(peerUserId, peerKey.fingerprint);"
-          if source.count(first) != 1:
-              raise SystemExit(f'expected one initialization fingerprint save, found {source.count(first)}')
-          source = source.replace(
-              first,
-              "saveKnownFingerprint(user.id, peerUserId, peerKey.fingerprint);",
-              1,
-          )
-          before = """  const acknowledgeFingerprint = useCallback(async () => {
-    if (!peerUserId || !state.peerFingerprint) return;
-    saveKnownFingerprint(peerUserId, state.peerFingerprint);"""
-          after = """  const acknowledgeFingerprint = useCallback(async () => {
-    if (!user || !peerUserId || !state.peerFingerprint) return;
-    saveKnownFingerprint(user.id, peerUserId, state.peerFingerprint);"""
-          if source.count(before) != 1:
-              raise SystemExit(f'expected one acknowledgement fingerprint save, found {source.count(before)}')
-          source = source.replace(before, after, 1)
-          source = source.replace(
-              "  }, [peerUserId, state.peerFingerprint]);",
-              "  }, [peerUserId, state.peerFingerprint, user]);",
-              1,
-          )
-          path.write_text(source)
-          PY
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -93,33 +33,7 @@ jobs:
         run: npm run typecheck
 
       - name: Test
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run test -- --reporter=verbose 2>&1 | tee vitest-output.txt
-
-      - name: Upload Vitest diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vitest-diagnostics
-          path: vitest-output.txt
-          if-no-files-found: warn
-          retention-days: 7
+        run: npm run test
 
       - name: Build
         run: npm run build
-
-      - name: Commit audited fixes
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/aegis-pin-recovery-continuity-fix'
-        shell: bash
-        run: |
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "No audit changes to commit"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "fix(aegis): enforce Signal identity invariants"
-          git push origin HEAD:${{ github.head_ref }}
