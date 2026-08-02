@@ -25,7 +25,7 @@ jobs:
 
       - name: Apply PR53 final audit fixes
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/aegis-pin-recovery-continuity-fix'
-        run: python scripts/apply_pr53_audit_fixes.py
+        run: python scripts/apply_pr53_audit_fixes_v2.py
 
       - name: Commit audited fixes
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/aegis-pin-recovery-continuity-fix'
