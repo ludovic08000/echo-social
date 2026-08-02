@@ -1,0 +1,37 @@
+name: Apply Master Key invariants
+
+on:
+  push:
+    branches:
+      - agent/aegis-pin-recovery-continuity-fix
+    paths:
+      - '.github/master-key-invariants.trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/aegis-pin-recovery-continuity-fix
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node scripts/apply-master-key-invariants.mjs
+      - run: npm run typecheck
+      - run: npm test -- --run src/lib/crypto/__tests__/masterKeyInvariants.test.ts src/lib/crypto/__tests__/aegisContinuityGuards.test.ts src/lib/crypto/__tests__/aegisPinRecoveryContinuity.test.ts
+      - run: npm run build
+      - name: Commit validated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/crypto/accountKeyBackup.ts src/lib/crypto/__tests__/masterKeyInvariants.test.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(crypto): enforce master key continuity invariants"
+          git push origin HEAD:agent/aegis-pin-recovery-continuity-fix
