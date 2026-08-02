@@ -33,7 +33,19 @@ jobs:
         run: npm run typecheck
 
       - name: Test
-        run: npm run test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test -- --reporter=verbose 2>&1 | tee vitest-output.txt
+
+      - name: Upload Vitest diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-diagnostics
+          path: vitest-output.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Build
         run: npm run build
