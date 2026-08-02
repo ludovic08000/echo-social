@@ -53,6 +53,12 @@ if ((continuityTest.split(oldLocalCommit).length - 1) !== 1) {
   throw new Error('Expected one legacy continuity assertion');
 }
 continuityTest = continuityTest.replace(oldLocalCommit, newLocalCommit);
+const oldExactPinComment = "expect(tracker).toContain('Confirm exactly the fingerprint shown to the user');";
+const newExactPinComment = "expect(tracker).toContain('manual verification confirms that exact fingerprint');";
+if ((continuityTest.split(oldExactPinComment).length - 1) !== 1) {
+  throw new Error('Expected one legacy exact-pin comment assertion');
+}
+continuityTest = continuityTest.replace(oldExactPinComment, newExactPinComment);
 write(continuityTestPath, continuityTest);
 
 unlinkSync('.github/aegis-signal-audit-trigger');
