@@ -62,7 +62,6 @@ function normalizeLastSeen(raw?: string): number | undefined {
   return Number.isFinite(ts) ? ts : undefined;
 }
 
-
 async function hygieneFilterDevices(devices: DeviceDescriptor[], options: DeviceListOptions = {}): Promise<DeviceDescriptor[]> {
   const deduped = new Map<string, DeviceDescriptor>();
 
@@ -99,7 +98,9 @@ async function hygieneFilterDevices(devices: DeviceDescriptor[], options: Device
 }
 
 async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions): Promise<DeviceDescriptor[]> {
-  // Trusted (signed) list only.
+  // Trusted (signed) list only. Invalid historical rows are quarantined: they
+  // are never returned as routes, but they also cannot deny service to a valid
+  // current device that is signed by the same canonical account identity.
   try {
     const verified = await fetchVerifiedDeviceList(userId);
     if (import.meta.env.DEV && typeof console !== 'undefined') {
@@ -117,33 +118,38 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
         reasons,
       });
     }
+
     if (verified.signedListPresent) {
       const rejected = verified.verifications.filter((entry) => !entry.ok);
-      if (
-        rejected.length > 0 ||
-        verified.trusted.length !== verified.verifications.length
-      ) {
-        if (typeof console !== 'undefined') {
-          console.warn('[A1] canonical device registry contains an invalid authorization', {
-            userId,
-            total: verified.verifications.length,
-            rejected: rejected.map((entry) => ({
-              deviceId: entry.deviceId,
-              reason: entry.reason ?? 'UNKNOWN',
-            })),
-          });
-        }
+      const trustedRoutable = verified.trusted.filter(
+        entry => entry.isRoutable && Boolean(entry.devicePublicKey),
+      );
+
+      if (rejected.length > 0 && typeof console !== 'undefined') {
+        console.warn('[A1] quarantining invalid device authorizations', {
+          userId: String(userId).slice(0, 8),
+          total: verified.verifications.length,
+          quarantined: rejected.map((entry) => ({
+            deviceId: String(entry.deviceId).slice(0, 8),
+            reason: entry.reason ?? 'UNKNOWN',
+          })),
+          trustedRoutable: trustedRoutable.length,
+        });
+      }
+
+      // Fail closed only when no cryptographically verified current route
+      // remains. A rejected row is excluded; it is never accepted as fallback.
+      if (trustedRoutable.length === 0) {
         throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
       }
+
       return hygieneFilterDevices(
-        verified.trusted
-          .filter(t => t.isRoutable && !!t.devicePublicKey)
-          .map(t => ({
-            userId,
-            deviceId: t.deviceId,
-            devicePublicKey: t.devicePublicKey,
-            lastSeen: normalizeLastSeen(t.lastSeenAt ?? undefined),
-          })),
+        trustedRoutable.map(entry => ({
+          userId,
+          deviceId: entry.deviceId,
+          devicePublicKey: entry.devicePublicKey,
+          lastSeen: normalizeLastSeen(entry.lastSeenAt ?? undefined),
+        })),
         options,
       );
     }
