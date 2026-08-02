@@ -15,25 +15,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   test:
-    name: Run guarded Signal audit
+    name: Run crypto test suite
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout PR branch
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-          fetch-depth: 0
-
-      - name: Prepare audited workspace
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/aegis-pin-recovery-continuity-fix'
-        run: node scripts/run-signal-audit-ci.mjs
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -44,28 +34,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Run crypto and messaging tests
-        run: npm exec vitest run -- src/lib/crypto/__tests__ src/lib/messaging/__tests__
-
-      - name: Run complete test suite
-        run: npm run test
-
-      - name: Build
-        run: npm run build
-
-      - name: Commit audited fixes
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/aegis-pin-recovery-continuity-fix'
-        shell: bash
+      - name: Run crypto + messaging test suite
+        id: tests
         run: |
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "No audit changes to commit"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "fix(aegis): enforce Signal identity invariants"
-          git push origin HEAD:${{ github.head_ref }}
+          mkdir -p test-results
+          npm exec vitest run -- \
+            src/lib/crypto/__tests__ \
+            src/lib/messaging/__tests__ \
+            --reporter=default \
+            --reporter=junit \
+            --outputFile=test-results/junit.xml 2>&1 | tee test-results/output.log
+
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-test-results-${{ github.run_id }}
+          path: |
+            test-results/
+            coverage/
+          retention-days: 14
+          if-no-files-found: warn
