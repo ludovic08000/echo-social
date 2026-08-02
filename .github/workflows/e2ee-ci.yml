@@ -47,6 +47,34 @@ jobs:
           path.write_text(source)
           PY
           node scripts/apply-signal-audit-fixes.mjs
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/hooks/useE2EE.ts')
+          source = path.read_text()
+          first = "saveKnownFingerprint(peerUserId, peerKey.fingerprint);"
+          if source.count(first) != 1:
+              raise SystemExit(f'expected one initialization fingerprint save, found {source.count(first)}')
+          source = source.replace(
+              first,
+              "saveKnownFingerprint(user.id, peerUserId, peerKey.fingerprint);",
+              1,
+          )
+          before = """  const acknowledgeFingerprint = useCallback(async () => {
+    if (!peerUserId || !state.peerFingerprint) return;
+    saveKnownFingerprint(peerUserId, state.peerFingerprint);"""
+          after = """  const acknowledgeFingerprint = useCallback(async () => {
+    if (!user || !peerUserId || !state.peerFingerprint) return;
+    saveKnownFingerprint(user.id, peerUserId, state.peerFingerprint);"""
+          if source.count(before) != 1:
+              raise SystemExit(f'expected one acknowledgement fingerprint save, found {source.count(before)}')
+          source = source.replace(before, after, 1)
+          source = source.replace(
+              "  }, [peerUserId, state.peerFingerprint]);",
+              "  }, [peerUserId, state.peerFingerprint, user]);",
+              1,
+          )
+          path.write_text(source)
+          PY
 
       - name: Setup Node
         uses: actions/setup-node@v4
