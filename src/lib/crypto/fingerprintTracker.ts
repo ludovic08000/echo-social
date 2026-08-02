@@ -39,7 +39,16 @@ const fingerprintCheckCache = new Map<
   { result: FingerprintCheckResult; timestamp: number }
 >();
 const fingerprintSaveCache = new Map<string, number>();
+// Read-after-write priority for an explicit user acknowledgement. This cache is
+// only populated after the verified server upsert succeeds. It bridges delayed
+// replicas or stale browser reads without weakening fail-closed identity checks:
+// a different fingerprint never inherits the override.
+const manualTrustPriority = new Map<string, string>();
 const CACHE_TTL_MS = 60_000;
+
+function manualTrustKey(currentUserId: string, peerUserId: string): string {
+  return `${currentUserId}:${peerUserId}`;
+}
 
 export function invalidateFingerprintCheckCache(peerUserId: string): void {
   for (const key of fingerprintCheckCache.keys()) {
@@ -78,9 +87,19 @@ export async function saveKnownFingerprintServer(
           ignoreDuplicates: true,
         });
     if (error) throw error;
+
     // A passive TOFU observation must never downgrade a previous manual
     // verification. Cache only a confirmed write so transient failures retry.
     fingerprintSaveCache.set(cacheKey, Date.now());
+
+    if (verifiedByUser) {
+      // "Je fais confiance" is authoritative for this exact fingerprint as
+      // soon as its server write succeeds. Persist locally and give it priority
+      // over stale check caches or delayed read replicas in the current session.
+      saveKnownFingerprint(peerUserId, fingerprint);
+      manualTrustPriority.set(manualTrustKey(userId, peerUserId), fingerprint);
+    }
+
     invalidateFingerprintCheckCache(peerUserId);
     return true;
   } catch (error) {
@@ -121,6 +140,24 @@ export async function checkFingerprintChangeWithServer(
 ): Promise<FingerprintCheckResult> {
   const localPrevious = getKnownFingerprints()[peerUserId] ?? null;
   const cacheKey = `${currentUserId}:${peerUserId}:${currentFingerprint}`;
+  const priorityKey = manualTrustKey(currentUserId, peerUserId);
+  const manuallyTrusted = manualTrustPriority.get(priorityKey);
+
+  // Explicit trust wins over stale local/check caches and delayed server reads,
+  // but only for the exact fingerprint the user accepted. Any later rotation
+  // clears the priority and goes through the normal fail-closed path.
+  if (manuallyTrusted === currentFingerprint) {
+    if (localPrevious !== currentFingerprint) {
+      saveKnownFingerprint(peerUserId, currentFingerprint);
+    }
+    const result = { changed: false, previousFp: null };
+    fingerprintCheckCache.set(cacheKey, { result, timestamp: Date.now() });
+    return result;
+  }
+  if (manuallyTrusted && manuallyTrusted !== currentFingerprint) {
+    manualTrustPriority.delete(priorityKey);
+  }
+
   const cached = fingerprintCheckCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
 
