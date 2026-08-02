@@ -34,20 +34,32 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(pin).toContain("supabase.rpc('has_backup_pin'");
   });
 
-  it('initializes the account Master Key session independently of archive status', () => {
+  it('initializes the account Master Key even when R2 or archive initialization fails', () => {
     const auth = source('src/lib/auth.tsx');
-    const accountInit = auth.indexOf('const accountStatus = await initAccountKeySync(password, userId)');
+    const r2FailureBoundary = auth.indexOf('R2 backup index unavailable; continuing with account backup');
+    const accountInit = auth.indexOf('accountStatus = await initAccountKeySync(password, userId)');
+    const archiveInit = auth.indexOf('archiveStatus = await initializeArchiveMasterKeyFromPassword(password, userId)');
     const archiveBlocked = auth.indexOf("if (archiveStatus === 'blocked')");
-    expect(accountInit).toBeGreaterThan(-1);
-    expect(archiveBlocked).toBeGreaterThan(accountInit);
+    expect(r2FailureBoundary).toBeGreaterThan(-1);
+    expect(accountInit).toBeGreaterThan(r2FailureBoundary);
+    expect(archiveInit).toBeGreaterThan(accountInit);
+    expect(archiveBlocked).toBeGreaterThan(archiveInit);
     expect(auth).toContain("status: 'restored_from_password_sign_in'");
   });
 
-  it('makes an explicit safety-number acknowledgement authoritative for sending', () => {
+  it('commits an explicit safety-number acknowledgement before enabling sending', () => {
     const banner = source('src/components/messages/IdentityChangeBanner.tsx');
-    expect(banner).toContain('saveKnownFingerprint(peerUserId, latest.newFingerprint)');
-    expect(banner).toContain('saveKnownFingerprintServer(peerUserId, latest.newFingerprint, true)');
+    const tracker = source('src/lib/crypto/fingerprintTracker.ts');
+    const serverCommit = banner.indexOf('const persisted = await saveKnownFingerprintServer');
+    const localCommit = banner.indexOf('saveKnownFingerprint(peerUserId, latest.newFingerprint)');
+    const ledgerCommit = banner.indexOf('await acknowledgeAllForPeer(observerUserId, peerUserId)');
+    expect(serverCommit).toBeGreaterThan(-1);
+    expect(localCommit).toBeGreaterThan(serverCommit);
+    expect(ledgerCommit).toBeGreaterThan(localCommit);
+    expect(banner).toContain('FINGERPRINT_ACK_PERSISTENCE_FAILED');
     expect(banner).toContain("reason: 'fingerprint_acknowledged_by_user'");
+    expect(tracker).toContain('): Promise<boolean>');
+    expect(tracker).toContain('return false;');
   });
 
   it('quarantines invalid historical devices while retaining verified routes', () => {
