@@ -27,14 +27,18 @@ describe('Aegis stage 3 route guards in the final schema', () => {
     expect(migration).toContain('device.revoked_at');
     expect(migration).toContain('device.is_routable = true');
     expect(signedList).toContain('isRoutable: row.is_routable === true');
+    expect(signedList).toContain('isRoutable: entry.isRoutable');
 
-    // Assert the invariant rather than a particular callback-variable spelling:
-    // only signed, currently routable devices with a public key may leave the
-    // canonical registry as transport routes.
+    // Only signed, currently routable devices with a public key may leave the
+    // canonical registry as transport routes. Invalid current routes block;
+    // only invalid non-routable historical entries may be quarantined.
     expect(registry).toMatch(
       /verified\.trusted\.filter\([\s\S]*?\.isRoutable\s*&&\s*Boolean\([^)]*\.devicePublicKey\)/,
     );
-    expect(registry).toContain('quarantining invalid device authorizations');
+    expect(registry).toContain('rejectedRoutable');
+    expect(registry).toContain('!entry.ok && entry.isRoutable');
+    expect(registry).toContain('!entry.ok && !entry.isRoutable');
+    expect(registry).toContain('quarantining invalid historical device authorizations');
   });
 
   it('binds destructive OPK claims to both users and the sender device', () => {
