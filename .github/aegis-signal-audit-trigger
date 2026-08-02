@@ -1,2 +1,2 @@
 Trigger the guarded Signal/Sesame audit migration on PR #53.
-Run: simplified CI wrapper, observer-scoped identity pinning, immutable account root, explicit device re-enrollment.
+Run: observer-scoped continuity assertion corrected; execute typecheck, all tests and production build.
