@@ -25,14 +25,21 @@ export async function ensureApprovedDeviceTrust(
   return 0;
 }
 
+/**
+ * Validate registry health without allowing one stale historical row to block
+ * every valid route. Invalid entries remain quarantined and are reported to the
+ * caller; success requires at least one verified, currently routable device.
+ */
 export async function repairApprovedDeviceTrust(
   userId: string,
 ): Promise<number> {
   const verified = await fetchVerifiedDeviceList(userId);
-  if (verified.trusted.length !== verified.verifications.length) {
-    throw new Error('DEVICE_REGISTRY_CONTAINS_INVALID_IDENTITY');
+  const invalidCount = verified.verifications.filter(entry => !entry.ok).length;
+  const hasTrustedRoute = verified.trusted.some(entry => entry.isRoutable);
+  if (!hasTrustedRoute) {
+    throw new Error('DEVICE_REGISTRY_CONTAINS_NO_VALID_ROUTE');
   }
-  return 0;
+  return invalidCount;
 }
 
 export async function finalizeLinkedDeviceAfterRestore(
