@@ -34,14 +34,14 @@ function validRegistry(userId: string, deviceId = `${userId}-device`) {
   };
 }
 
-describe('device registry all-or-nothing fan-out gate', () => {
+describe('device registry fail-closed fan-out gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     invalidateVerifiedDeviceCache();
     mocks.peekDeviceSignedPrekey.mockResolvedValue({ signedPrekeyId: 1 });
   });
 
-  it('rejects the complete route before encryption when one authorization is invalid', async () => {
+  it('quarantines an invalid historical authorization while retaining a valid signed route', async () => {
     mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
       if (userId !== 'peer') return validRegistry(userId);
       return {
@@ -49,6 +49,26 @@ describe('device registry all-or-nothing fan-out gate', () => {
         trusted: [{ deviceId: 'peer-valid', devicePublicKey: 'A'.repeat(44), lastSeenAt: null, isRoutable: true }],
         verifications: [
           { deviceId: 'peer-valid', ok: true, reason: 'VALID' },
+          { deviceId: 'peer-invalid', ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
+        ],
+      };
+    });
+
+    const targets = await listFanoutTargets('sender', ['peer'], { verifyPrekeys: false });
+    expect(targets.map((target) => target.deviceId).sort()).toEqual([
+      'peer-valid',
+      'sender-device',
+    ]);
+    expect(targets.some((target) => target.deviceId === 'peer-invalid')).toBe(false);
+  });
+
+  it('fails closed when a signed registry contains no valid route', async () => {
+    mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
+      if (userId !== 'peer') return validRegistry(userId);
+      return {
+        signedListPresent: true,
+        trusted: [],
+        verifications: [
           { deviceId: 'peer-invalid', ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
         ],
       };
@@ -71,7 +91,7 @@ describe('device registry all-or-nothing fan-out gate', () => {
 
     await expect(
       listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
-    ).rejects.toThrow('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:peer');
+    ).rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
   });
 
   it('does not downgrade a registry fetch failure into a partial route', async () => {
