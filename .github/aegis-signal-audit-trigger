@@ -1,1 +1,2 @@
 Trigger the guarded Signal/Sesame audit migration on PR #53.
+Run: observer-scoped identity pinning, immutable account root, explicit device re-enrollment.
