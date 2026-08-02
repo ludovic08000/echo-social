@@ -62,6 +62,11 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(banner).toContain('FINGERPRINT_ACK_PERSISTENCE_FAILED');
     expect(banner).toContain("reason: 'fingerprint_acknowledged_by_user'");
     expect(tracker).toContain('): Promise<boolean>');
+    expect(tracker).toContain('Confirm exactly the fingerprint shown to the user');
+    expect(tracker).toContain('previousFingerprint && previousFingerprint !== currentFingerprint');
+    expect(tracker).not.toContain('MANUAL_TRUST_CONTACTS_KEY');
+    expect(tracker).not.toContain('isManuallyTrustedContact');
+    expect(tracker).not.toContain('future key rotations update the observed');
     expect(tracker).toContain('return false;');
   });
 
