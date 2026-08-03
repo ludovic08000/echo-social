@@ -11,21 +11,17 @@ describe('Aegis continuity guards', () => {
     expect(evaluateServerContinuityProbe({
       activeIdentity: false,
       accountBackup: false,
-      backupPin: false,
       activeIdentityError: true,
       accountBackupError: false,
-      backupPinError: false,
     })).toBe('unavailable');
   });
 
-  it('detects continuity from identity, account backup, or PIN backup', () => {
+  it('detects continuity from identity or account backup', () => {
     expect(evaluateServerContinuityProbe({
-      activeIdentity: false,
+      activeIdentity: true,
       accountBackup: false,
-      backupPin: true,
       activeIdentityError: false,
       accountBackupError: false,
-      backupPinError: false,
     })).toBe('continuity');
   });
 
@@ -53,7 +49,6 @@ describe('Aegis continuity guards', () => {
       activeIdentityFingerprint: 'ACCOUNT-A',
       hasAccountBackup: false,
       hasRecoveryBackup: false,
-      hasPinBackup: false,
     })).toBe('create_first_key');
   });
 
@@ -64,7 +59,6 @@ describe('Aegis continuity guards', () => {
       activeIdentityFingerprint: 'ACCOUNT-A',
       hasAccountBackup: false,
       hasRecoveryBackup: true,
-      hasPinBackup: false,
     })).toBe('recovery_required');
   });
 
@@ -74,7 +68,6 @@ describe('Aegis continuity guards', () => {
       activeIdentityFingerprint: 'ACCOUNT-B',
       hasAccountBackup: false,
       hasRecoveryBackup: false,
-      hasPinBackup: false,
     };
     expect(decideMasterKeyCreation({ ...base, complete: false })).toBe('unavailable');
     expect(decideMasterKeyCreation({ ...base, complete: true })).toBe('identity_mismatch');

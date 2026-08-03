@@ -129,7 +129,7 @@ export default function PrivacyPolicy() {
               <li><strong>Chiffrement de bout en bout (E2EE)</strong> pour les conversations privées 1-à-1 via le protocole <strong>X3DH + Double Ratchet</strong> (standard Signal)</li>
               <li>Les clés privées ne quittent <strong>jamais votre appareil</strong> — Forsure ne peut pas lire vos messages chiffrés</li>
               <li>Vérification d'identité cryptographique par empreinte de clé (fingerprint) pour détecter les changements d'appareil</li>
-              <li>Protection d'accès à la messagerie par <strong>code PIN dédié</strong> (hachage PBKDF2 côté serveur)</li>
+              <li>Protection locale d'accès à la messagerie par <strong>code PIN dédié</strong> (le PIN de messagerie n'est pas une clé de récupération distante)</li>
               <li>Les appels audio/vidéo transitent par une infrastructure sécurisée (LiveKit)</li>
               <li>Un système anti-spam analyse les métadonnées pour détecter les abus, <strong>sans lire le contenu des messages chiffrés</strong></li>
               <li>Vous pouvez supprimer vos messages à tout moment</li>

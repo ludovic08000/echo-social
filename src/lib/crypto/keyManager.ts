@@ -442,19 +442,16 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
   // restore / recovery-key / passkey flow.
   try {
     const { supabase } = await import('@/integrations/supabase/client');
-    const [activeResult, backupResult, pinResult] = await Promise.all([
+    const [activeResult, backupResult] = await Promise.all([
       supabase.from('user_public_keys').select('fingerprint').eq('user_id', userId).eq('is_active', true).maybeSingle(),
       supabase.from('user_backups').select('id').eq('user_id', userId).limit(1).maybeSingle(),
-      supabase.rpc('has_backup_pin' as never, { _user_id: userId } as never),
     ]);
 
     const decision = evaluateServerContinuityProbe({
       activeIdentity: Boolean(activeResult.data),
       accountBackup: Boolean(backupResult.data),
-      backupPin: pinResult.data === true,
       activeIdentityError: Boolean(activeResult.error),
       accountBackupError: Boolean(backupResult.error),
-      backupPinError: Boolean(pinResult.error),
     });
 
     if (decision === 'unavailable') {

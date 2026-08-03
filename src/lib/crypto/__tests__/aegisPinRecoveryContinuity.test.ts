@@ -31,8 +31,9 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(pin).toContain('Aucun nouveau PIN n’a été créé');
     expect(pin).toContain(".from('user_public_keys')");
     expect(pin).toContain(".from('user_backups')");
-    expect(pin).toContain("supabase.rpc('has_backup_pin'");
-    expect(pin).toContain('const backupResult = await setupPersistentBackupPin');
+    expect(pin).not.toContain("supabase.rpc('has_backup_pin'");
+    expect(pin).not.toContain('setupPersistentBackupPin');
+    expect(pin).not.toContain('restoreWithBackupPin');
     expect(pin).toContain('const localIdentity = await loadIdentityKeys');
     expect(pin).not.toContain('initial server backup deferred');
   });
@@ -82,14 +83,14 @@ describe('Aegis PIN recovery and identity continuity', () => {
 
   it('does not generate a Master Key from sync or PIN setup fallback paths', () => {
     const accountBackup = source('src/lib/crypto/accountKeyBackup.ts');
-    const pinBackup = source('src/lib/crypto/aegisPinBackup.ts');
     expect(accountBackup).toContain('runAccountKeyInitSingleFlight');
     expect(accountBackup).toContain('hasLocalAccountIdentity');
     expect(accountBackup).toContain('decideMasterKeyCreation');
     expect(accountBackup).toContain('row?.id === userId');
     expect(accountBackup).toContain("backupUserId !== userId");
     expect(accountBackup).toContain('Sync refused: authoritative account Master Key session is unavailable');
-    expect(pinBackup).not.toContain('syncBackupToServer');
+    expect(accountBackup).not.toContain('pin_wrap_master');
+    expect(accountBackup).not.toContain('release_backup_pin_blob');
   });
 
   it('does not reuse a stale peer key after a failed forced refresh', () => {

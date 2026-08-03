@@ -1,10 +1,8 @@
 export interface ServerContinuityProbe {
   activeIdentity: boolean;
   accountBackup: boolean;
-  backupPin: boolean;
   activeIdentityError: boolean;
   accountBackupError: boolean;
-  backupPinError: boolean;
 }
 
 export type ServerContinuityDecision = 'clear' | 'continuity' | 'unavailable';
@@ -14,13 +12,12 @@ export function evaluateServerContinuityProbe(
 ): ServerContinuityDecision {
   if (
     probe.activeIdentityError ||
-    probe.accountBackupError ||
-    probe.backupPinError
+    probe.accountBackupError
   ) {
     return 'unavailable';
   }
 
-  return probe.activeIdentity || probe.accountBackup || probe.backupPin
+  return probe.activeIdentity || probe.accountBackup
     ? 'continuity'
     : 'clear';
 }
@@ -46,7 +43,6 @@ export interface MasterKeyContinuityProbe {
   activeIdentityFingerprint: string | null;
   hasAccountBackup: boolean;
   hasRecoveryBackup: boolean;
-  hasPinBackup: boolean;
 }
 
 export type MasterKeyCreationDecision =
@@ -62,8 +58,7 @@ export function decideMasterKeyCreation(
   if (!probe.complete) return 'unavailable';
   if (
     probe.hasAccountBackup ||
-    probe.hasRecoveryBackup ||
-    probe.hasPinBackup
+    probe.hasRecoveryBackup
   ) {
     return 'recovery_required';
   }
