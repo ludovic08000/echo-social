@@ -1148,42 +1148,6 @@ export type Database = {
         }
         Relationships: []
       }
-      backup_pin_state: {
-        Row: {
-          attempts_count: number
-          attempts_window_start: string
-          created_at: string
-          kdf_version: number
-          locked_until: string | null
-          pin_wrap_master: string
-          salt: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          attempts_count?: number
-          attempts_window_start?: string
-          created_at?: string
-          kdf_version?: number
-          locked_until?: string | null
-          pin_wrap_master: string
-          salt: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          attempts_count?: number
-          attempts_window_start?: string
-          created_at?: string
-          kdf_version?: number
-          locked_until?: string | null
-          pin_wrap_master?: string
-          salt?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       banned_emails: {
         Row: {
           associated_user_id: string | null
@@ -6467,7 +6431,6 @@ export type Database = {
           recall: number | null
           samples_used: number
           trained_at: string
-          version: number
           weights: Json
         }
         Insert: {
@@ -6481,7 +6444,6 @@ export type Database = {
           recall?: number | null
           samples_used?: number
           trained_at?: string
-          version: number
           weights: Json
         }
         Update: {
@@ -6495,7 +6457,6 @@ export type Database = {
           recall?: number | null
           samples_used?: number
           trained_at?: string
-          version?: number
           weights?: Json
         }
         Relationships: []
@@ -6693,7 +6654,6 @@ export type Database = {
           mk_locked_until: string | null
           salt: string
           user_id: string
-          version: number
           wrapped_master_key: string | null
         }
         Insert: {
@@ -6708,7 +6668,6 @@ export type Database = {
           mk_locked_until?: string | null
           salt: string
           user_id: string
-          version?: number
           wrapped_master_key?: string | null
         }
         Update: {
@@ -6723,7 +6682,6 @@ export type Database = {
           mk_locked_until?: string | null
           salt?: string
           user_id?: string
-          version?: number
           wrapped_master_key?: string | null
         }
         Relationships: []
@@ -8526,7 +8484,6 @@ export type Database = {
           wrapped_key: string
         }[]
       }
-      has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
       has_role: {
         Args: {
@@ -8873,17 +8830,6 @@ export type Database = {
           wrapped_master_key: string
         }[]
       }
-      release_backup_pin_blob: {
-        Args: { _user_id: string }
-        Returns: {
-          allowed: boolean
-          attempts_remaining: number
-          kdf_version: number
-          locked_until: string
-          pin_wrap_master: string
-          salt: string
-        }[]
-      }
       request_device_copy_retry: {
         Args: {
           p_message_id: string
@@ -8907,10 +8853,6 @@ export type Database = {
           p_sender_user_id: string
         }
         Returns: Json
-      }
-      reset_backup_pin_attempts: {
-        Args: { _user_id: string }
-        Returns: undefined
       }
       resolve_device_id_by_fingerprint: {
         Args: { p_fingerprint: string }

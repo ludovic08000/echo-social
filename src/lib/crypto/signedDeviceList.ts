@@ -19,6 +19,7 @@ export interface SignedDeviceEntry {
 
 export interface DeviceVerificationResult {
   deviceId: string;
+  isRoutable: boolean;
   ok: boolean;
   reason?:
     | 'VALID'
@@ -80,6 +81,7 @@ export async function verifySignedDeviceList(
   if (!rootFieldsPresent) {
     return list.map((entry) => ({
       deviceId: entry.deviceId,
+      isRoutable: entry.isRoutable,
       ok: false,
       reason: 'NO_ACCOUNT_IDENTITY',
     }));
@@ -102,6 +104,7 @@ export async function verifySignedDeviceList(
   if (!rootValid) {
     return list.map((entry) => ({
       deviceId: entry.deviceId,
+      isRoutable: entry.isRoutable,
       ok: false,
       reason: 'BAD_ACCOUNT_IDENTITY_BINDING',
     }));
@@ -113,7 +116,7 @@ export async function verifySignedDeviceList(
       !entry.deviceSigningKey ||
       !entry.authorizationSignature
     ) {
-      return { deviceId: entry.deviceId, ok: false, reason: 'NO_DEVICE_AUTHORIZATION' };
+      return { deviceId: entry.deviceId, isRoutable: entry.isRoutable, ok: false, reason: 'NO_DEVICE_AUTHORIZATION' };
     }
 
     const ok = await verifyDeviceAuthorization({
@@ -127,6 +130,7 @@ export async function verifySignedDeviceList(
     });
     return {
       deviceId: entry.deviceId,
+      isRoutable: entry.isRoutable,
       ok,
       reason: ok ? 'VALID' : 'BAD_DEVICE_AUTHORIZATION',
     };

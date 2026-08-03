@@ -14,6 +14,11 @@ import {
   acknowledgeAllForPeer,
   type IdentityChangeEvent,
 } from '@/lib/crypto/identityChangeLedger';
+import {
+  invalidateFingerprintCheckCache,
+  saveKnownFingerprint,
+  saveKnownFingerprintServer,
+} from '@/lib/crypto/fingerprintTracker';
 
 interface Props {
   observerUserId: string | null;
@@ -37,7 +42,7 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
   }, [observerUserId, peerUserId]);
 
   useEffect(() => {
-    load();
+    void load();
     if (!observerUserId) return;
     const ch = supabase
       .channel(`identity-change-${observerUserId}-${peerUserId || 'all'}`)
@@ -49,10 +54,10 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
           table: 'user_identity_change_events',
           filter: `observer_user_id=eq.${observerUserId}`,
         },
-        () => load(),
+        () => void load(),
       )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { void supabase.removeChannel(ch); };
   }, [observerUserId, peerUserId, load]);
 
   if (!events.length) return null;
@@ -60,6 +65,42 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
   const previewPrev = latest.previousFingerprint ? latest.previousFingerprint.slice(0, 12) : '—';
   const previewNew = latest.newFingerprint.slice(0, 12);
   const isRecovery = latest.changeType === 'recovery_restore';
+
+  const acknowledgeIdentityChange = async () => {
+    if (!observerUserId || !peerUserId) return;
+    setBusy(true);
+    try {
+      // The server trust record is the cross-device authority. Commit it first;
+      // do not clear the warning or enable the route after a failed write.
+      const persisted = await saveKnownFingerprintServer(
+        peerUserId,
+        latest.newFingerprint,
+        true,
+      );
+      if (!persisted) throw new Error('FINGERPRINT_ACK_PERSISTENCE_FAILED');
+
+      saveKnownFingerprint(observerUserId, peerUserId, latest.newFingerprint);
+      invalidateFingerprintCheckCache(peerUserId);
+      await acknowledgeAllForPeer(observerUserId, peerUserId);
+      setEvents([]);
+
+      try {
+        window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
+          detail: {
+            peerUserId,
+            reason: 'fingerprint_acknowledged_by_user',
+          },
+        }));
+      } catch {
+        // Event delivery is optional outside browser runtimes.
+      }
+    } catch (error) {
+      console.warn('[A4][banner] acknowledgement failed', error);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div
@@ -106,16 +147,7 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
           variant="ghost"
           className={cn('h-7 px-2', isRecovery ? 'text-sky-100 hover:bg-sky-500/20' : 'text-amber-100 hover:bg-amber-500/20')}
           disabled={busy || !observerUserId || !peerUserId}
-          onClick={async () => {
-            if (!observerUserId || !peerUserId) return;
-            setBusy(true);
-            try {
-              await acknowledgeAllForPeer(observerUserId, peerUserId);
-              setEvents([]);
-            } finally {
-              setBusy(false);
-            }
-          }}
+          onClick={() => void acknowledgeIdentityChange()}
         >
           <Check className="h-3.5 w-3.5 mr-1" /> Je fais confiance
         </Button>

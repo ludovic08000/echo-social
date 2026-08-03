@@ -10,7 +10,6 @@
  *   - userId of the account this device is bound to
  *   - SHA-256 digest of the local crypto state at the moment of last successful sync
  *   - lastSyncAt timestamp
- *   - backupVersion (server format version we last wrote/read)
  *
  * Purpose:
  *   On a cold start (iOS/Android) where IndexedDB has been purged by the OS but
@@ -24,13 +23,12 @@
 
 import { secureGet, secureSet, secureRemove } from '@/lib/secureStore';
 
-const SENTINEL_KEY = 'forsure-key-sentinel-v1';
+const SENTINEL_KEY = 'forsure-key-sentinel';
 
 export interface KeySentinel {
   userId: string;
   digest: string;          // SHA-256 of local crypto state at last sync
   lastSyncAt: number;      // epoch ms
-  backupVersion: number;   // server backup version
 }
 
 export async function readKeySentinel(): Promise<KeySentinel | null> {
@@ -42,8 +40,7 @@ export async function readKeySentinel(): Promise<KeySentinel | null> {
       parsed && typeof parsed === 'object' &&
       typeof parsed.userId === 'string' &&
       typeof parsed.digest === 'string' &&
-      typeof parsed.lastSyncAt === 'number' &&
-      typeof parsed.backupVersion === 'number'
+      typeof parsed.lastSyncAt === 'number'
     ) {
       return parsed as KeySentinel;
     }
@@ -63,5 +60,7 @@ export async function writeKeySentinel(sentinel: KeySentinel): Promise<void> {
 }
 
 export async function clearKeySentinel(): Promise<void> {
-  try { await secureRemove(SENTINEL_KEY); } catch {}
+  try { await secureRemove(SENTINEL_KEY); } catch {
+    // La suppression reste best-effort si le stockage natif est indisponible.
+  }
 }

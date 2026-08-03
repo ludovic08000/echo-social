@@ -12,12 +12,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, KeyRound, Lock, ShieldCheck, Hash } from 'lucide-react';
+import { Loader2, KeyRound, Lock, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   initAccountKeySync,
-  restoreWithBackupPin,
-  hasBackupPin,
   hasLocalKeys,
 } from '@/lib/crypto/accountKeyBackup';
 import { restoreAegisRecoveryVault } from '@/lib/crypto/aegisRecoveryVault';
@@ -28,9 +26,7 @@ export function E2EERestorePromptDialog() {
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
-  const [pin, setPin] = useState('');
-  const [tab, setTab] = useState<'password' | 'recovery' | 'pin'>('password');
-  const [pinAvailable, setPinAvailable] = useState(false);
+  const [tab, setTab] = useState<'password' | 'recovery'>('password');
 
   useEffect(() => {
     const onNeeded = async (event: Event) => {
@@ -41,13 +37,6 @@ export function E2EERestorePromptDialog() {
         // The dialog remains available if local storage inspection fails.
       }
       console.warn('[E2EERestore] prompting user to restore keys', detail);
-      if (user?.id) {
-        try {
-          setPinAvailable(await hasBackupPin(user.id));
-        } catch {
-          setPinAvailable(false);
-        }
-      }
       setOpen(true);
     };
     window.addEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
@@ -60,7 +49,6 @@ export function E2EERestorePromptDialog() {
       setOpen(false);
       setPassword('');
       setRecoveryKey('');
-      setPin('');
       toast.success('Messages déverrouillés');
     };
     window.addEventListener('forsure-keys-restored', onRestored);
@@ -71,7 +59,6 @@ export function E2EERestorePromptDialog() {
     setOpen(false);
     setPassword('');
     setRecoveryKey('');
-    setPin('');
     window.dispatchEvent(new CustomEvent('forsure-keys-unlocked', { detail: { origin } }));
     window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { origin } }));
     window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { status: origin } }));
@@ -120,32 +107,6 @@ export function E2EERestorePromptDialog() {
     }
   };
 
-  const handlePin = async () => {
-    if (!user?.id || pin.length !== 6) return;
-    setBusy(true);
-    try {
-      const result = await restoreWithBackupPin(pin, user.id);
-      if (result.status === 'restored') {
-        finish('pin_restore');
-      } else if (result.status === 'wrong_pin') {
-        const remaining = typeof result.attemptsRemaining === 'number' ? result.attemptsRemaining : null;
-        toast.error(remaining !== null ? `Code PIN incorrect — ${remaining} essai(s) restant(s)` : 'Code PIN incorrect');
-      } else if (result.status === 'locked') {
-        const until = result.lockedUntil ? new Date(result.lockedUntil).toLocaleString('fr-FR') : '24 h';
-        toast.error(`Trop d'essais. Réessayez après le ${until}`);
-      } else if (result.status === 'no_backup') {
-        toast.error('Aucune sauvegarde par PIN trouvée');
-      } else {
-        toast.error('Échec de la restauration par PIN');
-      }
-    } catch (error) {
-      console.error('[E2EERestore] pin restore failed', error);
-      toast.error('Échec de la restauration');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }}>
       <DialogContent className="sm:max-w-md">
@@ -167,18 +128,13 @@ export function E2EERestorePromptDialog() {
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
-          <TabsList className={`grid w-full ${pinAvailable ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="password">
               <Lock className="w-4 h-4 mr-1" /> Mot de passe
             </TabsTrigger>
             <TabsTrigger value="recovery">
               <KeyRound className="w-4 h-4 mr-1" /> Clé
             </TabsTrigger>
-            {pinAvailable && (
-              <TabsTrigger value="pin">
-                <Hash className="w-4 h-4 mr-1" /> PIN
-              </TabsTrigger>
-            )}
           </TabsList>
 
           <TabsContent value="password" className="space-y-3 pt-3">
@@ -220,32 +176,6 @@ export function E2EERestorePromptDialog() {
             </Button>
           </TabsContent>
 
-          {pinAvailable && (
-            <TabsContent value="pin" className="space-y-3 pt-3">
-              <Label htmlFor="restore-pin">Code PIN à 6 chiffres</Label>
-              <Input
-                id="restore-pin"
-                type="tel"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                value={pin}
-                onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="••••••"
-                disabled={busy}
-                autoComplete="off"
-                className="text-center tracking-[0.5em] text-xl"
-                onKeyDown={(event) => { if (event.key === 'Enter' && pin.length === 6) void handlePin(); }}
-              />
-              <p className="text-xs text-muted-foreground">
-                Limité à 10 essais par 24 h. Si vous l’oubliez, utilisez votre mot de passe ou la clé de récupération.
-              </p>
-              <Button onClick={handlePin} disabled={busy || pin.length !== 6} className="w-full">
-                {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Déverrouiller avec le PIN
-              </Button>
-            </TabsContent>
-          )}
         </Tabs>
 
         <DialogFooter className="text-xs text-muted-foreground">

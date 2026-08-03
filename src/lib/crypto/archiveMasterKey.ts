@@ -3,18 +3,20 @@ import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { secureGetSecret, secureSetSecret } from '@/lib/secureStore';
 import { getSessionMasterKey, getSessionUserId } from '@/lib/crypto/accountKeyBackup';
+import {
+  masterKeyAADLabel,
+} from '@/lib/crypto/masterKeyFormat';
 
 const PBKDF2_ITERATIONS = 600_000;
 const DEVICE_DB_NAME = 'forsure-archive-master-key';
 const DEVICE_DB_VERSION = 1;
 const DEVICE_STORE = 'keys';
-const SECURE_PREFIX = 'forsure-archive-master-key-v1:';
+const SECURE_PREFIX = 'forsure-archive-master-key:';
 
 interface AccountBackupWrap {
   salt: string;
   wrapped_master_key: string;
   master_key_iv: string;
-  version: number;
 }
 
 export type ArchiveMasterInitStatus = 'restored' | 'no_backup' | 'blocked';
@@ -28,8 +30,8 @@ function passwordSecret(password: string, userId: string): string {
   return `${password}::forsure::${userId}`;
 }
 
-function buildBackupAAD(userId: string, version: number): Uint8Array {
-  return new hardGlobals.TextEncoder().encode(`forsure-backup|${userId}|account|v${version}`);
+function buildBackupAAD(userId: string): Uint8Array {
+  return new hardGlobals.TextEncoder().encode(masterKeyAADLabel(userId, 'account'));
 }
 
 async function deriveWrappingKey(secret: string, salt: Uint8Array): Promise<CryptoKey> {
@@ -58,30 +60,17 @@ async function unwrapMasterKey(
   wrapped: string,
   iv: string,
   wrappingKey: CryptoKey,
-  aad?: Uint8Array,
+  aad: Uint8Array,
 ): Promise<Uint8Array> {
   const ivBytes = new Uint8Array(base64ToBuffer(iv));
   const ciphertext = base64ToBuffer(wrapped);
 
-  if (aad) {
-    try {
-      const plaintext = await hardCrypto.decrypt(
-        {
-          name: 'AES-GCM',
-          iv: ivBytes,
-          additionalData: aad.buffer.slice(aad.byteOffset, aad.byteOffset + aad.byteLength),
-        },
-        wrappingKey,
-        ciphertext,
-      );
-      return new Uint8Array(plaintext);
-    } catch {
-      // v5 backups were not AAD-bound.
-    }
-  }
-
   const plaintext = await hardCrypto.decrypt(
-    { name: 'AES-GCM', iv: ivBytes },
+    {
+      name: 'AES-GCM',
+      iv: ivBytes,
+      additionalData: aad.buffer.slice(aad.byteOffset, aad.byteOffset + aad.byteLength),
+    },
     wrappingKey,
     ciphertext,
   );
@@ -213,7 +202,7 @@ export async function initializeArchiveMasterKeyFromPassword(
     try {
       const { data, error } = await supabase
         .from('user_backups' as any)
-        .select('salt, wrapped_master_key, master_key_iv, version')
+        .select('salt, wrapped_master_key, master_key_iv')
         .eq('user_id', userId)
         .eq('backup_type', 'account')
         .maybeSingle();
@@ -223,7 +212,6 @@ export async function initializeArchiveMasterKeyFromPassword(
 
       const backup = data as unknown as AccountBackupWrap;
       if (
-        backup.version < 5 ||
         !backup.salt ||
         !backup.wrapped_master_key ||
         !backup.master_key_iv
@@ -233,7 +221,7 @@ export async function initializeArchiveMasterKeyFromPassword(
 
       const salt = new Uint8Array(base64ToBuffer(backup.salt));
       const wrappingKey = await deriveWrappingKey(passwordSecret(password, userId), salt);
-      const aad = backup.version >= 6 ? buildBackupAAD(userId, backup.version) : undefined;
+      const aad = buildBackupAAD(userId);
       const raw = await unwrapMasterKey(
         backup.wrapped_master_key,
         backup.master_key_iv,
@@ -281,15 +269,14 @@ export async function getArchiveMasterKey(userId: string): Promise<CryptoKey | n
     return persisted;
   }
 
-  // Compatibility fallback for sessions restored by PIN/recovery through the
-  // existing account backup module.
+  // Reuse the one account Master Key already active in this session.
   if (getSessionUserId() === userId) {
-    const legacy = getSessionMasterKey();
-    if (legacy) {
+    const accountMasterKey = getSessionMasterKey();
+    if (accountMasterKey) {
       sessionUserId = userId;
-      sessionKey = legacy;
+      sessionKey = accountMasterKey;
       publishReady(userId, 'account_session');
-      return legacy;
+      return accountMasterKey;
     }
   }
 

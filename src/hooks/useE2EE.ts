@@ -141,6 +141,9 @@ function initializationErrorCode(error: unknown): string {
   if (error instanceof Error && error.message === 'identity_lost_backup_available') {
     return 'identity_lost_backup_available';
   }
+  if (error instanceof Error && error.message === 'FINGERPRINT_TRUST_PERSIST_FAILED') {
+    return 'fingerprint_trust_persist_failed';
+  }
   return 'key_initialization_failed';
 }
 
@@ -214,8 +217,15 @@ export function useE2EE(_conversationId: string | undefined, peerUserId: string 
           return;
         }
 
-        saveKnownFingerprint(peerUserId, peerKey.fingerprint);
-        void saveKnownFingerprintServer(peerUserId, peerKey.fingerprint);
+        const persisted = await saveKnownFingerprintServer(
+          peerUserId,
+          peerKey.fingerprint,
+          false,
+        );
+        if (!persisted) throw new Error('FINGERPRINT_TRUST_PERSIST_FAILED');
+        saveKnownFingerprint(user.id, peerUserId, peerKey.fingerprint);
+
+        if (cancelled) return;
         setState({
           ready: true,
           fingerprint: ownIdentity.fingerprint,
@@ -280,9 +290,24 @@ export function useE2EE(_conversationId: string | undefined, peerUserId: string 
   }, [requestRefresh, user]);
 
   const acknowledgeFingerprint = useCallback(async () => {
-    if (!peerUserId || !state.peerFingerprint) return;
-    saveKnownFingerprint(peerUserId, state.peerFingerprint);
-    await saveKnownFingerprintServer(peerUserId, state.peerFingerprint, true);
+    if (!user || !peerUserId || !state.peerFingerprint) return;
+
+    const persisted = await saveKnownFingerprintServer(
+      peerUserId,
+      state.peerFingerprint,
+      true,
+    );
+    if (!persisted) {
+      setState(previous => ({
+        ...previous,
+        ready: false,
+        ratchetActive: false,
+        initError: 'fingerprint_trust_persist_failed',
+      }));
+      return;
+    }
+
+    saveKnownFingerprint(user.id, peerUserId, state.peerFingerprint);
     invalidateFingerprintCheckCache(peerUserId);
     setState(previous => ({
       ...previous,
@@ -296,7 +321,7 @@ export function useE2EE(_conversationId: string | undefined, peerUserId: string 
     window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
       detail: { peerUserId },
     }));
-  }, [peerUserId, state.peerFingerprint]);
+  }, [peerUserId, state.peerFingerprint, user]);
 
   const encrypt = useCallback(async (
     _plaintext: string,

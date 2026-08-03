@@ -17,6 +17,7 @@ import {
 } from './utils';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import * as memCache from './memoryIdentityCache';
+import { evaluateServerContinuityProbe } from './aegisContinuityGuards';
 import { runTxOn, reqToPromise } from './indexedDbTx';
 
 export interface IdentityKeyPair {
@@ -441,12 +442,25 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
   // restore / recovery-key / passkey flow.
   try {
     const { supabase } = await import('@/integrations/supabase/client');
-    const [{ data: activeKey }, { data: backup }] = await Promise.all([
+    const [activeResult, backupResult] = await Promise.all([
       supabase.from('user_public_keys').select('fingerprint').eq('user_id', userId).eq('is_active', true).maybeSingle(),
       supabase.from('user_backups').select('id').eq('user_id', userId).limit(1).maybeSingle(),
     ]);
 
-    if (activeKey || backup) {
+    const decision = evaluateServerContinuityProbe({
+      activeIdentity: Boolean(activeResult.data),
+      accountBackup: Boolean(backupResult.data),
+      activeIdentityError: Boolean(activeResult.error),
+      accountBackupError: Boolean(backupResult.error),
+    });
+
+    if (decision === 'unavailable') {
+      throw new PinUnlockRequiredError(
+        'PIN_UNLOCK_REQUIRED: continuity inspection incomplete — refusing to create a replacement identity.',
+      );
+    }
+
+    if (decision === 'continuity') {
       throw new PinUnlockRequiredError(
         'PIN_UNLOCK_REQUIRED: server identity continuity detected — restore via PIN / recovery key / passkey before generating a new identity.',
       );

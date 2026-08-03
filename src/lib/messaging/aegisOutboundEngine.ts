@@ -130,6 +130,7 @@ export async function sendAegisOutboundMessage(
     level: 'info' | 'warn' | 'error' = 'info',
   ) => traceE2EE({
     direction: 'send',
+    component: 'outbound_engine',
     stage,
     traceId,
     messageId,
@@ -137,9 +138,19 @@ export async function sendAegisOutboundMessage(
     elapsedMs: Date.now() - traceStartedAt,
     ...details,
   }, level);
-  trace(resumed ? 'SEND_RESUME' : 'SEND_CREATED');
+  trace(resumed ? 'SEND_RESUME' : 'SEND_CREATED', {
+    outcome: 'start',
+    payloadBytes: utf8ByteLength(input.plaintext),
+    retryCount: resumed?.retryCount ?? 0,
+  });
+  const deviceStartedAt = Date.now();
+  trace('DEVICE_READY_CHECK', { outcome: 'start' });
   const readyDevice = await ensureAegisDeviceReady(input.senderUserId);
-  trace('DEVICE_READY', { deviceId: readyDevice.deviceId });
+  trace('DEVICE_READY_CHECK', {
+    outcome: 'ok',
+    deviceId: readyDevice.deviceId,
+    blockMs: Date.now() - deviceStartedAt,
+  });
   let transportPlaintext = resumed?.transportPlaintext ?? input.plaintext;
   let parentBody = isMultiDeviceEnvelopeBody(resumed?.encryptedBody) && resumed?.keyCapsule
     ? resumed.encryptedBody
@@ -192,7 +203,7 @@ export async function sendAegisOutboundMessage(
     persist(),
     isViewOnce ? Promise.resolve() : savePlaintext(messageId, input.plaintext),
   ]);
-  trace('OUTBOX_DURABLE');
+  trace('OUTBOX_DURABLE', { outcome: 'ok', transport: 'local' });
 
   // One lock owns the complete mutable Ratchet transaction: copy creation,
   // authoritative RPC, confirmation and any rollback. Releasing the lock
@@ -202,7 +213,7 @@ export async function sendAegisOutboundMessage(
     return await runAegisConversationJob(
       `${input.senderUserId}:${input.conversationId}:aegis-outbound`,
       async () => {
-  trace('SEND_LOCK_ACQUIRED');
+  trace('SEND_LOCK_ACQUIRED', { outcome: 'ok', transport: 'local' });
   // Re-check on every attempt, including a retry with durable ciphertext and
   // copies. Otherwise an identity rotation between preparation and retry could
   // bypass the transport gate.
@@ -210,8 +221,11 @@ export async function sendAegisOutboundMessage(
     input.senderUserId,
     input.conversationId,
   );
+  trace('IDENTITY_TRUST_VERIFIED', { outcome: 'ok' });
 
   if (archiveBackupEnabled && !archiveBody) {
+    const archiveStartedAt = Date.now();
+    trace('ARCHIVE_ENCRYPT', { outcome: 'start' });
     const { encryptArchive } = await import('@/lib/messaging/archive/archiveKey');
     archiveBody = await encryptArchive(
       input.plaintext,
@@ -221,6 +235,7 @@ export async function sendAegisOutboundMessage(
     );
     if (!archiveBody) throw new Error('AEGIS_ARCHIVE_PREPARE_FAILED');
     await persist({ archiveBody });
+    trace('ARCHIVE_ENCRYPT', { outcome: 'ok', blockMs: Date.now() - archiveStartedAt });
   }
 
   if (!parentBody) {
@@ -231,6 +246,8 @@ export async function sendAegisOutboundMessage(
     }
 
     try {
+      const parentStartedAt = Date.now();
+      trace('PARENT_ENCRYPT', { outcome: 'start', payloadBytes: utf8ByteLength(transportPlaintext) });
       const preparedMessage = await createAegisMessage({
         messageId,
         conversationId: input.conversationId,
@@ -252,7 +269,7 @@ export async function sendAegisOutboundMessage(
         preparedCopies: [],
         routeVersion: null,
       });
-      trace('PARENT_ENCRYPTED');
+      trace('PARENT_ENCRYPT', { outcome: 'ok', blockMs: Date.now() - parentStartedAt });
     } catch (error) {
       await persist({
         encryptedBody: null,
@@ -272,7 +289,8 @@ export async function sendAegisOutboundMessage(
   }
 
   const buildCopies = async (): Promise<{ copies: FanoutCopyRow[]; routeVersion: string }> => {
-    trace('FANOUT_START');
+    const fanoutStartedAt = Date.now();
+    trace('FANOUT_BUILD', { outcome: 'start' });
     const built = await buildFanoutCopies({
       messageId,
       conversationId: input.conversationId,
@@ -297,7 +315,12 @@ export async function sendAegisOutboundMessage(
       status: 'sending',
       lastError: null,
     });
-    trace('FANOUT_READY', { targetCount: built.rows.length, copyCount: copies.length });
+    trace('FANOUT_BUILD', {
+      outcome: 'ok',
+      targetCount: built.rows.length,
+      copyCount: copies.length,
+      blockMs: Date.now() - fanoutStartedAt,
+    });
     return { copies, routeVersion };
   };
 
@@ -321,7 +344,11 @@ export async function sendAegisOutboundMessage(
 
   let result: Awaited<ReturnType<typeof sendMessageWithAegisRetry>>;
   try {
-    trace('SERVER_SEND_START', { copyCount: copies.length });
+    trace('SERVER_SEND', {
+      outcome: 'start',
+      copyCount: copies.length,
+      transport: 'aegis_server',
+    });
     result = await sendMessageWithAegisRetry({
       messageId,
       conversationId: input.conversationId,
@@ -366,7 +393,13 @@ export async function sendAegisOutboundMessage(
   }
 
   const committedId = result.data ?? messageId;
+  trace('SERVER_SEND', {
+    outcome: 'ok',
+    copyCount: copies.length,
+    transport: 'aegis_server',
+  });
   trace('MESSAGE_COMMITTED', {
+    outcome: 'ok',
     copyCount: copies.length,
     retryCount: result.retriedStaleRoute ? 1 : 0,
   });
@@ -394,7 +427,7 @@ export async function sendAegisOutboundMessage(
       imageUrl: input.imageUrl ?? resumed?.imageUrl ?? null,
     });
   }
-  trace('SEND_COMPLETE', { copyCount: copies.length });
+  trace('SEND_COMPLETE', { outcome: 'ok', copyCount: copies.length });
 
   return {
     id: committedId,
@@ -414,7 +447,7 @@ export async function sendAegisOutboundMessage(
       status: failureStatus(error),
       lastError: errorMessage(error),
     }).catch(() => undefined);
-    trace('SEND_FAILED', { errorCode: errorMessage(error) }, 'error');
+    trace('SEND_FAILED', { outcome: 'error', errorCode: errorMessage(error) }, 'error');
     throw error;
   }
 }

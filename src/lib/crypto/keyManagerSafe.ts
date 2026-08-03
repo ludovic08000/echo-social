@@ -1,20 +1,15 @@
 import {
   getOrCreateIdentityKeys as strictGetOrCreateIdentityKeys,
-  generateIdentityKeys,
-  saveIdentityKeys,
+  PinUnlockRequiredError,
   type IdentityKeyPair,
 } from './keyManager';
-import { PinUnlockRequiredError } from './keyManager';
 import { restoreAccountKeysFromActiveSession } from './accountKeyBackup';
 
 type RecoveredIdentity = IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean };
 
-const recoveryIdentities = new Map<string, Promise<RecoveredIdentity>>();
 const restoreAttempts = new Map<string, Promise<IdentityKeyPair | null>>();
 
 function normalizeIdentity(keys: IdentityKeyPair, recoveredAfterLoss = false): RecoveredIdentity {
-  // Identity recovery is handled here before the Aegis trust gate runs,
-  // so runtime consumers receive one already-resolved account identity.
   return {
     ...keys,
     isNewIdentity: false,
@@ -28,86 +23,94 @@ async function tryRestoreLatestBackup(userId: string): Promise<IdentityKeyPair |
 
   const attempt = (async () => {
     try {
-      console.warn('[E2EE][RECOVERY] Local identity missing; attempting latest encrypted backup restore.');
+      console.warn('[E2EE][RECOVERY] Local identity missing; attempting encrypted backup restore.');
       const restored = await restoreAccountKeysFromActiveSession(userId);
 
       if (restored === 'restored' || restored === 'local_ok') {
         const keys = await strictGetOrCreateIdentityKeys(userId);
-
         try {
           window.dispatchEvent(new CustomEvent('forsure-e2ee-identity-restored', {
-            detail: { source: 'latest_backup', fingerprint: keys.fingerprint },
+            detail: { source: 'active_session_backup', fingerprint: keys.fingerprint },
           }));
         } catch {
-          // Event dispatch is optional in non-browser runtimes.
+          // Event delivery is optional outside browser runtimes.
         }
-
-        console.info('[E2EE][RECOVERY] Identity restored from latest encrypted backup.');
         return keys;
       }
 
       return null;
     } catch (error) {
-      console.warn('[E2EE][RECOVERY] Backup restore failed.', error);
+      if (!(error instanceof PinUnlockRequiredError)) {
+        console.warn('[E2EE][RECOVERY] Backup restore failed.', error);
+      }
       return null;
     }
-  })();
+  })().finally(() => {
+    restoreAttempts.delete(userId);
+  });
 
   restoreAttempts.set(userId, attempt);
   return attempt;
 }
 
-async function createReplacementIdentity(userId: string, reason: string): Promise<RecoveredIdentity> {
-  const existing = recoveryIdentities.get(userId);
-  if (existing) return existing;
-
-  const created = (async () => {
-    const restored = await tryRestoreLatestBackup(userId);
-    if (restored) return normalizeIdentity(restored, true);
-
-    console.warn('[E2EE][RECOVERY] No usable backup found; creating a replacement identity epoch.', { reason });
-
-    const keys = await generateIdentityKeys();
-    await saveIdentityKeys(userId, keys);
-
-    try {
-      window.dispatchEvent(new CustomEvent('forsure-e2ee-identity-recreated', {
-        detail: { reason, fingerprint: keys.fingerprint },
-      }));
-      window.dispatchEvent(new CustomEvent('forsure-e2ee-security-code-changed', {
-        detail: { reason, fingerprint: keys.fingerprint },
-      }));
-    } catch {
-      // Event dispatch is optional in non-browser runtimes.
-    }
-
-    return normalizeIdentity(keys, true);
-  })();
-
-  recoveryIdentities.set(userId, created);
-  return created;
+function announceRestoreRequired(userId: string, reason: string): void {
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+      detail: {
+        userId,
+        reason: 'identity_continuity_guard',
+        source: 'keyManagerSafe',
+        diagnostic: reason,
+      },
+    }));
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
+      detail: { userId, source: 'keyManagerSafe' },
+    }));
+  } catch {
+    // Event delivery is optional outside browser runtimes.
+  }
 }
 
+/**
+ * Resolve the account identity without ever rotating it implicitly.
+ *
+ * The strict key manager creates an identity only when it has proved that the
+ * account is genuinely new: no local wrap, no active server identity and no
+ * server backup. When continuity already exists, this wrapper may attempt an
+ * authenticated restore, but it must propagate the restore requirement if
+ * that attempt is unavailable. Creating a replacement identity here would
+ * overwrite the account root and invalidate every existing device and peer.
+ */
 export async function getOrCreateIdentityKeys(userId: string): Promise<RecoveredIdentity> {
   try {
     const keys = await strictGetOrCreateIdentityKeys(userId);
-    const recoveryMetadata = keys as IdentityKeyPair & { recoveredAfterLoss?: boolean };
-    return normalizeIdentity(keys, recoveryMetadata.recoveredAfterLoss === true);
+    const metadata = keys as IdentityKeyPair & {
+      isNewIdentity?: boolean;
+      recoveredAfterLoss?: boolean;
+    };
+    return {
+      ...keys,
+      isNewIdentity: metadata.isNewIdentity === true,
+      recoveredAfterLoss: metadata.recoveredAfterLoss === true,
+    };
   } catch (error) {
-    if (error instanceof PinUnlockRequiredError) {
-      return createReplacementIdentity(userId, error.message || 'pin_required');
-    }
-
     const message = error instanceof Error ? error.message : String(error);
-    if (
+    const continuityFailure =
+      error instanceof PinUnlockRequiredError ||
       message.includes('Existing E2EE identity') ||
       message.includes('continuity') ||
       message.includes('identity continuity') ||
-      message.includes('PIN unlock')
-    ) {
-      return createReplacementIdentity(userId, message);
-    }
+      message.toLowerCase().includes('pin unlock');
 
-    throw error;
+    if (!continuityFailure) throw error;
+
+    const restored = await tryRestoreLatestBackup(userId);
+    if (restored) return normalizeIdentity(restored, true);
+
+    announceRestoreRequired(userId, message);
+    if (error instanceof PinUnlockRequiredError) throw error;
+    throw new PinUnlockRequiredError(
+      message || 'PIN_UNLOCK_REQUIRED: restore the existing account identity before continuing.',
+    );
   }
 }

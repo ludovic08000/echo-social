@@ -53,7 +53,9 @@ function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
   rememberBounded(delivered, deliveryKey);
   traceE2EE({
     direction: 'receive',
+    component: 'device_inbox',
     stage: 'SERVER_INBOX_DELIVERY',
+    outcome: 'ok',
     messageId: row.message_id,
     deviceId,
     peerDeviceId: row.sender_device_id,
@@ -75,6 +77,8 @@ function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
  * message_device_copies table directly.
  */
 export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRow[]> {
+  const startedAt = Date.now();
+  traceE2EE({ direction: 'receive', component: 'device_inbox', stage: 'INBOX_SYNC', outcome: 'start', transport: 'supabase' });
   const ready = await ensureAegisDeviceReady(userId);
   if (ready.userId !== userId) {
     throw new Error('AEGIS_DEVICE_USER_MISMATCH');
@@ -98,7 +102,10 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
         .map((row) => row.id)
         .filter((id): id is string => typeof id === 'string' && id.length > 0),
     ));
-    if (messageIds.length === 0) return [];
+    if (messageIds.length === 0) {
+      traceE2EE({ direction: 'receive', component: 'device_inbox', stage: 'INBOX_SYNC', outcome: 'skip', deviceId: ready.deviceId, targetCount: 0, blockMs: Date.now() - startedAt, transport: 'supabase' });
+      return [];
+    }
 
     const { data, error } = await supabase.rpc('get_device_copies_for_messages', {
       p_message_ids: messageIds,
@@ -108,6 +115,7 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
 
     const rows = (data ?? []) as AegisInboxRow[];
     for (const row of rows) dispatchInboxRow(row, ready.deviceId);
+    traceE2EE({ direction: 'receive', component: 'device_inbox', stage: 'INBOX_SYNC', outcome: 'ok', deviceId: ready.deviceId, targetCount: messageIds.length, copyCount: rows.length, blockMs: Date.now() - startedAt, transport: 'supabase' });
     return rows;
   })();
 
@@ -150,7 +158,9 @@ export function startAegisDeviceInbox(userId: string): () => void {
     void syncAegisDeviceInbox(userId).catch((error) => {
       traceE2EE({
         direction: 'receive',
+        component: 'device_inbox',
         stage: 'SERVER_INBOX_SYNC_FAILED',
+        outcome: 'error',
         errorCode: formatAegisInboxError(error),
       }, 'warn');
     });

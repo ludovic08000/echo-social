@@ -1,14 +1,15 @@
 /**
  * Aegis messaging PIN gate.
  *
- * The PIN itself never leaves the device. Supabase stores only a salt and the
- * Aegis master key wrapped by a key derived from that PIN. This lets a browser
- * recover the gate after cache loss without exposing the PIN or ratchet state.
+ * The PIN is a device-local application lock. It never wraps account key
+ * material stored on a remotely readable server: a six-digit secret cannot
+ * safely protect a downloadable ciphertext against offline brute force.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
+import { loadIdentityKeys } from '@/lib/crypto/keyManager';
 import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
 import {
   isSecureStoreNative,
@@ -16,11 +17,6 @@ import {
   secureRemoveSecret,
   secureSetSecret,
 } from '@/lib/secureStore';
-import {
-  hasBackupPin,
-  restoreWithBackupPin,
-} from '@/lib/crypto/accountKeyBackup';
-import { setupPersistentBackupPin } from '@/lib/crypto/aegisPinBackup';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
 
@@ -40,6 +36,22 @@ interface LocalPinRecord {
   iv: string;
   wrappedBlob: string;
   createdAt: number;
+}
+
+interface ServerContinuityInspection {
+  complete: boolean;
+  activeFingerprint: string | null;
+  hasAccountBackup: boolean;
+}
+
+interface SetupSafety {
+  allowed: boolean;
+  continuityExists: boolean;
+  reason:
+    | 'safe_first_setup'
+    | 'safe_restored_identity'
+    | 'restore_required'
+    | 'inspection_unavailable';
 }
 
 const STORE = 'pin-verifiers';
@@ -175,13 +187,12 @@ async function saveLocalPin(userId: string, pin: string): Promise<void> {
     key,
     new TextEncoder().encode(`${VERIFIER_PREFIX}${userId}`),
   );
-  const encoded = bytesToBase64(new Uint8Array(ciphertext));
   const record: LocalPinRecord = {
     id: userId,
     version: PIN_VERSION,
     salt: bytesToBase64(salt),
     iv: bytesToBase64(iv),
-    wrappedBlob: encoded,
+    wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
     createdAt: Date.now(),
   };
   await runTxOn('pin-wrap', [STORE], 'readwrite', (tx) => {
@@ -236,6 +247,88 @@ async function verifyLocalPin(userId: string, pin: string): Promise<boolean> {
   }
 }
 
+/**
+ * Inspect all server-side continuity markers as one decision. A transport/RLS
+ * failure is not equivalent to "this is a new account"; uncertainty therefore
+ * keeps setup closed until the inspection can be repeated safely.
+ */
+async function inspectServerContinuity(userId: string): Promise<ServerContinuityInspection> {
+  const [identityResult, backupResult] = await Promise.all([
+    supabase
+      .from('user_public_keys')
+      .select('fingerprint')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .maybeSingle(),
+    supabase
+      .from('user_backups')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  return {
+    complete: !identityResult.error && !backupResult.error,
+    activeFingerprint: identityResult.error ? null : identityResult.data?.fingerprint ?? null,
+    hasAccountBackup: !backupResult.error && Boolean(backupResult.data?.id),
+  };
+}
+
+async function inspectSetupSafety(userId: string): Promise<SetupSafety> {
+  let inspection: ServerContinuityInspection;
+  try {
+    inspection = await inspectServerContinuity(userId);
+  } catch {
+    return {
+      allowed: false,
+      continuityExists: true,
+      reason: 'inspection_unavailable',
+    };
+  }
+
+  const localIdentity = await loadIdentityKeys(userId).catch(() => null);
+  const continuityExists = Boolean(
+    inspection.activeFingerprint ||
+    inspection.hasAccountBackup,
+  );
+
+  if (!inspection.complete) {
+    return {
+      allowed: false,
+      continuityExists: true,
+      reason: 'inspection_unavailable',
+    };
+  }
+
+  if (!continuityExists) {
+    return {
+      allowed: true,
+      continuityExists: false,
+      reason: 'safe_first_setup',
+    };
+  }
+
+  const restoredIdentityMatches = Boolean(
+    localIdentity &&
+    inspection.activeFingerprint &&
+    localIdentity.fingerprint === inspection.activeFingerprint,
+  );
+  if (restoredIdentityMatches) {
+    return {
+      allowed: true,
+      continuityExists: true,
+      reason: 'safe_restored_identity',
+    };
+  }
+
+  return {
+    allowed: false,
+    continuityExists: true,
+    reason: 'restore_required',
+  };
+}
+
 function announceUnlock(userId: string): void {
   storageSet(sessionStorage, SESSION_KEY, userId);
   window.dispatchEvent(new CustomEvent('forsure-keys-unlocked'));
@@ -269,20 +362,32 @@ export function useChatPin() {
 
     const refresh = async (unlockCurrentOpen = false) => {
       const record = await loadLocalPin(user.id);
-      const serverHasPin = record ? false : await hasBackupPin(user.id);
+      const safety = record
+        ? null
+        : await inspectSetupSafety(user.id);
       if (cancelled) return;
+
       const mode = localMode(user.id);
       const sessionUnlocked = storageGet(sessionStorage, SESSION_KEY) === user.id;
-      const hasPin = Boolean(record) || serverHasPin;
+      // Recovery/uncertain states deliberately use the PIN-entry side of the
+      // gate. Only a proven first setup or a matching restored identity may
+      // display the PIN-creation screen.
+      const hasPin = Boolean(record) || Boolean(safety && !safety.allowed);
       const unlocked = Boolean(record) && (
         unlockCurrentOpen || (mode !== 'every_open' && sessionUnlocked)
       );
+      const recoveryError = !record && safety?.reason === 'restore_required'
+        ? 'Restaurez votre identité sécurisée existante avant de créer un nouveau PIN.'
+        : !record && safety?.reason === 'inspection_unavailable'
+          ? 'Vérification de sécurité indisponible. Réessayez après la restauration du compte.'
+          : null;
+
       pinModeRef.current = mode;
       setState({
         loaded: true,
         hasPin,
         unlocked,
-        error: null,
+        error: recoveryError,
         processing: false,
         pinMode: mode,
       });
@@ -293,11 +398,19 @@ export function useChatPin() {
       const detail = (event as CustomEvent<{ userId?: string; unlocked?: boolean }>).detail;
       if (!detail?.userId || detail.userId === user.id) void refresh(detail?.unlocked === true);
     };
+    const onKeysRestored = () => void refresh(false);
+
     window.addEventListener(PIN_STATE_CHANGED_EVENT, onPinStateChanged);
+    window.addEventListener('forsure-keys-restored', onKeysRestored);
+    window.addEventListener('forsure:e2ee-unlocked', onKeysRestored);
+    window.addEventListener('forsure-e2ee-identity-ready', onKeysRestored);
 
     return () => {
       cancelled = true;
       window.removeEventListener(PIN_STATE_CHANGED_EVENT, onPinStateChanged);
+      window.removeEventListener('forsure-keys-restored', onKeysRestored);
+      window.removeEventListener('forsure:e2ee-unlocked', onKeysRestored);
+      window.removeEventListener('forsure-e2ee-identity-ready', onKeysRestored);
     };
   }, [user?.id]);
 
@@ -343,9 +456,20 @@ export function useChatPin() {
       return false;
     }
     setState((current) => ({ ...current, processing: true, error: null }));
+
     try {
-      // Local encrypted persistence is the authority for opening this device.
-      // Server recovery is useful, but must never block PIN creation or chat.
+      // Re-run the continuity proof at the mutation boundary. A stale render or
+      // a concurrent restore must never turn the setup screen into an identity
+      // reset primitive.
+      const safety = await inspectSetupSafety(user.id);
+      if (!safety.allowed) {
+        const error = safety.reason === 'inspection_unavailable'
+            ? 'Vérification de sécurité indisponible. Aucun nouveau PIN n’a été créé.'
+            : 'Restaurez votre identité sécurisée existante avant de créer un nouveau PIN.';
+        setState((current) => ({ ...current, processing: false, hasPin: true, error }));
+        return false;
+      }
+
       await saveLocalPin(user.id, pin);
       announceUnlock(user.id);
       pinModeRef.current = 'every_open';
@@ -358,16 +482,6 @@ export function useChatPin() {
         processing: false,
         pinMode: 'every_open',
       });
-
-      void setupPersistentBackupPin(pin, user.id)
-        .then((result) => {
-          if (result !== 'ok') {
-            console.warn('[LOCAL-PIN] initial server backup deferred', { result });
-          }
-        })
-        .catch((error) => {
-          console.warn('[LOCAL-PIN] initial server backup failed', error);
-        });
 
       // This creates only an email-reset ticket. The PIN itself is deliberately
       // absent from the request and cannot be verified by the server.
@@ -389,6 +503,7 @@ export function useChatPin() {
       return false;
     }
     setState((current) => ({ ...current, processing: true, error: null }));
+
     const localRecord = await loadLocalPin(user.id);
     if (localRecord) {
       const valid = await verifyLocalPin(user.id, pin);
@@ -396,8 +511,17 @@ export function useChatPin() {
         setState((current) => ({ ...current, processing: false, error: 'PIN incorrect' }));
         return false;
       }
-      // A locally verified PIN opens messaging immediately. Server backup
-      // maintenance is optional and must never block the widget or full page.
+      const localIdentity = await loadIdentityKeys(user.id).catch(() => null);
+      if (!localIdentity) {
+        setState((current) => ({
+          ...current,
+          processing: false,
+          unlocked: false,
+          error: 'Les clés locales ont disparu. Restaurez-les avec votre mot de passe ou votre clé de récupération.',
+        }));
+        return false;
+      }
+
       announceUnlock(user.id);
       setState((current) => ({
         ...current,
@@ -405,32 +529,15 @@ export function useChatPin() {
         processing: false,
         error: null,
       }));
-      void setupPersistentBackupPin(pin, user.id)
-        .then((result) => {
-          if (result !== 'ok') {
-            console.warn('[LOCAL-PIN] background server backup upgrade deferred', { result });
-          }
-        })
-        .catch((error) => {
-          console.warn('[LOCAL-PIN] background server backup upgrade failed', error);
-        });
       return true;
-    } else {
-      const restored = await restoreWithBackupPin(pin, user.id);
-      if (restored.status !== 'restored') {
-        const error = restored.status === 'locked'
-          ? 'Trop de tentatives. Réessayez plus tard.'
-          : restored.status === 'wrong_pin'
-            ? 'PIN incorrect'
-            : 'Sauvegarde PIN Aegis indisponible';
-        setState((current) => ({ ...current, processing: false, error }));
-        return false;
-      }
-      await saveLocalPin(user.id, pin);
     }
-    announceUnlock(user.id);
-    setState((current) => ({ ...current, unlocked: true, processing: false, error: null }));
-    return true;
+
+    setState((current) => ({
+      ...current,
+      processing: false,
+      error: 'Ce PIN est local à cet appareil. Restaurez d’abord les clés avec votre mot de passe ou votre clé de récupération.',
+    }));
+    return false;
   }, [user?.id]);
 
   const updatePinMode = useCallback(async (mode: PinMode): Promise<boolean> => {
@@ -507,4 +614,6 @@ export const __test__ = {
   saveLocalPin,
   verifyLocalPin,
   removeLocalPin,
+  inspectServerContinuity,
+  inspectSetupSafety,
 };

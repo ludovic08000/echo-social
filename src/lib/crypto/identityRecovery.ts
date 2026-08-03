@@ -1,7 +1,6 @@
 import {
   loadIdentityKeys,
-  generateIdentityKeys,
-  saveIdentityKeys,
+  PinUnlockRequiredError,
   type IdentityKeyPair,
 } from './keyManager';
 import { getOrCreateIdentityKeys } from './keyManagerSafe';
@@ -9,7 +8,33 @@ import { restoreAccountKeysFromActiveSession } from './accountKeyBackup';
 
 export type IdentityRecoveryMode = 'local' | 'restored' | 'new_epoch';
 
-export async function resolveUserIdentity(userId: string): Promise<{ keys: IdentityKeyPair; mode: IdentityRecoveryMode }> {
+function announceRestoreRequired(userId: string, reason: string): void {
+  try {
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+      detail: {
+        userId,
+        reason: 'identity_recovery_required',
+        source: 'identityRecovery',
+        diagnostic: reason,
+      },
+    }));
+  } catch {
+    // Event delivery is optional outside browser runtimes.
+  }
+}
+
+/**
+ * Resolve the stable account identity.
+ *
+ * A new epoch is returned only when the strict key manager has proved that the
+ * account has no prior identity or backup. Recovery failures never generate a
+ * replacement identity: they stay blocked until the existing identity is
+ * restored with the PIN, password session, recovery key or passkey.
+ */
+export async function resolveUserIdentity(userId: string): Promise<{
+  keys: IdentityKeyPair;
+  mode: IdentityRecoveryMode;
+}> {
   const local = await loadIdentityKeys(userId).catch(() => null);
   if (local) return { keys: local, mode: 'local' };
 
@@ -22,29 +47,32 @@ export async function resolveUserIdentity(userId: string): Promise<{ keys: Ident
           window.dispatchEvent(new CustomEvent('forsure-e2ee-identity-restored', {
             detail: { userId, fingerprint: restoredKeys.fingerprint },
           }));
-        } catch {}
+        } catch {
+          // Event delivery is optional outside browser runtimes.
+        }
         return { keys: restoredKeys, mode: 'restored' };
       }
     }
   } catch (error) {
-    console.warn('[E2EE][RECOVERY] encrypted backup restore unavailable', error);
+    if (!(error instanceof PinUnlockRequiredError)) {
+      console.warn('[E2EE][RECOVERY] encrypted backup restore unavailable', error);
+    }
   }
 
   try {
     const keys = await getOrCreateIdentityKeys(userId);
-    return { keys, mode: (keys as any).recoveredAfterLoss ? 'new_epoch' : 'local' };
+    return {
+      keys,
+      mode: keys.isNewIdentity === true
+        ? 'new_epoch'
+        : keys.recoveredAfterLoss === true
+          ? 'restored'
+          : 'local',
+    };
   } catch (error) {
-    console.warn('[E2EE][RECOVERY] safe identity resolution failed; creating new epoch', error);
+    if (error instanceof PinUnlockRequiredError) {
+      announceRestoreRequired(userId, error.message);
+    }
+    throw error;
   }
-
-  const keys = await generateIdentityKeys();
-  await saveIdentityKeys(userId, keys);
-
-  try {
-    window.dispatchEvent(new CustomEvent('forsure-e2ee-security-code-changed', {
-      detail: { userId, fingerprint: keys.fingerprint, reason: 'new_epoch_after_recovery_failure' },
-    }));
-  } catch {}
-
-  return { keys, mode: 'new_epoch' };
 }

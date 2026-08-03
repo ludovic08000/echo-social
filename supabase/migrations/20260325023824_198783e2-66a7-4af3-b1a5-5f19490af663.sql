@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS public.user_backups (
   encrypted_blob text NOT NULL,
   salt text NOT NULL,
   iv text NOT NULL,
-  version integer NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(user_id)
 );

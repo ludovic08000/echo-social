@@ -27,6 +27,7 @@ import { logCryptoError, logCryptoException } from './errorLogger';
 export type RestoreReason =
   | 'recovery_key'
   | 'pin_backup'
+  | 'password_sign_in'
   | 'password_active_session'
   | 'in_memory_master_key'
   | 'manual';
