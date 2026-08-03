@@ -106,6 +106,19 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(sync).toContain('hasLocalKeys(user.id)');
   });
 
+  it('always scopes restored-session checks to the signed-in account and catches bootstrap pauses', () => {
+    const auth = source('src/lib/auth.tsx');
+    const dialog = source('src/components/messages/E2EERestorePromptDialog.tsx');
+    const bootstrap = source('src/lib/crypto/identityBootstrap.ts');
+
+    expect(auth).toContain('hasLocalKeys(userId)');
+    expect(dialog).toContain('hasLocalKeys(user.id)');
+    expect(dialog).toContain("reason: 'server_identity_without_local_identity'");
+    expect(dialog).toContain(".from('user_public_keys')");
+    expect(bootstrap).toContain('error instanceof PinUnlockRequiredError');
+    expect(bootstrap).toContain('runWithoutUnhandledRejection(userId)');
+  });
+
   it('does not reuse a stale peer key after a failed forced refresh', () => {
     const peerCache = source('src/lib/crypto/peerKeyCache.ts');
     expect(peerCache).toContain("if (options?.forceRefresh) _peerKeyCache.delete(peerUserId)");

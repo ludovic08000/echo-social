@@ -76,7 +76,7 @@ const initialRecovery = detectRecoveryFromHash() || isRecoveryPending();
 async function inspectCryptoReadiness(userId: string | undefined, reason: 'session_restored' | 'signed_in') {
   if (!userId) return;
   try {
-    const hasKeys = await hasLocalKeys();
+    const hasKeys = await hasLocalKeys(userId);
     console.log(`[AUTH][E2EE] ${reason} user=${userId} hasLocalKeys=${hasKeys}`);
     if (!hasKeys) {
       const keychainStatus = await restoreKeysFromKeychainSnapshot(userId);
@@ -110,7 +110,7 @@ async function runPostSignInSetup(password: string, userId: string): Promise<voi
   // prevent restoration of the account Master Key used by PIN backup.
   let localKeysPresent = false;
   try {
-    localKeysPresent = await hasLocalKeys();
+    localKeysPresent = await hasLocalKeys(userId);
   } catch (error) {
     console.warn('[AUTH][E2EE] local-key inspection failed:', error);
   }

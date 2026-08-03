@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { exportPublicKeyBundle, type IdentityKeyPair } from './keyManager';
+import { exportPublicKeyBundle, PinUnlockRequiredError, type IdentityKeyPair } from './keyManager';
 import { resolveUserIdentity } from './identityRecovery';
 import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoState';
 import { appendTransparencyLog } from './transparencyLog';
@@ -162,19 +162,29 @@ export async function ensureUserE2EEIdentity(userId: string, options: EnsureIden
 }
 
 export function startIdentityBootstrap(): void {
+  const runWithoutUnhandledRejection = (userId: string) => {
+    void ensureUserE2EEIdentity(userId).catch((error) => {
+      if (error instanceof PinUnlockRequiredError) {
+        console.warn('[E2EE][IDENTITY] restore required; bootstrap paused');
+        return;
+      }
+      console.error('[E2EE][IDENTITY] bootstrap failed', error);
+    });
+  };
+
   void supabase.auth.getSession().then(({ data }) => {
     const userId = data.session?.user?.id;
-    if (userId) void ensureUserE2EEIdentity(userId);
+    if (userId) runWithoutUnhandledRejection(userId);
   }).catch(() => {});
 
   supabase.auth.onAuthStateChange((_event, session) => {
     const userId = session?.user?.id;
-    if (userId) setTimeout(() => void ensureUserE2EEIdentity(userId), 0);
+    if (userId) setTimeout(() => runWithoutUnhandledRejection(userId), 0);
   });
 
   window.addEventListener('forsure-e2ee-needs-identity', (event) => {
     const detail = (event as CustomEvent<{ userId?: string }>).detail;
     const userId = detail?.userId;
-    if (userId) void ensureUserE2EEIdentity(userId);
+    if (userId) runWithoutUnhandledRejection(userId);
   });
 }

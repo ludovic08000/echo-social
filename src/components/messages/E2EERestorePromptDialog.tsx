@@ -19,6 +19,7 @@ import {
   hasLocalKeys,
 } from '@/lib/crypto/accountKeyBackup';
 import { restoreAegisRecoveryVault } from '@/lib/crypto/aegisRecoveryVault';
+import { supabase } from '@/integrations/supabase/client';
 
 export function E2EERestorePromptDialog() {
   const { user } = useAuth();
@@ -29,18 +30,43 @@ export function E2EERestorePromptDialog() {
   const [tab, setTab] = useState<'password' | 'recovery'>('password');
 
   useEffect(() => {
-    const onNeeded = async (event: Event) => {
-      const detail = (event as CustomEvent).detail || {};
+    if (!user?.id) return;
+    let cancelled = false;
+
+    const promptIfIdentityMissing = async (detail: unknown) => {
       try {
-        if (await hasLocalKeys()) return;
+        if (await hasLocalKeys(user.id)) return;
       } catch {
-        // The dialog remains available if local storage inspection fails.
+        // Une inspection locale en erreur ne doit pas masquer la restauration.
       }
+      if (cancelled) return;
       console.warn('[E2EERestore] prompting user to restore keys', detail);
       setOpen(true);
     };
+
+    const onNeeded = async (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      await promptIfIdentityMissing(detail);
+    };
     window.addEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
-    return () => window.removeEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
+    // Correction : un evenement emis avant le montage du dialogue ne doit plus
+    // laisser l'utilisateur bloque. La continuite serveur est reverifiee ici.
+    void (async () => {
+      const { data, error } = await supabase
+        .from('user_public_keys')
+        .select('fingerprint')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (!error && data?.fingerprint) {
+        await promptIfIdentityMissing({ reason: 'server_identity_without_local_identity' });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
+    };
   }, [user?.id]);
 
   useEffect(() => {
