@@ -78,3 +78,20 @@ export function selectPortableAccountIdentityRows<T extends { id?: unknown }>(
 ): T[] {
   return rows.filter((row) => row?.id === userId);
 }
+
+export type PasswordChangeReadiness =
+  | 'ready'
+  | 'no_backup'
+  | 'recovery_required'
+  | 'unavailable';
+
+/** Invariant : Auth ne change pas tant que la continuité Master Key est incertaine. */
+export function decidePasswordChangeReadiness(input: {
+  hasActiveMasterKey: boolean;
+  hasAccountBackup: boolean;
+  inspectionFailed: boolean;
+}): PasswordChangeReadiness {
+  if (input.hasActiveMasterKey) return 'ready';
+  if (input.inspectionFailed) return 'unavailable';
+  return input.hasAccountBackup ? 'recovery_required' : 'no_backup';
+}

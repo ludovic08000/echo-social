@@ -2,7 +2,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { checkRateLimit as checkRateLimitDB } from '../_shared/rate-limit.ts';
 
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
-const AEGIS_MASTER_KEY_SCHEMA = 7;
 const RATE_LIMIT = 12;
 const RATE_WINDOW_SECONDS = 60;
 const ALLOWED_ORIGINS = [
@@ -19,7 +18,6 @@ interface EncryptedBackupEnvelope {
   salt: string;
   wrapped_master_key: string;
   master_key_iv: string;
-  version: number;
   backup_type: BackupType;
   created_at: string;
 }
@@ -69,7 +67,6 @@ function validateEnvelope(value: unknown): EncryptedBackupEnvelope | null {
   if (!isNonEmptyString(row.salt, 512)) return null;
   if (!isNonEmptyString(row.wrapped_master_key, 4096)) return null;
   if (!isNonEmptyString(row.master_key_iv, 256)) return null;
-  if (row.version !== AEGIS_MASTER_KEY_SCHEMA) return null;
   if (row.backup_type !== 'account' && row.backup_type !== 'recovery') return null;
   if (typeof row.created_at !== 'string' || Number.isNaN(Date.parse(row.created_at))) return null;
 
@@ -79,7 +76,6 @@ function validateEnvelope(value: unknown): EncryptedBackupEnvelope | null {
     salt: row.salt,
     wrapped_master_key: row.wrapped_master_key,
     master_key_iv: row.master_key_iv,
-    version: Number(row.version),
     backup_type: row.backup_type,
     created_at: row.created_at,
   };
@@ -109,7 +105,7 @@ async function hmacText(key: string, message: string): Promise<Uint8Array> {
 }
 
 async function opaqueNamespace(userId: string, secret: string): Promise<string> {
-  return toHex(await hmacText(secret, `forsure-r2-backup-v1:${userId}`));
+  return toHex(await hmacText(secret, `forsure-r2-backup:${userId}`));
 }
 
 function loadR2Config(): R2Config {
@@ -265,7 +261,8 @@ Deno.serve(async (req) => {
     const action = input?.action;
     const backupType: BackupType = input?.backup_type === 'recovery' ? 'recovery' : 'account';
     const namespace = await opaqueNamespace(userId, namespaceSecret);
-    const objectKey = `e2ee-backups/v1/${namespace}/${backupType}/latest.enc`;
+    // Correction : le chemin courant ne partage aucun espace avec les anciens coffres.
+    const objectKey = `e2ee-backups/current/${namespace}/${backupType}/latest.enc`;
     const config = loadR2Config();
 
     if (action === 'put') {
@@ -273,10 +270,7 @@ Deno.serve(async (req) => {
       if (!backup || backup.backup_type !== backupType) {
         return json(req, { error: 'Invalid encrypted backup envelope' }, 400);
       }
-      const bytes = new TextEncoder().encode(JSON.stringify({
-        schema: 'forsure-e2ee-r2-v1',
-        backup,
-      }));
+      const bytes = new TextEncoder().encode(JSON.stringify({ backup }));
       if (bytes.byteLength > MAX_BACKUP_BYTES) {
         return json(req, { error: 'Encrypted backup too large' }, 413);
       }
@@ -288,7 +282,6 @@ Deno.serve(async (req) => {
       return json(req, {
         ok: true,
         backup_type: backupType,
-        version: backup.version,
         stored_at: new Date().toISOString(),
         digest: await sha256Hex(bytes),
       });
@@ -304,16 +297,7 @@ Deno.serve(async (req) => {
         return json(req, { error: 'Invalid backup mirror object' }, 502);
       }
       const parsed = JSON.parse(new TextDecoder().decode(bytes));
-      if (
-        parsed?.schema === 'forsure-e2ee-r2-v1'
-        && parsed?.backup?.version !== AEGIS_MASTER_KEY_SCHEMA
-      ) {
-        await r2Request(config, 'DELETE', objectKey);
-        return json(req, { ok: true, found: false });
-      }
-      const backup = parsed?.schema === 'forsure-e2ee-r2-v1'
-        ? validateEnvelope(parsed.backup)
-        : null;
+      const backup = validateEnvelope(parsed?.backup);
       if (!backup || backup.backup_type !== backupType) {
         return json(req, { error: 'Corrupted backup mirror object' }, 502);
       }

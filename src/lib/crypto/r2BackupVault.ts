@@ -1,5 +1,4 @@
 import { supabase } from '@/integrations/supabase/client';
-import { isCurrentMasterKeySchema } from '@/lib/crypto/masterKeySchema';
 
 export interface EncryptedAccountBackupEnvelope {
   encrypted_blob: string;
@@ -7,7 +6,6 @@ export interface EncryptedAccountBackupEnvelope {
   salt: string;
   wrapped_master_key: string;
   master_key_iv: string;
-  version: number;
   backup_type: 'account' | 'recovery';
   created_at: string;
 }
@@ -21,7 +19,6 @@ function isEnvelope(value: unknown): value is EncryptedAccountBackupEnvelope {
     typeof row.salt === 'string' && row.salt.length > 0 &&
     typeof row.wrapped_master_key === 'string' && row.wrapped_master_key.length > 0 &&
     typeof row.master_key_iv === 'string' && row.master_key_iv.length > 0 &&
-    isCurrentMasterKeySchema(row.version) &&
     (row.backup_type === 'account' || row.backup_type === 'recovery') &&
     typeof row.created_at === 'string' && !Number.isNaN(Date.parse(row.created_at))
   );
@@ -33,8 +30,8 @@ async function readLocalBackup(
 ): Promise<EncryptedAccountBackupEnvelope | null> {
   try {
     const { data, error } = await supabase
-      .from('user_backups' as any)
-      .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, version, backup_type, created_at')
+      .from('user_backups')
+      .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, backup_type, created_at')
       .eq('user_id', userId)
       .eq('backup_type', backupType)
       .maybeSingle();
@@ -115,7 +112,7 @@ export async function ensureBackupIndexedFromR2(
 
     const backup = data.backup as EncryptedAccountBackupEnvelope;
     const { error: restoreError } = await supabase
-      .from('user_backups' as any)
+      .from('user_backups')
       .upsert({
         user_id: userId,
         ...backup,

@@ -4,9 +4,8 @@ import { base64ToBuffer, bufferToBase64 } from '@/lib/crypto/utils';
 import { secureGetSecret, secureSetSecret } from '@/lib/secureStore';
 import { getSessionMasterKey, getSessionUserId } from '@/lib/crypto/accountKeyBackup';
 import {
-  isCurrentMasterKeySchema,
   masterKeyAADLabel,
-} from '@/lib/crypto/masterKeySchema';
+} from '@/lib/crypto/masterKeyFormat';
 
 const PBKDF2_ITERATIONS = 600_000;
 const DEVICE_DB_NAME = 'forsure-archive-master-key';
@@ -18,7 +17,6 @@ interface AccountBackupWrap {
   salt: string;
   wrapped_master_key: string;
   master_key_iv: string;
-  version: number;
 }
 
 export type ArchiveMasterInitStatus = 'restored' | 'no_backup' | 'blocked';
@@ -204,7 +202,7 @@ export async function initializeArchiveMasterKeyFromPassword(
     try {
       const { data, error } = await supabase
         .from('user_backups' as any)
-        .select('salt, wrapped_master_key, master_key_iv, version')
+        .select('salt, wrapped_master_key, master_key_iv')
         .eq('user_id', userId)
         .eq('backup_type', 'account')
         .maybeSingle();
@@ -214,7 +212,6 @@ export async function initializeArchiveMasterKeyFromPassword(
 
       const backup = data as unknown as AccountBackupWrap;
       if (
-        !isCurrentMasterKeySchema(backup.version) ||
         !backup.salt ||
         !backup.wrapped_master_key ||
         !backup.master_key_iv

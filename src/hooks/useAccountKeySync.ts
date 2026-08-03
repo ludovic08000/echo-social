@@ -38,7 +38,7 @@ export function useAccountKeySync() {
         const { verifySecureStoreHealth } = await import('@/lib/secureStore');
         const health = await verifySecureStoreHealth([
           'forsure-device-id-v1',
-          'forsure-key-sentinel-v1',
+          'forsure-key-sentinel',
         ]);
         if (health.tier !== 'keychain' && isNativePlatform()) {
           console.warn('[AccountKeySync] secure storage degraded — running on fallback tier:', health.tier, health.warnings);
@@ -143,7 +143,7 @@ export function useAccountKeySync() {
             // Confirm a backup actually exists on the server before prompting.
             const { data: backupRow } = await supabase
               .from('user_backups')
-              .select('id, version, backup_type, created_at')
+              .select('id, backup_type, created_at')
               .eq('user_id', user.id)
               .eq('backup_type', 'account')
               .maybeSingle();

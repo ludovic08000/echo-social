@@ -6431,7 +6431,6 @@ export type Database = {
           recall: number | null
           samples_used: number
           trained_at: string
-          version: number
           weights: Json
         }
         Insert: {
@@ -6445,7 +6444,6 @@ export type Database = {
           recall?: number | null
           samples_used?: number
           trained_at?: string
-          version: number
           weights: Json
         }
         Update: {
@@ -6459,7 +6457,6 @@ export type Database = {
           recall?: number | null
           samples_used?: number
           trained_at?: string
-          version?: number
           weights?: Json
         }
         Relationships: []
@@ -6657,7 +6654,6 @@ export type Database = {
           mk_locked_until: string | null
           salt: string
           user_id: string
-          version: number
           wrapped_master_key: string | null
         }
         Insert: {
@@ -6672,7 +6668,6 @@ export type Database = {
           mk_locked_until?: string | null
           salt: string
           user_id: string
-          version?: number
           wrapped_master_key?: string | null
         }
         Update: {
@@ -6687,7 +6682,6 @@ export type Database = {
           mk_locked_until?: string | null
           salt?: string
           user_id?: string
-          version?: number
           wrapped_master_key?: string | null
         }
         Relationships: []

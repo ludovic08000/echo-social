@@ -36,15 +36,15 @@ import {
 import { runPostRestoreSync, type RestoreReason } from '@/lib/crypto/postRestoreSync';
 import {
   createSingleFlightByKey,
+  decidePasswordChangeReadiness,
   decideMasterKeyCreation,
   selectPortableAccountIdentityRows,
+  type PasswordChangeReadiness,
 } from '@/lib/crypto/aegisContinuityGuards';
 import {
-  AEGIS_MASTER_KEY_SCHEMA,
-  isCurrentMasterKeySchema,
   masterKeyAADLabel,
   type AegisMasterKeyBackupType,
-} from '@/lib/crypto/masterKeySchema';
+} from '@/lib/crypto/masterKeyFormat';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -52,7 +52,7 @@ const IV_LENGTH = 12;
 const MASTER_KEY_LENGTH = 32;
 const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
-const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
+const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot:';
 
 /** Domain-separated AAD bound to owner, purpose and the only accepted schema. */
 function buildBackupAAD(userId: string, backupType: AegisMasterKeyBackupType): Uint8Array {
@@ -303,7 +303,6 @@ async function collectAllKeys(userId: string, scope: BackupScope = 'aegis-vault'
   } catch {}
 
   data['_meta'] = {
-    version: AEGIS_MASTER_KEY_SCHEMA,
     scope,
     userId,
     createdAt: new Date().toISOString(),
@@ -358,12 +357,9 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
 async function restoreAllKeys(json: string, userId: string): Promise<void> {
   const data = JSON.parse(json);
   const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
-  const backupVersion = Number(data?._meta?.version ?? 0);
   const backupUserId = typeof data?._meta?.userId === 'string' ? data._meta.userId : null;
 
-  if (!isCurrentMasterKeySchema(backupVersion)) {
-    throw new Error('Backup invalide : schéma Master Key non pris en charge');
-  }
+  // Correction : un coffre Aegis n'a plus de branche de version à interpréter.
   if (backupUserId !== userId) {
     throw new Error('Backup invalide : propriétaire du coffre incorrect');
   }
@@ -565,7 +561,6 @@ interface BackupRow {
   salt: string;
   wrapped_master_key: string;
   master_key_iv: string;
-  version: number;
   backup_type: string;
 }
 
@@ -603,7 +598,6 @@ async function uploadBackup(
       salt: bufferToBase64(salt.buffer),
       wrapped_master_key: wrapped,
       master_key_iv: mkIv,
-      version: AEGIS_MASTER_KEY_SCHEMA,
       backup_type: backupType,
       created_at: new Date().toISOString(),
     }, { onConflict: 'user_id,backup_type' });
@@ -620,7 +614,6 @@ async function uploadBackup(
         userId,
         digest,
         lastSyncAt: Date.now(),
-        backupVersion: AEGIS_MASTER_KEY_SCHEMA,
       });
     } catch (e) {
       console.warn('[MasterKey] sentinel write failed:', e);
@@ -640,7 +633,7 @@ async function downloadAndRestore(
 ): Promise<{ masterKeyRaw: Uint8Array; masterKey: CryptoKey } | null> {
   const { data, error } = await supabase
     .from('user_backups' as any)
-    .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, version, backup_type')
+    .select('encrypted_blob, iv, salt, wrapped_master_key, master_key_iv, backup_type')
     .eq('user_id', userId)
     .eq('backup_type', backupType)
     .maybeSingle();
@@ -650,8 +643,8 @@ async function downloadAndRestore(
 
   const backup = data as unknown as BackupRow;
 
-  if (!isCurrentMasterKeySchema(backup.version) || !backup.wrapped_master_key || !backup.master_key_iv) {
-    console.warn('[MasterKey] Rejected non-current backup schema');
+  if (!backup.wrapped_master_key || !backup.master_key_iv) {
+    console.warn('[MasterKey] Rejected incomplete backup');
     return null;
   }
 
@@ -924,14 +917,13 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
 
     const { data } = await supabase
       .from('user_backups' as any)
-      .select('encrypted_blob, iv, version, backup_type')
+      .select('encrypted_blob, iv, backup_type')
       .eq('user_id', targetUserId)
       .eq('backup_type', 'account')
       .maybeSingle();
     if (!data) return 'unavailable';
 
-    const backup = data as unknown as { encrypted_blob: string; iv: string; version: number };
-    if (!isCurrentMasterKeySchema(backup.version)) return 'unavailable';
+    const backup = data as unknown as { encrypted_blob: string; iv: string };
 
     const aad = buildBackupAAD(targetUserId, 'account');
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey, aad);
@@ -980,6 +972,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       }
       _sessionRawMasterKey = result.masterKeyRaw;
       _sessionMasterKey = result.masterKey;
+      _sessionUserId = userId;
       dispatchSessionUnlocked(userId);
       await writeKeychainSnapshot(userId);
       // Re-wrap with current password if available
@@ -1008,6 +1001,79 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
     logCryptoException('restore', e, {
       severity: 'error',
       metadata: { stage: 'recovery_restore', userId, durationMs: Math.round(performance.now() - t0) },
+    });
+    return false;
+  }
+}
+
+/**
+ * Correction : le mot de passe Auth ne change jamais avant de savoir si la
+ * même Master Key peut être ré-enveloppée. Une sauvegarde existante sans clé
+ * en mémoire impose une restauration authentifiée.
+ */
+export async function inspectPasswordChangeReadiness(
+  userId: string,
+): Promise<PasswordChangeReadiness> {
+  if (_sessionUserId === userId && _sessionMasterKey && _sessionRawMasterKey) {
+    return decidePasswordChangeReadiness({
+      hasActiveMasterKey: true,
+      hasAccountBackup: false,
+      inspectionFailed: false,
+    });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('user_backups' as any)
+      .select('id')
+      .eq('user_id', userId)
+      .eq('backup_type', 'account')
+      .maybeSingle();
+    return decidePasswordChangeReadiness({
+      hasActiveMasterKey: false,
+      hasAccountBackup: Boolean(data),
+      inspectionFailed: Boolean(error),
+    });
+  } catch {
+    return decidePasswordChangeReadiness({
+      hasActiveMasterKey: false,
+      hasAccountBackup: false,
+      inspectionFailed: true,
+    });
+  }
+}
+
+/** Ré-enveloppe la Master Key active sous le nouveau mot de passe. */
+export async function rewrapMasterKeyForNewPassword(
+  newPassword: string,
+  userId: string,
+): Promise<boolean> {
+  if (
+    !newPassword ||
+    _sessionUserId !== userId ||
+    !_sessionMasterKey ||
+    !_sessionRawMasterKey
+  ) {
+    return false;
+  }
+
+  const secret = passwordSecret(newPassword, userId);
+  try {
+    const written = await uploadBackup(
+      _sessionRawMasterKey,
+      _sessionMasterKey,
+      newPassword,
+      userId,
+      'account',
+      secret,
+    );
+    if (!written) return false;
+    _sessionPassword = newPassword;
+    return true;
+  } catch (error) {
+    logCryptoException('backup', error, {
+      severity: 'error',
+      metadata: { stage: 'password_change_rewrap', userId },
     });
     return false;
   }
@@ -1170,6 +1236,8 @@ export function requestImmediateBackup(reason: string = 'critical-mutation'): vo
 /** Clear session state (on logout) */
 export function clearAccountKeySession(): void {
   _sessionMasterKey = null;
+  // Correction : on écrase les octets secrets avant d'abandonner la référence.
+  _sessionRawMasterKey?.fill(0);
   _sessionRawMasterKey = null;
   _sessionPassword = null;
   _sessionUserId = null;

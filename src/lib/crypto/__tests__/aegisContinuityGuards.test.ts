@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createSingleFlightByKey,
+  decidePasswordChangeReadiness,
   decideMasterKeyCreation,
   evaluateServerContinuityProbe,
   selectPortableAccountIdentityRows,
@@ -83,5 +84,33 @@ describe('Aegis continuity guards', () => {
     expect(selectPortableAccountIdentityRows(rows, 'account-a')).toEqual([
       { id: 'account-a', private: 'A' },
     ]);
+  });
+});
+
+describe('changement de mot de passe et continuité Master Key', () => {
+  it('autorise uniquement une Master Key active ou un compte sans coffre', () => {
+    expect(decidePasswordChangeReadiness({
+      hasActiveMasterKey: true,
+      hasAccountBackup: true,
+      inspectionFailed: false,
+    })).toBe('ready');
+    expect(decidePasswordChangeReadiness({
+      hasActiveMasterKey: false,
+      hasAccountBackup: false,
+      inspectionFailed: false,
+    })).toBe('no_backup');
+  });
+
+  it('exige la récupération et échoue fermé si le serveur est incertain', () => {
+    expect(decidePasswordChangeReadiness({
+      hasActiveMasterKey: false,
+      hasAccountBackup: true,
+      inspectionFailed: false,
+    })).toBe('recovery_required');
+    expect(decidePasswordChangeReadiness({
+      hasActiveMasterKey: false,
+      hasAccountBackup: false,
+      inspectionFailed: true,
+    })).toBe('unavailable');
   });
 });

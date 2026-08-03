@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Lock, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, Lock, CheckCircle, KeyRound } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { Button } from '@/components/ui/button';
 import PasswordStrength from '@/components/PasswordStrength';
@@ -9,16 +9,22 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { clearRecoveryFlag, detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
-import { initAccountKeySync, syncBackupToServer } from '@/lib/crypto/accountKeyBackup';
+import {
+  inspectPasswordChangeReadiness,
+  restoreWithRecoveryKey,
+  rewrapMasterKeyForNewPassword,
+} from '@/lib/crypto/accountKeyBackup';
 import loginBg from '@/assets/login-bg.png';
 
 export default function ResetPassword() {
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryKey, setRecoveryKey] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [authPasswordUpdated, setAuthPasswordUpdated] = useState(false);
 
   const [isRecovery, setIsRecovery] = useState(() => {
     const detected = detectAndStoreRecoveryFromHash();
@@ -92,7 +98,47 @@ export default function ResetPassword() {
 
     setIsLoading(true);
 
-    const { error } = await supabase.auth.updateUser({ password });
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) {
+      setIsLoading(false);
+      toast({ title: 'Session expirée', description: 'Demandez un nouveau lien.', variant: 'destructive' });
+      return;
+    }
+
+    let readiness = await inspectPasswordChangeReadiness(user.id);
+    if (readiness === 'unavailable') {
+      setIsLoading(false);
+      toast({
+        title: 'Coffre indisponible',
+        description: 'La vérification E2EE a échoué. Le mot de passe n’a pas été modifié.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (readiness === 'recovery_required') {
+      if (!recoveryKey.trim()) {
+        setIsLoading(false);
+        toast({
+          title: 'Clé de récupération requise',
+          description: 'Saisissez votre clé Aegis pour conserver vos messages chiffrés.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const restored = await restoreWithRecoveryKey(recoveryKey.trim(), user.id);
+      if (!restored) {
+        setIsLoading(false);
+        toast({ title: 'Récupération impossible', description: 'La clé Aegis est invalide.', variant: 'destructive' });
+        return;
+      }
+      readiness = 'ready';
+    }
+
+    // Correction : la mutation Auth n'arrive qu'après validation de la continuité Master Key.
+    const { error } = authPasswordUpdated
+      ? { error: null }
+      : await supabase.auth.updateUser({ password });
 
     if (error) {
       setIsLoading(false);
@@ -108,21 +154,25 @@ export default function ResetPassword() {
       return;
     }
 
-    // Re-bind the account E2EE backup to the NEW password before signing out.
-    // Without this, the Supabase password changes but the encrypted key backup
-    // can remain wrapped with the old password, breaking future restores.
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id) {
-        const status = await initAccountKeySync(password, user.id);
-        if (status === 'local_ok' || status === 'restored') {
-          await syncBackupToServer();
-        } else {
-          console.warn('[ResetPassword][E2EE] backup rewrap skipped:', status);
-        }
+    if (!authPasswordUpdated) setAuthPasswordUpdated(true);
+
+    if (readiness === 'ready') {
+      const delays = [0, 400, 1_200, 3_000];
+      let rewrapped = false;
+      for (const delay of delays) {
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+        rewrapped = await rewrapMasterKeyForNewPassword(password, user.id);
+        if (rewrapped) break;
       }
-    } catch (e) {
-      console.warn('[ResetPassword][E2EE] backup rewrap failed:', e);
+      if (!rewrapped) {
+        setIsLoading(false);
+        toast({
+          title: 'Mot de passe changé, coffre à finaliser',
+          description: 'Ne fermez pas cette page. Vérifiez le réseau puis appuyez de nouveau sur Valider.',
+          variant: 'destructive',
+        });
+        return;
+      }
     }
 
     setIsLoading(false);
@@ -231,6 +281,23 @@ export default function ResetPassword() {
                     </button>
                   </div>
                   <PasswordStrength password={password} />
+
+                  <div className="space-y-2">
+                    <Label htmlFor="recovery-key" className="flex items-center gap-2">
+                      <KeyRound className="h-4 w-4" /> Clé de récupération Aegis
+                    </Label>
+                    <Input
+                      id="recovery-key"
+                      value={recoveryKey}
+                      onChange={(event) => setRecoveryKey(event.target.value)}
+                      placeholder="Nécessaire si ce navigateur ne possède plus la Master Key"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Elle reste locale et sert uniquement à conserver les messages chiffrés pendant le changement.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
