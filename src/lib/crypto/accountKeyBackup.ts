@@ -1,5 +1,5 @@
 /**
- * Account-based Key Backup — Aegis account Master Key architecture (v7)
+ * Account-based Key Backup — single Aegis account Master Key architecture.
  * 
  * Signal-inspired invariant: one stable, random Master Key per account.
  * This browser implementation is not Signal SVR: a short PIN cannot provide
@@ -39,20 +39,24 @@ import {
   decideMasterKeyCreation,
   selectPortableAccountIdentityRows,
 } from '@/lib/crypto/aegisContinuityGuards';
+import {
+  AEGIS_MASTER_KEY_SCHEMA,
+  isCurrentMasterKeySchema,
+  masterKeyAADLabel,
+  type AegisMasterKeyBackupType,
+} from '@/lib/crypto/masterKeySchema';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
 const MASTER_KEY_LENGTH = 32;
-const BACKUP_VERSION = 7;
 const BACKUP_TYPE_ACCOUNT = 'account';
 const BACKUP_TYPE_RECOVERY = 'recovery';
 const KEYCHAIN_SNAPSHOT_PREFIX = 'forsure-e2ee-keychain-snapshot-v1:';
 
-/** Domain-separated AAD bound to userId|backupType|version (Signal SVR / WA backup style). */
-function buildBackupAAD(userId: string, backupType: 'account' | 'recovery', version: number): Uint8Array {
-  const domain = version >= 7 ? 'forsure-aegis-vault' : 'forsure-backup';
-  return new hardGlobals.TextEncoder().encode(`${domain}|${userId}|${backupType}|v${version}`);
+/** Domain-separated AAD bound to owner, purpose and the only accepted schema. */
+function buildBackupAAD(userId: string, backupType: AegisMasterKeyBackupType): Uint8Array {
+  return new hardGlobals.TextEncoder().encode(masterKeyAADLabel(userId, backupType));
 }
 
 /** Domain separator for the recovery key (mirrors passwordSecret to avoid cross-secret collisions). */
@@ -92,30 +96,20 @@ function passwordSecret(password: string, userId: string): string {
   return `${password}::forsure::${userId}`;
 }
 
-/** Wrap (encrypt) the Master Key with a wrapping key. AAD optional for backwards compat. */
-async function wrapMasterKey(masterKeyRaw: Uint8Array, wrappingKey: CryptoKey, aad?: Uint8Array): Promise<{ wrapped: string; iv: string }> {
+/** Wrap the Master Key with mandatory authenticated context. */
+async function wrapMasterKey(masterKeyRaw: Uint8Array, wrappingKey: CryptoKey, aad: Uint8Array): Promise<{ wrapped: string; iv: string }> {
   const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const params: AesGcmParams = aad
-    ? { name: 'AES-GCM', iv, additionalData: aad.slice().buffer }
-    : { name: 'AES-GCM', iv };
+  const params: AesGcmParams = { name: 'AES-GCM', iv, additionalData: aad.slice().buffer };
   // Use slice() to get a clean ArrayBuffer (no offset issues — Signal lesson)
   const ciphertext = await hardCrypto.encrypt(params, wrappingKey, masterKeyRaw.slice().buffer);
   return { wrapped: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
 }
 
-/** Unwrap (decrypt) the Master Key. Tries with AAD first, falls back without (legacy v5). */
-async function unwrapMasterKey(wrapped: string, iv: string, wrappingKey: CryptoKey, aad?: Uint8Array): Promise<Uint8Array> {
+/** Unwrap the Master Key with mandatory authenticated context. */
+async function unwrapMasterKey(wrapped: string, iv: string, wrappingKey: CryptoKey, aad: Uint8Array): Promise<Uint8Array> {
   const ivBuf = new Uint8Array(base64ToBuffer(iv));
   const ciphertext = base64ToBuffer(wrapped);
-  if (aad) {
-    try {
-      const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf, additionalData: aad.slice().buffer }, wrappingKey, ciphertext);
-      return new Uint8Array(plainBuf);
-    } catch {
-      // Fall through — legacy v5 backup without AAD
-    }
-  }
-  const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, wrappingKey, ciphertext);
+  const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf, additionalData: aad.slice().buffer }, wrappingKey, ciphertext);
   return new Uint8Array(plainBuf);
 }
 
@@ -125,28 +119,20 @@ async function importMasterKey(raw: Uint8Array): Promise<CryptoKey> {
   return hardCrypto.importKey('raw', raw.slice().buffer, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
-/** Encrypt data with the Master Key (with optional AAD). */
-async function encryptWithMasterKey(data: string, masterKey: CryptoKey, aad?: Uint8Array): Promise<{ encrypted: string; iv: string }> {
+/** Encrypt data with the Master Key and mandatory authenticated context. */
+async function encryptWithMasterKey(data: string, masterKey: CryptoKey, aad: Uint8Array): Promise<{ encrypted: string; iv: string }> {
   const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LENGTH));
   const encoded = new hardGlobals.TextEncoder().encode(data);
-  const params: AesGcmParams = aad ? { name: 'AES-GCM', iv, additionalData: aad.slice().buffer } : { name: 'AES-GCM', iv };
+  const params: AesGcmParams = { name: 'AES-GCM', iv, additionalData: aad.slice().buffer };
   const ciphertext = await hardCrypto.encrypt(params, masterKey, encoded);
   return { encrypted: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer) };
 }
 
-/** Decrypt data with the Master Key. Tries with AAD first, falls back without (legacy v5). */
-async function decryptWithMasterKey(encrypted: string, iv: string, masterKey: CryptoKey, aad?: Uint8Array): Promise<string> {
+/** Decrypt data with the Master Key and mandatory authenticated context. */
+async function decryptWithMasterKey(encrypted: string, iv: string, masterKey: CryptoKey, aad: Uint8Array): Promise<string> {
   const ivBuf = new Uint8Array(base64ToBuffer(iv));
   const ciphertext = base64ToBuffer(encrypted);
-  if (aad) {
-    try {
-      const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf, additionalData: aad.slice().buffer }, masterKey, ciphertext);
-      return new hardGlobals.TextDecoder().decode(plainBuf);
-    } catch {
-      // Fall through — legacy v5 backup without AAD
-    }
-  }
-  const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, masterKey, ciphertext);
+  const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf, additionalData: aad.slice().buffer }, masterKey, ciphertext);
   return new hardGlobals.TextDecoder().decode(plainBuf);
 }
 
@@ -317,7 +303,7 @@ async function collectAllKeys(userId: string, scope: BackupScope = 'aegis-vault'
   } catch {}
 
   data['_meta'] = {
-    version: BACKUP_VERSION,
+    version: AEGIS_MASTER_KEY_SCHEMA,
     scope,
     userId,
     createdAt: new Date().toISOString(),
@@ -375,7 +361,10 @@ async function restoreAllKeys(json: string, userId: string): Promise<void> {
   const backupVersion = Number(data?._meta?.version ?? 0);
   const backupUserId = typeof data?._meta?.userId === 'string' ? data._meta.userId : null;
 
-  if (backupVersion >= BACKUP_VERSION && backupUserId !== userId) {
+  if (!isCurrentMasterKeySchema(backupVersion)) {
+    throw new Error('Backup invalide : schéma Master Key non pris en charge');
+  }
+  if (backupUserId !== userId) {
     throw new Error('Backup invalide : propriétaire du coffre incorrect');
   }
 
@@ -595,8 +584,8 @@ async function uploadBackup(
   const keysJson = await collectAllKeys(userId, 'aegis-vault');
   if (!keysJson) return false;
 
-  // 1. Encrypt all E2EE state with Master Key (AAD-bound to userId|backupType|version)
-  const aad = buildBackupAAD(userId, backupType, BACKUP_VERSION);
+  // 1. Encrypt all E2EE state with Master Key and its authenticated context.
+  const aad = buildBackupAAD(userId, backupType);
   const { encrypted, iv: dataIv } = await encryptWithMasterKey(keysJson, masterKey, aad);
 
   // 2. Wrap Master Key with the wrapping secret (password or recovery key), AAD-bound
@@ -614,7 +603,7 @@ async function uploadBackup(
       salt: bufferToBase64(salt.buffer),
       wrapped_master_key: wrapped,
       master_key_iv: mkIv,
-      version: BACKUP_VERSION,
+      version: AEGIS_MASTER_KEY_SCHEMA,
       backup_type: backupType,
       created_at: new Date().toISOString(),
     }, { onConflict: 'user_id,backup_type' });
@@ -631,7 +620,7 @@ async function uploadBackup(
         userId,
         digest,
         lastSyncAt: Date.now(),
-        backupVersion: BACKUP_VERSION,
+        backupVersion: AEGIS_MASTER_KEY_SCHEMA,
       });
     } catch (e) {
       console.warn('[MasterKey] sentinel write failed:', e);
@@ -661,51 +650,19 @@ async function downloadAndRestore(
 
   const backup = data as unknown as BackupRow;
 
-  // v5+ Master Key format (v6 adds AAD; unwrap/decrypt fall back to no-AAD for v5)
-  if (backup.version >= 5 && backup.wrapped_master_key && backup.master_key_iv) {
-    const saltBuf = new Uint8Array(base64ToBuffer(backup.salt));
-    const wrappingKey = await deriveWrappingKey(wrappingSecret, saltBuf);
-    const aad = backup.version >= 6 ? buildBackupAAD(userId, backupType, backup.version) : undefined;
-    const masterKeyRaw = await unwrapMasterKey(backup.wrapped_master_key, backup.master_key_iv, wrappingKey, aad);
-    const masterKey = await importMasterKey(masterKeyRaw);
-    const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, masterKey, aad);
-    await restoreAllKeys(json, userId);
-    return { masterKeyRaw, masterKey };
+  if (!isCurrentMasterKeySchema(backup.version) || !backup.wrapped_master_key || !backup.master_key_iv) {
+    console.warn('[MasterKey] Rejected non-current backup schema');
+    return null;
   }
 
-  // Legacy v3/v4: password directly encrypts the state (no Master Key)
-  if (backup.version >= 3 && backupType === 'account') {
-    const saltBuf = new Uint8Array(base64ToBuffer(backup.salt));
-    const ivBuf = new Uint8Array(base64ToBuffer(backup.iv));
-    const key = await deriveWrappingKey(wrappingSecret, saltBuf);
-    const ciphertext = base64ToBuffer(backup.encrypted_blob);
-    const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
-    const json = new hardGlobals.TextDecoder().decode(plainBuf);
-    await restoreAllKeys(json, userId);
-    // Migrate: generate Master Key and re-upload in v5 format
-    const mkRaw = generateMasterKey();
-    const mk = await importMasterKey(mkRaw);
-    console.log('[MasterKey] Migrating legacy v' + backup.version + ' → v5');
-    await uploadBackup(mkRaw, mk, _sessionPassword || '', userId, 'account', wrappingSecret).catch(() => {});
-    return { masterKeyRaw: mkRaw, masterKey: mk };
-  }
-
-  // Legacy v2: recovery key format
-  if (backup.version === 2 && backupType === 'recovery') {
-    const saltBuf = new Uint8Array(base64ToBuffer(backup.salt));
-    const ivBuf = new Uint8Array(base64ToBuffer(backup.iv));
-    const key = await deriveWrappingKey(wrappingSecret, saltBuf);
-    const ciphertext = base64ToBuffer(backup.encrypted_blob);
-    const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
-    const json = new hardGlobals.TextDecoder().decode(plainBuf);
-    await restoreAllKeys(json, userId);
-    const mkRaw = generateMasterKey();
-    const mk = await importMasterKey(mkRaw);
-    return { masterKeyRaw: mkRaw, masterKey: mk };
-  }
-
-  console.warn('[MasterKey] Incompatible backup version:', backup.version);
-  return null;
+  const saltBuf = new Uint8Array(base64ToBuffer(backup.salt));
+  const wrappingKey = await deriveWrappingKey(wrappingSecret, saltBuf);
+  const aad = buildBackupAAD(userId, backupType);
+  const masterKeyRaw = await unwrapMasterKey(backup.wrapped_master_key, backup.master_key_iv, wrappingKey, aad);
+  const masterKey = await importMasterKey(masterKeyRaw);
+  const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, masterKey, aad);
+  await restoreAllKeys(json, userId);
+  return { masterKeyRaw, masterKey };
 }
 
 // ── Public API ──
@@ -974,9 +931,9 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
     if (!data) return 'unavailable';
 
     const backup = data as unknown as { encrypted_blob: string; iv: string; version: number };
-    if (backup.version < 5) return 'unavailable';
+    if (!isCurrentMasterKeySchema(backup.version)) return 'unavailable';
 
-    const aad = backup.version >= 6 ? buildBackupAAD(targetUserId, 'account', backup.version) : undefined;
+    const aad = buildBackupAAD(targetUserId, 'account');
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey, aad);
     await restoreAllKeys(json, targetUserId);
     if (!(await hasLocalKeys())) return 'error';
@@ -1008,11 +965,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       errorMessage: 'Attempting recovery-key restore',
       metadata: { userId },
     });
-    // v6+ uses recoverySecret(...) (domain-separated). Legacy v5 used the raw recovery key.
-    let result = await downloadAndRestore(userId, 'recovery', recoverySecret(recoveryKey, userId)).catch(() => null);
-    if (!result) {
-      result = await downloadAndRestore(userId, 'recovery', recoveryKey).catch(() => null);
-    }
+    const result = await downloadAndRestore(userId, 'recovery', recoverySecret(recoveryKey, userId)).catch(() => null);
     if (result) {
       // Post-restore validation: ensure local identity actually exists now
       const validated = await hasLocalKeys();

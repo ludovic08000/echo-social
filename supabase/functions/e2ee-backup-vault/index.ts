@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { checkRateLimit as checkRateLimitDB } from '../_shared/rate-limit.ts';
 
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
+const AEGIS_MASTER_KEY_SCHEMA = 7;
 const RATE_LIMIT = 12;
 const RATE_WINDOW_SECONDS = 60;
 const ALLOWED_ORIGINS = [
@@ -68,7 +69,7 @@ function validateEnvelope(value: unknown): EncryptedBackupEnvelope | null {
   if (!isNonEmptyString(row.salt, 512)) return null;
   if (!isNonEmptyString(row.wrapped_master_key, 4096)) return null;
   if (!isNonEmptyString(row.master_key_iv, 256)) return null;
-  if (!Number.isInteger(row.version) || Number(row.version) < 1 || Number(row.version) > 100) return null;
+  if (row.version !== AEGIS_MASTER_KEY_SCHEMA) return null;
   if (row.backup_type !== 'account' && row.backup_type !== 'recovery') return null;
   if (typeof row.created_at !== 'string' || Number.isNaN(Date.parse(row.created_at))) return null;
 
@@ -303,6 +304,13 @@ Deno.serve(async (req) => {
         return json(req, { error: 'Invalid backup mirror object' }, 502);
       }
       const parsed = JSON.parse(new TextDecoder().decode(bytes));
+      if (
+        parsed?.schema === 'forsure-e2ee-r2-v1'
+        && parsed?.backup?.version !== AEGIS_MASTER_KEY_SCHEMA
+      ) {
+        await r2Request(config, 'DELETE', objectKey);
+        return json(req, { ok: true, found: false });
+      }
       const backup = parsed?.schema === 'forsure-e2ee-r2-v1'
         ? validateEnvelope(parsed.backup)
         : null;

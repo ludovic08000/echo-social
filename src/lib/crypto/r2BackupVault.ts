@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { isCurrentMasterKeySchema } from '@/lib/crypto/masterKeySchema';
 
 export interface EncryptedAccountBackupEnvelope {
   encrypted_blob: string;
@@ -20,7 +21,7 @@ function isEnvelope(value: unknown): value is EncryptedAccountBackupEnvelope {
     typeof row.salt === 'string' && row.salt.length > 0 &&
     typeof row.wrapped_master_key === 'string' && row.wrapped_master_key.length > 0 &&
     typeof row.master_key_iv === 'string' && row.master_key_iv.length > 0 &&
-    Number.isInteger(row.version) && Number(row.version) > 0 &&
+    isCurrentMasterKeySchema(row.version) &&
     (row.backup_type === 'account' || row.backup_type === 'recovery') &&
     typeof row.created_at === 'string' && !Number.isNaN(Date.parse(row.created_at))
   );
@@ -68,7 +69,7 @@ export async function mirrorCurrentBackupToR2(
 }
 
 /**
- * Backup creation is asynchronous in the legacy account module. Retry a few
+ * Backup creation is asynchronous. Retry a few
  * bounded times so the first successful row is mirrored without delaying login.
  */
 export function scheduleBackupMirrorToR2(
