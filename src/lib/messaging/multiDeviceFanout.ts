@@ -134,7 +134,7 @@ export async function preloadDeviceCopies(messageIds: string[]): Promise<void> {
   const task = (async () => {
     for (let offset = 0; offset < missing.length; offset += 100) {
       const batch = missing.slice(offset, offset + 100);
-      const { data, error } = await (supabase as any).rpc('get_device_copies_for_messages', {
+      const { data, error } = await supabase.rpc('get_device_copies_for_messages', {
         p_message_ids: batch,
         p_device_id: myDeviceId,
       });
@@ -418,11 +418,30 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
   hasTargets: boolean;
   routeVersion: string;
 }> {
-  if (isDeviceIdTemporary()) return { rows: [], hasTargets: false, routeVersion: '' };
+  const startedAt = Date.now();
+  const baseTrace = {
+    direction: 'send' as const,
+    component: 'device_fanout',
+    messageId: input.messageId,
+    conversationId: input.conversationId,
+  };
+  traceE2EE({ ...baseTrace, stage: 'ROUTE_SNAPSHOT', outcome: 'start' });
+  if (isDeviceIdTemporary()) {
+    traceE2EE({ ...baseTrace, stage: 'ROUTE_SNAPSHOT', outcome: 'error', errorCode: 'AEGIS_TEMPORARY_DEVICE_ID' }, 'warn');
+    return { rows: [], hasTargets: false, routeVersion: '' };
+  }
   const senderDeviceId = getCurrentDeviceId();
 
   const route = await resolveFanoutRouteSnapshot(input.conversationId, input.senderUserId);
   const targets = route.targets;
+  traceE2EE({
+    ...baseTrace,
+    stage: 'ROUTE_SNAPSHOT',
+    outcome: targets.length > 0 ? 'ok' : 'error',
+    targetCount: targets.length,
+    blockMs: Date.now() - startedAt,
+    errorCode: targets.length === 0 ? 'E2EE_NO_SECURE_TARGET' : undefined,
+  }, targets.length > 0 ? 'info' : 'warn');
   if (targets.length === 0) {
     // Registration/trust publication can finish between two outbox attempts;
     // never keep a negative route cached across the next bounded retry.
@@ -431,7 +450,12 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
   }
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
-    if (!dev.devicePublicKey) return null;
+    const targetStartedAt = Date.now();
+    traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_ENCRYPT', outcome: 'start', deviceId: senderDeviceId, peerDeviceId: dev.deviceId });
+    if (!dev.devicePublicKey) {
+      traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_ENCRYPT', outcome: 'error', peerDeviceId: dev.deviceId, errorCode: 'DEVICE_PUBLIC_KEY_MISSING' }, 'warn');
+      return null;
+    }
 
     try {
       const encrypted = await encryptPlaintextForDeviceTarget({
@@ -452,8 +476,10 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
           peerUserId: dev.userId,
           peerDeviceId: dev.deviceId,
         }).catch(() => false);
+        traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_ENCRYPT', outcome: 'error', peerDeviceId: dev.deviceId, blockMs: Date.now() - targetStartedAt, errorCode: 'AEGIS_DEVICE_ROUTE_UNAVAILABLE' }, 'warn');
         return null;
       }
+      traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_ENCRYPT', outcome: 'ok', peerDeviceId: dev.deviceId, blockMs: Date.now() - targetStartedAt });
       return {
         message_id: input.messageId,
         recipient_user_id: dev.userId,
@@ -478,12 +504,14 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
         peerDeviceId: dev.deviceId,
         metadata: { stage: 'fanout_target_encrypt' },
       });
+      traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_ENCRYPT', outcome: 'error', peerDeviceId: dev.deviceId, blockMs: Date.now() - targetStartedAt, errorCode: e instanceof Error ? e.message : String(e) }, 'error');
       return null;
     }
   });
 
   const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
   if (rows.length !== targets.length) {
+    traceE2EE({ ...baseTrace, stage: 'FANOUT_EXACT_COVERAGE', outcome: 'error', targetCount: targets.length, copyCount: rows.length, errorCode: 'AEGIS_PARTIAL_DEVICE_FANOUT' }, 'error');
     logCryptoError({
       severity: 'warning',
       context: 'fanout',
@@ -501,6 +529,7 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
     // in the durable outbox until every canonical device has its capsule.
     throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
   }
+  traceE2EE({ ...baseTrace, stage: 'FANOUT_EXACT_COVERAGE', outcome: 'ok', targetCount: targets.length, copyCount: rows.length, blockMs: Date.now() - startedAt });
   return { rows, hasTargets: true, routeVersion: route.version };
 }
 
@@ -557,7 +586,12 @@ export async function tryReadDeviceCopy(
 ): Promise<string | null> {
   const myDeviceId = getCurrentDeviceId();
   const userId = await getCachedAuthUserId();
-  if (!userId || isDeviceIdTemporary()) return null;
+  const baseTrace = { direction: 'receive' as const, component: 'device_copy_reader', messageId, deviceId: myDeviceId };
+  traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_LOOKUP', outcome: 'start' });
+  if (!userId || isDeviceIdTemporary()) {
+    traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_LOOKUP', outcome: 'error', errorCode: !userId ? 'AUTH_USER_MISSING' : 'AEGIS_TEMPORARY_DEVICE_ID' }, 'warn');
+    return null;
+  }
 
   try {
     const cacheKey = copyCacheKey(userId, myDeviceId, messageId);
@@ -571,9 +605,13 @@ export async function tryReadDeviceCopy(
         cached.encrypted_body,
       );
       const alreadyDecrypted = decryptedCapsuleCache.get(capsuleKey);
-      if (alreadyDecrypted !== undefined) return alreadyDecrypted;
+      if (alreadyDecrypted !== undefined) {
+        traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_DECRYPT', outcome: 'ok', cache: 'memory', peerDeviceId: cached.sender_device_id });
+        return alreadyDecrypted;
+      }
       const plaintext = (await tryDecryptCopy(cached, userId, myDeviceId)).plaintext;
       if (plaintext !== null) rememberDecryptedCapsule(capsuleKey, plaintext);
+      traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_DECRYPT', outcome: plaintext !== null ? 'ok' : 'error', cache: 'memory', peerDeviceId: cached.sender_device_id, errorCode: plaintext === null ? 'DEVICE_COPY_DECRYPT_NULL' : undefined }, plaintext !== null ? 'info' : 'warn');
       return plaintext;
     }
     if (hasCachedResult && cached === null) {
@@ -586,6 +624,7 @@ export async function tryReadDeviceCopy(
 
     const rows = (await loadDeviceCopyRows(messageId, userId, myDeviceId))
       .filter(row => !expectedSenderUserId || row.sender_user_id === expectedSenderUserId);
+    traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_LOOKUP', outcome: rows.length > 0 ? 'ok' : 'retry', cache: 'network', copyCount: rows.length, transport: 'supabase' }, rows.length > 0 ? 'info' : 'warn');
 
     if (rows.length === 0 && options.requestRetry) {
       // A historical message can legitimately predate this DeviceID. Repair
@@ -618,6 +657,14 @@ export async function tryReadDeviceCopy(
       const alreadyDecrypted = decryptedCapsuleCache.get(capsuleKey);
       if (alreadyDecrypted !== undefined) return alreadyDecrypted;
       const attempt = await tryDecryptCopy(row, userId, myDeviceId);
+      traceE2EE({
+        ...baseTrace,
+        stage: 'DEVICE_COPY_DECRYPT',
+        outcome: attempt.plaintext !== null ? 'ok' : 'error',
+        cache: 'network',
+        peerDeviceId: row.sender_device_id,
+        errorCode: attempt.reason,
+      }, attempt.plaintext !== null ? 'info' : 'warn');
       if (attempt.plaintext !== null) {
         rememberDecryptedCapsule(capsuleKey, attempt.plaintext);
         return attempt.plaintext;
@@ -642,6 +689,7 @@ export async function tryReadDeviceCopy(
     }
     deviceCopyCache.set(cacheKey, null);
     deviceCopyMissAt.set(cacheKey, Date.now());
+    traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_UNAVAILABLE', outcome: 'retry', cache: 'miss' }, 'warn');
     return null;
   } catch (error) {
     logCryptoException('decrypt', error, {
@@ -649,6 +697,7 @@ export async function tryReadDeviceCopy(
       myDeviceId,
       metadata: { messageId, stage: 'aegis_device_key_capsule' },
     });
+    traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_LOOKUP', outcome: 'error', errorCode: error instanceof Error ? error.message : String(error) }, 'error');
     return null;
   }
 }

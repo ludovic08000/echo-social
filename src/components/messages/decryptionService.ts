@@ -315,6 +315,7 @@ export async function resolvePlaintext(opts: {
     level: 'info' | 'warn' | 'error' = 'info',
   ) => traceE2EE({
     direction: 'receive',
+    component: 'decryption_service',
     stage,
     messageId,
     elapsedMs: Date.now() - traceStartedAt,
@@ -334,7 +335,7 @@ export async function resolvePlaintext(opts: {
   const key = cacheKey(messageId, body);
   const cached = cache.get(key);
   if (cached) {
-    trace('DECRYPT_MEMORY_CACHE_HIT');
+    trace('PLAINTEXT_RESOLVE', { outcome: 'ok', cache: 'memory' });
     if (messageId) {
       void getCachedAuthUserId()
         .then((userId) => userId && acknowledgeAegisMessage(userId, messageId))
@@ -345,7 +346,7 @@ export async function resolvePlaintext(opts: {
 
   const persisted = await loadPersistedOutcome(messageId, body).catch(() => null);
   if (persisted) {
-    trace('DECRYPT_LOCAL_CACHE_HIT');
+    trace('PLAINTEXT_RESOLVE', { outcome: 'ok', cache: 'disk' });
     cache.set(key, persisted);
     if (messageId) {
       void getCachedAuthUserId()
@@ -355,7 +356,10 @@ export async function resolvePlaintext(opts: {
     return persisted;
   }
 
-  if (negCacheHit(key)) return stickyOrNull(messageId, body);
+  if (negCacheHit(key)) {
+    trace('PLAINTEXT_RESOLVE', { outcome: 'skip', cache: 'miss' });
+    return stickyOrNull(messageId, body);
+  }
 
   let promise = inflight.get(key);
   if (!promise) {
@@ -364,7 +368,7 @@ export async function resolvePlaintext(opts: {
       void decrypt;
 
       if (messageId) {
-        trace('DEVICE_COPY_LOOKUP_START');
+        trace('DEVICE_COPY_LOOKUP', { outcome: 'start', cache: 'network' });
         const currentUserId = await getCachedAuthUserId().catch(() => null);
         if (!senderId) senderId = await getSenderId(messageId);
         if (senderId) {
@@ -373,14 +377,18 @@ export async function resolvePlaintext(opts: {
               requestRetry: true,
             }).catch(() => null);
             if (copyText !== null) {
-              trace('DEVICE_COPY_FOUND');
+              trace('DEVICE_COPY_LOOKUP', { outcome: 'ok', cache: 'network' });
+              const openStartedAt = Date.now();
+              trace('CONTENT_AES_DECRYPT', { outcome: 'start' });
               const plaintext = await openAegisMessage(body, copyText, {
                 messageId,
                 conversationId: aegisEnvelope.conversationId,
                 senderId,
               });
               if (plaintext !== null) {
-                trace('MESSAGE_DECRYPTED', {
+                trace('CONTENT_AES_DECRYPT', {
+                  outcome: 'ok',
+                  blockMs: Date.now() - openStartedAt,
                   conversationId: aegisEnvelope.conversationId,
                 });
                 const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);
@@ -395,8 +403,11 @@ export async function resolvePlaintext(opts: {
                 return cacheAndPersist(key, body, outcome, messageId, currentUserId);
               }
             }
-          } catch {
-            /* attachment download/decrypt remains retryable */
+          } catch (error) {
+            trace('DEVICE_COPY_DECRYPT', {
+              outcome: 'error',
+              errorCode: error instanceof Error ? error.message : String(error),
+            }, 'error');
           }
         }
 
@@ -413,6 +424,7 @@ export async function resolvePlaintext(opts: {
               messageId,
             ).catch(() => null);
             if (parentArchive !== null) {
+              trace('ARCHIVE_RECOVERY', { outcome: 'ok', cache: 'network' });
               const outcome = await buildAuthenticatedOutcomeFromText(parentArchive, messageId);
               return cacheAndPersist(key, body, outcome, messageId, currentUserId);
             }
@@ -424,13 +436,14 @@ export async function resolvePlaintext(opts: {
             userId: currentUserId,
           }).catch(() => null);
           if (archived !== null) {
+            trace('ARCHIVE_RECOVERY', { outcome: 'ok', cache: 'network' });
             const outcome = await buildAuthenticatedOutcomeFromText(archived, messageId);
             return cacheAndPersist(key, body, outcome, messageId, currentUserId);
           }
         }
       }
 
-      trace('DEVICE_COPY_UNAVAILABLE', {}, 'warn');
+      trace('PLAINTEXT_RESOLVE', { outcome: 'retry', cache: 'miss', errorCode: 'DEVICE_COPY_UNAVAILABLE' }, 'warn');
       negCache.set(key, Date.now());
       return stickyOrNull(messageId, body);
     })();

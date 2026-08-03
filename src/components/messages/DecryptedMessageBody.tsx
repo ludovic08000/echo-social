@@ -14,6 +14,7 @@ import {
 import { isImageMediaLabel, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt';
 import type { DecryptResult } from '@/hooks/useE2EE';
 import { scheduleBubbleRecovery } from '@/lib/messaging/bubbleRecoveryScheduler';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 function parseVoiceMessage(text: string): { url: string; duration: number } | null {
   const m1 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|(\d+)$/);
@@ -45,6 +46,24 @@ interface DecryptedMessageBodyProps {
 const SILENT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000];
 const RECOVERY_UNAVAILABLE_AFTER_MS = 15_000;
 
+function traceBubble(
+  messageId: string | undefined,
+  hasCachedPlaintext: boolean,
+  stage: string,
+  outcome: 'start' | 'ok' | 'retry' | 'skip' | 'error',
+  errorCode?: string,
+): void {
+  traceE2EE({
+    direction: 'receive',
+    component: 'message_bubble',
+    stage,
+    outcome,
+    messageId,
+    cache: hasCachedPlaintext ? 'memory' : undefined,
+    errorCode,
+  }, outcome === 'error' ? 'error' : outcome === 'retry' ? 'warn' : 'info');
+}
+
 function initialOutcomeFor(
   body: string,
   messageId?: string,
@@ -74,6 +93,8 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   hasMedia,
 }: DecryptedMessageBodyProps) {
   const initial = initialOutcomeFor(body, messageId, cachedPlaintext);
+  const logBubble = (stage: string, outcome: 'start' | 'ok' | 'retry' | 'skip' | 'error', errorCode?: string) =>
+    traceBubble(messageId, Boolean(cachedPlaintext), stage, outcome, errorCode);
   const [outcome, setOutcome] = useState<DecryptionOutcome | null>(initial.outcome);
   const [pending, setPending] = useState(initial.pending);
   const [retryTick, setRetryTick] = useState(0);
@@ -97,10 +118,12 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       setOutcome(sticky);
       setPending(false);
       setRecoveryExpired(false);
+      logBubble('BUBBLE_STICKY_PLAINTEXT', 'ok');
       return;
     }
     setOutcome(null);
     setPending(true);
+    logBubble('BUBBLE_WAITING', 'retry', 'PLAINTEXT_NOT_READY');
   };
 
   useEffect(() => {
@@ -124,9 +147,10 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     }
     const timer = window.setTimeout(() => {
       setRecoveryExpired(true);
+      traceBubble(messageId, Boolean(cachedPlaintext), 'BUBBLE_RECOVERY_TIMEOUT', 'retry', 'RECOVERY_UI_TIMEOUT');
     }, RECOVERY_UNAVAILABLE_AFTER_MS);
     return () => window.clearTimeout(timer);
-  }, [body, outcome, pending, retryTick]);
+  }, [body, cachedPlaintext, messageId, outcome, pending, retryTick]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -134,12 +158,13 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       if (detail?.messageId && messageId && detail.messageId !== messageId) return;
 
       clearNegativeCache(messageId, body);
+      traceBubble(messageId, Boolean(cachedPlaintext), 'BUBBLE_RETRY_SIGNAL', 'retry');
       setRecoveryExpired(false);
       setRetryTick((tick) => tick + 1);
     };
     window.addEventListener('forsure-decrypt-retry', handler);
     return () => window.removeEventListener('forsure-decrypt-retry', handler);
-  }, [messageId, body, pending]);
+  }, [messageId, body, cachedPlaintext, pending]);
 
   useEffect(() => {
     if (!looksEncrypted(body) || !pending || outcome !== null) {
@@ -157,10 +182,11 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       () => {
         silentRetryAttemptRef.current = attempt + 1;
         clearNegativeCache(messageId, body);
+        traceBubble(messageId, Boolean(cachedPlaintext), 'BUBBLE_SCHEDULED_RETRY', 'retry');
         setRetryTick((tick) => tick + 1);
       },
     );
-  }, [body, messageId, outcome, pending, retryTick]);
+  }, [body, cachedPlaintext, messageId, outcome, pending, retryTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,6 +197,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
       setOutcome(next);
       setPending(false);
       setRecoveryExpired(false);
+      logBubble('BUBBLE_RENDER_READY', 'ok');
       if (next.mediaKeyB64 && messageId) {
         setMediaKey(messageId, next.mediaKeyB64, isVideoMediaLabel(next.text));
       }
@@ -208,8 +235,9 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
         }
         commit(next);
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
+        logBubble('BUBBLE_RESOLVE_FAILED', 'error', error instanceof Error ? error.message : String(error));
         keepOrWait();
       });
 
@@ -218,6 +246,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   }, [body, messageId, senderId, archiveBody, cachedPlaintext, retryTick, refreshKey]);
 
   const retryNow = () => {
+    logBubble('BUBBLE_MANUAL_RETRY', 'retry');
     clearNegativeCache(messageId, body);
     setRecoveryExpired(false);
     silentRetryAttemptRef.current = 0;

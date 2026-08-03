@@ -7,6 +7,7 @@ import {
   rollbackFanoutSessionTransaction,
 } from '@/lib/messaging/fanoutSessionTransaction';
 import { callAegisServer } from '@/lib/messaging/aegisTransport';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 type RpcError = {
   code?: string | null;
@@ -187,6 +188,18 @@ export async function sendMessageWithAegisRetry(
   let copies = args.initialCopies;
   let routeVersion = args.routeVersion;
   let retriedStaleRoute = false;
+  const startedAt = Date.now();
+  const trace = (stage: string, details: Partial<Parameters<typeof traceE2EE>[0]> = {}, level: 'info' | 'warn' | 'error' = 'info') => traceE2EE({
+    direction: 'send',
+    component: 'send_rpc',
+    stage,
+    messageId: args.messageId,
+    conversationId: args.conversationId,
+    deviceId: args.senderDeviceId,
+    elapsedMs: Date.now() - startedAt,
+    transport: 'aegis_server',
+    ...details,
+  }, level);
 
   if (
     copies.length === 0 ||
@@ -194,6 +207,7 @@ export async function sendMessageWithAegisRetry(
       copy.message_id !== args.messageId || !isAegisDeviceCopyWire(copy.encrypted_body),
     )
   ) {
+    trace('CLIENT_REQUEST_VALIDATE', { outcome: 'error', copyCount: copies.length, errorCode: 'AEGIS_CLIENT_DEVICE_COPY_WIRE_REJECTED' }, 'error');
     await rollbackFanoutSessionTransaction(args.messageId);
     return {
       data: null,
@@ -208,10 +222,13 @@ export async function sendMessageWithAegisRetry(
   }
 
   for (let staleAttempt = 0; staleAttempt < 2; staleAttempt += 1) {
+    const attemptStartedAt = Date.now();
+    trace('RPC_COMMIT_ATTEMPT', { outcome: 'start', retryCount: staleAttempt, copyCount: copies.length });
     const response = await callAuthoritative(args, copies, SEND_TRANSPORT_TIMEOUT_MS);
     const committedId = committedMessageId(response, args.messageId);
 
     if (committedId) {
+      trace('RPC_COMMIT_RECEIPT', { outcome: 'ok', retryCount: staleAttempt, copyCount: copies.length, blockMs: Date.now() - attemptStartedAt });
       commitFanoutSessionTransaction(args.messageId);
       return {
         data: committedId,
@@ -227,6 +244,7 @@ export async function sendMessageWithAegisRetry(
     // Route rejection is authoritative only because the server serializes the
     // UUID. It cannot race a still-running call for the same message.
     if (isAegisDeviceListStale(responseError)) {
+      trace('ROUTE_STALE', { outcome: staleAttempt === 0 ? 'retry' : 'error', retryCount: staleAttempt, errorCode: errorText(responseError) }, 'warn');
       await rollbackFanoutSessionTransaction(args.messageId);
       if (staleAttempt === 0) {
         retriedStaleRoute = true;
@@ -235,6 +253,7 @@ export async function sendMessageWithAegisRetry(
         copies = rebuilt.copies;
         routeVersion = rebuilt.routeVersion;
         args = { ...args, routeVersion };
+        trace('ROUTE_REBUILT', { outcome: 'ok', copyCount: copies.length, retryCount: 1 });
         continue;
       }
       return {
@@ -247,9 +266,13 @@ export async function sendMessageWithAegisRetry(
     }
 
     if (isAegisAmbiguousTransportFailure(responseError)) {
+      trace('RPC_RESULT_AMBIGUOUS', { outcome: 'retry', errorCode: errorText(responseError), blockMs: Date.now() - attemptStartedAt }, 'warn');
+      const confirmationStartedAt = Date.now();
+      trace('RPC_CONFIRMATION', { outcome: 'start', copyCount: copies.length });
       const confirmation = await callAuthoritative(args, copies, SEND_CONFIRM_TIMEOUT_MS);
       const confirmedId = committedMessageId(confirmation, args.messageId);
       if (confirmedId) {
+        trace('RPC_CONFIRMATION', { outcome: 'ok', copyCount: copies.length, blockMs: Date.now() - confirmationStartedAt });
         commitFanoutSessionTransaction(args.messageId);
         return {
           data: confirmedId,
@@ -261,6 +284,7 @@ export async function sendMessageWithAegisRetry(
       }
 
       const confirmationError = confirmation.error ?? unverifiedReceiptError();
+      trace('RPC_CONFIRMATION', { outcome: 'error', copyCount: copies.length, blockMs: Date.now() - confirmationStartedAt, errorCode: errorText(confirmationError) }, 'error');
       if (!isAegisAmbiguousTransportFailure(confirmationError)) {
         // The server-side UUID lock guarantees that this rejection happened
         // after any earlier call completed or rolled back.
@@ -276,6 +300,7 @@ export async function sendMessageWithAegisRetry(
     }
 
     await rollbackFanoutSessionTransaction(args.messageId);
+    trace('RPC_COMMIT_REJECTED', { outcome: 'error', copyCount: copies.length, errorCode: errorText(responseError), blockMs: Date.now() - attemptStartedAt }, 'error');
     return {
       data: null,
       error: responseError,
