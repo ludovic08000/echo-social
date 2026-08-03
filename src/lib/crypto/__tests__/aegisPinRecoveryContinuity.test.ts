@@ -93,6 +93,19 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(accountBackup).not.toContain('release_backup_pin_blob');
   });
 
+  it('never mistakes orphan Ratchet state for a recoverable account identity', () => {
+    const accountBackup = source('src/lib/crypto/accountKeyBackup.ts');
+    const identityProbeStart = accountBackup.indexOf('export async function hasLocalKeys');
+    const digestStart = accountBackup.indexOf('export async function computeLocalCryptoDigest');
+    const identityProbe = accountBackup.slice(identityProbeStart, digestStart);
+    const sync = source('src/hooks/useAccountKeySync.ts');
+
+    expect(identityProbe).toContain('loadIdentityKeys(userId)');
+    expect(identityProbe).toContain('hasWrappedKeys(userId)');
+    expect(identityProbe).not.toContain("countSideDB('forsure-ratchet'");
+    expect(sync).toContain('hasLocalKeys(user.id)');
+  });
+
   it('does not reuse a stale peer key after a failed forced refresh', () => {
     const peerCache = source('src/lib/crypto/peerKeyCache.ts');
     expect(peerCache).toContain("if (options?.forceRefresh) _peerKeyCache.delete(peerUserId)");

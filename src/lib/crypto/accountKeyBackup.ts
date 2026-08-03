@@ -324,7 +324,7 @@ async function writeKeychainSnapshot(userId: string, keysJson?: string): Promise
 }
 
 export async function syncKeychainSnapshotFromLocal(userId: string): Promise<boolean> {
-  if (!(await hasLocalKeys())) return false;
+  if (!(await hasLocalKeys(userId))) return false;
   return writeKeychainSnapshot(userId);
 }
 
@@ -493,7 +493,25 @@ async function restoreAllKeys(json: string, userId: string): Promise<void> {
 /**
  * Check if local E2EE keys exist.
  */
-export async function hasLocalKeys(): Promise<boolean> {
+export async function hasLocalKeys(userId?: string): Promise<boolean> {
+  // Correction : une session Ratchet orpheline n'est jamais une identite de
+  // compte. Seule l'identite brute du compte ou sa copie locale verrouillee
+  // par PIN autorise l'application a sauter une restauration.
+  if (userId) {
+    try {
+      const { loadIdentityKeys } = await import('@/lib/crypto/keyManager');
+      if (await loadIdentityKeys(userId)) return true;
+    } catch {
+      // Continue avec la copie locale verrouillee par PIN.
+    }
+    try {
+      const { hasWrappedKeys } = await import('@/lib/crypto/pinWrap');
+      return await hasWrappedKeys(userId);
+    } catch {
+      return false;
+    }
+  }
+
   try {
     const db = await openE2EEDB();
     let rawCount = 0;
@@ -511,11 +529,6 @@ export async function hasLocalKeys(): Promise<boolean> {
   try {
     const pinCount = await countSideDB('forsure-pin-wrap', 'wrapped-keys');
     if (pinCount > 0) return true;
-  } catch {}
-
-  try {
-    const ratchetCount = await countSideDB('forsure-ratchet', 'ratchet-states');
-    if (ratchetCount > 0) return true;
   } catch {}
 
   return false;
@@ -847,7 +860,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
   const t0 = performance.now();
 
   try {
-    const hasLocal = await hasLocalKeys();
+    const hasLocal = targetUserId ? await hasLocalKeys(targetUserId) : false;
     if (hasLocal) {
       console.log('[MasterKey] Active-session restore skipped: local crypto already present');
       return 'local_ok';
@@ -867,7 +880,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
       return 'unavailable';
     }
 
-    const validated = await hasLocalKeys();
+    const validated = await hasLocalKeys(targetUserId);
     if (!validated) {
       console.error('[MasterKey] ⛔ Active-session restore succeeded but no local identity was restored');
       logCryptoError({
@@ -912,7 +925,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'restored' | 'local_ok' | 'unavailable' | 'error'> {
   const targetUserId = userId ?? _sessionUserId;
   try {
-    if (await hasLocalKeys()) return 'local_ok';
+    if (targetUserId && await hasLocalKeys(targetUserId)) return 'local_ok';
     if (!_sessionMasterKey || !targetUserId) return 'unavailable';
 
     const { data } = await supabase
@@ -928,7 +941,7 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
     const aad = buildBackupAAD(targetUserId, 'account');
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey, aad);
     await restoreAllKeys(json, targetUserId);
-    if (!(await hasLocalKeys())) return 'error';
+    if (!(await hasLocalKeys(targetUserId))) return 'error';
 
     await writeKeychainSnapshot(targetUserId);
     console.log('[MasterKey] ✅ Silent re-hydration via in-RAM Master Key');
@@ -960,7 +973,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
     const result = await downloadAndRestore(userId, 'recovery', recoverySecret(recoveryKey, userId)).catch(() => null);
     if (result) {
       // Post-restore validation: ensure local identity actually exists now
-      const validated = await hasLocalKeys();
+      const validated = await hasLocalKeys(userId);
       if (!validated) {
         console.error('[MasterKey] ⛔ Recovery restore reported success but no local identity found');
         logCryptoError({

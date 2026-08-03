@@ -78,7 +78,7 @@ export function useAccountKeySync() {
         ]);
 
         const [localKeysPresent, rawIdentityPresent, wrappedKeysPresent] = await Promise.all([
-          hasLocalKeys(),
+          hasLocalKeys(user.id),
           hasRawIdentityKeys(user.id),
           hasWrappedKeys(user.id),
         ]);
@@ -188,7 +188,7 @@ export function useAccountKeySync() {
       try {
         const snap = getSnapshot(user.id);
         if (snap.state === 'storage_checking') {
-          transition(user.id, await hasLocalKeys() ? 'identity_loaded' : 'backup_restore_required', 'boot.fallback');
+          transition(user.id, await hasLocalKeys(user.id) ? 'identity_loaded' : 'backup_restore_required', 'boot.fallback');
         }
       } catch {
         // The state-machine fallback is best-effort.
@@ -212,7 +212,7 @@ export function useAccountKeySync() {
     const checkForChanges = async () => {
       try {
         // Watchdog first: if IndexedDB lost the identity, recover NOW.
-        if (!(await hasLocalKeys())) {
+        if (!(await hasLocalKeys(user.id))) {
           // Try keychain → in-RAM master key → password (all silent).
           let recovered = false;
           try {
@@ -262,7 +262,7 @@ export function useAccountKeySync() {
     let unsubscribeApp: (() => void) | null = null;
 
     const attemptSilentRestore = async (origin: string): Promise<boolean> => {
-      if (await hasLocalKeys()) return true;
+      if (await hasLocalKeys(user.id)) return true;
       // 1) Native Keychain snapshot (survives IndexedDB purge on iOS)
       try {
         const k = await restoreKeysFromKeychainSnapshot(user.id);
@@ -416,7 +416,7 @@ export function useAccountKeySync() {
       try {
         if (cancelled) return;
         const done = sessionStorage.getItem(RESYNC_DONE_KEY);
-        if (!(await hasLocalKeys())) return;
+        if (!(await hasLocalKeys(user.id))) return;
         const did = await hydrateDeviceId();
         const { data: row } = await supabase
           .from('user_devices')
