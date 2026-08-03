@@ -68,7 +68,7 @@ describe('exact account identity pinning', () => {
       saveKnownFingerprintServer('peer-pinned', 'FINGERPRINT-1', true),
     ).resolves.toBe(true);
 
-    expect(getKnownFingerprints()['peer-pinned']).toBe('FINGERPRINT-1');
+    expect(getKnownFingerprints()['observer-1:peer-pinned']).toBe('FINGERPRINT-1');
 
     mocks.maybeSingle.mockResolvedValue({
       data: { fingerprint: 'FINGERPRINT-1' },
@@ -79,7 +79,7 @@ describe('exact account identity pinning', () => {
       checkFingerprintChangeWithServer('observer-1', 'peer-pinned', 'FINGERPRINT-2'),
     ).resolves.toEqual({ changed: true, previousFp: 'FINGERPRINT-1' });
 
-    expect(getKnownFingerprints()['peer-pinned']).toBe('FINGERPRINT-1');
+    expect(getKnownFingerprints()['observer-1:peer-pinned']).toBe('FINGERPRINT-1');
     expect(mocks.maybeSingle).toHaveBeenCalledTimes(1);
     expect(mocks.recordIdentityChange).toHaveBeenCalledTimes(1);
   });
@@ -94,13 +94,13 @@ describe('exact account identity pinning', () => {
       checkFingerprintChangeWithServer('observer-2', 'peer-restored', 'SERVER-PINNED'),
     ).resolves.toEqual({ changed: false, previousFp: null });
 
-    expect(getKnownFingerprints()['peer-restored']).toBe('SERVER-PINNED');
+    expect(getKnownFingerprints()['observer-2:peer-restored']).toBe('SERVER-PINNED');
 
     await expect(
       checkFingerprintChangeWithServer('observer-2', 'peer-restored', 'SERVER-REPLACEMENT'),
     ).resolves.toEqual({ changed: true, previousFp: 'SERVER-PINNED' });
 
-    expect(getKnownFingerprints()['peer-restored']).toBe('SERVER-PINNED');
+    expect(getKnownFingerprints()['observer-2:peer-restored']).toBe('SERVER-PINNED');
     expect(mocks.maybeSingle).toHaveBeenCalledTimes(2);
     expect(mocks.recordIdentityChange).toHaveBeenCalledTimes(1);
   });
@@ -110,8 +110,8 @@ describe('exact account identity pinning', () => {
       saveKnownFingerprintServer('peer-local', 'LOCAL-PINNED', true),
     ).resolves.toBe(true);
 
-    expect(checkFingerprintChange('peer-local', 'LOCAL-PINNED')).toBe(false);
-    expect(checkFingerprintChange('peer-local', 'LOCAL-REPLACEMENT')).toBe(true);
+    expect(checkFingerprintChange('observer-1', 'peer-local', 'LOCAL-PINNED')).toBe(false);
+    expect(checkFingerprintChange('observer-1', 'peer-local', 'LOCAL-REPLACEMENT')).toBe(true);
   });
 
   it('still treats first contact as TOFU but records later identity replacement', async () => {
@@ -121,7 +121,7 @@ describe('exact account identity pinning', () => {
       checkFingerprintChangeWithServer('observer-3', 'peer-new', 'FIRST-FINGERPRINT'),
     ).resolves.toEqual({ changed: false, previousFp: null });
 
-    saveKnownFingerprint('peer-new', 'FIRST-FINGERPRINT');
+    saveKnownFingerprint('observer-3', 'peer-new', 'FIRST-FINGERPRINT');
     mocks.maybeSingle.mockResolvedValue({
       data: { fingerprint: 'FIRST-FINGERPRINT' },
       error: null,

@@ -39,3 +39,47 @@ export function createSingleFlightByKey<T>() {
     return flight;
   };
 }
+
+export interface MasterKeyContinuityProbe {
+  complete: boolean;
+  localIdentityFingerprint: string | null;
+  activeIdentityFingerprint: string | null;
+  hasAccountBackup: boolean;
+  hasRecoveryBackup: boolean;
+  hasPinBackup: boolean;
+}
+
+export type MasterKeyCreationDecision =
+  | 'create_first_key'
+  | 'recovery_required'
+  | 'identity_mismatch'
+  | 'no_local_identity'
+  | 'unavailable';
+
+export function decideMasterKeyCreation(
+  probe: MasterKeyContinuityProbe,
+): MasterKeyCreationDecision {
+  if (!probe.complete) return 'unavailable';
+  if (
+    probe.hasAccountBackup ||
+    probe.hasRecoveryBackup ||
+    probe.hasPinBackup
+  ) {
+    return 'recovery_required';
+  }
+  if (!probe.localIdentityFingerprint) return 'no_local_identity';
+  if (
+    probe.activeIdentityFingerprint &&
+    probe.activeIdentityFingerprint !== probe.localIdentityFingerprint
+  ) {
+    return 'identity_mismatch';
+  }
+  return 'create_first_key';
+}
+
+export function selectPortableAccountIdentityRows<T extends { id?: unknown }>(
+  rows: T[],
+  userId: string,
+): T[] {
+  return rows.filter((row) => row?.id === userId);
+}

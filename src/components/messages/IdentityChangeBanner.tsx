@@ -79,7 +79,7 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
       );
       if (!persisted) throw new Error('FINGERPRINT_ACK_PERSISTENCE_FAILED');
 
-      saveKnownFingerprint(peerUserId, latest.newFingerprint);
+      saveKnownFingerprint(observerUserId, peerUserId, latest.newFingerprint);
       invalidateFingerprintCheckCache(peerUserId);
       await acknowledgeAllForPeer(observerUserId, peerUserId);
       setEvents([]);

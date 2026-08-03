@@ -6,6 +6,7 @@ const sql = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260730090000_aegis_clean_rebuild.sql'),
   'utf8',
 ).toLowerCase();
+const normalizedSql = sql.replace(/\r\n/g, '\n');
 
 describe('Aegis clean transport migration', () => {
   it('serializes every call for one stable message UUID before confirmation', () => {
@@ -43,7 +44,7 @@ describe('Aegis clean transport migration', () => {
 
   it('stores the digest in the same transaction as parent and device copies', () => {
     expect(sql).toContain('add column if not exists aegis_request_digest text');
-    expect(sql).toContain('archive_body, aegis_route_version,\n    aegis_request_digest');
+    expect(normalizedSql).toContain('archive_body, aegis_route_version,\n    aegis_request_digest');
     expect(sql).toContain('insert into public.message_device_copies');
     expect(sql).toContain('notify pgrst, \'reload schema\'');
   });

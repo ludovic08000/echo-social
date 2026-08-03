@@ -1,10 +1,14 @@
 /**
- * Account-based Key Backup — Signal-style Master Key architecture (v5)
+ * Account-based Key Backup — Aegis account Master Key architecture (v7)
  * 
- * Architecture inspired by Signal SVR (Secure Value Recovery):
+ * Signal-inspired invariant: one stable, random Master Key per account.
+ * This browser implementation is not Signal SVR: a short PIN cannot provide
+ * offline-bruteforce resistance without an enclave/HSM-backed online service.
  * 
  * 1. A random 32-byte MASTER KEY is generated once per account
- * 2. The Master Key encrypts all E2EE material (identity, ratchets, prekeys, etc.)
+ * 2. The portable vault contains only the permanent account identity and the
+ *    account-scoped fingerprint continuity cache. Ratchets, prekeys and device
+ *    identities remain device-local (native Keychain/Keystore snapshot only).
  * 3. The Master Key itself is "wrapped" (encrypted) by TWO parallel mechanisms:
  *    a. PASSWORD wrapping: PBKDF2(password + userId) → wraps Master Key → stored as backup_type='account'
  *    b. RECOVERY KEY wrapping: PBKDF2(recoveryKey) → wraps Master Key → stored as backup_type='recovery'
@@ -30,7 +34,11 @@ import {
   type PlaintextCacheExportEntry,
 } from '@/lib/crypto/plaintextStore';
 import { runPostRestoreSync, type RestoreReason } from '@/lib/crypto/postRestoreSync';
-import { createSingleFlightByKey } from '@/lib/crypto/aegisContinuityGuards';
+import {
+  createSingleFlightByKey,
+  decideMasterKeyCreation,
+  selectPortableAccountIdentityRows,
+} from '@/lib/crypto/aegisContinuityGuards';
 
 const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 32;
@@ -251,7 +259,7 @@ async function putAllInStore(db: IDBDatabase, storeName: string, records: any[])
 type BackupScope = 'aegis-vault' | 'device-keychain';
 
 /** Collect portable account material or physical-device recovery material. */
-async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<string | null> {
+async function collectAllKeys(userId: string, scope: BackupScope = 'aegis-vault'): Promise<string | null> {
   const data: Record<string, any> = {};
   const includeDeviceSecrets = scope === 'device-keychain';
 
@@ -261,7 +269,7 @@ async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<strin
       if (!includeDeviceSecrets && storeName !== 'identity-keys') continue;
       const rows = await getAllFromStore(db, storeName);
       data[`e2ee:${storeName}`] = storeName === 'identity-keys' && !includeDeviceSecrets
-        ? rows.filter((row: any) => !String(row?.id ?? '').startsWith('device-kx::'))
+        ? selectPortableAccountIdentityRows(rows, userId)
         : rows;
     }
     // db.close() skipped — shared singleton, see indexedDb.ts
@@ -283,12 +291,16 @@ async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<strin
 
   try {
     const fps = localStorage.getItem('forsure-known-fps');
-    if (fps) data['fingerprints'] = fps;
+    if (fps) {
+      const parsed = JSON.parse(fps) as Record<string, unknown>;
+      const scoped = Object.fromEntries(Object.entries(parsed).filter(
+        ([key, value]) => key.startsWith(`${userId}:`) && typeof value === 'string',
+      ));
+      if (Object.keys(scoped).length > 0) data['fingerprints'] = JSON.stringify(scoped);
+    }
   } catch {}
 
-  const hasIdentity = data['e2ee:identity-keys']?.some(
-    (row: any) => !String(row?.id ?? '').startsWith('device-kx::'),
-  );
+  const hasIdentity = data['e2ee:identity-keys']?.some((row: any) => row?.id === userId);
   if (!hasIdentity) return null;
 
   if (includeDeviceSecrets) {
@@ -297,10 +309,9 @@ async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<strin
     } catch {}
   }
 
-  try {
-    // Signal/WhatsApp-style secure backup: keep a small decryptable history
-    // cache inside the encrypted Master-Key backup so the latest messages and
-    // media keys remain readable after iOS/WebView purges IndexedDB.
+  if (includeDeviceSecrets) try {
+    // Decrypted history is confined to the native device snapshot. The
+    // portable account vault is identity continuity, not a chat backup.
     const plaintextCache = await exportPlaintextCache();
     if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
   } catch {}
@@ -308,6 +319,7 @@ async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<strin
   data['_meta'] = {
     version: BACKUP_VERSION,
     scope,
+    userId,
     createdAt: new Date().toISOString(),
     stores: Object.keys(data).filter(k => k !== '_meta'),
   };
@@ -317,7 +329,7 @@ async function collectAllKeys(scope: BackupScope = 'aegis-vault'): Promise<strin
 
 async function writeKeychainSnapshot(userId: string, keysJson?: string): Promise<boolean> {
   try {
-    const snapshot = keysJson ?? await collectAllKeys('device-keychain');
+    const snapshot = keysJson ?? await collectAllKeys(userId, 'device-keychain');
     if (!snapshot) return false;
     return await secureSetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`, snapshot);
   } catch (e) {
@@ -336,8 +348,8 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
     const snapshot = await secureGetSecret(`${KEYCHAIN_SNAPSHOT_PREFIX}${userId}`);
     if (!snapshot) return 'unavailable';
 
-    await restoreAllKeys(snapshot);
-    const validated = await hasLocalKeys();
+    await restoreAllKeys(snapshot, userId);
+    const validated = await hasLocalAccountIdentity(userId);
     if (!validated) return 'error';
 
     console.log('[MasterKey] ✅ Keys restored from iOS Keychain snapshot');
@@ -357,12 +369,18 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
 /**
  * Restore all local E2EE keys from backup — TRULY ATOMIC.
  */
-async function restoreAllKeys(json: string): Promise<void> {
+async function restoreAllKeys(json: string, userId: string): Promise<void> {
   const data = JSON.parse(json);
   const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
+  const backupVersion = Number(data?._meta?.version ?? 0);
+  const backupUserId = typeof data?._meta?.userId === 'string' ? data._meta.userId : null;
+
+  if (backupVersion >= BACKUP_VERSION && backupUserId !== userId) {
+    throw new Error('Backup invalide : propriétaire du coffre incorrect');
+  }
 
   const hasIdentityKeys = data['e2ee:identity-keys']?.some(
-    (row: any) => !String(row?.id ?? '').startsWith('device-kx::'),
+    (row: any) => row?.id === userId,
   );
   if (!hasIdentityKeys) {
     throw new Error('Backup invalide : aucune clé d\'identité');
@@ -384,12 +402,18 @@ async function restoreAllKeys(json: string): Promise<void> {
       const storeName = key.replace('e2ee:', '');
       if (!isDeviceKeychain && storeName !== 'identity-keys') continue;
       const safeRecords = storeName === 'identity-keys' && !isDeviceKeychain
-        ? records.filter((row: any) => !String(row?.id ?? '').startsWith('device-kx::'))
+        ? selectPortableAccountIdentityRows(records, userId)
         : records;
       const db = await openE2EEDB();
       if (db.objectStoreNames.contains(storeName)) {
         const existing = await getAllFromStore(db, storeName);
-        await putAllInStore(db, storeName, safeRecords);
+        const recordsToWrite = storeName === 'identity-keys' && !isDeviceKeychain
+          ? [
+            ...existing.filter((row: any) => row?.id !== userId),
+            ...safeRecords,
+          ]
+          : safeRecords;
+        await putAllInStore(db, storeName, recordsToWrite);
         const sn = storeName;
         const ed = existing;
         rollbackOps.push(async () => {
@@ -451,7 +475,12 @@ async function restoreAllKeys(json: string): Promise<void> {
     // Phase 5: Fingerprints
     if (data['fingerprints']) {
       const oldFps = localStorage.getItem('forsure-known-fps');
-      localStorage.setItem('forsure-known-fps', data['fingerprints']);
+      const current = JSON.parse(oldFps || '{}') as Record<string, unknown>;
+      const restored = JSON.parse(data['fingerprints']) as Record<string, unknown>;
+      const scoped = Object.fromEntries(Object.entries(restored).filter(
+        ([key, value]) => key.startsWith(`${userId}:`) && typeof value === 'string',
+      ));
+      localStorage.setItem('forsure-known-fps', JSON.stringify({ ...current, ...scoped }));
       rollbackOps.push(async () => {
         if (oldFps) localStorage.setItem('forsure-known-fps', oldFps);
         else localStorage.removeItem('forsure-known-fps');
@@ -563,7 +592,7 @@ async function uploadBackup(
   backupType: 'account' | 'recovery',
   wrappingSecret: string,
 ): Promise<boolean> {
-  const keysJson = await collectAllKeys('aegis-vault');
+  const keysJson = await collectAllKeys(userId, 'aegis-vault');
   if (!keysJson) return false;
 
   // 1. Encrypt all E2EE state with Master Key (AAD-bound to userId|backupType|version)
@@ -640,7 +669,7 @@ async function downloadAndRestore(
     const masterKeyRaw = await unwrapMasterKey(backup.wrapped_master_key, backup.master_key_iv, wrappingKey, aad);
     const masterKey = await importMasterKey(masterKeyRaw);
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, masterKey, aad);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, userId);
     return { masterKeyRaw, masterKey };
   }
 
@@ -652,7 +681,7 @@ async function downloadAndRestore(
     const ciphertext = base64ToBuffer(backup.encrypted_blob);
     const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
     const json = new hardGlobals.TextDecoder().decode(plainBuf);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, userId);
     // Migrate: generate Master Key and re-upload in v5 format
     const mkRaw = generateMasterKey();
     const mk = await importMasterKey(mkRaw);
@@ -669,7 +698,7 @@ async function downloadAndRestore(
     const ciphertext = base64ToBuffer(backup.encrypted_blob);
     const plainBuf = await hardCrypto.decrypt({ name: 'AES-GCM', iv: ivBuf }, key, ciphertext);
     const json = new hardGlobals.TextDecoder().decode(plainBuf);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, userId);
     const mkRaw = generateMasterKey();
     const mk = await importMasterKey(mkRaw);
     return { masterKeyRaw: mkRaw, masterKey: mk };
@@ -686,6 +715,48 @@ async function hasLocalAccountIdentity(userId: string): Promise<boolean> {
   return Boolean(await loadIdentityKeys(userId));
 }
 
+interface RemoteMasterKeyContinuity {
+  complete: boolean;
+  activeFingerprint: string | null;
+  hasAccountBackup: boolean;
+  hasRecoveryBackup: boolean;
+  hasPinBackup: boolean;
+}
+
+async function inspectRemoteMasterKeyContinuity(
+  userId: string,
+): Promise<RemoteMasterKeyContinuity> {
+  const [backupsResult, identityResult, pinResult] = await Promise.all([
+    supabase
+      .from('user_backups' as any)
+      .select('backup_type')
+      .eq('user_id', userId),
+    supabase
+      .from('user_public_keys' as any)
+      .select('fingerprint')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .maybeSingle(),
+    supabase.rpc('has_backup_pin' as any, { _user_id: userId } as any),
+  ]);
+
+  const backupTypes = new Set(
+    ((backupsResult.data ?? []) as Array<{ backup_type?: unknown }>)
+      .map((row) => row.backup_type)
+      .filter((value): value is string => typeof value === 'string'),
+  );
+
+  return {
+    complete: !backupsResult.error && !identityResult.error && !pinResult.error,
+    activeFingerprint: identityResult.error
+      ? null
+      : ((identityResult.data as { fingerprint?: string } | null)?.fingerprint ?? null),
+    hasAccountBackup: backupTypes.has(BACKUP_TYPE_ACCOUNT),
+    hasRecoveryBackup: backupTypes.has(BACKUP_TYPE_RECOVERY),
+    hasPinBackup: !pinResult.error && pinResult.data === true,
+  };
+}
+
 async function initAccountKeySyncOnce(
   password: string,
   userId: string,
@@ -694,6 +765,7 @@ async function initAccountKeySyncOnce(
   try {
     if (_sessionUserId && _sessionUserId !== userId) {
       _sessionMasterKey = null;
+      _sessionRawMasterKey?.fill(0);
       _sessionRawMasterKey = null;
     }
     _sessionPassword = password;
@@ -735,9 +807,53 @@ async function initAccountKeySyncOnce(
       return 'restored';
     }
 
-    if (!localIdentityBefore) {
+    const continuity = await inspectRemoteMasterKeyContinuity(userId);
+    const { loadIdentityKeys } = await import('@/lib/crypto/keyManager');
+    const localIdentity = await loadIdentityKeys(userId);
+    const creationDecision = decideMasterKeyCreation({
+      complete: continuity.complete,
+      localIdentityFingerprint: localIdentity?.fingerprint ?? null,
+      activeIdentityFingerprint: continuity.activeFingerprint,
+      hasAccountBackup: continuity.hasAccountBackup,
+      hasRecoveryBackup: continuity.hasRecoveryBackup,
+      hasPinBackup: continuity.hasPinBackup,
+    });
+
+    if (creationDecision === 'unavailable') {
+      logCryptoError({
+        severity: 'error', context: 'backup', errorCode: 'MASTER_KEY_CONTINUITY_UNAVAILABLE',
+        errorMessage: 'Master Key creation refused because server continuity inspection was incomplete',
+        metadata: { userId },
+      });
+      return 'error';
+    }
+
+    // If another recovery mechanism already references a Master Key, absence
+    // of the password-wrapped account row is damage/recovery state, never proof
+    // that a new key may be generated.
+    if (creationDecision === 'recovery_required') {
+      logCryptoError({
+        severity: 'critical', context: 'backup', errorCode: 'MASTER_KEY_RECOVERY_REQUIRED',
+        errorMessage: 'Existing recovery evidence forbids replacement Master Key generation',
+        metadata: { userId },
+      });
+      return 'error';
+    }
+
+    if (creationDecision === 'no_local_identity') {
       return 'no_backup';
     }
+
+    if (creationDecision === 'identity_mismatch') {
+      logCryptoError({
+        severity: 'critical', context: 'backup', errorCode: 'MASTER_KEY_IDENTITY_MISMATCH',
+        errorMessage: 'Master Key creation refused because account identity continuity did not match',
+        metadata: { userId },
+      });
+      return 'error';
+    }
+
+    if (creationDecision !== 'create_first_key') return 'error';
 
     const mkRaw = generateMasterKey();
     const mk = await importMasterKey(mkRaw);
@@ -866,7 +982,7 @@ export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'re
 
     const aad = backup.version >= 6 ? buildBackupAAD(targetUserId, 'account', backup.version) : undefined;
     const json = await decryptWithMasterKey(backup.encrypted_blob, backup.iv, _sessionMasterKey, aad);
-    await restoreAllKeys(json);
+    await restoreAllKeys(json, targetUserId);
     if (!(await hasLocalKeys())) return 'error';
 
     await writeKeychainSnapshot(targetUserId);

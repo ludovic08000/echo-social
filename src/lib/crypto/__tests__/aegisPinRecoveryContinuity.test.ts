@@ -54,7 +54,7 @@ describe('Aegis PIN recovery and identity continuity', () => {
     const banner = source('src/components/messages/IdentityChangeBanner.tsx');
     const tracker = source('src/lib/crypto/fingerprintTracker.ts');
     const serverCommit = banner.indexOf('const persisted = await saveKnownFingerprintServer');
-    const localCommit = banner.indexOf('saveKnownFingerprint(peerUserId, latest.newFingerprint)');
+    const localCommit = banner.indexOf('saveKnownFingerprint(observerUserId, peerUserId, latest.newFingerprint)');
     const ledgerCommit = banner.indexOf('await acknowledgeAllForPeer(observerUserId, peerUserId)');
     expect(serverCommit).toBeGreaterThan(-1);
     expect(localCommit).toBeGreaterThan(serverCommit);
@@ -62,7 +62,8 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(banner).toContain('FINGERPRINT_ACK_PERSISTENCE_FAILED');
     expect(banner).toContain("reason: 'fingerprint_acknowledged_by_user'");
     expect(tracker).toContain('): Promise<boolean>');
-    expect(tracker).toContain('Confirm exactly the fingerprint shown to the user');
+    expect(tracker).toContain('confirms the');
+    expect(tracker).toContain('exact account fingerprint currently displayed');
     expect(tracker).toContain('previousFingerprint && previousFingerprint !== currentFingerprint');
     expect(tracker).not.toContain('MANUAL_TRUST_CONTACTS_KEY');
     expect(tracker).not.toContain('isManuallyTrustedContact');
@@ -84,6 +85,9 @@ describe('Aegis PIN recovery and identity continuity', () => {
     const pinBackup = source('src/lib/crypto/aegisPinBackup.ts');
     expect(accountBackup).toContain('runAccountKeyInitSingleFlight');
     expect(accountBackup).toContain('hasLocalAccountIdentity');
+    expect(accountBackup).toContain('decideMasterKeyCreation');
+    expect(accountBackup).toContain('row?.id === userId');
+    expect(accountBackup).toContain("backupUserId !== userId");
     expect(accountBackup).toContain('Sync refused: authoritative account Master Key session is unavailable');
     expect(pinBackup).not.toContain('syncBackupToServer');
   });
