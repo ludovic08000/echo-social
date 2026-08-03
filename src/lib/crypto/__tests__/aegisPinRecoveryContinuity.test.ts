@@ -119,6 +119,22 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(bootstrap).toContain('runWithoutUnhandledRejection(userId)');
   });
 
+  it('recreates one identity and one password-wrapped Master Key after the preproduction reset', () => {
+    const auth = source('src/lib/auth.tsx');
+    const reset = source('supabase/migrations/20260803160000_reset_unrecoverable_preproduction_e2ee.sql');
+
+    expect(auth).toContain("if (accountStatus === 'no_backup')");
+    expect(auth).toContain('await getOrCreateIdentityKeys(userId)');
+    expect(auth.match(/await initAccountKeySync\(password, userId\)/g)).toHaveLength(2);
+    expect(reset).toContain('delete from public.messages;');
+    expect(reset).toContain('delete from public.user_devices;');
+    expect(reset).toContain('delete from public.user_public_keys;');
+    expect(reset).toContain('delete from public.user_backups;');
+    expect(reset.indexOf('delete from public.messages;')).toBeLessThan(
+      reset.indexOf('delete from public.user_public_keys;'),
+    );
+  });
+
   it('does not reuse a stale peer key after a failed forced refresh', () => {
     const peerCache = source('src/lib/crypto/peerKeyCache.ts');
     expect(peerCache).toContain("if (options?.forceRefresh) _peerKeyCache.delete(peerUserId)");

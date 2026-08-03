@@ -16,6 +16,7 @@ import {
   scheduleBackupMirrorToR2,
 } from '@/lib/crypto/r2BackupVault';
 import { primeAuthUserId } from '@/lib/crypto/peerKeyCache';
+import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManagerSafe';
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
@@ -126,6 +127,14 @@ async function runPostSignInSetup(password: string, userId: string): Promise<voi
   try {
     accountStatus = await initAccountKeySync(password, userId);
     console.log(`[AUTH][E2EE] initAccountKeySync status=${accountStatus}`);
+
+    if (accountStatus === 'no_backup') {
+      // Correction : apres la remise a zero de preproduction, le mot de passe
+      // authentifie cree une seule identite avant la Master Key et son coffre.
+      await getOrCreateIdentityKeys(userId);
+      accountStatus = await initAccountKeySync(password, userId);
+      console.log(`[AUTH][E2EE] initAccountKeySync after identity reset status=${accountStatus}`);
+    }
   } catch (error) {
     console.warn('[AUTH][E2EE] account Master Key initialization failed:', error);
   }
