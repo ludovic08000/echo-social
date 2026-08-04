@@ -85,6 +85,41 @@ async function handleDeviceSpkUpdate(payload: KeyChangePayload, selfUserId: stri
   }
 }
 
+/** Drop a peer-device session as soon as that device is revoked or deactivated. */
+async function handleDeviceRevocation(payload: KeyChangePayload, selfUserId: string): Promise<void> {
+  try {
+    const newRow = payload?.new;
+    const oldRow = payload?.old;
+    const row = (newRow && typeof newRow === 'object' ? newRow : oldRow) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return;
+
+    const revokedNow =
+      payload?.eventType === 'DELETE' ||
+      (Boolean(row.revoked_at) && !oldRow?.revoked_at) ||
+      (row.is_active === false && oldRow?.is_active !== false);
+    if (!revokedNow) return;
+
+    const peerUserId = row.user_id as string | undefined;
+    const peerDeviceId = row.device_id as string | undefined;
+    if (!peerUserId || !peerDeviceId || peerUserId === selfUserId) return;
+
+    const myDeviceId = (() => {
+      try { return getCurrentDeviceId(); } catch { return null; }
+    })();
+    if (!myDeviceId) return;
+
+    await invalidateDeviceSession(selfUserId, myDeviceId, peerUserId, peerDeviceId);
+    console.log('[RT_KEYS] peer device revoked → session invalidated', {
+      peer: peerUserId.slice(0, 8),
+      device: peerDeviceId.slice(0, 8),
+    });
+  } catch (e) {
+    console.warn('[RT_KEYS] handleDeviceRevocation failed:', e);
+  }
+}
+
 export interface RealtimeKeySyncOptions {
   userId: string;
 }
