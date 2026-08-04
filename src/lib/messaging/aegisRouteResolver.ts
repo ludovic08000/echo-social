@@ -16,6 +16,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { verifySignedDeviceList, type SignedDeviceEntry } from '@/lib/crypto/signedDeviceList';
 import type { DeviceDescriptor } from '@/e2ee-session/types';
+import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 type RouteDeviceRow = {
   device_id: string;
