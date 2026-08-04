@@ -37,6 +37,10 @@ export function E2EERestorePromptDialog() {
   const [password, setPassword] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
   const [tab, setTab] = useState<'password' | 'recovery'>('password');
+  // Invariant : on ne demande un mot de passe que si une sauvegarde restaurable
+  // existe réellement côté serveur. Sinon, seule la réinitialisation explicite
+  // peut débloquer le compte.
+  const [mode, setMode] = useState<'restore' | 'reset'>('restore');
 
   useEffect(() => () => releaseRecoveryDialog(DIALOG_OWNER), []);
 
@@ -51,11 +55,26 @@ export function E2EERestorePromptDialog() {
         // Une inspection locale en erreur ne doit pas masquer la restauration.
       }
       if (cancelled) return;
+
+      const inspection = await inspectAccountCryptoState(user.id);
+      if (cancelled) return;
+      if (inspection.state === 'RESTORABLE_IDENTITY') {
+        setMode('restore');
+      } else if (inspection.state === 'UNRECOVERABLE_SERVER_IDENTITY') {
+        setMode('reset');
+      } else {
+        // READY / NEW_ACCOUNT / LEGACY / INCONSISTENT : aucun mot de passe ne
+        // débloquerait quoi que ce soit ici.
+        return;
+      }
+
       // Un seul ecran de recuperation peut etre visible a la fois.
       if (!acquireRecoveryDialog(DIALOG_OWNER)) return;
-      console.warn('[E2EERestore] prompting user to restore keys', detail);
+      console.warn('[E2EERestore] prompting user', inspection.state, detail);
       setOpen(true);
     };
+
+
 
 
     const onNeeded = async (event: Event) => {
