@@ -363,6 +363,8 @@ export async function createRepeatablePreKeyEnvelope(args: {
         peerInitialDhPubB64: bundle.signedPrekey,
         isInitiator: true,
         peerSpkId: bundle.signedPrekeyId,
+        selfIkPubB64: senderIdentityKeyB64,
+        peerIkPubB64: bundle.identityKey,
       },
     );
 
@@ -481,6 +483,8 @@ export async function unwrapRepeatablePreKeyEnvelope(args: {
         peerSpkId: parsed.spkId,
         selfInitialDhPrivJwk: spkPrivJwk,
         selfInitialDhPubB64: bufferToBase64(spkPubRaw as ArrayBuffer),
+        selfIkPubB64: myIdentityKeyB64,
+        peerIkPubB64: parsed.senderIdentityKeyB64,
       },
     );
 
