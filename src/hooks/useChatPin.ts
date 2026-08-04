@@ -352,6 +352,11 @@ export function useChatPin() {
   });
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pinModeRef = useRef<PinMode>('every_open');
+  // Invariant corrigé : un déverrouillage réussi reste valable jusqu'à un
+  // verrouillage explicite. Une simple ré-inspection (clés restaurées, identité
+  // prête) ne doit plus refermer le volet PIN juste après la saisie du code.
+  const unlockedRef = useRef(false);
+
 
   useEffect(() => {
     let cancelled = false;
