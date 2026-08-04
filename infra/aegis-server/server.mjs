@@ -8,7 +8,7 @@ const ROUTES = new Map([
   ['/v1/rpc/aegis_ack_device_messages', 'aegis_ack_device_messages'],
 ]);
 
-class GatewayError extends Error {
+export class GatewayError extends Error {
   constructor(code, status, message) {
     super(message);
     this.name = 'GatewayError';
@@ -23,6 +23,15 @@ function parsePositiveInteger(value, fallback, minimum = 1, maximum = Number.MAX
   return Math.min(Math.max(Math.trunc(parsed), minimum), maximum);
 }
 
+function parseList(value) {
+  return new Set(
+    String(value || '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
 export function loadAegisConfig(env = process.env) {
   const supabaseUrl = String(env.SUPABASE_URL || '').replace(/\/+$/, '');
   const supabaseAnonKey = String(env.SUPABASE_ANON_KEY || '');
@@ -34,12 +43,8 @@ export function loadAegisConfig(env = process.env) {
     port: parsePositiveInteger(env.PORT, 8787, 0, 65_535),
     supabaseUrl,
     supabaseAnonKey,
-    allowedOrigins: new Set(
-      String(env.AEGIS_ALLOWED_ORIGINS || env.AEGIS_ALLOWED_ORIGIN || '')
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
+    allowedOrigins: parseList(env.AEGIS_ALLOWED_ORIGINS || env.AEGIS_ALLOWED_ORIGIN),
+    allowedHosts: parseList(env.AEGIS_ALLOWED_HOSTS || env.AEGIS_ALLOWED_HOST),
     maxBodyBytes: parsePositiveInteger(env.AEGIS_MAX_BODY_BYTES, 1_048_576, 1_024, 10_485_760),
     upstreamTimeoutMs: parsePositiveInteger(env.AEGIS_UPSTREAM_TIMEOUT_MS, 20_000, 100, 120_000),
   };
@@ -58,12 +63,22 @@ function pathnameOf(requestUrl) {
   }
 }
 
+function normalizedHost(value) {
+  return String(value || '').trim().toLowerCase().replace(/:\d+$/, '');
+}
+
+function hostAllowed(config, host) {
+  return !config.allowedHosts || config.allowedHosts.size === 0
+    || config.allowedHosts.has(normalizedHost(host));
+}
+
 function originAllowed(config, origin) {
-  return config.allowedOrigins.size === 0 || config.allowedOrigins.has(origin);
+  return config.allowedOrigins.size === 0 || config.allowedOrigins.has(String(origin).toLowerCase());
 }
 
 function corsHeaders(config, origin, requestId) {
-  const allowed = origin && config.allowedOrigins.has(origin) ? origin : '';
+  const normalizedOrigin = String(origin || '').toLowerCase();
+  const allowed = normalizedOrigin && config.allowedOrigins.has(normalizedOrigin) ? origin : '';
   return {
     ...(allowed ? { 'access-control-allow-origin': allowed, vary: 'Origin' } : {}),
     'access-control-allow-headers': 'authorization, content-type, x-request-id',
@@ -81,7 +96,34 @@ function writeJson(response, config, origin, requestId, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function parsedBodyToBuffer(body) {
+  if (Buffer.isBuffer(body)) return body;
+  if (typeof body === 'string') return Buffer.from(body, 'utf8');
+  try {
+    return Buffer.from(JSON.stringify(body ?? {}), 'utf8');
+  } catch {
+    throw new GatewayError('INVALID_JSON', 400, 'Request body must be valid JSON.');
+  }
+}
+
+function decodeJsonBuffer(raw) {
+  if (raw.length === 0) return {};
+  try {
+    return JSON.parse(raw.toString('utf8'));
+  } catch {
+    throw new GatewayError('INVALID_JSON', 400, 'Request body must be valid JSON.');
+  }
+}
+
 async function readJson(request, maxBodyBytes) {
+  if (request.body !== undefined) {
+    const raw = parsedBodyToBuffer(request.body);
+    if (raw.length > maxBodyBytes) {
+      throw new GatewayError('BODY_TOO_LARGE', 413, 'Request body exceeds the configured limit.');
+    }
+    return { body: decodeJsonBuffer(raw), bodyBytes: raw.length };
+  }
+
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
@@ -92,13 +134,8 @@ async function readJson(request, maxBodyBytes) {
     chunks.push(chunk);
   }
 
-  if (size === 0) return { body: {}, bodyBytes: 0 };
-  const raw = Buffer.concat(chunks).toString('utf8');
-  try {
-    return { body: JSON.parse(raw), bodyBytes: size };
-  } catch {
-    throw new GatewayError('INVALID_JSON', 400, 'Request body must be valid JSON.');
-  }
+  const raw = Buffer.concat(chunks);
+  return { body: decodeJsonBuffer(raw), bodyBytes: size };
 }
 
 function parseUpstreamPayload(text) {
@@ -123,77 +160,54 @@ function logRecord(logger, level, event, fields = {}) {
   });
 }
 
-export function createAegisServer({
+export async function handleAegisRequest(request, response, {
   config = loadAegisConfig(),
   fetchImpl = globalThis.fetch,
   logger = defaultLogger,
+  pathOverride,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl must be a function');
 
-  return createServer(async (request, response) => {
-    const startedAt = performance.now();
-    const requestId = normalizeRequestId(request.headers['x-request-id']);
-    const origin = String(request.headers.origin || '');
-    const path = pathnameOf(request.url);
-    const rpcName = ROUTES.get(path) || null;
-    let bodyBytes = 0;
-    let status = 500;
-    let errorCode = null;
-    let upstreamStatus = null;
+  const startedAt = performance.now();
+  const requestId = normalizeRequestId(request.headers?.['x-request-id']);
+  const origin = String(request.headers?.origin || '');
+  const host = normalizedHost(request.headers?.['x-forwarded-host'] || request.headers?.host);
+  const path = pathOverride || pathnameOf(request.url);
+  const rpcName = ROUTES.get(path) || null;
+  let bodyBytes = 0;
+  let status = 500;
+  let errorCode = null;
+  let upstreamStatus = null;
 
-    const finishLog = () => {
-      logRecord(logger, status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info', 'request_complete', {
+  const finishLog = () => {
+    logRecord(logger, status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info', 'request_complete', {
+      request_id: requestId,
+      method: request.method || 'UNKNOWN',
+      path,
+      rpc: rpcName,
+      status,
+      upstream_status: upstreamStatus,
+      duration_ms: Math.round((performance.now() - startedAt) * 100) / 100,
+      body_bytes: bodyBytes,
+      origin_allowed: originAllowed(config, origin),
+      host_allowed: hostAllowed(config, host),
+      error_code: errorCode,
+    });
+  };
+
+  try {
+    if (!hostAllowed(config, host)) {
+      status = 404;
+      errorCode = 'NOT_FOUND';
+      writeJson(response, config, origin, requestId, status, {
+        error: { code: errorCode, message: 'Unknown route.' },
         request_id: requestId,
-        method: request.method || 'UNKNOWN',
-        path,
-        rpc: rpcName,
-        status,
-        upstream_status: upstreamStatus,
-        duration_ms: Math.round((performance.now() - startedAt) * 100) / 100,
-        body_bytes: bodyBytes,
-        origin_allowed: originAllowed(config, origin),
-        error_code: errorCode,
       });
-    };
+      return;
+    }
 
-    try {
-      if (request.method === 'OPTIONS') {
-        if (!origin || !config.allowedOrigins.has(origin)) {
-          status = 403;
-          errorCode = 'ORIGIN_DENIED';
-          writeJson(response, config, origin, requestId, status, {
-            error: { code: errorCode, message: 'Origin denied.' },
-            request_id: requestId,
-          });
-          return;
-        }
-        status = 204;
-        response.writeHead(status, corsHeaders(config, origin, requestId));
-        response.end();
-        return;
-      }
-
-      if (request.method === 'GET' && path === '/health') {
-        status = 200;
-        writeJson(response, config, origin, requestId, status, {
-          ok: true,
-          service: 'aegis-server',
-          request_id: requestId,
-        });
-        return;
-      }
-
-      if (request.method !== 'POST' || !rpcName) {
-        status = 404;
-        errorCode = 'NOT_FOUND';
-        writeJson(response, config, origin, requestId, status, {
-          error: { code: errorCode, message: 'Unknown route.' },
-          request_id: requestId,
-        });
-        return;
-      }
-
-      if (!originAllowed(config, origin)) {
+    if (request.method === 'OPTIONS') {
+      if (!origin || !originAllowed(config, origin)) {
         status = 403;
         errorCode = 'ORIGIN_DENIED';
         writeJson(response, config, origin, requestId, status, {
@@ -202,100 +216,134 @@ export function createAegisServer({
         });
         return;
       }
+      status = 204;
+      response.writeHead(status, corsHeaders(config, origin, requestId));
+      response.end();
+      return;
+    }
 
-      const authorization = String(request.headers.authorization || '');
-      if (!authorization.startsWith('Bearer ')) {
-        status = 401;
-        errorCode = 'NOT_AUTHENTICATED';
-        writeJson(response, config, origin, requestId, status, {
-          error: { code: errorCode, message: 'Bearer token required.' },
-          request_id: requestId,
-        });
-        return;
-      }
-
-      const parsed = await readJson(request, config.maxBodyBytes);
-      bodyBytes = parsed.bodyBytes;
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), config.upstreamTimeoutMs);
-      let upstream;
-      try {
-        upstream = await fetchImpl(`${config.supabaseUrl}/rest/v1/rpc/${rpcName}`, {
-          method: 'POST',
-          headers: {
-            apikey: config.supabaseAnonKey,
-            authorization,
-            'content-type': 'application/json',
-            'x-request-id': requestId,
-          },
-          body: JSON.stringify(parsed.body),
-          signal: controller.signal,
-        });
-      } catch {
-        if (controller.signal.aborted) {
-          throw new GatewayError('UPSTREAM_TIMEOUT', 504, 'Aegis database request timed out.');
-        }
-        throw new GatewayError(
-          'UPSTREAM_UNAVAILABLE',
-          502,
-          'Aegis database is unavailable.',
-        );
-      } finally {
-        clearTimeout(timer);
-      }
-
-      upstreamStatus = upstream.status;
-      const text = await upstream.text();
-      const data = parseUpstreamPayload(text);
-
-      if (!upstream.ok) {
-        status = upstream.status;
-        errorCode = data?.code || `UPSTREAM_${upstream.status}`;
-        writeJson(response, config, origin, requestId, status, {
-          error: {
-            code: errorCode,
-            message: data?.message || 'Aegis database rejected the request.',
-            details: data?.details || null,
-            hint: data?.hint || null,
-          },
-          request_id: requestId,
-        });
-        return;
-      }
-
-      if (text && data === null) {
-        throw new GatewayError(
-          'UPSTREAM_INVALID_RESPONSE',
-          502,
-          'Aegis database returned an invalid response.',
-        );
-      }
-
+    if (request.method === 'GET' && path === '/health') {
       status = 200;
       writeJson(response, config, origin, requestId, status, {
-        data,
-        error: null,
+        ok: true,
+        service: 'aegis-server',
         request_id: requestId,
       });
-    } catch (error) {
-      const gatewayError = error instanceof GatewayError
-        ? error
-        : new GatewayError(
-            'AEGIS_GATEWAY_FAILURE',
-            502,
-            'Unexpected gateway failure.',
-          );
-      status = gatewayError.status;
-      errorCode = gatewayError.code;
-      writeJson(response, config, origin, requestId, status, {
-        error: { code: gatewayError.code, message: gatewayError.message },
-        request_id: requestId,
-      });
-    } finally {
-      finishLog();
+      return;
     }
-  });
+
+    if (request.method !== 'POST' || !rpcName) {
+      status = 404;
+      errorCode = 'NOT_FOUND';
+      writeJson(response, config, origin, requestId, status, {
+        error: { code: errorCode, message: 'Unknown route.' },
+        request_id: requestId,
+      });
+      return;
+    }
+
+    if (!originAllowed(config, origin)) {
+      status = 403;
+      errorCode = 'ORIGIN_DENIED';
+      writeJson(response, config, origin, requestId, status, {
+        error: { code: errorCode, message: 'Origin denied.' },
+        request_id: requestId,
+      });
+      return;
+    }
+
+    const authorization = String(request.headers?.authorization || '');
+    if (!authorization.startsWith('Bearer ')) {
+      status = 401;
+      errorCode = 'NOT_AUTHENTICATED';
+      writeJson(response, config, origin, requestId, status, {
+        error: { code: errorCode, message: 'Bearer token required.' },
+        request_id: requestId,
+      });
+      return;
+    }
+
+    const parsed = await readJson(request, config.maxBodyBytes);
+    bodyBytes = parsed.bodyBytes;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.upstreamTimeoutMs);
+    let upstream;
+    try {
+      upstream = await fetchImpl(`${config.supabaseUrl}/rest/v1/rpc/${rpcName}`, {
+        method: 'POST',
+        headers: {
+          apikey: config.supabaseAnonKey,
+          authorization,
+          'content-type': 'application/json',
+          'x-request-id': requestId,
+        },
+        body: JSON.stringify(parsed.body),
+        signal: controller.signal,
+      });
+    } catch {
+      if (controller.signal.aborted) {
+        throw new GatewayError('UPSTREAM_TIMEOUT', 504, 'Aegis database request timed out.');
+      }
+      throw new GatewayError('UPSTREAM_UNAVAILABLE', 502, 'Aegis database is unavailable.');
+    } finally {
+      clearTimeout(timer);
+    }
+
+    upstreamStatus = upstream.status;
+    const text = await upstream.text();
+    const data = parseUpstreamPayload(text);
+
+    if (!upstream.ok) {
+      status = upstream.status;
+      errorCode = data?.code || `UPSTREAM_${upstream.status}`;
+      writeJson(response, config, origin, requestId, status, {
+        error: {
+          code: errorCode,
+          message: data?.message || 'Aegis database rejected the request.',
+          details: data?.details || null,
+          hint: data?.hint || null,
+        },
+        request_id: requestId,
+      });
+      return;
+    }
+
+    if (text && data === null) {
+      throw new GatewayError('UPSTREAM_INVALID_RESPONSE', 502, 'Aegis database returned an invalid response.');
+    }
+
+    status = 200;
+    writeJson(response, config, origin, requestId, status, {
+      data,
+      error: null,
+      request_id: requestId,
+    });
+  } catch (error) {
+    const gatewayError = error instanceof GatewayError
+      ? error
+      : new GatewayError('AEGIS_GATEWAY_FAILURE', 502, 'Unexpected gateway failure.');
+    status = gatewayError.status;
+    errorCode = gatewayError.code;
+    writeJson(response, config, origin, requestId, status, {
+      error: { code: gatewayError.code, message: gatewayError.message },
+      request_id: requestId,
+    });
+  } finally {
+    finishLog();
+  }
+}
+
+export function createAegisServer({
+  config = loadAegisConfig(),
+  fetchImpl = globalThis.fetch,
+  logger = defaultLogger,
+} = {}) {
+  return createServer((request, response) => handleAegisRequest(request, response, {
+    config,
+    fetchImpl,
+    logger,
+  }));
 }
 
 export function startAegisServer(options = {}) {
@@ -308,6 +356,7 @@ export function startAegisServer(options = {}) {
       host: '0.0.0.0',
       port: typeof address === 'object' && address ? address.port : config.port,
       allowed_origin_count: config.allowedOrigins.size,
+      allowed_host_count: config.allowedHosts.size,
       max_body_bytes: config.maxBodyBytes,
       upstream_timeout_ms: config.upstreamTimeoutMs,
     });
