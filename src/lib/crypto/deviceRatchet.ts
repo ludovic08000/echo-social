@@ -703,6 +703,23 @@ async function decryptAegisWithStored(
     return skipped.pt;
   }
 
+  // Invariant corrigé : rejeu explicite. Sur la chaîne de réception courante,
+  // un n déjà consommé (n < Nr) sans clé sautée correspondante ne peut être
+  // qu'un message rejoué — on refuse au lieu de reconstruire une clé.
+  if (session.dhrPubB64 === dhPubB64 && Ns < session.Nr) {
+    void logCryptoError({
+      severity: 'warning',
+      context: 'decrypt',
+      errorCode: 'AEGIS_DEVICE_REPLAY_REJECTED',
+      errorMessage: `replayed message n=${Ns} < Nr=${session.Nr}`,
+      myDeviceId: activeKey.split('::')[1] ?? 'unknown',
+      peerUserId: logContext.peerUserId,
+      peerDeviceId: logContext.peerDeviceId,
+    });
+    return null;
+  }
+
+
   try {
     if (session.dhrPubB64 !== dhPubB64) {
       session = await skipMessageKeys(session, PN);
