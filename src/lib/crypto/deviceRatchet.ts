@@ -408,6 +408,9 @@ function pruneExpiredSkippedKeys(
   now = Date.now(),
 ): StoredSession {
   const skipped = session.skipped.filter((entry) =>
+    // Les anciennes entrées en clair (sans scellement SWK) sont écartées.
+    typeof entry.wrapB64 === 'string' &&
+    typeof entry.wrapIvB64 === 'string' &&
     typeof entry.createdAt === 'number' &&
     Number.isFinite(entry.createdAt) &&
     now - entry.createdAt >= 0 &&
