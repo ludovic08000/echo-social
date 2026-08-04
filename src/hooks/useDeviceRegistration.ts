@@ -23,6 +23,8 @@ import {
   rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import { startKeyConsistencyGuard } from '@/lib/crypto/keyConsistencyGuard';
+
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
