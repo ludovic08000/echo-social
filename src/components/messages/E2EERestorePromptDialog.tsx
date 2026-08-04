@@ -23,9 +23,12 @@ import {
   acquireRecoveryDialog,
   releaseRecoveryDialog,
 } from '@/lib/crypto/recoveryDialogCoordinator';
+import { inspectAccountCryptoState } from '@/lib/crypto/accountCryptoState';
+import { IdentityResetScreen } from '@/components/messaging/IdentityRecoveryGate';
 import { supabase } from '@/integrations/supabase/client';
 
 const DIALOG_OWNER = 'e2ee-restore-prompt';
+
 
 export function E2EERestorePromptDialog() {
   const { user } = useAuth();
