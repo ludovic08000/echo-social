@@ -676,6 +676,21 @@ async function decryptAegis(
   if (!found) return null;
   const peer = parseCompositeKey(found.key);
   if (!peer) return null;
+  let identity: { self: string; peer: string };
+  try {
+    identity = requireIdentityBinding(found.session);
+  } catch {
+    void logCryptoError({
+      severity: 'warning',
+      context: 'decrypt',
+      errorCode: 'AEGIS_SESSION_IDENTITY_BINDING_MISSING',
+      errorMessage: 'Session sans liaison d’identité — re-X3DH requis',
+      myDeviceId,
+      peerUserId: peer.peerUserId,
+      peerDeviceId: peer.peerDeviceId,
+    });
+    return null;
+  }
   const aad = buildDevAADWithHeader(
     peer.myUserId,
     peer.myDeviceId,
@@ -683,6 +698,7 @@ async function decryptAegis(
     peer.peerDeviceId,
     parsed.sessionId,
     { dh: parsed.dhPubB64, n: parsed.n, pn: parsed.pn },
+    identity,
   );
   return decryptAegisWithStored(found.activeKey, found.key, found.session, parsed, aad, peer);
 }
@@ -699,6 +715,19 @@ async function ratchetDecryptWithSessionUnlocked(
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const found = await lookupSessionById(myUserId, myDeviceId, parsed.sessionId);
   if (!found || found.activeKey !== key) return null;
+  let identity: { self: string; peer: string };
+  try {
+    identity = requireIdentityBinding(found.session);
+  } catch {
+    void logCryptoError({
+      severity: 'warning',
+      context: 'decrypt',
+      errorCode: 'AEGIS_SESSION_IDENTITY_BINDING_MISSING',
+      errorMessage: 'Session sans liaison d’identité — re-X3DH requis',
+      myDeviceId, peerUserId, peerDeviceId,
+    });
+    return null;
+  }
   const aad = buildDevAADWithHeader(
     myUserId,
     myDeviceId,
@@ -706,6 +735,7 @@ async function ratchetDecryptWithSessionUnlocked(
     peerDeviceId,
     parsed.sessionId,
     { dh: parsed.dhPubB64, n: parsed.n, pn: parsed.pn },
+    identity,
   );
   return decryptAegisWithStored(key, found.key, found.session, parsed, aad, {
     peerUserId,
