@@ -135,6 +135,8 @@ async function seedSession(
     Ns: 0, Nr: 0, PN: 0, skipped: [],
     createdAt: Date.now(),
     peerSpkId,
+    selfIkPubB64: `ik-${from.device}`,
+    peerIkPubB64: `ik-${to.device}`,
   });
   await putSession({
     id: `${to.user}::${to.device}::${from.user}::${from.device}`,
@@ -148,6 +150,8 @@ async function seedSession(
     Ns: 0, Nr: 0, PN: 0, skipped: [],
     createdAt: Date.now(),
     peerSpkId,
+    selfIkPubB64: `ik-${to.device}`,
+    peerIkPubB64: `ik-${from.device}`,
   });
 }
 

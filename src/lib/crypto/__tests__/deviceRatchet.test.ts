@@ -56,6 +56,8 @@ async function establishPair(seed: number, peerSpkId = 1): Promise<string> {
       isInitiator: true,
       peerInitialDhPubB64: responderPreKey.pubB64,
       peerSpkId,
+      selfIkPubB64: `ik-${A_DEV}`,
+      peerIkPubB64: `ik-${B_DEV}`,
     },
   );
 
@@ -71,6 +73,8 @@ async function establishPair(seed: number, peerSpkId = 1): Promise<string> {
       peerSpkId,
       selfInitialDhPrivJwk: responderPreKey.privJwk,
       selfInitialDhPubB64: responderPreKey.pubB64,
+      selfIkPubB64: `ik-${B_DEV}`,
+      peerIkPubB64: `ik-${A_DEV}`,
     },
   );
   return sessionId;
@@ -158,10 +162,14 @@ describe('deviceRatchet — real bootstrap and Double Ratchet', () => {
     await establishDeviceSession(A_USER, A_DEV, B_USER, B_DEV, sharedSecret, VALID_AEGIS_SESSION_ID, {
       isInitiator: true,
       peerInitialDhPubB64: peerPreKey.pubB64,
+      selfIkPubB64: `ik-${A_DEV}`,
+      peerIkPubB64: `ik-${B_DEV}`,
     });
     await establishDeviceSession(A_USER, 'dev-alice-other', B_USER, B_DEV, sharedSecret, 's_BBBBBBBBBBBBBBBBBBBBBB', {
       isInitiator: true,
       peerInitialDhPubB64: peerPreKey.pubB64,
+      selfIkPubB64: 'ik-dev-alice-other',
+      peerIkPubB64: `ik-${B_DEV}`,
     });
 
     const known = await listKnownSessionIds(A_USER, A_DEV);

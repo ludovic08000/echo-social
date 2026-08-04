@@ -47,6 +47,8 @@ describe('Aegis device envelope', () => {
         isInitiator: true,
         peerInitialDhPubB64: await generateX25519Public(),
         peerSpkId: 1,
+        selfIkPubB64: `ik-${A_DEV}`,
+        peerIkPubB64: `ik-${B_DEV}`,
       },
     );
 
@@ -67,6 +69,8 @@ describe('Aegis device envelope', () => {
         isInitiator: true,
         peerInitialDhPubB64: await generateX25519Public(),
         peerSpkId: 7,
+        selfIkPubB64: `ik-${A_DEV}`,
+        peerIkPubB64: `ik-${B_DEV}`,
       },
     );
 
