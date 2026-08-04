@@ -15,6 +15,8 @@ import {
   type IdentityKeyPair,
 } from '@/lib/crypto';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import { publishActiveIdentityKey } from '@/lib/crypto/publishIdentityKey';
+
 import {
   checkFingerprintChangeWithServer,
   invalidateFingerprintCheckCache,
