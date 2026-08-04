@@ -1,3 +1,5 @@
+import { isE2EEDebugEnabled, rawConsoleWrite } from '@/lib/consoleGuard';
+
 export type E2EETraceDirection = 'send' | 'receive' | 'device' | 'session';
 
 export interface E2EETraceEvent {
