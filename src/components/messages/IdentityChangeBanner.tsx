@@ -19,6 +19,8 @@ import {
   saveKnownFingerprint,
   saveKnownFingerprintServer,
 } from '@/lib/crypto/fingerprintTracker';
+import { fetchPeerPublicKeys } from '@/lib/crypto/peerKeyCache';
+
 
 interface Props {
   observerUserId: string | null;
@@ -29,13 +31,18 @@ interface Props {
 
 export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick, className }: Props) {
   const [events, setEvents] = useState<IdentityChangeEvent[]>([]);
+  const [currentFingerprint, setCurrentFingerprint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!observerUserId || !peerUserId) return;
     try {
-      const list = await fetchUnacknowledgedIdentityChanges(observerUserId, peerUserId);
+      const [list, peerKeys] = await Promise.all([
+        fetchUnacknowledgedIdentityChanges(observerUserId, peerUserId),
+        fetchPeerPublicKeys(peerUserId, { forceRefresh: true }).catch(() => null),
+      ]);
       setEvents(list);
+      setCurrentFingerprint(peerKeys?.fingerprint ?? null);
     } catch (e) {
       console.warn('[A4][banner] load failed', e);
     }
@@ -62,25 +69,37 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
 
   if (!events.length) return null;
   const latest = events[0];
+  // Invariant corrigé : la confiance porte TOUJOURS sur l'identité actuellement
+  // publiée par le contact, jamais sur une ligne d'historique périmée. Acquitter
+  // une ancienne empreinte laissait le portail d'envoi bloqué indéfiniment.
+  const trustTarget = currentFingerprint ?? latest.newFingerprint;
   const previewPrev = latest.previousFingerprint ? latest.previousFingerprint.slice(0, 12) : '—';
-  const previewNew = latest.newFingerprint.slice(0, 12);
+  const previewNew = trustTarget.slice(0, 12);
   const isRecovery = latest.changeType === 'recovery_restore';
+
+
 
   const acknowledgeIdentityChange = async () => {
     if (!observerUserId || !peerUserId) return;
     setBusy(true);
     try {
+      // On relit l'identité publiée au moment du clic : le ledger peut contenir
+      // des empreintes plus anciennes que l'identité active du contact.
+      const live = await fetchPeerPublicKeys(peerUserId, { forceRefresh: true }).catch(() => null);
+      const acceptedFingerprint = live?.fingerprint ?? trustTarget;
+
       // The server trust record is the cross-device authority. Commit it first;
       // do not clear the warning or enable the route after a failed write.
       const persisted = await saveKnownFingerprintServer(
         peerUserId,
-        latest.newFingerprint,
+        acceptedFingerprint,
         true,
       );
       if (!persisted) throw new Error('FINGERPRINT_ACK_PERSISTENCE_FAILED');
 
-      saveKnownFingerprint(observerUserId, peerUserId, latest.newFingerprint);
+      saveKnownFingerprint(observerUserId, peerUserId, acceptedFingerprint);
       invalidateFingerprintCheckCache(peerUserId);
+
       await acknowledgeAllForPeer(observerUserId, peerUserId);
       setEvents([]);
 
