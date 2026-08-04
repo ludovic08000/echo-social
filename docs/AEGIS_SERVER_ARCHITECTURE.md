@@ -132,7 +132,7 @@ The client uses direct Supabase RPC when `VITE_AEGIS_SERVER_URL` is absent.
 
 ```text
 Echo Social client
-  -> HTTPS aegis.forsure.social
+  -> HTTPS aegis.forsure.fans
   -> stateless Aegis gateway
   -> Supabase RPC / PostgreSQL Aegis queue
 ```
@@ -140,7 +140,7 @@ Echo Social client
 Set:
 
 ```dotenv
-VITE_AEGIS_SERVER_URL=https://aegis.forsure.social
+VITE_AEGIS_SERVER_URL=https://aegis.forsure.fans
 ```
 
 The public gateway boundary is:
