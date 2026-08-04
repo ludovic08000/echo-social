@@ -352,6 +352,11 @@ export function useChatPin() {
   });
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pinModeRef = useRef<PinMode>('every_open');
+  // Invariant corrigé : un déverrouillage réussi reste valable jusqu'à un
+  // verrouillage explicite. Une simple ré-inspection (clés restaurées, identité
+  // prête) ne doit plus refermer le volet PIN juste après la saisie du code.
+  const unlockedRef = useRef(false);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -373,9 +378,12 @@ export function useChatPin() {
       // gate. Only a proven first setup or a matching restored identity may
       // display the PIN-creation screen.
       const hasPin = Boolean(record) || Boolean(safety && !safety.allowed);
+      if (unlockCurrentOpen) unlockedRef.current = true;
+      if (!record) unlockedRef.current = false;
       const unlocked = Boolean(record) && (
-        unlockCurrentOpen || (mode !== 'every_open' && sessionUnlocked)
+        unlockCurrentOpen || unlockedRef.current || (mode !== 'every_open' && sessionUnlocked)
       );
+
       const recoveryError = !record && safety?.reason === 'restore_required'
         ? 'Restaurez votre identité sécurisée existante avant de créer un nouveau PIN.'
         : !record && safety?.reason === 'inspection_unavailable'
@@ -415,6 +423,7 @@ export function useChatPin() {
   }, [user?.id]);
 
   const lock = useCallback(async () => {
+    unlockedRef.current = false;
     storageRemove(sessionStorage, SESSION_KEY);
     setState((current) => ({ ...current, unlocked: false }));
     window.dispatchEvent(new CustomEvent('forsure-messaging-locked'));
@@ -471,6 +480,7 @@ export function useChatPin() {
       }
 
       await saveLocalPin(user.id, pin);
+      unlockedRef.current = true;
       announceUnlock(user.id);
       pinModeRef.current = 'every_open';
       storageSet(localStorage, `${MODE_PREFIX}${user.id}`, 'every_open');
@@ -522,6 +532,7 @@ export function useChatPin() {
         return false;
       }
 
+      unlockedRef.current = true;
       announceUnlock(user.id);
       setState((current) => ({
         ...current,
@@ -581,6 +592,7 @@ export function useChatPin() {
       return false;
     }
     await removeLocalPin(user.id);
+    unlockedRef.current = false;
     storageRemove(sessionStorage, SESSION_KEY);
     storageRemove(localStorage, `${MODE_PREFIX}${user.id}`);
     pinModeRef.current = 'every_open';
