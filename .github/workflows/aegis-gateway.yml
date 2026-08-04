@@ -46,3 +46,10 @@ jobs:
       - name: Gateway contract tests
         working-directory: infra/aegis-server
         run: npm test
+
+      - name: Temporary live Supabase schema probe
+        working-directory: infra/aegis-server
+        env:
+          SUPABASE_URL: https://vkpmoqfzrihcijjochks.supabase.co
+          SUPABASE_ANON_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
+        run: node live-schema-probe.mjs
