@@ -28,6 +28,19 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Add required anonymous profile name
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('infra/aegis-server/live-anonymous-delivery.mjs')
+          source = path.read_text()
+          old = "body: JSON.stringify({ data: { aegis_test_run: runId, aegis_test_label: label } }),"
+          new = "body: JSON.stringify({ data: { name: 'Aegis Test ' + label, aegis_test_run: runId, aegis_test_label: label } }),"
+          if old not in source:
+              raise SystemExit('anonymous signup payload marker not found')
+          path.write_text(source.replace(old, new, 1))
+          PY
+
       - name: Syntax check
         run: node --check infra/aegis-server/live-anonymous-delivery.mjs
 
