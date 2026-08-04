@@ -9008,6 +9008,10 @@ export type Database = {
         }
         Returns: Json
       }
+      verify_own_key_consistency: {
+        Args: { p_device_id: string }
+        Returns: Json
+      }
       video_score_batch: {
         Args: { p_user_id: string; p_video_ids: string[] }
         Returns: {
