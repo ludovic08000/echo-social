@@ -81,7 +81,7 @@ describe('Aegis conversation queue', () => {
     expect(retryDelayMs(0)).toBe(500);
     expect(retryDelayMs(1)).toBe(1_000);
     expect(retryDelayMs(3)).toBe(5_000);
-    expect(retryDelayMs(99)).toBe(10_000);
+    expect(retryDelayMs(99)).toBe(15 * 60_000);
   });
 
   it('runs a scheduled retry once and clears it after success', async () => {
