@@ -134,7 +134,11 @@ export function E2EERestorePromptDialog() {
       if (status === 'restored' || status === 'local_ok') {
         finish('password_restore');
       } else if (status === 'no_backup') {
-        toast.error('Aucune sauvegarde trouvée pour ce compte');
+        // Aucune sauvegarde : le mot de passe ne peut rien déverrouiller,
+        // on bascule sur la réinitialisation explicite d'identité.
+        setMode('reset');
+        toast.error('Aucune sauvegarde trouvée : réinitialisation nécessaire');
+
       } else {
         toast.error('Mot de passe incorrect ou sauvegarde illisible');
       }
