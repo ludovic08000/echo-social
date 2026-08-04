@@ -378,9 +378,12 @@ export function useChatPin() {
       // gate. Only a proven first setup or a matching restored identity may
       // display the PIN-creation screen.
       const hasPin = Boolean(record) || Boolean(safety && !safety.allowed);
+      if (unlockCurrentOpen) unlockedRef.current = true;
+      if (!record) unlockedRef.current = false;
       const unlocked = Boolean(record) && (
-        unlockCurrentOpen || (mode !== 'every_open' && sessionUnlocked)
+        unlockCurrentOpen || unlockedRef.current || (mode !== 'every_open' && sessionUnlocked)
       );
+
       const recoveryError = !record && safety?.reason === 'restore_required'
         ? 'Restaurez votre identité sécurisée existante avant de créer un nouveau PIN.'
         : !record && safety?.reason === 'inspection_unavailable'
