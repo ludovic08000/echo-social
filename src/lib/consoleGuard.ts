@@ -5,8 +5,62 @@
 
 const IS_DEV = import.meta.env.DEV;
 
+// Références capturées AVANT le lockdown : seul le traçage E2EE opt-in les
+// utilise, et uniquement des métadonnées (jamais de clé ni de contenu).
+const RAW_CONSOLE = {
+  log: console.log.bind(console),
+  info: console.info.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+} as const;
+
+export type RawConsoleLevel = keyof typeof RAW_CONSOLE;
+
+/** Écrit dans la vraie console même après le lockdown production. */
+export function rawConsoleWrite(level: RawConsoleLevel, ...args: unknown[]): void {
+  try {
+    RAW_CONSOLE[level](...args);
+  } catch {
+    /* console indisponible */
+  }
+}
+
+const DEBUG_KEY = 'forsure:e2ee-debug';
+
+/** Active/désactive le traçage E2EE visible dans F12 (persisté). */
+export function setE2EEDebugEnabled(enabled: boolean): void {
+  try {
+    if (enabled) localStorage.setItem(DEBUG_KEY, '1');
+    else localStorage.removeItem(DEBUG_KEY);
+  } catch {
+    /* stockage indisponible */
+  }
+}
+
+export function isE2EEDebugEnabled(): boolean {
+  if (IS_DEV) return true;
+  try {
+    if (typeof window !== 'undefined' && window.location.search.includes('e2eeDebug=1')) {
+      setE2EEDebugEnabled(true);
+      return true;
+    }
+    return localStorage.getItem(DEBUG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function lockdownConsole(): void {
+  // Expose l'interrupteur de diagnostic avant toute neutralisation.
+  if (typeof window !== 'undefined') {
+    (window as any).forsureDebug = {
+      enable: () => { setE2EEDebugEnabled(true); rawConsoleWrite('log', '[AEGIS] traçage activé — rechargez la page'); },
+      disable: () => { setE2EEDebugEnabled(false); rawConsoleWrite('log', '[AEGIS] traçage désactivé'); },
+      enabled: isE2EEDebugEnabled,
+    };
+  }
   if (IS_DEV) return; // Keep logs in dev mode
+
 
   const noop = () => {};
 

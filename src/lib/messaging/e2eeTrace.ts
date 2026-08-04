@@ -1,3 +1,5 @@
+import { isE2EEDebugEnabled, rawConsoleWrite } from '@/lib/consoleGuard';
+
 export type E2EETraceDirection = 'send' | 'receive' | 'device' | 'session';
 
 export interface E2EETraceEvent {
@@ -119,14 +121,39 @@ export function traceE2EE(
   };
   events.push(record);
   if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
-  if (typeof console !== 'undefined') {
-    const writer = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
-    writer('[E2EE_TRACE]', record);
+  // En production la console est verrouillée : on écrit via la référence brute
+  // capturée avant le lockdown, uniquement si le diagnostic est activé.
+  if (isE2EEDebugEnabled()) {
+    const parts = [
+      `#${record.seq}`,
+      record.direction.toUpperCase(),
+      record.component ?? '-',
+      record.stage,
+      record.outcome ? `→ ${record.outcome}` : '',
+      record.conversationRef ?? '',
+      record.messageRef ?? '',
+      record.deviceRef ?? '',
+      record.peerDeviceRef ?? '',
+      record.targetCount !== undefined ? `targets=${record.targetCount}` : '',
+      record.copyCount !== undefined ? `copies=${record.copyCount}` : '',
+      record.retryCount !== undefined ? `retry=${record.retryCount}` : '',
+      record.blockMs !== undefined ? `${record.blockMs}ms` : record.elapsedMs !== undefined ? `+${record.elapsedMs}ms` : '',
+      record.transport ? `via ${record.transport}` : '',
+      record.errorCode ? `!${record.errorCode}` : '',
+    ].filter(Boolean);
+    rawConsoleWrite(
+      level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log',
+      `%c[AEGIS ROUTE]%c ${parts.join(' ')}`,
+      `color:${level === 'error' ? '#ED2939' : level === 'warn' ? '#f59e0b' : '#4ea1ff'};font-weight:700`,
+      'color:inherit',
+      record,
+    );
   }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('forsure:e2ee-trace'));
   }
 }
+
 
 export function readE2EETrace(): E2EETraceEvent[] {
   return events.map((event) => ({ ...event }));
