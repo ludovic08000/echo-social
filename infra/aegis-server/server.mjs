@@ -264,9 +264,17 @@ export function createAegisServer({
         return;
       }
 
+      if (text && data === null) {
+        throw new GatewayError(
+          'UPSTREAM_INVALID_RESPONSE',
+          502,
+          'Aegis database returned an invalid response.',
+        );
+      }
+
       status = 200;
       writeJson(response, config, origin, requestId, status, {
-        data: data ?? (text || null),
+        data,
         error: null,
         request_id: requestId,
       });
@@ -276,7 +284,7 @@ export function createAegisServer({
         : new GatewayError(
             'AEGIS_GATEWAY_FAILURE',
             502,
-            error instanceof Error ? error.message : String(error),
+            'Unexpected gateway failure.',
           );
       status = gatewayError.status;
       errorCode = gatewayError.code;
