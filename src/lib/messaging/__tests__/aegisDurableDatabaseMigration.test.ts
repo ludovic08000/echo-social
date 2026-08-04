@@ -25,21 +25,27 @@ function section(start: string, end: string): string {
   return migration.slice(startIndex, endIndex);
 }
 
+function withoutSqlLineComments(sql: string): string {
+  return sql.replace(/--.*$/gm, '');
+}
+
 describe('Aegis durable database migration', () => {
   it('stores delivery state separately without duplicating ciphertext or secrets', () => {
     const table = section(
       'create table if not exists public.aegis_device_inbox',
       'alter table public.aegis_device_inbox enable row level security',
     );
+    const tableDefinition = withoutSqlLineComments(table);
 
-    expect(table).toContain('copy_id uuid primary key');
-    expect(table).toContain('references public.message_device_copies(id) on delete cascade');
-    expect(table).toContain("check (state in ('pending', 'acked'))");
-    expect(table).toContain('unique (message_id, recipient_user_id, recipient_device_id)');
-    expect(table).not.toContain('encrypted_body');
-    expect(table).not.toContain('plaintext');
-    expect(table).not.toContain('private_key');
-    expect(table).not.toContain('recovery_secret');
+    expect(tableDefinition).toContain('copy_id uuid primary key');
+    expect(tableDefinition).toContain('references public.message_device_copies(id) on delete cascade');
+    expect(tableDefinition).toContain("check (state in ('pending', 'acked'))");
+    expect(tableDefinition).toContain('unique (message_id, recipient_user_id, recipient_device_id)');
+    expect(tableDefinition).not.toContain('encrypted_body');
+    expect(tableDefinition).not.toContain('ciphertext');
+    expect(tableDefinition).not.toContain('plaintext');
+    expect(tableDefinition).not.toContain('private_key');
+    expect(tableDefinition).not.toContain('recovery_secret');
   });
 
   it('closes direct table access and provides bounded indexes', () => {
