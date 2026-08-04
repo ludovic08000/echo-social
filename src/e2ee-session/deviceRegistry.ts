@@ -131,6 +131,7 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
       );
 
       if (rejectedRoutable.length > 0) {
+        requestSelfRepairIfNeeded(rejectedRoutable.map(entry => entry.deviceId), 'invalid_device_authorization');
         throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
       }
 
@@ -147,8 +148,15 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
       }
 
       if (trustedRoutable.length === 0) {
+        // Une identité de compte remplacée invalide toutes les autorisations
+        // d'appareil : l'appareil courant doit se ré-autoriser lui-même.
+        requestSelfRepairIfNeeded(
+          [selfDeviceId()],
+          'missing_device_authorization',
+        );
         throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
       }
+
 
       return hygieneFilterDevices(
         trustedRoutable.map(entry => ({
