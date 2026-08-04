@@ -210,10 +210,14 @@ function buildOptions(argv, env) {
     .map((value) => value.trim())
     .filter(Boolean);
 
+  if (values.has('access-token')) {
+    throw new Error('Pass AEGIS_ACCESS_TOKEN through the environment, not the command line');
+  }
+
   return {
     command: parsed.command,
     baseUrl: one(values, 'base-url', env.AEGIS_BASE_URL || 'http://127.0.0.1:8787'),
-    accessToken: one(values, 'access-token', env.AEGIS_ACCESS_TOKEN || ''),
+    accessToken: env.AEGIS_ACCESS_TOKEN || '',
     deviceId: one(values, 'device-id', env.AEGIS_DEVICE_ID || ''),
     origin: one(values, 'origin', env.AEGIS_TEST_ORIGIN || ''),
     payloadFile: one(values, 'payload-file', env.AEGIS_TEST_PAYLOAD_FILE || ''),
@@ -364,7 +368,7 @@ function printUsage() {
   process.stderr.write(`Commands: scenario, health, sync, ack, send\n\n`);
   process.stderr.write(`Examples:\n`);
   process.stderr.write(`  node infra/aegis-server/smoke-client.mjs health --base-url http://127.0.0.1:8787\n`);
-  process.stderr.write(`  AEGIS_ACCESS_TOKEN=... AEGIS_DEVICE_ID=... npm run aegis:smoke\n`);
+  process.stderr.write(`  AEGIS_ACCESS_TOKEN=... AEGIS_DEVICE_ID=... npm run smoke -- scenario\n`);
   process.stderr.write(`  node infra/aegis-server/smoke-client.mjs ack --message-id <uuid> --mark-read\n`);
   process.stderr.write(`  node infra/aegis-server/smoke-client.mjs send --payload-file ./send-payload.json\n`);
   process.stderr.write(`\nLogs never print JWTs, ciphertext or identifier values. Use --capture-file for a local 0600 raw response.\n`);
