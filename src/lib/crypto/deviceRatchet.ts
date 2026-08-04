@@ -43,6 +43,7 @@ import {
   RATCHET_SKIPPED_TTL_MS,
 } from './constants';
 import { runDeviceSessionJob } from './deviceSessionQueue';
+import { wrapSkippedKey, unwrapSkippedKey } from './skippedKeyVault';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 const STORE = 'sessions';
@@ -64,8 +65,12 @@ interface SkippedKey {
   dhPubB64: string;
   /** message number in that chain */
   n: number;
-  /** raw 32B AES key, base64 */
-  keyB64: string;
+  /**
+   * Clé de message scellée localement par la SWK (AES-GCM non exportable).
+   * Invariant corrigé : plus aucune clé sautée en clair dans IndexedDB.
+   */
+  wrapB64: string;
+  wrapIvB64: string;
   /** creation time used to enforce the bounded out-of-order window */
   createdAt?: number;
 }
@@ -378,7 +383,7 @@ async function trySkippedKeys(
   if (idx === -1) return null;
   const entry = session.skipped[idx];
   try {
-    const aes = await importMessageKey(entry.keyB64);
+    const aes = await importMessageKey(await unwrapSkippedKey(entry));
     const ivCopy = new Uint8Array(iv.byteLength);
     ivCopy.set(iv);
     const ctCopy = (ct as ArrayBuffer).slice(0);
@@ -403,6 +408,9 @@ function pruneExpiredSkippedKeys(
   now = Date.now(),
 ): StoredSession {
   const skipped = session.skipped.filter((entry) =>
+    // Les anciennes entrées en clair (sans scellement SWK) sont écartées.
+    typeof entry.wrapB64 === 'string' &&
+    typeof entry.wrapIvB64 === 'string' &&
     typeof entry.createdAt === 'number' &&
     Number.isFinite(entry.createdAt) &&
     now - entry.createdAt >= 0 &&
@@ -422,10 +430,12 @@ async function skipMessageKeys(session: StoredSession, until: number): Promise<S
   const s = { ...pruned, skipped: [...pruned.skipped] };
   while (s.Nr < until) {
     const { ck, mk } = await kdfCK(s.ckRecvB64!);
+    const sealed = await wrapSkippedKey(mk);
     s.skipped.push({
       dhPubB64: s.dhrPubB64!,
       n: s.Nr,
-      keyB64: mk,
+      wrapB64: sealed.wrapB64,
+      wrapIvB64: sealed.wrapIvB64,
       createdAt: Date.now(),
     });
     s.ckRecvB64 = ck;
