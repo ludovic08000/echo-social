@@ -5,6 +5,8 @@ import {
 } from '@/e2ee-session/deviceRegistry';
 import type { DeviceDescriptor } from '@/e2ee-session/types';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
+import { resolveConversationRoute } from '@/lib/messaging/aegisRouteResolver';
+
 
 const ROUTE_TTL_MS = 20_000;
 
