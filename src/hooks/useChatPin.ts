@@ -423,6 +423,7 @@ export function useChatPin() {
   }, [user?.id]);
 
   const lock = useCallback(async () => {
+    unlockedRef.current = false;
     storageRemove(sessionStorage, SESSION_KEY);
     setState((current) => ({ ...current, unlocked: false }));
     window.dispatchEvent(new CustomEvent('forsure-messaging-locked'));
@@ -479,6 +480,7 @@ export function useChatPin() {
       }
 
       await saveLocalPin(user.id, pin);
+      unlockedRef.current = true;
       announceUnlock(user.id);
       pinModeRef.current = 'every_open';
       storageSet(localStorage, `${MODE_PREFIX}${user.id}`, 'every_open');
@@ -530,6 +532,7 @@ export function useChatPin() {
         return false;
       }
 
+      unlockedRef.current = true;
       announceUnlock(user.id);
       setState((current) => ({
         ...current,
@@ -589,6 +592,7 @@ export function useChatPin() {
       return false;
     }
     await removeLocalPin(user.id);
+    unlockedRef.current = false;
     storageRemove(sessionStorage, SESSION_KEY);
     storageRemove(localStorage, `${MODE_PREFIX}${user.id}`);
     pinModeRef.current = 'every_open';
