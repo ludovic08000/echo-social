@@ -3,11 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   rpc: vi.fn(),
-  client: null as { rest: object; rpc: typeof vi.fn } | null,
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
-  supabase: mocks.client = {
+  supabase: {
     rest: {},
     auth: { getSession: mocks.getSession },
     rpc(this: { rest?: object }, ...args: unknown[]) {
