@@ -153,6 +153,8 @@ async function seedSession(
     skipped: [],
     createdAt: Date.now(),
     peerSpkId,
+    selfIkPubB64: `ik-${from.device}`,
+    peerIkPubB64: `ik-${to.device}`,
   };
 
   // Receiver state: holds the pre-key PRIVATE as dhsPriv so its dhRatchet
@@ -172,6 +174,8 @@ async function seedSession(
     skipped: [],
     createdAt: Date.now(),
     peerSpkId,
+    selfIkPubB64: `ik-${to.device}`,
+    peerIkPubB64: `ik-${from.device}`,
   };
 
   await putSession(initiatorRecord);
