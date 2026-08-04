@@ -83,17 +83,23 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
     if (!observerUserId || !peerUserId) return;
     setBusy(true);
     try {
+      // On relit l'identité publiée au moment du clic : le ledger peut contenir
+      // des empreintes plus anciennes que l'identité active du contact.
+      const live = await fetchPeerPublicKeys(peerUserId, { forceRefresh: true }).catch(() => null);
+      const acceptedFingerprint = live?.fingerprint ?? trustTarget;
+
       // The server trust record is the cross-device authority. Commit it first;
       // do not clear the warning or enable the route after a failed write.
       const persisted = await saveKnownFingerprintServer(
         peerUserId,
-        latest.newFingerprint,
+        acceptedFingerprint,
         true,
       );
       if (!persisted) throw new Error('FINGERPRINT_ACK_PERSISTENCE_FAILED');
 
-      saveKnownFingerprint(observerUserId, peerUserId, latest.newFingerprint);
+      saveKnownFingerprint(observerUserId, peerUserId, acceptedFingerprint);
       invalidateFingerprintCheckCache(peerUserId);
+
       await acknowledgeAllForPeer(observerUserId, peerUserId);
       setEvents([]);
 
