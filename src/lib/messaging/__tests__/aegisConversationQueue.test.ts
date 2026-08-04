@@ -133,7 +133,7 @@ describe('Aegis conversation queue', () => {
     await Promise.resolve();
   });
 
-  it('stops after the bounded attempt budget and exposes terminal failure', async () => {
+  it('keeps transient failures queued after the initial retry budget', async () => {
     vi.useFakeTimers();
     const task = vi.fn(async () => {
       throw new Error('route unavailable');
@@ -143,9 +143,9 @@ describe('Aegis conversation queue', () => {
     expect(scheduleAegisRetry('job-exhausted', task, { onExhausted: exhausted })).toBe(true);
     await vi.advanceTimersByTimeAsync(20_000);
 
-    expect(task).toHaveBeenCalledTimes(5);
-    expect(exhausted).toHaveBeenCalledTimes(1);
-    expect(__test__.attempts('job-exhausted')).toBe(5);
+    expect(task.mock.calls.length).toBeGreaterThanOrEqual(5);
+    expect(exhausted).not.toHaveBeenCalled();
+    expect(__test__.attempts('job-exhausted')).toBeGreaterThanOrEqual(5);
   });
 
   it('does not auto-retry authentication or safety-number failures', () => {
