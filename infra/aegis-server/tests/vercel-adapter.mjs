@@ -36,6 +36,20 @@ test('Vercel health handler serves the Aegis contract on the allowed host', asyn
   assert.equal(JSON.parse(response.text).service, 'aegis-server');
 });
 
+test('Vercel adapter accepts the existing public Vite Supabase variables', async () => {
+  const handler = createVercelAegisHandler('/health', {
+    env: {
+      VITE_SUPABASE_URL: 'https://supabase.test',
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'public-publishable-key',
+    },
+    logger: () => {},
+  });
+  const response = responseRecorder();
+  await handler({ method: 'GET', headers: { host: 'preview.vercel.app' } }, response);
+  assert.equal(response.status, 200);
+  assert.equal(JSON.parse(response.text).ok, true);
+});
+
 test('Vercel adapter forwards an already parsed JSON body', async () => {
   let forwardedBody;
   const handler = createVercelAegisHandler('/v1/rpc/aegis_sync_device', {
