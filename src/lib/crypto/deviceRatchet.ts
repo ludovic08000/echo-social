@@ -488,12 +488,19 @@ async function establishDeviceSessionUnlocked(
     peerSpkId?: number | null;
     selfInitialDhPrivJwk?: JsonWebKey | null;
     selfInitialDhPubB64?: string | null;
+    /** Liaison d'identité obligatoire : IK publiques des deux appareils. */
+    selfIkPubB64?: string;
+    peerIkPubB64?: string;
   },
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
   const finalSessionId = sessionId ?? createAegisSessionId();
   if (!isAegisSessionId(finalSessionId)) {
     throw new Error('AEGIS_SESSION_ID_INVALID');
+  }
+  // Invariant : aucune session ne peut exister sans liaison aux clés d'identité.
+  if (!opts?.selfIkPubB64 || !opts?.peerIkPubB64) {
+    throw new Error('AEGIS_SESSION_IDENTITY_BINDING_MISSING');
   }
   const ss32 = sharedSecret.byteLength >= 32 ? sharedSecret.slice(0, 32) : sharedSecret;
   const rootKeyB64 = bufferToBase64(ss32);
@@ -513,6 +520,8 @@ async function establishDeviceSessionUnlocked(
     skipped: [],
     createdAt: Date.now(),
     peerSpkId: opts?.peerSpkId ?? null,
+    selfIkPubB64: opts?.selfIkPubB64,
+    peerIkPubB64: opts?.peerIkPubB64,
   };
 
   if (opts?.isInitiator && opts.peerInitialDhPubB64) {
@@ -545,6 +554,9 @@ export async function establishDeviceSession(
     peerSpkId?: number | null;
     selfInitialDhPrivJwk?: JsonWebKey | null;
     selfInitialDhPubB64?: string | null;
+    /** Liaison d'identité obligatoire : IK publiques des deux appareils. */
+    selfIkPubB64?: string;
+    peerIkPubB64?: string;
   },
 ): Promise<string> {
   const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
