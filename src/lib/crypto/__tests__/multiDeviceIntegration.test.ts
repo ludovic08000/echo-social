@@ -283,6 +283,10 @@ describe('Sesame active and inactive sessions', () => {
       alice.device,
       randomBytes(32).buffer as ArrayBuffer,
       's_BBBBBBBBBBBBBBBBBBBBBB',
+      {
+        selfIkPubB64: `ik-${bob.device}`,
+        peerIkPubB64: `ik-${alice.device}`,
+      },
     );
     expect((await listKnownSessionIds(bob.user, bob.device)).length).toBe(2);
 
