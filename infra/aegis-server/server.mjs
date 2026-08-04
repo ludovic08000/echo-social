@@ -32,9 +32,24 @@ function parseList(value) {
   );
 }
 
+function normalizeSupabaseUrl(value) {
+  const raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('SUPABASE_URL must be a valid HTTP(S) URL');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('SUPABASE_URL must be a valid HTTP(S) URL without embedded credentials');
+  }
+  return raw;
+}
+
 export function loadAegisConfig(env = process.env) {
-  const supabaseUrl = String(env.SUPABASE_URL || '').replace(/\/+$/, '');
-  const supabaseAnonKey = String(env.SUPABASE_ANON_KEY || '');
+  const supabaseUrl = normalizeSupabaseUrl(env.SUPABASE_URL);
+  const supabaseAnonKey = String(env.SUPABASE_ANON_KEY || '').trim();
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required');
   }
@@ -73,11 +88,13 @@ function hostAllowed(config, host) {
 }
 
 function originAllowed(config, origin) {
-  return config.allowedOrigins.size === 0 || config.allowedOrigins.has(String(origin).toLowerCase());
+  const normalizedOrigin = String(origin || '').trim().toLowerCase();
+  if (!normalizedOrigin) return true;
+  return config.allowedOrigins.size > 0 && config.allowedOrigins.has(normalizedOrigin);
 }
 
 function corsHeaders(config, origin, requestId) {
-  const normalizedOrigin = String(origin || '').toLowerCase();
+  const normalizedOrigin = String(origin || '').trim().toLowerCase();
   const allowed = normalizedOrigin && config.allowedOrigins.has(normalizedOrigin) ? origin : '';
   return {
     ...(allowed ? { 'access-control-allow-origin': allowed, vary: 'Origin' } : {}),
@@ -152,12 +169,18 @@ function defaultLogger(record) {
 }
 
 function logRecord(logger, level, event, fields = {}) {
-  logger({
-    timestamp: new Date().toISOString(),
-    level,
-    event,
-    ...fields,
-  });
+  try {
+    logger({ timestamp: new Date().toISOString(), level, event, ...fields });
+  } catch {
+    // Logging must never change the HTTP response or crash the gateway.
+  }
+}
+
+function hasValidBearerToken(value) {
+  const authorization = String(value || '');
+  if (!authorization.startsWith('Bearer ')) return false;
+  const token = authorization.slice(7);
+  return token.length > 0 && !/\s/.test(token);
 }
 
 export async function handleAegisRequest(request, response, {
@@ -171,7 +194,7 @@ export async function handleAegisRequest(request, response, {
   const startedAt = performance.now();
   const requestId = normalizeRequestId(request.headers?.['x-request-id']);
   const origin = String(request.headers?.origin || '');
-  const host = normalizedHost(request.headers?.['x-forwarded-host'] || request.headers?.host);
+  const host = normalizedHost(request.headers?.host || request.headers?.['x-forwarded-host']);
   const path = pathOverride || pathnameOf(request.url);
   const rpcName = ROUTES.get(path) || null;
   let bodyBytes = 0;
@@ -207,6 +230,15 @@ export async function handleAegisRequest(request, response, {
     }
 
     if (request.method === 'OPTIONS') {
+      if (!rpcName) {
+        status = 404;
+        errorCode = 'NOT_FOUND';
+        writeJson(response, config, origin, requestId, status, {
+          error: { code: errorCode, message: 'Unknown route.' },
+          request_id: requestId,
+        });
+        return;
+      }
       if (!origin || !originAllowed(config, origin)) {
         status = 403;
         errorCode = 'ORIGIN_DENIED';
@@ -253,7 +285,7 @@ export async function handleAegisRequest(request, response, {
     }
 
     const authorization = String(request.headers?.authorization || '');
-    if (!authorization.startsWith('Bearer ')) {
+    if (!hasValidBearerToken(authorization)) {
       status = 401;
       errorCode = 'NOT_AUTHENTICATED';
       writeJson(response, config, origin, requestId, status, {
@@ -269,6 +301,7 @@ export async function handleAegisRequest(request, response, {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.upstreamTimeoutMs);
     let upstream;
+    let text;
     try {
       upstream = await fetchImpl(`${config.supabaseUrl}/rest/v1/rpc/${rpcName}`, {
         method: 'POST',
@@ -280,7 +313,10 @@ export async function handleAegisRequest(request, response, {
         },
         body: JSON.stringify(parsed.body),
         signal: controller.signal,
+        redirect: 'error',
       });
+      upstreamStatus = upstream.status;
+      text = await upstream.text();
     } catch {
       if (controller.signal.aborted) {
         throw new GatewayError('UPSTREAM_TIMEOUT', 504, 'Aegis database request timed out.');
@@ -290,8 +326,6 @@ export async function handleAegisRequest(request, response, {
       clearTimeout(timer);
     }
 
-    upstreamStatus = upstream.status;
-    const text = await upstream.text();
     const data = parseUpstreamPayload(text);
 
     if (!upstream.ok) {
