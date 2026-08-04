@@ -102,21 +102,43 @@ export async function resolveConversationRoute(
   senderUserId: string,
   senderDeviceId: string,
 ): Promise<ResolvedConversationRoute> {
+  const startedAt = Date.now();
+  const trace = (
+    stage: string,
+    details: Record<string, unknown> = {},
+    level: 'info' | 'warn' | 'error' = 'info',
+  ) => traceE2EE({
+    direction: 'send',
+    component: 'route_resolver',
+    stage,
+    conversationId,
+    deviceId: senderDeviceId,
+    elapsedMs: Date.now() - startedAt,
+    ...details,
+  }, level);
+
+  trace('ROUTE_RESOLVE', { outcome: 'start', transport: 'supabase' });
   const { data, error } = await (supabase as any).rpc('aegis_resolve_conversation_route', {
     p_conversation_id: conversationId,
     p_sender_device_id: senderDeviceId,
   });
 
-  if (error) throw new Error(error.message || 'E2EE_ROUTE_RESOLUTION_FAILED');
+  if (error) {
+    trace('ROUTE_RESOLVE', { outcome: 'error', errorCode: error.message }, 'error');
+    throw new Error(error.message || 'E2EE_ROUTE_RESOLUTION_FAILED');
+  }
 
   const payload = data as RouteRpcPayload | null;
   if (!payload || typeof payload.route_version !== 'string' || payload.route_version.length < 8) {
+    trace('ROUTE_RESOLVE', { outcome: 'error', errorCode: 'E2EE_ROUTE_VERSION_UNAVAILABLE' }, 'error');
     throw new Error('E2EE_ROUTE_VERSION_UNAVAILABLE');
   }
 
   const participants = Array.isArray(payload.participants) ? payload.participants : [];
+  trace('ROUTE_PARTICIPANTS', { outcome: 'ok', targetCount: participants.length });
   const targets: DeviceDescriptor[] = [];
   const unroutableUserIds: string[] = [];
+
 
   for (const participant of participants) {
     const rows = Array.isArray(participant.devices) ? participant.devices : [];
