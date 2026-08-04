@@ -127,19 +127,35 @@ function activeKeyFromStorageKey(key: string): string | null {
   return parts.length >= 4 ? parts.slice(0, 4).join('::') : null;
 }
 
+/**
+ * Invariant corrigé : l'AAD lie désormais les clés d'identité publiques (IK) des
+ * deux appareils, et non plus seulement userId::deviceId. Un serveur ne peut donc
+ * plus rejouer un chiffré vers une identité substituée avec les mêmes identifiants.
+ */
 function buildDevAAD(
   myUserId: string,
   myDeviceId: string,
   peerUserId: string,
   peerDeviceId: string,
   sessionId: string,
+  selfIkPubB64: string,
+  peerIkPubB64: string,
 ): Uint8Array {
-  const me = `${myUserId}::${myDeviceId}`;
-  const peer = `${peerUserId}::${peerDeviceId}`;
+  const me = `${myUserId}::${myDeviceId}::${selfIkPubB64}`;
+  const peer = `${peerUserId}::${peerDeviceId}::${peerIkPubB64}`;
   const [a, b] = me < peer ? [me, peer] : [peer, me];
   return new hardGlobals.TextEncoder().encode(`${AEGIS_DEVICE_AAD}${sessionId}|${a}|${b}`);
 }
 
+/** Une session sans liaison d'identité est inutilisable : re-X3DH obligatoire. */
+function requireIdentityBinding(session: StoredSession): { self: string; peer: string } {
+  const self = session.selfIkPubB64;
+  const peer = session.peerIkPubB64;
+  if (!self || !peer) {
+    throw new Error('AEGIS_SESSION_IDENTITY_BINDING_MISSING');
+  }
+  return { self, peer };
+}
 
 function buildDevAADWithHeader(
   myUserId: string,
@@ -148,8 +164,17 @@ function buildDevAADWithHeader(
   peerDeviceId: string,
   sessionId: string,
   header: { dh: string; pn: number; n: number },
+  identity: { self: string; peer: string },
 ): Uint8Array {
-  const identityAd = buildDevAAD(myUserId, myDeviceId, peerUserId, peerDeviceId, sessionId);
+  const identityAd = buildDevAAD(
+    myUserId,
+    myDeviceId,
+    peerUserId,
+    peerDeviceId,
+    sessionId,
+    identity.self,
+    identity.peer,
+  );
   const headerAd = new hardGlobals.TextEncoder().encode(
     `${AEGIS_HEADER_AAD}${header.dh}|${header.pn}|${header.n}`,
   );
