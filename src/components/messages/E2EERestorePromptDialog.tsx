@@ -23,9 +23,12 @@ import {
   acquireRecoveryDialog,
   releaseRecoveryDialog,
 } from '@/lib/crypto/recoveryDialogCoordinator';
+import { inspectAccountCryptoState } from '@/lib/crypto/accountCryptoState';
+import { IdentityResetScreen } from '@/components/messaging/IdentityRecoveryGate';
 import { supabase } from '@/integrations/supabase/client';
 
 const DIALOG_OWNER = 'e2ee-restore-prompt';
+
 
 export function E2EERestorePromptDialog() {
   const { user } = useAuth();
@@ -34,6 +37,10 @@ export function E2EERestorePromptDialog() {
   const [password, setPassword] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
   const [tab, setTab] = useState<'password' | 'recovery'>('password');
+  // Invariant : on ne demande un mot de passe que si une sauvegarde restaurable
+  // existe réellement côté serveur. Sinon, seule la réinitialisation explicite
+  // peut débloquer le compte.
+  const [mode, setMode] = useState<'restore' | 'reset'>('restore');
 
   useEffect(() => () => releaseRecoveryDialog(DIALOG_OWNER), []);
 
@@ -48,11 +55,26 @@ export function E2EERestorePromptDialog() {
         // Une inspection locale en erreur ne doit pas masquer la restauration.
       }
       if (cancelled) return;
+
+      const inspection = await inspectAccountCryptoState(user.id);
+      if (cancelled) return;
+      if (inspection.state === 'RESTORABLE_IDENTITY') {
+        setMode('restore');
+      } else if (inspection.state === 'UNRECOVERABLE_SERVER_IDENTITY') {
+        setMode('reset');
+      } else {
+        // READY / NEW_ACCOUNT / LEGACY / INCONSISTENT : aucun mot de passe ne
+        // débloquerait quoi que ce soit ici.
+        return;
+      }
+
       // Un seul ecran de recuperation peut etre visible a la fois.
       if (!acquireRecoveryDialog(DIALOG_OWNER)) return;
-      console.warn('[E2EERestore] prompting user to restore keys', detail);
+      console.warn('[E2EERestore] prompting user', inspection.state, detail);
       setOpen(true);
     };
+
+
 
 
     const onNeeded = async (event: Event) => {
@@ -112,7 +134,11 @@ export function E2EERestorePromptDialog() {
       if (status === 'restored' || status === 'local_ok') {
         finish('password_restore');
       } else if (status === 'no_backup') {
-        toast.error('Aucune sauvegarde trouvée pour ce compte');
+        // Aucune sauvegarde : le mot de passe ne peut rien déverrouiller,
+        // on bascule sur la réinitialisation explicite d'identité.
+        setMode('reset');
+        toast.error('Aucune sauvegarde trouvée : réinitialisation nécessaire');
+
       } else {
         toast.error('Mot de passe incorrect ou sauvegarde illisible');
       }
@@ -146,6 +172,25 @@ export function E2EERestorePromptDialog() {
     }
   };
 
+  if (mode === 'reset') {
+    return (
+      <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) releaseRecoveryDialog(DIALOG_OWNER); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="sr-only">Réinitialiser votre identité sécurisée</DialogTitle>
+            <DialogDescription className="sr-only">
+              Aucune sauvegarde restaurable n’existe pour ce compte.
+            </DialogDescription>
+          </DialogHeader>
+          <IdentityResetScreen
+            onSuccess={() => finish('identity_reset')}
+            onRetryRestore={() => setMode('restore')}
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={(value) => { if (busy) return; setOpen(value); if (!value) releaseRecoveryDialog(DIALOG_OWNER); }}>
       <DialogContent className="sm:max-w-md">
@@ -165,6 +210,8 @@ export function E2EERestorePromptDialog() {
             </p>
           </DialogDescription>
         </DialogHeader>
+
+
 
         <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
           <TabsList className="grid w-full grid-cols-2">
