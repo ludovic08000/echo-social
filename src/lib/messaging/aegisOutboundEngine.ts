@@ -233,10 +233,18 @@ export async function sendAegisOutboundMessage(
       input.senderUserId,
       messageId,
     );
-    if (!archiveBody) throw new Error('AEGIS_ARCHIVE_PREPARE_FAILED');
-    await persist({ archiveBody });
-    trace('ARCHIVE_ENCRYPT', { outcome: 'ok', blockMs: Date.now() - archiveStartedAt });
+    // Invariant : la sauvegarde d'historique est une commodité de récupération,
+    // jamais une condition d'envoi. Si la clé d'archive est indisponible
+    // (Master Key absente ou ancienne clé non déchiffrable après reset
+    // d'identité), on envoie quand même en E2EE sans archive_body.
+    if (archiveBody) {
+      await persist({ archiveBody });
+      trace('ARCHIVE_ENCRYPT', { outcome: 'ok', blockMs: Date.now() - archiveStartedAt });
+    } else {
+      trace('ARCHIVE_ENCRYPT', { outcome: 'skip', blockMs: Date.now() - archiveStartedAt });
+    }
   }
+
 
   if (!parentBody) {
     if (utf8ByteLength(input.plaintext) > MAX_INLINE_MESSAGE_BODY_BYTES && !resumed?.transportPlaintext) {
