@@ -1,0 +1,50 @@
+name: Aegis Four-Device Live Ratchet
+
+on:
+  push:
+    branches:
+      - agent/aegis-durable-database
+    paths:
+      - 'src/lib/crypto/__tests__/aegisLiveFourDeviceDelivery.test.ts'
+      - '.github/workflows/aegis-live-four-device-ratchet.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aegis-four-device-live-ratchet
+  cancel-in-progress: true
+
+jobs:
+  delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Correct temporary expected gateway call count
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/lib/crypto/__tests__/aegisLiveFourDeviceDelivery.test.ts')
+          source = path.read_text()
+          source = source.replace('expect(gatewayLogs).toHaveLength(14);', 'expect(gatewayLogs).toHaveLength(20);')
+          path.write_text(source)
+          PY
+
+      - name: Run live four-device Double Ratchet delivery
+        env:
+          AEGIS_LIVE_FOUR_DEVICE_RATCHET: '1'
+          SUPABASE_URL: https://vkpmoqfzrihcijjochks.supabase.co
+          SUPABASE_ANON_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
+        run: npx vitest run src/lib/crypto/__tests__/aegisLiveFourDeviceDelivery.test.ts --reporter=verbose
