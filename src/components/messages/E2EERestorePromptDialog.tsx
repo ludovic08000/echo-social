@@ -84,6 +84,7 @@ export function E2EERestorePromptDialog() {
     if (!open) return;
     const onRestored = () => {
       setOpen(false);
+      releaseRecoveryDialog(DIALOG_OWNER);
       setPassword('');
       setRecoveryKey('');
       toast.success('Messages déverrouillés');
@@ -94,6 +95,7 @@ export function E2EERestorePromptDialog() {
 
   const finish = (origin: string) => {
     setOpen(false);
+    releaseRecoveryDialog(DIALOG_OWNER);
     setPassword('');
     setRecoveryKey('');
     window.dispatchEvent(new CustomEvent('forsure-keys-unlocked', { detail: { origin } }));
@@ -145,7 +147,7 @@ export function E2EERestorePromptDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }}>
+    <Dialog open={open} onOpenChange={(value) => { if (busy) return; setOpen(value); if (!value) releaseRecoveryDialog(DIALOG_OWNER); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
