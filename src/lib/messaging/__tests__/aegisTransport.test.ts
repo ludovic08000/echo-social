@@ -3,12 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   rpc: vi.fn(),
+  client: null as { rest: object; rpc: typeof vi.fn } | null,
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
-  supabase: {
+  supabase: mocks.client = {
+    rest: {},
     auth: { getSession: mocks.getSession },
-    rpc: mocks.rpc,
+    rpc(this: { rest?: object }, ...args: unknown[]) {
+      if (!this.rest) throw new TypeError("Cannot read properties of undefined (reading 'rest')");
+      return mocks.rpc(...args);
+    },
   },
 }));
 
@@ -34,6 +39,10 @@ describe('Aegis transport boundary', () => {
 
     expect(getAegisTransportKind()).toBe('supabase');
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith('aegis_send_message', {
+      p_device_id: 'device-one',
+      p_message_ids: ['message-one'],
+    });
   });
 
   it('uses the HTTPS VPS gateway with the current Supabase bearer token', async () => {
