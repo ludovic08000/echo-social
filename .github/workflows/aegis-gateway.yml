@@ -26,7 +26,7 @@ concurrency:
 jobs:
   contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,14 +41,16 @@ jobs:
           node --check infra/aegis-server/server.mjs
           node --check infra/aegis-server/smoke-client.mjs
           node --check infra/aegis-server/vercel-adapter.mjs
+          node --check infra/aegis-server/live-anonymous-delivery.mjs
           for file in api/aegis-*.mjs; do node --check "$file"; done
 
       - name: Gateway contract tests
         working-directory: infra/aegis-server
         run: npm test
 
-      - name: Temporary protocol implementation probe
-        run: |
-          echo AEGIS_PROTOCOL_PROBE_START
-          grep -R -n -E "register_user_device_safe|aegis_send_message|get_conversation_deliverable_devices|conversation_participants" src supabase | head -400 || true
-          echo AEGIS_PROTOCOL_PROBE_END
+      - name: Anonymous live send sync ack delivery
+        working-directory: infra/aegis-server
+        env:
+          SUPABASE_URL: https://vkpmoqfzrihcijjochks.supabase.co
+          SUPABASE_ANON_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
+        run: node live-anonymous-delivery.mjs
