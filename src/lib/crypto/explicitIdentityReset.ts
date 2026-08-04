@@ -108,7 +108,14 @@ async function runReset(password: string): Promise<IdentityResetResult> {
     window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
       detail: { status: 'identity_reset', userId: user.id, fingerprint: bundle.fingerprint },
     }));
+    // Invariant corrigé : les autorisations d'appareil signées par l'ancienne
+    // identité sont effacées côté serveur ; cet appareil doit se ré-autoriser
+    // immédiatement sinon le registre reste invalide et bloque les envois.
+    window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
+      detail: { reason: 'identity_reset' },
+    }));
   } catch { /* la diffusion d'événement est best-effort */ }
+
 
   return { ok: true, fingerprint: bundle.fingerprint, state: after.state };
 }

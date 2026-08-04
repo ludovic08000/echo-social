@@ -97,6 +97,29 @@ async function hygieneFilterDevices(devices: DeviceDescriptor[], options: Device
   return verified.filter(Boolean) as DeviceDescriptor[];
 }
 
+/**
+ * Invariant corrigé : après un remplacement d'identité de compte, l'autorisation
+ * locale devient invalide. On demande une ré-autorisation de CET appareil au
+ * lieu de rester bloqué indéfiniment sur un registre invalide.
+ */
+let lastSelfRepairAt = 0;
+function requestSelfRepairIfNeeded(deviceIds: DeviceId[], reason: string): void {
+  try {
+    const self = selfDeviceId();
+    if (!self || isDeviceIdTemporary()) return;
+    if (!deviceIds.includes(self)) return;
+    const now = Date.now();
+    if (now - lastSelfRepairAt < 30_000) return;
+    lastSelfRepairAt = now;
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
+      detail: { reason, deviceId: self },
+    }));
+  } catch { /* best-effort */ }
+}
+
+
+
 async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions): Promise<DeviceDescriptor[]> {
   // Trusted (signed) list only. Invalid historical rows are quarantined: they
   // are never returned as routes, but they also cannot deny service to a valid
@@ -131,6 +154,7 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
       );
 
       if (rejectedRoutable.length > 0) {
+        requestSelfRepairIfNeeded(rejectedRoutable.map(entry => entry.deviceId), 'invalid_device_authorization');
         throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
       }
 
@@ -147,8 +171,15 @@ async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions)
       }
 
       if (trustedRoutable.length === 0) {
+        // Une identité de compte remplacée invalide toutes les autorisations
+        // d'appareil : l'appareil courant doit se ré-autoriser lui-même.
+        requestSelfRepairIfNeeded(
+          [selfDeviceId()],
+          'missing_device_authorization',
+        );
         throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
       }
+
 
       return hygieneFilterDevices(
         trustedRoutable.map(entry => ({
