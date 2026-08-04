@@ -144,6 +144,9 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
         if (table === 'device_signed_prekeys' && payload?.eventType === 'UPDATE') {
           void handleDeviceSpkUpdate(payload, userId);
         }
+        if (table === 'user_devices') {
+          void handleDeviceRevocation(payload, userId);
+        }
       },
     );
   }
