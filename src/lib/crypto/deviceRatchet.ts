@@ -601,7 +601,7 @@ async function ratchetEncryptUnlocked(
       errorMessage: 'Session sans liaison d’identité — re-X3DH requis',
       myDeviceId, peerUserId, peerDeviceId,
     });
-    await deleteSession(key).catch(() => undefined);
+    await invalidateDeviceSessionUnlocked(myUserId, myDeviceId, peerUserId, peerDeviceId);
     return null;
   }
 
