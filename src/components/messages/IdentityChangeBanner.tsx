@@ -31,13 +31,18 @@ interface Props {
 
 export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick, className }: Props) {
   const [events, setEvents] = useState<IdentityChangeEvent[]>([]);
+  const [currentFingerprint, setCurrentFingerprint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!observerUserId || !peerUserId) return;
     try {
-      const list = await fetchUnacknowledgedIdentityChanges(observerUserId, peerUserId);
+      const [list, peerKeys] = await Promise.all([
+        fetchUnacknowledgedIdentityChanges(observerUserId, peerUserId),
+        fetchPeerPublicKeys(peerUserId, { forceRefresh: true }).catch(() => null),
+      ]);
       setEvents(list);
+      setCurrentFingerprint(peerKeys?.fingerprint ?? null);
     } catch (e) {
       console.warn('[A4][banner] load failed', e);
     }
@@ -64,9 +69,15 @@ export function IdentityChangeBanner({ observerUserId, peerUserId, onVerifyClick
 
   if (!events.length) return null;
   const latest = events[0];
+  // Invariant corrigé : la confiance porte TOUJOURS sur l'identité actuellement
+  // publiée par le contact, jamais sur une ligne d'historique périmée. Acquitter
+  // une ancienne empreinte laissait le portail d'envoi bloqué indéfiniment.
+  const trustTarget = currentFingerprint ?? latest.newFingerprint;
   const previewPrev = latest.previousFingerprint ? latest.previousFingerprint.slice(0, 12) : '—';
-  const previewNew = latest.newFingerprint.slice(0, 12);
+  const previewNew = trustTarget.slice(0, 12);
   const isRecovery = latest.changeType === 'recovery_restore';
+
+
 
   const acknowledgeIdentityChange = async () => {
     if (!observerUserId || !peerUserId) return;
