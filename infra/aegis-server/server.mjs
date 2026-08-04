@@ -1,604 +1,335 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 
 const SERVICE = 'aegis-server';
 const PROTOCOL_VERSION = 2;
-const MIN_PROTOCOL_VERSION = 2;
-const port = integerEnv('PORT', 8787, 1, 65535);
-const supabaseUrl = requiredEnv('SUPABASE_URL').replace(/\/+$/, '');
-const supabaseAnonKey = requiredEnv('SUPABASE_ANON_KEY');
-const allowedOrigins = csvSet('AEGIS_ALLOWED_ORIGINS', process.env.AEGIS_ALLOWED_ORIGIN ?? '');
-const trustProxy = boolEnv('AEGIS_TRUST_PROXY', true);
-const requestTimeoutMs = integerEnv('AEGIS_REQUEST_TIMEOUT_MS', 20_000, 1_000, 120_000);
-const authTimeoutMs = integerEnv('AEGIS_AUTH_TIMEOUT_MS', 8_000, 1_000, 30_000);
-const readinessTimeoutMs = integerEnv('AEGIS_READINESS_TIMEOUT_MS', 5_000, 500, 30_000);
-const maxBodyBytes = integerEnv('AEGIS_MAX_BODY_BYTES', 1_048_576, 1_024, 10_485_760);
-const rateWindowMs = integerEnv('AEGIS_RATE_WINDOW_MS', 60_000, 1_000, 3_600_000);
-const rateLimitPerIp = integerEnv('AEGIS_RATE_LIMIT_PER_IP', 180, 1, 100_000);
-const rateLimitPerUser = integerEnv('AEGIS_RATE_LIMIT_PER_USER', 300, 1, 100_000);
-const maxConcurrent = integerEnv('AEGIS_MAX_CONCURRENT_REQUESTS', 200, 1, 10_000);
-const shutdownGraceMs = integerEnv('AEGIS_SHUTDOWN_GRACE_MS', 10_000, 1_000, 120_000);
+const MIN_PROTOCOL_VERSION = 1;
 
-const routes = new Map([
-  ['/v2/rpc/aegis_send_message', route('aegis_send_message', {
-    maxBytes: maxBodyBytes,
-    idempotent: true,
-    required: ['p_message_id', 'p_conversation_id', 'p_sender_device_id', 'p_route_version'],
-  })],
-  ['/v2/rpc/aegis_sync_device', route('aegis_sync_device', {
-    maxBytes: 256_000,
-    idempotent: true,
-    required: ['p_device_id'],
-  })],
-  ['/v2/rpc/aegis_ack_device_messages', route('aegis_ack_device_messages', {
-    maxBytes: 128_000,
-    idempotent: true,
-    required: ['p_device_id'],
-  })],
-  ['/v2/rpc/aegis_resolve_conversation_route', route('aegis_resolve_conversation_route', {
-    maxBytes: 64_000,
-    required: ['p_conversation_id', 'p_sender_device_id'],
-  })],
-  ['/v2/rpc/aegis_get_device_health', route('aegis_get_device_health', {
-    maxBytes: 32_000,
-    required: ['p_device_id'],
-  })],
-  ['/v2/rpc/aegis_enroll_device', route('aegis_enroll_device', {
-    maxBytes: 512_000,
-    idempotent: true,
-    required: ['p_device_id', 'p_device_public_key'],
-  })],
-  ['/v2/rpc/aegis_publish_prekey_bundle', route('aegis_publish_prekey_bundle', {
-    maxBytes: 768_000,
-    idempotent: true,
-    required: ['p_device_id'],
-  })],
-  ['/v2/rpc/aegis_repair_current_device', route('aegis_repair_current_device', {
-    maxBytes: 512_000,
-    idempotent: true,
-    required: ['p_device_id'],
-  })],
-]);
+const config = {
+  port: intEnv('PORT', 8787, 1, 65535),
+  supabaseUrl: requiredEnv('SUPABASE_URL').replace(/\/+$/, ''),
+  supabaseAnonKey: requiredEnv('SUPABASE_ANON_KEY'),
+  origins: csvEnv('AEGIS_ALLOWED_ORIGINS', process.env.AEGIS_ALLOWED_ORIGIN ?? ''),
+  trustProxy: boolEnv('AEGIS_TRUST_PROXY', true),
+  authTimeoutMs: intEnv('AEGIS_AUTH_TIMEOUT_MS', 8_000, 1_000, 30_000),
+  rpcTimeoutMs: intEnv('AEGIS_REQUEST_TIMEOUT_MS', 20_000, 1_000, 120_000),
+  readinessTimeoutMs: intEnv('AEGIS_READINESS_TIMEOUT_MS', 5_000, 500, 30_000),
+  maxBodyBytes: intEnv('AEGIS_MAX_BODY_BYTES', 1_048_576, 1_024, 10_485_760),
+  rateWindowMs: intEnv('AEGIS_RATE_WINDOW_MS', 60_000, 1_000, 3_600_000),
+  ratePerIp: intEnv('AEGIS_RATE_LIMIT_PER_IP', 180, 1, 100_000),
+  ratePerUser: intEnv('AEGIS_RATE_LIMIT_PER_USER', 300, 1, 100_000),
+  maxConcurrent: intEnv('AEGIS_MAX_CONCURRENT_REQUESTS', 200, 1, 10_000),
+  shutdownGraceMs: intEnv('AEGIS_SHUTDOWN_GRACE_MS', 10_000, 1_000, 120_000),
+};
 
-// Temporary v1 compatibility. It accepts only the original three routes and
-// tells the caller which protocol should be adopted. Remove after every active
-// web/mobile client advertises protocol v2.
-const legacyRoutes = new Map([
-  ['/v1/rpc/aegis_send_message', routes.get('/v2/rpc/aegis_send_message')],
-  ['/v1/rpc/aegis_sync_device', routes.get('/v2/rpc/aegis_sync_device')],
-  ['/v1/rpc/aegis_ack_device_messages', routes.get('/v2/rpc/aegis_ack_device_messages')],
+const ROUTES = new Map([
+  ['/v1/rpc/aegis_send_message', rpcRoute('aegis_send_message', ['p_message_id', 'p_conversation_id', 'p_sender_device_id', 'p_route_version'], 'p_message_id')],
+  ['/v1/rpc/aegis_sync_device', rpcRoute('aegis_sync_device', ['p_device_id'], 'p_device_id', 256_000)],
+  ['/v1/rpc/aegis_ack_device_messages', rpcRoute('aegis_ack_device_messages', ['p_device_id'], 'p_device_id', 128_000)],
+  ['/v2/rpc/aegis_send_message', rpcRoute('aegis_send_message', ['p_message_id', 'p_conversation_id', 'p_sender_device_id', 'p_route_version'], 'p_message_id')],
+  ['/v2/rpc/aegis_sync_device', rpcRoute('aegis_sync_device', ['p_device_id'], 'p_device_id', 256_000)],
+  ['/v2/rpc/aegis_ack_device_messages', rpcRoute('aegis_ack_device_messages', ['p_device_id'], 'p_device_id', 128_000)],
+  ['/v2/rpc/aegis_resolve_conversation_route', rpcRoute('aegis_resolve_conversation_route', ['p_conversation_id', 'p_sender_device_id'], null, 64_000)],
+  ['/v2/rpc/aegis_get_device_health', rpcRoute('aegis_get_device_health', ['p_device_id'], null, 32_000)],
+  ['/v2/rpc/aegis_enroll_device', rpcRoute('aegis_enroll_device', ['p_device_id', 'p_device_public_key'], 'p_device_id', 512_000)],
+  ['/v2/rpc/aegis_publish_prekey_bundle', rpcRoute('aegis_publish_prekey_bundle', ['p_device_id'], 'p_device_id', 768_000)],
+  ['/v2/rpc/aegis_repair_current_device', rpcRoute('aegis_repair_current_device', ['p_device_id'], 'p_device_id', 512_000)],
 ]);
 
 const ipBuckets = new Map();
 const userBuckets = new Map();
 let inflight = 0;
 let shuttingDown = false;
-let readyCache = { checkedAt: 0, ok: false, reason: 'not_checked' };
+let readinessCache = { at: 0, ok: false, reason: 'not_checked' };
 
 function requiredEnv(name) {
   const value = String(process.env[name] ?? '').trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
 }
-
-function integerEnv(name, fallback, min, max) {
-  const raw = Number(process.env[name] ?? fallback);
-  if (!Number.isInteger(raw) || raw < min || raw > max) {
-    throw new Error(`${name} must be an integer between ${min} and ${max}`);
-  }
-  return raw;
+function intEnv(name, fallback, min, max) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${name} must be between ${min} and ${max}`);
+  return value;
 }
-
 function boolEnv(name, fallback) {
-  const raw = String(process.env[name] ?? fallback).toLowerCase();
-  if (['1', 'true', 'yes'].includes(raw)) return true;
-  if (['0', 'false', 'no'].includes(raw)) return false;
+  const value = String(process.env[name] ?? fallback).toLowerCase();
+  if (['1', 'true', 'yes'].includes(value)) return true;
+  if (['0', 'false', 'no'].includes(value)) return false;
   throw new Error(`${name} must be true or false`);
 }
-
-function csvSet(name, fallback = '') {
-  return new Set(String(process.env[name] ?? fallback)
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean));
+function csvEnv(name, fallback = '') {
+  return new Set(String(process.env[name] ?? fallback).split(',').map((v) => v.trim()).filter(Boolean));
 }
-
-function route(rpc, options = {}) {
-  return {
-    rpc,
-    maxBytes: options.maxBytes ?? maxBodyBytes,
-    idempotent: options.idempotent === true,
-    required: options.required ?? [],
-  };
+function rpcRoute(rpc, required, stableField = null, maxBytes = config.maxBodyBytes) {
+  return { rpc, required, stableField, maxBytes };
 }
-
-function requestId(request) {
+function getRequestId(request) {
   const supplied = String(request.headers['x-request-id'] ?? '').trim();
   return /^[A-Za-z0-9._:-]{8,128}$/.test(supplied) ? supplied : randomUUID();
 }
-
-function remoteIp(request) {
-  if (trustProxy) {
+function getIp(request) {
+  if (config.trustProxy) {
     const forwarded = String(request.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim();
     if (forwarded) return forwarded;
   }
   return request.socket.remoteAddress ?? 'unknown';
 }
-
-function corsHeaders(origin, requestIdValue, legacy = false) {
-  const allowed = allowedOrigins.size === 0 || allowedOrigins.has(origin) ? origin : '';
+function allowedOrigin(origin) {
+  return config.origins.size === 0 || config.origins.has(origin);
+}
+function headers(origin, requestId, extra = {}) {
+  const allow = allowedOrigin(origin) && origin ? origin : '';
   return {
-    ...(allowed ? { 'access-control-allow-origin': allowed } : {}),
-    ...(allowed ? { vary: 'origin' } : {}),
+    ...(allow ? { 'access-control-allow-origin': allow, vary: 'origin' } : {}),
     'access-control-allow-headers': 'authorization, content-type, idempotency-key, x-aegis-protocol-version, x-request-id',
     'access-control-expose-headers': 'x-aegis-protocol-version, x-request-id, retry-after',
-    'access-control-allow-methods': 'POST, GET, OPTIONS',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
     'cache-control': 'no-store',
     'content-type': 'application/json; charset=utf-8',
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
     'referrer-policy': 'no-referrer',
     'x-aegis-protocol-version': String(PROTOCOL_VERSION),
-    'x-request-id': requestIdValue,
-    ...(legacy ? { deprecation: 'true', sunset: 'Wed, 04 Nov 2026 00:00:00 GMT' } : {}),
+    'x-request-id': requestId,
+    ...extra,
   };
 }
-
-function send(response, status, payload, context = {}) {
+function send(response, status, payload, origin, requestId, extra = {}) {
   if (response.writableEnded) return;
-  const headers = { ...corsHeaders(context.origin ?? '', context.requestId ?? randomUUID(), context.legacy), ...(context.headers ?? {}) };
-  response.writeHead(status, headers);
+  response.writeHead(status, headers(origin, requestId, extra));
   response.end(JSON.stringify(payload));
 }
-
-function apiError(code, message, options = {}) {
-  return {
-    error: {
-      code,
-      message,
-      retryable: options.retryable === true,
-      details: options.details ?? null,
-      hint: options.hint ?? null,
-      request_id: options.requestId ?? null,
-    },
-  };
+function failure(code, message, requestId, options = {}) {
+  return { error: { code, message, retryable: options.retryable === true, details: options.details ?? null, hint: options.hint ?? null, request_id: requestId } };
 }
-
 function log(level, event, fields = {}) {
-  const safe = {
-    ts: new Date().toISOString(),
-    level,
-    service: SERVICE,
-    event,
-    ...fields,
-  };
-  // Never log authorization headers, request bodies, plaintext, ciphertext or keys.
-  console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](JSON.stringify(safe));
+  const payload = JSON.stringify({ ts: new Date().toISOString(), level, service: SERVICE, event, ...fields });
+  if (level === 'error') console.error(payload);
+  else if (level === 'warn') console.warn(payload);
+  else console.log(payload);
 }
-
-function consumeBucket(store, key, limit) {
+function consume(store, key, limit) {
   const now = Date.now();
   let bucket = store.get(key);
-  if (!bucket || bucket.resetAt <= now) {
-    bucket = { count: 0, resetAt: now + rateWindowMs };
-    store.set(key, bucket);
-  }
+  if (!bucket || bucket.resetAt <= now) bucket = { count: 0, resetAt: now + config.rateWindowMs };
   bucket.count += 1;
-  return {
-    allowed: bucket.count <= limit,
-    remaining: Math.max(0, limit - bucket.count),
-    retryAfterSeconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
-  };
+  store.set(key, bucket);
+  return { allowed: bucket.count <= limit, retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)) };
 }
-
-function cleanupBuckets() {
+setInterval(() => {
   const now = Date.now();
-  for (const store of [ipBuckets, userBuckets]) {
-    for (const [key, bucket] of store) {
-      if (bucket.resetAt <= now) store.delete(key);
-    }
-  }
-}
-setInterval(cleanupBuckets, Math.min(rateWindowMs, 60_000)).unref();
+  for (const store of [ipBuckets, userBuckets]) for (const [key, bucket] of store) if (bucket.resetAt <= now) store.delete(key);
+}, Math.min(config.rateWindowMs, 60_000)).unref();
 
-async function readJson(request, limit) {
+async function fetchWithTimeout(url, init, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(url, { ...init, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
+async function authenticate(authorization) {
+  const response = await fetchWithTimeout(`${config.supabaseUrl}/auth/v1/user`, {
+    method: 'GET', headers: { apikey: config.supabaseAnonKey, authorization },
+  }, config.authTimeoutMs);
+  if (!response.ok) return null;
+  const user = await response.json();
+  return typeof user?.id === 'string' ? user.id : null;
+}
+async function readJson(request, maxBytes) {
   const contentType = String(request.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
-  if (contentType !== 'application/json') {
-    const error = new Error('CONTENT_TYPE_REQUIRED');
-    error.status = 415;
-    throw error;
-  }
+  if (contentType !== 'application/json') throw httpError(415, 'CONTENT_TYPE_REQUIRED');
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > limit) {
-      const error = new Error('BODY_TOO_LARGE');
-      error.status = 413;
-      throw error;
-    }
+    if (size > maxBytes) throw httpError(413, 'BODY_TOO_LARGE');
     chunks.push(chunk);
   }
   const raw = Buffer.concat(chunks).toString('utf8');
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error('object required');
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error();
     return parsed;
-  } catch {
-    const error = new Error('INVALID_JSON');
-    error.status = 400;
-    throw error;
-  }
+  } catch { throw httpError(400, 'INVALID_JSON'); }
 }
-
-function validateBody(body, definition) {
-  const missing = definition.required.filter((key) => body[key] === undefined || body[key] === null || body[key] === '');
-  if (missing.length > 0) {
-    const error = new Error('VALIDATION_FAILED');
-    error.status = 400;
-    error.details = { missing };
-    throw error;
-  }
+function httpError(status, code, details = null) {
+  const error = new Error(code);
+  error.status = status;
+  error.details = details;
+  return error;
 }
-
-function validateProtocol(request, legacy) {
-  if (legacy) return;
-  const raw = String(request.headers['x-aegis-protocol-version'] ?? '');
+function validateProtocol(request, path) {
+  const raw = String(request.headers['x-aegis-protocol-version'] ?? (path.startsWith('/v1/') ? '1' : ''));
   const version = Number(raw);
   if (!Number.isInteger(version) || version < MIN_PROTOCOL_VERSION || version > PROTOCOL_VERSION) {
-    const error = new Error('AEGIS_PROTOCOL_VERSION_UNSUPPORTED');
-    error.status = 426;
-    error.details = { supported_min: MIN_PROTOCOL_VERSION, supported_max: PROTOCOL_VERSION, received: raw || null };
-    throw error;
+    throw httpError(426, 'AEGIS_PROTOCOL_VERSION_UNSUPPORTED', { received: raw || null, supported_min: MIN_PROTOCOL_VERSION, supported_max: PROTOCOL_VERSION });
   }
+  return version;
 }
-
-function validateIdempotency(request, definition) {
-  if (!definition.idempotent) return null;
-  const key = String(request.headers['idempotency-key'] ?? '').trim();
-  if (!/^[A-Za-z0-9._:-]{16,128}$/.test(key)) {
-    const error = new Error('IDEMPOTENCY_KEY_REQUIRED');
-    error.status = 400;
-    throw error;
-  }
-  return key;
+function validateBody(body, definition) {
+  const missing = definition.required.filter((key) => body[key] === undefined || body[key] === null || body[key] === '');
+  if (missing.length) throw httpError(400, 'VALIDATION_FAILED', { missing });
 }
-
-async function fetchWithTimeout(url, init, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+function stableIdempotencyKey(request, body, definition, userId) {
+  const header = String(request.headers['idempotency-key'] ?? '').trim();
+  if (header && !/^[A-Za-z0-9._:-]{16,128}$/.test(header)) throw httpError(400, 'INVALID_IDEMPOTENCY_KEY');
+  const source = header || (definition.stableField ? String(body[definition.stableField] ?? '') : '');
+  if (!source) return null;
+  return createHash('sha256').update(`${userId}:${definition.rpc}:${source}`).digest('hex');
 }
-
-async function authenticate(authorization) {
-  const response = await fetchWithTimeout(`${supabaseUrl}/auth/v1/user`, {
-    method: 'GET',
-    headers: { apikey: supabaseAnonKey, authorization },
-  }, authTimeoutMs);
-  if (!response.ok) return null;
-  const user = await response.json();
-  return typeof user?.id === 'string' ? { id: user.id } : null;
-}
-
-async function callRpc(definition, body, authorization, requestIdValue, idempotencyKey) {
-  const upstream = await fetchWithTimeout(`${supabaseUrl}/rest/v1/rpc/${definition.rpc}`, {
+async function callRpc(definition, body, authorization, requestId, idempotencyHash) {
+  const response = await fetchWithTimeout(`${config.supabaseUrl}/rest/v1/rpc/${definition.rpc}`, {
     method: 'POST',
     headers: {
-      apikey: supabaseAnonKey,
+      apikey: config.supabaseAnonKey,
       authorization,
       'content-type': 'application/json',
       'x-client-info': `${SERVICE}/${PROTOCOL_VERSION}`,
-      'x-request-id': requestIdValue,
-      ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}),
+      'x-request-id': requestId,
+      ...(idempotencyHash ? { 'idempotency-key': idempotencyHash } : {}),
     },
     body: JSON.stringify(body),
-  }, requestTimeoutMs);
-
-  const text = await upstream.text();
+  }, config.rpcTimeoutMs);
+  const text = await response.text();
   let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { message: text.slice(0, 500) }; }
-  return { upstream, data };
+  try { data = text ? JSON.parse(text) : null; }
+  catch { data = { message: text.slice(0, 500) }; }
+  return { response, data };
 }
-
-function normalizeUpstreamError(status, data, requestIdValue) {
-  const rawCode = String(data?.code ?? `UPSTREAM_${status}`);
-  const rawMessage = String(data?.message ?? 'Aegis database rejected the request.');
-  const knownRetryable = new Set([
-    '40001', '40P01', '57014', 'PGRST003',
-    'E2EE_DEVICE_LIST_STALE', 'PARTICIPANT_DEVICE_SETUP_REQUIRED',
-    'SENDER_DEVICE_NOT_ROUTABLE', 'PREKEY_BUNDLE_INCOMPLETE',
-  ]);
-  const retryable = status >= 500 || status === 408 || status === 409 || status === 429 || knownRetryable.has(rawCode);
-  return apiError(rawCode, publicMessage(rawCode, rawMessage), {
-    retryable,
-    details: sanitizeDetails(data?.details),
-    hint: sanitizeText(data?.hint),
-    requestId: requestIdValue,
-  });
+function safeText(value) {
+  return typeof value === 'string' ? value.replace(/[\r\n\t]/g, ' ').slice(0, 500) : null;
 }
-
-function publicMessage(code, fallback) {
-  const messages = {
+function sanitizeDetails(value, depth = 0) {
+  if (depth > 4 || value === null || value === undefined) return value ?? null;
+  if (typeof value === 'string') return safeText(value);
+  if (typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitizeDetails(item, depth + 1));
+  const out = {};
+  for (const [key, item] of Object.entries(value).slice(0, 50)) {
+    out[key] = /key|secret|token|authorization|cipher|body|plaintext/i.test(key) ? '[REDACTED]' : sanitizeDetails(item, depth + 1);
+  }
+  return out;
+}
+function publicRpcMessage(code, fallback) {
+  const known = {
     PARTICIPANT_DEVICE_SETUP_REQUIRED: 'Le destinataire doit terminer la sécurisation de son appareil.',
+    E2EE_PARTICIPANT_ROUTE_UNAVAILABLE: 'Un participant ne possède actuellement aucun appareil sécurisé disponible.',
     SENDER_DEVICE_NOT_ROUTABLE: 'Cet appareil doit être réparé avant de pouvoir envoyer des messages.',
     PREKEY_BUNDLE_INCOMPLETE: 'Le canal sécurisé est en cours de préparation.',
     E2EE_DEVICE_LIST_STALE: 'La liste des appareils a changé. Une nouvelle tentative est nécessaire.',
-    E2EE_PARTICIPANT_ROUTE_UNAVAILABLE: 'Un participant ne possède actuellement aucun appareil sécurisé disponible.',
   };
-  return messages[code] ?? sanitizeText(fallback) ?? 'Aegis database rejected the request.';
+  return known[code] ?? safeText(fallback) ?? 'Aegis database rejected the request.';
 }
-
-function sanitizeText(value) {
-  if (typeof value !== 'string') return null;
-  return value.replace(/[\r\n\t]/g, ' ').slice(0, 500);
+function normalizeUpstream(status, data, requestId) {
+  const code = String(data?.code ?? `UPSTREAM_${status}`);
+  const retryableCodes = new Set(['40001', '40P01', '57014', 'PGRST003', 'PARTICIPANT_DEVICE_SETUP_REQUIRED', 'E2EE_PARTICIPANT_ROUTE_UNAVAILABLE', 'SENDER_DEVICE_NOT_ROUTABLE', 'PREKEY_BUNDLE_INCOMPLETE', 'E2EE_DEVICE_LIST_STALE']);
+  return failure(code, publicRpcMessage(code, data?.message), requestId, {
+    retryable: status >= 500 || [408, 409, 429].includes(status) || retryableCodes.has(code),
+    details: sanitizeDetails(data?.details),
+    hint: safeText(data?.hint),
+  });
 }
-
-function sanitizeDetails(value) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return sanitizeText(value);
-  // Details can contain participant/device identifiers but must never contain keys.
-  if (typeof value === 'object') {
-    const json = JSON.stringify(value, (key, item) =>
-      /key|secret|token|authorization|cipher|body|plaintext/i.test(key) ? '[REDACTED]' : item,
-    );
-    return JSON.parse(json.slice(0, 4_000));
-  }
-  return String(value).slice(0, 500);
-}
-
 async function readiness() {
   const now = Date.now();
-  if (now - readyCache.checkedAt < 5_000) return readyCache;
+  if (now - readinessCache.at < 5_000) return readinessCache;
   try {
-    const response = await fetchWithTimeout(`${supabaseUrl}/rest/v1/`, {
-      method: 'GET',
-      headers: { apikey: supabaseAnonKey },
-    }, readinessTimeoutMs);
-    readyCache = {
-      checkedAt: now,
-      ok: response.status < 500,
-      reason: response.status < 500 ? 'ok' : `supabase_${response.status}`,
-    };
+    const response = await fetchWithTimeout(`${config.supabaseUrl}/rest/v1/`, { headers: { apikey: config.supabaseAnonKey } }, config.readinessTimeoutMs);
+    readinessCache = { at: now, ok: response.status < 500, reason: response.status < 500 ? 'ok' : `supabase_${response.status}` };
   } catch (error) {
-    readyCache = { checkedAt: now, ok: false, reason: error?.name === 'AbortError' ? 'timeout' : 'unreachable' };
+    readinessCache = { at: now, ok: false, reason: error?.name === 'AbortError' ? 'timeout' : 'unreachable' };
   }
-  return readyCache;
-}
-
-function safeEqual(a, b) {
-  const left = Buffer.from(String(a));
-  const right = Buffer.from(String(b));
-  return left.length === right.length && timingSafeEqual(left, right);
+  return readinessCache;
 }
 
 const server = createServer(async (request, response) => {
   const startedAt = Date.now();
-  const id = requestId(request);
+  const requestId = getRequestId(request);
   const origin = String(request.headers.origin ?? '');
-  const ip = remoteIp(request);
-  const url = new URL(request.url ?? '/', 'http://localhost');
-  const legacy = legacyRoutes.has(url.pathname);
-  const definition = routes.get(url.pathname) ?? legacyRoutes.get(url.pathname);
-  const context = { requestId: id, origin, legacy };
-
+  const path = new URL(request.url ?? '/', 'http://localhost').pathname;
+  const definition = ROUTES.get(path);
+  const ip = getIp(request);
   response.setHeader('connection', 'close');
 
   if (request.method === 'OPTIONS') {
-    if (allowedOrigins.size > 0 && !allowedOrigins.has(origin)) {
-      return send(response, 403, apiError('ORIGIN_DENIED', 'Origin denied.', { requestId: id }), context);
-    }
-    response.writeHead(204, corsHeaders(origin, id, legacy));
+    if (!allowedOrigin(origin)) return send(response, 403, failure('ORIGIN_DENIED', 'Origin denied.', requestId), origin, requestId);
+    response.writeHead(204, headers(origin, requestId));
     return response.end();
   }
-
-  if (request.method === 'GET' && url.pathname === '/health/live') {
-    return send(response, shuttingDown ? 503 : 200, {
-      ok: !shuttingDown,
-      service: SERVICE,
-      protocol_version: PROTOCOL_VERSION,
-      uptime_seconds: Math.floor(process.uptime()),
-    }, context);
+  if (request.method === 'GET' && path === '/health/live') {
+    return send(response, shuttingDown ? 503 : 200, { ok: !shuttingDown, service: SERVICE, protocol_version: PROTOCOL_VERSION, uptime_seconds: Math.floor(process.uptime()) }, origin, requestId);
   }
-
-  if (request.method === 'GET' && url.pathname === '/health/ready') {
-    const status = shuttingDown ? { ok: false, reason: 'shutting_down' } : await readiness();
-    return send(response, status.ok ? 200 : 503, {
-      ok: status.ok,
-      service: SERVICE,
-      dependency: 'supabase',
-      reason: status.reason,
-      protocol_version: PROTOCOL_VERSION,
-    }, context);
+  if (request.method === 'GET' && path === '/health/ready') {
+    const state = shuttingDown ? { ok: false, reason: 'shutting_down' } : await readiness();
+    return send(response, state.ok ? 200 : 503, { ok: state.ok, service: SERVICE, dependency: 'supabase', reason: state.reason, protocol_version: PROTOCOL_VERSION }, origin, requestId);
   }
+  if (shuttingDown) return send(response, 503, failure('SERVER_SHUTTING_DOWN', 'Server is shutting down.', requestId, { retryable: true }), origin, requestId, { 'retry-after': '5' });
+  if (request.method !== 'POST' || !definition) return send(response, 404, failure('NOT_FOUND', 'Unknown route.', requestId), origin, requestId);
+  if (origin && !allowedOrigin(origin)) return send(response, 403, failure('ORIGIN_DENIED', 'Origin denied.', requestId), origin, requestId);
 
-  if (shuttingDown) {
-    return send(response, 503, apiError('SERVER_SHUTTING_DOWN', 'Server is shutting down.', { retryable: true, requestId: id }), {
-      ...context,
-      headers: { 'retry-after': '5' },
-    });
-  }
-
-  if (request.method !== 'POST' || !definition) {
-    return send(response, 404, apiError('NOT_FOUND', 'Unknown route.', { requestId: id }), context);
-  }
-
-  if (allowedOrigins.size > 0 && origin && !allowedOrigins.has(origin)) {
-    return send(response, 403, apiError('ORIGIN_DENIED', 'Origin denied.', { requestId: id }), context);
-  }
-
-  const ipRate = consumeBucket(ipBuckets, ip, rateLimitPerIp);
-  if (!ipRate.allowed) {
-    return send(response, 429, apiError('RATE_LIMITED', 'Too many requests.', { retryable: true, requestId: id }), {
-      ...context,
-      headers: { 'retry-after': String(ipRate.retryAfterSeconds) },
-    });
-  }
-
-  if (inflight >= maxConcurrent) {
-    return send(response, 503, apiError('SERVER_BUSY', 'Aegis is temporarily busy.', { retryable: true, requestId: id }), {
-      ...context,
-      headers: { 'retry-after': '1' },
-    });
-  }
+  const ipRate = consume(ipBuckets, ip, config.ratePerIp);
+  if (!ipRate.allowed) return send(response, 429, failure('RATE_LIMITED', 'Too many requests.', requestId, { retryable: true }), origin, requestId, { 'retry-after': String(ipRate.retryAfter) });
+  if (inflight >= config.maxConcurrent) return send(response, 503, failure('SERVER_BUSY', 'Aegis is temporarily busy.', requestId, { retryable: true }), origin, requestId, { 'retry-after': '1' });
 
   const authorization = String(request.headers.authorization ?? '');
-  if (!authorization.startsWith('Bearer ')) {
-    return send(response, 401, apiError('NOT_AUTHENTICATED', 'Bearer token required.', { requestId: id }), context);
-  }
+  if (!authorization.startsWith('Bearer ')) return send(response, 401, failure('NOT_AUTHENTICATED', 'Bearer token required.', requestId), origin, requestId);
 
   inflight += 1;
   let userId = null;
   try {
-    validateProtocol(request, legacy);
-    const idempotencyKey = validateIdempotency(request, definition);
-    const user = await authenticate(authorization);
-    if (!user) {
-      return send(response, 401, apiError('INVALID_SESSION', 'Session expired or invalid.', { requestId: id }), context);
-    }
-    userId = user.id;
+    const protocolVersion = validateProtocol(request, path);
+    userId = await authenticate(authorization);
+    if (!userId) return send(response, 401, failure('INVALID_SESSION', 'Session expired or invalid.', requestId), origin, requestId);
 
-    const userRate = consumeBucket(userBuckets, user.id, rateLimitPerUser);
-    if (!userRate.allowed) {
-      return send(response, 429, apiError('RATE_LIMITED', 'Too many requests.', { retryable: true, requestId: id }), {
-        ...context,
-        headers: { 'retry-after': String(userRate.retryAfterSeconds) },
-      });
-    }
+    const userRate = consume(userBuckets, userId, config.ratePerUser);
+    if (!userRate.allowed) return send(response, 429, failure('RATE_LIMITED', 'Too many requests.', requestId, { retryable: true }), origin, requestId, { 'retry-after': String(userRate.retryAfter) });
 
     const body = await readJson(request, definition.maxBytes);
     validateBody(body, definition);
+    const idempotencyHash = stableIdempotencyKey(request, body, definition, userId);
+    const { response: upstream, data } = await callRpc(definition, body, authorization, requestId, idempotencyHash);
 
-    // Bind idempotent RPC calls to both user and route without exposing the raw
-    // key in logs. PostgreSQL remains responsible for durable deduplication.
-    if (idempotencyKey) {
-      body.p_idempotency_key ??= createHash('sha256')
-        .update(`${user.id}:${definition.rpc}:${idempotencyKey}`)
-        .digest('hex');
-    }
-    body.p_protocol_version ??= PROTOCOL_VERSION;
-    body.p_request_id ??= id;
-
-    const { upstream, data } = await callRpc(definition, body, authorization, id, idempotencyKey);
     if (!upstream.ok) {
-      const normalized = normalizeUpstreamError(upstream.status, data, id);
-      log('warn', 'rpc_rejected', {
-        request_id: id,
-        rpc: definition.rpc,
-        user_id: user.id,
-        status: upstream.status,
-        code: normalized.error.code,
-        retryable: normalized.error.retryable,
-        duration_ms: Date.now() - startedAt,
-      });
-      return send(response, upstream.status, normalized, context);
+      const normalized = normalizeUpstream(upstream.status, data, requestId);
+      log('warn', 'rpc_rejected', { request_id: requestId, rpc: definition.rpc, user_id: userId, status: upstream.status, code: normalized.error.code, retryable: normalized.error.retryable, duration_ms: Date.now() - startedAt });
+      return send(response, upstream.status, normalized, origin, requestId);
     }
 
-    log('info', 'rpc_completed', {
-      request_id: id,
-      rpc: definition.rpc,
-      user_id: user.id,
-      status: 200,
-      duration_ms: Date.now() - startedAt,
-      legacy,
-    });
-    return send(response, 200, {
-      data,
-      error: null,
-      meta: {
-        request_id: id,
-        protocol_version: PROTOCOL_VERSION,
-        legacy,
-      },
-    }, context);
+    log('info', 'rpc_completed', { request_id: requestId, rpc: definition.rpc, user_id: userId, status: 200, protocol_version: protocolVersion, duration_ms: Date.now() - startedAt });
+    return send(response, 200, { data, error: null, meta: { request_id: requestId, protocol_version: PROTOCOL_VERSION } }, origin, requestId);
   } catch (error) {
     const status = Number(error?.status) || (error?.name === 'AbortError' ? 504 : 502);
-    const code = error?.message === 'BODY_TOO_LARGE' ? 'BODY_TOO_LARGE'
-      : error?.message === 'INVALID_JSON' ? 'INVALID_JSON'
-      : error?.message === 'CONTENT_TYPE_REQUIRED' ? 'CONTENT_TYPE_REQUIRED'
-      : error?.message === 'VALIDATION_FAILED' ? 'VALIDATION_FAILED'
-      : error?.message === 'IDEMPOTENCY_KEY_REQUIRED' ? 'IDEMPOTENCY_KEY_REQUIRED'
-      : error?.message === 'AEGIS_PROTOCOL_VERSION_UNSUPPORTED' ? 'AEGIS_PROTOCOL_VERSION_UNSUPPORTED'
-      : error?.name === 'AbortError' ? 'UPSTREAM_TIMEOUT'
-      : 'AEGIS_GATEWAY_FAILURE';
-    const retryable = status >= 500 && code !== 'AEGIS_PROTOCOL_VERSION_UNSUPPORTED';
-    log(status >= 500 ? 'error' : 'warn', 'request_failed', {
-      request_id: id,
-      user_id: userId,
-      path: url.pathname,
-      status,
-      code,
-      duration_ms: Date.now() - startedAt,
-    });
-    return send(response, status, apiError(code, publicGatewayMessage(code), {
-      retryable,
-      details: error?.details ?? null,
-      requestId: id,
-    }), {
-      ...context,
-      headers: status === 426 ? { upgrade: `aegis/${PROTOCOL_VERSION}` } : {},
-    });
+    const code = error?.message || 'AEGIS_GATEWAY_FAILURE';
+    const messages = {
+      BODY_TOO_LARGE: 'Request body is too large.', INVALID_JSON: 'Request body must be valid JSON.', CONTENT_TYPE_REQUIRED: 'Content-Type application/json is required.',
+      VALIDATION_FAILED: 'Required request fields are missing.', INVALID_IDEMPOTENCY_KEY: 'Idempotency-Key is invalid.',
+      AEGIS_PROTOCOL_VERSION_UNSUPPORTED: 'This client protocol version is not supported.', UPSTREAM_TIMEOUT: 'Aegis did not receive a response in time.',
+    };
+    log(status >= 500 ? 'error' : 'warn', 'request_failed', { request_id: requestId, user_id: userId, path, status, code, duration_ms: Date.now() - startedAt });
+    return send(response, status, failure(code, messages[code] ?? 'Aegis gateway could not complete the request.', requestId, { retryable: status >= 500, details: error?.details ?? null }), origin, requestId, status === 426 ? { upgrade: `aegis/${PROTOCOL_VERSION}` } : {});
   } finally {
     inflight -= 1;
   }
 });
 
-function publicGatewayMessage(code) {
-  const messages = {
-    BODY_TOO_LARGE: 'Request body is too large.',
-    INVALID_JSON: 'Request body must be valid JSON.',
-    CONTENT_TYPE_REQUIRED: 'Content-Type application/json is required.',
-    VALIDATION_FAILED: 'Required request fields are missing.',
-    IDEMPOTENCY_KEY_REQUIRED: 'A valid Idempotency-Key header is required.',
-    AEGIS_PROTOCOL_VERSION_UNSUPPORTED: 'This client protocol version is not supported.',
-    UPSTREAM_TIMEOUT: 'Aegis did not receive a response in time.',
-    AEGIS_GATEWAY_FAILURE: 'Aegis gateway could not complete the request.',
-  };
-  return messages[code] ?? 'Aegis gateway could not complete the request.';
-}
-
-server.requestTimeout = requestTimeoutMs + authTimeoutMs + 5_000;
+server.requestTimeout = config.rpcTimeoutMs + config.authTimeoutMs + 5_000;
 server.headersTimeout = Math.min(server.requestTimeout, 30_000);
 server.keepAliveTimeout = 5_000;
 server.maxRequestsPerSocket = 100;
-
-server.listen(port, '0.0.0.0', () => {
-  log('info', 'server_started', {
-    port,
-    protocol_version: PROTOCOL_VERSION,
-    allowed_origin_count: allowedOrigins.size,
-    max_body_bytes: maxBodyBytes,
-  });
-});
+server.listen(config.port, '0.0.0.0', () => log('info', 'server_started', { port: config.port, protocol_version: PROTOCOL_VERSION, allowed_origin_count: config.origins.size }));
 
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   log('warn', 'shutdown_started', { signal, inflight });
   server.close((error) => {
-    if (error) {
-      log('error', 'shutdown_failed', { signal, message: sanitizeText(error.message) });
-      process.exitCode = 1;
-    } else {
-      log('info', 'shutdown_complete', { signal });
-    }
+    if (error) { log('error', 'shutdown_failed', { signal, message: safeText(error.message) }); process.exitCode = 1; }
+    else log('info', 'shutdown_complete', { signal });
   });
-  setTimeout(() => {
-    log('error', 'shutdown_forced', { signal, inflight });
-    process.exit(1);
-  }, shutdownGraceMs).unref();
+  setTimeout(() => { log('error', 'shutdown_forced', { signal, inflight }); process.exit(1); }, config.shutdownGraceMs).unref();
 }
-
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('uncaughtException', (error) => {
-  log('error', 'uncaught_exception', { message: sanitizeText(error?.message), name: error?.name });
-  shutdown('uncaughtException');
-});
-process.on('unhandledRejection', (reason) => {
-  log('error', 'unhandled_rejection', { message: sanitizeText(reason instanceof Error ? reason.message : String(reason)) });
-});
+process.on('uncaughtException', (error) => { log('error', 'uncaught_exception', { name: error?.name, message: safeText(error?.message) }); shutdown('uncaughtException'); });
+process.on('unhandledRejection', (reason) => log('error', 'unhandled_rejection', { message: safeText(reason instanceof Error ? reason.message : String(reason)) }));
