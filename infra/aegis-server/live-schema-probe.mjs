@@ -5,11 +5,15 @@ if (!supabaseUrl || !anonKey) throw new Error('Missing public Supabase configura
 const response = await fetch(`${supabaseUrl}/rest/v1/`, {
   headers: {
     apikey: anonKey,
+    authorization: `Bearer ${anonKey}`,
     accept: 'application/openapi+json',
   },
   redirect: 'error',
 });
-if (!response.ok) throw new Error(`OpenAPI request failed: ${response.status}`);
+if (!response.ok) {
+  const detail = await response.text().catch(() => '');
+  throw new Error(`OpenAPI request failed: ${response.status} ${detail.slice(0, 200)}`);
+}
 const spec = await response.json();
 const paths = spec.paths || {};
 const definitions = spec.definitions || spec.components?.schemas || {};
