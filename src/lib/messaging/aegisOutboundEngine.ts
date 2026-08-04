@@ -241,7 +241,7 @@ export async function sendAegisOutboundMessage(
       await persist({ archiveBody });
       trace('ARCHIVE_ENCRYPT', { outcome: 'ok', blockMs: Date.now() - archiveStartedAt });
     } else {
-      trace('ARCHIVE_ENCRYPT', { outcome: 'skipped', blockMs: Date.now() - archiveStartedAt });
+      trace('ARCHIVE_ENCRYPT', { outcome: 'skip', blockMs: Date.now() - archiveStartedAt });
     }
   }
 
