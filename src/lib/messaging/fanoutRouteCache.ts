@@ -106,6 +106,22 @@ async function loadStableFanoutRoute(
   senderUserId: string,
   senderDeviceId: string,
 ): Promise<FanoutRouteSnapshot> {
+  // Chemin principal : module de routage serveur, version + appareils lus dans
+  // le même instantané (aucune dérive possible entre les deux lectures).
+  try {
+    const resolved = await resolveConversationRoute(conversationId, senderUserId, senderDeviceId);
+    if (resolved.unroutableUserIds.length > 0) {
+      throw new Error(`E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:${resolved.unroutableUserIds.join(',')}`);
+    }
+    return { version: resolved.version, targets: resolved.targets };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (message.startsWith('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE')) throw e;
+    if (typeof console !== 'undefined') {
+      console.warn('[ROUTE] server route module unavailable; falling back to per-user resolution', message);
+    }
+  }
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const before = await readConversationRouteVersion(conversationId);
     const targets = await loadFanoutRoute(conversationId, senderUserId, senderDeviceId);
@@ -113,6 +129,7 @@ async function loadStableFanoutRoute(
     if (before === after) return { version: after, targets };
     invalidateVerifiedDeviceCache();
   }
+
   throw new Error('E2EE_DEVICE_LIST_STALE');
 }
 
