@@ -1,0 +1,162 @@
+name: Deploy Aegis durable database
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - supabase/migrations/20260804154000_aegis_durable_database.sql
+      - .github/workflows/deploy-aegis-durable-database.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: deploy-aegis-durable-database
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROJECT_REF: vkpmoqfzrihcijjochks
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      MIGRATION_FILE: supabase/migrations/20260804154000_aegis_durable_database.sql
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Supabase management token
+        shell: bash
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN" >&2
+            exit 1
+          fi
+
+      - name: Apply Aegis durable database migration
+        shell: bash
+        run: |
+          jq -Rs '{query: ., read_only: false}' "$MIGRATION_FILE" > "$RUNNER_TEMP/migration-request.json"
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/migration-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/migration-request.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Supabase Aegis durable migration failed with HTTP $status" >&2
+            jq . "$RUNNER_TEMP/migration-response.json" >&2 || true
+            exit 1
+          fi
+
+      - name: Verify durable table, isolation, trigger and RPCs
+        shell: bash
+        run: |
+          verification_sql="select
+            to_regclass('public.aegis_device_inbox') is not null as table_ready,
+            to_regprocedure('public.aegis_sync_device(text,integer)') is not null as sync_rpc_ready,
+            to_regprocedure('public.aegis_ack_device_messages(text,uuid[],boolean)') is not null as ack_rpc_ready,
+            to_regprocedure('public.aegis_prune_device_inbox()') is not null as prune_rpc_ready,
+            exists (
+              select 1
+              from pg_trigger
+              where tgrelid = 'public.message_device_copies'::regclass
+                and tgname = 'aegis_enqueue_device_copy'
+                and not tgisinternal
+            ) as enqueue_trigger_ready,
+            exists (
+              select 1
+              from pg_class
+              where oid = 'public.aegis_device_inbox'::regclass
+                and relrowsecurity = true
+            ) as rls_ready,
+            not has_table_privilege('anon', 'public.aegis_device_inbox', 'select') as anon_select_blocked,
+            not has_table_privilege('authenticated', 'public.aegis_device_inbox', 'select') as authenticated_select_blocked,
+            not exists (
+              select 1
+              from information_schema.columns
+              where table_schema = 'public'
+                and table_name = 'aegis_device_inbox'
+                and column_name in (
+                  'encrypted_body', 'ciphertext', 'plaintext',
+                  'private_key', 'media_key', 'pin', 'recovery_secret'
+                )
+            ) as no_secret_columns;"
+
+          jq -n --arg query "$verification_sql" \
+            '{query: $query, read_only: true}' > "$RUNNER_TEMP/verification-request.json"
+
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/verification-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/verification-request.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Supabase Aegis durable verification failed with HTTP $status" >&2
+            jq . "$RUNNER_TEMP/verification-response.json" >&2 || true
+            exit 1
+          fi
+
+          jq -e '
+            .. | objects |
+            select(
+              .table_ready == true
+              and .sync_rpc_ready == true
+              and .ack_rpc_ready == true
+              and .prune_rpc_ready == true
+              and .enqueue_trigger_ready == true
+              and .rls_ready == true
+              and .anon_select_blocked == true
+              and .authenticated_select_blocked == true
+              and .no_secret_columns == true
+            )
+          ' "$RUNNER_TEMP/verification-response.json" > /dev/null
+
+      - name: Publish Supabase migration status
+        if: always()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MIGRATION_JOB_STATUS: ${{ job.status }}
+        run: |
+          case "$MIGRATION_JOB_STATUS" in
+            success)
+              state="success"
+              description="Aegis durable database applied and verified"
+              ;;
+            failure)
+              state="failure"
+              description="Aegis durable database migration or verification failed"
+              ;;
+            *)
+              state="error"
+              description="Aegis durable database workflow did not complete"
+              ;;
+          esac
+
+          jq -n \
+            --arg state "$state" \
+            --arg context "Supabase/Aegis durable database" \
+            --arg description "$description" \
+            --arg target_url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{state: $state, context: $context, description: $description, target_url: $target_url}' \
+            > "$RUNNER_TEMP/status.json"
+
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --data-binary "@$RUNNER_TEMP/status.json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" > /dev/null
