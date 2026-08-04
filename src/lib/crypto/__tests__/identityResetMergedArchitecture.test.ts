@@ -42,8 +42,8 @@ describe('merged explicit identity reset architecture', () => {
     expect(resetSource).not.toContain('functions.invoke');
   });
 
-  it('archives the previous public identity instead of deleting it', () => {
-    expect(resetSource).toContain('is_active: false');
+  it('swaps the public identity atomically server-side and never deletes it', () => {
+    expect(resetSource).toContain("rpc('replace_own_identity_key'");
     expect(resetSource).not.toContain(".delete()");
   });
 
