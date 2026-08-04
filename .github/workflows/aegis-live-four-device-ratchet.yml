@@ -40,17 +40,7 @@ jobs:
           source = path.read_text()
           source = source.replace('expect(gatewayLogs).toHaveLength(14);', 'expect(gatewayLogs).toHaveLength(20);')
           marker = "  const result = await directRpc(runId, startedAt, user, 'register_user_device_safe', {"
-          diagnostic = """  console.log(`AEGIS_AUTH_LENGTHS ${JSON.stringify({
-            device_id: id.length,
-            device_public_key: devicePublicKey.length,
-            device_signing_key: deviceSigningKey.length,
-            device_authorization_signature: authorizationSignature.length,
-            account_identity_key: account.identityPublicB64.length,
-            account_signing_key: account.signingPublicB64.length,
-            account_fingerprint: account.fingerprint.length,
-            account_binding_signature: account.bindingSignature.length,
-          })}`);
-"""
+          diagnostic = "  console.log('AEGIS_AUTH_LENGTHS ' + JSON.stringify({ device_id: id.length, device_public_key: devicePublicKey.length, device_signing_key: deviceSigningKey.length, device_authorization_signature: authorizationSignature.length, account_identity_key: account.identityPublicB64.length, account_signing_key: account.signingPublicB64.length, account_fingerprint: account.fingerprint.length, account_binding_signature: account.bindingSignature.length }));\n"
           if marker not in source:
               raise SystemExit('device registration marker not found')
           source = source.replace(marker, diagnostic + marker, 1)
