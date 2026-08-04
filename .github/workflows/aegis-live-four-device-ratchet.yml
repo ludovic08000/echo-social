@@ -32,13 +32,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Apply temporary test diagnostics
+      - name: Apply temporary test compatibility patch
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
           path = Path('src/lib/crypto/__tests__/aegisLiveFourDeviceDelivery.test.ts')
           source = path.read_text()
           source = source.replace('expect(gatewayLogs).toHaveLength(14);', 'expect(gatewayLogs).toHaveLength(20);')
+          source, count = re.subn(
+              r"const b64 = \(value: ArrayBuffer \| ArrayBufferView\) => \{.*?\n\};",
+              "const b64 = (value: ArrayBuffer | ArrayBufferView) => {\n  const candidate = value as any;\n  const bytes = ArrayBuffer.isView(candidate)\n    ? new Uint8Array(candidate.buffer, candidate.byteOffset, candidate.byteLength)\n    : new Uint8Array(candidate);\n  return Buffer.from(bytes).toString('base64');\n};",
+              source,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit('base64 compatibility marker not found')
           marker = "  const result = await directRpc(runId, startedAt, user, 'register_user_device_safe', {"
           diagnostic = "  console.log('AEGIS_AUTH_LENGTHS ' + JSON.stringify({ device_id: id.length, device_public_key: devicePublicKey.length, device_signing_key: deviceSigningKey.length, device_authorization_signature: authorizationSignature.length, account_identity_key: account.identityPublicB64.length, account_signing_key: account.signingPublicB64.length, account_fingerprint: account.fingerprint.length, account_binding_signature: account.bindingSignature.length }));\n"
           if marker not in source:
