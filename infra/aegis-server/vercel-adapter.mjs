@@ -6,6 +6,16 @@ function safeRequestId(value) {
   return /^[A-Za-z0-9._:-]{1,128}$/.test(candidate) ? candidate : randomUUID();
 }
 
+function normalizeVercelEnv(env) {
+  return {
+    ...env,
+    SUPABASE_URL: env.SUPABASE_URL || env.VITE_SUPABASE_URL,
+    SUPABASE_ANON_KEY: env.SUPABASE_ANON_KEY
+      || env.SUPABASE_PUBLISHABLE_KEY
+      || env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  };
+}
+
 function writeConfigurationError(request, response, error, logger) {
   const requestId = safeRequestId(request.headers?.['x-request-id']);
   logger({
@@ -39,7 +49,7 @@ export function createVercelAegisHandler(path, {
   return async function handler(request, response) {
     let config;
     try {
-      config = loadAegisConfig(env);
+      config = loadAegisConfig(normalizeVercelEnv(env));
     } catch (error) {
       writeConfigurationError(request, response, error, logger);
       return;
