@@ -15,6 +15,8 @@ import {
   type IdentityKeyPair,
 } from '@/lib/crypto';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import { publishActiveIdentityKey } from '@/lib/crypto/publishIdentityKey';
+
 import {
   checkFingerprintChangeWithServer,
   invalidateFingerprintCheckCache,
@@ -72,21 +74,18 @@ async function initializeIdentity(userId: string): Promise<ReadyIdentity> {
       throw new Error('identity_lost_backup_available');
     }
 
-    const { error: publishError } = await supabase
-      .from('user_public_keys')
-      .upsert({
-        user_id: userId,
-        identity_key: bundle.identityKey,
-        signing_key: bundle.signingKey,
-        fingerprint: bundle.fingerprint,
-        identity_binding_version: bundle.bindingVersion,
-        identity_binding_signature: bundle.bindingSignature,
-        kem_type: 'X25519',
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,is_active' });
+    await publishActiveIdentityKey({
+      user_id: userId,
+      identity_key: bundle.identityKey,
+      signing_key: bundle.signingKey,
+      fingerprint: bundle.fingerprint,
+      identity_binding_version: bundle.bindingVersion,
+      identity_binding_signature: bundle.bindingSignature,
+      kem_type: 'X25519',
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    });
 
-    if (publishError) throw publishError;
 
     void supabase.rpc('push_my_fingerprint_to_peers');
 

@@ -3,6 +3,8 @@ import { exportPublicKeyBundle, PinUnlockRequiredError, type IdentityKeyPair } f
 import { resolveUserIdentity } from './identityRecovery';
 import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoState';
 import { appendTransparencyLog } from './transparencyLog';
+import { publishActiveIdentityKey } from './publishIdentityKey';
+
 
 const BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 const attempts = new Map<string, Promise<void>>();
@@ -32,21 +34,18 @@ async function resolveLocalIdentityOnce(userId: string): Promise<{ keys: Identit
 async function publishIdentity(userId: string, keys: IdentityKeyPair): Promise<void> {
   const bundle = await exportPublicKeyBundle(keys);
 
-  const { error } = await supabase
-    .from('user_public_keys')
-    .upsert({
-      user_id: userId,
-      identity_key: bundle.identityKey,
-      signing_key: bundle.signingKey,
-      fingerprint: bundle.fingerprint,
-      identity_binding_version: bundle.bindingVersion,
-      identity_binding_signature: bundle.bindingSignature,
-      kem_type: 'X25519',
-      is_active: true,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'user_id,is_active' });
+  await publishActiveIdentityKey({
+    user_id: userId,
+    identity_key: bundle.identityKey,
+    signing_key: bundle.signingKey,
+    fingerprint: bundle.fingerprint,
+    identity_binding_version: bundle.bindingVersion,
+    identity_binding_signature: bundle.bindingSignature,
+    kem_type: 'X25519',
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  });
 
-  if (error) throw error;
 
   try {
     await markServerCryptoReady(bundle.fingerprint);
