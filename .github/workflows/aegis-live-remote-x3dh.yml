@@ -34,6 +34,55 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Use the shared gateway core locally
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/lib/crypto/__tests__/aegisLiveRemoteX3DH.test.ts')
+          source = path.read_text()
+          source = source.replace(
+              "import { describe, expect, it } from 'vitest';",
+              "import { afterAll, beforeAll, describe, expect, it } from 'vitest';\nimport { once } from 'node:events';\nimport { createAegisServer, loadAegisConfig } from '../../../../infra/aegis-server/server.mjs';",
+              1,
+          )
+          source = source.replace(
+              "const gatewayUrl = String(process.env.AEGIS_GATEWAY_URL || '').replace(/\\/+$/, '');",
+              "let gatewayUrl = '';\nlet gateway: any = null;",
+              1,
+          )
+          marker = "(LIVE ? describe : describe.skip)('Aegis live remote-directory X3DH bootstrap', () => {"
+          setup = r"""
+beforeAll(async () => {
+  gateway = createAegisServer({
+    config: loadAegisConfig({
+      SUPABASE_URL: supabaseUrl,
+      SUPABASE_ANON_KEY: publishableKey,
+      PORT: '0',
+    }),
+    logger: (record: Record<string, unknown>) => {
+      console.log(`AEGIS_REMOTE_X3DH_GATEWAY ${JSON.stringify(record)}`);
+    },
+  });
+  gateway.listen(0, '127.0.0.1');
+  await once(gateway, 'listening');
+  const address = gateway.address();
+  if (!address || typeof address === 'string') throw new Error('LOCAL_GATEWAY_ADDRESS_MISSING');
+  gatewayUrl = `http://127.0.0.1:${address.port}`;
+});
+
+afterAll(async () => {
+  if (!gateway) return;
+  gateway.close();
+  await once(gateway, 'close').catch(() => undefined);
+});
+
+"""
+          if marker not in source:
+              raise SystemExit('live describe marker not found')
+          source = source.replace(marker, setup + marker, 1)
+          path.write_text(source)
+          PY
+
       - name: Run live remote-directory X3DH bootstrap
         env:
           AEGIS_LIVE_REMOTE_X3DH: '1'
@@ -41,5 +90,4 @@ jobs:
           SUPABASE_ANON_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
           VITE_SUPABASE_URL: https://vkpmoqfzrihcijjochks.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
-          AEGIS_GATEWAY_URL: https://echo-social-git-agent-aegis-d-0e9be3-ludovics-projects-92893680.vercel.app
         run: npx vitest run src/lib/crypto/__tests__/aegisLiveRemoteX3DH.test.ts --reporter=verbose
