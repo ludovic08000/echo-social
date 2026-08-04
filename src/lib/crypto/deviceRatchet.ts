@@ -590,6 +590,21 @@ async function ratchetEncryptUnlocked(
     return null;
   }
 
+  let identity: { self: string; peer: string };
+  try {
+    identity = requireIdentityBinding(session);
+  } catch {
+    void logCryptoError({
+      severity: 'warning',
+      context: 'encrypt',
+      errorCode: 'AEGIS_SESSION_IDENTITY_BINDING_MISSING',
+      errorMessage: 'Session sans liaison d’identité — re-X3DH requis',
+      myDeviceId, peerUserId, peerDeviceId,
+    });
+    await deleteSession(key).catch(() => undefined);
+    return null;
+  }
+
   const { ck, mk } = await kdfCK(session.ckSendB64);
   const aes = await importMessageKey(mk);
   const iv = randomBytes(12);
@@ -602,6 +617,7 @@ async function ratchetEncryptUnlocked(
     peerDeviceId,
     session.sessionId,
     header,
+    identity,
   );
   const ct = await hardCrypto.encrypt(
     { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> },
