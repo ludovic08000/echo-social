@@ -12,7 +12,10 @@ export type AegisRpcResponse<T> = {
   error: AegisRpcError;
 };
 
-type AegisRpcName = 'aegis_send_message';
+type AegisRpcName =
+  | 'aegis_send_message'
+  | 'aegis_sync_device'
+  | 'aegis_ack_device_messages';
 
 function gatewayUrl(): string {
   const value = String(import.meta.env.VITE_AEGIS_SERVER_URL ?? '').trim();
@@ -85,7 +88,11 @@ async function callSupabase<T>(
   // Invariant : l'appel RPC conserve toujours son receveur SDK. Détacher
   // `supabase.rpc` détruit son contexte interne (`this.rest`) sur certains
   // bundles navigateur et bloque l'envoi avant toute transaction Aegis.
-  const response = await supabase.rpc(name, args as never);
+  //
+  // The generated Database type is refreshed only after the migration reaches
+  // the cloud database. The cast keeps this additive branch type-safe until
+  // that schema regeneration occurs; the public wrapper remains strongly typed.
+  const response = await supabase.rpc(name as never, args as never);
   return {
     data: (response.data as T | null) ?? null,
     error: response.error ?? null,

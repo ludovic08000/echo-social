@@ -1,0 +1,48 @@
+name: Aegis Gateway Contract
+
+on:
+  pull_request:
+    paths:
+      - 'api/aegis-*.mjs'
+      - 'infra/aegis-server/**'
+      - 'vercel.json'
+      - '.github/workflows/aegis-gateway.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'api/aegis-*.mjs'
+      - 'infra/aegis-server/**'
+      - 'vercel.json'
+      - '.github/workflows/aegis-gateway.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aegis-gateway-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Syntax check
+        run: |
+          node --check infra/aegis-server/server.mjs
+          node --check infra/aegis-server/smoke-client.mjs
+          node --check infra/aegis-server/vercel-adapter.mjs
+          for file in api/aegis-*.mjs; do node --check "$file"; done
+
+      - name: Gateway contract tests
+        working-directory: infra/aegis-server
+        run: npm test

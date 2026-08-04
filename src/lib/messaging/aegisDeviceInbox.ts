@@ -1,17 +1,26 @@
 import { supabase } from '@/integrations/supabase/client';
 import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
+import {
+  callAegisServer,
+  getAegisTransportKind,
+} from '@/lib/messaging/aegisTransport';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 export type AegisInboxRow = {
+  copy_id: string;
   message_id: string;
+  conversation_id: string;
   encrypted_body: string;
+  parent_body: string;
   sender_user_id: string;
   sender_device_id: string;
-  recipient_device_id: string;
+  recipient_device_id?: string;
   created_at: string;
+  expires_at: string;
 };
 
 const syncInflight = new Map<string, Promise<AegisInboxRow[]>>();
+const ackInflight = new Map<string, Promise<void>>();
 const acknowledged = new Set<string>();
 const delivered = new Set<string>();
 const MAX_LOCAL_CACHE = 1_000;
@@ -23,6 +32,10 @@ function rememberBounded(cache: Set<string>, key: string): void {
     if (oldest === undefined) break;
     cache.delete(oldest);
   }
+}
+
+function traceTransport(): 'supabase' | 'aegis_server' {
+  return getAegisTransportKind() === 'gateway' ? 'aegis_server' : 'supabase';
 }
 
 export function formatAegisInboxError(error: unknown): string {
@@ -48,7 +61,7 @@ export function formatAegisInboxError(error: unknown): string {
 }
 
 function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
-  const deliveryKey = `${deviceId}:${row.message_id}`;
+  const deliveryKey = `${deviceId}:${row.copy_id}`;
   if (delivered.has(deliveryKey)) return;
   rememberBounded(delivered, deliveryKey);
   traceE2EE({
@@ -69,16 +82,22 @@ function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
 }
 
 /**
- * Catch up the current authorized device with the final Aegis schema.
+ * Pull the current authorized device's pending encrypted capsules.
  *
- * Message identifiers come from the normal RLS-protected conversation view.
- * The security-definer RPC then returns only capsules addressed to the current
- * authenticated user and authorized device. The client never reads the sealed
- * message_device_copies table directly.
+ * The security-definer RPC authenticates both auth.uid() and DeviceID. The
+ * client never enumerates message IDs and never reads message_device_copies or
+ * aegis_device_inbox directly.
  */
 export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRow[]> {
   const startedAt = Date.now();
-  traceE2EE({ direction: 'receive', component: 'device_inbox', stage: 'INBOX_SYNC', outcome: 'start', transport: 'supabase' });
+  const transport = traceTransport();
+  traceE2EE({
+    direction: 'receive',
+    component: 'device_inbox',
+    stage: 'INBOX_SYNC',
+    outcome: 'start',
+    transport,
+  });
   const ready = await ensureAegisDeviceReady(userId);
   if (ready.userId !== userId) {
     throw new Error('AEGIS_DEVICE_USER_MISMATCH');
@@ -89,33 +108,28 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
   if (active) return active;
 
   const operation = (async () => {
-    const { data: references, error: referenceError } = await supabase
-      .from('messages')
-      .select('id')
-      .eq('body_kind', 'multi_device')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (referenceError) throw referenceError;
-
-    const messageIds = Array.from(new Set(
-      (references ?? [])
-        .map((row) => row.id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0),
-    ));
-    if (messageIds.length === 0) {
-      traceE2EE({ direction: 'receive', component: 'device_inbox', stage: 'INBOX_SYNC', outcome: 'skip', deviceId: ready.deviceId, targetCount: 0, blockMs: Date.now() - startedAt, transport: 'supabase' });
-      return [];
-    }
-
-    const { data, error } = await supabase.rpc('get_device_copies_for_messages', {
-      p_message_ids: messageIds,
-      p_device_id: ready.deviceId,
-    });
+    const { data, error } = await callAegisServer<AegisInboxRow[]>(
+      'aegis_sync_device',
+      {
+        p_device_id: ready.deviceId,
+        p_limit: 100,
+      },
+    );
     if (error) throw error;
 
-    const rows = (data ?? []) as AegisInboxRow[];
+    const rows = data ?? [];
     for (const row of rows) dispatchInboxRow(row, ready.deviceId);
-    traceE2EE({ direction: 'receive', component: 'device_inbox', stage: 'INBOX_SYNC', outcome: 'ok', deviceId: ready.deviceId, targetCount: messageIds.length, copyCount: rows.length, blockMs: Date.now() - startedAt, transport: 'supabase' });
+    traceE2EE({
+      direction: 'receive',
+      component: 'device_inbox',
+      stage: 'INBOX_SYNC',
+      outcome: rows.length > 0 ? 'ok' : 'skip',
+      deviceId: ready.deviceId,
+      targetCount: rows.length,
+      copyCount: rows.length,
+      blockMs: Date.now() - startedAt,
+      transport,
+    });
     return rows;
   })();
 
@@ -128,9 +142,9 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
 }
 
 /**
- * The final schema has no server acknowledgement RPC. Authenticated decryption
- * is persisted by decryptionService; this bounded marker only prevents
- * duplicate local work and misleading network failures.
+ * Persist the server ACK only after authenticated decryption and durable local
+ * storage. The RPC is idempotent and bound to auth.uid() plus the current
+ * authorized DeviceID.
  */
 export async function acknowledgeAegisMessage(
   userId: string,
@@ -138,14 +152,47 @@ export async function acknowledgeAegisMessage(
   markRead = false,
 ): Promise<void> {
   if (!userId || !messageId) return;
-  const key = `${userId}:${messageId}:${markRead ? 'read' : 'delivered'}`;
+
+  const ready = await ensureAegisDeviceReady(userId);
+  if (ready.userId !== userId) {
+    throw new Error('AEGIS_DEVICE_USER_MISMATCH');
+  }
+
+  const key = `${userId}:${ready.deviceId}:${messageId}:${markRead ? 'read' : 'delivered'}`;
   if (acknowledged.has(key)) return;
-  rememberBounded(acknowledged, key);
-  traceE2EE({
-    direction: 'receive',
-    stage: markRead ? 'MESSAGE_READ_LOCAL' : 'MESSAGE_DECRYPTED_LOCAL',
-    messageId,
-  });
+
+  const active = ackInflight.get(key);
+  if (active) return active;
+
+  const operation = (async () => {
+    const { error } = await callAegisServer<number>(
+      'aegis_ack_device_messages',
+      {
+        p_device_id: ready.deviceId,
+        p_message_ids: [messageId],
+        p_mark_read: markRead,
+      },
+    );
+    if (error) throw error;
+
+    rememberBounded(acknowledged, key);
+    traceE2EE({
+      direction: 'receive',
+      component: 'device_inbox',
+      stage: markRead ? 'MESSAGE_READ_LOCAL' : 'SERVER_INBOX_DURABLE_ACK',
+      outcome: 'ok',
+      messageId,
+      deviceId: ready.deviceId,
+      transport: traceTransport(),
+    });
+  })();
+
+  ackInflight.set(key, operation);
+  try {
+    return await operation;
+  } finally {
+    if (ackInflight.get(key) === operation) ackInflight.delete(key);
+  }
 }
 
 export function startAegisDeviceInbox(userId: string): () => void {

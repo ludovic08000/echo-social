@@ -8,39 +8,30 @@ const mocks = vi.hoisted(() => {
   channel.on.mockReturnValue(channel);
   channel.subscribe.mockReturnValue(channel);
 
-  const query = {
-    select: vi.fn(),
-    eq: vi.fn(),
-    order: vi.fn(),
-    limit: vi.fn(),
-  };
-  query.select.mockReturnValue(query);
-  query.eq.mockReturnValue(query);
-  query.order.mockReturnValue(query);
-
   return {
+    callAegisServer: vi.fn(),
     channel,
     ensureReady: vi.fn(),
-    from: vi.fn(() => query),
-    limit: query.limit,
-    query,
     removeChannel: vi.fn(),
-    rpc: vi.fn(),
     trace: vi.fn(),
+    transportKind: vi.fn(),
   };
 });
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     channel: vi.fn(() => mocks.channel),
-    from: mocks.from,
     removeChannel: mocks.removeChannel,
-    rpc: mocks.rpc,
   },
 }));
 
 vi.mock('@/lib/messaging/aegisDeviceRuntime', () => ({
   ensureAegisDeviceReady: mocks.ensureReady,
+}));
+
+vi.mock('@/lib/messaging/aegisTransport', () => ({
+  callAegisServer: mocks.callAegisServer,
+  getAegisTransportKind: mocks.transportKind,
 }));
 
 vi.mock('@/lib/messaging/e2eeTrace', () => ({
@@ -57,34 +48,30 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.channel.on.mockReturnValue(mocks.channel);
   mocks.channel.subscribe.mockReturnValue(mocks.channel);
-  mocks.query.select.mockReturnValue(mocks.query);
-  mocks.query.eq.mockReturnValue(mocks.query);
-  mocks.query.order.mockReturnValue(mocks.query);
   mocks.ensureReady.mockResolvedValue({
     deviceId: 'device-stable',
     expiresAt: Date.now() + 30_000,
     userId: 'user-one',
   });
-  mocks.limit.mockResolvedValue({ data: [], error: null });
+  mocks.transportKind.mockReturnValue('supabase');
+  mocks.callAegisServer.mockResolvedValue({ data: [], error: null });
 });
 
-describe('Aegis final-schema device inbox client', () => {
-  it('shares one synchronization and wakes the matching bubble', async () => {
-    mocks.limit.mockResolvedValue({
-      data: [{ id: 'message-one' }],
-      error: null,
-    });
-    mocks.rpc.mockResolvedValue({
-      data: [{
-        message_id: 'message-one',
-        sender_user_id: 'user-two',
-        sender_device_id: 'device-two',
-        recipient_device_id: 'device-stable',
-        encrypted_body: 'aegis1.ratchet.payload',
-        created_at: new Date().toISOString(),
-      }],
-      error: null,
-    });
+describe('Aegis durable device inbox client', () => {
+  it('shares one server synchronization and wakes the matching bubble', async () => {
+    const row = {
+      copy_id: 'copy-one',
+      message_id: 'message-one',
+      conversation_id: 'conversation-one',
+      sender_user_id: 'user-two',
+      sender_device_id: 'device-two',
+      recipient_device_id: 'device-stable',
+      encrypted_body: 'aegis1.ratchet.payload',
+      parent_body: '{"encryptionMode":"multi_device"}',
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    };
+    mocks.callAegisServer.mockResolvedValue({ data: [row], error: null });
     const listener = vi.fn();
     window.addEventListener('forsure-decrypt-retry', listener);
 
@@ -93,14 +80,12 @@ describe('Aegis final-schema device inbox client', () => {
       syncAegisDeviceInbox('user-one'),
     ]);
 
-    expect(first).toEqual(second);
-    expect(mocks.from).toHaveBeenCalledWith('messages');
-    expect(mocks.query.select).toHaveBeenCalledWith('id');
-    expect(mocks.query.eq).toHaveBeenCalledWith('body_kind', 'multi_device');
-    expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    expect(mocks.rpc).toHaveBeenCalledWith('get_device_copies_for_messages', {
-      p_message_ids: ['message-one'],
+    expect(first).toEqual([row]);
+    expect(second).toEqual(first);
+    expect(mocks.callAegisServer).toHaveBeenCalledTimes(1);
+    expect(mocks.callAegisServer).toHaveBeenCalledWith('aegis_sync_device', {
       p_device_id: 'device-stable',
+      p_limit: 100,
     });
     expect(listener).toHaveBeenCalledTimes(1);
     window.removeEventListener('forsure-decrypt-retry', listener);
@@ -119,31 +104,53 @@ describe('Aegis final-schema device inbox client', () => {
     expect(formatAegisInboxError(null)).toBe('UNKNOWN');
   });
 
-  it('deduplicates a local authenticated-decryption acknowledgement', async () => {
+  it('deduplicates a durable authenticated-decryption acknowledgement', async () => {
+    mocks.callAegisServer.mockResolvedValue({ data: 1, error: null });
+
     await Promise.all([
       acknowledgeAegisMessage('user-one', 'message-two'),
       acknowledgeAegisMessage('user-one', 'message-two'),
     ]);
     await acknowledgeAegisMessage('user-one', 'message-two');
 
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.callAegisServer).toHaveBeenCalledTimes(1);
+    expect(mocks.callAegisServer).toHaveBeenCalledWith(
+      'aegis_ack_device_messages',
+      {
+        p_device_id: 'device-stable',
+        p_message_ids: ['message-two'],
+        p_mark_read: false,
+      },
+    );
     expect(mocks.trace).toHaveBeenCalledTimes(1);
     expect(mocks.trace).toHaveBeenCalledWith(expect.objectContaining({
       direction: 'receive',
-      stage: 'MESSAGE_DECRYPTED_LOCAL',
+      stage: 'SERVER_INBOX_DURABLE_ACK',
       messageId: 'message-two',
     }));
   });
 
-  it('tracks delivered and read state separately without an obsolete server RPC', async () => {
+  it('tracks durable delivered and read acknowledgement separately', async () => {
+    mocks.callAegisServer.mockResolvedValue({ data: 1, error: null });
+
     await acknowledgeAegisMessage('user-one', 'message-three');
     await acknowledgeAegisMessage('user-one', 'message-three', true);
     await acknowledgeAegisMessage('user-one', 'message-three', true);
 
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.callAegisServer).toHaveBeenCalledTimes(2);
+    expect(mocks.callAegisServer).toHaveBeenNthCalledWith(
+      1,
+      'aegis_ack_device_messages',
+      expect.objectContaining({ p_mark_read: false }),
+    );
+    expect(mocks.callAegisServer).toHaveBeenNthCalledWith(
+      2,
+      'aegis_ack_device_messages',
+      expect.objectContaining({ p_mark_read: true }),
+    );
     expect(mocks.trace).toHaveBeenCalledTimes(2);
     expect(mocks.trace).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      stage: 'MESSAGE_DECRYPTED_LOCAL',
+      stage: 'SERVER_INBOX_DURABLE_ACK',
       messageId: 'message-three',
     }));
     expect(mocks.trace).toHaveBeenNthCalledWith(2, expect.objectContaining({
@@ -152,16 +159,15 @@ describe('Aegis final-schema device inbox client', () => {
     }));
   });
 
-  it('releases the shared synchronization after a reference-query failure', async () => {
-    mocks.limit
-      .mockResolvedValueOnce({ data: null, error: new Error('offline') })
+  it('releases the shared synchronization after a server failure', async () => {
+    mocks.callAegisServer
+      .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce({ data: [], error: null });
 
     await expect(syncAegisDeviceInbox('user-one')).rejects.toThrow('offline');
     await expect(syncAegisDeviceInbox('user-one')).resolves.toEqual([]);
 
-    expect(mocks.limit).toHaveBeenCalledTimes(2);
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.callAegisServer).toHaveBeenCalledTimes(2);
   });
 
   it('does not share an in-flight synchronization across users or devices', async () => {
@@ -170,25 +176,20 @@ describe('Aegis final-schema device inbox client', () => {
       expiresAt: Date.now() + 30_000,
       userId,
     }));
-    mocks.limit.mockResolvedValue({
-      data: [{ id: 'message-scoped' }],
-      error: null,
-    });
-    mocks.rpc.mockResolvedValue({ data: [], error: null });
 
     await Promise.all([
       syncAegisDeviceInbox('user-one'),
       syncAegisDeviceInbox('user-two'),
     ]);
 
-    expect(mocks.rpc).toHaveBeenCalledTimes(2);
-    expect(mocks.rpc).toHaveBeenCalledWith('get_device_copies_for_messages', {
-      p_message_ids: ['message-scoped'],
+    expect(mocks.callAegisServer).toHaveBeenCalledTimes(2);
+    expect(mocks.callAegisServer).toHaveBeenCalledWith('aegis_sync_device', {
       p_device_id: 'device-user-one',
+      p_limit: 100,
     });
-    expect(mocks.rpc).toHaveBeenCalledWith('get_device_copies_for_messages', {
-      p_message_ids: ['message-scoped'],
+    expect(mocks.callAegisServer).toHaveBeenCalledWith('aegis_sync_device', {
       p_device_id: 'device-user-two',
+      p_limit: 100,
     });
   });
 
@@ -201,7 +202,6 @@ describe('Aegis final-schema device inbox client', () => {
 
     await expect(syncAegisDeviceInbox('user-one'))
       .rejects.toThrow('AEGIS_DEVICE_USER_MISMATCH');
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.callAegisServer).not.toHaveBeenCalled();
   });
-
 });
