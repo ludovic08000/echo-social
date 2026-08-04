@@ -23,6 +23,8 @@ import {
   rotateCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import { startKeyConsistencyGuard } from '@/lib/crypto/keyConsistencyGuard';
+
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
@@ -556,6 +558,9 @@ export function useDeviceRegistration() {
     };
 
     void registerCurrentDevice('auth-mounted');
+    // Vérification serveur/client périodique : détecte une autorisation périmée
+    // (reset d'identité) avant qu'un envoi échoue et déclenche la réparation.
+    const stopKeyGuard = startKeyConsistencyGuard();
     window.addEventListener('forsure-keys-unlocked', onKeysAvailable);
     window.addEventListener('forsure-keys-restored', onKeysAvailable);
     window.addEventListener('forsure:authenticated-device-enroll', onAuthenticatedDeviceEnroll);
@@ -563,10 +568,12 @@ export function useDeviceRegistration() {
 
     return () => {
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      stopKeyGuard();
       window.removeEventListener('forsure-keys-unlocked', onKeysAvailable);
       window.removeEventListener('forsure-keys-restored', onKeysAvailable);
       window.removeEventListener('forsure:authenticated-device-enroll', onAuthenticatedDeviceEnroll);
       window.removeEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
     };
+
   }, [user]);
 }
