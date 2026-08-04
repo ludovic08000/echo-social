@@ -50,6 +50,31 @@ test('Vercel adapter accepts the existing public Vite Supabase variables', async
   assert.equal(JSON.parse(response.text).ok, true);
 });
 
+test('Vercel-provided preview host is added without weakening the production allowlist', async () => {
+  const handler = createVercelAegisHandler('/health', {
+    env: {
+      ...env,
+      VERCEL_URL: 'echo-social-preview.vercel.app',
+      VERCEL_BRANCH_URL: 'echo-social-git-feature.vercel.app',
+    },
+    logger: () => {},
+  });
+
+  const previewResponse = responseRecorder();
+  await handler({
+    method: 'GET',
+    headers: { host: 'echo-social-preview.vercel.app' },
+  }, previewResponse);
+  assert.equal(previewResponse.status, 200);
+
+  const deniedResponse = responseRecorder();
+  await handler({
+    method: 'GET',
+    headers: { host: 'attacker.vercel.app' },
+  }, deniedResponse);
+  assert.equal(deniedResponse.status, 404);
+});
+
 test('Vercel adapter forwards an already parsed JSON body', async () => {
   let forwardedBody;
   const handler = createVercelAegisHandler('/v1/rpc/aegis_sync_device', {
