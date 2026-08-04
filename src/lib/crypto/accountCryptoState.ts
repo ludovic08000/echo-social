@@ -82,12 +82,15 @@ export async function inspectAccountCryptoState(userId: string): Promise<Account
       .limit(1),
   ]);
 
-  if (identityResult.error || backupsResult.error) {
+  if (identityResult.error || backupsResult.error || devicesResult.error) {
     return inconsistent(userId, 'server_inspection_incomplete');
   }
 
   const serverFingerprint =
     (identityResult.data as { fingerprint?: string } | null)?.fingerprint ?? null;
+  // Un compte antérieur à la publication d'identité possède déjà des appareils
+  // enregistrés côté serveur : fait observable, jamais un compteur ni un délai.
+  const hasRegisteredDevice = ((devicesResult.data ?? []) as unknown[]).length > 0;
 
   const backupTypes = new Set(
     ((backupsResult.data ?? []) as Array<{ backup_type?: unknown }>)
