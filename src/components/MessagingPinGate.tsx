@@ -10,6 +10,12 @@ import { useChatPin } from '@/hooks/useChatPin';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PinValidatedMessaging } from '@/components/PinValidatedMessaging';
+import {
+  IdentityInconsistentScreen,
+  IdentityResetScreen,
+  IdentityRestoreScreen,
+  useAccountCryptoGate,
+} from '@/components/messaging/IdentityRecoveryGate';
 
 const CompactCtx = createContext(false);
 
@@ -21,28 +27,55 @@ interface MessagingPinGateProps {
 
 export function MessagingPinGate({ children, compact = false }: MessagingPinGateProps) {
   const pin = useChatPin();
+  const crypto = useAccountCryptoGate();
 
-  if (!pin.loaded) {
-    return (
-      <div className={cn('flex items-center justify-center', compact ? 'h-full' : 'h-full min-h-[50vh]')}>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-col items-center gap-2"
-        >
-          <div className={cn('relative', compact ? 'w-8 h-8' : 'w-12 h-12')}>
-            <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
-            <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Lock className={cn(compact ? 'w-3 h-3' : 'w-5 h-5', 'text-primary/60')} />
-            </div>
+  const loader = (
+    <div className={cn('flex items-center justify-center', compact ? 'h-full' : 'h-full min-h-[50vh]')}>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col items-center gap-2"
+      >
+        <div className={cn('relative', compact ? 'w-8 h-8' : 'w-12 h-12')}>
+          <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+          <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Lock className={cn(compact ? 'w-3 h-3' : 'w-5 h-5', 'text-primary/60')} />
           </div>
-          {!compact && <p className="text-xs text-muted-foreground animate-pulse">Chargement sécurisé…</p>}
-        </motion.div>
-      </div>
+        </div>
+        {!compact && <p className="text-xs text-muted-foreground animate-pulse">Chargement sécurisé…</p>}
+      </motion.div>
+    </div>
+  );
+
+  if (!pin.loaded || !crypto.loaded) return loader;
+
+  const state = crypto.inspection?.state;
+
+  // Fail-closed : aucun écran de création de clé pour un état incohérent.
+  if (state === 'INCONSISTENT') {
+    return (
+      <IdentityInconsistentScreen
+        reason={crypto.inspection?.reason ?? 'unknown'}
+        onRetry={() => { void crypto.refresh(); }}
+      />
     );
   }
 
+  if (state === 'RESTORABLE_IDENTITY') {
+    return <IdentityRestoreScreen onRestored={() => { void crypto.refresh(); }} />;
+  }
+
+  if (state === 'UNRECOVERABLE_SERVER_IDENTITY') {
+    return (
+      <IdentityResetScreen
+        onSuccess={() => { void crypto.refresh(); }}
+        onRetryRestore={() => { void crypto.refresh(); }}
+      />
+    );
+  }
+
+  // READY / NEW_ACCOUNT / LEGACY_ACCOUNT_UNINITIALIZED : cycle PIN normal.
   if (pin.unlocked) return <PinValidatedMessaging>{children}</PinValidatedMessaging>;
 
   return (
@@ -60,6 +93,7 @@ export function MessagingPinGate({ children, compact = false }: MessagingPinGate
     </CompactCtx.Provider>
   );
 }
+
 
 // ─── PIN Input ───
 

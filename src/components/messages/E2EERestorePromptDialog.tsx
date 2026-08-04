@@ -19,7 +19,13 @@ import {
   hasLocalKeys,
 } from '@/lib/crypto/accountKeyBackup';
 import { restoreAegisRecoveryVault } from '@/lib/crypto/aegisRecoveryVault';
+import {
+  acquireRecoveryDialog,
+  releaseRecoveryDialog,
+} from '@/lib/crypto/recoveryDialogCoordinator';
 import { supabase } from '@/integrations/supabase/client';
+
+const DIALOG_OWNER = 'e2ee-restore-prompt';
 
 export function E2EERestorePromptDialog() {
   const { user } = useAuth();
@@ -28,6 +34,8 @@ export function E2EERestorePromptDialog() {
   const [password, setPassword] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
   const [tab, setTab] = useState<'password' | 'recovery'>('password');
+
+  useEffect(() => () => releaseRecoveryDialog(DIALOG_OWNER), []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -40,9 +48,12 @@ export function E2EERestorePromptDialog() {
         // Une inspection locale en erreur ne doit pas masquer la restauration.
       }
       if (cancelled) return;
+      // Un seul ecran de recuperation peut etre visible a la fois.
+      if (!acquireRecoveryDialog(DIALOG_OWNER)) return;
       console.warn('[E2EERestore] prompting user to restore keys', detail);
       setOpen(true);
     };
+
 
     const onNeeded = async (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -73,6 +84,7 @@ export function E2EERestorePromptDialog() {
     if (!open) return;
     const onRestored = () => {
       setOpen(false);
+      releaseRecoveryDialog(DIALOG_OWNER);
       setPassword('');
       setRecoveryKey('');
       toast.success('Messages déverrouillés');
@@ -83,6 +95,7 @@ export function E2EERestorePromptDialog() {
 
   const finish = (origin: string) => {
     setOpen(false);
+    releaseRecoveryDialog(DIALOG_OWNER);
     setPassword('');
     setRecoveryKey('');
     window.dispatchEvent(new CustomEvent('forsure-keys-unlocked', { detail: { origin } }));
@@ -134,7 +147,7 @@ export function E2EERestorePromptDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }}>
+    <Dialog open={open} onOpenChange={(value) => { if (busy) return; setOpen(value); if (!value) releaseRecoveryDialog(DIALOG_OWNER); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
