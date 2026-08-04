@@ -12,7 +12,10 @@ export type AegisRpcResponse<T> = {
   error: AegisRpcError;
 };
 
-type AegisRpcName = 'aegis_send_message';
+type AegisRpcName =
+  | 'aegis_send_message'
+  | 'aegis_sync_device'
+  | 'aegis_ack_device_messages';
 
 function gatewayUrl(): string {
   const value = String(import.meta.env.VITE_AEGIS_SERVER_URL ?? '').trim();
