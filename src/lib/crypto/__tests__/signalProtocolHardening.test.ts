@@ -42,6 +42,8 @@ describe('Signal protocol hardening', () => {
       {
         isInitiator: true,
         peerInitialDhPubB64: bobPublic,
+        selfIkPubB64: `ik-${ALICE_DEVICE}`,
+        peerIkPubB64: `ik-${BOB_DEVICE}`,
       },
     );
     await establishDeviceSession(
@@ -55,6 +57,8 @@ describe('Signal protocol hardening', () => {
         isInitiator: false,
         selfInitialDhPrivJwk: bobPrivateJwk,
         selfInitialDhPubB64: bobPublic,
+        selfIkPubB64: `ik-${BOB_DEVICE}`,
+        peerIkPubB64: `ik-${ALICE_DEVICE}`,
       },
     );
 
