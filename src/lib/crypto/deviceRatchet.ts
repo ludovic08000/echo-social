@@ -64,8 +64,12 @@ interface SkippedKey {
   dhPubB64: string;
   /** message number in that chain */
   n: number;
-  /** raw 32B AES key, base64 */
-  keyB64: string;
+  /**
+   * Clé de message scellée localement par la SWK (AES-GCM non exportable).
+   * Invariant corrigé : plus aucune clé sautée en clair dans IndexedDB.
+   */
+  wrapB64: string;
+  wrapIvB64: string;
   /** creation time used to enforce the bounded out-of-order window */
   createdAt?: number;
 }
