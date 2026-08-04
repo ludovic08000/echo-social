@@ -43,7 +43,7 @@ describe('realtimeKeySync module', () => {
     const stop = startRealtimeKeySync({ userId: 'user-local' });
 
     expect(stop).toBeTypeOf('function');
-    expect(channel.on).toHaveBeenCalledTimes(4);
+    expect(channel.on).toHaveBeenCalledTimes(6);
     expect(channel.on.mock.calls.map((call) => call[1]?.table)).not.toContain(
       'device_one_time_prekeys',
     );

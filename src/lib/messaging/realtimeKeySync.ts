@@ -14,6 +14,10 @@ const KEY_TABLES = [
   'user_devices',
   'signed_prekeys',
   'device_signed_prekeys',
+  // Invariant : une révocation ou une republication de liste signée doit
+  // purger immédiatement le cache de routes (sinon jusqu'à 30 s de périmé).
+  'user_device_signatures',
+  'signed_device_lists',
 ] as const;
 
 let activeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -81,6 +85,41 @@ async function handleDeviceSpkUpdate(payload: KeyChangePayload, selfUserId: stri
   }
 }
 
+/** Drop a peer-device session as soon as that device is revoked or deactivated. */
+async function handleDeviceRevocation(payload: KeyChangePayload, selfUserId: string): Promise<void> {
+  try {
+    const newRow = payload?.new;
+    const oldRow = payload?.old;
+    const row = (newRow && typeof newRow === 'object' ? newRow : oldRow) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return;
+
+    const revokedNow =
+      payload?.eventType === 'DELETE' ||
+      (Boolean(row.revoked_at) && !oldRow?.revoked_at) ||
+      (row.is_active === false && oldRow?.is_active !== false);
+    if (!revokedNow) return;
+
+    const peerUserId = row.user_id as string | undefined;
+    const peerDeviceId = row.device_id as string | undefined;
+    if (!peerUserId || !peerDeviceId || peerUserId === selfUserId) return;
+
+    const myDeviceId = (() => {
+      try { return getCurrentDeviceId(); } catch { return null; }
+    })();
+    if (!myDeviceId) return;
+
+    await invalidateDeviceSession(selfUserId, myDeviceId, peerUserId, peerDeviceId);
+    console.log('[RT_KEYS] peer device revoked → session invalidated', {
+      peer: peerUserId.slice(0, 8),
+      device: peerDeviceId.slice(0, 8),
+    });
+  } catch (e) {
+    console.warn('[RT_KEYS] handleDeviceRevocation failed:', e);
+  }
+}
+
 export interface RealtimeKeySyncOptions {
   userId: string;
 }
@@ -104,6 +143,9 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
         scheduleResume(`${payload?.table ?? table}:${payload?.eventType ?? 'change'}`);
         if (table === 'device_signed_prekeys' && payload?.eventType === 'UPDATE') {
           void handleDeviceSpkUpdate(payload, userId);
+        }
+        if (table === 'user_devices') {
+          void handleDeviceRevocation(payload, userId);
         }
       },
     );
