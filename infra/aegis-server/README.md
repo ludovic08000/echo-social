@@ -48,8 +48,8 @@ Supabase; authorization remains inside PostgreSQL.
 5. Run `docker compose up -d --build`.
 6. Put Caddy or nginx in front of `127.0.0.1:8787`.
 7. Expose the service only through HTTPS, for example
-   `https://aegis.forsure.social`.
-8. Set `VITE_AEGIS_SERVER_URL=https://aegis.forsure.social` in the client build.
+   `https://aegis.forsure.fans`.
+8. Set `VITE_AEGIS_SERVER_URL=https://aegis.forsure.fans` in the client build.
 
 Without `VITE_AEGIS_SERVER_URL`, the same client calls the same Supabase RPCs
 directly. This makes gateway deployment reversible and requires no ciphertext
@@ -58,7 +58,7 @@ conversion.
 ## Health check
 
 ```sh
-curl --fail https://aegis.forsure.social/health
+curl --fail https://aegis.forsure.fans/health
 ```
 
 Expected body:
