@@ -107,6 +107,9 @@ interface StoredSession {
    */
   peerSpkId?: number | null;
 
+  /** Clés d'identité publiques liées à l'AAD (obligatoires pour toute session neuve). */
+  selfIkPubB64?: string;
+  peerIkPubB64?: string;
 }
 
 interface DecryptLogContext {
