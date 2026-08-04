@@ -43,6 +43,7 @@ import {
   RATCHET_SKIPPED_TTL_MS,
 } from './constants';
 import { runDeviceSessionJob } from './deviceSessionQueue';
+import { wrapSkippedKey, unwrapSkippedKey } from './skippedKeyVault';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 const STORE = 'sessions';
@@ -382,7 +383,7 @@ async function trySkippedKeys(
   if (idx === -1) return null;
   const entry = session.skipped[idx];
   try {
-    const aes = await importMessageKey(entry.keyB64);
+    const aes = await importMessageKey(await unwrapSkippedKey(entry));
     const ivCopy = new Uint8Array(iv.byteLength);
     ivCopy.set(iv);
     const ctCopy = (ct as ArrayBuffer).slice(0);
@@ -426,10 +427,12 @@ async function skipMessageKeys(session: StoredSession, until: number): Promise<S
   const s = { ...pruned, skipped: [...pruned.skipped] };
   while (s.Nr < until) {
     const { ck, mk } = await kdfCK(s.ckRecvB64!);
+    const sealed = await wrapSkippedKey(mk);
     s.skipped.push({
       dhPubB64: s.dhrPubB64!,
       n: s.Nr,
-      keyB64: mk,
+      wrapB64: sealed.wrapB64,
+      wrapIvB64: sealed.wrapIvB64,
       createdAt: Date.now(),
     });
     s.ckRecvB64 = ck;
