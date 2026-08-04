@@ -43,11 +43,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function rpc(name: string, args: Record<string, unknown>): Promise<RpcResult> {
-  const invoke = supabase.rpc as unknown as (
-    functionName: string,
-    functionArgs: Record<string, unknown>,
-  ) => PromiseLike<RpcResult>;
-  return invoke(name, args);
+  // Invariant : l'appel conserve le receveur SDK ; détacher `rpc` casse son
+  // contexte interne (`this.rest`) avant la confirmation « vue unique ».
+  return await supabase.rpc(name as never, args as never) as unknown as RpcResult;
 }
 
 async function releaseClaim(messageId: string, deviceId: string, claimToken: string): Promise<void> {

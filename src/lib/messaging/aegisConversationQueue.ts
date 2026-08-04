@@ -7,7 +7,7 @@
  * the web client the queue guarantees that matter for stable delivery:
  *   - one active send/retry per conversation;
  *   - cross-tab exclusion through Web Locks or a renewable IndexedDB lease;
- *   - bounded retry with increasing delay;
+ *   - durable retry with increasing capped delay;
  *   - idempotent timer registration.
  */
 
@@ -21,8 +21,7 @@ const retryAttempts = new Map<string, number>();
 const retryInflight = new Set<string>();
 const retryStopped = new Set<string>();
 
-const RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000] as const;
-const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length;
+const RETRY_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000, 5 * 60_000, 15 * 60_000] as const;
 const LOCK_ACQUIRE_TIMEOUT_MS = 45_000;
 
 export class AegisConversationLockTimeoutError extends Error {
@@ -109,10 +108,6 @@ export function scheduleAegisRetry(
   if (retryTimers.has(retryKey) || retryInflight.has(retryKey)) return true;
 
   const attempt = retryAttempts.get(retryKey) ?? 0;
-  if (attempt >= MAX_RETRY_ATTEMPTS) {
-    options.onExhausted?.();
-    return false;
-  }
 
   const delay = options.immediate ? 0 : retryDelayMs(attempt);
   const timer = setTimeout(() => {
@@ -127,6 +122,9 @@ export function scheduleAegisRetry(
       .catch(() => {
         retryInflight.delete(retryKey);
         if (!retryStopped.has(retryKey)) {
+          // Invariant : un échec transitoire ne devient jamais terminal. Le
+          // ciphertext durable reste identique et les transitions Ratchet ne
+          // sont reprises que par la transaction idempotente suivante.
           scheduleAegisRetry(retryKey, task, { onExhausted: options.onExhausted });
         }
       })

@@ -293,7 +293,7 @@ describe('canonical Aegis outbound transaction engine', () => {
     });
   });
 
-  it('does not send when a required sender history archive cannot be prepared', async () => {
+  it('sends securely without the optional history archive when it cannot be prepared', async () => {
     mocks.archiveEnabled.mockReturnValue(true);
     mocks.encryptArchive.mockResolvedValue(null);
 
@@ -304,17 +304,14 @@ describe('canonical Aegis outbound transaction engine', () => {
       localId: 'local-archive-failed',
       traceId: 'trace-archive-failed',
       messageId: COPY.message_id,
-    })).rejects.toThrow('AEGIS_ARCHIVE_PREPARE_FAILED');
+    })).resolves.toEqual(expect.objectContaining({ id: COPY.message_id }));
 
-    expect(mocks.buildCopies).not.toHaveBeenCalled();
-    expect(mocks.sendRpc).not.toHaveBeenCalled();
-    expect(mocks.putOutbox).toHaveBeenLastCalledWith(
-      COPY.sender_user_id,
-      expect.objectContaining({
-        status: 'retry_pending',
-        lastError: 'AEGIS_ARCHIVE_PREPARE_FAILED',
+    expect(mocks.buildCopies).toHaveBeenCalled();
+    expect(mocks.sendRpc).toHaveBeenCalledWith(expect.objectContaining({
+      extra: expect.objectContaining({
+        archive_body: null,
       }),
-    );
+    }));
   });
 
   it('blocks a durable retry when the peer identity changed after preparation', async () => {

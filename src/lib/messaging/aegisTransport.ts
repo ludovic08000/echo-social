@@ -82,13 +82,12 @@ async function callSupabase<T>(
   name: AegisRpcName,
   args: Record<string, unknown>,
 ): Promise<AegisRpcResponse<T>> {
-  const rpc = supabase.rpc as unknown as (
-    functionName: string,
-    functionArgs: Record<string, unknown>,
-  ) => PromiseLike<AegisRpcResponse<T>>;
-  const response = await rpc(name, args);
+  // Invariant : l'appel RPC conserve toujours son receveur SDK. Détacher
+  // `supabase.rpc` détruit son contexte interne (`this.rest`) sur certains
+  // bundles navigateur et bloque l'envoi avant toute transaction Aegis.
+  const response = await supabase.rpc(name, args as never);
   return {
-    data: response.data ?? null,
+    data: (response.data as T | null) ?? null,
     error: response.error ?? null,
   };
 }
