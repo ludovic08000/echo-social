@@ -106,7 +106,7 @@ let lastSelfRepairAt = 0;
 function requestSelfRepairIfNeeded(deviceIds: DeviceId[], reason: string): void {
   try {
     const self = selfDeviceId();
-    if (!self || isDeviceIdTemporary(self)) return;
+    if (!self || isDeviceIdTemporary()) return;
     if (!deviceIds.includes(self)) return;
     const now = Date.now();
     if (now - lastSelfRepairAt < 30_000) return;
