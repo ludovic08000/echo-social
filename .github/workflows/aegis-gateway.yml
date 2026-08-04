@@ -3,13 +3,17 @@ name: Aegis Gateway Contract
 on:
   pull_request:
     paths:
+      - 'api/aegis-*.mjs'
       - 'infra/aegis-server/**'
+      - 'vercel.json'
       - '.github/workflows/aegis-gateway.yml'
   push:
     branches:
       - main
     paths:
+      - 'api/aegis-*.mjs'
       - 'infra/aegis-server/**'
+      - 'vercel.json'
       - '.github/workflows/aegis-gateway.yml'
 
 permissions:
@@ -36,6 +40,8 @@ jobs:
         run: |
           node --check infra/aegis-server/server.mjs
           node --check infra/aegis-server/smoke-client.mjs
+          node --check infra/aegis-server/vercel-adapter.mjs
+          for file in api/aegis-*.mjs; do node --check "$file"; done
 
       - name: Gateway contract tests
         working-directory: infra/aegis-server
