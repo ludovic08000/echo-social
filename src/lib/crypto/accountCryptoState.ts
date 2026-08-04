@@ -64,7 +64,7 @@ function inconsistent(userId: string, reason: string): AccountCryptoInspection {
 export async function inspectAccountCryptoState(userId: string): Promise<AccountCryptoInspection> {
   if (!userId) return inconsistent('', 'missing_user_id');
 
-  const [identityResult, backupsResult] = await Promise.all([
+  const [identityResult, backupsResult, devicesResult] = await Promise.all([
     supabase
       .from('user_public_keys' as never)
       .select('fingerprint')
@@ -75,6 +75,11 @@ export async function inspectAccountCryptoState(userId: string): Promise<Account
       .from('user_backups' as never)
       .select('backup_type')
       .eq('user_id', userId),
+    supabase
+      .from('user_devices' as never)
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1),
   ]);
 
   if (identityResult.error || backupsResult.error) {
