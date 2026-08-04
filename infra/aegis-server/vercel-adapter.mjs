@@ -6,6 +6,31 @@ function safeRequestId(value) {
   return /^[A-Za-z0-9._:-]{1,128}$/.test(candidate) ? candidate : randomUUID();
 }
 
+function normalizeHost(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/:\d+$/, '');
+}
+
+function vercelAllowedHosts(env) {
+  const hosts = new Set(
+    String(env.AEGIS_ALLOWED_HOSTS || env.AEGIS_ALLOWED_HOST || '')
+      .split(',')
+      .map(normalizeHost)
+      .filter(Boolean),
+  );
+
+  for (const value of [env.VERCEL_URL, env.VERCEL_BRANCH_URL, env.VERCEL_PROJECT_PRODUCTION_URL]) {
+    const host = normalizeHost(value);
+    if (host) hosts.add(host);
+  }
+
+  return [...hosts].join(',');
+}
+
 function normalizeVercelEnv(env) {
   return {
     ...env,
@@ -13,6 +38,7 @@ function normalizeVercelEnv(env) {
     SUPABASE_ANON_KEY: env.SUPABASE_ANON_KEY
       || env.SUPABASE_PUBLISHABLE_KEY
       || env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    AEGIS_ALLOWED_HOSTS: vercelAllowedHosts(env),
   };
 }
 
