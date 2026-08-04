@@ -144,16 +144,31 @@ export async function resolveConversationRoute(
   for (const participant of participants) {
     const rows = Array.isArray(participant.devices) ? participant.devices : [];
     const entries = rows.filter(row => row.is_routable === true).map(toSignedEntry);
+    trace('ROUTE_PARTICIPANT_DEVICES', {
+      outcome: 'ok',
+      peerDeviceId: participant.is_self ? 'self' : undefined,
+      targetCount: rows.length,
+      copyCount: entries.length,
+    });
 
     if (entries.length === 0) {
       // Un participant sans appareil routable n'est pas joignable : on ne
       // dégrade jamais vers un envoi en clair.
       if (!participant.is_self) unroutableUserIds.push(participant.user_id);
+      trace('ROUTE_PARTICIPANT_UNROUTABLE', {
+        outcome: 'skip',
+        errorCode: 'E2EE_NO_ROUTABLE_DEVICE',
+      }, participant.is_self ? 'info' : 'warn');
       continue;
     }
 
     const verifications = await verifySignedDeviceList(participant.user_id, entries);
     const trusted = new Set(verifications.filter(v => v.ok).map(v => v.deviceId));
+    trace('ROUTE_SIGNATURE_VERIFIED', {
+      outcome: trusted.size === entries.length ? 'ok' : 'retry',
+      targetCount: entries.length,
+      copyCount: trusted.size,
+    }, trusted.size === entries.length ? 'info' : 'warn');
 
     const accepted = entries.filter(entry =>
       trusted.has(entry.deviceId) &&
@@ -161,11 +176,16 @@ export async function resolveConversationRoute(
     );
 
     if (participant.is_self && verifications.some(v => !v.ok && v.deviceId === senderDeviceId)) {
+      trace('ROUTE_SELF_REPAIR', { outcome: 'retry', errorCode: 'INVALID_DEVICE_AUTHORIZATION' }, 'warn');
       requestSelfRepair('invalid_device_authorization', senderDeviceId);
     }
 
     if (!participant.is_self && accepted.length === 0) {
       unroutableUserIds.push(participant.user_id);
+      trace('ROUTE_PARTICIPANT_UNTRUSTED', {
+        outcome: 'skip',
+        errorCode: 'E2EE_NO_TRUSTED_DEVICE',
+      }, 'warn');
       continue;
     }
 
@@ -180,8 +200,16 @@ export async function resolveConversationRoute(
   }
 
   if (payload.sender_device_routable === false) {
+    trace('ROUTE_SENDER_NOT_ROUTABLE', { outcome: 'retry', errorCode: 'SENDER_DEVICE_NOT_ROUTABLE' }, 'warn');
     requestSelfRepair('sender_device_not_routable', senderDeviceId);
   }
+
+  trace('ROUTE_RESOLVED', {
+    outcome: unroutableUserIds.length > 0 ? 'retry' : 'ok',
+    targetCount: targets.length,
+    copyCount: unroutableUserIds.length,
+  }, unroutableUserIds.length > 0 ? 'warn' : 'info');
+
 
   return {
     version: payload.route_version,
