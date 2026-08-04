@@ -77,28 +77,22 @@ async function runReset(password: string): Promise<IdentityResetResult> {
   const keys = await generateIdentityKeys();
   const bundle = await exportPublicKeyBundle(keys);
 
-  // L'ancienne identité est archivée, jamais supprimée.
-  const { error: archiveError } = await supabase
-    .from('user_public_keys' as never)
-    .update({ is_active: false, updated_at: new Date().toISOString() } as never)
-    .eq('user_id', user.id)
-    .eq('is_active', true);
-  if (archiveError) return fail('publish_failed');
-
-  const { error: publishError } = await supabase
-    .from('user_public_keys' as never)
-    .insert({
-      user_id: user.id,
-      identity_key: bundle.identityKey,
-      signing_key: bundle.signingKey,
-      fingerprint: bundle.fingerprint,
-      identity_binding_version: bundle.bindingVersion,
-      identity_binding_signature: bundle.bindingSignature,
-      kem_type: 'X25519',
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    } as never);
-  if (publishError) return fail('publish_failed');
+  // Invariant corrigé : l'archivage de l'ancienne identité et la publication
+  // de la nouvelle sont désormais une seule transaction serveur. L'ancien
+  // chemin en deux requêtes pouvait laisser le compte sans identité active.
+  const { error: publishError } = await (supabase as unknown as {
+    rpc: (fn: string, args: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
+  }).rpc('replace_own_identity_key', {
+    p_identity_key: bundle.identityKey,
+    p_signing_key: bundle.signingKey,
+    p_fingerprint: bundle.fingerprint,
+    p_binding_version: bundle.bindingVersion,
+    p_binding_signature: bundle.bindingSignature,
+  });
+  if (publishError) {
+    if ((publishError.message ?? '').includes('RECOVERABLE_BACKUP_EXISTS')) return fail('backup_exists');
+    return fail('publish_failed');
+  }
 
   await saveIdentityKeys(user.id, keys);
 

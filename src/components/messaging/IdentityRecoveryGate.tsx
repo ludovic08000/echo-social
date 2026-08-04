@@ -41,9 +41,14 @@ export function useAccountCryptoGate(): AccountCryptoGate {
   const [inspection, setInspection] = useState<AccountCryptoInspection | null>(null);
   const running = useRef<Promise<void> | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<void> => {
     if (!user?.id) { setInspection(null); setLoaded(true); return; }
-    if (running.current) return running.current;
+    // Une inspection déjà lancée ne peut pas servir de réponse à une demande
+    // postérieure (ex. après un reset) : on enchaîne une nouvelle passe.
+    if (running.current) {
+      const chained = running.current.then(() => refresh());
+      return chained;
+    }
     const attempt = (async () => {
       const result = await inspectAccountCryptoState(user.id);
       setInspection(result);

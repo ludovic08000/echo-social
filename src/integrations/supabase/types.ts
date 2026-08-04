@@ -8881,6 +8881,16 @@ export type Database = {
           salt: string
         }[]
       }
+      replace_own_identity_key: {
+        Args: {
+          p_binding_signature: string
+          p_binding_version: number
+          p_fingerprint: string
+          p_identity_key: string
+          p_signing_key: string
+        }
+        Returns: string
+      }
       request_device_copy_retry: {
         Args: {
           p_message_id: string
