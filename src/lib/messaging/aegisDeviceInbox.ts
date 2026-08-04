@@ -34,6 +34,10 @@ function rememberBounded(cache: Set<string>, key: string): void {
   }
 }
 
+function traceTransport(): 'supabase' | 'aegis_server' {
+  return getAegisTransportKind() === 'gateway' ? 'aegis_server' : 'supabase';
+}
+
 export function formatAegisInboxError(error: unknown): string {
   if (error instanceof Error) {
     return error.message.slice(0, 120) || error.name.slice(0, 120) || 'UNKNOWN';
@@ -86,7 +90,7 @@ function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
  */
 export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRow[]> {
   const startedAt = Date.now();
-  const transport = getAegisTransportKind();
+  const transport = traceTransport();
   traceE2EE({
     direction: 'receive',
     component: 'device_inbox',
@@ -179,7 +183,7 @@ export async function acknowledgeAegisMessage(
       outcome: 'ok',
       messageId,
       deviceId: ready.deviceId,
-      transport: getAegisTransportKind(),
+      transport: traceTransport(),
     });
   })();
 
