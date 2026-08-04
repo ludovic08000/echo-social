@@ -8024,6 +8024,10 @@ export type Database = {
         Args: { p_call_id: string; p_device_id: string; p_status: string }
         Returns: Json
       }
+      aegis_resolve_conversation_route: {
+        Args: { p_conversation_id: string; p_sender_device_id?: string }
+        Returns: Json
+      }
       aegis_send_message: {
         Args: {
           p_body: string
