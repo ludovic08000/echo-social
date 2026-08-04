@@ -3,6 +3,8 @@ import { exportPublicKeyBundle, PinUnlockRequiredError, type IdentityKeyPair } f
 import { resolveUserIdentity } from './identityRecovery';
 import { ensureServerCryptoState, markServerCryptoReady } from './serverCryptoState';
 import { appendTransparencyLog } from './transparencyLog';
+import { publishActiveIdentityKey } from './publishIdentityKey';
+
 
 const BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 const attempts = new Map<string, Promise<void>>();
