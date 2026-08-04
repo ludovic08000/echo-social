@@ -19,6 +19,8 @@ import {
   saveKnownFingerprint,
   saveKnownFingerprintServer,
 } from '@/lib/crypto/fingerprintTracker';
+import { fetchPeerPublicKeys } from '@/lib/crypto/peerKeyCache';
+
 
 interface Props {
   observerUserId: string | null;
