@@ -172,6 +172,25 @@ export function E2EERestorePromptDialog() {
     }
   };
 
+  if (mode === 'reset') {
+    return (
+      <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) releaseRecoveryDialog(DIALOG_OWNER); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="sr-only">Réinitialiser votre identité sécurisée</DialogTitle>
+            <DialogDescription className="sr-only">
+              Aucune sauvegarde restaurable n’existe pour ce compte.
+            </DialogDescription>
+          </DialogHeader>
+          <IdentityResetScreen
+            onSuccess={() => finish('identity_reset')}
+            onRetryRestore={() => setMode('restore')}
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={(value) => { if (busy) return; setOpen(value); if (!value) releaseRecoveryDialog(DIALOG_OWNER); }}>
       <DialogContent className="sm:max-w-md">
@@ -191,6 +210,8 @@ export function E2EERestorePromptDialog() {
             </p>
           </DialogDescription>
         </DialogHeader>
+
+
 
         <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
           <TabsList className="grid w-full grid-cols-2">
