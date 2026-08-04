@@ -156,8 +156,10 @@ export async function inspectAccountCryptoState(userId: string): Promise<Account
     }
     return {
       ...base,
-      state: 'NEW_ACCOUNT',
-      reason: 'no_server_identity_no_backup',
+      state: hasRegisteredDevice ? 'LEGACY_ACCOUNT_UNINITIALIZED' : 'NEW_ACCOUNT',
+      reason: hasRegisteredDevice
+        ? 'registered_devices_without_published_identity'
+        : 'no_server_identity_no_backup',
     };
   }
 
