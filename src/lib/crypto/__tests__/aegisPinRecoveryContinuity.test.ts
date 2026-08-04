@@ -54,10 +54,20 @@ describe('Aegis PIN recovery and identity continuity', () => {
   it('commits an explicit safety-number acknowledgement before enabling sending', () => {
     const banner = source('src/components/messages/IdentityChangeBanner.tsx');
     const tracker = source('src/lib/crypto/fingerprintTracker.ts');
+    const liveRefresh = banner.indexOf(
+      'const live = await fetchPeerPublicKeys(peerUserId, { forceRefresh: true })',
+    );
+    const targetSelection = banner.indexOf(
+      'const acceptedFingerprint = live?.fingerprint ?? trustTarget',
+    );
     const serverCommit = banner.indexOf('const persisted = await saveKnownFingerprintServer');
-    const localCommit = banner.indexOf('saveKnownFingerprint(observerUserId, peerUserId, latest.newFingerprint)');
+    const localCommit = banner.indexOf(
+      'saveKnownFingerprint(observerUserId, peerUserId, acceptedFingerprint)',
+    );
     const ledgerCommit = banner.indexOf('await acknowledgeAllForPeer(observerUserId, peerUserId)');
-    expect(serverCommit).toBeGreaterThan(-1);
+    expect(liveRefresh).toBeGreaterThan(-1);
+    expect(targetSelection).toBeGreaterThan(liveRefresh);
+    expect(serverCommit).toBeGreaterThan(targetSelection);
     expect(localCommit).toBeGreaterThan(serverCommit);
     expect(ledgerCommit).toBeGreaterThan(localCommit);
     expect(banner).toContain('FINGERPRINT_ACK_PERSISTENCE_FAILED');
