@@ -14,18 +14,12 @@
  * Real E2EE key material lives in IndexedDB (encrypted at rest by the OS on iOS/Android).
  */
 
-import { Capacitor } from '@capacitor/core';
+import { isVerifiedNativeRuntime } from '@/lib/runtimePlatform';
 
 let _prefs: typeof import('@capacitor/preferences').Preferences | null = null;
 let _prefsLoading: Promise<void> | null = null;
 
-const isNative = (): boolean => {
-  try {
-    return Capacitor.isNativePlatform?.() === true;
-  } catch {
-    return false;
-  }
-};
+const isNative = (): boolean => isVerifiedNativeRuntime();
 
 async function ensurePrefs(): Promise<void> {
   if (_prefs || !isNative()) return;
