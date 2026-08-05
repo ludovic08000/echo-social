@@ -29,10 +29,11 @@ import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto/x3dh';
-import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
-import { prepareDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import { deleteDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { deleteDeviceIdentity, prepareDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
 import {
   beginServerAssignedDeviceEnrollment,
+  cancelServerAssignedDeviceEnrollment,
   completeServerAssignedDeviceEnrollment,
   hasRegisteredDevice,
   type DeviceEnrollmentChallenge,
@@ -430,20 +431,48 @@ async function republishDeviceIdentity(
   });
   try {
     if (enrollmentChallenge) {
-      const completedDeviceId = await completeServerAssignedDeviceEnrollment(
-        enrollmentChallenge,
-        authorization,
-      );
-      if (completedDeviceId !== deviceId) {
-        throw new Error('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
+      try {
+        const completedDeviceId = await completeServerAssignedDeviceEnrollment(
+          enrollmentChallenge,
+          authorization,
+        );
+        if (completedDeviceId !== deviceId) {
+          throw new Error('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
+        }
+        // Commit the routing identity only after the server transaction succeeds.
+        setCurrentDeviceId(completedDeviceId);
+        result.deviceId = completedDeviceId;
+        result.identity = true;
+        diag?.push('identity', 'success', 'server device enrollment completed', {
+          deviceIdLength: completedDeviceId.length,
+        });
+      } catch (completionError) {
+        const settlement = await cancelServerAssignedDeviceEnrollment(
+          enrollmentChallenge,
+          'completion_failed',
+        ).catch(() => null);
+
+        if (settlement?.status === 'completed') {
+          // The commit succeeded but its HTTP response was lost. Keep the keys.
+          setCurrentDeviceId(settlement.deviceId);
+          result.deviceId = settlement.deviceId;
+          result.identity = true;
+          diag?.push('identity', 'success', 'recovered committed device after ambiguous response', {
+            deviceIdLength: settlement.deviceId.length,
+          });
+        } else {
+          if (settlement?.status === 'cancelled') {
+            await Promise.allSettled([
+              deleteDeviceKxKey(deviceId, userId),
+              deleteDeviceIdentity(userId, deviceId),
+            ]);
+            diag?.push('identity', 'info', 'removed provisional device keys after cancellation');
+          } else {
+            diag?.push('identity', 'warn', 'enrollment settlement unavailable; provisional keys retained');
+          }
+          throw completionError;
+        }
       }
-      // Commit the routing identity only after the server transaction succeeds.
-      setCurrentDeviceId(completedDeviceId);
-      result.deviceId = completedDeviceId;
-      result.identity = true;
-      diag?.push('identity', 'success', 'server device enrollment completed', {
-        deviceIdLength: completedDeviceId.length,
-      });
     } else {
       const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe', {
         p_user_id: payload.user_id,

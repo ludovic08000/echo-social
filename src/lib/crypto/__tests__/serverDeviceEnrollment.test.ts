@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseCompletedDeviceEnrollment,
   parseDeviceEnrollmentChallenge,
+  parseDeviceEnrollmentSettlement,
 } from '../serverDeviceEnrollment';
 
 const DEVICE_ID = 'dev_0123456789abcdef0123456789abcdef';
@@ -63,4 +64,26 @@ describe('server-assigned device enrollment', () => {
       device_id: 'dev_ffffffffffffffffffffffffffffffff',
     }, DEVICE_ID)).toThrow('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
   });
+
+  it('recovers a server commit after an ambiguous HTTP response', () => {
+    expect(parseDeviceEnrollmentSettlement({
+      ok: true,
+      code: 'DEVICE_ENROLLMENT_ALREADY_COMPLETED',
+      device_id: DEVICE_ID,
+    }, DEVICE_ID)).toEqual({ status: 'completed', deviceId: DEVICE_ID });
+  });
+
+  it('confirms cancellation before provisional keys may be deleted', () => {
+    expect(parseDeviceEnrollmentSettlement({
+      ok: true,
+      code: 'DEVICE_ENROLLMENT_CANCELLED',
+      device_id: DEVICE_ID,
+    }, DEVICE_ID)).toEqual({ status: 'cancelled', deviceId: DEVICE_ID });
+
+    expect(() => parseDeviceEnrollmentSettlement({
+      ok: false,
+      code: 'DEVICE_ENROLLMENT_INVALID_NONCE',
+    }, DEVICE_ID)).toThrow('DEVICE_ENROLLMENT_INVALID_NONCE');
+  });
+
 });

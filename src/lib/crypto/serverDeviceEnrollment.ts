@@ -20,6 +20,11 @@ export interface DeviceEnrollmentChallenge {
   expiresAt: string;
 }
 
+export type DeviceEnrollmentSettlement = {
+  status: 'completed' | 'cancelled';
+  deviceId: string;
+};
+
 function asObject(value: unknown): RpcObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('DEVICE_ENROLLMENT_INVALID_RESPONSE');
@@ -68,6 +73,32 @@ export function parseCompletedDeviceEnrollment(
     throw new Error('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
   }
   return deviceId;
+}
+
+
+export function parseDeviceEnrollmentSettlement(
+  value: unknown,
+  expectedDeviceId: string,
+): DeviceEnrollmentSettlement {
+  const result = asObject(value);
+  if (result.ok !== true) throw new Error(responseCode(result));
+
+  const deviceId = typeof result.device_id === 'string' ? result.device_id : '';
+  if (!SERVER_DEVICE_ID_RE.test(deviceId)) {
+    throw new Error('DEVICE_ENROLLMENT_INVALID_DEVICE_ID');
+  }
+  if (deviceId !== expectedDeviceId) {
+    throw new Error('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
+  }
+
+  const code = responseCode(result);
+  if (code === 'DEVICE_ENROLLMENT_ALREADY_COMPLETED') {
+    return { status: 'completed', deviceId };
+  }
+  if (code === 'DEVICE_ENROLLMENT_CANCELLED' || code === 'DEVICE_ENROLLMENT_ALREADY_CANCELLED') {
+    return { status: 'cancelled', deviceId };
+  }
+  throw new Error('DEVICE_ENROLLMENT_INVALID_SETTLEMENT');
 }
 
 export async function hasRegisteredDevice(
@@ -124,3 +155,21 @@ export async function completeServerAssignedDeviceEnrollment(
   if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_FAILED:${error.message}`);
   return parseCompletedDeviceEnrollment(data, challenge.deviceId);
 }
+
+export async function cancelServerAssignedDeviceEnrollment(
+  challenge: DeviceEnrollmentChallenge,
+  reason: string,
+): Promise<DeviceEnrollmentSettlement> {
+  const { data, error } = await supabase.rpc(
+    'cancel_user_device_enrollment' as never,
+    {
+      p_challenge_id: challenge.challengeId,
+      p_nonce: challenge.nonce,
+      p_reason: reason.slice(0, 120),
+    } as never,
+  );
+
+  if (error) throw new Error(`DEVICE_ENROLLMENT_CANCEL_FAILED:${error.message}`);
+  return parseDeviceEnrollmentSettlement(data, challenge.deviceId);
+}
+
