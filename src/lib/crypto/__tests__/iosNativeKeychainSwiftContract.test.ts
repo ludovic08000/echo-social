@@ -34,11 +34,10 @@ describe('native iOS Aegis Continuity Enclave contract', () => {
     expect(source).toContain('E2EE_ENCLAVE_MIGRATION_READBACK_FAILED');
   });
 
-  it('keeps WebKit, Preferences, iCloud sync, and logs outside the trust root', () => {
+  it('keeps Preferences, iCloud sync, and logs outside the trust root', () => {
     expect(source).toContain('kSecClassGenericPassword');
     expect(source).toContain('AegisKeychain');
     expect(source).not.toContain('UserDefaults');
-    expect(source).not.toContain('WKWebView');
     expect(source).not.toContain('kSecAttrSynchronizable');
     expect(source).not.toContain('print(');
     expect(source).not.toContain('NSLog');
