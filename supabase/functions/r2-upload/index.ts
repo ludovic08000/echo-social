@@ -48,6 +48,8 @@ function isAllowedOriginUpload(origin: string): boolean {
   if (ALLOWED_ORIGINS_LIST.includes(origin)) return true;
   if (/^https:\/\/[a-z0-9-]+--[a-f0-9-]+\.lovable\.app$/.test(origin)) return true;
   if (/^https:\/\/[a-z0-9-]+\.lovableproject\.com$/.test(origin)) return true;
+  // Preview Vercel de ce projet uniquement (jamais *.vercel.app global)
+  if (/^https:\/\/echo-social(?:-[a-z0-9-]+)?-ludovics-projects-92893680\.vercel\.app$/.test(origin)) return true;
   return false;
 }
 
