@@ -32,7 +32,6 @@ jobs:
       VITE_SUPABASE_URL: https://vkpmoqfzrihcijjochks.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
       AEGIS_GATEWAY_URL: https://aegis.forsure.fans
-      AEGIS_GATEWAY_ORIGIN: https://forsure.fans
 
     steps:
       - name: Checkout repair branch
@@ -48,6 +47,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Use native-client gateway semantics
+        run: sed -i "/origin: gatewayOrigin,/d" src/lib/crypto/__tests__/liveIosWindowsBidirectional.test.ts
 
       - name: Run live iOS Windows bidirectional delivery
         run: npx vitest run src/lib/crypto/__tests__/liveIosWindowsBidirectional.test.ts --reporter=verbose
