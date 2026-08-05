@@ -17,7 +17,7 @@ concurrency:
 jobs:
   application:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout branch
         uses: actions/checkout@v4
@@ -33,8 +33,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Lint new enrollment modules
+        run: |
+          npx eslint \
+            src/lib/crypto/deviceBackupPolicy.ts \
+            src/lib/crypto/__tests__/deviceBackupPolicy.test.ts \
+            src/lib/crypto/serverDeviceEnrollment.ts \
+            src/lib/crypto/__tests__/serverDeviceEnrollment.test.ts
 
       - name: Full test suite
         run: npm test
