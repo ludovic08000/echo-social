@@ -1,9 +1,9 @@
 /**
  * Aegis PIN continuity vault.
  *
- * Invariant : le serveur ne détient qu'une enveloppe AES-GCM scellée par la
- * Master Key aléatoire de 32 octets du compte. Le PIN à 6 chiffres n'est jamais
- * envoyé, ni dérivé côté serveur : sans la Master Key, l'enveloppe est inerte.
+ * The server stores only an AES-GCM envelope sealed by the account's random,
+ * non-exportable Master Key. The six-digit PIN and its local verifier are never
+ * exposed as server-readable material.
  */
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
@@ -11,9 +11,14 @@ import { getSessionMasterKey } from './accountKeyBackup';
 
 export const PIN_CONTINUITY_VERSION = 1 as const;
 const LOCAL_PIN_VERSION = 3 as const;
-const IV_LENGTH = 12;
-const MAX_CIPHERTEXT_B64 = 8192;
-const MAX_FIELD_B64 = 2048;
+const ENVELOPE_IV_BYTES = 12;
+const LOCAL_SALT_BYTES = 32;
+const LOCAL_IV_BYTES = 12;
+const MIN_WRAPPED_BLOB_BYTES = 32;
+const MAX_WRAPPED_BLOB_BYTES = 512;
+const MIN_CIPHERTEXT_BYTES = 48;
+const MAX_CIPHERTEXT_BYTES = 6_144;
+const MAX_FUTURE_SKEW_MS = 5 * 60_000;
 
 export interface PinContinuityEnvelope {
   version: typeof PIN_CONTINUITY_VERSION;
@@ -30,8 +35,28 @@ export interface PortablePinRecord {
   createdAt: number;
 }
 
+export type PinContinuityEnsureStatus =
+  | 'matched'
+  | 'published'
+  | 'locked'
+  | 'unavailable'
+  | 'invalid'
+  | 'mismatch'
+  | 'write_failed'
+  | 'readback_failed';
+
+type RemotePinContinuity =
+  | PinContinuityEnvelope
+  | null
+  | 'unavailable'
+  | 'invalid';
+
+const ensureJobs = new Map<string, Promise<PinContinuityEnsureStatus>>();
+
 export function pinContinuityAad(userId: string): Uint8Array {
-  return new hardGlobals.TextEncoder().encode(`FORSURE-PIN-CONTINUITY-v1|${userId}`);
+  return new hardGlobals.TextEncoder().encode(
+    `FORSURE-PIN-CONTINUITY-v1|${userId}`,
+  );
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -40,35 +65,68 @@ function toBase64(bytes: Uint8Array): string {
   return hardGlobals.btoa(binary);
 }
 
-function fromBase64(value: string): Uint8Array {
-  const binary = hardGlobals.atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
+function decodeCanonicalBase64(
+  value: unknown,
+  minBytes: number,
+  maxBytes: number,
+): Uint8Array | null {
+  if (
+    typeof value !== 'string'
+    || value.length < 4
+    || value.length > Math.ceil(maxBytes / 3) * 4 + 4
+    || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)
+  ) {
+    return null;
+  }
+
+  try {
+    const binary = hardGlobals.atob(value);
+    if (binary.length < minBytes || binary.length > maxBytes) return null;
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    const canonical = toBase64(bytes).replace(/=+$/, '');
+    if (canonical !== value.replace(/=+$/, '')) return null;
+    return bytes;
+  } catch {
+    return null;
+  }
 }
 
-function isBoundedBase64(value: unknown, min: number, max: number): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length >= min &&
-    value.length <= max &&
-    /^[A-Za-z0-9+/]+={0,2}$/.test(value)
-  );
-}
-
-/** Valide strictement le record déchiffré ; toute anomalie échoue fermé. */
 export function validatePortablePinRecord(
   candidate: unknown,
   userId: string,
 ): PortablePinRecord | null {
-  if (!candidate || typeof candidate !== 'object') return null;
+  if (
+    !candidate
+    || typeof candidate !== 'object'
+    || Array.isArray(candidate)
+    || typeof userId !== 'string'
+    || userId.length < 1
+    || userId.length > 128
+  ) {
+    return null;
+  }
+
   const record = candidate as Partial<PortablePinRecord>;
-  if (record.id !== userId) return null;
-  if (record.version !== LOCAL_PIN_VERSION) return null;
-  if (!isBoundedBase64(record.salt, 4, MAX_FIELD_B64)) return null;
-  if (!isBoundedBase64(record.iv, 4, MAX_FIELD_B64)) return null;
-  if (!isBoundedBase64(record.wrappedBlob, 4, MAX_FIELD_B64)) return null;
-  if (typeof record.createdAt !== 'number' || !Number.isFinite(record.createdAt)) return null;
+  if (record.id !== userId || record.version !== LOCAL_PIN_VERSION) return null;
+  if (!decodeCanonicalBase64(record.salt, LOCAL_SALT_BYTES, LOCAL_SALT_BYTES)) return null;
+  if (!decodeCanonicalBase64(record.iv, LOCAL_IV_BYTES, LOCAL_IV_BYTES)) return null;
+  if (!decodeCanonicalBase64(
+    record.wrappedBlob,
+    MIN_WRAPPED_BLOB_BYTES,
+    MAX_WRAPPED_BLOB_BYTES,
+  )) return null;
+  if (
+    typeof record.createdAt !== 'number'
+    || !Number.isSafeInteger(record.createdAt)
+    || record.createdAt <= 0
+    || record.createdAt > Date.now() + MAX_FUTURE_SKEW_MS
+  ) {
+    return null;
+  }
+
   return {
     id: record.id,
     version: LOCAL_PIN_VERSION,
@@ -79,24 +137,64 @@ export function validatePortablePinRecord(
   };
 }
 
-/** Scelle le record local sous la Master Key du compte. */
+export function equalPortablePinRecords(
+  left: PortablePinRecord,
+  right: PortablePinRecord,
+): boolean {
+  return left.id === right.id
+    && left.version === right.version
+    && left.salt === right.salt
+    && left.iv === right.iv
+    && left.wrappedBlob === right.wrappedBlob
+    && left.createdAt === right.createdAt;
+}
+
+function validateEnvelope(candidate: unknown): PinContinuityEnvelope | null {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return null;
+  }
+  const envelope = candidate as Partial<PinContinuityEnvelope>;
+  if (envelope.version !== PIN_CONTINUITY_VERSION) return null;
+  if (!decodeCanonicalBase64(
+    envelope.iv,
+    ENVELOPE_IV_BYTES,
+    ENVELOPE_IV_BYTES,
+  )) return null;
+  if (!decodeCanonicalBase64(
+    envelope.ciphertext,
+    MIN_CIPHERTEXT_BYTES,
+    MAX_CIPHERTEXT_BYTES,
+  )) return null;
+
+  return {
+    version: PIN_CONTINUITY_VERSION,
+    ciphertext: envelope.ciphertext,
+    iv: envelope.iv,
+  };
+}
+
 export async function sealPinContinuityRecord(
   record: PortablePinRecord,
   userId: string,
   masterKey: CryptoKey,
 ): Promise<PinContinuityEnvelope> {
-  const iv = hardCrypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const aad = pinContinuityAad(userId);
+  const validated = validatePortablePinRecord(record, userId);
+  if (!validated) throw new Error('AEGIS_PIN_CONTINUITY_INVALID_LOCAL_RECORD');
+
+  const iv = hardCrypto.getRandomValues(new Uint8Array(ENVELOPE_IV_BYTES));
   const ciphertext = await hardCrypto.encrypt(
     {
       name: 'AES-GCM',
       iv: iv as Uint8Array<ArrayBuffer>,
-      additionalData: aad.slice().buffer,
+      additionalData: pinContinuityAad(userId).slice().buffer,
       tagLength: 128,
     },
     masterKey,
-    new hardGlobals.TextEncoder().encode(hardGlobals.jsonStringify(record)),
+    new hardGlobals.TextEncoder().encode(
+      hardGlobals.jsonStringify(validated),
+    ),
   );
+
   return {
     version: PIN_CONTINUITY_VERSION,
     ciphertext: toBase64(new Uint8Array(ciphertext)),
@@ -104,34 +202,52 @@ export async function sealPinContinuityRecord(
   };
 }
 
-/** Ouvre l'enveloppe et revalide le record ; renvoie null en cas d'échec. */
 export async function openPinContinuityRecord(
-  envelope: PinContinuityEnvelope,
+  candidate: PinContinuityEnvelope,
   userId: string,
   masterKey: CryptoKey,
 ): Promise<PortablePinRecord | null> {
-  if (envelope?.version !== PIN_CONTINUITY_VERSION) return null;
-  if (!isBoundedBase64(envelope.ciphertext, 24, MAX_CIPHERTEXT_B64)) return null;
-  if (!isBoundedBase64(envelope.iv, 12, 64)) return null;
+  const envelope = validateEnvelope(candidate);
+  if (!envelope) return null;
+
+  const iv = decodeCanonicalBase64(
+    envelope.iv,
+    ENVELOPE_IV_BYTES,
+    ENVELOPE_IV_BYTES,
+  );
+  const ciphertext = decodeCanonicalBase64(
+    envelope.ciphertext,
+    MIN_CIPHERTEXT_BYTES,
+    MAX_CIPHERTEXT_BYTES,
+  );
+  if (!iv || !ciphertext) return null;
+
   try {
     const plaintext = await hardCrypto.decrypt(
       {
         name: 'AES-GCM',
-        iv: fromBase64(envelope.iv) as Uint8Array<ArrayBuffer>,
+        iv: iv as Uint8Array<ArrayBuffer>,
         additionalData: pinContinuityAad(userId).slice().buffer,
         tagLength: 128,
       },
       masterKey,
-      fromBase64(envelope.ciphertext) as Uint8Array<ArrayBuffer>,
+      ciphertext as Uint8Array<ArrayBuffer>,
     );
-    const decoded = hardGlobals.jsonParse(new hardGlobals.TextDecoder().decode(plaintext));
+    const decoded = hardGlobals.jsonParse(
+      new hardGlobals.TextDecoder().decode(plaintext),
+    );
     return validatePortablePinRecord(decoded, userId);
   } catch {
     return null;
   }
 }
 
-type RpcClient = { rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }> };
+type RpcClient = {
+  rpc: (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: unknown }>;
+};
 
 function rpcClient(): RpcClient {
   return supabase as unknown as RpcClient;
@@ -139,8 +255,7 @@ function rpcClient(): RpcClient {
 
 export async function hasRemotePinContinuity(): Promise<boolean | 'unavailable'> {
   try {
-    const client = rpcClient();
-    const { data, error } = await client.rpc('aegis_pin_continuity_has');
+    const { data, error } = await rpcClient().rpc('aegis_pin_continuity_has');
     if (error) return 'unavailable';
     return data === true;
   } catch {
@@ -148,31 +263,34 @@ export async function hasRemotePinContinuity(): Promise<boolean | 'unavailable'>
   }
 }
 
-export async function fetchRemotePinContinuity(): Promise<PinContinuityEnvelope | null | 'unavailable'> {
+export async function fetchRemotePinContinuity(): Promise<RemotePinContinuity> {
   try {
-    const client = rpcClient();
-    const { data, error } = await client.rpc('aegis_pin_continuity_get');
+    const { data, error } = await rpcClient().rpc('aegis_pin_continuity_get');
     if (error) return 'unavailable';
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) return null;
-    const envelope = row as Partial<PinContinuityEnvelope>;
-    if (envelope.version !== PIN_CONTINUITY_VERSION) return null;
-    if (typeof envelope.ciphertext !== 'string' || typeof envelope.iv !== 'string') return null;
-    return { version: PIN_CONTINUITY_VERSION, ciphertext: envelope.ciphertext, iv: envelope.iv };
+    return validateEnvelope(row) ?? 'invalid';
   } catch {
     return 'unavailable';
   }
 }
 
-async function upsertRemotePinContinuity(envelope: PinContinuityEnvelope): Promise<boolean> {
+async function upsertRemotePinContinuity(
+  envelope: PinContinuityEnvelope,
+): Promise<boolean> {
+  const validated = validateEnvelope(envelope);
+  if (!validated) return false;
+
   try {
-    const client = rpcClient();
-    const { error } = await client.rpc('aegis_pin_continuity_upsert', {
-      p_version: envelope.version,
-      p_ciphertext: envelope.ciphertext,
-      p_iv: envelope.iv,
-    });
-    return !error;
+    const { data, error } = await rpcClient().rpc(
+      'aegis_pin_continuity_upsert',
+      {
+        p_version: validated.version,
+        p_ciphertext: validated.ciphertext,
+        p_iv: validated.iv,
+      },
+    );
+    return !error && data === true;
   } catch {
     return false;
   }
@@ -180,40 +298,95 @@ async function upsertRemotePinContinuity(envelope: PinContinuityEnvelope): Promi
 
 export async function deleteRemotePinContinuity(): Promise<boolean> {
   try {
-    const client = rpcClient();
-    const { error } = await client.rpc('aegis_pin_continuity_delete');
-    return !error;
+    const { data, error } = await rpcClient().rpc(
+      'aegis_pin_continuity_delete',
+    );
+    return !error && data === true;
   } catch {
     return false;
   }
 }
 
-export type PinContinuityPublishResult =
-  | 'published'
-  | 'master_key_unavailable'
-  | 'write_failed'
-  | 'readback_failed';
+async function ensurePinContinuityOnce(
+  userId: string,
+  record: PortablePinRecord,
+): Promise<PinContinuityEnsureStatus> {
+  const validated = validatePortablePinRecord(record, userId);
+  if (!validated) return 'invalid';
+
+  const masterKey = getSessionMasterKey();
+  if (!masterKey) return 'locked';
+
+  const current = await fetchRemotePinContinuity();
+  if (current === 'unavailable') return 'unavailable';
+  if (current === 'invalid') return 'invalid';
+
+  if (current) {
+    const remoteRecord = await openPinContinuityRecord(
+      current,
+      userId,
+      masterKey,
+    );
+    if (!remoteRecord) return 'invalid';
+    return equalPortablePinRecords(validated, remoteRecord)
+      ? 'matched'
+      : 'mismatch';
+  }
+
+  const envelope = await sealPinContinuityRecord(
+    validated,
+    userId,
+    masterKey,
+  );
+  if (!(await upsertRemotePinContinuity(envelope))) return 'write_failed';
+
+  const stored = await fetchRemotePinContinuity();
+  if (!stored || stored === 'unavailable') return 'readback_failed';
+  if (stored === 'invalid') return 'invalid';
+
+  const reopened = await openPinContinuityRecord(stored, userId, masterKey);
+  if (!reopened) return 'readback_failed';
+  if (!equalPortablePinRecords(validated, reopened)) return 'mismatch';
+  return 'published';
+}
 
 /**
- * Publie le record local dans le coffre puis relit et déchiffre l'enveloppe.
- * Sans cette relecture réussie, la continuité n'est pas considérée durable.
+ * Idempotently verifies or creates the user's Master-Key-sealed PIN envelope.
+ * Concurrent gates sharing the same local record reuse one operation.
  */
+export function ensurePinContinuity(
+  userId: string,
+  record: PortablePinRecord,
+): Promise<PinContinuityEnsureStatus> {
+  const key = `${userId}:${record.createdAt}:${record.wrappedBlob}`;
+  const active = ensureJobs.get(key);
+  if (active) return active;
+
+  const operation = ensurePinContinuityOnce(userId, record);
+  ensureJobs.set(key, operation);
+  void operation.finally(() => {
+    if (ensureJobs.get(key) === operation) ensureJobs.delete(key);
+  });
+  return operation;
+}
+
+export type PinContinuityPublishResult =
+  | 'published'
+  | 'matched'
+  | 'master_key_unavailable'
+  | 'write_failed'
+  | 'readback_failed'
+  | 'invalid'
+  | 'mismatch'
+  | 'unavailable';
+
 export async function publishPinContinuity(
   userId: string,
   record: PortablePinRecord,
 ): Promise<PinContinuityPublishResult> {
-  const masterKey = getSessionMasterKey();
-  if (!masterKey) return 'master_key_unavailable';
-
-  const envelope = await sealPinContinuityRecord(record, userId, masterKey);
-  const written = await upsertRemotePinContinuity(envelope);
-  if (!written) return 'write_failed';
-
-  const stored = await fetchRemotePinContinuity();
-  if (!stored || stored === 'unavailable') return 'readback_failed';
-  const reopened = await openPinContinuityRecord(stored, userId, masterKey);
-  if (!reopened || reopened.wrappedBlob !== record.wrappedBlob) return 'readback_failed';
-  return 'published';
+  const status = await ensurePinContinuity(userId, record);
+  if (status === 'locked') return 'master_key_unavailable';
+  return status;
 }
 
 export type PinContinuityRestore =
@@ -223,16 +396,26 @@ export type PinContinuityRestore =
   | { status: 'unavailable' }
   | { status: 'invalid' };
 
-/** Récupère et déchiffre le record distant lorsque la Master Key est en RAM. */
-export async function restorePinContinuity(userId: string): Promise<PinContinuityRestore> {
+export async function restorePinContinuity(
+  userId: string,
+): Promise<PinContinuityRestore> {
   const envelope = await fetchRemotePinContinuity();
   if (envelope === 'unavailable') return { status: 'unavailable' };
+  if (envelope === 'invalid') return { status: 'invalid' };
   if (!envelope) return { status: 'absent' };
 
   const masterKey = getSessionMasterKey();
   if (!masterKey) return { status: 'locked' };
 
-  const record = await openPinContinuityRecord(envelope, userId, masterKey);
+  const record = await openPinContinuityRecord(
+    envelope,
+    userId,
+    masterKey,
+  );
   if (!record) return { status: 'invalid' };
   return { status: 'restored', record };
+}
+
+export function clearPinContinuitySingleFlightForTests(): void {
+  ensureJobs.clear();
 }
