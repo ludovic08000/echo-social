@@ -50,29 +50,57 @@ test('Vercel adapter accepts the existing public Vite Supabase variables', async
   assert.equal(JSON.parse(response.text).ok, true);
 });
 
-test('Vercel-provided preview host is added without weakening the production allowlist', async () => {
-  const handler = createVercelAegisHandler('/health', {
+test('Vercel-provided preview host and exact origin are added without wildcard trust', async () => {
+  let forwardedBody;
+  const previewHost = 'echo-social-preview.vercel.app';
+  const handler = createVercelAegisHandler('/v1/rpc/aegis_sync_device', {
     env: {
       ...env,
-      VERCEL_URL: 'echo-social-preview.vercel.app',
+      VERCEL_URL: previewHost,
       VERCEL_BRANCH_URL: 'echo-social-git-feature.vercel.app',
     },
     logger: () => {},
+    fetchImpl: async (_url, options) => {
+      forwardedBody = JSON.parse(options.body);
+      return new Response('[]', { status: 200 });
+    },
   });
 
   const previewResponse = responseRecorder();
   await handler({
-    method: 'GET',
-    headers: { host: 'echo-social-preview.vercel.app' },
+    method: 'POST',
+    headers: {
+      host: previewHost,
+      origin: `https://${previewHost}`,
+      authorization: 'Bearer test-token',
+      'content-type': 'application/json',
+    },
+    body: { p_device_id: 'device-stable', p_limit: 25 },
   }, previewResponse);
   assert.equal(previewResponse.status, 200);
+  assert.equal(previewResponse.headers['access-control-allow-origin'], `https://${previewHost}`);
+  assert.deepEqual(forwardedBody, { p_device_id: 'device-stable', p_limit: 25 });
 
-  const deniedResponse = responseRecorder();
+  const deniedHostResponse = responseRecorder();
   await handler({
     method: 'GET',
     headers: { host: 'attacker.vercel.app' },
-  }, deniedResponse);
-  assert.equal(deniedResponse.status, 404);
+  }, deniedHostResponse);
+  assert.equal(deniedHostResponse.status, 404);
+
+  const deniedOriginResponse = responseRecorder();
+  await handler({
+    method: 'POST',
+    headers: {
+      host: previewHost,
+      origin: 'https://attacker.vercel.app',
+      authorization: 'Bearer test-token',
+      'content-type': 'application/json',
+    },
+    body: { p_device_id: 'device-stable', p_limit: 25 },
+  }, deniedOriginResponse);
+  assert.equal(deniedOriginResponse.status, 403);
+  assert.equal(JSON.parse(deniedOriginResponse.text).error.code, 'ORIGIN_DENIED');
 });
 
 test('Vercel adapter forwards an already parsed JSON body', async () => {

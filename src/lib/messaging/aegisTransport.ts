@@ -17,9 +17,9 @@ type AegisRpcName =
   | 'aegis_sync_device'
   | 'aegis_ack_device_messages';
 
-function gatewayUrl(): string {
-  const value = String(import.meta.env.VITE_AEGIS_SERVER_URL ?? '').trim();
-  if (!value) return '';
+type BrowserLocation = Pick<Location, 'hostname' | 'origin'>;
+
+function validateGatewayUrl(value: string): string {
   const normalized = value.replace(/\/+$/, '');
   if (
     !normalized.startsWith('https://') &&
@@ -28,6 +28,44 @@ function gatewayUrl(): string {
     throw new Error('AEGIS_SERVER_HTTPS_REQUIRED');
   }
   return normalized;
+}
+
+/**
+ * Vercel Preview builds contain the production gateway URL at build time.
+ * Calling it from `*.vercel.app` would be cross-origin and intentionally denied
+ * by the production CORS allowlist. Preview deployments expose the exact same
+ * `/v1/rpc/*` functions, so they must use their own origin instead.
+ */
+export function resolveAegisGatewayUrl(
+  configuredValue: unknown,
+  browserLocation: BrowserLocation | null = typeof window !== 'undefined'
+    ? window.location
+    : null,
+): string {
+  const value = String(configuredValue ?? '').trim();
+  if (!value) return '';
+
+  const configured = validateGatewayUrl(value);
+  const hostname = browserLocation?.hostname?.toLowerCase() ?? '';
+  if (hostname.endsWith('.vercel.app')) {
+    return validateGatewayUrl(browserLocation?.origin ?? '');
+  }
+  return configured;
+}
+
+function gatewayUrl(): string {
+  return resolveAegisGatewayUrl(import.meta.env.VITE_AEGIS_SERVER_URL);
+}
+
+function gatewayCredentials(baseUrl: string): RequestCredentials {
+  if (typeof window === 'undefined') return 'omit';
+  try {
+    return new URL(baseUrl).origin === window.location.origin
+      ? 'same-origin'
+      : 'omit';
+  } catch {
+    return 'omit';
+  }
 }
 
 async function callGateway<T>(
@@ -51,7 +89,7 @@ async function callGateway<T>(
       },
       body: JSON.stringify(args),
       cache: 'no-store',
-      credentials: 'omit',
+      credentials: gatewayCredentials(baseUrl),
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({})) as {

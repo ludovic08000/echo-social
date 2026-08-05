@@ -56,6 +56,12 @@ function dbPut<T>(value: T): Promise<void> {
   });
 }
 
+function dbDelete(key: string): Promise<void> {
+  return runTx([STORE_KEYS], 'readwrite', (tx) => {
+    tx.objectStore(STORE_KEYS).delete(key);
+  });
+}
+
 async function publicKeyToBase64(publicKey: CryptoKey): Promise<string> {
   try {
     return bufferToBase64(await hardCrypto.exportKey('raw', publicKey) as ArrayBuffer);
@@ -158,6 +164,16 @@ async function createDeviceIdentityUnderLock(
     create,
     { waitTimeoutMs: 12_000, leaseMs: 60_000 },
   );
+}
+
+/** Remove a provisional signing identity after confirmed server cancellation. */
+export async function deleteDeviceIdentity(userId: string, deviceId: string): Promise<void> {
+  creationJobs.delete(storageKey(userId, deviceId));
+  try {
+    await dbDelete(storageKey(userId, deviceId));
+  } catch {
+    // Failure cleanup is best-effort; never rotate an established device here.
+  }
 }
 
 export async function signDeviceAuthorization(args: {

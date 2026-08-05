@@ -1,8 +1,11 @@
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
+import { flushCryptoErrors, logCryptoError } from '@/lib/crypto/errorLogger';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
+import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
 import {
   getCurrentDeviceId,
   hydrateDeviceId,
@@ -15,6 +18,14 @@ import {
 interface PinValidatedMessagingProps {
   children: ReactNode;
 }
+
+type DeviceRouteInspection = {
+  exists: boolean;
+  ready: boolean;
+  hasAuthorization: boolean;
+  hasSignedPrekey: boolean;
+  status: 'missing' | 'incomplete' | 'ready';
+};
 
 function wakeMessageDecryptors(deviceId: string | null, reason: string): void {
   try {
@@ -29,6 +40,93 @@ function wakeMessageDecryptors(deviceId: string | null, reason: string): void {
     }));
   } catch {
     // Browser event dispatch is best-effort during teardown/SSR.
+  }
+}
+
+function recordEnrollment(
+  errorCode: string,
+  status: string,
+  stage: string,
+  severity: 'info' | 'warning' | 'error' = 'info',
+  failureCode?: string,
+): void {
+  logCryptoError({
+    severity,
+    context: 'restore',
+    errorCode,
+    errorMessage: errorCode,
+    metadata: {
+      stage,
+      status,
+      platform: getCurrentPlatform(),
+      ...(failureCode ? { failure_code: failureCode } : {}),
+    },
+  });
+}
+
+function classifyEnrollmentFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (/PIN_UNLOCK|PIN.*REQUIRED/i.test(message)) return 'pin_required';
+  if (/SESSION/i.test(message)) return 'auth_session';
+  if (/DEVICE_ROUTE_NOT_READY/i.test(message)) return 'route_not_ready';
+  if (/SPK|PREKEY/i.test(message)) return 'prekey';
+  if (/REGISTER|DEVICE_AUTH|IDENTITY/i.test(message)) return 'device_identity';
+  if (/FETCH|NETWORK|TIMEOUT|429|5\d\d/i.test(message)) return 'network';
+  return 'unknown';
+}
+
+async function inspectCurrentDeviceRoute(
+  userId: string,
+  deviceId: string,
+): Promise<DeviceRouteInspection> {
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('device_id,is_active,revoked_at,stale_at,approval_status,routing_status,device_authorization_signature')
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) throw new Error('DEVICE_ROUTE_LOOKUP_FAILED');
+  if (!data) {
+    return {
+      exists: false,
+      ready: false,
+      hasAuthorization: false,
+      hasSignedPrekey: false,
+      status: 'missing',
+    };
+  }
+
+  const hasAuthorization = typeof data.device_authorization_signature === 'string'
+    && data.device_authorization_signature.trim().length > 0;
+  const hasSignedPrekey = Boolean(
+    await peekDeviceSignedPrekey(userId, deviceId).catch(() => null),
+  );
+  const ready = data.is_active !== false
+    && !data.revoked_at
+    && !data.stale_at
+    && data.approval_status !== 'rejected'
+    && data.routing_status === 'ready'
+    && hasAuthorization
+    && hasSignedPrekey;
+
+  return {
+    exists: true,
+    ready,
+    hasAuthorization,
+    hasSignedPrekey,
+    status: ready ? 'ready' : 'incomplete',
+  };
+}
+
+async function markCurrentRouteReady(deviceId: string): Promise<void> {
+  const { data, error } = await supabase.rpc(
+    'mark_current_device_route_ready' as never,
+    { p_device_id: deviceId } as never,
+  );
+  const result = data as { ok?: boolean; code?: string } | null;
+  if (error || result?.ok !== true) {
+    throw new Error(`DEVICE_ROUTE_NOT_READY:${result?.code ?? 'RPC_FAILED'}`);
   }
 }
 
@@ -56,54 +154,86 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
     const frame = window.requestAnimationFrame(() => wake('pin_gate_next_frame'));
     const shortTimer = window.setTimeout(() => wake('pin_gate_bubbles_mounted'), 80);
 
+    recordEnrollment('E2EE_DEVICE_ENROLL_START', 'started', 'pin_gate_open');
+
     void runDeviceOperation(`pin-fast-maintenance:${userId}`, async () => {
       await requireAuthenticatedDeviceSession(userId);
+      recordEnrollment('E2EE_DEVICE_ENROLL_AUTH_READY', 'ready', 'auth_session');
+
       await hydrateDeviceId();
       let deviceId = getCurrentDeviceId();
 
       try {
         const lifecycle = await recoverStableDeviceLifecycle(userId, deviceId);
         deviceId = lifecycle.deviceId;
-      } catch (error) {
-        console.warn('[PIN-DEVTRUST] lifecycle maintenance deferred', {
-          deviceId: deviceId.slice(0, 8),
-          error: error instanceof Error ? error.message : String(error),
-        });
+      } catch {
+        recordEnrollment('E2EE_DEVICE_LIFECYCLE_DEFERRED', 'deferred', 'device_lifecycle', 'warning');
       }
 
-      // Run independent maintenance concurrently. A valid SPK is left untouched;
-      // companion signatures are repaired in one batch by DeviceLinkTrust.
-      const [prekeyResult, trustResult] = await Promise.allSettled([
-        (async () => {
-          const existingSpk = await peekDeviceSignedPrekey(userId, deviceId).catch(() => null);
-          if (existingSpk) return 'already-valid';
-          await resyncE2EE(userId);
-          return 'repaired';
-        })(),
-        ensureApprovedDeviceTrust(userId, deviceId),
-      ]);
+      let route = await inspectCurrentDeviceRoute(userId, deviceId);
+      recordEnrollment(
+        'E2EE_DEVICE_ROUTE_INSPECTED',
+        route.status,
+        'route_before_repair',
+        route.ready ? 'info' : 'warning',
+      );
 
-      const trustFailureReason = trustResult.status === 'rejected' ? String(trustResult.reason) : null;
+      if (!route.ready) {
+        const report = await resyncE2EE(userId);
+        if (
+          report.needsPinUnlock
+          || report.steps.identity !== 'ok'
+          || report.steps.spk !== 'ok'
+        ) {
+          throw new Error('DEVICE_RESYNC_INCOMPLETE');
+        }
+
+        // A fresh registration starts in `repairing`. The restore path must
+        // explicitly certify the route after the signed prekey is published.
+        if (report.deviceId && report.deviceId !== deviceId) {
+          deviceId = report.deviceId;
+          recordEnrollment(
+            'E2EE_DEVICE_ID_SERVER_ASSIGNED',
+            'ready',
+            'server_device_id',
+          );
+        }
+
+        await markCurrentRouteReady(deviceId);
+        route = await inspectCurrentDeviceRoute(userId, deviceId);
+        if (!route.ready) throw new Error('DEVICE_ROUTE_NOT_READY_AFTER_RESYNC');
+
+        recordEnrollment('E2EE_DEVICE_ENROLL_REPAIRED', 'ready', 'route_after_resync');
+      }
+
+      const repairedCompanions = await ensureApprovedDeviceTrust(userId, deviceId);
+      invalidateAllFanoutRoutes();
+
+      recordEnrollment('E2EE_DEVICE_ENROLL_READY', 'ready', 'complete');
+      await flushCryptoErrors();
 
       console.info('[PIN-DEVTRUST] fast maintenance complete', {
-        userId: userId.slice(0, 8),
-        deviceId: getCurrentDeviceId().slice(0, 8),
-        prekey: prekeyResult.status === 'fulfilled'
-          ? prekeyResult.value
-          : `deferred:${String(prekeyResult.reason)}`,
-        repairedCompanions: trustResult.status === 'fulfilled'
-          ? trustResult.value
-          : `deferred:${trustFailureReason}`,
+        route: route.status,
+        repairedCompanions,
       });
-
-      if (trustResult.status === 'fulfilled') invalidateAllFanoutRoutes();
 
       wake('pin_fast_maintenance_complete');
-    }, { coalesce: true, cooldownMs: 2_000 }).catch((error) => {
-      // Cooldown or network failure never affects already-mounted bubbles.
-      console.warn('[PIN-DEVTRUST] fast maintenance unavailable', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+    }, { coalesce: true, cooldownMs: 2_000 }).catch(async (error) => {
+      const failureMessage = error instanceof Error ? error.message : String(error ?? '');
+      const failureCode = failureMessage
+        .split(':')
+        .map(part => part.trim())
+        .find(part => /^[A-Z][A-Z0-9_]{2,80}$/.test(part))
+        ?? 'UNKNOWN';
+      recordEnrollment(
+        'E2EE_DEVICE_ENROLL_FAILED',
+        classifyEnrollmentFailure(error),
+        'complete',
+        'error',
+        failureCode,
+      );
+      await flushCryptoErrors().catch(() => undefined);
+      console.warn('[PIN-DEVTRUST] fast maintenance unavailable');
     });
 
     return () => {

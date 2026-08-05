@@ -229,40 +229,18 @@ export function setCurrentDeviceId(id: string): string {
   if (!id || typeof id !== 'string') return getCurrentDeviceId();
   if (memoryDeviceId === id) return id;
   hydrationPromise = null;
-  console.log('[device-id] forcing device id from backup', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8), scoped: !!currentDeviceUserScope });
+  console.log('[device-id] committing authoritative device id', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8), scoped: !!currentDeviceUserScope });
   return persistEverywhere(id);
 }
 
 /**
- * Adopt a device id coming from the ACCOUNT key backup — but ONLY when this
- * physical device has no stable id yet (fresh install / storage purge).
- *
- * The account backup is account-wide and syncs across every device. Forcing its
- * `device:id` on every restore overwrote the local, already-established
- * per-device id each session, so the id flipped between the locally-resolved one
- * and the backup one — orphaning published prekeys and breaking delivery. A
- * device id is per-physical-device (Signal/WhatsApp model) and must never be
- * dictated by the account backup once the device is established.
+ * Legacy compatibility only. Device routing identities are installation-local
+ * and must never be restored from account or key snapshots. Older backups may
+ * still contain `device:id`; callers receive the current local installation ID.
  */
-export function adoptDeviceIdFromBackup(id: string): string {
-  if (!id || typeof id !== 'string' || id.length < 16) return getCurrentDeviceId();
-
-  const key = storageKey();
-  const existing = memoryDeviceId || nativeGetSync(key);
-  // Keep an already-established, non-temporary local id — never override it.
-  if (existing && !memoryDeviceIdIsTemporary) {
-    if (existing !== id) {
-      console.log('[device-id] keeping stable local id; ignoring backup id', {
-        local: existing.slice(0, 8), backup: id.slice(0, 8),
-      });
-    }
-    memoryDeviceId = existing;
-    return existing;
-  }
-
-  // No stable local id (fresh / purged) -> adopt the backup id for routing recovery.
-  console.log('[device-id] adopting backup device id (no stable local id)', { next: id.slice(0, 8) });
-  return persistEverywhere(id);
+export function adoptDeviceIdFromBackup(_legacyId: string): string {
+  console.info('[device-id] ignored legacy backup device id; using local installation identity');
+  return getCurrentDeviceId();
 }
 
 export function rotateCurrentDeviceId(reason = 'device-key-loss'): string {

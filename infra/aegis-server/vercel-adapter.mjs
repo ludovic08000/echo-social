@@ -15,20 +15,41 @@ function normalizeHost(value) {
     .replace(/:\d+$/, '');
 }
 
-function vercelAllowedHosts(env) {
-  const hosts = new Set(
-    String(env.AEGIS_ALLOWED_HOSTS || env.AEGIS_ALLOWED_HOST || '')
-      .split(',')
-      .map(normalizeHost)
-      .filter(Boolean),
-  );
+function configuredValues(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
 
+function vercelRuntimeHosts(env) {
+  const hosts = new Set();
   for (const value of [env.VERCEL_URL, env.VERCEL_BRANCH_URL, env.VERCEL_PROJECT_PRODUCTION_URL]) {
     const host = normalizeHost(value);
     if (host) hosts.add(host);
   }
+  return hosts;
+}
 
+function vercelAllowedHosts(env) {
+  const hosts = new Set(
+    configuredValues(env.AEGIS_ALLOWED_HOSTS || env.AEGIS_ALLOWED_HOST)
+      .map(normalizeHost)
+      .filter(Boolean),
+  );
+  for (const host of vercelRuntimeHosts(env)) hosts.add(host);
   return [...hosts].join(',');
+}
+
+function vercelAllowedOrigins(env) {
+  const origins = new Set(
+    configuredValues(env.AEGIS_ALLOWED_ORIGINS || env.AEGIS_ALLOWED_ORIGIN),
+  );
+  // These values are injected by Vercel for the current deployment only.
+  // Adding their exact HTTPS origins enables same-origin Preview RPC calls
+  // without accepting arbitrary `*.vercel.app` origins.
+  for (const host of vercelRuntimeHosts(env)) origins.add(`https://${host}`);
+  return [...origins].join(',');
 }
 
 function normalizeVercelEnv(env) {
@@ -39,6 +60,7 @@ function normalizeVercelEnv(env) {
       || env.SUPABASE_PUBLISHABLE_KEY
       || env.VITE_SUPABASE_PUBLISHABLE_KEY,
     AEGIS_ALLOWED_HOSTS: vercelAllowedHosts(env),
+    AEGIS_ALLOWED_ORIGINS: vercelAllowedOrigins(env),
   };
 }
 

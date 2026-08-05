@@ -17,6 +17,7 @@ import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
   hydrateDeviceId,
+  setCurrentDeviceId,
 } from '@/lib/messaging/currentDevice';
 import {
   getOrCreateIdentityKeys,
@@ -28,8 +29,15 @@ import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
 } from '@/lib/crypto/x3dh';
-import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
-import { prepareDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import { deleteDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { deleteDeviceIdentity, prepareDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import {
+  beginServerAssignedDeviceEnrollment,
+  cancelServerAssignedDeviceEnrollment,
+  completeServerAssignedDeviceEnrollment,
+  hasRegisteredDevice,
+  type DeviceEnrollmentChallenge,
+} from '@/lib/crypto/serverDeviceEnrollment';
 import { clearAllDeviceSessions } from '@/lib/crypto/deviceRatchet';
 import { tryReadDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 import { syncKeychainSnapshotFromLocal, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
@@ -275,8 +283,20 @@ async function republishDeviceIdentity(
   userId: string,
   deviceId: string,
   diag?: DiagRecorder,
-): Promise<{ identity: boolean; spk: boolean; opks: boolean }> {
-  const result = { identity: false, spk: false, opks: false };
+): Promise<{
+  identity: boolean;
+  spk: boolean;
+  opks: boolean;
+  deviceId: string;
+  serverAssigned: boolean;
+}> {
+  const result = {
+    identity: false,
+    spk: false,
+    opks: false,
+    deviceId,
+    serverAssigned: false,
+  };
 
   diag?.push('identity', 'info', 'stage load_identity_keys');
   const keys = await getOrCreateIdentityKeys(userId).catch((e) => {
@@ -302,6 +322,39 @@ async function republishDeviceIdentity(
   }
   if (!bundle?.identityKey || !bundle?.signingKey || !keys?.signingPrivateKey) {
     throw new Error('identity bundle incomplete (identityKey/signingKey missing)');
+  }
+
+  let enrollmentChallenge: DeviceEnrollmentChallenge | null = null;
+  const routeExists = await hasRegisteredDevice(userId, deviceId);
+  if (!routeExists) {
+    const enrollmentPlatform = normalizePlatform(getCurrentPlatform());
+    const enrollmentDeviceName = (getCurrentDeviceLabel() || 'Unknown device').slice(0, 120);
+    const enrollmentUserAgent = typeof navigator !== 'undefined'
+      ? (navigator.userAgent || '').slice(0, 500)
+      : null;
+    let enrollmentFingerprint: string | null = null;
+    try {
+      const { getDeviceFingerprint } = await import('@/lib/messaging/currentDevice');
+      enrollmentFingerprint = await getDeviceFingerprint();
+    } catch {
+      // Advisory metadata only. The challenge and device keys are authoritative.
+    }
+
+    diag?.push('identity', 'info', 'stage server_device_id.begin', {
+      platform: enrollmentPlatform,
+    });
+    enrollmentChallenge = await beginServerAssignedDeviceEnrollment({
+      deviceName: enrollmentDeviceName,
+      deviceFingerprint: enrollmentFingerprint,
+      platform: enrollmentPlatform,
+      userAgent: enrollmentUserAgent,
+    });
+    deviceId = enrollmentChallenge.deviceId;
+    result.deviceId = deviceId;
+    result.serverAssigned = true;
+    diag?.push('identity', 'success', 'server DeviceID allocated', {
+      deviceIdLength: deviceId.length,
+    });
   }
 
   let devicePublicKeyB64: string;
@@ -377,51 +430,96 @@ async function republishDeviceIdentity(
     devicePublicKeyLen: payload.device_public_key.length,
   });
   try {
-    const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe', {
-      p_user_id: payload.user_id,
-      p_device_id: payload.device_id,
-      p_device_name: payload.device_name,
-      p_device_public_key: payload.device_public_key,
-      p_device_fingerprint: payload.device_fingerprint,
-      p_platform: payload.platform,
-      p_user_agent: payload.user_agent,
-      p_device_signing_key: payload.device_signing_key,
-      p_device_authorization_signature: payload.device_authorization_signature,
-      p_account_identity_key: authorization.account.identityKey,
-      p_account_signing_key: authorization.account.signingKey,
-      p_account_fingerprint: authorization.account.fingerprint,
-      p_account_binding_signature: authorization.account.bindingSignature,
-    });
-    const registerResult = registerData as {
-      ok?: boolean;
-      code?: string;
-      message?: string;
-    } | null;
+    if (enrollmentChallenge) {
+      try {
+        const completedDeviceId = await completeServerAssignedDeviceEnrollment(
+          enrollmentChallenge,
+          authorization,
+        );
+        if (completedDeviceId !== deviceId) {
+          throw new Error('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
+        }
+        // Commit the routing identity only after the server transaction succeeds.
+        setCurrentDeviceId(completedDeviceId);
+        result.deviceId = completedDeviceId;
+        result.identity = true;
+        diag?.push('identity', 'success', 'server device enrollment completed', {
+          deviceIdLength: completedDeviceId.length,
+        });
+      } catch (completionError) {
+        const settlement = await cancelServerAssignedDeviceEnrollment(
+          enrollmentChallenge,
+          'completion_failed',
+        ).catch(() => null);
 
-    const code = String(registerResult?.code ?? registerResult?.message ?? '');
-    if (registerErr) {
-      throw new Error(`E2EE_DB_RPC_FAILED table=user_devices step=register_user_device_safe message=${registerErr.message}`);
-    }
-    if (registerResult?.ok === true) {
-      result.identity = true;
-    } else if (/DEVICE_APPROVAL_PENDING/i.test(code)) {
-      if (!(await hasLocalKeys())) {
-        throw new Error('DEVICE_APPROVAL_PENDING: local keys must be unlocked before device approval');
+        if (settlement?.status === 'completed') {
+          // The commit succeeded but its HTTP response was lost. Keep the keys.
+          setCurrentDeviceId(settlement.deviceId);
+          result.deviceId = settlement.deviceId;
+          result.identity = true;
+          diag?.push('identity', 'success', 'recovered committed device after ambiguous response', {
+            deviceIdLength: settlement.deviceId.length,
+          });
+        } else {
+          if (settlement?.status === 'cancelled') {
+            await Promise.allSettled([
+              deleteDeviceKxKey(deviceId, userId),
+              deleteDeviceIdentity(userId, deviceId),
+            ]);
+            diag?.push('identity', 'info', 'removed provisional device keys after cancellation');
+          } else {
+            diag?.push('identity', 'warn', 'enrollment settlement unavailable; provisional keys retained');
+          }
+          throw completionError;
+        }
       }
-      const { data: approveData, error: approveErr } = await supabase.rpc('approve_user_device', {
-        p_device_id: payload.device_id,
-      });
-      const approveResult = approveData as { ok?: boolean; code?: string } | null;
-      if (approveErr || approveResult?.ok !== true) {
-        throw new Error(`DEVICE_APPROVAL_PENDING: approve_user_device failed (${approveErr?.message ?? approveResult?.code ?? 'unknown'})`);
-      }
-      result.identity = true;
     } else {
-      throw new Error(`E2EE_DB_RPC_FAILED table=user_devices step=register_user_device_safe code=${code || 'UNKNOWN'}`);
+      const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe', {
+        p_user_id: payload.user_id,
+        p_device_id: payload.device_id,
+        p_device_name: payload.device_name,
+        p_device_public_key: payload.device_public_key,
+        p_device_fingerprint: payload.device_fingerprint,
+        p_platform: payload.platform,
+        p_user_agent: payload.user_agent,
+        p_device_signing_key: payload.device_signing_key,
+        p_device_authorization_signature: payload.device_authorization_signature,
+        p_account_identity_key: authorization.account.identityKey,
+        p_account_signing_key: authorization.account.signingKey,
+        p_account_fingerprint: authorization.account.fingerprint,
+        p_account_binding_signature: authorization.account.bindingSignature,
+      });
+      const registerResult = registerData as {
+        ok?: boolean;
+        code?: string;
+        message?: string;
+      } | null;
+
+      const code = String(registerResult?.code ?? registerResult?.message ?? '');
+      if (registerErr) {
+        throw new Error(`E2EE_DB_RPC_FAILED table=user_devices step=register_user_device_safe message=${registerErr.message}`);
+      }
+      if (registerResult?.ok === true) {
+        result.identity = true;
+      } else if (/DEVICE_APPROVAL_PENDING/i.test(code)) {
+        if (!(await hasLocalKeys())) {
+          throw new Error('DEVICE_APPROVAL_PENDING: local keys must be unlocked before device approval');
+        }
+        const { data: approveData, error: approveErr } = await supabase.rpc('approve_user_device', {
+          p_device_id: payload.device_id,
+        });
+        const approveResult = approveData as { ok?: boolean; code?: string } | null;
+        if (approveErr || approveResult?.ok !== true) {
+          throw new Error(`DEVICE_APPROVAL_PENDING: approve_user_device failed (${approveErr?.message ?? approveResult?.code ?? 'unknown'})`);
+        }
+        result.identity = true;
+      } else {
+        throw new Error(`E2EE_DB_RPC_FAILED table=user_devices step=register_user_device_safe code=${code || 'UNKNOWN'}`);
+      }
     }
   } catch (e) {
     console.error('[E2EE][IDENTITY][FAIL]', {
-      step: 'user_devices_register_safe',
+      step: enrollmentChallenge ? 'server_device_enrollment' : 'user_devices_register_safe',
       error: e,
       payload: sanitizePayloadForLog(payload),
     });
@@ -624,6 +722,8 @@ export async function resyncE2EE(userId: string, options: ResyncOptions = {}): P
   const tIdent = Date.now();
   try {
     const pub = await republishDeviceIdentity(userId, deviceId, diag);
+    deviceId = pub.deviceId;
+    report.deviceId = deviceId;
     report.steps.identity = pub.identity ? 'ok' : 'error';
     report.steps.spk = pub.spk ? 'ok' : 'error';
     report.steps.opks = pub.opks ? 'ok' : 'error';
