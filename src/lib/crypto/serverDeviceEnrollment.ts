@@ -27,6 +27,13 @@ export type DeviceEnrollmentSettlement = {
   deviceId: string;
 };
 
+export interface RegisteredDeviceReuseState {
+  isActive?: unknown;
+  approvalStatus?: unknown;
+  revokedAt?: unknown;
+  cryptoInvalidAt?: unknown;
+}
+
 function asObject(value: unknown): RpcObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('DEVICE_ENROLLMENT_INVALID_RESPONSE');
@@ -49,7 +56,20 @@ function normalizeDevicePlatform(value: unknown): DevicePlatform {
 export function isRegisteredDeviceReusable(
   serverPlatform: unknown,
   runtimePlatform: unknown,
+  state?: RegisteredDeviceReuseState,
 ): boolean {
+  if (state) {
+    const approvalStatus = String(state.approvalStatus ?? 'approved').toLowerCase();
+    if (
+      state.isActive !== true
+      || approvalStatus !== 'approved'
+      || state.revokedAt != null
+      || state.cryptoInvalidAt != null
+    ) {
+      return false;
+    }
+  }
+
   return normalizeDevicePlatform(serverPlatform) === normalizeDevicePlatform(runtimePlatform);
 }
 
@@ -121,7 +141,7 @@ export async function hasRegisteredDevice(
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from('user_devices')
-    .select('device_id,platform')
+    .select('device_id,platform,is_active,approval_status,revoked_at,crypto_invalid_at')
     .eq('user_id', userId)
     .eq('device_id', deviceId)
     .maybeSingle();
@@ -130,10 +150,21 @@ export async function hasRegisteredDevice(
   if (!data?.device_id) return false;
 
   const runtimePlatform = normalizeDevicePlatform(getCurrentPlatform());
-  if (!isRegisteredDeviceReusable(data.platform, runtimePlatform)) {
-    console.warn('[e2ee] refusing cross-platform DeviceID reuse', {
+  const reusable = isRegisteredDeviceReusable(data.platform, runtimePlatform, {
+    isActive: data.is_active,
+    approvalStatus: data.approval_status,
+    revokedAt: data.revoked_at,
+    cryptoInvalidAt: data.crypto_invalid_at,
+  });
+
+  if (!reusable) {
+    console.warn('[e2ee] refusing stale, revoked or cross-platform DeviceID reuse', {
       serverPlatform: normalizeDevicePlatform(data.platform),
       runtimePlatform,
+      active: data.is_active === true,
+      approved: String(data.approval_status ?? 'approved').toLowerCase() === 'approved',
+      revoked: data.revoked_at != null,
+      cryptoInvalid: data.crypto_invalid_at != null,
     });
     return false;
   }
