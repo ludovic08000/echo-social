@@ -1,0 +1,126 @@
+import { supabase } from '@/integrations/supabase/client';
+import type { PreparedDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+
+const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type RpcObject = Record<string, unknown>;
+
+export interface DeviceEnrollmentMetadata {
+  deviceName: string;
+  deviceFingerprint: string | null;
+  platform: 'ios' | 'android' | 'web';
+  userAgent: string | null;
+}
+
+export interface DeviceEnrollmentChallenge {
+  challengeId: string;
+  deviceId: string;
+  nonce: string;
+  expiresAt: string;
+}
+
+function asObject(value: unknown): RpcObject {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('DEVICE_ENROLLMENT_INVALID_RESPONSE');
+  }
+  return value as RpcObject;
+}
+
+function responseCode(value: RpcObject): string {
+  return typeof value.code === 'string' && value.code.length > 0
+    ? value.code
+    : 'DEVICE_ENROLLMENT_RPC_REJECTED';
+}
+
+export function parseDeviceEnrollmentChallenge(value: unknown): DeviceEnrollmentChallenge {
+  const result = asObject(value);
+  if (result.ok !== true) throw new Error(responseCode(result));
+
+  const challengeId = typeof result.challenge_id === 'string' ? result.challenge_id : '';
+  const deviceId = typeof result.device_id === 'string' ? result.device_id : '';
+  const nonce = typeof result.nonce === 'string' ? result.nonce : '';
+  const expiresAt = typeof result.expires_at === 'string' ? result.expires_at : '';
+
+  if (!UUID_RE.test(challengeId)) throw new Error('DEVICE_ENROLLMENT_INVALID_CHALLENGE_ID');
+  if (!SERVER_DEVICE_ID_RE.test(deviceId)) throw new Error('DEVICE_ENROLLMENT_INVALID_DEVICE_ID');
+  if (nonce.length < 32) throw new Error('DEVICE_ENROLLMENT_INVALID_NONCE');
+  if (!expiresAt || Number.isNaN(Date.parse(expiresAt))) {
+    throw new Error('DEVICE_ENROLLMENT_INVALID_EXPIRY');
+  }
+  if (Date.parse(expiresAt) <= Date.now()) throw new Error('DEVICE_ENROLLMENT_EXPIRED');
+
+  return { challengeId, deviceId, nonce, expiresAt };
+}
+
+export function parseCompletedDeviceEnrollment(
+  value: unknown,
+  expectedDeviceId: string,
+): string {
+  const result = asObject(value);
+  if (result.ok !== true) throw new Error(responseCode(result));
+
+  const deviceId = typeof result.device_id === 'string' ? result.device_id : '';
+  if (!SERVER_DEVICE_ID_RE.test(deviceId)) {
+    throw new Error('DEVICE_ENROLLMENT_INVALID_DEVICE_ID');
+  }
+  if (deviceId !== expectedDeviceId) {
+    throw new Error('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
+  }
+  return deviceId;
+}
+
+export async function hasRegisteredDevice(
+  userId: string,
+  deviceId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('device_id')
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) throw new Error(`DEVICE_ROUTE_LOOKUP_FAILED:${error.message}`);
+  return Boolean(data?.device_id);
+}
+
+export async function beginServerAssignedDeviceEnrollment(
+  metadata: DeviceEnrollmentMetadata,
+): Promise<DeviceEnrollmentChallenge> {
+  const { data, error } = await supabase.rpc(
+    'begin_user_device_enrollment' as never,
+    {
+      p_device_name: metadata.deviceName,
+      p_device_fingerprint: metadata.deviceFingerprint,
+      p_platform: metadata.platform,
+      p_user_agent: metadata.userAgent,
+    } as never,
+  );
+
+  if (error) throw new Error(`DEVICE_ENROLLMENT_BEGIN_FAILED:${error.message}`);
+  return parseDeviceEnrollmentChallenge(data);
+}
+
+export async function completeServerAssignedDeviceEnrollment(
+  challenge: DeviceEnrollmentChallenge,
+  authorization: PreparedDeviceAuthorization,
+): Promise<string> {
+  const { data, error } = await supabase.rpc(
+    'complete_user_device_enrollment' as never,
+    {
+      p_challenge_id: challenge.challengeId,
+      p_nonce: challenge.nonce,
+      p_device_public_key: authorization.deviceKx.publicB64,
+      p_device_signing_key: authorization.deviceSigning.publicB64,
+      p_device_authorization_signature: authorization.authorizationSignature,
+      p_account_identity_key: authorization.account.identityKey,
+      p_account_signing_key: authorization.account.signingKey,
+      p_account_fingerprint: authorization.account.fingerprint,
+      p_account_binding_signature: authorization.account.bindingSignature,
+    } as never,
+  );
+
+  if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_FAILED:${error.message}`);
+  return parseCompletedDeviceEnrollment(data, challenge.deviceId);
+}
