@@ -2068,6 +2068,54 @@ export type Database = {
         }
         Relationships: []
       }
+      device_enrollment_challenges: {
+        Row: {
+          cancel_reason: string | null
+          cancelled_at: string | null
+          consumed_at: string | null
+          created_at: string
+          device_fingerprint: string | null
+          device_id: string
+          device_name: string | null
+          expires_at: string
+          id: string
+          nonce_hash: string
+          platform: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          device_fingerprint?: string | null
+          device_id: string
+          device_name?: string | null
+          expires_at: string
+          id?: string
+          nonce_hash: string
+          platform: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          device_fingerprint?: string | null
+          device_id?: string
+          device_name?: string | null
+          expires_at?: string
+          id?: string
+          nonce_hash?: string
+          platform?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       device_fingerprints: {
         Row: {
           created_at: string
@@ -8190,6 +8238,15 @@ export type Database = {
         Args: { p_device_id: string; p_message_id: string }
         Returns: Json
       }
+      begin_user_device_enrollment: {
+        Args: {
+          p_device_fingerprint?: string
+          p_device_name?: string
+          p_platform?: string
+          p_user_agent?: string
+        }
+        Returns: Json
+      }
       bump_aegis_user_route_version: {
         Args: { p_user_id: string }
         Returns: undefined
@@ -8205,6 +8262,10 @@ export type Database = {
       can_view_order_item: {
         Args: { _order_id: string; _seller_id: string }
         Returns: boolean
+      }
+      cancel_user_device_enrollment: {
+        Args: { p_challenge_id: string; p_nonce: string; p_reason?: string }
+        Returns: Json
       }
       cancel_x3dh_initial: {
         Args: { p_fingerprint: string; p_reservation_token: string }
@@ -8290,6 +8351,20 @@ export type Database = {
         Returns: boolean
       }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
+      complete_user_device_enrollment: {
+        Args: {
+          p_account_binding_signature: string
+          p_account_fingerprint: string
+          p_account_identity_key: string
+          p_account_signing_key: string
+          p_challenge_id: string
+          p_device_authorization_signature: string
+          p_device_public_key: string
+          p_device_signing_key: string
+          p_nonce: string
+        }
+        Returns: Json
+      }
       consume_device_link_token: {
         Args: { p_token_hash: string }
         Returns: {
