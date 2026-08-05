@@ -624,6 +624,33 @@ export type Database = {
           },
         ]
       }
+      aegis_pin_continuity_vault: {
+        Row: {
+          ciphertext: string
+          created_at: string
+          iv: string
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          ciphertext: string
+          created_at?: string
+          iv: string
+          updated_at?: string
+          user_id: string
+          version: number
+        }
+        Update: {
+          ciphertext?: string
+          created_at?: string
+          iv?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
       aegis_recovery_vaults: {
         Row: {
           ciphertext: string
@@ -8175,6 +8202,21 @@ export type Database = {
       aegis_call_update_status: {
         Args: { p_call_id: string; p_device_id: string; p_status: string }
         Returns: Json
+      }
+      aegis_pin_continuity_delete: { Args: never; Returns: boolean }
+      aegis_pin_continuity_get: {
+        Args: never
+        Returns: {
+          ciphertext: string
+          iv: string
+          updated_at: string
+          version: number
+        }[]
+      }
+      aegis_pin_continuity_has: { Args: never; Returns: boolean }
+      aegis_pin_continuity_upsert: {
+        Args: { p_ciphertext: string; p_iv: string; p_version: number }
+        Returns: boolean
       }
       aegis_prune_device_inbox: { Args: never; Returns: Json }
       aegis_resolve_conversation_route: {
