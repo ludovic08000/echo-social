@@ -35,57 +35,48 @@ jobs:
           backup = Path('src/lib/crypto/accountKeyBackup.ts')
           text = backup.read_text(encoding='utf-8')
 
-          text = text.replace(
-              "import { getCurrentDeviceId, adoptDeviceIdFromBackup } from '@/lib/messaging/currentDevice';",
-              "import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';\nimport { discardLegacyDeviceIdFromBackup } from '@/lib/crypto/deviceBackupPolicy';",
+          old_import = "import { getCurrentDeviceId, adoptDeviceIdFromBackup } from '@/lib/messaging/currentDevice';"
+          new_import = "import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';\nimport { discardLegacyDeviceIdFromBackup } from '@/lib/crypto/deviceBackupPolicy';"
+          if old_import in text:
+              text = text.replace(old_import, new_import, 1)
+          elif new_import not in text:
+              raise SystemExit('currentDevice import anchor missing')
+
+          serialization_pattern = re.compile(
+              r"\n\s*if \(includeDeviceSecrets\) \{\s*try \{\s*data\['device:id'\] = getCurrentDeviceId\(\);\s*\} catch \{\}\s*\}\s*\n",
+              re.S,
           )
+          text, serialization_count = serialization_pattern.subn('\n', text, count=1)
+          if serialization_count != 1 and "data['device:id'] = getCurrentDeviceId();" in text:
+              raise SystemExit('device:id serialization still present')
 
-          serialization = """  if (includeDeviceSecrets) {
-            try {
-              data['device:id'] = getCurrentDeviceId();
-            } catch {}
-          }
-
-          """
-          if serialization in text:
-              text = text.replace(serialization, '', 1)
-          elif "data['device:id'] = getCurrentDeviceId();" in text:
-              raise SystemExit('Unexpected device:id serialization layout')
-
-          parse_anchor = """  const data = JSON.parse(json);
-          const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
-          """
+          parse_pattern = re.compile(
+              r"  const data = JSON\.parse\(json\);\n  const isDeviceKeychain = data\?\._meta\?\.scope === 'device-keychain';"
+          )
           parse_replacement = """  const data = JSON.parse(json) as Record<string, any>;
           const discardedLegacyDeviceId = discardLegacyDeviceIdFromBackup(data);
           if (discardedLegacyDeviceId) {
             console.info('[MasterKey] ignored legacy device routing id from backup');
           }
-          const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
-          """
-          if parse_anchor in text:
-              text = text.replace(parse_anchor, parse_replacement, 1)
-          elif parse_replacement not in text:
+          const isDeviceKeychain = data?._meta?.scope === 'device-keychain';"""
+          text, parse_count = parse_pattern.subn(parse_replacement, text, count=1)
+          if parse_count != 1 and 'discardedLegacyDeviceId' not in text:
               raise SystemExit('restoreAllKeys parse anchor missing')
 
-          phase_zero = """    // Phase 0: restore the encrypted device routing id before restoring the
-            // matching per-device private key. This keeps message device-copies readable
-            // after iOS/WebView storage purges without showing a \"verify device\" flow.
-            if (isDeviceKeychain && typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
-              adoptDeviceIdFromBackup(data['device:id']);
-            }
-
-          """
-          if phase_zero in text:
-              text = text.replace(phase_zero, '', 1)
-          elif 'adoptDeviceIdFromBackup' in text:
-              raise SystemExit('Unexpected legacy device adoption reference remains')
+          phase_zero_pattern = re.compile(
+              r"\n\s*// Phase 0: restore the encrypted device routing id.*?adoptDeviceIdFromBackup\(data\['device:id'\]\);\s*\}\s*\n",
+              re.S,
+          )
+          text, phase_count = phase_zero_pattern.subn('\n', text, count=1)
+          if phase_count != 1 and 'adoptDeviceIdFromBackup' in text:
+              raise SystemExit('legacy device adoption still present')
 
           backup.write_text(text, encoding='utf-8')
 
           current = Path('src/lib/messaging/currentDevice.ts')
           current_text = current.read_text(encoding='utf-8')
-          pattern = re.compile(
-              r"/\*\*\n \* Adopt a device id coming from the ACCOUNT key backup.*?\nexport function adoptDeviceIdFromBackup\(id: string\): string \{.*?\n\}\n\nexport function rotateCurrentDeviceId",
+          adopt_pattern = re.compile(
+              r"/\*\*\n \* Adopt a device id coming from the ACCOUNT key backup.*?\nexport function adoptDeviceIdFromBackup\([^)]*\): string \{.*?\n\}\n\n(?=export function rotateCurrentDeviceId)",
               re.S,
           )
           replacement = """/**
@@ -98,14 +89,13 @@ jobs:
             return getCurrentDeviceId();
           }
 
-          export function rotateCurrentDeviceId"""
-          current_text, count = pattern.subn(replacement, current_text, count=1)
-          if count != 1 and 'ignored legacy backup device id; using local installation identity' not in current_text:
-              raise SystemExit(f'adoptDeviceIdFromBackup patch count={count}')
+          """
+          current_text, adopt_count = adopt_pattern.subn(replacement, current_text, count=1)
+          if adopt_count != 1 and 'ignored legacy backup device id; using local installation identity' not in current_text:
+              raise SystemExit(f'adoptDeviceIdFromBackup patch count={adopt_count}')
           current.write_text(current_text, encoding='utf-8')
 
-          policy = Path('src/lib/crypto/deviceBackupPolicy.ts')
-          policy.write_text("""/**
+          Path('src/lib/crypto/deviceBackupPolicy.ts').write_text("""/**
            * Device routing identity is local to one logical installation.
            * It is never portable account material and must not be restored from a blob.
            */
@@ -122,8 +112,7 @@ jobs:
           }
           """, encoding='utf-8')
 
-          test = Path('src/lib/crypto/__tests__/deviceBackupPolicy.test.ts')
-          test.write_text("""import { describe, expect, it } from 'vitest';
+          Path('src/lib/crypto/__tests__/deviceBackupPolicy.test.ts').write_text("""import { describe, expect, it } from 'vitest';
           import {
             discardLegacyDeviceIdFromBackup,
             LEGACY_DEVICE_ID_BACKUP_KEY,
