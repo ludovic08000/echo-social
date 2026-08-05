@@ -616,7 +616,9 @@ export function useChatPin() {
     setState((current) => ({
       ...current,
       processing: false,
-      error: 'Ce PIN est local à cet appareil. Restaurez d’abord les clés avec votre mot de passe ou votre clé de récupération.',
+      error: resolved.remote === 'locked'
+        ? 'Votre PIN existe toujours. Restaurez votre compte sécurisé pour le saisir à nouveau.'
+        : 'Ce PIN est local à cet appareil. Restaurez d’abord les clés avec votre mot de passe ou votre clé de récupération.',
     }));
     return false;
   }, [user?.id]);
