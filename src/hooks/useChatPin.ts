@@ -584,8 +584,8 @@ export function useChatPin() {
     }
     setState((current) => ({ ...current, processing: true, error: null }));
 
-    const localRecord = await loadLocalPin(user.id);
-    if (localRecord) {
+    const resolved = await resolvePinRecord(user.id);
+    if (resolved.record) {
       const valid = await verifyLocalPin(user.id, pin);
       if (!valid) {
         setState((current) => ({ ...current, processing: false, error: 'PIN incorrect' }));
