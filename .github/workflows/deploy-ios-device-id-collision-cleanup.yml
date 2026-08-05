@@ -1,0 +1,157 @@
+name: Deploy iOS DeviceID collision cleanup
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - supabase/migrations/20260805131000_revoke_ios_device_id_collision.sql
+      - .github/workflows/deploy-ios-device-id-collision-cleanup.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: deploy-ios-device-id-collision-cleanup
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PROJECT_REF: vkpmoqfzrihcijjochks
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      MIGRATION_FILE: supabase/migrations/20260805131000_revoke_ios_device_id_collision.sql
+      TARGET_USER_ID: ffeb378a-e1b3-4bfb-8c31-72c94e4da14d
+      TARGET_DEVICE_ID: dbd1c32a42c588b6d57a235f55ea63ac
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Supabase management token
+        shell: bash
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN" >&2
+            exit 1
+          fi
+
+      - name: Apply targeted device cleanup
+        shell: bash
+        run: |
+          jq -Rs '{query: ., read_only: false}' "$MIGRATION_FILE" > "$RUNNER_TEMP/migration-request.json"
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/migration-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/migration-request.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Supabase device cleanup failed with HTTP $status" >&2
+            jq . "$RUNNER_TEMP/migration-response.json" >&2 || true
+            exit 1
+          fi
+
+      - name: Verify revoked tombstone and removed prekeys
+        shell: bash
+        run: |
+          verification_sql="select
+            exists (
+              select 1
+              from public.user_devices
+              where user_id = '$TARGET_USER_ID'::uuid
+                and device_id = '$TARGET_DEVICE_ID'
+                and is_active = false
+                and approval_status = 'rejected'
+                and revoked_at is not null
+                and crypto_invalid_at is not null
+                and routing_status = 'unavailable'
+            ) as device_revoked,
+            not exists (
+              select 1 from public.device_signed_prekeys
+              where user_id = '$TARGET_USER_ID'::uuid
+                and device_id = '$TARGET_DEVICE_ID'
+            ) as signed_prekeys_removed,
+            not exists (
+              select 1 from public.device_one_time_prekeys
+              where user_id = '$TARGET_USER_ID'::uuid
+                and device_id = '$TARGET_DEVICE_ID'
+            ) as one_time_prekeys_removed,
+            exists (
+              select 1 from public.invalid_e2ee_devices
+              where user_id = '$TARGET_USER_ID'::uuid
+                and device_id = '$TARGET_DEVICE_ID'
+                and reason = 'cross_platform_device_id_collision'
+            ) as invalid_tombstone_ready;"
+
+          jq -n --arg query "$verification_sql" \
+            '{query: $query, read_only: true}' > "$RUNNER_TEMP/verification-request.json"
+
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/verification-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/verification-request.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Supabase device cleanup verification failed with HTTP $status" >&2
+            jq . "$RUNNER_TEMP/verification-response.json" >&2 || true
+            exit 1
+          fi
+
+          jq -e '
+            .. | objects |
+            select(
+              .device_revoked == true
+              and .signed_prekeys_removed == true
+              and .one_time_prekeys_removed == true
+              and .invalid_tombstone_ready == true
+            )
+          ' "$RUNNER_TEMP/verification-response.json" > /dev/null
+
+      - name: Publish cleanup status
+        if: always()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CLEANUP_JOB_STATUS: ${{ job.status }}
+        run: |
+          case "$CLEANUP_JOB_STATUS" in
+            success)
+              state="success"
+              description="iOS DeviceID collision revoked and verified"
+              ;;
+            failure)
+              state="failure"
+              description="iOS DeviceID collision cleanup failed"
+              ;;
+            *)
+              state="error"
+              description="iOS DeviceID cleanup did not complete"
+              ;;
+          esac
+
+          jq -n \
+            --arg state "$state" \
+            --arg context "Supabase/iOS DeviceID cleanup" \
+            --arg description "$description" \
+            --arg target_url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{state: $state, context: $context, description: $description, target_url: $target_url}' \
+            > "$RUNNER_TEMP/status.json"
+
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --data-binary "@$RUNNER_TEMP/status.json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" > /dev/null

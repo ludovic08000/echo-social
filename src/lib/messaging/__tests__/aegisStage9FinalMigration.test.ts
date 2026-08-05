@@ -54,7 +54,7 @@ describe('Aegis stage 9 final schema migration', () => {
     ]) expect(sql).toContain(token);
   });
 
-  it('keeps generated types aligned with the final schema', () => {
+  it('keeps generated types aligned with the current additive schema', () => {
     const activeStart = types.indexOf('      active_calls: {');
     const activeEnd = types.indexOf('      aegis_call_invitations: {', activeStart);
     const active = types.slice(activeStart, activeEnd);
@@ -62,10 +62,12 @@ describe('Aegis stage 9 final schema migration', () => {
     expect(active).toContain('protocol_version: number');
     expect(active).not.toContain('encrypted_call_key');
     expect(types).toContain('      aegis_call_invitations: {');
+    expect(types).toContain('      aegis_device_inbox: {');
     expect(types).toContain('      aegis_recovery_vaults: {');
     expect(types).toContain('      aegis_view_once_payloads: {');
     expect(types).toContain('aegis_request_digest: string | null');
+    expect(types).toContain('      aegis_sync_device: {');
+    expect(types).toContain('      aegis_ack_device_messages: {');
     expect(types).not.toContain('      call_signal: {');
-    expect(types).not.toContain('      aegis_sync_device: {');
   });
 });

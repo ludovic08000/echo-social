@@ -1,15 +1,17 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PreparedDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
 
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type RpcObject = Record<string, unknown>;
+export type DevicePlatform = 'ios' | 'android' | 'web';
 
 export interface DeviceEnrollmentMetadata {
   deviceName: string;
   deviceFingerprint: string | null;
-  platform: 'ios' | 'android' | 'web';
+  platform: DevicePlatform;
   userAgent: string | null;
 }
 
@@ -25,6 +27,13 @@ export type DeviceEnrollmentSettlement = {
   deviceId: string;
 };
 
+export interface RegisteredDeviceReuseState {
+  isActive?: unknown;
+  approvalStatus?: unknown;
+  revokedAt?: unknown;
+  cryptoInvalidAt?: unknown;
+}
+
 function asObject(value: unknown): RpcObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('DEVICE_ENROLLMENT_INVALID_RESPONSE');
@@ -36,6 +45,32 @@ function responseCode(value: RpcObject): string {
   return typeof value.code === 'string' && value.code.length > 0
     ? value.code
     : 'DEVICE_ENROLLMENT_RPC_REJECTED';
+}
+
+function normalizeDevicePlatform(value: unknown): DevicePlatform {
+  const platform = String(value ?? '').toLowerCase();
+  if (platform === 'ios' || platform === 'android') return platform;
+  return 'web';
+}
+
+export function isRegisteredDeviceReusable(
+  serverPlatform: unknown,
+  runtimePlatform: unknown,
+  state?: RegisteredDeviceReuseState,
+): boolean {
+  if (state) {
+    const approvalStatus = String(state.approvalStatus ?? 'approved').toLowerCase();
+    if (
+      state.isActive !== true
+      || approvalStatus !== 'approved'
+      || state.revokedAt != null
+      || state.cryptoInvalidAt != null
+    ) {
+      return false;
+    }
+  }
+
+  return normalizeDevicePlatform(serverPlatform) === normalizeDevicePlatform(runtimePlatform);
 }
 
 export function parseDeviceEnrollmentChallenge(value: unknown): DeviceEnrollmentChallenge {
@@ -75,7 +110,6 @@ export function parseCompletedDeviceEnrollment(
   return deviceId;
 }
 
-
 export function parseDeviceEnrollmentSettlement(
   value: unknown,
   expectedDeviceId: string,
@@ -107,13 +141,35 @@ export async function hasRegisteredDevice(
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from('user_devices')
-    .select('device_id')
+    .select('device_id,platform,is_active,approval_status,revoked_at,crypto_invalid_at')
     .eq('user_id', userId)
     .eq('device_id', deviceId)
     .maybeSingle();
 
   if (error) throw new Error(`DEVICE_ROUTE_LOOKUP_FAILED:${error.message}`);
-  return Boolean(data?.device_id);
+  if (!data?.device_id) return false;
+
+  const runtimePlatform = normalizeDevicePlatform(getCurrentPlatform());
+  const reusable = isRegisteredDeviceReusable(data.platform, runtimePlatform, {
+    isActive: data.is_active,
+    approvalStatus: data.approval_status,
+    revokedAt: data.revoked_at,
+    cryptoInvalidAt: data.crypto_invalid_at,
+  });
+
+  if (!reusable) {
+    console.warn('[e2ee] refusing stale, revoked or cross-platform DeviceID reuse', {
+      serverPlatform: normalizeDevicePlatform(data.platform),
+      runtimePlatform,
+      active: data.is_active === true,
+      approved: String(data.approval_status ?? 'approved').toLowerCase() === 'approved',
+      revoked: data.revoked_at != null,
+      cryptoInvalid: data.crypto_invalid_at != null,
+    });
+    return false;
+  }
+
+  return true;
 }
 
 export async function beginServerAssignedDeviceEnrollment(
@@ -172,4 +228,3 @@ export async function cancelServerAssignedDeviceEnrollment(
   if (error) throw new Error(`DEVICE_ENROLLMENT_CANCEL_FAILED:${error.message}`);
   return parseDeviceEnrollmentSettlement(data, challenge.deviceId);
 }
-
