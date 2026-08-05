@@ -1,0 +1,64 @@
+name: Apply PIN continuity hardening
+
+on:
+  push:
+    branches:
+      - agent/pin-continuity-hardening
+    paths:
+      - .github/workflows/apply-pin-continuity-hardening.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-pin-continuity-hardening
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/pin-continuity-hardening
+          fetch-depth: 0
+
+      - name: Apply reviewed hook patch
+        run: |
+          git apply --check .github/patches/pin-continuity-hardening.patch
+          git apply .github/patches/pin-continuity-hardening.patch
+
+      - name: Update PIN continuity copy
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/components/MessagingPinGate.tsx')
+          source = path.read_text(encoding='utf-8')
+
+          replacements = {
+              "Ce code à 6 chiffres protège vos conversations chiffrées.": (
+                  "Le même PIN restera valide après une restauration sécurisée du compte."
+              ),
+              "Ce code ne peut pas être récupéré. Si vous le perdez, vos anciens messages seront illisibles.": (
+                  "Il n’est jamais stocké en clair. Si vous l’oubliez, une réinitialisation sera nécessaire."
+              ),
+          }
+
+          for old, new in replacements.items():
+              if source.count(old) != 1:
+                  raise SystemExit(f'expected exactly one UI occurrence: {old}')
+              source = source.replace(old, new)
+
+          path.write_text(source, encoding='utf-8')
+
+      - name: Commit applied changes
+        run: |
+          rm .github/patches/pin-continuity-hardening.patch
+          rm .github/workflows/apply-pin-continuity-hardening.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/hooks/useChatPin.ts src/components/MessagingPinGate.tsx .github
+          git commit -m "fix(pin): stabilize restored PIN"
+          git push origin HEAD:agent/pin-continuity-hardening
