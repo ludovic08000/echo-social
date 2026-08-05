@@ -24,6 +24,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { exportPublicKeyRaw } from './keyManager';
 import type { DeviceKxKey } from './deviceKx';
 import { fetchVerifiedDeviceIdentity } from './signedDeviceList';
+import { isSecureStoreNative } from '@/lib/secureStore';
+import { readNativeKeyRecord, removeNativeKeyRecord, writeNativeKeyRecord } from './nativeKeyVault';
 
 export interface X3DHPrekeyBundle {
   identityKey: string;
@@ -67,6 +69,8 @@ export interface X3DHInitialMessage {
 
 export type DevicePrekeyBundleErrorCode =
   | 'DEVICE_PREKEY_BUNDLE_UNAVAILABLE'
+  | 'DEVICE_PREKEY_BUNDLE_FETCH_FAILED'
+  | 'DEVICE_SIGNED_PREKEY_UNAVAILABLE'
   | 'DEVICE_SPK_SIGNATURE_INVALID'
   | 'ACCOUNT_IDENTITY_BINDING_INVALID';
 
@@ -183,25 +187,85 @@ interface StoredSPK {
 
 function deviceSpkKey(userId: string, deviceId: string, spkId: number): string { return `${userId}::dev::${deviceId}::${spkId}`; }
 function deviceOPKKey(userId: string, deviceId: string, opkId: number): string { return `${userId}::dev::${deviceId}::opk::${opkId}`; }
+function nativePrekeyKey(id: string): string { return `x3dh-prekey::${id}`; }
+
+function isStoredPrekey(value: unknown, id: string): value is StoredSPK {
+  const candidate = value as Partial<StoredSPK> | null;
+  return Boolean(
+    candidate &&
+    candidate.id === id &&
+    typeof candidate.spkId === 'number' && Number.isInteger(candidate.spkId) && candidate.spkId > 0 &&
+    candidate.privateKeyJWK && typeof candidate.privateKeyJWK === 'object' &&
+    typeof candidate.publicKeyBase64 === 'string' && candidate.publicKeyBase64.length >= 40 &&
+    typeof candidate.createdAt === 'number' && Number.isFinite(candidate.createdAt)
+  );
+}
+
+async function persistStoredPrekey(record: StoredSPK): Promise<void> {
+  if (isSecureStoreNative()) {
+    await writeNativeKeyRecord(nativePrekeyKey(record.id), record);
+    await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+      tx.objectStore(SPK_STORE).put(record);
+    }).catch(() => undefined);
+    return;
+  }
+  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+    tx.objectStore(SPK_STORE).put(record);
+  });
+}
+
+async function loadStoredPrekey(id: string): Promise<StoredSPK | null> {
+  if (isSecureStoreNative()) {
+    const native = await readNativeKeyRecord(nativePrekeyKey(id), (value): value is StoredSPK =>
+      isStoredPrekey(value, id));
+    if (native) {
+      await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+        tx.objectStore(SPK_STORE).put(native);
+      }).catch(() => undefined);
+      return native;
+    }
+    const legacy = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+      reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(id)),
+    ).catch(() => undefined);
+    if (!legacy) return null;
+    if (!isStoredPrekey(legacy, id)) throw new Error('E2EE_PREKEY_RECORD_INVALID');
+    await writeNativeKeyRecord(nativePrekeyKey(id), legacy);
+    return legacy;
+  }
+  const stored = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+    reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(id)),
+  ).catch(() => undefined);
+  if (!stored) return null;
+  if (!isStoredPrekey(stored, id)) throw new Error('E2EE_PREKEY_RECORD_INVALID');
+  return stored;
+}
+
+async function deleteStoredPrekey(id: string): Promise<void> {
+  await Promise.allSettled([
+    runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+      tx.objectStore(SPK_STORE).delete(id);
+    }),
+    removeNativeKeyRecord(nativePrekeyKey(id)),
+  ]);
+}
 
 async function saveDeviceSPKPrivate(userId: string, deviceId: string, spkId: number, privateKey: CryptoKey, publicBase64: string): Promise<void> {
   const jwk = await hardCrypto.exportKey('jwk', privateKey);
-  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
-    tx.objectStore(SPK_STORE).put({ id: deviceSpkKey(userId, deviceId, spkId), spkId, privateKeyJWK: jwk, publicKeyBase64: publicBase64, createdAt: Date.now() } as StoredSPK);
+  await persistStoredPrekey({
+    id: deviceSpkKey(userId, deviceId, spkId),
+    spkId,
+    privateKeyJWK: jwk,
+    publicKeyBase64: publicBase64,
+    createdAt: Date.now(),
   });
 }
 
 async function loadDeviceSPKRecord(userId: string, deviceId: string, spkId: number): Promise<StoredSPK | null> {
-  try {
-    const result = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) => reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(deviceSpkKey(userId, deviceId, spkId))));
-    return result ?? null;
-  } catch { return null; }
+  return loadStoredPrekey(deviceSpkKey(userId, deviceId, spkId));
 }
 
 async function deleteDeviceSPKPrivate(userId: string, deviceId: string, spkId: number): Promise<void> {
-  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
-    tx.objectStore(SPK_STORE).delete(deviceSpkKey(userId, deviceId, spkId));
-  }).catch(() => undefined);
+  await deleteStoredPrekey(deviceSpkKey(userId, deviceId, spkId));
 }
 
 function randomPositiveId(): number {
@@ -214,24 +278,15 @@ async function pruneOldDeviceSPKs(userId: string, deviceId: string, activeSpkId:
   const prefix = `${userId}::dev::${deviceId}::`;
   const now = Date.now();
   const maxAgeMs = 45 * 24 * 60 * 60 * 1000;
-  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) =>
-    new Promise<void>((resolve, reject) => {
-      const store = tx.objectStore(SPK_STORE);
-      const request = store.getAll();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        const records = (request.result as StoredSPK[])
-          .filter((record) => record.id.startsWith(prefix) && !record.id.includes('::opk::'))
-          .sort((a, b) => b.createdAt - a.createdAt);
-        records.forEach((record, index) => {
-          if (record.spkId !== activeSpkId && (index >= 4 || now - record.createdAt > maxAgeMs)) {
-            store.delete(record.id);
-          }
-        });
-        resolve();
-      };
-    }),
-  );
+  const records = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+    reqToPromise<StoredSPK[]>(tx.objectStore(SPK_STORE).getAll()),
+  ).catch(() => [] as StoredSPK[]);
+  const stale = records
+    .filter((record) => record.id.startsWith(prefix) && !record.id.includes('::opk::'))
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .filter((record, index) =>
+      record.spkId !== activeSpkId && (index >= 4 || now - record.createdAt > maxAgeMs));
+  await Promise.all(stale.map((record) => deleteStoredPrekey(record.id)));
 }
 
 export async function generateAndUploadDeviceSignedPrekey(
@@ -339,27 +394,23 @@ const OPK_LOW_THRESHOLD = 25;
 
 async function saveDeviceOPKPrivate(userId: string, deviceId: string, opkId: number, privateKey: CryptoKey, publicBase64: string): Promise<void> {
   const jwk = await hardCrypto.exportKey('jwk', privateKey);
-  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
-    tx.objectStore(SPK_STORE).put({ id: deviceOPKKey(userId, deviceId, opkId), spkId: opkId, privateKeyJWK: jwk, publicKeyBase64: publicBase64, createdAt: Date.now() } as StoredSPK);
+  await persistStoredPrekey({
+    id: deviceOPKKey(userId, deviceId, opkId),
+    spkId: opkId,
+    privateKeyJWK: jwk,
+    publicKeyBase64: publicBase64,
+    createdAt: Date.now(),
   });
 }
 
 async function loadDeviceOPKPrivate(userId: string, deviceId: string, opkId: number): Promise<CryptoKey | null> {
-  try {
-    const result = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) => reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(deviceOPKKey(userId, deviceId, opkId))));
-    if (!result) return null;
-    return importKeyFromJWK(result.privateKeyJWK, KX_KEY_PARAMS, ['deriveBits'], false);
-  } catch { return null; }
+  const result = await loadStoredPrekey(deviceOPKKey(userId, deviceId, opkId));
+  if (!result) return null;
+  return importKeyFromJWK(result.privateKeyJWK, KX_KEY_PARAMS, ['deriveBits'], false);
 }
 
 async function deleteDeviceOPKPrivate(userId: string, deviceId: string, opkId: number): Promise<void> {
-  try {
-    await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
-      tx.objectStore(SPK_STORE).delete(deviceOPKKey(userId, deviceId, opkId));
-    });
-  } catch {
-    // Consumed OPK cleanup is best-effort.
-  }
+  await deleteStoredPrekey(deviceOPKKey(userId, deviceId, opkId));
 }
 
 export async function refillDeviceOneTimePrekeysIfNeeded(userId: string, deviceId: string): Promise<void> {
@@ -421,7 +472,7 @@ async function claimPeerDeviceOPK(
 async function fetchDevicePrekeyMaterial(
   peerUserId: string,
   peerDeviceId: string,
-): Promise<{ identityKey: string; signingKey: string; spkId: number; publicKey: string; signature: string } | null> {
+): Promise<{ identityKey: string; signingKey: string; spkId: number; publicKey: string; signature: string }> {
   const device = await fetchVerifiedDeviceIdentity(peerUserId, peerDeviceId);
   if (!device) {
     throw new DevicePrekeyBundleError(
@@ -434,7 +485,20 @@ async function fetchDevicePrekeyMaterial(
     p_user_id: peerUserId,
     p_device_id: peerDeviceId,
   });
-  if (error || !spkRows || spkRows.length === 0) return null;
+  if (error) {
+    throw new DevicePrekeyBundleError(
+      'DEVICE_PREKEY_BUNDLE_FETCH_FAILED',
+      peerUserId,
+      peerDeviceId,
+    );
+  }
+  if (!spkRows || spkRows.length === 0) {
+    throw new DevicePrekeyBundleError(
+      'DEVICE_SIGNED_PREKEY_UNAVAILABLE',
+      peerUserId,
+      peerDeviceId,
+    );
+  }
   const spk = spkRows[0] as { spk_id: number; public_key: string; signature: string };
   return {
     identityKey: device.devicePublicKey,
@@ -459,7 +523,6 @@ async function verifySignedPrekey(signingKeyB64: string, spkPublicB64: string, s
 
 export async function peekDeviceSignedPrekey(peerUserId: string, peerDeviceId: string): Promise<{ signedPrekeyId: number } | null> {
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
-  if (!material) return null;
   const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, { source: 'peekDeviceSignedPrekey', identityKeyB64: material.identityKey, userId: peerUserId, deviceId: peerDeviceId, spkId: material.spkId });
   if (!sigValid) {
     console.warn('[X3DH-DEV] device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false });
@@ -474,7 +537,6 @@ export async function fetchPrekeyBundleForDevice(
   options: FetchDevicePrekeyBundleOptions = {},
 ): Promise<X3DHPrekeyBundle | null> {
   const material = await fetchDevicePrekeyMaterial(peerUserId, peerDeviceId);
-  if (!material) return null;
   const sigValid = await verifySignedPrekey(material.signingKey, material.publicKey, material.signature, { source: 'fetchPrekeyBundleForDevice', identityKeyB64: material.identityKey, userId: peerUserId, deviceId: peerDeviceId, spkId: material.spkId });
   if (!sigValid) {
     console.warn('[X3DH-DEV] device SPK signature INVALID', { user_id: peerUserId, device_id: peerDeviceId, spk_id: material.spkId, valid: false });

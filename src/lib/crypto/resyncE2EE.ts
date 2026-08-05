@@ -530,7 +530,18 @@ async function republishDeviceIdentity(
     await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, authorization.deviceSigning.privateKey);
     result.spk = true;
   } catch (e) {
-    console.warn('[resync] device SPK refresh failed:', e);
+    result.spk = false;
+    logCryptoException('restore', e, {
+      severity: 'error',
+      myDeviceId: deviceId,
+      metadata: {
+        stage: 'device_signed_prekey_publish',
+        errorCode: 'E2EE_DEVICE_SPK_PUBLISH_FAILED',
+      },
+    });
+    const spkError = new Error('E2EE_DEVICE_SPK_PUBLISH_FAILED');
+    Object.defineProperty(spkError, 'cause', { value: e, enumerable: false });
+    throw spkError;
   }
 
   try {

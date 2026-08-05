@@ -413,7 +413,7 @@ export interface FanoutCopyRow {
  * Pass a synthetic `messageId` (e.g. the to-be-assigned UUID) — the same id
  * must then be reused when persisting the `messages` row.
  */
-export async function buildFanoutCopies(input: FanoutInput): Promise<{
+export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt = 0): Promise<{
   rows: FanoutCopyRow[];
   hasTargets: boolean;
   routeVersion: string;
@@ -511,6 +511,18 @@ export async function buildFanoutCopies(input: FanoutInput): Promise<{
 
   const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
   if (rows.length !== targets.length) {
+    if (routeRefreshAttempt === 0) {
+      await Promise.allSettled(targets.map((dev) => rollbackFanoutSessionTarget({
+        messageId: input.messageId,
+        myUserId: input.senderUserId,
+        myDeviceId: senderDeviceId,
+        peerUserId: dev.userId,
+        peerDeviceId: dev.deviceId,
+      })));
+      invalidateFanoutRoute(input.conversationId, input.senderUserId);
+      traceE2EE({ ...baseTrace, stage: 'FANOUT_ROUTE_REFRESH', outcome: 'retry', targetCount: targets.length, copyCount: rows.length }, 'warn');
+      return buildFanoutCopies(input, 1);
+    }
     traceE2EE({ ...baseTrace, stage: 'FANOUT_EXACT_COVERAGE', outcome: 'error', targetCount: targets.length, copyCount: rows.length, errorCode: 'AEGIS_PARTIAL_DEVICE_FANOUT' }, 'error');
     logCryptoError({
       severity: 'warning',

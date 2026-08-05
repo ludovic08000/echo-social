@@ -1,230 +1,244 @@
 /**
- * secureStore — Hardware-backed secret storage with health-checked fallback.
+ * Platform secure storage.
  *
- * iOS  → Keychain Services (kSecAttrAccessibleAfterFirstUnlock)
- * Android → Android Keystore (AES-GCM, hardware-backed when available)
- * Web / fallback → Capacitor Preferences then localStorage (NOT secure — best-effort)
- *
- * Use this for values that must NEVER leak between apps and must survive
- * WebView cache purges:
- *   - device id (routing label)
- *   - account-key sentinel (digest of last successful master-key sync)
- *
- * On startup, `verifySecureStoreHealth()` runs a probe + cross-checks the
- * Keychain/Keystore against the Preferences mirror. The result drives the
- * reconciliation strategy used by callers (e.g. keySentinel).
+ * Legacy non-critical APIs preserve the Preferences mirror used for routing
+ * labels and health reconciliation. E2EE private material must use the
+ * `*CriticalSecret` APIs, which are native-only and fail closed.
  */
-
 import { Capacitor } from '@capacitor/core';
-import { nativeGet, nativeSet, nativeRemove, nativeGetSync } from '@/lib/nativeStore';
+import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';
+import { nativeGet, nativeGetSync, nativeRemove, nativeSet } from '@/lib/nativeStore';
 
-type SecurePlugin = {
-  get: (opts: { key: string }) => Promise<{ value: string }>;
-  set: (opts: { key: string; value: string }) => Promise<{ value: boolean }>;
-  remove: (opts: { key: string }) => Promise<{ value: boolean }>;
-  keys: () => Promise<{ value: string[] }>;
-  clear: () => Promise<{ value: boolean }>;
-};
-
-let _secure: SecurePlugin | null = null;
-let _loading: Promise<void> | null = null;
-let _pluginAvailable: boolean | null = null;
-
+const CRITICAL_PREFIX = 'forsure.secure.v1:';
 const PROBE_KEY = '__forsure_secure_probe__';
 const SECRET_CHUNK_SIZE = 24_000;
 
 const secretMetaKey = (key: string) => `${key}.__chunks__`;
 const secretChunkKey = (key: string, index: number) => `${key}.__chunk_${index}__`;
 
-const isNative = (): boolean => {
-  try { return Capacitor.isNativePlatform?.() === true; } catch { return false; }
-};
+export class NativeSecureStoreUnavailableError extends Error {
+  readonly operation: 'get' | 'set' | 'remove';
 
-async function ensureSecure(): Promise<void> {
-  if (_secure || !isNative()) return;
-  if (!_loading) {
-    _loading = import('capacitor-secure-storage-plugin')
-      .then((m) => {
-        _secure = (m.SecureStoragePlugin as unknown) as SecurePlugin;
-        _pluginAvailable = true;
-      })
-      .catch((e) => {
-        _pluginAvailable = false;
-        console.warn('[secureStore] secure storage plugin unavailable, falling back to Preferences:', e);
-      });
+  constructor(operation: 'get' | 'set' | 'remove', cause?: unknown) {
+    super(`E2EE_NATIVE_KEYCHAIN_UNAVAILABLE:${operation}`);
+    this.name = 'NativeSecureStoreUnavailableError';
+    this.operation = operation;
+    if (cause !== undefined) {
+      Object.defineProperty(this, 'cause', { value: cause, enumerable: false });
+    }
   }
-  await _loading;
 }
 
+export function isSecureStoreNative(): boolean {
+  try {
+    return Capacitor.isNativePlatform() === true;
+  } catch {
+    return false;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function isMissingItemError(error: unknown): boolean {
+  return /does not exist|not found|missing item|no value/i.test(errorMessage(error));
+}
+
+function criticalKey(key: string): string {
+  return `${CRITICAL_PREFIX}${key}`;
+}
+
+async function rawSecureGet(key: string): Promise<string | null> {
+  try {
+    const result = await SecureStoragePlugin.get({ key });
+    return typeof result?.value === 'string' ? result.value : null;
+  } catch (error) {
+    if (isMissingItemError(error)) return null;
+    throw error;
+  }
+}
+
+async function rawSecureRemove(key: string): Promise<void> {
+  try {
+    await SecureStoragePlugin.remove({ key });
+  } catch (error) {
+    if (!isMissingItemError(error)) throw error;
+  }
+}
+
+/** Native Keychain/Keystore only. Never Preferences/localStorage. */
+export async function secureGetCriticalSecret(key: string): Promise<string | null> {
+  if (!isSecureStoreNative()) return null;
+  try {
+    return await rawSecureGet(criticalKey(key));
+  } catch (error) {
+    throw new NativeSecureStoreUnavailableError('get', error);
+  }
+}
+
+/** Native Keychain/Keystore only, with mandatory readback. */
+export async function secureSetCriticalSecret(key: string, value: string): Promise<void> {
+  if (!isSecureStoreNative()) {
+    throw new NativeSecureStoreUnavailableError('set', 'native platform required');
+  }
+  try {
+    await SecureStoragePlugin.set({ key: criticalKey(key), value });
+  } catch (error) {
+    throw new NativeSecureStoreUnavailableError('set', error);
+  }
+  const readback = await secureGetCriticalSecret(key);
+  if (readback !== value) {
+    throw new NativeSecureStoreUnavailableError('set', 'keychain readback mismatch');
+  }
+}
+
+/** Native Keychain/Keystore only, with mandatory deletion readback. */
+export async function secureRemoveCriticalSecret(key: string): Promise<void> {
+  if (!isSecureStoreNative()) {
+    throw new NativeSecureStoreUnavailableError('remove', 'native platform required');
+  }
+  try {
+    await rawSecureRemove(criticalKey(key));
+  } catch (error) {
+    throw new NativeSecureStoreUnavailableError('remove', error);
+  }
+  const readback = await secureGetCriticalSecret(key);
+  if (readback !== null) {
+    throw new NativeSecureStoreUnavailableError('remove', 'keychain delete readback mismatch');
+  }
+}
+
+/**
+ * Legacy non-critical mirrored storage. The secure copy wins when present;
+ * Preferences/localStorage remains a compatibility mirror only.
+ */
 export async function secureGet(key: string): Promise<string | null> {
-  await ensureSecure();
-  if (_secure) {
+  if (isSecureStoreNative()) {
     try {
-      const { value } = await _secure.get({ key });
-      if (value != null) return value;
+      const secure = await rawSecureGet(key);
+      if (secure !== null) return secure;
     } catch {
-      // Plugin throws on missing key — silently fall through
+      // Non-critical callers may use the established mirror.
     }
   }
   return nativeGet(key);
 }
 
 export async function secureSet(key: string, value: string): Promise<void> {
-  await ensureSecure();
-  let secureOk = false;
-  if (_secure) {
+  if (isSecureStoreNative()) {
     try {
-      await _secure.set({ key, value });
-      secureOk = true;
-    } catch (e) {
-      console.warn('[secureStore] set failed:', key, e);
+      await SecureStoragePlugin.set({ key, value });
+    } catch {
+      // The mirror is intentionally retained for non-critical values.
     }
   }
-  // Always mirror to Preferences so synchronous WebView reads still work,
-  // and so we have something to detect drift against.
   await nativeSet(key, value);
-  if (isNative() && !secureOk) {
-    console.warn('[secureStore] value persisted to fallback only:', key);
+}
+
+export async function secureRemove(key: string): Promise<void> {
+  if (isSecureStoreNative()) {
+    try {
+      await rawSecureRemove(key);
+    } catch {
+      // Continue removing the compatibility mirror.
+    }
   }
+  await nativeRemove(key);
 }
 
 /**
- * Store secret material ONLY in the platform secure store.
- * Unlike secureSet(), this intentionally does not mirror to Preferences or
- * localStorage, so E2EE key snapshots never leak into non-secure storage.
+ * Existing chunked secret API used by account snapshots. It remains
+ * Keychain/Keystore-only and keeps its original key format for migration-free
+ * continuity. New device-private records use the strict critical APIs above.
  */
 export async function secureSetSecret(key: string, value: string): Promise<boolean> {
-  await ensureSecure();
-  if (!_secure) {
-    // Only warn on native platforms where the plugin is expected.
-    // On web there is no Keychain/Keystore — this is the normal code path.
-    if (isNative()) {
-      console.warn('[secureStore] secret write skipped — secure plugin unavailable:', key);
-    }
-    return false;
-  }
-
+  if (!isSecureStoreNative()) return false;
   try {
     const chunks = value.match(new RegExp(`.{1,${SECRET_CHUNK_SIZE}}`, 'gs')) ?? [''];
-    await _secure.set({ key, value: chunks.length === 1 ? value : '' });
-    await _secure.set({ key: secretMetaKey(key), value: String(chunks.length) });
-    await Promise.all(chunks.map((chunk, index) => _secure!.set({
+    await SecureStoragePlugin.set({ key, value: chunks.length === 1 ? value : '' });
+    await SecureStoragePlugin.set({ key: secretMetaKey(key), value: String(chunks.length) });
+    await Promise.all(chunks.map((chunk, index) => SecureStoragePlugin.set({
       key: secretChunkKey(key, index),
       value: chunk,
     })));
-    return true;
-  } catch (e) {
-    console.warn('[secureStore] secret set failed:', key, e);
+    const readback = await secureGetSecret(key);
+    return readback === value;
+  } catch {
     return false;
   }
 }
 
-/** Read secret material from Keychain/Keystore only. No fallback mirror. */
 export async function secureGetSecret(key: string): Promise<string | null> {
-  await ensureSecure();
-  if (!_secure) return null;
-
+  if (!isSecureStoreNative()) return null;
   try {
-    let chunkCount = 0;
-    try {
-      const meta = await _secure.get({ key: secretMetaKey(key) });
-      chunkCount = Number(meta.value || 0);
-    } catch {
-      chunkCount = 0;
-    }
-
+    const meta = await rawSecureGet(secretMetaKey(key));
+    const chunkCount = Number(meta ?? 0);
     if (chunkCount > 1) {
       const chunks = await Promise.all(Array.from({ length: chunkCount }, (_, index) =>
-        _secure!.get({ key: secretChunkKey(key, index) }).then((r) => r.value),
+        rawSecureGet(secretChunkKey(key, index)),
       ));
+      if (chunks.some((chunk) => chunk === null)) return null;
       return chunks.join('');
     }
-
-    const { value } = await _secure.get({ key });
-    return value ?? null;
+    return rawSecureGet(key);
   } catch {
     return null;
   }
 }
 
-/** Remove secret material from Keychain/Keystore only. */
 export async function secureRemoveSecret(key: string): Promise<void> {
-  await ensureSecure();
-  if (!_secure) return;
+  if (!isSecureStoreNative()) return;
   let chunkCount = 0;
   try {
-    const meta = await _secure.get({ key: secretMetaKey(key) });
-    chunkCount = Number(meta.value || 0);
-  } catch {}
-  await Promise.all([
-    _secure.remove({ key }).catch(() => {}),
-    _secure.remove({ key: secretMetaKey(key) }).catch(() => {}),
+    chunkCount = Number(await rawSecureGet(secretMetaKey(key)) ?? 0);
+  } catch {
+    chunkCount = 0;
+  }
+  await Promise.allSettled([
+    rawSecureRemove(key),
+    rawSecureRemove(secretMetaKey(key)),
     ...Array.from({ length: chunkCount }, (_, index) =>
-      _secure!.remove({ key: secretChunkKey(key, index) }).catch(() => {}),
+      rawSecureRemove(secretChunkKey(key, index)),
     ),
   ]);
 }
 
-export async function secureRemove(key: string): Promise<void> {
-  await ensureSecure();
-  if (_secure) {
-    try { await _secure.remove({ key }); } catch {}
-  }
-  await nativeRemove(key);
-}
-
-export function isSecureStoreNative(): boolean {
-  return isNative();
-}
-
-/** Last-known plugin availability. `null` until first ensureSecure() resolves. */
 export function isSecurePluginAvailable(): boolean | null {
-  if (!isNative()) return false;
-  return _pluginAvailable;
+  return isSecureStoreNative() ? true : false;
 }
 
-// ── Health check & reconciliation ──────────────────────────────────────────
-
-export type SecureStoreTier =
-  | 'keychain'        // iOS/Android secure storage healthy
-  | 'preferences'     // Native Preferences only (plugin missing/broken)
-  | 'web';            // Browser localStorage (best-effort)
+export type SecureStoreTier = 'keychain' | 'preferences' | 'web';
 
 export interface SecureStoreHealth {
   tier: SecureStoreTier;
   pluginAvailable: boolean;
   probeRoundTripOk: boolean;
-  driftedKeys: string[];   // keys where Keychain != Preferences
-  reconciled: number;      // keys auto-fixed by copying Keychain → Preferences
+  driftedKeys: string[];
+  reconciled: number;
   warnings: string[];
 }
 
-let _healthCache: SecureStoreHealth | null = null;
-let _healthPromise: Promise<SecureStoreHealth> | null = null;
+let healthCache: SecureStoreHealth | null = null;
+let healthPromise: Promise<SecureStoreHealth> | null = null;
 
-/**
- * Run on app startup. Verifies the secure plugin works and reconciles drift
- * between Keychain/Keystore and the Preferences mirror.
- *
- * Drift policy: the Keychain/Keystore is authoritative when present, because
- * Preferences can be wiped by the user via "Clear app data" while the Keychain
- * survives. If a key exists in Keychain but not in Preferences, we copy it
- * forward. If a key exists only in Preferences, we leave it (it may simply be
- * a non-secure value).
- */
-export async function verifySecureStoreHealth(
-  watchedKeys: string[] = [],
-): Promise<SecureStoreHealth> {
-  if (_healthCache) return _healthCache;
-  if (_healthPromise) return _healthPromise;
+export async function verifySecureStoreHealth(watchedKeys: string[] = []): Promise<SecureStoreHealth> {
+  if (healthCache) return healthCache;
+  if (healthPromise) return healthPromise;
 
-  _healthPromise = (async () => {
-    const warnings: string[] = [];
+  healthPromise = (async () => {
     const driftedKeys: string[] = [];
+    const warnings: string[] = [];
     let reconciled = 0;
 
-    if (!isNative()) {
-      const result: SecureStoreHealth = {
+    if (!isSecureStoreNative()) {
+      healthCache = {
         tier: 'web',
         pluginAvailable: false,
         probeRoundTripOk: false,
@@ -232,79 +246,52 @@ export async function verifySecureStoreHealth(
         reconciled,
         warnings,
       };
-      _healthCache = result;
-      return result;
+      return healthCache;
     }
-
-    await ensureSecure();
-    const pluginAvailable = !!_secure;
 
     let probeRoundTripOk = false;
-    if (_secure) {
-      try {
-        const probeValue = `probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        await _secure.set({ key: PROBE_KEY, value: probeValue });
-        const readBack = await _secure.get({ key: PROBE_KEY });
-        probeRoundTripOk = readBack?.value === probeValue;
-        try { await _secure.remove({ key: PROBE_KEY }); } catch {}
-        if (!probeRoundTripOk) {
-          warnings.push('Keychain probe round-trip mismatch');
-        }
-      } catch (e) {
-        warnings.push(`Keychain probe failed: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    } else {
-      warnings.push('Secure storage plugin not available — using Preferences fallback');
+    try {
+      const value = `probe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      await SecureStoragePlugin.set({ key: PROBE_KEY, value });
+      probeRoundTripOk = await rawSecureGet(PROBE_KEY) === value;
+      await rawSecureRemove(PROBE_KEY);
+    } catch (error) {
+      warnings.push(`Keychain probe failed: ${errorMessage(error)}`);
     }
 
-    if (_secure && probeRoundTripOk) {
+    if (probeRoundTripOk) {
       for (const key of watchedKeys) {
         try {
-          let secureValue: string | null = null;
-          try { secureValue = (await _secure.get({ key })).value ?? null; } catch { secureValue = null; }
-          const mirroredValue = nativeGetSync(key) ?? (await nativeGet(key));
-
-          if (secureValue && secureValue !== mirroredValue) {
+          const secureValue = await rawSecureGet(key);
+          const mirror = nativeGetSync(key) ?? await nativeGet(key);
+          if (secureValue !== null && secureValue !== mirror) {
             driftedKeys.push(key);
-            // Reconcile: Keychain wins, push to Preferences mirror.
             await nativeSet(key, secureValue);
-            reconciled++;
-            console.log('[secureStore] reconciled drift on', key);
-          } else if (!secureValue && mirroredValue) {
-            // Mirror has a value the Keychain lost (rare — possibly a fallback-only write
-            // from a previous session where the plugin was missing). Promote it.
-            try {
-              await _secure.set({ key, value: mirroredValue });
-              reconciled++;
-              console.log('[secureStore] promoted fallback value to Keychain:', key);
-            } catch (e) {
-              warnings.push(`failed to promote ${key}: ${e instanceof Error ? e.message : String(e)}`);
-            }
+            reconciled += 1;
+          } else if (secureValue === null && mirror !== null) {
+            await SecureStoragePlugin.set({ key, value: mirror });
+            reconciled += 1;
           }
-        } catch (e) {
-          warnings.push(`reconcile failed for ${key}: ${e instanceof Error ? e.message : String(e)}`);
+        } catch (error) {
+          warnings.push(`reconcile failed for ${key}: ${errorMessage(error)}`);
         }
       }
     }
 
-    const tier: SecureStoreTier = (_secure && probeRoundTripOk) ? 'keychain' : 'preferences';
-    const result: SecureStoreHealth = {
-      tier,
-      pluginAvailable,
+    healthCache = {
+      tier: probeRoundTripOk ? 'keychain' : 'preferences',
+      pluginAvailable: probeRoundTripOk,
       probeRoundTripOk,
       driftedKeys,
       reconciled,
       warnings,
     };
-    _healthCache = result;
-    console.log('[secureStore] health check', result);
-    return result;
+    return healthCache;
   })();
 
-  return _healthPromise;
+  return healthPromise;
 }
 
-/** Returns the cached health report from the last verifySecureStoreHealth() call. */
 export function getSecureStoreHealth(): SecureStoreHealth | null {
-  return _healthCache;
+  return healthCache;
 }

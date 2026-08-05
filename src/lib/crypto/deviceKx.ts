@@ -14,6 +14,8 @@ import { exportKeyToJWK, importKeyFromJWK, bufferToBase64 } from './utils';
 import { hardCrypto } from './cryptoIntegrity';
 import { runTx, reqToPromise } from './indexedDbTx';
 import { runCrossTabExclusive } from './crossTabLock';
+import { isSecureStoreNative } from '@/lib/secureStore';
+import { readNativeKeyRecord, removeNativeKeyRecord, writeNativeKeyRecord } from './nativeKeyVault';
 
 export interface DeviceKxKey {
   publicKey: CryptoKey;
@@ -34,6 +36,53 @@ const creationJobs = new Map<string, Promise<DeviceKxKey>>();
 
 function storageKey(deviceId: string, userId: string): string {
   return `device-kx::${userId}::${deviceId}`;
+}
+
+function isStoredDeviceKx(value: unknown, deviceId: string, userId: string): value is StoredDeviceKx {
+  const candidate = value as Partial<StoredDeviceKx> | null;
+  return Boolean(
+    candidate &&
+    candidate.id === storageKey(deviceId, userId) &&
+    candidate.userId === userId &&
+    candidate.deviceId === deviceId &&
+    candidate.publicKeyJWK && typeof candidate.publicKeyJWK === 'object' &&
+    candidate.privateKeyJWK && typeof candidate.privateKeyJWK === 'object' &&
+    typeof candidate.createdAt === 'number' && Number.isFinite(candidate.createdAt)
+  );
+}
+
+async function loadStoredDeviceKx(deviceId: string, userId: string): Promise<StoredDeviceKx | null> {
+  const id = storageKey(deviceId, userId);
+  if (isSecureStoreNative()) {
+    const native = await readNativeKeyRecord(id, (value): value is StoredDeviceKx =>
+      isStoredDeviceKx(value, deviceId, userId));
+    if (native) {
+      await dbPut(native).catch(() => undefined);
+      return native;
+    }
+    const legacy = await dbGet<StoredDeviceKx>(id);
+    if (!legacy) return null;
+    if (!isStoredDeviceKx(legacy, deviceId, userId)) {
+      throw new Error('E2EE_DEVICE_KX_RECORD_INVALID');
+    }
+    await writeNativeKeyRecord(id, legacy);
+    return legacy;
+  }
+  const stored = await dbGet<StoredDeviceKx>(id);
+  if (!stored) return null;
+  if (!isStoredDeviceKx(stored, deviceId, userId)) {
+    throw new Error('E2EE_DEVICE_KX_RECORD_INVALID');
+  }
+  return stored;
+}
+
+async function persistStoredDeviceKx(record: StoredDeviceKx): Promise<void> {
+  if (isSecureStoreNative()) {
+    await writeNativeKeyRecord(record.id, record);
+    await dbPut(record).catch(() => undefined);
+    return;
+  }
+  await dbPut(record);
 }
 
 /**
@@ -88,7 +137,7 @@ async function importStoredDeviceKx(stored: StoredDeviceKx): Promise<DeviceKxKey
  * Load the per-account/per-device kx keypair if present. Returns null if none\n * is stored. Both IDs are mandatory, preventing cross-account key reuse.
  */
 export async function loadDeviceKxKey(deviceId: string, userId: string): Promise<DeviceKxKey | null> {
-  const stored = await dbGet<StoredDeviceKx>(storageKey(deviceId, userId));
+  const stored = await loadStoredDeviceKx(deviceId, userId);
   return stored ? importStoredDeviceKx(stored) : null;
 }
 
@@ -106,7 +155,7 @@ export async function generateDeviceKxKey(deviceId: string, userId: string): Pro
     exportKeyToJWK(privateKey),
   ]);
 
-  await dbPut<StoredDeviceKx>({
+  await persistStoredDeviceKx({
     id: storageKey(deviceId, userId),
     userId,
     deviceId,
@@ -147,9 +196,10 @@ export async function getOrCreateDeviceKxKey(deviceId: string, userId: string): 
 
 /** Used when a device is unlinked / revoked. */
 export async function deleteDeviceKxKey(deviceId: string, userId: string): Promise<void> {
-  try {
-    await dbDelete(storageKey(deviceId, userId));
-  } catch {
-    /* non-fatal */
-  }
+  const id = storageKey(deviceId, userId);
+  creationJobs.delete(id);
+  await Promise.allSettled([
+    dbDelete(id),
+    removeNativeKeyRecord(id),
+  ]);
 }
