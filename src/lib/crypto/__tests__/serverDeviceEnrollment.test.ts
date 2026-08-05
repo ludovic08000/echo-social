@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isRegisteredDeviceReusable,
   parseCompletedDeviceEnrollment,
   parseDeviceEnrollmentChallenge,
   parseDeviceEnrollmentSettlement,
@@ -86,4 +87,10 @@ describe('server-assigned device enrollment', () => {
     }, DEVICE_ID)).toThrow('DEVICE_ENROLLMENT_INVALID_NONCE');
   });
 
+  it('refuses to reuse a Windows DeviceID from an iOS runtime', () => {
+    expect(isRegisteredDeviceReusable('web', 'ios')).toBe(false);
+    expect(isRegisteredDeviceReusable('ios', 'web')).toBe(false);
+    expect(isRegisteredDeviceReusable('ios', 'ios')).toBe(true);
+    expect(isRegisteredDeviceReusable('web', 'web')).toBe(true);
+  });
 });
