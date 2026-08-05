@@ -1,0 +1,60 @@
+name: Stage 3 Device Enrollment Settlement
+
+on:
+  push:
+    branches:
+      - fix/ios-pin-device-enrollment
+    paths:
+      - .github/workflows/stage3-device-enrollment-settlement.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage3-device-enrollment-settlement
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/ios-pin-device-enrollment
+          fetch-depth: 0
+
+      - name: Apply settlement patch
+        run: python scripts/stage3-device-enrollment-settlement.py
+
+      - name: Assert settlement wiring
+        shell: bash
+        run: |
+          grep -n "cancelServerAssignedDeviceEnrollment" src/lib/crypto/resyncE2EE.ts
+          grep -n "deleteDeviceKxKey" src/lib/crypto/resyncE2EE.ts
+          grep -n "deleteDeviceIdentity" src/lib/crypto/resyncE2EE.ts
+          grep -n "DEVICE_ENROLLMENT_ALREADY_COMPLETED" src/lib/crypto/serverDeviceEnrollment.ts
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run enrollment tests
+        run: npx vitest run src/lib/crypto/__tests__/deviceBackupPolicy.test.ts src/lib/crypto/__tests__/serverDeviceEnrollment.test.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit stage 3
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            src/lib/crypto/deviceIdentity.ts \
+            src/lib/crypto/serverDeviceEnrollment.ts \
+            src/lib/crypto/resyncE2EE.ts \
+            src/lib/crypto/__tests__/serverDeviceEnrollment.test.ts
+          git commit -m "fix(e2ee): settle ambiguous device enrollment failures"
+          git push origin HEAD:fix/ios-pin-device-enrollment
