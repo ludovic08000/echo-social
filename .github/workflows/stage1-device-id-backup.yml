@@ -1,0 +1,185 @@
+name: Stage 1 Device ID Backup Isolation
+
+on:
+  push:
+    branches:
+      - fix/ios-pin-device-enrollment
+    paths:
+      - .github/workflows/stage1-device-id-backup.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage1-device-id-backup-isolation
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/ios-pin-device-enrollment
+          fetch-depth: 0
+
+      - name: Apply backup isolation patch
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          backup = Path('src/lib/crypto/accountKeyBackup.ts')
+          text = backup.read_text(encoding='utf-8')
+
+          text = text.replace(
+              "import { getCurrentDeviceId, adoptDeviceIdFromBackup } from '@/lib/messaging/currentDevice';",
+              "import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';\nimport { discardLegacyDeviceIdFromBackup } from '@/lib/crypto/deviceBackupPolicy';",
+          )
+
+          serialization = """  if (includeDeviceSecrets) {
+            try {
+              data['device:id'] = getCurrentDeviceId();
+            } catch {}
+          }
+
+          """
+          if serialization in text:
+              text = text.replace(serialization, '', 1)
+          elif "data['device:id'] = getCurrentDeviceId();" in text:
+              raise SystemExit('Unexpected device:id serialization layout')
+
+          parse_anchor = """  const data = JSON.parse(json);
+          const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
+          """
+          parse_replacement = """  const data = JSON.parse(json) as Record<string, any>;
+          const discardedLegacyDeviceId = discardLegacyDeviceIdFromBackup(data);
+          if (discardedLegacyDeviceId) {
+            console.info('[MasterKey] ignored legacy device routing id from backup');
+          }
+          const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
+          """
+          if parse_anchor in text:
+              text = text.replace(parse_anchor, parse_replacement, 1)
+          elif parse_replacement not in text:
+              raise SystemExit('restoreAllKeys parse anchor missing')
+
+          phase_zero = """    // Phase 0: restore the encrypted device routing id before restoring the
+            // matching per-device private key. This keeps message device-copies readable
+            // after iOS/WebView storage purges without showing a \"verify device\" flow.
+            if (isDeviceKeychain && typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
+              adoptDeviceIdFromBackup(data['device:id']);
+            }
+
+          """
+          if phase_zero in text:
+              text = text.replace(phase_zero, '', 1)
+          elif 'adoptDeviceIdFromBackup' in text:
+              raise SystemExit('Unexpected legacy device adoption reference remains')
+
+          backup.write_text(text, encoding='utf-8')
+
+          current = Path('src/lib/messaging/currentDevice.ts')
+          current_text = current.read_text(encoding='utf-8')
+          pattern = re.compile(
+              r"/\*\*\n \* Adopt a device id coming from the ACCOUNT key backup.*?\nexport function adoptDeviceIdFromBackup\(id: string\): string \{.*?\n\}\n\nexport function rotateCurrentDeviceId",
+              re.S,
+          )
+          replacement = """/**
+           * Legacy compatibility only. Device routing identities are installation-local
+           * and must never be restored from account or key snapshots. Older backups may
+           * still contain `device:id`; callers receive the current local installation ID.
+           */
+          export function adoptDeviceIdFromBackup(_legacyId: string): string {
+            console.info('[device-id] ignored legacy backup device id; using local installation identity');
+            return getCurrentDeviceId();
+          }
+
+          export function rotateCurrentDeviceId"""
+          current_text, count = pattern.subn(replacement, current_text, count=1)
+          if count != 1 and 'ignored legacy backup device id; using local installation identity' not in current_text:
+              raise SystemExit(f'adoptDeviceIdFromBackup patch count={count}')
+          current.write_text(current_text, encoding='utf-8')
+
+          policy = Path('src/lib/crypto/deviceBackupPolicy.ts')
+          policy.write_text("""/**
+           * Device routing identity is local to one logical installation.
+           * It is never portable account material and must not be restored from a blob.
+           */
+          export const LEGACY_DEVICE_ID_BACKUP_KEY = 'device:id' as const;
+
+          export function discardLegacyDeviceIdFromBackup(
+            data: Record<string, unknown>,
+          ): boolean {
+            if (!Object.prototype.hasOwnProperty.call(data, LEGACY_DEVICE_ID_BACKUP_KEY)) {
+              return false;
+            }
+            delete data[LEGACY_DEVICE_ID_BACKUP_KEY];
+            return true;
+          }
+          """, encoding='utf-8')
+
+          test = Path('src/lib/crypto/__tests__/deviceBackupPolicy.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';
+          import {
+            discardLegacyDeviceIdFromBackup,
+            LEGACY_DEVICE_ID_BACKUP_KEY,
+          } from '../deviceBackupPolicy';
+
+          describe('device backup policy', () => {
+            it('removes a legacy Windows DeviceID before an iOS restore', () => {
+              const backup: Record<string, unknown> = {
+                [LEGACY_DEVICE_ID_BACKUP_KEY]: 'windows-device-routing-id',
+                'e2ee:identity-keys': [{ id: 'account-id' }],
+                _meta: { scope: 'device-keychain' },
+              };
+
+              expect(discardLegacyDeviceIdFromBackup(backup)).toBe(true);
+              expect(backup).not.toHaveProperty(LEGACY_DEVICE_ID_BACKUP_KEY);
+              expect(backup['e2ee:identity-keys']).toEqual([{ id: 'account-id' }]);
+            });
+
+            it('leaves a modern backup unchanged', () => {
+              const backup: Record<string, unknown> = {
+                'e2ee:identity-keys': [{ id: 'account-id' }],
+              };
+
+              expect(discardLegacyDeviceIdFromBackup(backup)).toBe(false);
+              expect(backup).toEqual({
+                'e2ee:identity-keys': [{ id: 'account-id' }],
+              });
+            });
+          });
+          """, encoding='utf-8')
+
+      - name: Assert no backup adoption remains
+        shell: bash
+        run: |
+          ! grep -n "data\['device:id'\] =" src/lib/crypto/accountKeyBackup.ts
+          ! grep -n "adoptDeviceIdFromBackup(data" src/lib/crypto/accountKeyBackup.ts
+          grep -n "discardLegacyDeviceIdFromBackup" src/lib/crypto/accountKeyBackup.ts
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run stage 1 test
+        run: npx vitest run src/lib/crypto/__tests__/deviceBackupPolicy.test.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit stage 1
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            src/lib/crypto/accountKeyBackup.ts \
+            src/lib/messaging/currentDevice.ts \
+            src/lib/crypto/deviceBackupPolicy.ts \
+            src/lib/crypto/__tests__/deviceBackupPolicy.test.ts
+          git commit -m "fix(e2ee): keep device ids out of restored backups"
+          git push origin HEAD:fix/ios-pin-device-enrollment
