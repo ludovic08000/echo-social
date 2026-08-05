@@ -402,7 +402,8 @@ export function useChatPin() {
     }
 
     const refresh = async (unlockCurrentOpen = false) => {
-      const record = await loadLocalPin(user.id);
+      const resolved = await resolvePinRecord(user.id);
+      const record = resolved.record;
       const safety = record
         ? null
         : await inspectSetupSafety(user.id);
@@ -413,18 +414,30 @@ export function useChatPin() {
       // Recovery/uncertain states deliberately use the PIN-entry side of the
       // gate. Only a proven first setup or a matching restored identity may
       // display the PIN-creation screen.
-      const hasPin = Boolean(record) || Boolean(safety && !safety.allowed);
+      const remoteVaultBlocks = !record && (
+        resolved.remote === 'locked' ||
+        resolved.remote === 'unavailable' ||
+        resolved.remote === 'invalid'
+      );
+      const hasPin = Boolean(record) || remoteVaultBlocks || Boolean(safety && !safety.allowed);
       if (unlockCurrentOpen) unlockedRef.current = true;
       if (!record) unlockedRef.current = false;
       const unlocked = Boolean(record) && (
         unlockCurrentOpen || unlockedRef.current || (mode !== 'every_open' && sessionUnlocked)
       );
 
-      const recoveryError = !record && safety?.reason === 'restore_required'
-        ? 'Restaurez votre identité sécurisée existante avant de créer un nouveau PIN.'
-        : !record && safety?.reason === 'inspection_unavailable'
-          ? 'Vérification de sécurité indisponible. Réessayez après la restauration du compte.'
-          : null;
+      const recoveryError = record
+        ? null
+        : resolved.remote === 'locked'
+          ? 'Votre PIN existe toujours. Restaurez votre compte sécurisé (mot de passe ou clé de récupération) pour le réutiliser.'
+          : resolved.remote === 'invalid' || resolved.remote === 'unavailable'
+            ? 'Coffre PIN indisponible pour le moment. Réessayez après la restauration du compte.'
+            : safety?.reason === 'restore_required'
+              ? 'Restaurez votre identité sécurisée existante avant de créer un nouveau PIN.'
+              : safety?.reason === 'inspection_unavailable'
+                ? 'Vérification de sécurité indisponible. Réessayez après la restauration du compte.'
+                : null;
+
 
       pinModeRef.current = mode;
       setState({
