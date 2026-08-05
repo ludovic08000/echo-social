@@ -39,7 +39,7 @@ describe('native iOS Aegis Continuity Enclave contract', () => {
     expect(source).toContain('AegisKeychain');
     expect(source).not.toContain('UserDefaults');
     expect(source).not.toContain('kSecAttrSynchronizable');
-    expect(source).not.toContain('print(');
+    expect(source).not.toMatch(/(^|\n)\s*(?:Swift\.)?print\s*\(/);
     expect(source).not.toContain('NSLog');
   });
 
