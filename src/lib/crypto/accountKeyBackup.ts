@@ -27,7 +27,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
-import { getCurrentDeviceId, adoptDeviceIdFromBackup } from '@/lib/messaging/currentDevice';
+import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { discardLegacyDeviceIdFromBackup } from '@/lib/crypto/deviceBackupPolicy';
 import {
   exportPlaintextCache,
   importPlaintextCache,
@@ -288,13 +289,6 @@ async function collectAllKeys(userId: string, scope: BackupScope = 'aegis-vault'
 
   const hasIdentity = data['e2ee:identity-keys']?.some((row: any) => row?.id === userId);
   if (!hasIdentity) return null;
-
-  if (includeDeviceSecrets) {
-    try {
-      data['device:id'] = getCurrentDeviceId();
-    } catch {}
-  }
-
   if (includeDeviceSecrets) try {
     // Decrypted history is confined to the native device snapshot. The
     // portable account vault is identity continuity, not a chat backup.
@@ -355,8 +349,12 @@ export async function restoreKeysFromKeychainSnapshot(userId: string): Promise<'
  * Restore all local E2EE keys from backup — TRULY ATOMIC.
  */
 async function restoreAllKeys(json: string, userId: string): Promise<void> {
-  const data = JSON.parse(json);
-  const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
+  const data = JSON.parse(json) as Record<string, any>;
+const discardedLegacyDeviceId = discardLegacyDeviceIdFromBackup(data);
+if (discardedLegacyDeviceId) {
+  console.info('[MasterKey] ignored legacy device routing id from backup');
+}
+const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
   const backupUserId = typeof data?._meta?.userId === 'string' ? data._meta.userId : null;
 
   // Correction : un coffre Aegis n'a plus de branche de version à interpréter.
@@ -374,13 +372,6 @@ async function restoreAllKeys(json: string, userId: string): Promise<void> {
   const rollbackOps: Array<() => Promise<void>> = [];
 
   try {
-    // Phase 0: restore the encrypted device routing id before restoring the
-    // matching per-device private key. This keeps message device-copies readable
-    // after iOS/WebView storage purges without showing a "verify device" flow.
-    if (isDeviceKeychain && typeof data['device:id'] === 'string' && data['device:id'].length >= 16) {
-      adoptDeviceIdFromBackup(data['device:id']);
-    }
-
     // Phase 1: E2EE stores
     for (const [key, records] of Object.entries(data)) {
       if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
