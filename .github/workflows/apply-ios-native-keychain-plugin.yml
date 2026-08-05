@@ -1,0 +1,57 @@
+name: Verify native iOS Keychain plugin
+
+on:
+  push:
+    branches:
+      - agent/ios-keychain-atomic-enrollment
+    paths:
+      - .github/workflows/apply-ios-native-keychain-plugin.yml
+      - .github/scripts/apply-ios-native-keychain-plugin.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-ios-native-keychain-plugin
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ios-keychain-atomic-enrollment
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply native Keychain bridge
+        run: python3 .github/scripts/apply-ios-native-keychain-plugin.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit verified implementation
+        run: |
+          rm -f .github/scripts/apply-ios-native-keychain-plugin.py
+          rm -f .github/workflows/apply-ios-native-keychain-plugin.yml
+          git checkout main -- public/version.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(e2ee): bind iOS private keys to native Keychain"
+          git push origin HEAD:agent/ios-keychain-atomic-enrollment
