@@ -93,4 +93,31 @@ describe('server-assigned device enrollment', () => {
     expect(isRegisteredDeviceReusable('ios', 'ios')).toBe(true);
     expect(isRegisteredDeviceReusable('web', 'web')).toBe(true);
   });
+
+  it('refuses revoked, inactive, rejected or crypto-invalid routes', () => {
+    const healthy = {
+      isActive: true,
+      approvalStatus: 'approved',
+      revokedAt: null,
+      cryptoInvalidAt: null,
+    };
+
+    expect(isRegisteredDeviceReusable('ios', 'ios', healthy)).toBe(true);
+    expect(isRegisteredDeviceReusable('ios', 'ios', {
+      ...healthy,
+      isActive: false,
+    })).toBe(false);
+    expect(isRegisteredDeviceReusable('ios', 'ios', {
+      ...healthy,
+      approvalStatus: 'rejected',
+    })).toBe(false);
+    expect(isRegisteredDeviceReusable('ios', 'ios', {
+      ...healthy,
+      revokedAt: '2026-08-05T00:00:00.000Z',
+    })).toBe(false);
+    expect(isRegisteredDeviceReusable('ios', 'ios', {
+      ...healthy,
+      cryptoInvalidAt: '2026-08-05T00:00:00.000Z',
+    })).toBe(false);
+  });
 });
