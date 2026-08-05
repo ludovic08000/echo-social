@@ -6,8 +6,8 @@ import {
 
 /**
  * Upload a file to Cloudflare R2.
- * - Small ordinary files (< 8 MiB): proxied through r2-upload.
- * - Large files and encrypted E2EE attachments: presigned direct PUT.
+ * - Small files, including encrypted E2EE attachments (< 8 MiB): proxied through r2-upload.
+ * - Large files and stories: presigned direct PUT.
  */
 
 const PRESIGN_THRESHOLD = 8 * 1024 * 1024;
