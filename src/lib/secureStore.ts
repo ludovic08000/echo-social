@@ -5,10 +5,17 @@
  * labels and health reconciliation. E2EE private material must use the
  * `*CriticalSecret` APIs, which are native-only and fail closed.
  */
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';
 import { nativeGet, nativeGetSync, nativeRemove, nativeSet } from '@/lib/nativeStore';
 
+type AegisKeychainBridge = {
+  get(options: { key: string }): Promise<{ value?: string | null }>;
+  set(options: { key: string; value: string }): Promise<void>;
+  remove(options: { key: string }): Promise<void>;
+};
+
+const AegisKeychain = registerPlugin<AegisKeychainBridge>('AegisKeychain');
 const CRITICAL_PREFIX = 'forsure.secure.v1:';
 const PROBE_KEY = '__forsure_secure_probe__';
 const SECRET_CHUNK_SIZE = 24_000;
@@ -55,6 +62,34 @@ function criticalKey(key: string): string {
   return `${CRITICAL_PREFIX}${key}`;
 }
 
+function isIOSNative(): boolean {
+  return isSecureStoreNative() && Capacitor.getPlatform() === 'ios';
+}
+
+async function criticalPlatformGet(key: string): Promise<string | null> {
+  if (isIOSNative()) {
+    const result = await AegisKeychain.get({ key });
+    return typeof result?.value === 'string' ? result.value : null;
+  }
+  return rawSecureGet(key);
+}
+
+async function criticalPlatformSet(key: string, value: string): Promise<void> {
+  if (isIOSNative()) {
+    await AegisKeychain.set({ key, value });
+    return;
+  }
+  await SecureStoragePlugin.set({ key, value });
+}
+
+async function criticalPlatformRemove(key: string): Promise<void> {
+  if (isIOSNative()) {
+    await AegisKeychain.remove({ key });
+    return;
+  }
+  await rawSecureRemove(key);
+}
+
 async function rawSecureGet(key: string): Promise<string | null> {
   try {
     const result = await SecureStoragePlugin.get({ key });
@@ -77,7 +112,7 @@ async function rawSecureRemove(key: string): Promise<void> {
 export async function secureGetCriticalSecret(key: string): Promise<string | null> {
   if (!isSecureStoreNative()) return null;
   try {
-    return await rawSecureGet(criticalKey(key));
+    return await criticalPlatformGet(criticalKey(key));
   } catch (error) {
     throw new NativeSecureStoreUnavailableError('get', error);
   }
@@ -89,7 +124,7 @@ export async function secureSetCriticalSecret(key: string, value: string): Promi
     throw new NativeSecureStoreUnavailableError('set', 'native platform required');
   }
   try {
-    await SecureStoragePlugin.set({ key: criticalKey(key), value });
+    await criticalPlatformSet(criticalKey(key), value);
   } catch (error) {
     throw new NativeSecureStoreUnavailableError('set', error);
   }
@@ -105,7 +140,7 @@ export async function secureRemoveCriticalSecret(key: string): Promise<void> {
     throw new NativeSecureStoreUnavailableError('remove', 'native platform required');
   }
   try {
-    await rawSecureRemove(criticalKey(key));
+    await criticalPlatformRemove(criticalKey(key));
   } catch (error) {
     throw new NativeSecureStoreUnavailableError('remove', error);
   }
