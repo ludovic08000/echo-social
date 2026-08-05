@@ -292,7 +292,7 @@ function PinSetupScreen({ onSetup, processing, error }: {
             compact ? 'text-[10px]' : 'text-xs sm:text-sm',
           )}>
             {step === 'create'
-              ? 'Ce code à 6 chiffres protège vos conversations chiffrées.'
+              ? 'Le même PIN restera valide après une restauration sécurisée du compte.'
               : 'Ressaisissez votre code PIN pour confirmer.'}
           </p>
         </div>
@@ -386,7 +386,7 @@ function PinSetupScreen({ onSetup, processing, error }: {
             <div className="min-w-0">
               <p className="text-[11px] sm:text-xs font-semibold text-foreground mb-0.5">Important</p>
               <p className="text-[10px] sm:text-[11px] text-muted-foreground leading-relaxed">
-                Ce code ne peut pas être récupéré. Si vous le perdez, vos anciens messages seront illisibles.
+                Il n’est jamais stocké en clair. Si vous l’oubliez, une réinitialisation sera nécessaire.
               </p>
             </div>
           </motion.div>
