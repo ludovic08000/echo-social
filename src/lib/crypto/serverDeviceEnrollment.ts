@@ -1,15 +1,17 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PreparedDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
 
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type RpcObject = Record<string, unknown>;
+export type DevicePlatform = 'ios' | 'android' | 'web';
 
 export interface DeviceEnrollmentMetadata {
   deviceName: string;
   deviceFingerprint: string | null;
-  platform: 'ios' | 'android' | 'web';
+  platform: DevicePlatform;
   userAgent: string | null;
 }
 
@@ -36,6 +38,19 @@ function responseCode(value: RpcObject): string {
   return typeof value.code === 'string' && value.code.length > 0
     ? value.code
     : 'DEVICE_ENROLLMENT_RPC_REJECTED';
+}
+
+function normalizeDevicePlatform(value: unknown): DevicePlatform {
+  const platform = String(value ?? '').toLowerCase();
+  if (platform === 'ios' || platform === 'android') return platform;
+  return 'web';
+}
+
+export function isRegisteredDeviceReusable(
+  serverPlatform: unknown,
+  runtimePlatform: unknown,
+): boolean {
+  return normalizeDevicePlatform(serverPlatform) === normalizeDevicePlatform(runtimePlatform);
 }
 
 export function parseDeviceEnrollmentChallenge(value: unknown): DeviceEnrollmentChallenge {
@@ -75,7 +90,6 @@ export function parseCompletedDeviceEnrollment(
   return deviceId;
 }
 
-
 export function parseDeviceEnrollmentSettlement(
   value: unknown,
   expectedDeviceId: string,
@@ -107,13 +121,24 @@ export async function hasRegisteredDevice(
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from('user_devices')
-    .select('device_id')
+    .select('device_id,platform')
     .eq('user_id', userId)
     .eq('device_id', deviceId)
     .maybeSingle();
 
   if (error) throw new Error(`DEVICE_ROUTE_LOOKUP_FAILED:${error.message}`);
-  return Boolean(data?.device_id);
+  if (!data?.device_id) return false;
+
+  const runtimePlatform = normalizeDevicePlatform(getCurrentPlatform());
+  if (!isRegisteredDeviceReusable(data.platform, runtimePlatform)) {
+    console.warn('[e2ee] refusing cross-platform DeviceID reuse', {
+      serverPlatform: normalizeDevicePlatform(data.platform),
+      runtimePlatform,
+    });
+    return false;
+  }
+
+  return true;
 }
 
 export async function beginServerAssignedDeviceEnrollment(
@@ -172,4 +197,3 @@ export async function cancelServerAssignedDeviceEnrollment(
   if (error) throw new Error(`DEVICE_ENROLLMENT_CANCEL_FAILED:${error.message}`);
   return parseDeviceEnrollmentSettlement(data, challenge.deviceId);
 }
-
