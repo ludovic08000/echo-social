@@ -8,6 +8,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';
 import { nativeGet, nativeGetSync, nativeRemove, nativeSet } from '@/lib/nativeStore';
+import { isVerifiedNativeRuntime } from '@/lib/runtimePlatform';
 
 type AegisKeychainBridge = {
   get(options: { key: string }): Promise<{ value?: string | null }>;
@@ -37,11 +38,7 @@ export class NativeSecureStoreUnavailableError extends Error {
 }
 
 export function isSecureStoreNative(): boolean {
-  try {
-    return Capacitor.isNativePlatform() === true;
-  } catch {
-    return false;
-  }
+  return isVerifiedNativeRuntime();
 }
 
 function errorMessage(error: unknown): string {
