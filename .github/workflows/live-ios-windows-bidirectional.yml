@@ -49,7 +49,8 @@ jobs:
         run: npm ci
 
       - name: Use native-client gateway semantics
-        run: sed -i "/origin: gatewayOrigin,/d" src/lib/crypto/__tests__/liveIosWindowsBidirectional.test.ts
+        run: |
+          sed -i '/origin: gatewayOrigin,/d' src/lib/crypto/__tests__/liveIosWindowsBidirectional.test.ts
 
       - name: Run live iOS Windows bidirectional delivery
         run: npx vitest run src/lib/crypto/__tests__/liveIosWindowsBidirectional.test.ts --reporter=verbose
