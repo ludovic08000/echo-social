@@ -1,0 +1,172 @@
+name: Deploy iOS Preview Media Fix
+
+on:
+  push:
+    branches:
+      - fix/ios-pin-device-enrollment
+    paths:
+      - .github/workflows/deploy-ios-preview-media-fix.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-ios-preview-media-fix
+  cancel-in-progress: false
+
+jobs:
+  patch-deploy-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: vkpmoqfzrihcijjochks
+      PREVIEW_ORIGIN: https://echo-social-git-fix-ios-pin-d-e70524-ludovics-projects-92893680.vercel.app
+
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/ios-pin-device-enrollment
+          fetch-depth: 0
+
+      - name: Verify deployment credentials
+        shell: bash
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+
+      - name: Patch Preview media CORS and diagnostics
+        shell: python
+        run: |
+          from pathlib import Path
+
+          preview_rule = '  if (/^https:\\/\\/echo-social(?:-[a-z0-9-]+)?-ludovics-projects-92893680\\.vercel\\.app$/.test(origin)) return true;\n'
+
+          for path_text, lovable_line in [
+              ('supabase/functions/r2-presign/index.ts', '  if (/^https:\\/\\/[a-z0-9-]+\\.lovableproject\\.com$/.test(origin)) return true;\n'),
+              ('supabase/functions/r2-upload/index.ts', '  if (/^https:\\/\\/[a-z0-9-]+\\.lovableproject\\.com$/.test(origin)) return true;\n'),
+          ]:
+              path = Path(path_text)
+              text = path.read_text()
+              if preview_rule not in text:
+                  if lovable_line not in text:
+                      raise SystemExit(f'CORS anchor missing in {path_text}')
+                  text = text.replace(lovable_line, lovable_line + preview_rule, 1)
+                  path.write_text(text)
+
+          r2 = Path('src/lib/r2.ts')
+          text = r2.read_text()
+          old = """  // E2EE blobs always use the direct path, even when small. This avoids the
+  // proxy's multipart buffering and keeps the same MIME/size policy at all sizes.
+  const shouldPreferPresignedUpload =
+    category === 'stories' || isEncryptedAttachment || file.size >= PRESIGN_THRESHOLD;
+"""
+          new = """  // Small encrypted chat media uses the authenticated Edge proxy. This
+  // avoids browser-to-R2 CORS differences on protected Preview domains. Large
+  // encrypted files still use a presigned PUT to stay below Edge body limits.
+  const shouldPreferPresignedUpload =
+    category === 'stories' || file.size >= PRESIGN_THRESHOLD;
+"""
+          if old in text:
+              text = text.replace(old, new, 1)
+              r2.write_text(text)
+          elif new not in text:
+              raise SystemExit('R2 upload strategy anchor missing')
+
+          pin = Path('src/components/PinValidatedMessaging.tsx')
+          text = pin.read_text()
+          old_signature = """  severity: 'info' | 'warning' | 'error' = 'info',
+): void {
+"""
+          new_signature = """  severity: 'info' | 'warning' | 'error' = 'info',
+  failureCode?: string,
+): void {
+"""
+          if old_signature in text:
+              text = text.replace(old_signature, new_signature, 1)
+          elif new_signature not in text:
+              raise SystemExit('Enrollment signature anchor missing')
+
+          old_metadata = """      platform: getCurrentPlatform(),
+    },
+"""
+          new_metadata = """      platform: getCurrentPlatform(),
+      ...(failureCode ? { failure_code: failureCode } : {}),
+    },
+"""
+          if old_metadata in text:
+              text = text.replace(old_metadata, new_metadata, 1)
+          elif new_metadata not in text:
+              raise SystemExit('Enrollment metadata anchor missing')
+
+          old_catch = """    }, { coalesce: true, cooldownMs: 2_000 }).catch(async (error) => {
+      recordEnrollment(
+        'E2EE_DEVICE_ENROLL_FAILED',
+        classifyEnrollmentFailure(error),
+        'complete',
+        'error',
+      );
+"""
+          new_catch = """    }, { coalesce: true, cooldownMs: 2_000 }).catch(async (error) => {
+      const failureMessage = error instanceof Error ? error.message : String(error ?? '');
+      const failureCode = failureMessage
+        .split(':')
+        .map(part => part.trim())
+        .find(part => /^[A-Z][A-Z0-9_]{2,80}$/.test(part))
+        ?? 'UNKNOWN';
+      recordEnrollment(
+        'E2EE_DEVICE_ENROLL_FAILED',
+        classifyEnrollmentFailure(error),
+        'complete',
+        'error',
+        failureCode,
+      );
+"""
+          if old_catch in text:
+              text = text.replace(old_catch, new_catch, 1)
+          elif new_catch not in text:
+              raise SystemExit('Enrollment catch anchor missing')
+          pin.write_text(text)
+
+      - name: Commit repaired sources
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/r2.ts src/components/PinValidatedMessaging.tsx \
+            supabase/functions/r2-presign/index.ts supabase/functions/r2-upload/index.ts
+          if git diff --cached --quiet; then
+            echo "Sources already patched"
+          else
+            git commit -m "fix(ios): allow project Preview media and expose safe enrollment code"
+            git push origin HEAD:fix/ios-pin-device-enrollment
+          fi
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy media Edge Functions
+        shell: bash
+        run: |
+          supabase functions deploy r2-presign --project-ref "$PROJECT_REF" --no-verify-jwt
+          supabase functions deploy r2-upload --project-ref "$PROJECT_REF" --no-verify-jwt
+
+      - name: Verify exact Preview CORS
+        shell: bash
+        run: |
+          for function_name in r2-presign r2-upload; do
+            endpoint="https://${PROJECT_REF}.supabase.co/functions/v1/${function_name}"
+            headers=$(mktemp)
+            curl --silent --show-error --output /dev/null --dump-header "$headers" \
+              --request OPTIONS "$endpoint" \
+              --header "Origin: ${PREVIEW_ORIGIN}" \
+              --header "Access-Control-Request-Method: POST" \
+              --header "Access-Control-Request-Headers: authorization,apikey,content-type"
+            tr -d '\r' < "$headers"
+            grep -Fqi "access-control-allow-origin: ${PREVIEW_ORIGIN}" "$headers" || {
+              echo "Preview CORS verification failed for ${function_name}" >&2
+              exit 1
+            }
+          done
