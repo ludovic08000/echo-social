@@ -1,14 +1,25 @@
 /**
- * Platform secure storage.
+ * Aegis secure storage router.
  *
- * Legacy non-critical APIs preserve the Preferences mirror used for routing
- * labels and health reconciliation. E2EE private material must use the
- * `*CriticalSecret` APIs, which are native-only and fail closed.
+ * - Native iOS: AegisKeychain backed by the Secure Enclave anchor.
+ * - Native Android: platform secure storage.
+ * - Web browsers: ACE Web, a software enclave using a non-extractable
+ *   WebCrypto AES-GCM anchor and authenticated records in IndexedDB.
+ *
+ * ACE Web is not a hardware boundary: same-origin script execution can invoke
+ * WebCrypto. It does prevent private material from being stored as plaintext in
+ * localStorage/Preferences and fails closed if the IndexedDB anchor disappears.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';
 import { nativeGet, nativeGetSync, nativeRemove, nativeSet } from '@/lib/nativeStore';
 import { isVerifiedNativeRuntime } from '@/lib/runtimePlatform';
+import {
+  verifyWebAegisEnclaveHealth,
+  webAegisEnclaveGet,
+  webAegisEnclaveRemove,
+  webAegisEnclaveSet,
+} from '@/lib/crypto/webAegisEnclave';
 
 type AegisKeychainBridge = {
   get(options: { key: string }): Promise<{ value?: string | null }>;
@@ -105,23 +116,29 @@ async function rawSecureRemove(key: string): Promise<void> {
   }
 }
 
-/** Native Keychain/Keystore only. Never Preferences/localStorage. */
+/** ACE hardware on native; ACE Web on browsers. Never Preferences/localStorage. */
 export async function secureGetCriticalSecret(key: string): Promise<string | null> {
-  if (!isSecureStoreNative()) return null;
+  const scopedKey = criticalKey(key);
+  if (!isSecureStoreNative()) return webAegisEnclaveGet(scopedKey);
   try {
-    return await criticalPlatformGet(criticalKey(key));
+    return await criticalPlatformGet(scopedKey);
   } catch (error) {
     throw new NativeSecureStoreUnavailableError('get', error);
   }
 }
 
-/** Native Keychain/Keystore only, with mandatory readback. */
+/** Critical write with mandatory authenticated readback on every platform. */
 export async function secureSetCriticalSecret(key: string, value: string): Promise<void> {
+  const scopedKey = criticalKey(key);
   if (!isSecureStoreNative()) {
-    throw new NativeSecureStoreUnavailableError('set', 'native platform required');
+    await webAegisEnclaveSet(scopedKey, value);
+    const readback = await webAegisEnclaveGet(scopedKey);
+    if (readback !== value) throw new Error('E2EE_WEB_ENCLAVE_READBACK_MISMATCH');
+    return;
   }
+
   try {
-    await criticalPlatformSet(criticalKey(key), value);
+    await criticalPlatformSet(scopedKey, value);
   } catch (error) {
     throw new NativeSecureStoreUnavailableError('set', error);
   }
@@ -131,13 +148,19 @@ export async function secureSetCriticalSecret(key: string, value: string): Promi
   }
 }
 
-/** Native Keychain/Keystore only, with mandatory deletion readback. */
+/** Critical deletion with mandatory readback on every platform. */
 export async function secureRemoveCriticalSecret(key: string): Promise<void> {
+  const scopedKey = criticalKey(key);
   if (!isSecureStoreNative()) {
-    throw new NativeSecureStoreUnavailableError('remove', 'native platform required');
+    await webAegisEnclaveRemove(scopedKey);
+    if (await webAegisEnclaveGet(scopedKey) !== null) {
+      throw new Error('E2EE_WEB_ENCLAVE_DELETE_READBACK_MISMATCH');
+    }
+    return;
   }
+
   try {
-    await criticalPlatformRemove(criticalKey(key));
+    await criticalPlatformRemove(scopedKey);
   } catch (error) {
     throw new NativeSecureStoreUnavailableError('remove', error);
   }
@@ -186,12 +209,19 @@ export async function secureRemove(key: string): Promise<void> {
 }
 
 /**
- * Existing chunked secret API used by account snapshots. It remains
- * Keychain/Keystore-only and keeps its original key format for migration-free
- * continuity. New device-private records use the strict critical APIs above.
+ * Snapshot storage. Native keeps the established chunked Keychain format.
+ * Chrome stores the complete snapshot as one authenticated ACE Web record.
  */
 export async function secureSetSecret(key: string, value: string): Promise<boolean> {
-  if (!isSecureStoreNative()) return false;
+  if (!isSecureStoreNative()) {
+    try {
+      await webAegisEnclaveSet(key, value);
+      return await webAegisEnclaveGet(key) === value;
+    } catch {
+      return false;
+    }
+  }
+
   try {
     const chunks = value.match(new RegExp(`.{1,${SECRET_CHUNK_SIZE}}`, 'gs')) ?? [''];
     await SecureStoragePlugin.set({ key, value: chunks.length === 1 ? value : '' });
@@ -208,7 +238,8 @@ export async function secureSetSecret(key: string, value: string): Promise<boole
 }
 
 export async function secureGetSecret(key: string): Promise<string | null> {
-  if (!isSecureStoreNative()) return null;
+  if (!isSecureStoreNative()) return webAegisEnclaveGet(key);
+
   try {
     const meta = await rawSecureGet(secretMetaKey(key));
     const chunkCount = Number(meta ?? 0);
@@ -226,7 +257,11 @@ export async function secureGetSecret(key: string): Promise<string | null> {
 }
 
 export async function secureRemoveSecret(key: string): Promise<void> {
-  if (!isSecureStoreNative()) return;
+  if (!isSecureStoreNative()) {
+    await webAegisEnclaveRemove(key);
+    return;
+  }
+
   let chunkCount = 0;
   try {
     chunkCount = Number(await rawSecureGet(secretMetaKey(key)) ?? 0);
@@ -246,7 +281,7 @@ export function isSecurePluginAvailable(): boolean | null {
   return isSecureStoreNative() ? true : false;
 }
 
-export type SecureStoreTier = 'keychain' | 'preferences' | 'web';
+export type SecureStoreTier = 'keychain' | 'preferences' | 'web-enclave' | 'web';
 
 export interface SecureStoreHealth {
   tier: SecureStoreTier;
@@ -270,10 +305,15 @@ export async function verifySecureStoreHealth(watchedKeys: string[] = []): Promi
     let reconciled = 0;
 
     if (!isSecureStoreNative()) {
+      const webHealth = await verifyWebAegisEnclaveHealth();
+      if (webHealth.warning) warnings.push(webHealth.warning);
+      if (webHealth.persistentStorage === false) {
+        warnings.push('Browser storage persistence was not granted; recovery backup remains required.');
+      }
       healthCache = {
-        tier: 'web',
+        tier: webHealth.available && webHealth.roundTripOk ? 'web-enclave' : 'web',
         pluginAvailable: false,
-        probeRoundTripOk: false,
+        probeRoundTripOk: webHealth.roundTripOk,
         driftedKeys,
         reconciled,
         warnings,
