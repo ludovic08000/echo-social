@@ -48,6 +48,7 @@ function recordEnrollment(
   status: string,
   stage: string,
   severity: 'info' | 'warning' | 'error' = 'info',
+  failureCode?: string,
 ): void {
   logCryptoError({
     severity,
@@ -58,6 +59,7 @@ function recordEnrollment(
       stage,
       status,
       platform: getCurrentPlatform(),
+      ...(failureCode ? { failure_code: failureCode } : {}),
     },
   });
 }
@@ -208,11 +210,18 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
 
       wake('pin_fast_maintenance_complete');
     }, { coalesce: true, cooldownMs: 2_000 }).catch(async (error) => {
+      const failureMessage = error instanceof Error ? error.message : String(error ?? '');
+      const failureCode = failureMessage
+        .split(':')
+        .map(part => part.trim())
+        .find(part => /^[A-Z][A-Z0-9_]{2,80}$/.test(part))
+        ?? 'UNKNOWN';
       recordEnrollment(
         'E2EE_DEVICE_ENROLL_FAILED',
         classifyEnrollmentFailure(error),
         'complete',
         'error',
+        failureCode,
       );
       await flushCryptoErrors().catch(() => undefined);
       console.warn('[PIN-DEVTRUST] fast maintenance unavailable');

@@ -80,10 +80,11 @@ export async function uploadToR2(
     );
   }
 
-  // E2EE blobs always use the direct path, even when small. This avoids the
-  // proxy's multipart buffering and keeps the same MIME/size policy at all sizes.
+  // Small encrypted chat media uses the authenticated Edge proxy. This
+  // avoids browser-to-R2 CORS differences on protected Preview domains. Large
+  // encrypted files still use a presigned PUT to stay below Edge body limits.
   const shouldPreferPresignedUpload =
-    category === 'stories' || isEncryptedAttachment || file.size >= PRESIGN_THRESHOLD;
+    category === 'stories' || file.size >= PRESIGN_THRESHOLD;
 
   if (shouldPreferPresignedUpload) {
     try {

@@ -56,6 +56,7 @@ function isAllowedOrigin(origin: string): boolean {
   if (ALLOWED_ORIGINS.includes(origin)) return true;
   if (/^https:\/\/[a-z0-9-]+--[a-f0-9-]+\.lovable\.app$/.test(origin)) return true;
   if (/^https:\/\/[a-z0-9-]+\.lovableproject\.com$/.test(origin)) return true;
+  if (/^https:\/\/echo-social(?:-[a-z0-9-]+)?-ludovics-projects-92893680\.vercel\.app$/.test(origin)) return true;
   return false;
 }
 function cors(req: Request): Record<string, string> {
