@@ -709,6 +709,7 @@ export const __test__ = {
   saveLocalPin,
   verifyLocalPin,
   removeLocalPin,
+  resolvePinRecord,
   inspectServerContinuity,
   inspectSetupSafety,
 };
