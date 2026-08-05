@@ -173,7 +173,30 @@ async function loadLocalPin(userId: string): Promise<LocalPinRecord | null> {
   return null;
 }
 
-async function saveLocalPin(userId: string, pin: string): Promise<void> {
+async function persistLocalRecord(userId: string, record: LocalPinRecord): Promise<void> {
+  await runTxOn('pin-wrap', [STORE], 'readwrite', (tx) => {
+    tx.objectStore(STORE).put(record);
+  });
+
+  const persisted = await runTxOn('pin-wrap', [STORE], 'readonly', (tx) =>
+    reqToPromise(tx.objectStore(STORE).get(userId)),
+  ) as Partial<LocalPinRecord> | undefined;
+  if (persisted?.version !== PIN_VERSION || persisted.wrappedBlob !== record.wrappedBlob) {
+    throw new Error('PIN_PERSISTENCE_READBACK_FAILED');
+  }
+
+  if (isSecureStoreNative()) {
+    const mirrored = await secureSetSecret(
+      `${SECURE_PIN_PREFIX}${userId}`,
+      JSON.stringify(record),
+    );
+    if (!mirrored) {
+      console.warn('[LOCAL-PIN] native secure mirror unavailable; IndexedDB remains active');
+    }
+  }
+}
+
+async function saveLocalPin(userId: string, pin: string): Promise<LocalPinRecord> {
   const salt = hardCrypto.getRandomValues(new Uint8Array(32));
   const iv = hardCrypto.getRandomValues(new Uint8Array(12));
   const key = await derivePinKey(pin, salt);
@@ -195,26 +218,33 @@ async function saveLocalPin(userId: string, pin: string): Promise<void> {
     wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
     createdAt: Date.now(),
   };
-  await runTxOn('pin-wrap', [STORE], 'readwrite', (tx) => {
-    tx.objectStore(STORE).put(record);
-  });
+  await persistLocalRecord(userId, record);
+  return record;
+}
 
-  const persisted = await runTxOn('pin-wrap', [STORE], 'readonly', (tx) =>
-    reqToPromise(tx.objectStore(STORE).get(userId)),
-  ) as Partial<LocalPinRecord> | undefined;
-  if (persisted?.version !== PIN_VERSION || persisted.wrappedBlob !== record.wrappedBlob) {
-    throw new Error('PIN_PERSISTENCE_READBACK_FAILED');
-  }
+/**
+ * Invariant : après purge du cache, le même PIN reste valide dès que la Master
+ * Key du compte est restaurée. Le coffre distant ne contient qu'une enveloppe
+ * scellée par cette Master Key, jamais le PIN.
+ */
+async function resolvePinRecord(userId: string): Promise<{
+  record: LocalPinRecord | null;
+  remote: 'restored' | 'absent' | 'locked' | 'unavailable' | 'invalid' | 'not_checked';
+}> {
+  const local = await loadLocalPin(userId);
+  if (local) return { record: local, remote: 'not_checked' };
 
-  if (isSecureStoreNative()) {
-    const mirrored = await secureSetSecret(
-      `${SECURE_PIN_PREFIX}${userId}`,
-      JSON.stringify(record),
-    );
-    if (!mirrored) {
-      console.warn('[LOCAL-PIN] native secure mirror unavailable; IndexedDB remains active');
+  const restore = await restorePinContinuity(userId);
+  if (restore.status === 'restored') {
+    const candidate = restore.record as unknown as LocalPinRecord;
+    try {
+      await persistLocalRecord(userId, candidate);
+    } catch {
+      // Le record reste utilisable en mémoire même si le stockage refuse.
     }
+    return { record: candidate, remote: 'restored' };
   }
+  return { record: null, remote: restore.status };
 }
 
 async function removeLocalPin(userId: string): Promise<void> {
