@@ -49,7 +49,7 @@ jobs:
         run: |
           rm -f .github/scripts/apply-ios-native-keychain-plugin.py
           rm -f .github/workflows/apply-ios-native-keychain-plugin.yml
-          git checkout main -- public/version.json
+          git checkout origin/main -- public/version.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
