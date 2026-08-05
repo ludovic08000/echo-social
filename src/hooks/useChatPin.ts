@@ -664,6 +664,17 @@ export function useChatPin() {
       return false;
     }
     await removeLocalPin(user.id);
+    // Un reset confirmé efface aussi le coffre distant : le prochain setup
+    // recrée une continuité entièrement neuve.
+    const vaultCleared = await deleteRemotePinContinuity();
+    if (!vaultCleared) {
+      setState((current) => ({
+        ...current,
+        processing: false,
+        error: 'Le coffre PIN distant n’a pas pu être supprimé. Réessayez.',
+      }));
+      return false;
+    }
     unlockedRef.current = false;
     storageRemove(sessionStorage, SESSION_KEY);
     storageRemove(localStorage, `${MODE_PREFIX}${user.id}`);
