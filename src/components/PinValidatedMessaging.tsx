@@ -190,6 +190,15 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
 
         // A fresh registration starts in `repairing`. The restore path must
         // explicitly certify the route after the signed prekey is published.
+        if (report.deviceId && report.deviceId !== deviceId) {
+          deviceId = report.deviceId;
+          recordEnrollment(
+            'E2EE_DEVICE_ID_SERVER_ASSIGNED',
+            'ready',
+            'server_device_id',
+          );
+        }
+
         await markCurrentRouteReady(deviceId);
         route = await inspectCurrentDeviceRoute(userId, deviceId);
         if (!route.ready) throw new Error('DEVICE_ROUTE_NOT_READY_AFTER_RESYNC');

@@ -229,7 +229,7 @@ export function setCurrentDeviceId(id: string): string {
   if (!id || typeof id !== 'string') return getCurrentDeviceId();
   if (memoryDeviceId === id) return id;
   hydrationPromise = null;
-  console.log('[device-id] forcing device id from backup', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8), scoped: !!currentDeviceUserScope });
+  console.log('[device-id] committing authoritative device id', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8), scoped: !!currentDeviceUserScope });
   return persistEverywhere(id);
 }
 
