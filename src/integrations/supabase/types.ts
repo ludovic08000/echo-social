@@ -564,6 +564,66 @@ export type Database = {
           },
         ]
       }
+      aegis_device_inbox: {
+        Row: {
+          acked_at: string | null
+          available_at: string
+          copy_id: string
+          created_at: string
+          expires_at: string
+          last_synced_at: string | null
+          message_id: string
+          read_at: string | null
+          recipient_device_id: string
+          recipient_user_id: string
+          state: string
+          sync_attempt_count: number
+        }
+        Insert: {
+          acked_at?: string | null
+          available_at?: string
+          copy_id: string
+          created_at?: string
+          expires_at?: string
+          last_synced_at?: string | null
+          message_id: string
+          read_at?: string | null
+          recipient_device_id: string
+          recipient_user_id: string
+          state?: string
+          sync_attempt_count?: number
+        }
+        Update: {
+          acked_at?: string | null
+          available_at?: string
+          copy_id?: string
+          created_at?: string
+          expires_at?: string
+          last_synced_at?: string | null
+          message_id?: string
+          read_at?: string | null
+          recipient_device_id?: string
+          recipient_user_id?: string
+          state?: string
+          sync_attempt_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aegis_device_inbox_copy_id_fkey"
+            columns: ["copy_id"]
+            isOneToOne: true
+            referencedRelation: "message_device_copies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aegis_device_inbox_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       aegis_recovery_vaults: {
         Row: {
           ciphertext: string
@@ -699,6 +759,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      aegis_x3dh_initial_replay: {
+        Row: {
+          created_at: string
+          expires_at: string
+          finalized_at: string | null
+          fingerprint: string
+          reservation_token: string | null
+          reserved_until: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          finalized_at?: string | null
+          fingerprint: string
+          reservation_token?: string | null
+          reserved_until?: string | null
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          finalized_at?: string | null
+          fingerprint?: string
+          reservation_token?: string | null
+          reserved_until?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       ai_agent_conversations: {
         Row: {
@@ -8001,6 +8097,14 @@ export type Database = {
         Args: { _expected_step: number; _user_id: string }
         Returns: number
       }
+      aegis_ack_device_messages: {
+        Args: {
+          p_device_id: string
+          p_mark_read?: boolean
+          p_message_ids: string[]
+        }
+        Returns: number
+      }
       aegis_call_create: {
         Args: {
           p_call_id: string
@@ -8024,6 +8128,7 @@ export type Database = {
         Args: { p_call_id: string; p_device_id: string; p_status: string }
         Returns: Json
       }
+      aegis_prune_device_inbox: { Args: never; Returns: Json }
       aegis_resolve_conversation_route: {
         Args: { p_conversation_id: string; p_sender_device_id?: string }
         Returns: Json
@@ -8040,6 +8145,26 @@ export type Database = {
           p_sender_device_id: string
         }
         Returns: Json
+      }
+      aegis_sync_device: {
+        Args: { p_device_id: string; p_limit?: number }
+        Returns: {
+          archive_body: string
+          conversation_id: string
+          copy_id: string
+          created_at: string
+          document_mime: string
+          document_name: string
+          document_size_bytes: number
+          document_url: string
+          encrypted_body: string
+          expires_at: string
+          image_url: string
+          message_id: string
+          parent_body: string
+          sender_device_id: string
+          sender_user_id: string
+        }[]
       }
       ai_engine_module_stats: {
         Args: { p_window_minutes?: number }
@@ -8079,6 +8204,10 @@ export type Database = {
       }
       can_view_order_item: {
         Args: { _order_id: string; _seller_id: string }
+        Returns: boolean
+      }
+      cancel_x3dh_initial: {
+        Args: { p_fingerprint: string; p_reservation_token: string }
         Returns: boolean
       }
       check_login_rate_limit: {
@@ -8262,6 +8391,10 @@ export type Database = {
           post_id: string
           reason: string
         }[]
+      }
+      finalize_x3dh_initial: {
+        Args: { p_fingerprint: string; p_reservation_token: string }
+        Returns: boolean
       }
       generate_order_number: { Args: never; Returns: string }
       get_active_device_public_key: {
@@ -8917,6 +9050,10 @@ export type Database = {
           p_requester_device_id: string
           p_sender_user_id: string
         }
+        Returns: Json
+      }
+      reserve_x3dh_initial: {
+        Args: { p_fingerprint: string; p_ttl_seconds?: number }
         Returns: Json
       }
       reset_backup_pin_attempts: {
