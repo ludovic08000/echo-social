@@ -15,6 +15,8 @@ import {
   type PublicIdentityBundle,
 } from './keyManager';
 import { getOrCreateDeviceKxKey, type DeviceKxKey } from './deviceKx';
+import { isSecureStoreNative } from '@/lib/secureStore';
+import { readNativeKeyRecord, removeNativeKeyRecord, writeNativeKeyRecord } from './nativeKeyVault';
 
 export interface DeviceIdentityKey {
   publicKey: CryptoKey;
@@ -42,6 +44,60 @@ const creationJobs = new Map<string, Promise<DeviceIdentityKey>>();
 
 function storageKey(userId: string, deviceId: string): string {
   return `device-signing::${userId}::${deviceId}`;
+}
+
+function isStoredDeviceIdentity(
+  value: unknown,
+  userId: string,
+  deviceId: string,
+): value is StoredDeviceIdentity {
+  const candidate = value as Partial<StoredDeviceIdentity> | null;
+  return Boolean(
+    candidate &&
+    candidate.id === storageKey(userId, deviceId) &&
+    candidate.userId === userId &&
+    candidate.deviceId === deviceId &&
+    candidate.publicKeyJWK && typeof candidate.publicKeyJWK === 'object' &&
+    candidate.privateKeyJWK && typeof candidate.privateKeyJWK === 'object' &&
+    typeof candidate.createdAt === 'number' && Number.isFinite(candidate.createdAt)
+  );
+}
+
+async function loadStoredDeviceIdentity(
+  userId: string,
+  deviceId: string,
+): Promise<StoredDeviceIdentity | null> {
+  const id = storageKey(userId, deviceId);
+  if (isSecureStoreNative()) {
+    const native = await readNativeKeyRecord(id, (value): value is StoredDeviceIdentity =>
+      isStoredDeviceIdentity(value, userId, deviceId));
+    if (native) {
+      await dbPut(native).catch(() => undefined);
+      return native;
+    }
+    const legacy = await dbGet<StoredDeviceIdentity>(id);
+    if (!legacy) return null;
+    if (!isStoredDeviceIdentity(legacy, userId, deviceId)) {
+      throw new Error('E2EE_DEVICE_SIGNING_RECORD_INVALID');
+    }
+    await writeNativeKeyRecord(id, legacy);
+    return legacy;
+  }
+  const stored = await dbGet<StoredDeviceIdentity>(id);
+  if (!stored) return null;
+  if (!isStoredDeviceIdentity(stored, userId, deviceId)) {
+    throw new Error('E2EE_DEVICE_SIGNING_RECORD_INVALID');
+  }
+  return stored;
+}
+
+async function persistStoredDeviceIdentity(record: StoredDeviceIdentity): Promise<void> {
+  if (isSecureStoreNative()) {
+    await writeNativeKeyRecord(record.id, record);
+    await dbPut(record).catch(() => undefined);
+    return;
+  }
+  await dbPut(record);
 }
 
 function dbGet<T>(key: string): Promise<T | undefined> {
@@ -98,7 +154,7 @@ export async function loadDeviceIdentity(
   userId: string,
   deviceId: string,
 ): Promise<DeviceIdentityKey | null> {
-  const stored = await dbGet<StoredDeviceIdentity>(storageKey(userId, deviceId));
+  const stored = await loadStoredDeviceIdentity(userId, deviceId);
   if (!stored) return null;
   const [publicKey, privateKey] = await Promise.all([
     importKeyFromJWK(stored.publicKeyJWK, SIG_KEY_PARAMS, ['verify'], true),
@@ -142,7 +198,7 @@ async function createDeviceIdentityUnderLock(
       exportKeyToJWK(generated.privateKey),
       publicKeyToBase64(generated.publicKey),
     ]);
-    await dbPut<StoredDeviceIdentity>({
+    await persistStoredDeviceIdentity({
       id,
       userId,
       deviceId,
@@ -168,12 +224,12 @@ async function createDeviceIdentityUnderLock(
 
 /** Remove a provisional signing identity after confirmed server cancellation. */
 export async function deleteDeviceIdentity(userId: string, deviceId: string): Promise<void> {
-  creationJobs.delete(storageKey(userId, deviceId));
-  try {
-    await dbDelete(storageKey(userId, deviceId));
-  } catch {
-    // Failure cleanup is best-effort; never rotate an established device here.
-  }
+  const id = storageKey(userId, deviceId);
+  creationJobs.delete(id);
+  await Promise.allSettled([
+    dbDelete(id),
+    removeNativeKeyRecord(id),
+  ]);
 }
 
 export async function signDeviceAuthorization(args: {
