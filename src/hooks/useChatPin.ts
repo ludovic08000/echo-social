@@ -12,6 +12,12 @@ import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { loadIdentityKeys } from '@/lib/crypto/keyManager';
 import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
 import {
+  deleteRemotePinContinuity,
+  hasRemotePinContinuity,
+  publishPinContinuity,
+  restorePinContinuity,
+} from '@/lib/crypto/pinContinuityVault';
+import {
   isSecureStoreNative,
   secureGetSecret,
   secureRemoveSecret,
