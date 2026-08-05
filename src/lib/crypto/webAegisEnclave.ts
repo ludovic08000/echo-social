@@ -214,9 +214,9 @@ async function createAnchor(): Promise<WebEnclaveAnchorRecord> {
   };
 
   try {
-    await enqueueWrite(() => runTransaction([ANCHOR_STORE], 'readwrite', (tx) =>
+    await runTransaction([ANCHOR_STORE], 'readwrite', (tx) =>
       requestToPromise(tx.objectStore(ANCHOR_STORE).add(record)),
-    ));
+    );
     return record;
   } catch (error) {
     const name = error instanceof DOMException ? error.name : '';
@@ -281,12 +281,10 @@ export async function webAegisEnclaveGet(key: string): Promise<string | null> {
 export async function webAegisEnclaveSet(key: string, value: string): Promise<void> {
   requireBrowserPrimitives();
   void requestPersistentStorage();
+  const anchor = await requireAnchorForExistingData();
 
   await enqueueWrite(async () => {
-    const [anchor, current] = await Promise.all([
-      requireAnchorForExistingData(),
-      readSecret(key),
-    ]);
+    const current = await readSecret(key);
     const revision = (current?.revision ?? 0) + 1;
     const iv = hardCrypto.getRandomValues(new Uint8Array(12));
     const ciphertext = await hardCrypto.encrypt(
