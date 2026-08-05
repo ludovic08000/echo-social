@@ -1,0 +1,49 @@
+name: Live Server Device Enrollment
+
+on:
+  push:
+    branches:
+      - fix/ios-pin-device-enrollment
+    paths:
+      - .github/workflows/live-server-device-enrollment.yml
+      - src/lib/crypto/__tests__/serverAssignedDeviceEnrollmentLive.test.ts
+      - src/lib/crypto/serverDeviceEnrollment.ts
+      - src/lib/crypto/resyncE2EE.ts
+      - supabase/migrations/20260805051500_server_assigned_device_enrollment.sql
+      - supabase/migrations/20260805052500_device_enrollment_failure_settlement.sql
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-server-device-enrollment
+  cancel-in-progress: false
+
+jobs:
+  enroll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AEGIS_LIVE_SERVER_DEVICE_ENROLLMENT: '1'
+      SUPABASE_URL: https://vkpmoqfzrihcijjochks.supabase.co
+      SUPABASE_ANON_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
+      VITE_SUPABASE_URL: https://vkpmoqfzrihcijjochks.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
+
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/ios-pin-device-enrollment
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run live server-assigned DeviceID enrollment
+        run: npx vitest run src/lib/crypto/__tests__/serverAssignedDeviceEnrollmentLive.test.ts --reporter=verbose
