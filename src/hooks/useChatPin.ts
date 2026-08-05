@@ -528,7 +528,23 @@ export function useChatPin() {
         return false;
       }
 
-      await saveLocalPin(user.id, pin);
+      // Un coffre distant existant signifie que le PIN du compte est encore
+      // valide : on ne le remplace jamais silencieusement.
+      const remote = await hasRemotePinContinuity();
+      if (remote !== false) {
+        setState((current) => ({
+          ...current,
+          processing: false,
+          hasPin: true,
+          error: remote === true
+            ? 'Un PIN existe déjà pour ce compte. Restaurez votre compte sécurisé pour le saisir.'
+            : 'Coffre PIN indisponible. Aucun nouveau PIN n’a été créé.',
+        }));
+        return false;
+      }
+
+      const record = await saveLocalPin(user.id, pin);
+      const published = await publishPinContinuity(user.id, record);
       unlockedRef.current = true;
       announceUnlock(user.id);
       pinModeRef.current = 'every_open';
@@ -537,7 +553,11 @@ export function useChatPin() {
         loaded: true,
         hasPin: true,
         unlocked: true,
-        error: null,
+        error: published === 'published'
+          ? null
+          : published === 'master_key_unavailable'
+            ? 'PIN activé sur cet appareil uniquement : compte sécurisé verrouillé, continuité non enregistrée.'
+            : 'PIN activé sur cet appareil uniquement : la continuité sécurisée n’a pas pu être enregistrée.',
         processing: false,
         pinMode: 'every_open',
       });
@@ -547,7 +567,8 @@ export function useChatPin() {
       void supabase.functions.invoke('verify-chat-pin', {
         body: { action: 'register-local-recovery' },
       }).catch(() => undefined);
-      return true;
+      return published === 'published';
+
     } catch (error) {
       console.warn('[LOCAL-PIN] setup failed', error);
       setState((current) => ({ ...current, processing: false, error: 'Stockage local indisponible' }));
