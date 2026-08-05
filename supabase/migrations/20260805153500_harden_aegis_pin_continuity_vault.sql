@@ -190,18 +190,16 @@ to authenticated, service_role;
 
 do $verification$
 begin
-  if has_table_privilege(
-    'authenticated',
-    'public.aegis_pin_continuity_vault',
-    'select,insert,update,delete'
-  ) then
+  if has_table_privilege('authenticated', 'public.aegis_pin_continuity_vault', 'select')
+     or has_table_privilege('authenticated', 'public.aegis_pin_continuity_vault', 'insert')
+     or has_table_privilege('authenticated', 'public.aegis_pin_continuity_vault', 'update')
+     or has_table_privilege('authenticated', 'public.aegis_pin_continuity_vault', 'delete') then
     raise exception 'AEGIS_PIN_CONTINUITY_DIRECT_AUTHENTICATED_ACCESS';
   end if;
-  if has_table_privilege(
-    'anon',
-    'public.aegis_pin_continuity_vault',
-    'select,insert,update,delete'
-  ) then
+  if has_table_privilege('anon', 'public.aegis_pin_continuity_vault', 'select')
+     or has_table_privilege('anon', 'public.aegis_pin_continuity_vault', 'insert')
+     or has_table_privilege('anon', 'public.aegis_pin_continuity_vault', 'update')
+     or has_table_privilege('anon', 'public.aegis_pin_continuity_vault', 'delete') then
     raise exception 'AEGIS_PIN_CONTINUITY_DIRECT_ANON_ACCESS';
   end if;
   if not has_function_privilege(
