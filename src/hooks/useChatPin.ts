@@ -12,6 +12,12 @@ import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { loadIdentityKeys } from '@/lib/crypto/keyManager';
 import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
 import {
+  deleteRemotePinContinuity,
+  hasRemotePinContinuity,
+  publishPinContinuity,
+  restorePinContinuity,
+} from '@/lib/crypto/pinContinuityVault';
+import {
   isSecureStoreNative,
   secureGetSecret,
   secureRemoveSecret,
@@ -173,7 +179,30 @@ async function loadLocalPin(userId: string): Promise<LocalPinRecord | null> {
   return null;
 }
 
-async function saveLocalPin(userId: string, pin: string): Promise<void> {
+async function persistLocalRecord(userId: string, record: LocalPinRecord): Promise<void> {
+  await runTxOn('pin-wrap', [STORE], 'readwrite', (tx) => {
+    tx.objectStore(STORE).put(record);
+  });
+
+  const persisted = await runTxOn('pin-wrap', [STORE], 'readonly', (tx) =>
+    reqToPromise(tx.objectStore(STORE).get(userId)),
+  ) as Partial<LocalPinRecord> | undefined;
+  if (persisted?.version !== PIN_VERSION || persisted.wrappedBlob !== record.wrappedBlob) {
+    throw new Error('PIN_PERSISTENCE_READBACK_FAILED');
+  }
+
+  if (isSecureStoreNative()) {
+    const mirrored = await secureSetSecret(
+      `${SECURE_PIN_PREFIX}${userId}`,
+      JSON.stringify(record),
+    );
+    if (!mirrored) {
+      console.warn('[LOCAL-PIN] native secure mirror unavailable; IndexedDB remains active');
+    }
+  }
+}
+
+async function saveLocalPin(userId: string, pin: string): Promise<LocalPinRecord> {
   const salt = hardCrypto.getRandomValues(new Uint8Array(32));
   const iv = hardCrypto.getRandomValues(new Uint8Array(12));
   const key = await derivePinKey(pin, salt);
@@ -195,26 +224,33 @@ async function saveLocalPin(userId: string, pin: string): Promise<void> {
     wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
     createdAt: Date.now(),
   };
-  await runTxOn('pin-wrap', [STORE], 'readwrite', (tx) => {
-    tx.objectStore(STORE).put(record);
-  });
+  await persistLocalRecord(userId, record);
+  return record;
+}
 
-  const persisted = await runTxOn('pin-wrap', [STORE], 'readonly', (tx) =>
-    reqToPromise(tx.objectStore(STORE).get(userId)),
-  ) as Partial<LocalPinRecord> | undefined;
-  if (persisted?.version !== PIN_VERSION || persisted.wrappedBlob !== record.wrappedBlob) {
-    throw new Error('PIN_PERSISTENCE_READBACK_FAILED');
-  }
+/**
+ * Invariant : après purge du cache, le même PIN reste valide dès que la Master
+ * Key du compte est restaurée. Le coffre distant ne contient qu'une enveloppe
+ * scellée par cette Master Key, jamais le PIN.
+ */
+async function resolvePinRecord(userId: string): Promise<{
+  record: LocalPinRecord | null;
+  remote: 'restored' | 'absent' | 'locked' | 'unavailable' | 'invalid' | 'not_checked';
+}> {
+  const local = await loadLocalPin(userId);
+  if (local) return { record: local, remote: 'not_checked' };
 
-  if (isSecureStoreNative()) {
-    const mirrored = await secureSetSecret(
-      `${SECURE_PIN_PREFIX}${userId}`,
-      JSON.stringify(record),
-    );
-    if (!mirrored) {
-      console.warn('[LOCAL-PIN] native secure mirror unavailable; IndexedDB remains active');
+  const restore = await restorePinContinuity(userId);
+  if (restore.status === 'restored') {
+    const candidate = restore.record as unknown as LocalPinRecord;
+    try {
+      await persistLocalRecord(userId, candidate);
+    } catch {
+      // Le record reste utilisable en mémoire même si le stockage refuse.
     }
+    return { record: candidate, remote: 'restored' };
   }
+  return { record: null, remote: restore.status };
 }
 
 async function removeLocalPin(userId: string): Promise<void> {
@@ -366,7 +402,8 @@ export function useChatPin() {
     }
 
     const refresh = async (unlockCurrentOpen = false) => {
-      const record = await loadLocalPin(user.id);
+      const resolved = await resolvePinRecord(user.id);
+      const record = resolved.record;
       const safety = record
         ? null
         : await inspectSetupSafety(user.id);
@@ -377,18 +414,30 @@ export function useChatPin() {
       // Recovery/uncertain states deliberately use the PIN-entry side of the
       // gate. Only a proven first setup or a matching restored identity may
       // display the PIN-creation screen.
-      const hasPin = Boolean(record) || Boolean(safety && !safety.allowed);
+      const remoteVaultBlocks = !record && (
+        resolved.remote === 'locked' ||
+        resolved.remote === 'unavailable' ||
+        resolved.remote === 'invalid'
+      );
+      const hasPin = Boolean(record) || remoteVaultBlocks || Boolean(safety && !safety.allowed);
       if (unlockCurrentOpen) unlockedRef.current = true;
       if (!record) unlockedRef.current = false;
       const unlocked = Boolean(record) && (
         unlockCurrentOpen || unlockedRef.current || (mode !== 'every_open' && sessionUnlocked)
       );
 
-      const recoveryError = !record && safety?.reason === 'restore_required'
-        ? 'Restaurez votre identité sécurisée existante avant de créer un nouveau PIN.'
-        : !record && safety?.reason === 'inspection_unavailable'
-          ? 'Vérification de sécurité indisponible. Réessayez après la restauration du compte.'
-          : null;
+      const recoveryError = record
+        ? null
+        : resolved.remote === 'locked'
+          ? 'Votre PIN existe toujours. Restaurez votre compte sécurisé (mot de passe ou clé de récupération) pour le réutiliser.'
+          : resolved.remote === 'invalid' || resolved.remote === 'unavailable'
+            ? 'Coffre PIN indisponible pour le moment. Réessayez après la restauration du compte.'
+            : safety?.reason === 'restore_required'
+              ? 'Restaurez votre identité sécurisée existante avant de créer un nouveau PIN.'
+              : safety?.reason === 'inspection_unavailable'
+                ? 'Vérification de sécurité indisponible. Réessayez après la restauration du compte.'
+                : null;
+
 
       pinModeRef.current = mode;
       setState({
@@ -479,7 +528,23 @@ export function useChatPin() {
         return false;
       }
 
-      await saveLocalPin(user.id, pin);
+      // Un coffre distant existant signifie que le PIN du compte est encore
+      // valide : on ne le remplace jamais silencieusement.
+      const remote = await hasRemotePinContinuity();
+      if (remote !== false) {
+        setState((current) => ({
+          ...current,
+          processing: false,
+          hasPin: true,
+          error: remote === true
+            ? 'Un PIN existe déjà pour ce compte. Restaurez votre compte sécurisé pour le saisir.'
+            : 'Coffre PIN indisponible. Aucun nouveau PIN n’a été créé.',
+        }));
+        return false;
+      }
+
+      const record = await saveLocalPin(user.id, pin);
+      const published = await publishPinContinuity(user.id, record);
       unlockedRef.current = true;
       announceUnlock(user.id);
       pinModeRef.current = 'every_open';
@@ -488,7 +553,11 @@ export function useChatPin() {
         loaded: true,
         hasPin: true,
         unlocked: true,
-        error: null,
+        error: published === 'published'
+          ? null
+          : published === 'master_key_unavailable'
+            ? 'PIN activé sur cet appareil uniquement : compte sécurisé verrouillé, continuité non enregistrée.'
+            : 'PIN activé sur cet appareil uniquement : la continuité sécurisée n’a pas pu être enregistrée.',
         processing: false,
         pinMode: 'every_open',
       });
@@ -498,7 +567,8 @@ export function useChatPin() {
       void supabase.functions.invoke('verify-chat-pin', {
         body: { action: 'register-local-recovery' },
       }).catch(() => undefined);
-      return true;
+      return published === 'published';
+
     } catch (error) {
       console.warn('[LOCAL-PIN] setup failed', error);
       setState((current) => ({ ...current, processing: false, error: 'Stockage local indisponible' }));
@@ -514,8 +584,8 @@ export function useChatPin() {
     }
     setState((current) => ({ ...current, processing: true, error: null }));
 
-    const localRecord = await loadLocalPin(user.id);
-    if (localRecord) {
+    const resolved = await resolvePinRecord(user.id);
+    if (resolved.record) {
       const valid = await verifyLocalPin(user.id, pin);
       if (!valid) {
         setState((current) => ({ ...current, processing: false, error: 'PIN incorrect' }));
@@ -546,7 +616,9 @@ export function useChatPin() {
     setState((current) => ({
       ...current,
       processing: false,
-      error: 'Ce PIN est local à cet appareil. Restaurez d’abord les clés avec votre mot de passe ou votre clé de récupération.',
+      error: resolved.remote === 'locked'
+        ? 'Votre PIN existe toujours. Restaurez votre compte sécurisé pour le saisir à nouveau.'
+        : 'Ce PIN est local à cet appareil. Restaurez d’abord les clés avec votre mot de passe ou votre clé de récupération.',
     }));
     return false;
   }, [user?.id]);
@@ -592,6 +664,17 @@ export function useChatPin() {
       return false;
     }
     await removeLocalPin(user.id);
+    // Un reset confirmé efface aussi le coffre distant : le prochain setup
+    // recrée une continuité entièrement neuve.
+    const vaultCleared = await deleteRemotePinContinuity();
+    if (!vaultCleared) {
+      setState((current) => ({
+        ...current,
+        processing: false,
+        error: 'Le coffre PIN distant n’a pas pu être supprimé. Réessayez.',
+      }));
+      return false;
+    }
     unlockedRef.current = false;
     storageRemove(sessionStorage, SESSION_KEY);
     storageRemove(localStorage, `${MODE_PREFIX}${user.id}`);
@@ -626,6 +709,7 @@ export const __test__ = {
   saveLocalPin,
   verifyLocalPin,
   removeLocalPin,
+  resolvePinRecord,
   inspectServerContinuity,
   inspectSetupSafety,
 };
