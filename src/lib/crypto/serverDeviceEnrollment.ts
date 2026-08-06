@@ -210,8 +210,13 @@ export async function hasRegisteredDevice(
 
 /**
  * Existing accounts use the fingerprint pinned by the server. A genuinely new
- * account has no server identity yet, so its locally generated stable account
- * identity supplies the fingerprint used to bind the first device challenge.
+ * account has no server identity and no device history, so its locally generated
+ * stable account identity may supply the fingerprint for the first challenge.
+ *
+ * Device history without an active account identity is a legacy/inconsistent
+ * state. It must enter an explicit migration or recovery flow; silently minting
+ * a replacement account root here would invalidate every previously trusted
+ * device and peer fingerprint.
  */
 export async function readActiveAccountFingerprint(userId: string): Promise<string> {
   const { data, error } = await supabase
@@ -226,6 +231,20 @@ export async function readActiveAccountFingerprint(userId: string): Promise<stri
   if (error) throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${error.message}`);
   const serverFingerprint = String(data?.fingerprint ?? '').trim();
   if (serverFingerprint.length >= 32) return serverFingerprint;
+
+  const { data: deviceHistory, error: deviceHistoryError } = await supabase
+    .from('user_devices')
+    .select('device_id')
+    .eq('user_id', userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (deviceHistoryError) {
+    throw new Error(`ACCOUNT_DEVICE_HISTORY_LOOKUP_FAILED:${deviceHistoryError.message}`);
+  }
+  if (deviceHistory?.device_id) {
+    throw new Error('ACCOUNT_IDENTITY_BOOTSTRAP_REQUIRES_EXPLICIT_MIGRATION');
+  }
 
   const { getOrCreateIdentityKeys } = await import('@/lib/crypto/keyManagerSafe');
   const localIdentity = await getOrCreateIdentityKeys(userId);
