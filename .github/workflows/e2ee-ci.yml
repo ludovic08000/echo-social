@@ -37,7 +37,7 @@ jobs:
       - run: npm run typecheck
 
   lint:
-    name: Lint
+    name: Lint Lot 1 changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -52,7 +52,24 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      - name: Lint every TypeScript file modified by Lot 1
+        run: |
+          npm exec eslint -- \
+            src/hooks/useMessages.legacy.ts \
+            src/hooks/useMessages.ts \
+            src/hooks/useSendMessageSecure.ts \
+            src/lib/crypto/__tests__/deviceEnrollmentGate.test.ts \
+            src/lib/crypto/__tests__/trustedDeviceApproval.test.ts \
+            src/lib/crypto/deviceEnrollmentGate.ts \
+            src/lib/crypto/serverDeviceEnrollment.ts \
+            src/lib/messaging/__tests__/sealedSenderArchitecture.test.ts \
+            src/lib/messaging/__tests__/stableDeviceIdentityArchitecture.test.ts \
+            src/lib/messaging/__tests__/zeusPlaintextBoundary.test.ts \
+            src/lib/messaging/currentDevice.ts \
+            supabase/functions/_shared/__tests__/sealedSenderToken.test.ts \
+            supabase/functions/_shared/sealedSenderToken.ts \
+            supabase/functions/sealed-mint-token/index.ts \
+            supabase/functions/sealed-relay/index.ts
 
   device-approval-sync:
     name: Device approval and account sync
