@@ -17,6 +17,14 @@ describe('Sealed Sender v1 architecture', () => {
     expect(mint).toContain("from('conversations')");
   });
 
+  it('pins the Edge Function SDK dependency to a reviewed version', () => {
+    const pinnedImport = "https://esm.sh/@supabase/supabase-js@2.45.4";
+    expect(mint).toContain(pinnedImport);
+    expect(relay).toContain(pinnedImport);
+    expect(mint).not.toContain("@supabase/supabase-js@2';");
+    expect(relay).not.toContain("@supabase/supabase-js@2';");
+  });
+
   it('validates exact relay context and size limits before the service-role RPC', () => {
     expect(relay).toContain('conversation_mismatch');
     expect(relay).toContain('recipient_mismatch');
