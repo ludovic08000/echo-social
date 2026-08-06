@@ -3,17 +3,41 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
-import type { Message } from './useMessages.legacy';
 
 const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
-const messagesKey = (conversationId: string, userId: string | undefined) =>
-  ['messages', conversationId, userId ?? 'anon'] as const;
+async function assertRegularMessengerConversation(conversationId: string): Promise<void> {
+  const [conversationResult, zeusParticipantResult] = await Promise.all([
+    supabase
+      .from('conversations')
+      .select('created_by')
+      .eq('id', conversationId)
+      .maybeSingle(),
+    supabase
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', conversationId)
+      .eq('user_id', ZEUS_BOT_ID)
+      .maybeSingle(),
+  ]);
+
+  if (conversationResult.error) throw conversationResult.error;
+  if (zeusParticipantResult.error) throw zeusParticipantResult.error;
+  if (!conversationResult.data) throw new Error('Conversation introuvable.');
+
+  if (
+    conversationResult.data.created_by === ZEUS_BOT_ID
+    || zeusParticipantResult.data?.user_id === ZEUS_BOT_ID
+  ) {
+    throw new Error("Zeus est disponible uniquement dans l’espace IA dédié.");
+  }
+}
 
 /**
  * The regular messenger has exactly one outbound transport: Aegis E2EE.
  * Zeus conversations belong to the dedicated AI surface and are rejected
- * before encryption or optimistic persistence is attempted.
+ * before encryption or optimistic persistence is attempted. The database
+ * trigger remains the final fail-closed boundary for historical blocked shells.
  */
 export function useSendMessage() {
   const queryClient = useQueryClient();
@@ -27,16 +51,7 @@ export function useSendMessage() {
     }) => {
       if (!user) throw new Error('Not authenticated');
 
-      const { data: conversation, error: conversationError } = await supabase
-        .from('conversations')
-        .select('created_by')
-        .eq('id', conversationId)
-        .maybeSingle();
-
-      if (conversationError) throw conversationError;
-      if (conversation?.created_by === ZEUS_BOT_ID) {
-        throw new Error("Zeus est disponible uniquement dans l’espace IA dédié.");
-      }
+      await assertRegularMessengerConversation(conversationId);
 
       const isSpecialMessage = body.startsWith('🎙️ voice:') || body === '📷 Image';
       if (!isSpecialMessage) {
@@ -74,42 +89,6 @@ export function useSendMessage() {
         sender_id: user.id,
         body: sent.parentBody,
       };
-    },
-    onMutate: async (variables) => {
-      if (!user) return;
-
-      const key = messagesKey(variables.conversationId, user.id);
-      await queryClient.cancelQueries({ queryKey: key });
-      const previousMessages = queryClient.getQueryData<Message[]>(key);
-      const profile = queryClient.getQueryData<{ name?: string; avatar_url?: string | null }>([
-        'profile',
-        user.id,
-      ]);
-
-      const optimisticMessage: Message = {
-        id: `optimistic-${Date.now()}`,
-        conversation_id: variables.conversationId,
-        sender_id: user.id,
-        body: variables.body,
-        image_url: variables.imageUrl || null,
-        created_at: new Date().toISOString(),
-        status: 'delivered',
-        profile: {
-          name: profile?.name || user.user_metadata?.name || 'Moi',
-          avatar_url: profile?.avatar_url || null,
-        },
-      };
-
-      queryClient.setQueryData<Message[]>(key, (old) => [...(old || []), optimisticMessage]);
-      return { previousMessages };
-    },
-    onError: (_error, variables, context) => {
-      if (context?.previousMessages) {
-        queryClient.setQueryData(
-          messagesKey(variables.conversationId, user?.id),
-          context.previousMessages,
-        );
-      }
     },
     onSettled: (_data, _error, variables) => {
       void queryClient.invalidateQueries({ queryKey: ['messages', variables.conversationId] });
