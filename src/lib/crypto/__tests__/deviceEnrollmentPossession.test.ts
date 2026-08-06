@@ -9,6 +9,10 @@ const migration = readFileSync(
   'supabase/migrations/20260806130000_bind_device_possession_to_exact_challenge.sql',
   'utf8',
 ).toLowerCase();
+const liveExpiryGuard = readFileSync(
+  'supabase/migrations/20260806153000_enforce_current_device_approval_challenge.sql',
+  'utf8',
+).toLowerCase();
 const enrollmentClient = readFileSync('src/lib/crypto/serverDeviceEnrollment.ts', 'utf8');
 const approvalFunction = readFileSync(
   'supabase/functions/approve-device-enrollment/index.ts',
@@ -67,5 +71,15 @@ describe('device enrollment possession proof', () => {
     expect(migration).toContain('v_challenge.consumed_at > v_challenge.expires_at');
     expect(migration).toContain('device_approval_challenge_binding_required');
     expect(migration).toContain('to service_role');
+  });
+
+  it('requires the exact challenge to remain unexpired at finalization time', () => {
+    expect(liveExpiryGuard).toContain('challenge.id = p_challenge_id');
+    expect(liveExpiryGuard).toContain('challenge.user_id = p_user_id');
+    expect(liveExpiryGuard).toContain('challenge.device_id = trim(p_device_id)');
+    expect(liveExpiryGuard).toContain('v_challenge.expires_at <= v_now');
+    expect(liveExpiryGuard).toContain('v_challenge.consumed_at > v_challenge.expires_at');
+    expect(liveExpiryGuard).toContain('device_possession_proof_changed');
+    expect(liveExpiryGuard).toContain('to service_role');
   });
 });
