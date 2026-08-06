@@ -214,10 +214,9 @@ export async function approveServerAssignedDevice(deviceId: string): Promise<str
     throw new Error('DEVICE_APPROVAL_INVALID_DEVICE_ID');
   }
 
-  const { data, error } = await supabase.rpc(
-    'approve_user_device' as never,
-    { p_device_id: deviceId } as never,
-  );
+  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
+    body: { device_id: deviceId },
+  });
 
   if (error) throw new Error(`DEVICE_APPROVAL_FAILED:${error.message}`);
   return parseApprovedDevice(data, deviceId);
