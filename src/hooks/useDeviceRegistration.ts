@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';
@@ -55,6 +56,8 @@ import {
   type DevicePlatform,
 } from '@/lib/crypto/serverDeviceEnrollment';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
+import { beginAccountSynchronization } from '@/lib/messaging/accountSyncBarrier';
+import { syncAegisDeviceInbox } from '@/lib/messaging/aegisDeviceInbox';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
 import {
@@ -152,6 +155,7 @@ async function restoreDeviceMaterial(userId: string): Promise<void> {
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const ranRef = useRef(false);
   const inFlightRef = useRef(false);
 
@@ -383,6 +387,20 @@ export function useDeviceRegistration() {
         invalidateAllFanoutRoutes();
         invalidateAegisDeviceRuntime(user.id);
         await ensureApprovedDeviceTrust(user.id, deviceId);
+
+        trace('ACCOUNT_SYNC_START');
+        await beginAccountSynchronization(user.id, async () => {
+          await syncAegisDeviceInbox(user.id);
+          await queryClient.invalidateQueries({ refetchType: 'none' });
+          await queryClient.refetchQueries({ type: 'active' });
+          window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+            detail: { reason: 'approved-device-account-sync', deviceId },
+          }));
+          window.dispatchEvent(new CustomEvent('forsure:account-sync-complete', {
+            detail: { userId: user.id, deviceId },
+          }));
+        });
+        trace('ACCOUNT_SYNC_READY');
         trace('DEVICE_READY');
 
         void import('@/lib/crypto/accountKeyBackup').then((vault) => {
@@ -484,5 +502,5 @@ export function useDeviceRegistration() {
       window.removeEventListener('forsure:authenticated-device-enroll', onAuthenticatedDeviceEnroll);
       window.removeEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
     };
-  }, [user]);
+  }, [queryClient, user]);
 }
