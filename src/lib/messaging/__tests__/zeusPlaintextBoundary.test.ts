@@ -5,6 +5,10 @@ const migration = readFileSync(
   'supabase/migrations/20260806233500_remove_zeus_plaintext_messenger.sql',
   'utf8',
 );
+const sqlSecurityTest = readFileSync(
+  'supabase/tests/zeus_plaintext_messaging.sql',
+  'utf8',
+);
 const messagesHook = readFileSync('src/hooks/useMessages.ts', 'utf8');
 const agentChat = readFileSync('supabase/functions/agent-chat/index.ts', 'utf8');
 
@@ -28,9 +32,19 @@ describe('Zeus plaintext boundary', () => {
     expect(migration).toContain('blocked.conversation_id = new.conversation_id');
   });
 
-  it('rejects Zeus participants and messages at the database boundary', () => {
-    expect(migration).toContain('reject_zeus_messenger_participant_trigger');
-    expect(migration).toContain('reject_zeus_messenger_message_trigger');
+  it('uses the canonical database guards asserted by pgTAP', () => {
+    expect(migration).toContain('create or replace function public.reject_plaintext_zeus_messenger()');
+    expect(migration).toContain('create trigger reject_plaintext_zeus_messenger');
+    expect(migration).toContain('create or replace function public.reject_zeus_messenger_participant()');
+    expect(migration).toContain('create trigger reject_zeus_messenger_participant');
+
+    expect(sqlSecurityTest).toContain("to_regprocedure('public.reject_plaintext_zeus_messenger()')");
+    expect(sqlSecurityTest).toContain("t.tgname = 'reject_plaintext_zeus_messenger'");
+    expect(sqlSecurityTest).toContain("to_regprocedure('public.reject_zeus_messenger_participant()')");
+    expect(sqlSecurityTest).toContain("t.tgname = 'reject_zeus_messenger_participant'");
+  });
+
+  it('rejects legacy plaintext paths at the database boundary', () => {
     expect(migration).toContain("new.sender_id = '00000000-0000-0000-0000-000000000001'::uuid");
     expect(migration).toContain("message = 'zeus_messenger_e2ee_required'");
     expect(migration).toContain('return null;');
@@ -42,9 +56,9 @@ describe('Zeus plaintext boundary', () => {
     expect(migration).toContain('from public.zeus_messenger_blocked_conversations blocked');
   });
 
-  it('documents every legacy caller guarded by the database invariant', () => {
+  it('documents every legacy caller currently guarded by the database invariant', () => {
     expect(messagesHook).toContain('sendToZeus');
     expect(agentChat).toContain('pushToMessenger');
-    expect(migration).toContain('A legacy caller may create a conversation');
+    expect(migration).toContain('legacy caller');
   });
 });
