@@ -209,17 +209,16 @@ export async function hasRegisteredDevice(
 }
 
 /**
- * Existing accounts use the fingerprint pinned by the server. A genuinely new
- * account has no server identity and no device history, so its locally generated
- * stable account identity may supply the fingerprint for the first challenge.
+ * Existing accounts use their active server fingerprint. If the public row is
+ * temporarily absent but an encrypted recovery vault remains, its pinned
+ * fingerprint is authoritative and keeps the device in account-recovery mode.
  *
- * Device history without an active account identity is a legacy/inconsistent
- * state. It must enter an explicit migration or recovery flow; silently minting
- * a replacement account root here would invalidate every previously trusted
- * device and peer fingerprint.
+ * A fresh identity may be generated only when there is no public identity, no
+ * recovery vault, no backup and no device history. Any other continuity
+ * evidence fails closed instead of silently replacing the account root.
  */
 export async function readActiveAccountFingerprint(userId: string): Promise<string> {
-  const { data, error } = await supabase
+  const { data: serverIdentity, error: identityError } = await supabase
     .from('user_public_keys')
     .select('fingerprint')
     .eq('user_id', userId)
@@ -228,21 +227,48 @@ export async function readActiveAccountFingerprint(userId: string): Promise<stri
     .limit(1)
     .maybeSingle();
 
-  if (error) throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${error.message}`);
-  const serverFingerprint = String(data?.fingerprint ?? '').trim();
+  if (identityError) {
+    throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${identityError.message}`);
+  }
+  const serverFingerprint = String(serverIdentity?.fingerprint ?? '').trim();
   if (serverFingerprint.length >= 32) return serverFingerprint;
 
-  const { data: deviceHistory, error: deviceHistoryError } = await supabase
-    .from('user_devices')
-    .select('device_id')
+  const { data: recoveryVault, error: recoveryVaultError } = await supabase
+    .from('aegis_recovery_vaults' as never)
+    .select('identity_fingerprint')
     .eq('user_id', userId)
-    .limit(1)
     .maybeSingle();
 
-  if (deviceHistoryError) {
-    throw new Error(`ACCOUNT_DEVICE_HISTORY_LOOKUP_FAILED:${deviceHistoryError.message}`);
+  if (recoveryVaultError) {
+    throw new Error(`ACCOUNT_RECOVERY_VAULT_LOOKUP_FAILED:${recoveryVaultError.message}`);
   }
-  if (deviceHistory?.device_id) {
+  const recoveryFingerprint = String(
+    (recoveryVault as { identity_fingerprint?: unknown } | null)?.identity_fingerprint ?? '',
+  ).trim();
+  if (recoveryFingerprint.length >= 32) return recoveryFingerprint;
+
+  const [backupResult, deviceHistoryResult] = await Promise.all([
+    supabase
+      .from('user_backups' as never)
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('user_devices')
+      .select('device_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (backupResult.error) {
+    throw new Error(`ACCOUNT_BACKUP_LOOKUP_FAILED:${backupResult.error.message}`);
+  }
+  if (deviceHistoryResult.error) {
+    throw new Error(`ACCOUNT_DEVICE_HISTORY_LOOKUP_FAILED:${deviceHistoryResult.error.message}`);
+  }
+  if (backupResult.data || deviceHistoryResult.data?.device_id) {
     throw new Error('ACCOUNT_IDENTITY_BOOTSTRAP_REQUIRES_EXPLICIT_MIGRATION');
   }
 
