@@ -283,11 +283,23 @@ serve(async (req) => {
         .maybeSingle(),
     ]);
 
-    if (targetResult.error || !targetResult.data) {
+    if (targetResult.error) {
+      console.error("[recover-device-enrollment] device lookup failed", targetResult.error.message);
+      return respond(req, 500, { ok: false, code: "DEVICE_LOOKUP_FAILED" });
+    }
+    if (!targetResult.data) {
       return respond(req, 404, { ok: false, code: "DEVICE_NOT_FOUND" });
     }
-    if (challengeResult.error || !challengeResult.data) {
+    if (challengeResult.error) {
+      console.error("[recover-device-enrollment] challenge lookup failed", challengeResult.error.message);
+      return respond(req, 500, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_LOOKUP_FAILED" });
+    }
+    if (!challengeResult.data) {
       return respond(req, 409, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_NOT_FOUND" });
+    }
+    if (serverAccountResult.error) {
+      console.error("[recover-device-enrollment] account lookup failed", serverAccountResult.error.message);
+      return respond(req, 500, { ok: false, code: "ACCOUNT_IDENTITY_LOOKUP_FAILED" });
     }
 
     const target = targetResult.data as DeviceRow;
@@ -295,6 +307,9 @@ serve(async (req) => {
 
     if (target.revoked_at || target.approval_status === "rejected") {
       return respond(req, 409, { ok: false, code: "DEVICE_REVOKED_OR_REJECTED" });
+    }
+    if (target.crypto_invalid_at) {
+      return respond(req, 409, { ok: false, code: "DEVICE_CRYPTO_INVALID" });
     }
     if (target.approval_status !== "pending" || target.is_active !== false) {
       return respond(req, 409, { ok: false, code: "DEVICE_NOT_PENDING" });
@@ -328,7 +343,7 @@ serve(async (req) => {
 
     let account: AccountRow;
     if (mode === "account_recovery") {
-      if (serverAccountResult.error || !serverAccountResult.data) {
+      if (!serverAccountResult.data) {
         return respond(req, 409, { ok: false, code: "ACCOUNT_IDENTITY_NOT_FOUND" });
       }
       const serverAccount = serverAccountResult.data as AccountRow;
