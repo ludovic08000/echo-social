@@ -208,6 +208,11 @@ export async function hasRegisteredDevice(
   return true;
 }
 
+/**
+ * Existing accounts use the fingerprint pinned by the server. A genuinely new
+ * account has no server identity yet, so its locally generated stable account
+ * identity supplies the fingerprint used to bind the first device challenge.
+ */
 export async function readActiveAccountFingerprint(userId: string): Promise<string> {
   const { data, error } = await supabase
     .from('user_public_keys')
@@ -219,9 +224,14 @@ export async function readActiveAccountFingerprint(userId: string): Promise<stri
     .maybeSingle();
 
   if (error) throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${error.message}`);
-  const fingerprint = String(data?.fingerprint ?? '').trim();
-  if (fingerprint.length < 32) throw new Error('ACCOUNT_IDENTITY_NOT_FOUND');
-  return fingerprint;
+  const serverFingerprint = String(data?.fingerprint ?? '').trim();
+  if (serverFingerprint.length >= 32) return serverFingerprint;
+
+  const { getOrCreateIdentityKeys } = await import('@/lib/crypto/keyManagerSafe');
+  const localIdentity = await getOrCreateIdentityKeys(userId);
+  const localFingerprint = String(localIdentity.fingerprint ?? '').trim();
+  if (localFingerprint.length < 32) throw new Error('ACCOUNT_IDENTITY_NOT_FOUND');
+  return localFingerprint;
 }
 
 export async function beginServerAssignedDeviceEnrollment(
@@ -241,19 +251,16 @@ export async function beginServerAssignedDeviceEnrollment(
   return parseDeviceEnrollmentChallenge(data);
 }
 
-/**
- * Legacy entry point retained to fail closed. A pending device may never approve
- * itself; approval must be signed by another active, approved device.
- */
+/** Pending devices cannot approve themselves through the legacy endpoint. */
 export async function approveServerAssignedDevice(_deviceId: string): Promise<string> {
-  throw new Error('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
+  throw new Error('DEVICE_APPROVAL_REQUIRES_TRUSTED_OR_RECOVERED_ACCOUNT');
 }
 
 /**
  * Stage the device before restoring account private keys. The candidate proves
- * possession of its own Ed25519 key and binds that proof to the public account
- * fingerprint. A trusted existing device supplies the account authorization
- * signature later when the user presses Approve.
+ * possession of its own Ed25519 key and binds that proof to the account
+ * fingerprint. Authorization is supplied later by another approved device or
+ * by a locally restored stable account identity.
  */
 export async function completeServerAssignedDeviceEnrollmentCandidate(
   challenge: DeviceEnrollmentChallenge,
