@@ -15,7 +15,7 @@ describe('trusted-device approval architecture', () => {
     const completed = enrollment.indexOf('return parseCompletedDeviceEnrollment');
     const legacyBlock = enrollment.indexOf('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
     const pendingReturn = registration.indexOf("trace('DEVICE_ENROLLMENT_PENDING')");
-    const prekeyPublication = registration.indexOf('refreshDeviceSignedPrekeyIfNeeded');
+    const prekeyPublication = registration.indexOf('await refreshDeviceSignedPrekeyIfNeeded');
 
     expect(completed).toBeGreaterThan(-1);
     expect(legacyBlock).toBeGreaterThan(-1);
