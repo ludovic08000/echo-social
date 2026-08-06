@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(15);
 
 select ok(
   to_regprocedure('public.reject_plaintext_zeus_messenger()') is not null,
@@ -78,6 +78,14 @@ select ok(
        and trigger.tgenabled = 'O'
   ),
   'conversation participants have an enabled Zeus guard trigger'
+);
+
+select ok(
+  position(
+    'delete from public.conversation_participants'
+    in lower(pg_get_functiondef(to_regprocedure('public.reject_zeus_messenger_participant()')))
+  ) > 0,
+  'Zeus participant guard detaches any participant inserted before Zeus'
 );
 
 select ok(
