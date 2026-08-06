@@ -21,17 +21,25 @@ describe('Zeus plaintext boundary', () => {
     expect(welcomeFunction).not.toContain('insert into public.conversations');
   });
 
+  it('persists the blocked conversation before suppressing Zeus', () => {
+    expect(migration).toContain('zeus_messenger_blocked_conversations');
+    expect(migration).toContain('insert into public.zeus_messenger_blocked_conversations');
+    expect(migration).toContain('on conflict (conversation_id) do update');
+    expect(migration).toContain('blocked.conversation_id = new.conversation_id');
+  });
+
   it('rejects Zeus participants and messages at the database boundary', () => {
     expect(migration).toContain('reject_zeus_messenger_participant_trigger');
     expect(migration).toContain('reject_zeus_messenger_message_trigger');
     expect(migration).toContain("new.sender_id = '00000000-0000-0000-0000-000000000001'::uuid");
+    expect(migration).toContain("message = 'zeus_messenger_e2ee_required'");
     expect(migration).toContain('return null;');
   });
 
   it('removes historical plaintext rows and detaches Zeus conversations', () => {
-    expect(migration).toContain('create temporary table zeus_messenger_conversations');
     expect(migration).toContain('delete from public.messages');
     expect(migration).toContain('delete from public.conversation_participants');
+    expect(migration).toContain('from public.zeus_messenger_blocked_conversations blocked');
   });
 
   it('documents every legacy caller guarded by the database invariant', () => {
