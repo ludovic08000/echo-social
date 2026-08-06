@@ -85,8 +85,8 @@ beforeEach(() => {
 });
 
 describe('account identity device approval', () => {
-  it('approves a pending device after restoring the pinned account identity', async () => {
-    mocks.maybeSingle.mockResolvedValue({ data: { fingerprint }, error: null });
+  it('approves a pending device after restoring the active server identity', async () => {
+    mocks.maybeSingle.mockResolvedValueOnce({ data: { fingerprint }, error: null });
     mocks.loadIdentityKeys.mockResolvedValue(identity);
     mocks.invoke.mockResolvedValue({
       data: { ok: true, code: 'DEVICE_APPROVED', mode: 'account_recovery', device_id: deviceId },
@@ -115,8 +115,29 @@ describe('account identity device approval', () => {
     });
   });
 
-  it('bootstraps exactly the first device when no server account identity exists', async () => {
-    mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
+  it('uses the recovery-vault fingerprint when the active public identity row is absent', async () => {
+    mocks.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { identity_fingerprint: fingerprint }, error: null });
+    mocks.loadIdentityKeys.mockResolvedValue(identity);
+    mocks.invoke.mockResolvedValue({
+      data: { ok: true, code: 'DEVICE_APPROVED', mode: 'account_recovery', device_id: deviceId },
+      error: null,
+    });
+
+    await expect(submitAccountIdentityDeviceApproval({ userId, target }))
+      .resolves.toEqual({ deviceId, mode: 'account_recovery' });
+
+    expect(mocks.getOrCreateIdentityKeys).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith('recover-device-enrollment', {
+      body: expect.objectContaining({ mode: 'account_recovery' }),
+    });
+  });
+
+  it('bootstraps only when neither a server identity nor recovery vault exists', async () => {
+    mocks.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
     mocks.loadIdentityKeys.mockResolvedValue(null);
     mocks.getOrCreateIdentityKeys.mockResolvedValue(identity);
     mocks.invoke.mockResolvedValue({
@@ -134,7 +155,7 @@ describe('account identity device approval', () => {
   });
 
   it('fails closed when the restored identity does not match the server fingerprint', async () => {
-    mocks.maybeSingle.mockResolvedValue({ data: { fingerprint }, error: null });
+    mocks.maybeSingle.mockResolvedValueOnce({ data: { fingerprint }, error: null });
     mocks.loadIdentityKeys.mockResolvedValue({
       ...identity,
       fingerprint: '0011 2233 4455 6677 8899 AABB CCDD EEFF 0011 2233',
@@ -142,6 +163,21 @@ describe('account identity device approval', () => {
 
     await expect(submitAccountIdentityDeviceApproval({ userId, target }))
       .rejects.toThrow('ACCOUNT_RECOVERY_IDENTITY_MISMATCH');
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the restored identity does not match the recovery vault', async () => {
+    mocks.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { identity_fingerprint: fingerprint }, error: null });
+    mocks.loadIdentityKeys.mockResolvedValue({
+      ...identity,
+      fingerprint: '0011 2233 4455 6677 8899 AABB CCDD EEFF 0011 2233',
+    });
+
+    await expect(submitAccountIdentityDeviceApproval({ userId, target }))
+      .rejects.toThrow('ACCOUNT_RECOVERY_IDENTITY_MISMATCH');
+    expect(mocks.getOrCreateIdentityKeys).not.toHaveBeenCalled();
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
