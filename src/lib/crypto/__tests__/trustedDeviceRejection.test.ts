@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   loadDeviceIdentity: vi.fn(),
+  loadIdentityKeys: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -11,6 +12,11 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 vi.mock('@/lib/crypto/deviceIdentity', () => ({
   loadDeviceIdentity: mocks.loadDeviceIdentity,
+  signDeviceAuthorization: vi.fn(),
+}));
+
+vi.mock('@/lib/crypto/keyManager', () => ({
+  loadIdentityKeys: mocks.loadIdentityKeys,
 }));
 
 import { submitDeviceApprovalDecision } from '@/lib/crypto/deviceApprovalDecision';
@@ -25,7 +31,7 @@ beforeEach(() => {
 });
 
 describe('trusted device rejection', () => {
-  it('maps a signed refusal to an immediate device revocation', async () => {
+  it('maps a signed refusal to an immediate device revocation without account restoration', async () => {
     const keyPair = await crypto.subtle.generateKey(
       { name: 'Ed25519' },
       true,
@@ -53,12 +59,14 @@ describe('trusted device rejection', () => {
       decision: 'reject',
     })).resolves.toEqual({ deviceId: iphoneId, decision: 'reject' });
 
+    expect(mocks.loadIdentityKeys).not.toHaveBeenCalled();
     expect(mocks.invoke).toHaveBeenCalledWith('approve-device-enrollment', {
       body: expect.objectContaining({
         decision: 'reject',
         approver_device_id: windowsId,
         target_device_id: iphoneId,
         target_challenge_id: challengeId,
+        target_device_authorization_signature: null,
         approver_signature: expect.any(String),
       }),
     });
