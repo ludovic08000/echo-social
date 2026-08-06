@@ -29,8 +29,10 @@ describe('Zeus plaintext boundary', () => {
     expect(welcomeFunction).not.toContain('insert into public.conversations');
   });
 
-  it('scrubs legacy plaintext without deleting referenced message rows', () => {
+  it('scrubs legacy plaintext and its archive copies without deleting message rows', () => {
     for (const migration of [initialMigration, durableMigration]) {
+      expect(migration).toContain('update public.message_archives');
+      expect(migration).toContain("archive_body = '[zeus_messenger_removed]'");
       expect(migration).toContain("body = '[zeus_messenger_removed]'");
       expect(migration).toContain('archive_body = null');
       expect(migration).toContain("status = 'blocked'");
