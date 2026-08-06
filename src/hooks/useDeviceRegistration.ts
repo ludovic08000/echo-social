@@ -174,7 +174,7 @@ async function ensureCanonicalAccountIdentity(userId: string): Promise<void> {
   if (local?.fingerprint === expectedFingerprint) return;
 
   const { data: backup, error: backupError } = await supabase
-    .from('user_backups' as never)
+    .from('user_backups' as any)
     .select('id')
     .eq('user_id', userId)
     .eq('backup_type', 'account')
