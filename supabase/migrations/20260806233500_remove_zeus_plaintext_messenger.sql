@@ -4,6 +4,26 @@ begin;
 -- the end-to-end encrypted messenger, because an AI service cannot hold the
 -- user's device keys or participate in the Aegis device protocol.
 
+-- Persist the blocked conversation id before suppressing a Zeus participant.
+-- Without this marker, a legacy caller could insert the human participant,
+-- have the Zeus participant silently rejected, then insert the human's prompt
+-- into an apparently ordinary conversation.
+create table if not exists public.zeus_messenger_blocked_conversations (
+  conversation_id uuid primary key,
+  blocked_at timestamptz not null default clock_timestamp()
+);
+
+revoke all on table public.zeus_messenger_blocked_conversations
+  from public, anon, authenticated;
+
+-- Seed the durable marker before historical Zeus participant rows are removed.
+insert into public.zeus_messenger_blocked_conversations (conversation_id)
+select distinct participant.conversation_id
+  from public.conversation_participants participant
+ where participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
+on conflict (conversation_id) do update
+set blocked_at = excluded.blocked_at;
+
 create or replace function public.zeus_welcome_new_user()
 returns trigger
 language plpgsql
@@ -49,7 +69,54 @@ set search_path = pg_catalog, public
 as $$
 begin
   if new.user_id = '00000000-0000-0000-0000-000000000001'::uuid then
+    insert into public.zeus_messenger_blocked_conversations (conversation_id)
+    values (new.conversation_id)
+    on conflict (conversation_id) do update
+    set blocked_at = excluded.blocked_at;
     return null;
+  end if;
+
+  if exists (
+    select 1
+      from public.zeus_messenger_blocked_conversations blocked
+     where blocked.conversation_id = new.conversation_id
+  ) or exists (
+    select 1
+      from public.conversation_participants participant
+     where participant.conversation_id = new.conversation_id
+       and participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
+  ) then
+    return null;
+  end if;
+
+  return new;
+end;
+$$;
+
+-- Replace the earlier guard as well, because its trigger remains installed.
+-- It now checks the durable marker in addition to the participant table.
+create or replace function public.reject_plaintext_zeus_messenger()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if new.sender_id = '00000000-0000-0000-0000-000000000001'::uuid
+     or exists (
+       select 1
+         from public.zeus_messenger_blocked_conversations blocked
+        where blocked.conversation_id = new.conversation_id
+     )
+     or exists (
+       select 1
+         from public.conversation_participants participant
+        where participant.conversation_id = new.conversation_id
+          and participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
+     ) then
+    raise exception using
+      errcode = '42501',
+      message = 'zeus_messenger_e2ee_required';
   end if;
 
   return new;
@@ -66,10 +133,20 @@ begin
   if new.sender_id = '00000000-0000-0000-0000-000000000001'::uuid
      or exists (
        select 1
+         from public.zeus_messenger_blocked_conversations blocked
+        where blocked.conversation_id = new.conversation_id
+     )
+     or exists (
+       select 1
          from public.conversation_participants participant
         where participant.conversation_id = new.conversation_id
           and participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
      ) then
+    insert into public.zeus_messenger_blocked_conversations (conversation_id)
+    values (new.conversation_id)
+    on conflict (conversation_id) do update
+    set blocked_at = excluded.blocked_at;
+
     -- A legacy caller may create a conversation before trying to insert the
     -- plaintext message. Remove its participants so the empty shell cannot be
     -- exposed in the messenger, then discard the message row.
@@ -101,23 +178,20 @@ execute function public.reject_zeus_messenger_message();
 -- Remove plaintext history and detach every historical Zeus conversation from
 -- the normal messenger. Conversation shells are intentionally left orphaned so
 -- this migration does not depend on every optional foreign-key cascade.
-create temporary table zeus_messenger_conversations
-on commit drop
-as
-select distinct participant.conversation_id
-  from public.conversation_participants participant
- where participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid;
-
 delete from public.messages message
  where message.conversation_id in (
-   select conversation_id from zeus_messenger_conversations
+   select blocked.conversation_id
+     from public.zeus_messenger_blocked_conversations blocked
  );
 
 delete from public.conversation_participants participant
  where participant.conversation_id in (
-   select conversation_id from zeus_messenger_conversations
+   select blocked.conversation_id
+     from public.zeus_messenger_blocked_conversations blocked
  );
 
+revoke all on function public.reject_plaintext_zeus_messenger()
+  from public, anon, authenticated;
 revoke all on function public.reject_zeus_messenger_participant()
   from public, anon, authenticated;
 revoke all on function public.reject_zeus_messenger_message()
