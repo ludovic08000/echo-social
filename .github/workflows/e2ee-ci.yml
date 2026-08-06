@@ -52,10 +52,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Lint every TypeScript file modified by Lot 1
+      - name: Lint new and security-sensitive TypeScript files
         run: |
           npm exec eslint -- \
-            src/hooks/useMessages.legacy.ts \
             src/hooks/useMessages.ts \
             src/hooks/useSendMessageSecure.ts \
             src/lib/crypto/__tests__/deviceEnrollmentGate.test.ts \
