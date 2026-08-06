@@ -1,7 +1,7 @@
 /**
  * Registers the current installation through the server-assigned Aegis flow.
  * New devices are staged as pending and can only be approved by another active,
- * approved device. Device prekeys and routing become available after approval.
+ * approved device. Account restoration, prekeys and routing happen afterwards.
  */
 
 import { useEffect, useRef } from 'react';
@@ -48,7 +48,8 @@ import {
 import {
   beginServerAssignedDeviceEnrollment,
   cancelServerAssignedDeviceEnrollment,
-  completeServerAssignedDeviceEnrollment,
+  completeServerAssignedDeviceEnrollmentCandidate,
+  readActiveAccountFingerprint,
   type DeviceEnrollmentChallenge,
   type DevicePlatform,
 } from '@/lib/crypto/serverDeviceEnrollment';
@@ -151,24 +152,9 @@ async function restoreDeviceMaterial(userId: string): Promise<void> {
   await restoreAccountKeysFromActiveSession(userId).catch(() => 'error');
 }
 
-/**
- * A second device must reuse the account identity already published by the
- * first device. A mismatched local identity is deleted only when a portable
- * account backup exists, then restored from the unlocked account vault.
- */
+/** Restore the stable account identity only after a trusted device approved this device. */
 async function ensureCanonicalAccountIdentity(userId: string): Promise<void> {
-  const { data: serverIdentity, error: serverError } = await supabase
-    .from('user_public_keys')
-    .select('fingerprint')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (serverError) throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${serverError.message}`);
-  const expectedFingerprint = serverIdentity?.fingerprint;
-  if (!expectedFingerprint) return;
+  const expectedFingerprint = await readActiveAccountFingerprint(userId);
 
   let local = await loadIdentityKeys(userId).catch(() => null);
   if (local?.fingerprint === expectedFingerprint) return;
@@ -182,7 +168,7 @@ async function ensureCanonicalAccountIdentity(userId: string): Promise<void> {
   if (backupError) throw new Error(`ACCOUNT_BACKUP_LOOKUP_FAILED:${backupError.message}`);
   if (!backup) {
     throw new PinUnlockRequiredError(
-      'PIN_UNLOCK_REQUIRED: canonical account identity backup is unavailable on this device.',
+      'PIN_UNLOCK_REQUIRED: canonical account identity backup is unavailable on this approved device.',
     );
   }
 
@@ -197,7 +183,7 @@ async function ensureCanonicalAccountIdentity(userId: string): Promise<void> {
       window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
         detail: {
           userId,
-          reason: 'account_identity_mismatch',
+          reason: 'approved_device_account_identity_restore',
           source: 'useDeviceRegistration',
           expectedFingerprint,
           actualFingerprint: local?.fingerprint ?? null,
@@ -207,7 +193,7 @@ async function ensureCanonicalAccountIdentity(userId: string): Promise<void> {
       // Browser notification is best-effort.
     }
     throw new PinUnlockRequiredError(
-      'PIN_UNLOCK_REQUIRED: restore the existing account identity before enrolling this device.',
+      'PIN_UNLOCK_REQUIRED: restore the existing account identity before activating this approved device.',
     );
   }
 }
@@ -318,10 +304,6 @@ export function useDeviceRegistration() {
           return;
         }
 
-        if (!existing || isPending(existing)) {
-          await ensureCanonicalAccountIdentity(user.id);
-        }
-
         if (!existing) {
           challenge = await beginServerAssignedDeviceEnrollment({
             deviceName: getCurrentDeviceLabel(),
@@ -359,13 +341,9 @@ export function useDeviceRegistration() {
             return;
           }
 
-          if (
-            !existing.device_public_key ||
-            !existing.device_signing_key ||
-            !existing.device_authorization_signature
-          ) {
-            await markRouteUnavailable(deviceId, 'DEVICE_AUTHORIZATION_INCOMPLETE');
-            await restartWithFreshServerDevice('device-authorization-incomplete');
+          if (!existing.device_public_key || !existing.device_signing_key) {
+            await markRouteUnavailable(deviceId, 'DEVICE_CANDIDATE_INCOMPLETE');
+            await restartWithFreshServerDevice('device-candidate-incomplete');
             return;
           }
 
@@ -384,24 +362,18 @@ export function useDeviceRegistration() {
           ]);
         }
 
+        if (!deviceIdentity || !deviceKx) {
+          throw new Error('LOCAL_DEVICE_PRIVATE_KEY_MISSING');
+        }
         trace('DEVICE_LOCAL_KEYS_READY');
 
-        const authorization = await prepareDeviceAuthorization(user.id, deviceId, deviceKx);
-        if (
-          authorization.deviceSigning.publicB64 !== deviceIdentity.publicB64 ||
-          authorization.deviceKx.publicB64 !== deviceKx.publicB64
-        ) {
-          throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
-        }
-
-        if (existing && existing.device_authorization_signature !== authorization.authorizationSignature) {
-          await markRouteUnavailable(deviceId, 'ACCOUNT_DEVICE_AUTHORIZATION_CHANGED');
-          await restartWithFreshServerDevice('account-device-authorization-changed');
-          return;
-        }
-
         if (challenge) {
-          const stagedDeviceId = await completeServerAssignedDeviceEnrollment(challenge, authorization);
+          const accountFingerprint = await readActiveAccountFingerprint(user.id);
+          const stagedDeviceId = await completeServerAssignedDeviceEnrollmentCandidate(challenge, {
+            accountFingerprint,
+            deviceKx,
+            deviceSigning: deviceIdentity,
+          });
           if (stagedDeviceId !== deviceId) throw new Error('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
           challenge = null;
           provisionalDeviceId = null;
@@ -418,6 +390,23 @@ export function useDeviceRegistration() {
 
         if (!existing || !isApproved(existing)) {
           throw new Error('DEVICE_APPROVAL_STATE_INVALID');
+        }
+        if (!existing.device_authorization_signature) {
+          await markRouteUnavailable(deviceId, 'DEVICE_AUTHORIZATION_INCOMPLETE');
+          throw new Error('DEVICE_AUTHORIZATION_INCOMPLETE');
+        }
+
+        await ensureCanonicalAccountIdentity(user.id);
+        const authorization = await prepareDeviceAuthorization(user.id, deviceId, deviceKx);
+        if (
+          authorization.deviceSigning.publicB64 !== deviceIdentity.publicB64 ||
+          authorization.deviceKx.publicB64 !== deviceKx.publicB64
+        ) {
+          throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
+        }
+        if (existing.device_authorization_signature !== authorization.authorizationSignature) {
+          await markRouteUnavailable(deviceId, 'ACCOUNT_DEVICE_AUTHORIZATION_CHANGED');
+          throw new Error('ACCOUNT_DEVICE_AUTHORIZATION_CHANGED');
         }
 
         const signingPrivateKey = deviceIdentity.privateKey;

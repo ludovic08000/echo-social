@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   invoke: vi.fn(),
   loadDeviceIdentity: vi.fn(),
+  loadIdentityKeys: vi.fn(),
+  signAuthorization: vi.fn(async () => 'Y'.repeat(88)),
   signPossession: vi.fn(async () => 'c2lnbmF0dXJl'.repeat(8)),
 }));
 
@@ -16,7 +18,16 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 vi.mock('@/lib/crypto/deviceIdentity', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/crypto/deviceIdentity')>();
-  return { ...original, loadDeviceIdentity: mocks.loadDeviceIdentity };
+  return {
+    ...original,
+    loadDeviceIdentity: mocks.loadDeviceIdentity,
+    signDeviceAuthorization: mocks.signAuthorization,
+  };
+});
+
+vi.mock('@/lib/crypto/keyManager', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/lib/crypto/keyManager')>();
+  return { ...original, loadIdentityKeys: mocks.loadIdentityKeys };
 });
 
 vi.mock('@/lib/crypto/deviceEnrollmentPossession', () => ({
@@ -26,7 +37,7 @@ vi.mock('@/lib/crypto/deviceEnrollmentPossession', () => ({
 import {
   approveServerAssignedDevice,
   beginServerAssignedDeviceEnrollment,
-  completeServerAssignedDeviceEnrollment,
+  completeServerAssignedDeviceEnrollmentCandidate,
 } from '@/lib/crypto/serverDeviceEnrollment';
 import {
   canonicalDeviceApprovalDecisionPayload,
@@ -34,17 +45,18 @@ import {
 } from '@/lib/crypto/deviceApprovalDecision';
 
 const userId = '11111111-1111-4111-8111-111111111111';
-const windowsId = `dev_${'a'.repeat(32)}`;
+const approvedDeviceId = `dev_${'a'.repeat(32)}`;
 const iphoneId = `dev_${'b'.repeat(32)}`;
 const challengeId = '22222222-2222-4222-8222-222222222222';
 const expiresAt = new Date(Date.now() + 60_000).toISOString();
+const accountFingerprint = 'AA11 BB22 CC33 DD44 EE55 FF66 7788 9900 AABB CCDD';
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('simulated Chrome iPhone enrollment', () => {
-  it('stages the iOS device as pending without calling the approval function', async () => {
+  it('stages the iOS device as pending without loading account private keys', async () => {
     mocks.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
       if (name === 'begin_user_device_enrollment') {
         expect(args).toMatchObject({
@@ -64,7 +76,14 @@ describe('simulated Chrome iPhone enrollment', () => {
           error: null,
         };
       }
-      if (name === 'complete_user_device_enrollment') {
+      if (name === 'complete_user_device_enrollment_candidate') {
+        expect(args).toMatchObject({
+          p_account_fingerprint: accountFingerprint,
+          p_device_public_key: 'k'.repeat(44),
+          p_device_signing_key: 'd'.repeat(44),
+        });
+        expect(args).not.toHaveProperty('p_device_authorization_signature');
+        expect(args).not.toHaveProperty('p_account_signing_key');
         return {
           data: {
             ok: true,
@@ -86,14 +105,8 @@ describe('simulated Chrome iPhone enrollment', () => {
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) CriOS/140 Mobile/15E148 Safari/604.1',
     });
 
-    const deviceId = await completeServerAssignedDeviceEnrollment(challenge, {
-      account: {
-        identityKey: 'i'.repeat(44),
-        signingKey: 's'.repeat(44),
-        fingerprint: 'AA11 BB22 CC33 DD44 EE55 FF66 7788 9900 AABB CCDD',
-        bindingVersion: 1,
-        bindingSignature: 'a'.repeat(88),
-      },
+    const deviceId = await completeServerAssignedDeviceEnrollmentCandidate(challenge, {
+      accountFingerprint,
       deviceKx: {
         publicKey: {} as CryptoKey,
         privateKey: {} as CryptoKey,
@@ -104,23 +117,24 @@ describe('simulated Chrome iPhone enrollment', () => {
         privateKey: {} as CryptoKey,
         publicB64: 'd'.repeat(44),
       },
-      authorizationSignature: 'z'.repeat(88),
     });
 
     expect(deviceId).toBe(iphoneId);
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.loadIdentityKeys).not.toHaveBeenCalled();
+    expect(mocks.signAuthorization).not.toHaveBeenCalled();
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
   it('fails closed when legacy code tries to let the iPhone approve itself', async () => {
     await expect(approveServerAssignedDevice(iphoneId))
-      .rejects.toThrow('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
+      .rejects.toThrow('DEVICE_APPROVAL_REQUIRES_TRUSTED_OR_RECOVERED_ACCOUNT');
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 });
 
-describe('approved Windows device decision', () => {
-  it('signs the exact target and invokes the approval endpoint', async () => {
+describe('approved device decision', () => {
+  it('signs the account authorization and exact approval decision', async () => {
     const keyPair = await crypto.subtle.generateKey(
       { name: 'Ed25519' },
       true,
@@ -130,6 +144,10 @@ describe('approved Windows device decision', () => {
       publicKey: keyPair.publicKey,
       privateKey: keyPair.privateKey,
       publicB64: 'w'.repeat(44),
+    });
+    mocks.loadIdentityKeys.mockResolvedValue({
+      fingerprint: accountFingerprint,
+      signingPrivateKey: {} as CryptoKey,
     });
     mocks.invoke.mockResolvedValue({
       data: { ok: true, code: 'DEVICE_APPROVED', device_id: iphoneId },
@@ -144,14 +162,17 @@ describe('approved Windows device decision', () => {
     };
     const payload = canonicalDeviceApprovalDecisionPayload({
       userId,
-      approverDeviceId: windowsId,
-      target,
+      approverDeviceId: approvedDeviceId,
+      target: {
+        ...target,
+        deviceAuthorizationSignature: 'Y'.repeat(88),
+      },
       decision: 'approve',
     });
 
     await expect(submitDeviceApprovalDecision({
       userId,
-      approverDeviceId: windowsId,
+      approverDeviceId: approvedDeviceId,
       target,
       decision: 'approve',
     })).resolves.toEqual({ deviceId: iphoneId, decision: 'approve' });
@@ -168,15 +189,21 @@ describe('approved Windows device decision', () => {
       signatureBytes,
       new TextEncoder().encode(payload),
     )).resolves.toBe(true);
+    expect(mocks.signAuthorization).toHaveBeenCalledWith(expect.objectContaining({
+      userId,
+      deviceId: iphoneId,
+      accountFingerprint,
+    }));
     expect(call.body).toMatchObject({
       decision: 'approve',
-      approver_device_id: windowsId,
+      approver_device_id: approvedDeviceId,
       target_device_id: iphoneId,
       target_challenge_id: challengeId,
+      target_device_authorization_signature: 'Y'.repeat(88),
     });
   });
 
-  it('refuses self-approval before any network call', async () => {
+  it('refuses self-approval before any account-key or network call', async () => {
     await expect(submitDeviceApprovalDecision({
       userId,
       approverDeviceId: iphoneId,
@@ -188,6 +215,7 @@ describe('approved Windows device decision', () => {
       },
       decision: 'approve',
     })).rejects.toThrow('DEVICE_SELF_APPROVAL_FORBIDDEN');
+    expect(mocks.loadIdentityKeys).not.toHaveBeenCalled();
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 });

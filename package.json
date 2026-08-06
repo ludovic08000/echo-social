@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "test:device-approval": "vitest run src/lib/crypto/__tests__/trustedDeviceApproval.test.ts src/lib/crypto/__tests__/trustedDeviceRejection.test.ts src/lib/crypto/__tests__/trustedDeviceApprovalArchitecture.test.ts src/lib/messaging/__tests__/accountSyncBarrier.test.ts src/lib/messaging/__tests__/deviceApprovalAccountSyncArchitecture.test.ts",
+    "test:device-approval": "vitest run src/lib/crypto/__tests__/trustedDeviceApproval.test.ts src/lib/crypto/__tests__/trustedDeviceRejection.test.ts src/lib/crypto/__tests__/trustedDeviceApprovalArchitecture.test.ts src/lib/crypto/__tests__/accountIdentityDeviceApproval.test.ts src/lib/crypto/__tests__/accountIdentityDeviceApprovalArchitecture.test.ts src/lib/crypto/__tests__/accountFingerprintBootstrap.test.ts src/lib/messaging/__tests__/accountSyncBarrier.test.ts src/lib/messaging/__tests__/deviceApprovalAccountSyncArchitecture.test.ts src/components/security/__tests__/pendingDeviceApprovalGateArchitecture.test.ts",
     "build": "npm run test:device-approval && npm run typecheck && node scripts/generate-version.mjs && vite build",
     "build:dev": "npm run test:device-approval && npm run typecheck && node scripts/generate-version.mjs && vite build --mode development",
     "lint": "eslint .",

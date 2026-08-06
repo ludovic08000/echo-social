@@ -1,5 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { PreparedDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import type {
+  DeviceIdentityKey,
+  PreparedDeviceAuthorization,
+} from '@/lib/crypto/deviceIdentity';
+import type { DeviceKxKey } from '@/lib/crypto/deviceKx';
 import { signDeviceEnrollmentPossession } from '@/lib/crypto/deviceEnrollmentPossession';
 import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
 
@@ -21,6 +25,12 @@ export interface DeviceEnrollmentChallenge {
   deviceId: string;
   nonce: string;
   expiresAt: string;
+}
+
+export interface PendingDeviceCandidate {
+  accountFingerprint: string;
+  deviceKx: DeviceKxKey;
+  deviceSigning: DeviceIdentityKey;
 }
 
 export type DeviceEnrollmentSettlement = {
@@ -198,6 +208,77 @@ export async function hasRegisteredDevice(
   return true;
 }
 
+/**
+ * Existing accounts use their active server fingerprint. If the public row is
+ * temporarily absent but an encrypted recovery vault remains, its pinned
+ * fingerprint is authoritative and keeps the device in account-recovery mode.
+ *
+ * A fresh identity may be generated only when there is no public identity, no
+ * recovery vault, no backup and no device history. Any other continuity
+ * evidence fails closed instead of silently replacing the account root.
+ */
+export async function readActiveAccountFingerprint(userId: string): Promise<string> {
+  const { data: serverIdentity, error: identityError } = await supabase
+    .from('user_public_keys')
+    .select('fingerprint')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (identityError) {
+    throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${identityError.message}`);
+  }
+  const serverFingerprint = String(serverIdentity?.fingerprint ?? '').trim();
+  if (serverFingerprint.length >= 32) return serverFingerprint;
+
+  const { data: recoveryVault, error: recoveryVaultError } = await supabase
+    .from('aegis_recovery_vaults' as never)
+    .select('identity_fingerprint')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (recoveryVaultError) {
+    throw new Error(`ACCOUNT_RECOVERY_VAULT_LOOKUP_FAILED:${recoveryVaultError.message}`);
+  }
+  const recoveryFingerprint = String(
+    (recoveryVault as { identity_fingerprint?: unknown } | null)?.identity_fingerprint ?? '',
+  ).trim();
+  if (recoveryFingerprint.length >= 32) return recoveryFingerprint;
+
+  const [backupResult, deviceHistoryResult] = await Promise.all([
+    supabase
+      .from('user_backups' as never)
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('user_devices')
+      .select('device_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (backupResult.error) {
+    throw new Error(`ACCOUNT_BACKUP_LOOKUP_FAILED:${backupResult.error.message}`);
+  }
+  if (deviceHistoryResult.error) {
+    throw new Error(`ACCOUNT_DEVICE_HISTORY_LOOKUP_FAILED:${deviceHistoryResult.error.message}`);
+  }
+  if (backupResult.data || deviceHistoryResult.data?.device_id) {
+    throw new Error('ACCOUNT_IDENTITY_BOOTSTRAP_REQUIRES_EXPLICIT_MIGRATION');
+  }
+
+  const { getOrCreateIdentityKeys } = await import('@/lib/crypto/keyManagerSafe');
+  const localIdentity = await getOrCreateIdentityKeys(userId);
+  const localFingerprint = String(localIdentity.fingerprint ?? '').trim();
+  if (localFingerprint.length < 32) throw new Error('ACCOUNT_IDENTITY_NOT_FOUND');
+  return localFingerprint;
+}
+
 export async function beginServerAssignedDeviceEnrollment(
   metadata: DeviceEnrollmentMetadata,
 ): Promise<DeviceEnrollmentChallenge> {
@@ -215,14 +296,49 @@ export async function beginServerAssignedDeviceEnrollment(
   return parseDeviceEnrollmentChallenge(data);
 }
 
-/**
- * Legacy entry point retained to fail closed. A pending device may never approve
- * itself; approval must be signed by another active, approved device.
- */
+/** Pending devices cannot approve themselves through the legacy endpoint. */
 export async function approveServerAssignedDevice(_deviceId: string): Promise<string> {
-  throw new Error('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
+  throw new Error('DEVICE_APPROVAL_REQUIRES_TRUSTED_OR_RECOVERED_ACCOUNT');
 }
 
+/**
+ * Stage the device before restoring account private keys. The candidate proves
+ * possession of its own Ed25519 key and binds that proof to the account
+ * fingerprint. Authorization is supplied later by another approved device or
+ * by a locally restored stable account identity.
+ */
+export async function completeServerAssignedDeviceEnrollmentCandidate(
+  challenge: DeviceEnrollmentChallenge,
+  candidate: PendingDeviceCandidate,
+): Promise<string> {
+  const possessionSignature = await signDeviceEnrollmentPossession({
+    challengeId: challenge.challengeId,
+    deviceId: challenge.deviceId,
+    nonce: challenge.nonce,
+    expiresAt: challenge.expiresAt,
+    accountFingerprint: candidate.accountFingerprint,
+    devicePublicKey: candidate.deviceKx.publicB64,
+    deviceSigningKey: candidate.deviceSigning.publicB64,
+    deviceSigningPrivateKey: candidate.deviceSigning.privateKey,
+  });
+
+  const { data, error } = await supabase.rpc(
+    'complete_user_device_enrollment_candidate' as never,
+    {
+      p_challenge_id: challenge.challengeId,
+      p_nonce: challenge.nonce,
+      p_device_public_key: candidate.deviceKx.publicB64,
+      p_device_signing_key: candidate.deviceSigning.publicB64,
+      p_device_possession_signature: possessionSignature,
+      p_account_fingerprint: candidate.accountFingerprint,
+    } as never,
+  );
+
+  if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_FAILED:${error.message}`);
+  return parseCompletedDeviceEnrollment(data, challenge.deviceId);
+}
+
+/** Compatibility path for already restored clients. New registrations use the candidate flow above. */
 export async function completeServerAssignedDeviceEnrollment(
   challenge: DeviceEnrollmentChallenge,
   authorization: PreparedDeviceAuthorization,

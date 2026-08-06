@@ -32,6 +32,7 @@ import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
 import { E2EERestorePromptDialog } from "@/components/messages/E2EERestorePromptDialog";
 import { ContactVerificationDialog } from "@/components/messages/ContactVerificationDialog";
 import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
+import { PendingDeviceApprovalGate } from "@/components/security/PendingDeviceApprovalGate";
 
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -85,7 +86,6 @@ const CreatePostPage = lazyWithOneRetry(() => import("./pages/CreatePostPage"), 
 const Search = lazyWithOneRetry(() => import("./pages/Search"), 'r-search');
 const Notifications = lazyWithOneRetry(() => import("./pages/Notifications"), 'r-notifs');
 const Settings = lazyWithOneRetry(() => import("./pages/Settings"), 'r-settings');
-const SecurityDeviceVerify = lazyWithOneRetry(() => import("./pages/SecurityDeviceVerify"), 'r-secdev');
 const Messages = lazyWithOneRetry(() => import("./pages/Messages"), 'r-messages');
 const Friends = lazyWithOneRetry(() => import("./pages/Friends"), 'r-friends');
 const Groups = lazyWithOneRetry(() => import("./pages/Groups"), 'r-groups');
@@ -238,6 +238,7 @@ function AppContent() {
             <BrowserRouter>
               <RecoveryFlowGuard />
               <AccountKeySyncRunner />
+              <PendingDeviceApprovalGate />
               <SafetyNumberRevalidationBanner />
               <IncomingCallHandler />
               <E2EEDebugPanel />
@@ -282,7 +283,7 @@ function AppContent() {
                     <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
                     <Route path="/profile" element={<Navigate to="/feed" replace />} />
                     <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-                    <Route path="/security/device" element={<ProtectedRoute><SecurityDeviceVerify /></ProtectedRoute>} />
+                    <Route path="/security/device" element={<ProtectedRoute><Navigate to="/settings" replace /></ProtectedRoute>} />
                     <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                     <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
                     <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
