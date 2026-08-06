@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PreparedDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import { signDeviceEnrollmentPossession } from '@/lib/crypto/deviceEnrollmentPossession';
 import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
 
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
@@ -226,6 +227,17 @@ export async function completeServerAssignedDeviceEnrollment(
   challenge: DeviceEnrollmentChallenge,
   authorization: PreparedDeviceAuthorization,
 ): Promise<string> {
+  const possessionSignature = await signDeviceEnrollmentPossession({
+    challengeId: challenge.challengeId,
+    deviceId: challenge.deviceId,
+    nonce: challenge.nonce,
+    expiresAt: challenge.expiresAt,
+    accountFingerprint: authorization.account.fingerprint,
+    devicePublicKey: authorization.deviceKx.publicB64,
+    deviceSigningKey: authorization.deviceSigning.publicB64,
+    deviceSigningPrivateKey: authorization.deviceSigning.privateKey,
+  });
+
   const { data, error } = await supabase.rpc(
     'complete_user_device_enrollment' as never,
     {
@@ -234,6 +246,7 @@ export async function completeServerAssignedDeviceEnrollment(
       p_device_public_key: authorization.deviceKx.publicB64,
       p_device_signing_key: authorization.deviceSigning.publicB64,
       p_device_authorization_signature: authorization.authorizationSignature,
+      p_device_possession_signature: possessionSignature,
       p_account_identity_key: authorization.account.identityKey,
       p_account_signing_key: authorization.account.signingKey,
       p_account_fingerprint: authorization.account.fingerprint,
