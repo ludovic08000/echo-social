@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  CheckCircle2,
   Loader2,
   MonitorCheck,
   RefreshCw,
@@ -223,7 +222,7 @@ export function PendingDeviceApprovalGate() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-2xl bg-primary/6 p-4 text-sm leading-5 text-muted-foreground">
+            <div className="mt-4 rounded-2xl bg-primary/10 p-4 text-sm leading-5 text-muted-foreground">
               Après validation, cet appareil sera rattaché à la même identité E2EE de compte,
               puis la synchronisation démarrera automatiquement. Cette fenêtre se fermera seule.
             </div>
@@ -292,12 +291,6 @@ export function PendingDeviceApprovalGate() {
             <Button variant="destructive" className="mt-6 w-full rounded-xl" onClick={() => void signOut()}>
               Retour à la connexion
             </Button>
-          </div>
-        )}
-
-        {phase === 'hidden' && (
-          <div className="sr-only">
-            <CheckCircle2 /> Appareil prêt
           </div>
         )}
       </div>
