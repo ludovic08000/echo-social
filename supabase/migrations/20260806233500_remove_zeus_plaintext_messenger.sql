@@ -33,6 +33,17 @@ drop trigger if exists reject_plaintext_zeus_messenger
 drop trigger if exists reject_zeus_messenger_message_trigger
   on public.messages;
 
+update public.message_archives archive
+   set archive_body = '[zeus_messenger_removed]'
+ where archive.message_id in (
+   select message.id
+     from public.messages message
+    where message.conversation_id in (
+      select blocked.conversation_id
+        from public.zeus_messenger_blocked_conversations blocked
+    )
+ );
+
 update public.messages message
    set body = '[zeus_messenger_removed]',
        archive_body = null,
