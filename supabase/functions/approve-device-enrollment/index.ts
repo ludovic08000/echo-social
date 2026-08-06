@@ -249,7 +249,15 @@ serve(async (req) => {
     if (!challenge.consumed_at) {
       return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_NOT_COMPLETED" });
     }
-    if (Date.parse(challenge.consumed_at) > Date.parse(challenge.expires_at)) {
+
+    const consumedAt = Date.parse(challenge.consumed_at);
+    const expiresAt = Date.parse(challenge.expires_at);
+    if (
+      !Number.isFinite(consumedAt) ||
+      !Number.isFinite(expiresAt) ||
+      consumedAt > expiresAt ||
+      expiresAt <= Date.now()
+    ) {
       return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_EXPIRED" });
     }
     if (
