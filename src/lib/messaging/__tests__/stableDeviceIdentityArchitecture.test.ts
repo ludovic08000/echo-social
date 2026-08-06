@@ -22,6 +22,19 @@ describe('stable DeviceID architecture', () => {
     const explicitBody = currentDevice.match(/export async function beginExplicitDeviceEnrollment[\s\S]*?\n}/)?.[0] ?? '';
     expect(explicitBody).toContain('authorizeExplicitDeviceEnrollment');
     expect(explicitBody).toContain('generateId()');
+    expect(explicitBody).toContain('cancelLocalEnrollmentTransition');
+  });
+
+  it('bounds and cancels the local server-ID transition', () => {
+    expect(currentDevice).toContain('EXPLICIT_ENROLLMENT_TRANSITION_TTL_MS');
+    expect(currentDevice).toContain('explicitEnrollmentExpiresAt > Date.now()');
+    expect(currentDevice).toContain('SERVER_DEVICE_ID_RE.test(id)');
+    expect(currentDevice).toContain('cancelExplicitDeviceEnrollmentAuthorization');
+
+    const scopeBody = currentDevice.match(/export function setCurrentDeviceUserScope[\s\S]*?\n}/)?.[0] ?? '';
+    const setterBody = currentDevice.match(/export function setCurrentDeviceId[\s\S]*?\n}/)?.[0] ?? '';
+    expect(scopeBody).toContain('cancelLocalEnrollmentTransition();');
+    expect(setterBody).toContain('cancelLocalEnrollmentTransition();');
   });
 
   it('blocks server enrollment unless the one-shot explicit grant is consumed', () => {
