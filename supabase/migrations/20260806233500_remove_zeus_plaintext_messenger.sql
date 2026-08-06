@@ -6,13 +6,14 @@ begin;
 
 -- Persist the blocked conversation id before suppressing a Zeus participant.
 -- Without this marker, a legacy caller could insert the human participant,
--- have the Zeus participant silently rejected, then insert the human's prompt
--- into an apparently ordinary conversation.
+-- have the Zeus participant rejected, then insert the human's prompt into an
+-- apparently ordinary conversation.
 create table if not exists public.zeus_messenger_blocked_conversations (
   conversation_id uuid primary key,
   blocked_at timestamptz not null default clock_timestamp()
 );
 
+alter table public.zeus_messenger_blocked_conversations enable row level security;
 revoke all on table public.zeus_messenger_blocked_conversations
   from public, anon, authenticated;
 
@@ -23,6 +24,32 @@ select distinct participant.conversation_id
  where participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
 on conflict (conversation_id) do update
 set blocked_at = excluded.blocked_at;
+
+-- The previous migration already installed a fail-closed message trigger. Drop
+-- it temporarily so historical plaintext can be scrubbed without deleting rows
+-- referenced by reactions, receipts or other dependent tables.
+drop trigger if exists reject_plaintext_zeus_messenger
+  on public.messages;
+drop trigger if exists reject_zeus_messenger_message_trigger
+  on public.messages;
+
+update public.messages message
+   set body = '[zeus_messenger_removed]',
+       archive_body = null,
+       status = 'blocked',
+       body_kind = 'system'
+ where message.conversation_id in (
+   select blocked.conversation_id
+     from public.zeus_messenger_blocked_conversations blocked
+ );
+
+-- Detach historical Zeus conversations from the normal messenger. Conversation
+-- shells remain orphaned so this migration does not depend on optional cascades.
+delete from public.conversation_participants participant
+ where participant.conversation_id in (
+   select blocked.conversation_id
+     from public.zeus_messenger_blocked_conversations blocked
+ );
 
 create or replace function public.zeus_welcome_new_user()
 returns trigger
@@ -133,8 +160,6 @@ on public.conversation_participants
 for each row
 execute function public.reject_zeus_messenger_participant();
 
-drop trigger if exists reject_zeus_messenger_message_trigger
-  on public.messages;
 drop trigger if exists reject_plaintext_zeus_messenger
   on public.messages;
 create trigger reject_plaintext_zeus_messenger
@@ -144,21 +169,6 @@ for each row
 execute function public.reject_plaintext_zeus_messenger();
 
 drop function if exists public.reject_zeus_messenger_message();
-
--- Remove plaintext history and detach every historical Zeus conversation from
--- the normal messenger. Conversation shells are intentionally left orphaned so
--- this migration does not depend on every optional foreign-key cascade.
-delete from public.messages message
- where message.conversation_id in (
-   select blocked.conversation_id
-     from public.zeus_messenger_blocked_conversations blocked
- );
-
-delete from public.conversation_participants participant
- where participant.conversation_id in (
-   select blocked.conversation_id
-     from public.zeus_messenger_blocked_conversations blocked
- );
 
 revoke all on function public.reject_plaintext_zeus_messenger()
   from public, anon, authenticated;
