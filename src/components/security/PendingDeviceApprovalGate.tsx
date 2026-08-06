@@ -20,6 +20,7 @@ const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const STATUS_POLL_MS = 5_000;
 
 type GatePhase = 'hidden' | 'checking' | 'pending' | 'syncing' | 'revoked' | 'sync_failed';
+type AccountSyncPhase = 'idle' | 'syncing' | 'ready' | 'failed';
 
 type CurrentDeviceRow = {
   device_id: string;
@@ -38,21 +39,13 @@ function isRevoked(row: CurrentDeviceRow): boolean {
   return Boolean(row.revoked_at) || row.approval_status === 'rejected';
 }
 
-function resolvePhase(row: CurrentDeviceRow): GatePhase {
-  if (isRevoked(row)) return 'revoked';
-  if (row.approval_status === 'pending') return 'pending';
-  if (row.approval_status === 'approved' && row.is_active === true) {
-    return row.routing_status === 'ready' ? 'hidden' : 'syncing';
-  }
-  return 'checking';
-}
-
 export function PendingDeviceApprovalGate() {
   const { user } = useAuth();
   const [phase, setPhase] = useState<GatePhase>('hidden');
   const [row, setRow] = useState<CurrentDeviceRow | null>(null);
   const [deviceId, setDeviceId] = useState(() => getCurrentDeviceId());
   const pendingObservedRef = useRef(false);
+  const syncStateRef = useRef<AccountSyncPhase>('idle');
 
   const inspect = useCallback(async (source: string) => {
     if (!user?.id) {
@@ -82,10 +75,28 @@ export function PendingDeviceApprovalGate() {
     if (!data) return;
 
     const current = data as unknown as CurrentDeviceRow;
-    const nextPhase = resolvePhase(current);
+    let nextPhase: GatePhase = 'checking';
+    if (isRevoked(current)) {
+      nextPhase = 'revoked';
+    } else if (current.approval_status === 'pending') {
+      nextPhase = 'pending';
+    } else if (current.approval_status === 'approved' && current.is_active === true) {
+      if (syncStateRef.current === 'failed') {
+        nextPhase = 'sync_failed';
+      } else if (pendingObservedRef.current && syncStateRef.current !== 'ready') {
+        nextPhase = 'syncing';
+      } else {
+        nextPhase = current.routing_status === 'ready' ? 'hidden' : 'syncing';
+      }
+    }
+
     setRow(current);
     setPhase(nextPhase);
-    pendingObservedRef.current = nextPhase === 'pending' || nextPhase === 'syncing';
+    if (nextPhase === 'pending' || nextPhase === 'syncing' || nextPhase === 'sync_failed') {
+      pendingObservedRef.current = true;
+    } else if (nextPhase === 'revoked' || nextPhase === 'hidden') {
+      pendingObservedRef.current = false;
+    }
   }, [user?.id]);
 
   useEffect(() => {
@@ -93,6 +104,7 @@ export function PendingDeviceApprovalGate() {
       setPhase('hidden');
       setRow(null);
       pendingObservedRef.current = false;
+      syncStateRef.current = 'idle';
       return;
     }
 
@@ -105,20 +117,23 @@ export function PendingDeviceApprovalGate() {
       const detail = (event as CustomEvent<{ deviceId?: string }>).detail;
       if (detail?.deviceId) setDeviceId(detail.deviceId);
       pendingObservedRef.current = true;
+      syncStateRef.current = 'idle';
       setPhase('pending');
       safeInspect('pending-event');
     };
 
+    // This event is emitted only after account synchronization succeeds.
     const onApproved = () => {
-      pendingObservedRef.current = true;
-      setPhase('syncing');
-      safeInspect('approved-event');
+      syncStateRef.current = 'ready';
+      pendingObservedRef.current = false;
+      setPhase('hidden');
     };
 
     const onRevoked = (event: Event) => {
       const detail = (event as CustomEvent<{ deviceId?: string }>).detail;
       if (detail?.deviceId && detail.deviceId !== getCurrentDeviceId()) return;
       pendingObservedRef.current = false;
+      syncStateRef.current = 'idle';
       setPhase('revoked');
       safeInspect('revoked-event');
     };
@@ -126,15 +141,23 @@ export function PendingDeviceApprovalGate() {
     const onSyncState = (event: Event) => {
       const detail = (event as CustomEvent<{
         userId?: string;
-        phase?: 'idle' | 'syncing' | 'ready' | 'failed';
+        phase?: AccountSyncPhase;
       }>).detail;
       if (detail?.userId && detail.userId !== user.id) return;
-      if (detail?.phase === 'syncing') setPhase('syncing');
-      if (detail?.phase === 'ready') {
+      if (!detail?.phase) return;
+      syncStateRef.current = detail.phase;
+      if (detail.phase === 'syncing') {
+        pendingObservedRef.current = true;
+        setPhase('syncing');
+      }
+      if (detail.phase === 'ready') {
         pendingObservedRef.current = false;
         setPhase('hidden');
       }
-      if (detail?.phase === 'failed') setPhase('sync_failed');
+      if (detail.phase === 'failed') {
+        pendingObservedRef.current = true;
+        setPhase('sync_failed');
+      }
     };
 
     window.addEventListener('forsure:e2ee-device-pending', onPending);
@@ -184,6 +207,15 @@ export function PendingDeviceApprovalGate() {
   const signOut = async () => {
     await supabase.auth.signOut().catch(() => undefined);
     window.location.assign('/login');
+  };
+
+  const retrySynchronization = () => {
+    syncStateRef.current = 'syncing';
+    pendingObservedRef.current = true;
+    setPhase('syncing');
+    window.dispatchEvent(new CustomEvent('forsure:authenticated-device-enroll', {
+      detail: { userId: user.id, source: 'pending-device-gate-sync-retry' },
+    }));
   };
 
   return (
@@ -250,7 +282,7 @@ export function PendingDeviceApprovalGate() {
             </h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               {phase === 'syncing'
-                ? 'Synchronisation sécurisée du compte, des conversations et des clés de session…'
+                ? 'Restauration de l’identité commune et synchronisation sécurisée du compte…'
                 : 'Contrôle du statut cryptographique de cet appareil…'}
             </p>
             <Loader2 className="mx-auto mt-6 h-6 w-6 animate-spin text-primary" />
@@ -266,7 +298,7 @@ export function PendingDeviceApprovalGate() {
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               L’appareil reste bloqué tant que la synchronisation sécurisée n’est pas terminée.
             </p>
-            <Button className="mt-6 w-full rounded-xl" onClick={() => void inspect('sync-retry')}>
+            <Button className="mt-6 w-full rounded-xl" onClick={retrySynchronization}>
               <RefreshCw className="mr-2 h-4 w-4" /> Réessayer
             </Button>
           </div>
