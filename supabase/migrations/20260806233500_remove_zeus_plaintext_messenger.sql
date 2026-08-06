@@ -33,26 +33,73 @@ drop trigger if exists reject_plaintext_zeus_messenger
 drop trigger if exists reject_zeus_messenger_message_trigger
   on public.messages;
 
-update public.message_archives archive
-   set archive_body = '[zeus_messenger_removed]'
- where archive.message_id in (
-   select message.id
-     from public.messages message
-    where message.conversation_id in (
-      select blocked.conversation_id
-        from public.zeus_messenger_blocked_conversations blocked
-    )
- );
+-- Archive support was introduced independently. Guard every optional relation
+-- and column so this migration remains replay-safe across the full history.
+do $zeus_archive_scrub$
+begin
+  if to_regclass('public.message_archives') is not null
+     and exists (
+       select 1
+         from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'message_archives'
+          and column_name = 'message_id'
+     )
+     and exists (
+       select 1
+         from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'message_archives'
+          and column_name = 'archive_body'
+     ) then
+    execute $sql$
+      update public.message_archives archive
+         set archive_body = '[zeus_messenger_removed]'
+       where archive.message_id in (
+         select message.id
+           from public.messages message
+          where message.conversation_id in (
+            select blocked.conversation_id
+              from public.zeus_messenger_blocked_conversations blocked
+          )
+       )
+    $sql$;
+  end if;
+end;
+$zeus_archive_scrub$;
 
-update public.messages message
-   set body = '[zeus_messenger_removed]',
-       archive_body = null,
-       status = 'blocked',
-       body_kind = 'system'
- where message.conversation_id in (
-   select blocked.conversation_id
-     from public.zeus_messenger_blocked_conversations blocked
- );
+do $zeus_message_scrub$
+begin
+  if exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'messages'
+       and column_name = 'archive_body'
+  ) then
+    execute $sql$
+      update public.messages message
+         set body = '[zeus_messenger_removed]',
+             archive_body = null,
+             status = 'blocked',
+             body_kind = 'system'
+       where message.conversation_id in (
+         select blocked.conversation_id
+           from public.zeus_messenger_blocked_conversations blocked
+       )
+    $sql$;
+  else
+    update public.messages message
+       set body = '[zeus_messenger_removed]',
+           status = 'blocked',
+           body_kind = 'system'
+     where message.conversation_id in (
+       select blocked.conversation_id
+         from public.zeus_messenger_blocked_conversations blocked
+     );
+  end if;
+end;
+$zeus_message_scrub$;
 
 -- Detach historical Zeus conversations from the normal messenger. Conversation
 -- shells remain orphaned so this migration does not depend on optional cascades.
