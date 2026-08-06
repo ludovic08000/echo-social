@@ -11,6 +11,7 @@ import { secureGet, secureSet } from '@/lib/secureStore';
 import { supabase } from '@/integrations/supabase/client';
 import {
   authorizeExplicitDeviceEnrollment,
+  cancelExplicitDeviceEnrollmentAuthorization,
   type ExplicitDeviceEnrollmentReason,
 } from '@/lib/crypto/deviceEnrollmentGate';
 
@@ -19,6 +20,8 @@ const FINGERPRINT_KEY = 'forsure-device-fingerprint-v1';
 const DEVICE_ID_DB = 'forsure-device-routing-v1';
 const DEVICE_ID_STORE = 'device-ids';
 const DEVICE_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
+const EXPLICIT_ENROLLMENT_TRANSITION_TTL_MS = 10 * 60_000;
 
 export type DeviceIdentityErrorCode =
   | 'DEVICE_ID_INVALID'
@@ -42,6 +45,7 @@ let memoryDeviceId: string | null = null;
 let hydrationPromise: Promise<string> | null = null;
 let memoryDeviceIdIsTemporary = false;
 let explicitEnrollmentInProgress = false;
+let explicitEnrollmentExpiresAt = 0;
 let cachedFingerprints: { strict: string; loose: string; ultraLoose: string } | null = null;
 
 function storageKey(): string {
@@ -150,14 +154,20 @@ async function persistDurably(id: string): Promise<string> {
   return id;
 }
 
+function cancelLocalEnrollmentTransition(): void {
+  explicitEnrollmentInProgress = false;
+  explicitEnrollmentExpiresAt = 0;
+  cancelExplicitDeviceEnrollmentAuthorization();
+}
+
 export function setCurrentDeviceUserScope(userId: string | null | undefined): void {
   const next = userId || null;
   if (currentDeviceUserScope === next) return;
+  cancelLocalEnrollmentTransition();
   currentDeviceUserScope = next;
   memoryDeviceId = null;
   hydrationPromise = null;
   memoryDeviceIdIsTemporary = false;
-  explicitEnrollmentInProgress = false;
   cachedFingerprints = null;
 }
 
@@ -180,19 +190,28 @@ export async function beginExplicitDeviceEnrollment(
   await ensureUserScopeFromAuth();
   authorizeExplicitDeviceEnrollment(reason);
   explicitEnrollmentInProgress = true;
+  explicitEnrollmentExpiresAt = Date.now() + EXPLICIT_ENROLLMENT_TRANSITION_TTL_MS;
   hydrationPromise = null;
-  return persistDurably(generateId());
+  try {
+    return await persistDurably(generateId());
+  } catch (error) {
+    cancelLocalEnrollmentTransition();
+    throw error;
+  }
 }
 
 export function setCurrentDeviceId(id: string): string {
   if (!validId(id)) throw new DeviceIdentityError('DEVICE_ID_INVALID');
   const existing = memoryDeviceId ?? readBrowserStorage(storageKey())[0] ?? null;
-  if (existing && existing !== id && !explicitEnrollmentInProgress) {
+  const serverTransitionAllowed = explicitEnrollmentInProgress
+    && explicitEnrollmentExpiresAt > Date.now()
+    && SERVER_DEVICE_ID_RE.test(id);
+  if (existing && existing !== id && !serverTransitionAllowed) {
     throw new DeviceIdentityError('DEVICE_ID_MISMATCH');
   }
   memoryDeviceId = id;
   memoryDeviceIdIsTemporary = false;
-  explicitEnrollmentInProgress = false;
+  cancelLocalEnrollmentTransition();
   hydrationPromise = Promise.resolve(id);
   void persistDurably(id).catch(() => {
     memoryDeviceId = null;
@@ -332,11 +351,11 @@ export function getCurrentPlatform(): string {
 export const __test__ = {
   validId,
   reset(): void {
+    cancelLocalEnrollmentTransition();
     currentDeviceUserScope = null;
     memoryDeviceId = null;
     hydrationPromise = null;
     memoryDeviceIdIsTemporary = false;
-    explicitEnrollmentInProgress = false;
     cachedFingerprints = null;
   },
 };
