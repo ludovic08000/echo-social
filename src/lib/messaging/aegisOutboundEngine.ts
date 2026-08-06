@@ -7,6 +7,7 @@ import {
   sendMessageWithAegisRetry,
 } from '@/lib/messaging/aegisSendRpc';
 import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
+import { waitForAccountSynchronization } from '@/lib/messaging/accountSyncBarrier';
 import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
 import {
   MAX_INLINE_MESSAGE_BODY_BYTES,
@@ -143,6 +144,9 @@ export async function sendAegisOutboundMessage(
     payloadBytes: utf8ByteLength(input.plaintext),
     retryCount: resumed?.retryCount ?? 0,
   });
+  trace('ACCOUNT_SYNC_GATE', { outcome: 'start' });
+  await waitForAccountSynchronization(input.senderUserId);
+  trace('ACCOUNT_SYNC_GATE', { outcome: 'ok' });
   const deviceStartedAt = Date.now();
   trace('DEVICE_READY_CHECK', { outcome: 'start' });
   const readyDevice = await ensureAegisDeviceReady(input.senderUserId);

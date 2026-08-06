@@ -101,6 +101,11 @@ export function parseCompletedDeviceEnrollment(
   const result = asObject(value);
   if (result.ok !== true) throw new Error(responseCode(result));
 
+  const code = responseCode(result);
+  if (code !== 'DEVICE_ENROLLMENT_COMPLETED' && code !== 'DEVICE_ENROLLMENT_ALREADY_COMPLETED') {
+    throw new Error('DEVICE_ENROLLMENT_NOT_STAGED');
+  }
+
   const deviceId = typeof result.device_id === 'string' ? result.device_id : '';
   if (!SERVER_DEVICE_ID_RE.test(deviceId)) {
     throw new Error('DEVICE_ENROLLMENT_INVALID_DEVICE_ID');
@@ -210,17 +215,12 @@ export async function beginServerAssignedDeviceEnrollment(
   return parseDeviceEnrollmentChallenge(data);
 }
 
-export async function approveServerAssignedDevice(deviceId: string): Promise<string> {
-  if (!SERVER_DEVICE_ID_RE.test(deviceId)) {
-    throw new Error('DEVICE_APPROVAL_INVALID_DEVICE_ID');
-  }
-
-  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
-    body: { device_id: deviceId },
-  });
-
-  if (error) throw new Error(`DEVICE_APPROVAL_FAILED:${error.message}`);
-  return parseApprovedDevice(data, deviceId);
+/**
+ * Legacy entry point retained to fail closed. A pending device may never approve
+ * itself; approval must be signed by another active, approved device.
+ */
+export async function approveServerAssignedDevice(_deviceId: string): Promise<string> {
+  throw new Error('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
 }
 
 export async function completeServerAssignedDeviceEnrollment(
@@ -255,8 +255,7 @@ export async function completeServerAssignedDeviceEnrollment(
   );
 
   if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_FAILED:${error.message}`);
-  const completedDeviceId = parseCompletedDeviceEnrollment(data, challenge.deviceId);
-  return approveServerAssignedDevice(completedDeviceId);
+  return parseCompletedDeviceEnrollment(data, challenge.deviceId);
 }
 
 export async function cancelServerAssignedDeviceEnrollment(

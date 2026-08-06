@@ -7,6 +7,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const encoder = new TextEncoder();
 
 type JsonObject = Record<string, unknown>;
+type ApprovalDecision = "approve" | "reject";
 
 type DeviceRow = {
   device_id: string;
@@ -17,6 +18,8 @@ type DeviceRow = {
   approval_status: string | null;
   is_active: boolean | null;
   revoked_at: string | null;
+  crypto_invalid_at: string | null;
+  routing_status: string | null;
 };
 
 type AccountRow = {
@@ -110,6 +113,26 @@ function devicePossessionPayload(
   });
 }
 
+function approvalDecisionPayload(args: {
+  userId: string;
+  approver: DeviceRow;
+  target: DeviceRow;
+  challengeId: string;
+  decision: ApprovalDecision;
+}): string {
+  return JSON.stringify({
+    protocol: "forsure-aegis-device-approval-decision",
+    version: 1,
+    userId: args.userId,
+    approverDeviceId: args.approver.device_id,
+    targetDeviceId: args.target.device_id,
+    targetChallengeId: args.challengeId,
+    targetDevicePublicKey: args.target.device_public_key,
+    targetDeviceSigningKey: args.target.device_signing_key,
+    decision: args.decision,
+  });
+}
+
 async function fingerprintForAccountPayload(payload: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(payload)));
   let fingerprint = "";
@@ -135,6 +158,13 @@ async function verifyEd25519(publicKeyB64: string, signatureB64: string, payload
   } catch {
     return false;
   }
+}
+
+function isTrustedApprover(device: DeviceRow): boolean {
+  return device.approval_status === "approved"
+    && device.is_active === true
+    && !device.revoked_at
+    && !device.crypto_invalid_at;
 }
 
 serve(async (req) => {
@@ -179,17 +209,47 @@ serve(async (req) => {
       return respond(req, 400, { ok: false, code: "INVALID_JSON" });
     }
 
-    const deviceId = typeof input.device_id === "string" ? input.device_id.trim() : "";
-    if (!DEVICE_ID_RE.test(deviceId)) {
+    const decision = input.decision === "reject" ? "reject" : input.decision === "approve" ? "approve" : null;
+    const approverDeviceId = typeof input.approver_device_id === "string"
+      ? input.approver_device_id.trim()
+      : "";
+    const targetDeviceId = typeof input.target_device_id === "string"
+      ? input.target_device_id.trim()
+      : "";
+    const targetChallengeId = typeof input.target_challenge_id === "string"
+      ? input.target_challenge_id.trim()
+      : "";
+    const approverSignature = typeof input.approver_signature === "string"
+      ? input.approver_signature.trim()
+      : "";
+
+    if (!decision) return respond(req, 400, { ok: false, code: "INVALID_DECISION" });
+    if (!DEVICE_ID_RE.test(approverDeviceId) || !DEVICE_ID_RE.test(targetDeviceId)) {
       return respond(req, 400, { ok: false, code: "INVALID_DEVICE_ID" });
     }
+    if (approverDeviceId === targetDeviceId) {
+      return respond(req, 403, { ok: false, code: "DEVICE_SELF_APPROVAL_FORBIDDEN" });
+    }
+    if (!UUID_RE.test(targetChallengeId)) {
+      return respond(req, 400, { ok: false, code: "INVALID_CHALLENGE_ID" });
+    }
+    if (approverSignature.length < 80) {
+      return respond(req, 400, { ok: false, code: "APPROVER_SIGNATURE_REQUIRED" });
+    }
 
-    const [deviceResult, accountResult] = await Promise.all([
+    const deviceColumns = "device_id,device_public_key,device_signing_key,device_authorization_signature,approval_challenge_id,approval_status,is_active,revoked_at,crypto_invalid_at,routing_status";
+    const [approverResult, targetResult, accountResult] = await Promise.all([
       admin
         .from("user_devices")
-        .select("device_id,device_public_key,device_signing_key,device_authorization_signature,approval_challenge_id,approval_status,is_active,revoked_at")
+        .select(deviceColumns)
         .eq("user_id", user.id)
-        .eq("device_id", deviceId)
+        .eq("device_id", approverDeviceId)
+        .maybeSingle(),
+      admin
+        .from("user_devices")
+        .select(deviceColumns)
+        .eq("user_id", user.id)
+        .eq("device_id", targetDeviceId)
         .maybeSingle(),
       admin
         .from("user_public_keys")
@@ -201,48 +261,99 @@ serve(async (req) => {
         .maybeSingle(),
     ]);
 
-    if (deviceResult.error || !deviceResult.data) {
+    if (approverResult.error || !approverResult.data) {
+      return respond(req, 404, { ok: false, code: "APPROVER_DEVICE_NOT_FOUND" });
+    }
+    if (targetResult.error || !targetResult.data) {
       return respond(req, 404, { ok: false, code: "DEVICE_NOT_FOUND" });
     }
-    if (accountResult.error || !accountResult.data) {
-      return respond(req, 409, { ok: false, code: "ACCOUNT_IDENTITY_NOT_FOUND" });
+
+    const approver = approverResult.data as DeviceRow;
+    const target = targetResult.data as DeviceRow;
+
+    if (!isTrustedApprover(approver)) {
+      return respond(req, 403, { ok: false, code: "APPROVER_DEVICE_NOT_TRUSTED" });
     }
-
-    const device = deviceResult.data as DeviceRow;
-    const account = accountResult.data as AccountRow;
-
-    if (device.revoked_at || device.approval_status === "rejected") {
+    if (!approver.device_signing_key) {
+      return respond(req, 422, { ok: false, code: "APPROVER_SIGNING_KEY_MISSING" });
+    }
+    if (target.revoked_at || target.approval_status === "rejected") {
       return respond(req, 409, { ok: false, code: "DEVICE_REVOKED_OR_REJECTED" });
     }
-    if (!device.device_public_key || !device.device_signing_key || !device.device_authorization_signature) {
+    if (target.approval_status !== "pending" || target.is_active !== false) {
+      return respond(req, 409, { ok: false, code: "DEVICE_NOT_PENDING" });
+    }
+    if (!target.device_public_key || !target.device_signing_key || !target.device_authorization_signature) {
       return respond(req, 422, { ok: false, code: "DEVICE_AUTHORIZATION_INCOMPLETE" });
     }
-    if (!device.approval_challenge_id || !UUID_RE.test(device.approval_challenge_id)) {
-      return respond(req, 409, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_NOT_FOUND" });
+    if (target.approval_challenge_id !== targetChallengeId) {
+      return respond(req, 409, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_CHANGED" });
     }
-    if (
-      !account.identity_key ||
-      !account.signing_key ||
-      !account.fingerprint ||
-      !account.identity_binding_signature ||
-      account.identity_binding_version !== 1
-    ) {
-      return respond(req, 422, { ok: false, code: "ACCOUNT_BINDING_INCOMPLETE" });
+
+    const approvalSignatureValid = await verifyEd25519(
+      approver.device_signing_key,
+      approverSignature,
+      approvalDecisionPayload({
+        userId: user.id,
+        approver,
+        target,
+        challengeId: targetChallengeId,
+        decision,
+      }),
+    );
+    if (!approvalSignatureValid) {
+      return respond(req, 422, { ok: false, code: "APPROVER_SIGNATURE_INVALID" });
     }
 
     const { data: challengeData, error: challengeError } = await admin
       .from("device_enrollment_challenges")
       .select("id,device_id,nonce_hash,expires_at,consumed_at,cancelled_at,device_possession_signature,possession_payload_version")
-      .eq("id", device.approval_challenge_id)
+      .eq("id", targetChallengeId)
       .eq("user_id", user.id)
-      .eq("device_id", device.device_id)
+      .eq("device_id", target.device_id)
       .maybeSingle();
 
     if (challengeError || !challengeData) {
       return respond(req, 409, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_NOT_FOUND" });
     }
-
     const challenge = challengeData as ChallengeRow;
+
+    if (decision === "reject") {
+      const { data: rejectedData, error: rejectedError } = await admin.rpc(
+        "reject_verified_user_device_enrollment",
+        {
+          p_user_id: user.id,
+          p_approver_device_id: approver.device_id,
+          p_challenge_id: challenge.id,
+          p_device_id: target.device_id,
+        },
+      );
+      const rejected = rejectedData as JsonObject | null;
+      if (rejectedError) {
+        console.error("[approve-device-enrollment] rejection finalizer failed", rejectedError.message);
+        return respond(req, 500, { ok: false, code: "DEVICE_REJECTION_FINALIZER_FAILED" });
+      }
+      if (!rejected || rejected.ok !== true || rejected.code !== "DEVICE_REVOKED") {
+        return respond(req, 409, {
+          ok: false,
+          code: typeof rejected?.code === "string" ? rejected.code : "DEVICE_REJECTION_REJECTED",
+        });
+      }
+      return respond(req, 200, {
+        ok: true,
+        code: "DEVICE_REVOKED",
+        decision,
+        device_id: target.device_id,
+        challenge_id: challenge.id,
+        approver_device_id: approver.device_id,
+      });
+    }
+
+    if (accountResult.error || !accountResult.data) {
+      return respond(req, 409, { ok: false, code: "ACCOUNT_IDENTITY_NOT_FOUND" });
+    }
+    const account = accountResult.data as AccountRow;
+
     if (challenge.cancelled_at) {
       return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_CANCELLED" });
     }
@@ -253,18 +364,24 @@ serve(async (req) => {
     const consumedAt = Date.parse(challenge.consumed_at);
     const expiresAt = Date.parse(challenge.expires_at);
     if (
-      !Number.isFinite(consumedAt) ||
-      !Number.isFinite(expiresAt) ||
-      consumedAt > expiresAt ||
-      expiresAt <= Date.now()
+      !Number.isFinite(consumedAt)
+      || !Number.isFinite(expiresAt)
+      || consumedAt > expiresAt
+      || expiresAt <= Date.now()
     ) {
       return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_EXPIRED" });
     }
-    if (
-      challenge.possession_payload_version !== 1 ||
-      !challenge.device_possession_signature
-    ) {
+    if (challenge.possession_payload_version !== 1 || !challenge.device_possession_signature) {
       return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_PROOF_REQUIRED" });
+    }
+    if (
+      !account.identity_key
+      || !account.signing_key
+      || !account.fingerprint
+      || !account.identity_binding_signature
+      || account.identity_binding_version !== 1
+    ) {
+      return respond(req, 422, { ok: false, code: "ACCOUNT_BINDING_INCOMPLETE" });
     }
 
     const bindingPayload = accountBindingPayload(account);
@@ -273,42 +390,44 @@ serve(async (req) => {
       return respond(req, 422, { ok: false, code: "ACCOUNT_FINGERPRINT_INVALID" });
     }
 
-    const accountBindingValid = await verifyEd25519(
-      account.signing_key,
-      account.identity_binding_signature,
-      bindingPayload,
-    );
+    const [accountBindingValid, deviceAuthorizationValid, devicePossessionValid] = await Promise.all([
+      verifyEd25519(
+        account.signing_key,
+        account.identity_binding_signature,
+        bindingPayload,
+      ),
+      verifyEd25519(
+        account.signing_key,
+        target.device_authorization_signature,
+        deviceAuthorizationPayload(user.id, target, account),
+      ),
+      verifyEd25519(
+        target.device_signing_key,
+        challenge.device_possession_signature,
+        devicePossessionPayload(challenge, target, account),
+      ),
+    ]);
+
     if (!accountBindingValid) {
       return respond(req, 422, { ok: false, code: "ACCOUNT_BINDING_SIGNATURE_INVALID" });
     }
-
-    const deviceAuthorizationValid = await verifyEd25519(
-      account.signing_key,
-      device.device_authorization_signature,
-      deviceAuthorizationPayload(user.id, device, account),
-    );
     if (!deviceAuthorizationValid) {
       return respond(req, 422, { ok: false, code: "DEVICE_AUTHORIZATION_SIGNATURE_INVALID" });
     }
-
-    const devicePossessionValid = await verifyEd25519(
-      device.device_signing_key,
-      challenge.device_possession_signature,
-      devicePossessionPayload(challenge, device, account),
-    );
     if (!devicePossessionValid) {
       return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_SIGNATURE_INVALID" });
     }
 
     const { data: finalizedData, error: finalizedError } = await admin.rpc(
-      "finalize_verified_user_device_approval",
+      "finalize_verified_user_device_approval_from_device",
       {
         p_user_id: user.id,
+        p_approver_device_id: approver.device_id,
         p_challenge_id: challenge.id,
-        p_device_id: device.device_id,
-        p_device_public_key: device.device_public_key,
-        p_device_signing_key: device.device_signing_key,
-        p_device_authorization_signature: device.device_authorization_signature,
+        p_device_id: target.device_id,
+        p_device_public_key: target.device_public_key,
+        p_device_signing_key: target.device_signing_key,
+        p_device_authorization_signature: target.device_authorization_signature,
         p_device_possession_signature: challenge.device_possession_signature,
         p_account_identity_key: account.identity_key,
         p_account_signing_key: account.signing_key,
@@ -331,8 +450,10 @@ serve(async (req) => {
     return respond(req, 200, {
       ok: true,
       code: "DEVICE_APPROVED",
-      device_id: device.device_id,
+      decision,
+      device_id: target.device_id,
       challenge_id: challenge.id,
+      approver_device_id: approver.device_id,
       existing: finalized.existing === true,
     });
   } catch (error) {
