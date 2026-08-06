@@ -22,7 +22,7 @@ describe('account identity device approval architecture', () => {
     expect(gate).toContain('Récupérer ce compte');
     expect(gate).not.toContain('À faire sur votre Windows');
     expect(gate).not.toContain('par exemple votre Windows');
-    expect(client).toContain("mode: 'account_recovery'");
+    expect(client).toContain("AccountIdentityApprovalMode = 'account_recovery'");
     expect(client).toContain("functions.invoke('recover-device-enrollment'");
   });
 
