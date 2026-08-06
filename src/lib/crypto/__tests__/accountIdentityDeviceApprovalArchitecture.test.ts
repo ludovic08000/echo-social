@@ -10,6 +10,7 @@ const recoveryMigration = readFileSync(
   'supabase/migrations/20260806213000_allow_recovery_and_first_device_approval.sql',
   'utf8',
 );
+const supabaseConfig = readFileSync('supabase/config.toml', 'utf8');
 const gate = readFileSync('src/components/security/PendingDeviceApprovalGate.tsx', 'utf8');
 const restoreDialog = readFileSync(
   'src/components/messages/E2EERestorePromptDialog.tsx',
@@ -56,10 +57,13 @@ describe('account identity device approval architecture', () => {
     expect(restoreDialog).toContain('Aucune sauvegarde ne permet de prouver cette identité');
   });
 
-  it('keeps all approval finalizers service-role only', () => {
+  it('keeps all approval finalizers service-role only and the edge endpoint JWT-protected', () => {
     expect(recoveryMigration).toContain('finalize_verified_user_device_approval_from_recovery');
     expect(recoveryMigration).toContain('finalize_verified_first_user_device');
     expect(recoveryMigration).toContain('to service_role');
     expect(recoveryMigration).toContain('from public, anon, authenticated');
+    expect(supabaseConfig).toContain('[functions.recover-device-enrollment]');
+    const recoveryConfig = supabaseConfig.split('[functions.recover-device-enrollment]')[1] ?? '';
+    expect(recoveryConfig).toContain('verify_jwt = true');
   });
 });
