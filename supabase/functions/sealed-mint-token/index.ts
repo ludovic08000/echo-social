@@ -1,117 +1,127 @@
-// Lot A2 — Sealed Sender: mint a short-lived single-use delivery token.
-//
-// The sender authenticates here (JWT in Authorization header), proves to the
-// server it is a legitimate user, and receives an opaque token bound to a
-// specific recipient + expiry. The server stores ONLY a hash of the token,
-// then forgets which sender minted it. The companion `sealed-relay` function
-// accepts that token without any auth header, so the row eventually inserted
-// into `sealed_sender_messages` cannot be linked back to the sender via
-// auth.uid() or service-role audit logs.
-
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { safeServerErrorMeta, safeServerLog } from "../_shared/aegis-privacy.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  SEALED_SENDER_PROTOCOL_VERSION,
+  SEALED_SENDER_TOKEN_TTL_MS,
+  encodeSignedToken,
+  isUuid,
+  sha256Base64Url,
+  signTokenPayload,
+  type SealedSenderTokenPayloadV1,
+} from '../_shared/sealedSenderToken.ts';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const TOKEN_TTL_MS = 5 * 60_000; // 5 minutes
-const enc = new TextEncoder();
-
-function b64url(bytes: Uint8Array): string {
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-}
-
-async function hmac(key: string, msg: string): Promise<Uint8Array> {
-  const k = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(key),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", k, enc.encode(msg));
-  return new Uint8Array(sig);
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", enc.encode(input));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+function json(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const authorization = req.headers.get('Authorization');
+    if (!authorization?.startsWith('Bearer ')) return json(401, { error: 'unauthorized' });
 
-    const auth = req.headers.get("Authorization") || "";
-    if (!auth.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "missing_auth" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const tokenSecret = Deno.env.get('SEALED_SENDER_TOKEN_SECRET');
+    if (!supabaseUrl || !anonKey || !serviceRoleKey || !tokenSecret) {
+      return json(503, { error: 'sealed_sender_unavailable' });
     }
 
-    // Verify JWT via auth.getUser; we only need confirmation it's a real user.
-    const userClient = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { Authorization: auth } },
+    const callerClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false },
     });
-    const { data: { user }, error: uErr } = await userClient.auth.getUser();
-    if (uErr || !user) {
-      return new Response(JSON.stringify({ error: "invalid_auth" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+
+    const { data: authData, error: authError } = await callerClient.auth.getUser();
+    const caller = authData.user;
+    if (authError || !caller) return json(401, { error: 'unauthorized' });
+
+    const body = await req.json().catch(() => null) as {
+      recipient_user_id?: unknown;
+      conversation_id?: unknown;
+      context_id?: unknown;
+    } | null;
+    if (
+      !body ||
+      !isUuid(body.recipient_user_id) ||
+      !isUuid(body.conversation_id) ||
+      (body.context_id !== undefined && body.context_id !== null && typeof body.context_id !== 'string')
+    ) {
+      return json(400, { error: 'invalid_request' });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const recipient = String(body?.recipient_user_id || "");
-    if (!recipient || !/^[0-9a-f-]{36}$/i.test(recipient)) {
-      return new Response(JSON.stringify({ error: "bad_recipient" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const recipientUserId = body.recipient_user_id;
+    const conversationId = body.conversation_id;
+    if (recipientUserId === caller.id) return json(400, { error: 'invalid_recipient' });
+    if (typeof body.context_id === 'string' && body.context_id.length > 256) {
+      return json(400, { error: 'context_too_large' });
     }
 
-    const expiresAt = Date.now() + TOKEN_TTL_MS;
-    const nonce = b64url(crypto.getRandomValues(new Uint8Array(16)));
-    // Token format: <recipient>.<expMs>.<nonce>.<sig>
-    const base = `${recipient}.${expiresAt}.${nonce}`;
-    const sig = b64url(await hmac(SERVICE_KEY, base));
-    const token = `${base}.${sig}`;
-    const tokenHash = await sha256Hex(token);
+    const { data: conversation, error: conversationError } = await callerClient
+      .from('conversations')
+      .select('id')
+      .eq('id', conversationId)
+      .maybeSingle();
+    if (conversationError || !conversation) return json(404, { error: 'conversation_not_found' });
 
-    // Persist hash only — service role bypasses RLS.
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
-    const { error: insErr } = await admin
-      .from("sealed_delivery_tokens")
-      .insert({
-        token_hash: tokenHash,
-        recipient_user_id: recipient,
-        expires_at: new Date(expiresAt).toISOString(),
-      });
-    if (insErr) {
-      safeServerLog("sealed-mint", "STORE_FAILED", safeServerErrorMeta(insErr));
-      return new Response(JSON.stringify({ error: "store_failed" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const { data: members, error: membersError } = await callerClient
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', conversationId)
+      .in('user_id', [caller.id, recipientUserId]);
+    if (membersError) return json(403, { error: 'conversation_membership_denied' });
 
-    return new Response(JSON.stringify({ token, expires_at: expiresAt }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const memberIds = new Set((members ?? []).map(row => row.user_id));
+    if (!memberIds.has(caller.id)) return json(403, { error: 'sender_not_member' });
+    if (!memberIds.has(recipientUserId)) return json(403, { error: 'recipient_not_member' });
+
+    const now = Date.now();
+    const payload: SealedSenderTokenPayloadV1 = {
+      version: SEALED_SENDER_PROTOCOL_VERSION,
+      sender_user_id: caller.id,
+      recipient_user_id: recipientUserId,
+      conversation_id: conversationId,
+      nonce: crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, ''),
+      issued_at: new Date(now).toISOString(),
+      expires_at: new Date(now + SEALED_SENDER_TOKEN_TTL_MS).toISOString(),
+      context_id: typeof body.context_id === 'string' ? body.context_id : null,
+    };
+    const mac = await signTokenPayload(payload, tokenSecret);
+    const token = encodeSignedToken({ payload, mac });
+    const tokenHash = await sha256Base64Url(token);
+
+    const { error: insertError } = await admin.from('sealed_sender_tokens').insert({
+      token_hash: tokenHash,
+      nonce: payload.nonce,
+      protocol_version: payload.version,
+      sender_user_id: payload.sender_user_id,
+      recipient_user_id: payload.recipient_user_id,
+      conversation_id: payload.conversation_id,
+      context_id: payload.context_id,
+      issued_at: payload.issued_at,
+      expires_at: payload.expires_at,
     });
-  } catch (e) {
-    safeServerLog("sealed-mint", "UNHANDLED", safeServerErrorMeta(e));
-    return new Response(JSON.stringify({ error: "internal" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    if (insertError) return json(500, { error: 'token_persistence_failed' });
+
+    return json(200, {
+      token,
+      protocol_version: payload.version,
+      expires_at: payload.expires_at,
+      recipient_user_id: payload.recipient_user_id,
+      conversation_id: payload.conversation_id,
     });
+  } catch {
+    return json(400, { error: 'invalid_request' });
   }
 });
