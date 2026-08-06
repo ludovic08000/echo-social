@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const client = readFileSync('src/lib/crypto/deviceApprovalDecision.ts', 'utf8');
+const enrollmentClient = readFileSync('src/lib/crypto/serverDeviceEnrollment.ts', 'utf8');
 const recoveryFunction = readFileSync(
   'supabase/functions/recover-device-enrollment/index.ts',
   'utf8',
@@ -40,12 +41,21 @@ describe('account identity device approval architecture', () => {
 
   it('allows exactly one first-device bootstrap for a genuinely new account', () => {
     expect(client).toContain("'first_device_bootstrap'");
+    expect(enrollmentClient).toContain('ACCOUNT_IDENTITY_BOOTSTRAP_REQUIRES_EXPLICIT_MIGRATION');
+    expect(enrollmentClient).toContain(".from('user_devices')");
     expect(recoveryFunction).toContain('FIRST_DEVICE_ACCOUNT_ALREADY_INITIALIZED');
     expect(recoveryFunction).toContain('FIRST_DEVICE_BOOTSTRAP_FORBIDDEN');
     expect(recoveryFunction).toContain('finalize_verified_first_user_device');
     expect(recoveryMigration).toContain("approval_method = 'first_device_bootstrap'");
     expect(recoveryMigration).toContain('device.device_id <> v_device_id');
     expect(gate).toContain('Activer ce premier appareil');
+  });
+
+  it('fails closed on account lookup errors and invalid device crypto state', () => {
+    expect(recoveryFunction).toContain('if (serverAccountResult.error)');
+    expect(recoveryFunction).toContain('ACCOUNT_IDENTITY_LOOKUP_FAILED');
+    expect(recoveryFunction).toContain('if (target.crypto_invalid_at)');
+    expect(recoveryFunction).toContain('DEVICE_CRYPTO_INVALID');
   });
 
   it('allows explicit recovery on pending devices but blocks automatic recovery prompts', () => {
