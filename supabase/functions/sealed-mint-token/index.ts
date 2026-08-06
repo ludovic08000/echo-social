@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import {
   SEALED_SENDER_PROTOCOL_VERSION,
   SEALED_SENDER_TOKEN_TTL_MS,
