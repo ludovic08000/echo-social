@@ -25,6 +25,15 @@ describe('Sealed Sender v1 architecture', () => {
     expect(relay).not.toContain("@supabase/supabase-js@2';");
   });
 
+  it('fails closed when the token secret is missing or shorter than 32 UTF-8 bytes', () => {
+    for (const edgeFunction of [mint, relay]) {
+      expect(edgeFunction).toContain("Deno.env.get('SEALED_SENDER_TOKEN_SECRET')");
+      expect(edgeFunction).toContain('utf8ByteLength(tokenSecret) < 32');
+      expect(edgeFunction).toContain("error: 'sealed_sender_unavailable'");
+    }
+    expect(mint).toContain('utf8ByteLength(body.context_id) > 256');
+  });
+
   it('validates exact relay context and size limits before the service-role RPC', () => {
     expect(relay).toContain('conversation_mismatch');
     expect(relay).toContain('recipient_mismatch');
