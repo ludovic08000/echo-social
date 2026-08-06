@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   WebAegisEnclaveAnchorMissingError,
   WebAegisEnclaveIntegrityError,
@@ -13,6 +13,7 @@ const DB_VERSION = 1;
 const ANCHOR_STORE = 'anchors';
 const SECRET_STORE = 'secrets';
 const ANCHOR_ID = 'aegis-web-anchor-v1';
+const WRITE_LOCK_NAME = 'forsure-ace-web-write-v1';
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -65,7 +66,10 @@ async function clearEnclave(): Promise<void> {
 
 describe('ACE Web', () => {
   beforeEach(clearEnclave);
-  afterEach(clearEnclave);
+  afterEach(async () => {
+    Reflect.deleteProperty(globalThis.navigator, 'locks');
+    await clearEnclave();
+  });
 
   it('round-trips critical material in Chrome-compatible IndexedDB storage', async () => {
     await webAegisEnclaveSet('identity', 'private-jwk-bundle');
@@ -120,10 +124,78 @@ describe('ACE Web', () => {
     );
   });
 
+  it('serializes concurrent writes with the Web Locks API when available', async () => {
+    let lockTail = Promise.resolve();
+    let activeLocks = 0;
+    let maxActiveLocks = 0;
+
+    const request = vi.fn((
+      name: string,
+      options: { mode?: string },
+      callback: (lock: Lock | null) => Promise<unknown>,
+    ) => {
+      const run = lockTail.then(async () => {
+        activeLocks += 1;
+        maxActiveLocks = Math.max(maxActiveLocks, activeLocks);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          return await callback({ name, mode: 'exclusive' } as Lock);
+        } finally {
+          activeLocks -= 1;
+        }
+      });
+      lockTail = run.then(() => undefined, () => undefined);
+      return run;
+    });
+
+    Object.defineProperty(globalThis.navigator, 'locks', {
+      configurable: true,
+      value: { request },
+    });
+
+    await Promise.all([
+      webAegisEnclaveSet('shared-key', 'first'),
+      webAegisEnclaveSet('shared-key', 'second'),
+    ]);
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      WRITE_LOCK_NAME,
+      { mode: 'exclusive' },
+      expect.any(Function),
+    );
+    expect(maxActiveLocks).toBe(1);
+    expect(await webAegisEnclaveGet('shared-key')).toBe('second');
+  });
+
   it('reports a successful authenticated health probe', async () => {
     const health = await verifyWebAegisEnclaveHealth();
     expect(health.available).toBe(true);
     expect(health.roundTripOk).toBe(true);
     expect(health.anchorPresent).toBe(true);
+  });
+
+  it('fails closed when a protected browser primitive is replaced', async () => {
+    const OriginalTextEncoder = globalThis.TextEncoder;
+    class PatchedTextEncoder extends OriginalTextEncoder {}
+
+    Object.defineProperty(globalThis, 'TextEncoder', {
+      configurable: true,
+      writable: true,
+      value: PatchedTextEncoder,
+    });
+
+    try {
+      await expect(webAegisEnclaveGet('integrity-guard')).rejects.toThrow(
+        'E2EE_WEB_ENCLAVE_UNAVAILABLE:crypto_integrity_failed',
+      );
+    } finally {
+      Object.defineProperty(globalThis, 'TextEncoder', {
+        configurable: true,
+        writable: true,
+        value: OriginalTextEncoder,
+      });
+    }
   });
 });
