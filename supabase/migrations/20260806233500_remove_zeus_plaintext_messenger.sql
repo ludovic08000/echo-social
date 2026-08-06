@@ -93,8 +93,6 @@ begin
 end;
 $$;
 
--- Replace the earlier guard as well, because its trigger remains installed.
--- It now checks the durable marker in addition to the participant table.
 create or replace function public.reject_plaintext_zeus_messenger()
 returns trigger
 language plpgsql
@@ -123,45 +121,13 @@ begin
 end;
 $$;
 
-create or replace function public.reject_zeus_messenger_message()
-returns trigger
-language plpgsql
-security definer
-set search_path = pg_catalog, public
-as $$
-begin
-  if new.sender_id = '00000000-0000-0000-0000-000000000001'::uuid
-     or exists (
-       select 1
-         from public.zeus_messenger_blocked_conversations blocked
-        where blocked.conversation_id = new.conversation_id
-     )
-     or exists (
-       select 1
-         from public.conversation_participants participant
-        where participant.conversation_id = new.conversation_id
-          and participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
-     ) then
-    insert into public.zeus_messenger_blocked_conversations (conversation_id)
-    values (new.conversation_id)
-    on conflict (conversation_id) do update
-    set blocked_at = excluded.blocked_at;
-
-    -- A legacy caller may create a conversation before trying to insert the
-    -- plaintext message. Remove its participants so the empty shell cannot be
-    -- exposed in the messenger, then discard the message row.
-    delete from public.conversation_participants
-     where conversation_id = new.conversation_id;
-    return null;
-  end if;
-
-  return new;
-end;
-$$;
-
+-- Remove every historical or intermediate trigger name before installing the
+-- canonical names asserted by the SQL security suite.
 drop trigger if exists reject_zeus_messenger_participant_trigger
   on public.conversation_participants;
-create trigger reject_zeus_messenger_participant_trigger
+drop trigger if exists reject_zeus_messenger_participant
+  on public.conversation_participants;
+create trigger reject_zeus_messenger_participant
 before insert or update of user_id, conversation_id
 on public.conversation_participants
 for each row
@@ -169,11 +135,15 @@ execute function public.reject_zeus_messenger_participant();
 
 drop trigger if exists reject_zeus_messenger_message_trigger
   on public.messages;
-create trigger reject_zeus_messenger_message_trigger
+drop trigger if exists reject_plaintext_zeus_messenger
+  on public.messages;
+create trigger reject_plaintext_zeus_messenger
 before insert or update of sender_id, conversation_id, body, body_kind
 on public.messages
 for each row
-execute function public.reject_zeus_messenger_message();
+execute function public.reject_plaintext_zeus_messenger();
+
+drop function if exists public.reject_zeus_messenger_message();
 
 -- Remove plaintext history and detach every historical Zeus conversation from
 -- the normal messenger. Conversation shells are intentionally left orphaned so
@@ -193,8 +163,6 @@ delete from public.conversation_participants participant
 revoke all on function public.reject_plaintext_zeus_messenger()
   from public, anon, authenticated;
 revoke all on function public.reject_zeus_messenger_participant()
-  from public, anon, authenticated;
-revoke all on function public.reject_zeus_messenger_message()
   from public, anon, authenticated;
 
 commit;
