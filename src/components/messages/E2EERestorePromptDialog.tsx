@@ -31,9 +31,17 @@ import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevi
 const DIALOG_OWNER = 'e2ee-restore-prompt';
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
-async function currentDeviceIsApproved(userId: string): Promise<boolean> {
+type CurrentDeviceApprovalState = 'approved' | 'pending' | 'unavailable';
+type RestoreRequestDetail = {
+  allowPendingDeviceRecovery?: boolean;
+  source?: string;
+  reason?: string;
+  deviceId?: string;
+};
+
+async function currentDeviceApprovalState(userId: string): Promise<CurrentDeviceApprovalState> {
   const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
-  if (!SERVER_DEVICE_ID_RE.test(deviceId)) return false;
+  if (!SERVER_DEVICE_ID_RE.test(deviceId)) return 'unavailable';
 
   const { data, error } = await supabase
     .from('user_devices')
@@ -42,11 +50,10 @@ async function currentDeviceIsApproved(userId: string): Promise<boolean> {
     .eq('device_id', deviceId)
     .maybeSingle();
 
-  if (error || !data) return false;
-  return data.approval_status === 'approved'
-    && data.is_active === true
-    && !data.revoked_at
-    && !data.crypto_invalid_at;
+  if (error || !data || data.revoked_at || data.crypto_invalid_at) return 'unavailable';
+  if (data.approval_status === 'approved' && data.is_active === true) return 'approved';
+  if (data.approval_status === 'pending' && data.is_active === false) return 'pending';
+  return 'unavailable';
 }
 
 export function E2EERestorePromptDialog() {
@@ -57,6 +64,7 @@ export function E2EERestorePromptDialog() {
   const [recoveryKey, setRecoveryKey] = useState('');
   const [tab, setTab] = useState<'password' | 'recovery'>('password');
   const [mode, setMode] = useState<'restore' | 'reset'>('restore');
+  const [pendingDeviceRecovery, setPendingDeviceRecovery] = useState(false);
 
   useEffect(() => () => releaseRecoveryDialog(DIALOG_OWNER), []);
 
@@ -64,13 +72,25 @@ export function E2EERestorePromptDialog() {
     if (!user?.id) return;
     let cancelled = false;
 
-    const promptIfIdentityMissing = async (detail: unknown) => {
-      // A pending device must show the trusted-device approval gate first.
-      // Account recovery is intentionally deferred until another approved
-      // device has authorized this installation.
-      if (!(await currentDeviceIsApproved(user.id))) return;
+    const promptIfIdentityMissing = async (rawDetail: unknown) => {
+      const detail = (rawDetail && typeof rawDetail === 'object'
+        ? rawDetail
+        : {}) as RestoreRequestDetail;
+      const approvalState = await currentDeviceApprovalState(user.id);
+      const pendingRecoveryAllowed =
+        approvalState === 'pending' && detail.allowPendingDeviceRecovery === true;
+
+      if (approvalState !== 'approved' && !pendingRecoveryAllowed) return;
+
       try {
-        if (await hasLocalKeys(user.id)) return;
+        if (await hasLocalKeys(user.id)) {
+          if (pendingRecoveryAllowed) {
+            window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+              detail: { status: 'pending_device_identity_already_local' },
+            }));
+          }
+          return;
+        }
       } catch {
         // Une inspection locale en erreur ne doit pas masquer la restauration.
       }
@@ -81,24 +101,36 @@ export function E2EERestorePromptDialog() {
       if (inspection.state === 'RESTORABLE_IDENTITY') {
         setMode('restore');
       } else if (inspection.state === 'UNRECOVERABLE_SERVER_IDENTITY') {
+        if (pendingRecoveryAllowed) {
+          toast.error(
+            'Aucune sauvegarde ne permet de prouver cette identité. Une réinitialisation cryptographique séparée est nécessaire.',
+          );
+          return;
+        }
         setMode('reset');
       } else {
         return;
       }
 
       if (!acquireRecoveryDialog(DIALOG_OWNER)) return;
-      console.warn('[E2EERestore] prompting approved device', inspection.state, detail);
+      setPendingDeviceRecovery(pendingRecoveryAllowed);
+      console.warn('[E2EERestore] prompting identity recovery', {
+        state: inspection.state,
+        approvalState,
+        pendingRecoveryAllowed,
+        detail,
+      });
       setOpen(true);
     };
 
     const onNeeded = async (event: Event) => {
-      const detail = (event as CustomEvent).detail || {};
-      await promptIfIdentityMissing(detail);
+      await promptIfIdentityMissing((event as CustomEvent).detail || {});
     };
     window.addEventListener('forsure:e2ee-restore-needed', onNeeded as EventListener);
 
-    // Recover an event emitted before this component mounted, but only for an
-    // already approved current device. Pending devices never enter this UI.
+    // Automatic recovery prompts remain restricted to an already approved
+    // device. A pending device enters recovery only after the user explicitly
+    // presses “Récupérer ce compte” in the global approval gate.
     void (async () => {
       const { data, error } = await supabase
         .from('user_public_keys')
@@ -124,21 +156,35 @@ export function E2EERestorePromptDialog() {
       releaseRecoveryDialog(DIALOG_OWNER);
       setPassword('');
       setRecoveryKey('');
-      toast.success('Messages déverrouillés');
+      toast.success(
+        pendingDeviceRecovery
+          ? 'Identité restaurée — approbation cryptographique en cours'
+          : 'Messages déverrouillés',
+      );
     };
     window.addEventListener('forsure-keys-restored', onRestored);
     return () => window.removeEventListener('forsure-keys-restored', onRestored);
-  }, [open]);
+  }, [open, pendingDeviceRecovery]);
 
   const finish = (origin: string) => {
     setOpen(false);
     releaseRecoveryDialog(DIALOG_OWNER);
     setPassword('');
     setRecoveryKey('');
-    window.dispatchEvent(new CustomEvent('forsure-keys-unlocked', { detail: { origin } }));
-    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', { detail: { origin } }));
-    window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { status: origin } }));
-    toast.success('Vos messages sont à nouveau déchiffrés');
+    window.dispatchEvent(new CustomEvent('forsure-keys-unlocked', {
+      detail: { origin, pendingDeviceRecovery },
+    }));
+    window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+      detail: { origin, pendingDeviceRecovery },
+    }));
+    window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+      detail: { status: origin, pendingDeviceRecovery },
+    }));
+    toast.success(
+      pendingDeviceRecovery
+        ? 'Identité restaurée — validation du nouvel appareil'
+        : 'Vos messages sont à nouveau déchiffrés',
+    );
   };
 
   const handlePassword = async () => {
@@ -149,8 +195,12 @@ export function E2EERestorePromptDialog() {
       if (status === 'restored' || status === 'local_ok') {
         finish('password_restore');
       } else if (status === 'no_backup') {
-        setMode('reset');
-        toast.error('Aucune sauvegarde trouvée : réinitialisation nécessaire');
+        if (pendingDeviceRecovery) {
+          toast.error('Aucune sauvegarde de l’identité existante n’a été trouvée.');
+        } else {
+          setMode('reset');
+          toast.error('Aucune sauvegarde trouvée : réinitialisation nécessaire');
+        }
       } else {
         toast.error('Mot de passe incorrect ou sauvegarde illisible');
       }
@@ -186,7 +236,10 @@ export function E2EERestorePromptDialog() {
 
   if (mode === 'reset') {
     return (
-      <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) releaseRecoveryDialog(DIALOG_OWNER); }}>
+      <Dialog open={open} onOpenChange={(value) => {
+        setOpen(value);
+        if (!value) releaseRecoveryDialog(DIALOG_OWNER);
+      }}>
         <DialogContent className="z-[140] sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="sr-only">Réinitialiser votre identité sécurisée</DialogTitle>
@@ -204,21 +257,43 @@ export function E2EERestorePromptDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (busy) return; setOpen(value); if (!value) releaseRecoveryDialog(DIALOG_OWNER); }}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (busy) return;
+      setOpen(value);
+      if (!value) releaseRecoveryDialog(DIALOG_OWNER);
+    }}>
       <DialogContent className="z-[140] sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-primary" />
-            <DialogTitle>Restaurer vos messages chiffrés</DialogTitle>
+            <DialogTitle>
+              {pendingDeviceRecovery
+                ? 'Récupérer ce compte sur cet appareil'
+                : 'Restaurer vos messages chiffrés'}
+            </DialogTitle>
           </div>
           <DialogDescription className="text-left pt-2 space-y-2">
-            <p>
-              Cet appareil vient d’être approuvé. Il doit maintenant récupérer l’identité chiffrée
-              commune à votre compte avant d’accéder à vos conversations.
-            </p>
-            <p>
-              Les clés propres à cet appareil restent différentes de celles de Windows.
-            </p>
+            {pendingDeviceRecovery ? (
+              <>
+                <p>
+                  Aucun autre appareil approuvé n’est nécessaire si tu peux restaurer l’identité
+                  chiffrée permanente de ce compte.
+                </p>
+                <p>
+                  Après restauration, cette identité signera la clé publique propre à cet appareil.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  Cet appareil est approuvé, mais il doit récupérer l’identité chiffrée commune au
+                  compte avant d’accéder aux conversations.
+                </p>
+                <p>
+                  Les clés propres à chaque appareil restent différentes.
+                </p>
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
