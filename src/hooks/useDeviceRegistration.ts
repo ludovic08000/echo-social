@@ -1,30 +1,31 @@
 /**
- * useDeviceRegistration — registers the current browser as an active device
- * for the logged-in user, and publishes a per-device Signed PreKey so that
- * other users can perform a targeted X3DH handshake against THIS device.
+ * Registers the current installation through the server-assigned, verified
+ * Aegis enrollment flow, then publishes per-device prekeys.
  *
- * Aegis multi-device model:
- *   - the account identity and signing keys are portable through Aegis Vault;
- *   - each physical device has its own KX key, prekeys and ratchet sessions;
- *   - peer sends remain fail-closed until the authenticated route is ready.
+ * Invariants:
+ * - a new DeviceID is chosen by the server before device keys are generated;
+ * - completion only stages a pending route;
+ * - Ed25519 proofs are verified server-side before approval;
+ * - SPK publication and route readiness happen only after approval;
+ * - existing approved devices are never silently overwritten or re-keyed.
  */
 
 import { useEffect, useRef } from 'react';
-import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
+import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';
 import {
   getCurrentDeviceId,
   getCurrentDeviceLabel,
   getCurrentPlatform,
-  hydrateDeviceId,
-  isDeviceIdTemporary,
   getDeviceFingerprint,
+  hydrateDeviceId,
   rotateCurrentDeviceId,
+  setCurrentDeviceId,
+  setCurrentDeviceUserScope,
 } from '@/lib/messaging/currentDevice';
 import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
 import { startKeyConsistencyGuard } from '@/lib/crypto/keyConsistencyGuard';
-
 import {
   refreshDeviceSignedPrekeyIfNeeded,
   refillDeviceOneTimePrekeysIfNeeded,
@@ -32,13 +33,30 @@ import {
   isDevicePrekeyBundleError,
 } from '@/lib/crypto/x3dh';
 import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
-import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import {
+  deleteDeviceKxKey,
+  getOrCreateDeviceKxKey,
+  loadDeviceKxKey,
+  type DeviceKxKey,
+} from '@/lib/crypto/deviceKx';
+import {
+  deleteDeviceIdentity,
   getOrCreateDeviceIdentity,
+  loadDeviceIdentity,
   prepareDeviceAuthorization,
+  type DeviceIdentityKey,
 } from '@/lib/crypto/deviceIdentity';
+import {
+  approveServerAssignedDevice,
+  beginServerAssignedDeviceEnrollment,
+  cancelServerAssignedDeviceEnrollment,
+  completeServerAssignedDeviceEnrollment,
+  type DeviceEnrollmentChallenge,
+  type DevicePlatform,
+} from '@/lib/crypto/serverDeviceEnrollment';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
+import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
 import {
   restoreAccountKeysFromActiveSession,
   restoreFromInMemoryMasterKey,
@@ -46,16 +64,91 @@ import {
 } from '@/lib/crypto/accountKeyBackup';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
-const REVOKED_DEVICE_ERROR_RE = /USER_DEVICES_REACTIVATION_BLOCKED|revoked_device_cannot_be_reactivated|DEVICE_REVOKED_OR_LOCKED|DEVICE_REVOKED(?!_OR_REJECTED)/i;
-const DEVICE_APPROVAL_PENDING_RE = /DEVICE_APPROVAL_PENDING/i;
-const DEVICE_REJECTED_RE = /DEVICE_REJECTED|DEVICE_REVOKED_OR_REJECTED/i;
-const RPC_SCHEMA_MISMATCH_RE = /could not find the function|schema cache|pgrst202/i;
+const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
+const MAX_ENROLLMENT_ATTEMPTS = 3;
 
-type DeviceRegistrationRpcResult = {
-  ok?: boolean;
-  code?: string;
-  message?: string;
+type ExistingDeviceRow = {
+  device_id: string;
+  device_public_key: string | null;
+  device_signing_key: string | null;
+  device_authorization_signature: string | null;
+  device_fingerprint: string | null;
+  platform: string | null;
+  is_active: boolean | null;
+  approval_status: string | null;
+  revoked_at: string | null;
+  crypto_invalid_at: string | null;
+  routing_status: string | null;
 };
+
+function normalizePlatform(value: unknown): DevicePlatform {
+  const platform = String(value ?? '').toLowerCase();
+  if (platform === 'ios' || platform === 'android') return platform;
+  return 'web';
+}
+
+function isApproved(row: ExistingDeviceRow): boolean {
+  return String(row.approval_status ?? 'approved').toLowerCase() === 'approved';
+}
+
+function isPending(row: ExistingDeviceRow): boolean {
+  return String(row.approval_status ?? '').toLowerCase() === 'pending';
+}
+
+async function readDevice(userId: string, deviceId: string): Promise<ExistingDeviceRow | null> {
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('device_id,device_public_key,device_signing_key,device_authorization_signature,device_fingerprint,platform,is_active,approval_status,revoked_at,crypto_invalid_at,routing_status')
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) throw new Error(`DEVICE_ROUTE_LOOKUP_FAILED:${error.message}`);
+  return (data as ExistingDeviceRow | null) ?? null;
+}
+
+async function findRecoverablePendingDevice(
+  userId: string,
+  fingerprint: string,
+  platform: DevicePlatform,
+): Promise<ExistingDeviceRow | null> {
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('device_id,device_public_key,device_signing_key,device_authorization_signature,device_fingerprint,platform,is_active,approval_status,revoked_at,crypto_invalid_at,routing_status')
+    .eq('user_id', userId)
+    .eq('device_fingerprint', fingerprint)
+    .eq('platform', platform)
+    .eq('approval_status', 'pending')
+    .is('revoked_at', null)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`DEVICE_PENDING_LOOKUP_FAILED:${error.message}`);
+  const candidate = (data as ExistingDeviceRow | null) ?? null;
+  if (!candidate || !SERVER_DEVICE_ID_RE.test(candidate.device_id)) return null;
+
+  const [identity, kx] = await Promise.all([
+    loadDeviceIdentity(userId, candidate.device_id).catch(() => null),
+    loadDeviceKxKey(candidate.device_id, userId).catch(() => null),
+  ]);
+  return identity && kx ? candidate : null;
+}
+
+async function markRouteUnavailable(deviceId: string, code: string): Promise<void> {
+  await supabase.rpc('mark_current_device_route_unavailable' as never, {
+    p_device_id: deviceId,
+    p_error_code: code,
+  } as never).then(() => undefined, () => undefined);
+}
+
+async function restoreDeviceMaterial(userId: string): Promise<void> {
+  const restoredFromKeychain = await restoreKeysFromKeychainSnapshot(userId).catch(() => 'error');
+  if (restoredFromKeychain === 'restored') return;
+  const restoredFromMemory = await restoreFromInMemoryMasterKey(userId).catch(() => 'error');
+  if (restoredFromMemory === 'restored') return;
+  await restoreAccountKeysFromActiveSession(userId).catch(() => 'error');
+}
 
 export function useDeviceRegistration() {
   const { user } = useAuth();
@@ -64,45 +157,14 @@ export function useDeviceRegistration() {
 
   useEffect(() => {
     if (!user) return;
+    setCurrentDeviceUserScope(user.id);
+
     let retryTimer: number | undefined;
+    let disposed = false;
 
-    const approveCurrentAuthenticatedDevice = async (deviceId: string, source: string): Promise<boolean> => {
-      try {
-        const { data: approvalData, error } = await supabase.rpc('approve_user_device' as never, {
-          p_device_id: deviceId,
-        } as never);
-        const data = approvalData as DeviceRegistrationRpcResult | null;
-        if (!error && data?.ok === true) {
-          console.info('[useDeviceRegistration] authenticated device approved', {
-            deviceId: deviceId.slice(0, 8),
-            source,
-          });
-          try {
-            window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
-              detail: { source, deviceId },
-            }));
-          } catch { /* browser event delivery is best-effort */ }
-          return true;
-        }
-        console.warn('[useDeviceRegistration] approve_user_device non-ok', {
-          deviceId: deviceId.slice(0, 8),
-          source,
-          error: error?.message,
-          data,
-        });
-      } catch (approvalErr) {
-        console.warn('[useDeviceRegistration] approve_user_device failed', approvalErr);
-      }
-
-      return false;
-    };
-
-    const scheduleRegistrationRetry = (reason: string, attempt: number) => {
-      if (attempt >= 3) {
-        console.warn('[useDeviceRegistration] automatic enrollment retry exhausted', {
-          reason,
-          attempt,
-        });
+    const scheduleRetry = (reason: string, attempt: number) => {
+      if (disposed || attempt >= MAX_ENROLLMENT_ATTEMPTS) {
+        console.warn('[useDeviceRegistration] automatic enrollment retry exhausted', { reason, attempt });
         return;
       }
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
@@ -113,12 +175,16 @@ export function useDeviceRegistration() {
       }, 500 * (attempt + 1));
     };
 
-    const registerCurrentDevice = async (reason: string, attempt = 0) => {
-      if (ranRef.current || inFlightRef.current) return;
+    const registerCurrentDevice = async (reason: string, attempt = 0): Promise<void> => {
+      if (disposed || ranRef.current || inFlightRef.current) return;
       ranRef.current = true;
       inFlightRef.current = true;
-      const traceStartedAt = Date.now();
+
+      const startedAt = Date.now();
       let tracedDeviceId: string | undefined;
+      let challenge: DeviceEnrollmentChallenge | null = null;
+      let provisionalDeviceId: string | null = null;
+
       const trace = (
         stage: string,
         details: Partial<Parameters<typeof traceE2EE>[0]> = {},
@@ -127,439 +193,282 @@ export function useDeviceRegistration() {
         direction: 'device',
         stage,
         deviceId: tracedDeviceId,
-        elapsedMs: Date.now() - traceStartedAt,
+        elapsedMs: Date.now() - startedAt,
         retryCount: attempt,
         ...details,
       }, level);
+
+      const restartWithFreshServerDevice = async (restartReason: string): Promise<void> => {
+        rotateCurrentDeviceId(restartReason);
+        invalidateAegisDeviceRuntime(user.id);
+        ranRef.current = false;
+        inFlightRef.current = false;
+        if (attempt < MAX_ENROLLMENT_ATTEMPTS - 1) {
+          await registerCurrentDevice(`fresh-device:${restartReason}`, attempt + 1);
+        }
+      };
+
       trace('DEVICE_REGISTRATION_START');
+
       try {
         await requireAuthenticatedDeviceSession(user.id);
-        console.log('[useDeviceRegistration] publishing current device', { reason, attempt });
-        const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
-        tracedDeviceId = deviceId;
-        trace('DEVICE_ID_HYDRATED');
-        if (isDeviceIdTemporary()) {
-          console.warn('[useDeviceRegistration] device id still temporary - delaying device publish');
-          ranRef.current = false;
-          return;
-        }
-        const deviceIdentity = await getOrCreateDeviceIdentity(user.id, deviceId);
-        trace('DEVICE_IDENTITY_READY');
-        const keys = {
-          privateKey: deviceIdentity.privateKey,
-          signingPrivateKey: deviceIdentity.privateKey,
-        };
 
-        // Per-device dedicated X25519 key (TRUE cryptographic isolation per device).
-        //
-        // STABILITY CONTRACT (PR #13):
-        //   - identity key   = immutable for the account, lives in shared vault
-        //   - device key     = immutable for this physical device once published
-        //   - SPK / OPK      = rotatable
-        //
-        // Before generating or publishing anything, we read what the SERVER
-        // already knows about this device_id. If a public key is already
-        // pinned server-side and our local material doesn't match, we MUST
-        // NOT overwrite it — peers may be encrypting against the published
-        // key right now. Instead we block and ask the user to restore.
-        let devicePublicKeyB64: string | null = null;
-        let serverDevicePublicKey: string | null = null;
-        let serverDeviceSigningKey: string | null = null;
-        try {
-          const { data: existing } = await supabase
-            .from('user_devices')
-            .select('device_public_key,device_signing_key,is_active,revoked_at,approval_status')
-            .eq('user_id', user.id)
-            .eq('device_id', deviceId)
-            .maybeSingle();
+        const platform = normalizePlatform(getCurrentPlatform());
+        const fingerprint = await getDeviceFingerprint();
+        let deviceId = await hydrateDeviceId();
+        let existing = await readDevice(user.id, deviceId);
 
-          const approvalStatus = existing?.approval_status;
-          if (existing && approvalStatus === 'rejected') {
-            window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
-              detail: { deviceId, status: 'rejected' },
-            }));
-            return;
+        if (!existing) {
+          const pending = await findRecoverablePendingDevice(user.id, fingerprint, platform);
+          if (pending) {
+            deviceId = setCurrentDeviceId(pending.device_id);
+            existing = pending;
+            trace('DEVICE_PENDING_RECOVERED');
           }
-          if (existing && approvalStatus !== 'pending' && (existing.is_active === false || existing.revoked_at)) {
-            console.warn('[useDeviceRegistration] server says current device id is revoked — enrollment blocked', {
-              deviceId: deviceId.slice(0, 8),
-              attempt,
-            });
-            window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
-              detail: { deviceId, status: 'revoked' },
-            }));
-            return;
-          }
-
-          serverDevicePublicKey = (existing?.device_public_key as string | null) ?? null;
-          serverDeviceSigningKey = (existing?.device_signing_key as string | null) ?? null;
-        } catch (lookupErr) {
-          console.warn('[useDeviceRegistration] server device lookup failed:', lookupErr);
         }
 
-        if (
-          serverDeviceSigningKey &&
-          serverDeviceSigningKey !== deviceIdentity.publicB64
-        ) {
-          try {
-            await supabase.rpc('mark_current_device_route_unavailable' as never, {
-              p_device_id: deviceId,
-              p_error_code: 'LOCAL_DEVICE_IDENTITY_KEY_MISSING',
-            } as never);
-          } catch {
-            // Registration still fails closed if route-health reporting fails.
-          }
-          rotateCurrentDeviceId('aegis-device-private-key-missing');
-          ranRef.current = false;
-          inFlightRef.current = false;
-          if (attempt < 2) {
-            return registerCurrentDevice('rotated-after-device-identity-loss', attempt + 1);
-          }
+        if (existing && normalizePlatform(existing.platform) !== platform) {
+          await markRouteUnavailable(existing.device_id, 'CROSS_PLATFORM_DEVICE_ID');
+          await restartWithFreshServerDevice('cross-platform-device-id');
           return;
         }
 
-        let localKx: Awaited<ReturnType<typeof getOrCreateDeviceKxKey>> | null = null;
-        if (serverDevicePublicKey) {
-          // Server already published a device key for this device_id.
-          // ONLY load the local one — never auto-generate / overwrite.
-          try {
-            const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
-            localKx = await loadDeviceKxKey(deviceId, user.id);
-          } catch (loadErr) {
-            console.warn('[useDeviceRegistration] loadDeviceKxKey failed:', loadErr);
-          }
-
-          if (!localKx) {
-            const restored =
-              (await restoreKeysFromKeychainSnapshot(user.id).catch(() => 'error')) === 'restored' ||
-              (await restoreFromInMemoryMasterKey(user.id).catch(() => 'error')) === 'restored' ||
-              (await restoreAccountKeysFromActiveSession(user.id).catch(() => 'error')) === 'restored';
-            if (restored) {
-              try {
-                const { loadDeviceKxKey } = await import('@/lib/crypto/deviceKx');
-                localKx = await loadDeviceKxKey(deviceId, user.id);
-              } catch { /* the next enrollment attempt will retry restoration */ }
-            }
-          }
-
-          if (!localKx) {
-            // The account vault deliberately never clones physical-device
-            // secrets. If this browser retained a DeviceID but lost its private
-            // KX key, retire that logical identity and enroll a fresh device.
-            if (attempt < 2) {
-              try {
-                await supabase.rpc('mark_current_device_route_unavailable' as never, {
-                  p_device_id: deviceId,
-                  p_error_code: 'LOCAL_DEVICE_PRIVATE_KEY_MISSING',
-                } as never);
-              } catch {
-                // Registration will still fail closed if route-health update is unavailable.
-              }
-              rotateCurrentDeviceId('aegis-device-private-key-missing');
-              ranRef.current = false;
-              inFlightRef.current = false;
-              return registerCurrentDevice('rotated-after-device-key-loss', attempt + 1);
-            }
-            console.warn('[useDeviceRegistration] unable to enroll replacement device key');
-            ranRef.current = false;
-            return;
-          }
-
-          if (localKx.publicB64 !== serverDevicePublicKey) {
-            console.warn('[useDeviceRegistration] server/local device key mismatch - waiting for restore');
-            try {
-              await supabase.rpc('mark_current_device_route_unavailable' as never, {
-                p_device_id: deviceId,
-                p_error_code: 'LOCAL_DEVICE_KEY_MISMATCH',
-              } as never);
-            } catch {
-              // Registration remains blocked even if health reporting fails.
-            }
-            try {
-              window.dispatchEvent(new CustomEvent('forsure:e2ee-silent-restore-retry', {
-                detail: {
-                  source: 'device-registration',
-                  deviceId,
-                  reason: 'mismatch',
-                },
-              }));
-            } catch { /* browser event delivery is best-effort */ }
-            ranRef.current = false;
-            return;
-          }
-
-          devicePublicKeyB64 = localKx.publicB64;
-        } else {
-          // First-time publish for this device_id → generation allowed.
-          try {
-            const kx = await getOrCreateDeviceKxKey(deviceId, user.id);
-            if (kx?.publicB64) {
-              devicePublicKeyB64 = kx.publicB64;
-              localKx = kx;
-            }
-          } catch (kxErr) {
-            console.warn('[useDeviceRegistration] device kx key generation failed:', kxErr);
-          }
-          if (!devicePublicKeyB64) {
-            ranRef.current = false;
-            return;
-          }
+        if (existing && (existing.revoked_at || existing.approval_status === 'rejected')) {
+          window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
+            detail: { deviceId: existing.device_id, status: existing.approval_status ?? 'revoked' },
+          }));
+          return;
         }
 
-        // Stable device fingerprint — lets the server-side
-        // resolve_device_id_by_fingerprints RPC reuse this device_id after
-        // Safari ITP wipes IndexedDB / localStorage / Keychain on iOS.
-        const deviceFingerprint = await getDeviceFingerprint().catch(() => null);
-        const latestDeviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
-        if (latestDeviceId !== deviceId) {
-          console.warn('[useDeviceRegistration] device id changed during restore - restarting publish with hydrated id', {
-            previous: deviceId.slice(0, 8),
-            next: latestDeviceId.slice(0, 8),
-            reason,
-            attempt,
+        if (existing && isApproved(existing) && existing.is_active !== true) {
+          await markRouteUnavailable(existing.device_id, 'APPROVED_DEVICE_INACTIVE');
+          window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
+            detail: { deviceId: existing.device_id, status: 'inactive' },
+          }));
+          return;
+        }
+
+        if (!existing) {
+          challenge = await beginServerAssignedDeviceEnrollment({
+            deviceName: getCurrentDeviceLabel(),
+            deviceFingerprint: fingerprint,
+            platform,
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
           });
-          ranRef.current = false;
-          inFlightRef.current = false;
-          if (attempt < 3) {
-            return registerCurrentDevice('device-id-changed-during-restore', attempt + 1);
-          }
-          return;
+          deviceId = setCurrentDeviceId(challenge.deviceId);
+          provisionalDeviceId = deviceId;
+          trace('DEVICE_SERVER_ID_ASSIGNED');
         }
 
-        const payload = {
-          user_id: user.id,
-          device_id: deviceId,
-          device_name: getCurrentDeviceLabel(),
-          device_public_key: devicePublicKeyB64,
-          device_fingerprint: deviceFingerprint,
-          platform: getCurrentPlatform(),
-          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
-          is_active: true,
-          last_seen_at: new Date().toISOString(),
-        };
-        if (!localKx) throw new Error('DEVICE_KX_MISSING_AFTER_ENROLLMENT');
-        const authorization = await prepareDeviceAuthorization(user.id, deviceId, localKx);
+        tracedDeviceId = deviceId;
+
+        let deviceIdentity: DeviceIdentityKey | null;
+        let deviceKx: DeviceKxKey | null;
+
+        if (existing) {
+          [deviceIdentity, deviceKx] = await Promise.all([
+            loadDeviceIdentity(user.id, deviceId),
+            loadDeviceKxKey(deviceId, user.id),
+          ]);
+
+          if (!deviceIdentity || !deviceKx) {
+            await restoreDeviceMaterial(user.id);
+            [deviceIdentity, deviceKx] = await Promise.all([
+              loadDeviceIdentity(user.id, deviceId),
+              loadDeviceKxKey(deviceId, user.id),
+            ]);
+          }
+
+          if (!deviceIdentity || !deviceKx) {
+            await markRouteUnavailable(deviceId, 'LOCAL_DEVICE_PRIVATE_KEY_MISSING');
+            await restartWithFreshServerDevice('device-private-key-missing');
+            return;
+          }
+
+          if (
+            !existing.device_public_key ||
+            !existing.device_signing_key ||
+            !existing.device_authorization_signature
+          ) {
+            await markRouteUnavailable(deviceId, 'DEVICE_AUTHORIZATION_INCOMPLETE');
+            await restartWithFreshServerDevice('device-authorization-incomplete');
+            return;
+          }
+
+          if (
+            deviceKx.publicB64 !== existing.device_public_key ||
+            deviceIdentity.publicB64 !== existing.device_signing_key
+          ) {
+            await markRouteUnavailable(deviceId, 'LOCAL_DEVICE_KEY_MISMATCH');
+            await restartWithFreshServerDevice('device-key-mismatch');
+            return;
+          }
+        } else {
+          [deviceIdentity, deviceKx] = await Promise.all([
+            getOrCreateDeviceIdentity(user.id, deviceId),
+            getOrCreateDeviceKxKey(deviceId, user.id),
+          ]);
+        }
+
+        trace('DEVICE_LOCAL_KEYS_READY');
+
+        const authorization = await prepareDeviceAuthorization(user.id, deviceId, deviceKx);
         if (
           authorization.deviceSigning.publicB64 !== deviceIdentity.publicB64 ||
-          authorization.deviceKx.publicB64 !== devicePublicKeyB64
+          authorization.deviceKx.publicB64 !== deviceKx.publicB64
         ) {
           throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
         }
 
-        // 1. Register the device.
-        // The authenticated RPC is the only registration path. Direct upsert
-        // fallback is forbidden because it would bypass device approval.
-        let registered = false;
-        try {
-          const { data: rpcResult, error: rpcErr } = await supabase.rpc('register_user_device_safe', {
-            p_user_id: payload.user_id,
-            p_device_id: payload.device_id,
-            p_device_name: payload.device_name,
-            p_device_public_key: payload.device_public_key,
-            p_device_fingerprint: payload.device_fingerprint,
-            p_platform: payload.platform,
-            p_user_agent: payload.user_agent,
-            p_device_signing_key: authorization.deviceSigning.publicB64,
-            p_device_authorization_signature: authorization.authorizationSignature,
-            p_account_identity_key: authorization.account.identityKey,
-            p_account_signing_key: authorization.account.signingKey,
-            p_account_fingerprint: authorization.account.fingerprint,
-            p_account_binding_signature: authorization.account.bindingSignature,
-          });
-          const registrationResult = rpcResult as DeviceRegistrationRpcResult | null;
-
-          if (!rpcErr && registrationResult?.ok === true) {
-            registered = true;
-          } else if (!rpcErr && DEVICE_APPROVAL_PENDING_RE.test(String(registrationResult?.code ?? registrationResult?.message ?? ''))) {
-            const approved = await approveCurrentAuthenticatedDevice(deviceId, `register-pending:${reason}`);
-            if (!approved) {
-              scheduleRegistrationRetry(`approval:${reason}`, attempt);
-              return;
-            }
-            registered = true;
-          } else if (!rpcErr && REVOKED_DEVICE_ERROR_RE.test(String(registrationResult?.code ?? registrationResult?.message ?? ''))) {
-            console.warn('[useDeviceRegistration] safe RPC rejected revoked device — enrollment blocked', registrationResult);
-            window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
-              detail: { deviceId, status: 'revoked' },
-            }));
-            return;
-          } else if (!rpcErr && DEVICE_REJECTED_RE.test(String(registrationResult?.code ?? registrationResult?.message ?? ''))) {
-            window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
-              detail: { deviceId, status: 'rejected' },
-            }));
-            return;
-          } else if (rpcErr) {
-            console.warn('[useDeviceRegistration] safe RPC unavailable/failed:', {
-              message: rpcErr.message,
-            });
-            if (RPC_SCHEMA_MISMATCH_RE.test(rpcErr.message ?? '')) {
-              trace('DEVICE_SERVER_SCHEMA_OUTDATED', {
-                errorCode: 'REGISTER_USER_DEVICE_SAFE_SIGNATURE_MISSING',
-              }, 'error');
-              try {
-                window.dispatchEvent(new CustomEvent('forsure:e2ee-server-schema-outdated', {
-                  detail: {
-                    rpc: 'register_user_device_safe',
-                    migration: '20260730090000_aegis_clean_rebuild.sql',
-                  },
-                }));
-              } catch {
-                // The trace remains available when DOM events are unavailable.
-              }
-              return;
-            }
-          } else {
-            console.warn('[useDeviceRegistration] safe RPC non-ok; device publish paused:', registrationResult);
-            ranRef.current = false;
-            return;
-          }
-        } catch (rpcUnexpectedErr) {
-          console.warn('[useDeviceRegistration] safe RPC unexpected failure:', {
-            error: rpcUnexpectedErr,
-          });
-        }
-
-        if (!registered) {
-          trace('DEVICE_REGISTRATION_DEFERRED', {}, 'warn');
-          scheduleRegistrationRetry(`registration-rpc:${reason}`, attempt);
+        if (existing && existing.device_authorization_signature !== authorization.authorizationSignature) {
+          await markRouteUnavailable(deviceId, 'ACCOUNT_DEVICE_AUTHORIZATION_CHANGED');
+          await restartWithFreshServerDevice('account-device-authorization-changed');
           return;
         }
-        trace('DEVICE_REGISTERED');
 
-        // 2. Ensure the per-device Signed PreKey exists and is fresh.
-        //    This is what makes targeted X3DH per device possible. After the
-        //    normal refresh, peek the SPK without consuming OPK. If it is still
-        //    invalid/missing, run the repair helper: purge stale SPK/OPK state,
-        //    publish a fresh SPK, and refill OPKs.
+        if (challenge) {
+          const approvedDeviceId = await completeServerAssignedDeviceEnrollment(challenge, authorization);
+          if (approvedDeviceId !== deviceId) throw new Error('DEVICE_APPROVAL_SERVER_ID_MISMATCH');
+          trace('DEVICE_ENROLLMENT_APPROVED');
+        } else if (existing && isPending(existing)) {
+          await approveServerAssignedDevice(deviceId);
+          trace('DEVICE_PENDING_APPROVED');
+        } else if (!existing || !isApproved(existing)) {
+          throw new Error('DEVICE_APPROVAL_STATE_INVALID');
+        }
+
+        const signingPrivateKey = deviceIdentity.privateKey;
+
         try {
-          await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, keys.signingPrivateKey);
+          await refreshDeviceSignedPrekeyIfNeeded(user.id, deviceId, signingPrivateKey);
           const currentSpk = await peekDeviceSignedPrekey(user.id, deviceId);
           if (!currentSpk) {
-            await repairCurrentDevicePrekeys(user.id, deviceId, keys.signingPrivateKey, 'current-device-spk-invalid-after-refresh');
-            try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch { /* best-effort */ }
-            try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* best-effort */ }
+            await repairCurrentDevicePrekeys(
+              user.id,
+              deviceId,
+              signingPrivateKey,
+              'current-device-spk-invalid-after-refresh',
+            );
+            window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+              detail: { source: 'device-prekey-repair', deviceId },
+            }));
+            window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
           }
           trace('DEVICE_SPK_READY');
-        } catch (spkErr) {
-          if (isDevicePrekeyBundleError(spkErr, 'DEVICE_SPK_SIGNATURE_INVALID')) {
-            try {
-              await repairCurrentDevicePrekeys(user.id, deviceId, keys.signingPrivateKey, 'current-device-spk-signature-invalid');
-              try { window.dispatchEvent(new CustomEvent('forsure-keys-restored', { detail: { source: 'device-prekey-repair', deviceId } })); } catch { /* best-effort */ }
-              try { window.dispatchEvent(new CustomEvent('forsure-decrypt-retry')); } catch { /* best-effort */ }
-            } catch (repairErr) {
-              console.warn('[useDeviceRegistration] device SPK signature repair failed (non-fatal):', repairErr);
-            }
-          } else {
-            console.warn('[useDeviceRegistration] device SPK refresh/repair failed (non-fatal):', spkErr);
-          }
+        } catch (spkError) {
+          if (!isDevicePrekeyBundleError(spkError, 'DEVICE_SPK_SIGNATURE_INVALID')) throw spkError;
+          await repairCurrentDevicePrekeys(
+            user.id,
+            deviceId,
+            signingPrivateKey,
+            'current-device-spk-signature-invalid',
+          );
+          trace('DEVICE_SPK_REPAIRED');
         }
 
-        // 3. Refill the OPK pool if low (forward secrecy on bursts).
-        //    Non-fatal: X3DH gracefully degrades to 3-DH when no OPK is available.
-        try {
-          await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId);
-          trace('DEVICE_OPK_POOL_READY');
-        } catch (opkErr) {
-          console.warn('[useDeviceRegistration] OPK refill failed (non-fatal):', opkErr);
-        }
+        await refillDeviceOneTimePrekeysIfNeeded(user.id, deviceId).catch((error) => {
+          console.warn('[useDeviceRegistration] OPK refill failed; 3-DH fallback remains available', error);
+        });
+        trace('DEVICE_OPK_POOL_READY');
 
-        // Authorization and route health are separate server states. A login
-        // authorizes this stable device ID; only this proof marks its route
-        // healthy after a valid SPK has actually reached the server.
-        const { data: routeReadyData, error: routeReadyError } = await supabase.rpc(
+        const { data: routeData, error: routeError } = await supabase.rpc(
           'mark_current_device_route_ready' as never,
           { p_device_id: deviceId } as never,
         );
-        const routeReady = routeReadyData as { ok?: boolean; code?: string } | null;
-        if (routeReadyError || routeReady?.ok !== true) {
-          throw new Error(
-            `DEVICE_ROUTE_NOT_READY:${routeReady?.code ?? routeReadyError?.message ?? 'UNKNOWN'}`,
-          );
+        const route = routeData as { ok?: boolean; code?: string } | null;
+        if (routeError || route?.ok !== true) {
+          throw new Error(`DEVICE_ROUTE_NOT_READY:${route?.code ?? routeError?.message ?? 'UNKNOWN'}`);
         }
-        trace('DEVICE_ROUTE_READY');
 
-        // Registration and prekeys are not enough for Aegis. Publish the
-        // canonical account root, sign companions, then prove that this exact
-        // DeviceID is visible through the fail-closed route used by senders.
-        // Unhealthy companion devices stay visible for explicit user action;
-        // registration never revokes or retires them automatically.
-        const repairedCompanions = await ensureApprovedDeviceTrust(user.id, deviceId);
         invalidateAllFanoutRoutes();
-        console.info('[useDeviceRegistration] authenticated E2EE device ready', {
-          deviceId: deviceId.slice(0, 8),
-          repairedCompanions,
-        });
+        invalidateAegisDeviceRuntime(user.id);
+        await ensureApprovedDeviceTrust(user.id, deviceId);
         trace('DEVICE_READY');
+
         void import('@/lib/crypto/accountKeyBackup').then((vault) => {
           void vault.syncKeychainSnapshotFromLocal(user.id);
           vault.requestBackgroundBackup('aegis-device-registration-ready');
         }).catch(() => undefined);
-        try {
-          window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
-            detail: { source: `authenticated-registration:${reason}`, deviceId },
-          }));
-          window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
-            detail: { reason: 'authenticated_device_ready', deviceId },
-          }));
-        } catch { /* browser event delivery is best-effort */ }
-      } catch (err) {
-        trace('DEVICE_REGISTRATION_FAILED', {
-          errorCode: err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120),
-        }, 'error');
-        if (err instanceof PinUnlockRequiredError || String(err).toLowerCase().includes('pin unlock required')) {
-          ranRef.current = false;
-          console.warn('[useDeviceRegistration] PIN_REQUIRED — device publish paused until PIN unlock');
+
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
+          detail: { source: `server-verified-registration:${reason}`, deviceId },
+        }));
+        window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
+          detail: { reason: 'server_verified_device_ready', deviceId },
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        trace('DEVICE_REGISTRATION_FAILED', { errorCode: message.slice(0, 120) }, 'error');
+
+        if (challenge) {
           try {
-            window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', { detail: { source: 'useDeviceRegistration' } }));
-          } catch { /* browser event delivery is best-effort */ }
+            const settlement = await cancelServerAssignedDeviceEnrollment(
+              challenge,
+              message.slice(0, 120),
+            );
+            if (settlement.status === 'cancelled' && provisionalDeviceId) {
+              await Promise.allSettled([
+                deleteDeviceIdentity(user.id, provisionalDeviceId),
+                deleteDeviceKxKey(provisionalDeviceId, user.id),
+              ]);
+              rotateCurrentDeviceId('cancelled-server-enrollment');
+            }
+          } catch (settlementError) {
+            console.warn('[useDeviceRegistration] enrollment settlement unavailable; provisional keys preserved', settlementError);
+          }
+        }
+
+        if (error instanceof PinUnlockRequiredError || message.toLowerCase().includes('pin unlock required')) {
+          ranRef.current = false;
+          window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
+            detail: { source: 'useDeviceRegistration' },
+          }));
           return;
         }
+
+        if (
+          /DEVICE_IDENTITY_UNVERIFIED|DEVICE_ROUTE_NOT_AUTHORIZED|E2EE_SENDER_DEVICE_NOT_TRUSTED/.test(message)
+          && attempt < MAX_ENROLLMENT_ATTEMPTS - 1
+        ) {
+          const failedDeviceId = tracedDeviceId ?? getCurrentDeviceId();
+          await markRouteUnavailable(failedDeviceId, 'VERIFIED_ROUTE_CHECK_FAILED');
+          await restartWithFreshServerDevice('verified-route-check-failed');
+          return;
+        }
+
         ranRef.current = false;
-        console.warn('[useDeviceRegistration] failed (non-fatal):', err);
-        scheduleRegistrationRetry(`failure:${reason}`, attempt);
+        console.warn('[useDeviceRegistration] registration deferred', error);
+        scheduleRetry(`failure:${reason}`, attempt);
       } finally {
         inFlightRef.current = false;
       }
     };
 
-    const onKeysAvailable = () => {
+    const triggerRegistration = (source: string) => {
       ranRef.current = false;
-      void registerCurrentDevice('keys-unlocked');
+      invalidateAegisDeviceRuntime(user.id);
+      void registerCurrentDevice(source);
     };
 
+    const onKeysAvailable = () => triggerRegistration('keys-available');
     const onAuthenticatedDeviceEnroll = (event: Event) => {
       const detail = (event as CustomEvent<{ userId?: string; source?: string }>).detail;
       if (detail?.userId && detail.userId !== user.id) return;
-      ranRef.current = false;
-      void registerCurrentDevice(detail?.source ?? 'authenticated-device-enroll');
+      triggerRegistration(detail?.source ?? 'authenticated-device-enroll');
     };
 
-    // A missing message copy is a message/refanout issue, not proof that the
-    // local device is invalid. Once PIN/backup/key restore succeeded, the device
-    // must stay valid unless a real key/SPK/mismatch error is detected.
     let lastSelfRepairAt = 0;
-    const onSelfRepairRequired = (ev: Event) => {
-      const detail = (ev as CustomEvent).detail;
+    const onSelfRepairRequired = (event: Event) => {
+      const detail = (event as CustomEvent<{ reason?: string }>).detail;
       const reason = String(detail?.reason ?? 'unknown');
-      if (reason === 'absent-from-fanout') {
-        console.info('[useDeviceRegistration] ignoring message-copy miss for device repair', {
-          reason,
-          messageId: detail?.messageId,
-          peerUserId: detail?.peerUserId,
-        });
-        return;
-      }
-
+      if (reason === 'absent-from-fanout') return;
       const now = Date.now();
       if (now - lastSelfRepairAt < 15_000) return;
       lastSelfRepairAt = now;
-      ranRef.current = false;
-      void registerCurrentDevice(`self-repair:${reason}`);
+      triggerRegistration(`self-repair:${reason}`);
     };
 
     void registerCurrentDevice('auth-mounted');
-    // Vérification serveur/client périodique : détecte une autorisation périmée
-    // (reset d'identité) avant qu'un envoi échoue et déclenche la réparation.
     const stopKeyGuard = startKeyConsistencyGuard();
     window.addEventListener('forsure-keys-unlocked', onKeysAvailable);
     window.addEventListener('forsure-keys-restored', onKeysAvailable);
@@ -567,6 +476,7 @@ export function useDeviceRegistration() {
     window.addEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
 
     return () => {
+      disposed = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       stopKeyGuard();
       window.removeEventListener('forsure-keys-unlocked', onKeysAvailable);
@@ -574,6 +484,5 @@ export function useDeviceRegistration() {
       window.removeEventListener('forsure:authenticated-device-enroll', onAuthenticatedDeviceEnroll);
       window.removeEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
     };
-
   }, [user]);
 }

@@ -1,4 +1,5 @@
 import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
+import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import {
   getCurrentDeviceId,
   hydrateDeviceId,
@@ -17,11 +18,10 @@ const readyByUser = new Map<string, ReadyDevice>();
 const initializingByUser = new Map<string, Promise<ReadyDevice>>();
 
 /**
- * Establishes the stable Aegis installation before any route or ratchet work.
- *
- * This mirrors the useful lifecycle guarantee of MatrixClient initialization:
- * concurrent callers share one initialization, and a temporary installation
- * identifier is never allowed to enter the encrypted delivery pipeline.
+ * Establishes and verifies the stable Aegis installation before any route or
+ * Ratchet work. A stable local DeviceID is not enough: the exact current device
+ * must have a valid account authorization, a routable server state and a valid
+ * active Signed PreKey.
  */
 export async function ensureAegisDeviceReady(userId: string): Promise<ReadyDevice> {
   if (!userId) throw new Error('AEGIS_USER_ID_REQUIRED');
@@ -46,9 +46,8 @@ export async function ensureAegisDeviceReady(userId: string): Promise<ReadyDevic
       throw new Error('E2EE_STABLE_DEVICE_REQUIRED');
     }
 
-    // Registration, identity binding and prekey publication must complete
-    // before fan-out reads the authoritative device route.
     await ensureUserE2EEIdentity(userId, { waitForMaintenance: true });
+    await ensureApprovedDeviceTrust(userId, deviceId);
 
     const ready = {
       deviceId,

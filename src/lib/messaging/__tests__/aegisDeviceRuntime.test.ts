@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   ensureIdentity: vi.fn(),
+  ensureTrust: vi.fn(),
   getDeviceId: vi.fn(),
   hydrate: vi.fn(),
   isTemporary: vi.fn(),
@@ -10,6 +11,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/crypto/identityBootstrap', () => ({
   ensureUserE2EEIdentity: mocks.ensureIdentity,
+}));
+
+vi.mock('@/lib/crypto/deviceLinkTrust', () => ({
+  ensureApprovedDeviceTrust: mocks.ensureTrust,
 }));
 
 vi.mock('@/lib/messaging/currentDevice', () => ({
@@ -31,6 +36,7 @@ beforeEach(() => {
   mocks.hydrate.mockResolvedValue('device-stable');
   mocks.isTemporary.mockReturnValue(false);
   mocks.ensureIdentity.mockResolvedValue(undefined);
+  mocks.ensureTrust.mockResolvedValue(undefined);
 });
 
 describe('Aegis stable device runtime', () => {
@@ -47,6 +53,8 @@ describe('Aegis stable device runtime', () => {
     expect(mocks.ensureIdentity).toHaveBeenCalledWith('user-one', {
       waitForMaintenance: true,
     });
+    expect(mocks.ensureTrust).toHaveBeenCalledTimes(1);
+    expect(mocks.ensureTrust).toHaveBeenCalledWith('user-one', 'device-stable');
   });
 
   it('never exposes a temporary device to fan-out', async () => {
@@ -55,6 +63,7 @@ describe('Aegis stable device runtime', () => {
     await expect(ensureAegisDeviceReady('user-one'))
       .rejects.toThrow('E2EE_STABLE_DEVICE_REQUIRED');
     expect(mocks.ensureIdentity).not.toHaveBeenCalled();
+    expect(mocks.ensureTrust).not.toHaveBeenCalled();
   });
 
   it('retries initialization after a failure', async () => {
@@ -69,5 +78,6 @@ describe('Aegis stable device runtime', () => {
 
     expect(mocks.hydrate).toHaveBeenCalledTimes(2);
     expect(mocks.ensureIdentity).toHaveBeenCalledTimes(2);
+    expect(mocks.ensureTrust).toHaveBeenCalledTimes(1);
   });
 });

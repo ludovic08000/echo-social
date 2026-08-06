@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PreparedDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import { signDeviceEnrollmentPossession } from '@/lib/crypto/deviceEnrollmentPossession';
 import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
 
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
@@ -110,6 +111,26 @@ export function parseCompletedDeviceEnrollment(
   return deviceId;
 }
 
+export function parseApprovedDevice(
+  value: unknown,
+  expectedDeviceId: string,
+): string {
+  const result = asObject(value);
+  if (result.ok !== true) throw new Error(responseCode(result));
+  if (responseCode(result) !== 'DEVICE_APPROVED') {
+    throw new Error('DEVICE_APPROVAL_INVALID_RESPONSE');
+  }
+
+  const deviceId = typeof result.device_id === 'string' ? result.device_id : '';
+  if (!SERVER_DEVICE_ID_RE.test(deviceId)) {
+    throw new Error('DEVICE_APPROVAL_INVALID_DEVICE_ID');
+  }
+  if (deviceId !== expectedDeviceId) {
+    throw new Error('DEVICE_APPROVAL_SERVER_ID_MISMATCH');
+  }
+  return deviceId;
+}
+
 export function parseDeviceEnrollmentSettlement(
   value: unknown,
   expectedDeviceId: string,
@@ -189,10 +210,34 @@ export async function beginServerAssignedDeviceEnrollment(
   return parseDeviceEnrollmentChallenge(data);
 }
 
+export async function approveServerAssignedDevice(deviceId: string): Promise<string> {
+  if (!SERVER_DEVICE_ID_RE.test(deviceId)) {
+    throw new Error('DEVICE_APPROVAL_INVALID_DEVICE_ID');
+  }
+
+  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
+    body: { device_id: deviceId },
+  });
+
+  if (error) throw new Error(`DEVICE_APPROVAL_FAILED:${error.message}`);
+  return parseApprovedDevice(data, deviceId);
+}
+
 export async function completeServerAssignedDeviceEnrollment(
   challenge: DeviceEnrollmentChallenge,
   authorization: PreparedDeviceAuthorization,
 ): Promise<string> {
+  const possessionSignature = await signDeviceEnrollmentPossession({
+    challengeId: challenge.challengeId,
+    deviceId: challenge.deviceId,
+    nonce: challenge.nonce,
+    expiresAt: challenge.expiresAt,
+    accountFingerprint: authorization.account.fingerprint,
+    devicePublicKey: authorization.deviceKx.publicB64,
+    deviceSigningKey: authorization.deviceSigning.publicB64,
+    deviceSigningPrivateKey: authorization.deviceSigning.privateKey,
+  });
+
   const { data, error } = await supabase.rpc(
     'complete_user_device_enrollment' as never,
     {
@@ -201,6 +246,7 @@ export async function completeServerAssignedDeviceEnrollment(
       p_device_public_key: authorization.deviceKx.publicB64,
       p_device_signing_key: authorization.deviceSigning.publicB64,
       p_device_authorization_signature: authorization.authorizationSignature,
+      p_device_possession_signature: possessionSignature,
       p_account_identity_key: authorization.account.identityKey,
       p_account_signing_key: authorization.account.signingKey,
       p_account_fingerprint: authorization.account.fingerprint,
@@ -209,7 +255,8 @@ export async function completeServerAssignedDeviceEnrollment(
   );
 
   if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_FAILED:${error.message}`);
-  return parseCompletedDeviceEnrollment(data, challenge.deviceId);
+  const completedDeviceId = parseCompletedDeviceEnrollment(data, challenge.deviceId);
+  return approveServerAssignedDevice(completedDeviceId);
 }
 
 export async function cancelServerAssignedDeviceEnrollment(

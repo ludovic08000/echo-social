@@ -1,0 +1,50 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+const enrollmentClient = readFileSync('src/lib/crypto/serverDeviceEnrollment.ts', 'utf8');
+const registrationHook = readFileSync('src/hooks/useDeviceRegistration.ts', 'utf8');
+const deviceRuntime = readFileSync('src/lib/messaging/aegisDeviceRuntime.ts', 'utf8');
+const approvalFunction = readFileSync(
+  'supabase/functions/approve-device-enrollment/index.ts',
+  'utf8',
+);
+const supabaseConfig = readFileSync('supabase/config.toml', 'utf8');
+
+describe('server-verified device enrollment architecture', () => {
+  it('uses the verification Edge Function instead of direct approval RPC', () => {
+    expect(enrollmentClient).toContain(
+      "supabase.functions.invoke('approve-device-enrollment'",
+    );
+    expect(enrollmentClient).not.toContain("supabase.rpc(\n    'approve_user_device'");
+  });
+
+  it('routes the live registration hook through server-assigned enrollment', () => {
+    expect(registrationHook).toContain('beginServerAssignedDeviceEnrollment');
+    expect(registrationHook).toContain('completeServerAssignedDeviceEnrollment');
+    expect(registrationHook).toContain('setCurrentDeviceId(challenge.deviceId)');
+    expect(registrationHook).not.toContain('register_user_device_safe');
+    expect(registrationHook).not.toContain('approve_user_device');
+  });
+
+  it('requires authorization, routing and a valid SPK before send', () => {
+    expect(deviceRuntime).toContain('ensureApprovedDeviceTrust');
+    expect(deviceRuntime).toContain('await ensureApprovedDeviceTrust(userId, deviceId)');
+    expect(deviceRuntime).not.toContain('readyByUser.set(userId, ready);\n    return ready;\n  })();');
+  });
+
+  it('verifies both canonical Ed25519 proofs before finalization', () => {
+    expect(approvalFunction).toContain('forsure-aegis-account-identity');
+    expect(approvalFunction).toContain('forsure-aegis-device-authorization');
+    expect(approvalFunction).toContain('crypto.subtle.verify');
+    expect(approvalFunction).toContain('ACCOUNT_BINDING_SIGNATURE_INVALID');
+    expect(approvalFunction).toContain('DEVICE_AUTHORIZATION_SIGNATURE_INVALID');
+    expect(approvalFunction).toContain('finalize_verified_user_device_approval');
+  });
+
+  it('enables JWT verification for the approval function', () => {
+    expect(supabaseConfig).toContain('[functions.approve-device-enrollment]');
+    expect(supabaseConfig).toMatch(
+      /\[functions\.approve-device-enrollment\]\s+verify_jwt\s*=\s*true/,
+    );
+  });
+});
