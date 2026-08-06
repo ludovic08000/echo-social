@@ -119,7 +119,7 @@ export function DevicesPanel() {
         });
         toast.error(`Appareils: ${error.code ?? 'DB_ERROR'} · ${error.message}`);
       } else {
-        setDevices((data ?? []) as DeviceRow[]);
+        setDevices((data ?? []) as unknown as DeviceRow[]);
       }
     } finally {
       setLoading(false);
