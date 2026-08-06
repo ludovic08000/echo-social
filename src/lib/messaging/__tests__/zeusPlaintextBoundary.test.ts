@@ -1,5 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+function collectTypeScriptFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = join(directory, entry.name);
+    if (entry.isDirectory()) return collectTypeScriptFiles(entryPath);
+    return /\.tsx?$/u.test(entry.name) ? [entryPath] : [];
+  });
+}
 
 const initialMigration = readFileSync(
   'supabase/migrations/20260806232000_block_plaintext_zeus_messaging.sql',
@@ -100,7 +109,15 @@ describe('Zeus plaintext boundary', () => {
     expect(secureSendHook).not.toContain('optimistic-');
   });
 
-  it('keeps the former client plaintext sender quarantined behind the public override', () => {
+  it('allows the legacy module only behind the controlled public facade', () => {
+    const testPath = 'src/lib/messaging/__tests__/zeusPlaintextBoundary.test.ts';
+    const directReferences = collectTypeScriptFiles('src')
+      .filter((path) => relative('.', path).replaceAll('\\', '/') !== testPath)
+      .filter((path) => readFileSync(path, 'utf8').includes('useMessages.legacy'))
+      .map((path) => relative('.', path).replaceAll('\\', '/'))
+      .sort();
+
+    expect(directReferences).toEqual(['src/hooks/useMessages.ts']);
     expect(legacyMessagesHook).toContain('sendToZeus');
     expect(legacyMessagesHook).toContain('export function useSendMessage()');
     expect(messagesPublicApi.indexOf("export { useSendMessage } from './useSendMessageSecure'"))
