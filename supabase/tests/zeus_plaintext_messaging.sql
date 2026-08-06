@@ -1,6 +1,6 @@
 begin;
 
-select plan(6);
+select plan(10);
 
 select ok(
   to_regprocedure('public.reject_plaintext_zeus_messenger()') is not null,
@@ -39,6 +39,45 @@ select ok(
        and t.tgenabled = 'O'
   ),
   'messages table has an enabled Zeus plaintext guard trigger'
+);
+
+select ok(
+  to_regprocedure('public.reject_zeus_messenger_participant()') is not null,
+  'Zeus messenger participant guard exists'
+);
+
+select ok(
+  coalesce((
+    select p.prosecdef
+      from pg_proc p
+     where p.oid = to_regprocedure('public.reject_zeus_messenger_participant()')
+  ), false),
+  'Zeus participant guard is SECURITY DEFINER'
+);
+
+select ok(
+  exists (
+    select 1
+      from pg_proc p
+     where p.oid = to_regprocedure('public.reject_zeus_messenger_participant()')
+       and coalesce(p.proconfig, array[]::text[]) @> array['search_path=pg_catalog, public']::text[]
+  ),
+  'Zeus participant guard pins search_path'
+);
+
+select ok(
+  exists (
+    select 1
+      from pg_trigger t
+      join pg_class c on c.oid = t.tgrelid
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public'
+       and c.relname = 'conversation_participants'
+       and t.tgname = 'reject_zeus_messenger_participant'
+       and not t.tgisinternal
+       and t.tgenabled = 'O'
+  ),
+  'conversation participants have an enabled Zeus guard trigger'
 );
 
 select ok(
