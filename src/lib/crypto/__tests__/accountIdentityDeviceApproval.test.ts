@@ -39,9 +39,16 @@ vi.mock('@/lib/crypto/deviceIdentity', () => ({
   signDeviceAuthorization: mocks.signDeviceAuthorization,
 }));
 
-vi.mock('@/lib/crypto/cryptoIntegrity', () => ({
-  hardCrypto: { sign: mocks.sign },
-}));
+vi.mock('@/lib/crypto/cryptoIntegrity', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/lib/crypto/cryptoIntegrity')>();
+  return {
+    ...original,
+    hardCrypto: {
+      ...original.hardCrypto,
+      sign: mocks.sign,
+    },
+  };
+});
 
 import {
   canonicalAccountIdentityDeviceApprovalPayload,
