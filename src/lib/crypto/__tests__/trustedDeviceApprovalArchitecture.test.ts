@@ -21,7 +21,7 @@ const recoveryDialog = readFileSync(
 describe('trusted-device approval architecture', () => {
   it('stages device-owned public material and does not publish prekeys yet', () => {
     const completed = enrollment.indexOf('complete_user_device_enrollment_candidate');
-    const legacyBlock = enrollment.indexOf('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
+    const legacyBlock = enrollment.indexOf('DEVICE_APPROVAL_REQUIRES_TRUSTED_OR_RECOVERED_ACCOUNT');
     const pendingReturn = registration.indexOf("trace('DEVICE_ENROLLMENT_PENDING')");
     const prekeyPublication = registration.indexOf('await refreshDeviceSignedPrekeyIfNeeded');
 
@@ -34,7 +34,7 @@ describe('trusted-device approval architecture', () => {
     expect(candidateMigration).toContain('device_authorization_signature = null');
   });
 
-  it('requires another approved device to sign account authorization and approve or reject', () => {
+  it('allows any approved device to sign account authorization and approve or reject', () => {
     expect(approvalClient).toContain('DEVICE_SELF_APPROVAL_FORBIDDEN');
     expect(approvalClient).toContain("protocol: 'forsure-aegis-device-approval-decision'");
     expect(approvalClient).toContain('signDeviceAuthorization');
@@ -54,7 +54,7 @@ describe('trusted-device approval architecture', () => {
     expect(trustedDecisionMigration).toContain("'code', 'DEVICE_REVOKED'");
   });
 
-  it('creates pending UI state before any canonical account restoration', () => {
+  it('creates pending UI state before canonical account restoration', () => {
     const challengeStart = registration.indexOf('await beginServerAssignedDeviceEnrollment');
     const candidateCompletion = registration.indexOf('await completeServerAssignedDeviceEnrollmentCandidate');
     const pendingEvent = registration.indexOf('dispatchPendingDevice(deviceId)');
@@ -67,9 +67,11 @@ describe('trusted-device approval architecture', () => {
     expect(candidateCompletion).toBeLessThan(restoreCheck);
   });
 
-  it('prevents the legacy recovery UI from opening on a pending device', () => {
-    expect(recoveryDialog).toContain('currentDeviceIsApproved');
-    expect(recoveryDialog).toContain("data.approval_status === 'approved'");
-    expect(recoveryDialog).toContain('if (!(await currentDeviceIsApproved(user.id))) return');
+  it('opens recovery on a pending device only after an explicit user request', () => {
+    expect(recoveryDialog).toContain("type CurrentDeviceApprovalState = 'approved' | 'pending' | 'unavailable'");
+    expect(recoveryDialog).toContain('detail.allowPendingDeviceRecovery === true');
+    expect(recoveryDialog).toContain("approvalState === 'pending'");
+    expect(recoveryDialog).toContain('pendingRecoveryAllowed');
+    expect(recoveryDialog).toContain('explicitly');
   });
 });
