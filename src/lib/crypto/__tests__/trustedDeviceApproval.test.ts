@@ -45,7 +45,7 @@ import {
 } from '@/lib/crypto/deviceApprovalDecision';
 
 const userId = '11111111-1111-4111-8111-111111111111';
-const windowsId = `dev_${'a'.repeat(32)}`;
+const approvedDeviceId = `dev_${'a'.repeat(32)}`;
 const iphoneId = `dev_${'b'.repeat(32)}`;
 const challengeId = '22222222-2222-4222-8222-222222222222';
 const expiresAt = new Date(Date.now() + 60_000).toISOString();
@@ -128,12 +128,12 @@ describe('simulated Chrome iPhone enrollment', () => {
 
   it('fails closed when legacy code tries to let the iPhone approve itself', async () => {
     await expect(approveServerAssignedDevice(iphoneId))
-      .rejects.toThrow('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
+      .rejects.toThrow('DEVICE_APPROVAL_REQUIRES_TRUSTED_OR_RECOVERED_ACCOUNT');
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 });
 
-describe('approved Windows device decision', () => {
+describe('approved device decision', () => {
   it('signs the account authorization and exact approval decision', async () => {
     const keyPair = await crypto.subtle.generateKey(
       { name: 'Ed25519' },
@@ -162,7 +162,7 @@ describe('approved Windows device decision', () => {
     };
     const payload = canonicalDeviceApprovalDecisionPayload({
       userId,
-      approverDeviceId: windowsId,
+      approverDeviceId: approvedDeviceId,
       target: {
         ...target,
         deviceAuthorizationSignature: 'Y'.repeat(88),
@@ -172,7 +172,7 @@ describe('approved Windows device decision', () => {
 
     await expect(submitDeviceApprovalDecision({
       userId,
-      approverDeviceId: windowsId,
+      approverDeviceId: approvedDeviceId,
       target,
       decision: 'approve',
     })).resolves.toEqual({ deviceId: iphoneId, decision: 'approve' });
@@ -196,7 +196,7 @@ describe('approved Windows device decision', () => {
     }));
     expect(call.body).toMatchObject({
       decision: 'approve',
-      approver_device_id: windowsId,
+      approver_device_id: approvedDeviceId,
       target_device_id: iphoneId,
       target_challenge_id: challengeId,
       target_device_authorization_signature: 'Y'.repeat(88),
