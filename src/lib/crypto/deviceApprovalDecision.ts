@@ -184,7 +184,23 @@ export async function submitAccountIdentityDeviceApproval(args: {
     throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${accountLookupError.message}`);
   }
 
-  const mode: AccountIdentityApprovalMode = serverAccount?.fingerprint
+  let expectedFingerprint = String(serverAccount?.fingerprint ?? '').trim();
+  if (expectedFingerprint.length < 32) {
+    const { data: recoveryVault, error: recoveryVaultError } = await supabase
+      .from('aegis_recovery_vaults' as never)
+      .select('identity_fingerprint')
+      .eq('user_id', args.userId)
+      .maybeSingle();
+
+    if (recoveryVaultError) {
+      throw new Error(`ACCOUNT_RECOVERY_VAULT_LOOKUP_FAILED:${recoveryVaultError.message}`);
+    }
+    expectedFingerprint = String(
+      (recoveryVault as { identity_fingerprint?: unknown } | null)?.identity_fingerprint ?? '',
+    ).trim();
+  }
+
+  const mode: AccountIdentityApprovalMode = expectedFingerprint.length >= 32
     ? 'account_recovery'
     : 'first_device_bootstrap';
 
@@ -198,13 +214,16 @@ export async function submitAccountIdentityDeviceApproval(args: {
 
   if (
     mode === 'account_recovery'
-    && serverAccount?.fingerprint
-    && accountIdentity.fingerprint !== serverAccount.fingerprint
+    && accountIdentity.fingerprint !== expectedFingerprint
   ) {
     throw new Error('ACCOUNT_RECOVERY_IDENTITY_MISMATCH');
   }
 
   const account = await exportPublicKeyBundle(accountIdentity);
+  if (account.fingerprint !== accountIdentity.fingerprint) {
+    throw new Error('ACCOUNT_RECOVERY_PUBLIC_BUNDLE_MISMATCH');
+  }
+
   const deviceAuthorizationSignature = await signDeviceAuthorization({
     userId: args.userId,
     deviceId: args.target.deviceId,
