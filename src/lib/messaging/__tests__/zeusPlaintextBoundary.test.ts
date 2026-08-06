@@ -17,7 +17,9 @@ const sqlSecurityTest = readFileSync(
   'supabase/tests/zeus_plaintext_messaging.sql',
   'utf8',
 );
-const messagesHook = readFileSync('src/hooks/useMessages.ts', 'utf8');
+const messagesPublicApi = readFileSync('src/hooks/useMessages.ts', 'utf8');
+const secureSendHook = readFileSync('src/hooks/useSendMessageSecure.ts', 'utf8');
+const legacyMessagesHook = readFileSync('src/hooks/useMessages.legacy.ts', 'utf8');
 const agentChat = readFileSync('supabase/functions/agent-chat/index.ts', 'utf8');
 
 describe('Zeus plaintext boundary', () => {
@@ -73,6 +75,26 @@ describe('Zeus plaintext boundary', () => {
     expect(sqlSecurityTest).toContain("trigger.tgname = 'reject_zeus_messenger_participant'");
   });
 
+  it('routes the public messenger send hook through Aegis only', () => {
+    expect(messagesPublicApi).toContain("export * from './useMessages.legacy'");
+    expect(messagesPublicApi).toContain("export { useSendMessage } from './useSendMessageSecure'");
+    expect(messagesPublicApi).not.toContain('sendToZeus');
+
+    expect(secureSendHook).toContain('sendAegisOutboundMessage');
+    expect(secureSendHook).toContain('useSendMessage');
+    expect(secureSendHook).toContain('ZEUS_BOT_ID');
+    expect(secureSendHook).not.toContain('sendToZeus');
+    expect(secureSendHook).not.toContain("functions.invoke('agent-chat'");
+    expect(secureSendHook).not.toContain("from('messages')\n        .insert");
+  });
+
+  it('keeps the former client plaintext sender quarantined behind the public override', () => {
+    expect(legacyMessagesHook).toContain('sendToZeus');
+    expect(legacyMessagesHook).toContain('export function useSendMessage()');
+    expect(messagesPublicApi.indexOf("export { useSendMessage } from './useSendMessageSecure'"))
+      .toBeGreaterThan(messagesPublicApi.indexOf("export * from './useMessages.legacy'"));
+  });
+
   it('rejects legacy plaintext paths at the database boundary', () => {
     expect(durableMigration).toContain("new.sender_id = '00000000-0000-0000-0000-000000000001'::uuid");
     expect(durableMigration).toContain("message = 'zeus_messenger_e2ee_required'");
@@ -87,9 +109,9 @@ describe('Zeus plaintext boundary', () => {
     expect(sqlSecurityTest).toContain("'delete from public.conversation_participants'");
   });
 
-  it('documents every legacy caller currently guarded by the database invariant', () => {
-    expect(messagesHook).toContain('sendToZeus');
+  it('keeps the remaining server legacy push behind the database invariant', () => {
     expect(agentChat).toContain('pushToMessenger');
-    expect(durableMigration).toContain('legacy caller');
+    expect(durableMigration).toContain('zeus_messenger_blocked_conversations');
+    expect(durableMigration).toContain("message = 'zeus_messenger_e2ee_required'");
   });
 });
