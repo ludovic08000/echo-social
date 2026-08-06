@@ -119,16 +119,18 @@ function approvalDecisionPayload(args: {
   target: DeviceRow;
   challengeId: string;
   decision: ApprovalDecision;
+  targetDeviceAuthorizationSignature: string | null;
 }): string {
   return JSON.stringify({
     protocol: "forsure-aegis-device-approval-decision",
-    version: 1,
+    version: 2,
     userId: args.userId,
     approverDeviceId: args.approver.device_id,
     targetDeviceId: args.target.device_id,
     targetChallengeId: args.challengeId,
     targetDevicePublicKey: args.target.device_public_key,
     targetDeviceSigningKey: args.target.device_signing_key,
+    targetDeviceAuthorizationSignature: args.targetDeviceAuthorizationSignature,
     decision: args.decision,
   });
 }
@@ -219,6 +221,9 @@ serve(async (req) => {
     const targetChallengeId = typeof input.target_challenge_id === "string"
       ? input.target_challenge_id.trim()
       : "";
+    const targetDeviceAuthorizationSignature = typeof input.target_device_authorization_signature === "string"
+      ? input.target_device_authorization_signature.trim()
+      : null;
     const approverSignature = typeof input.approver_signature === "string"
       ? input.approver_signature.trim()
       : "";
@@ -235,6 +240,9 @@ serve(async (req) => {
     }
     if (approverSignature.length < 80) {
       return respond(req, 400, { ok: false, code: "APPROVER_SIGNATURE_REQUIRED" });
+    }
+    if (decision === "approve" && (!targetDeviceAuthorizationSignature || targetDeviceAuthorizationSignature.length < 80)) {
+      return respond(req, 400, { ok: false, code: "DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED" });
     }
 
     const deviceColumns = "device_id,device_public_key,device_signing_key,device_authorization_signature,approval_challenge_id,approval_status,is_active,revoked_at,crypto_invalid_at,routing_status";
@@ -283,11 +291,18 @@ serve(async (req) => {
     if (target.approval_status !== "pending" || target.is_active !== false) {
       return respond(req, 409, { ok: false, code: "DEVICE_NOT_PENDING" });
     }
-    if (!target.device_public_key || !target.device_signing_key || !target.device_authorization_signature) {
-      return respond(req, 422, { ok: false, code: "DEVICE_AUTHORIZATION_INCOMPLETE" });
+    if (!target.device_public_key || !target.device_signing_key) {
+      return respond(req, 422, { ok: false, code: "DEVICE_CANDIDATE_INCOMPLETE" });
     }
     if (target.approval_challenge_id !== targetChallengeId) {
       return respond(req, 409, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_CHANGED" });
+    }
+    if (
+      target.device_authorization_signature
+      && targetDeviceAuthorizationSignature
+      && target.device_authorization_signature !== targetDeviceAuthorizationSignature
+    ) {
+      return respond(req, 409, { ok: false, code: "DEVICE_AUTHORIZATION_CHANGED" });
     }
 
     const approvalSignatureValid = await verifyEd25519(
@@ -299,6 +314,7 @@ serve(async (req) => {
         target,
         challengeId: targetChallengeId,
         decision,
+        targetDeviceAuthorizationSignature,
       }),
     );
     if (!approvalSignatureValid) {
@@ -398,7 +414,7 @@ serve(async (req) => {
       ),
       verifyEd25519(
         account.signing_key,
-        target.device_authorization_signature,
+        targetDeviceAuthorizationSignature!,
         deviceAuthorizationPayload(user.id, target, account),
       ),
       verifyEd25519(
@@ -427,7 +443,7 @@ serve(async (req) => {
         p_device_id: target.device_id,
         p_device_public_key: target.device_public_key,
         p_device_signing_key: target.device_signing_key,
-        p_device_authorization_signature: target.device_authorization_signature,
+        p_device_authorization_signature: targetDeviceAuthorizationSignature,
         p_device_possession_signature: challenge.device_possession_signature,
         p_account_identity_key: account.identity_key,
         p_account_signing_key: account.signing_key,
