@@ -86,6 +86,18 @@ describe('Zeus plaintext boundary', () => {
     expect(secureSendHook).not.toContain('sendToZeus');
     expect(secureSendHook).not.toContain("functions.invoke('agent-chat'");
     expect(secureSendHook).not.toContain("from('messages')\n        .insert");
+    expect(secureSendHook).not.toContain("from './useMessages.legacy'");
+  });
+
+  it('rejects Zeus before encryption or optimistic messenger persistence', () => {
+    expect(secureSendHook).toContain('assertRegularMessengerConversation');
+    expect(secureSendHook).toContain("from('conversation_participants')");
+    expect(secureSendHook).toContain(".eq('user_id', ZEUS_BOT_ID)");
+    expect(secureSendHook).toContain('await assertRegularMessengerConversation(conversationId);');
+    expect(secureSendHook.indexOf('await assertRegularMessengerConversation(conversationId);'))
+      .toBeLessThan(secureSendHook.indexOf('sendAegisOutboundMessage'));
+    expect(secureSendHook).not.toContain('onMutate:');
+    expect(secureSendHook).not.toContain('optimistic-');
   });
 
   it('keeps the former client plaintext sender quarantined behind the public override', () => {
