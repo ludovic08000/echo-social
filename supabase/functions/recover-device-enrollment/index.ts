@@ -40,6 +40,10 @@ type ChallengeRow = {
   possession_payload_version: number | null;
 };
 
+type RecoveryVaultRow = {
+  identity_fingerprint: string;
+};
+
 function respond(req: Request, status: number, body: JsonObject): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -259,7 +263,13 @@ serve(async (req) => {
     }
 
     const deviceColumns = "device_id,device_public_key,device_signing_key,device_authorization_signature,approval_challenge_id,approval_status,is_active,revoked_at,crypto_invalid_at";
-    const [targetResult, challengeResult, serverAccountResult] = await Promise.all([
+    const [
+      targetResult,
+      challengeResult,
+      serverAccountResult,
+      recoveryVaultResult,
+      backupResult,
+    ] = await Promise.all([
       admin
         .from("user_devices")
         .select(deviceColumns)
@@ -279,6 +289,17 @@ serve(async (req) => {
         .eq("user_id", user.id)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      admin
+        .from("aegis_recovery_vaults")
+        .select("identity_fingerprint")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      admin
+        .from("user_backups")
+        .select("id")
+        .eq("user_id", user.id)
         .limit(1)
         .maybeSingle(),
     ]);
@@ -301,9 +322,18 @@ serve(async (req) => {
       console.error("[recover-device-enrollment] account lookup failed", serverAccountResult.error.message);
       return respond(req, 500, { ok: false, code: "ACCOUNT_IDENTITY_LOOKUP_FAILED" });
     }
+    if (recoveryVaultResult.error) {
+      console.error("[recover-device-enrollment] recovery vault lookup failed", recoveryVaultResult.error.message);
+      return respond(req, 500, { ok: false, code: "ACCOUNT_RECOVERY_VAULT_LOOKUP_FAILED" });
+    }
+    if (backupResult.error) {
+      console.error("[recover-device-enrollment] backup lookup failed", backupResult.error.message);
+      return respond(req, 500, { ok: false, code: "ACCOUNT_BACKUP_LOOKUP_FAILED" });
+    }
 
     const target = targetResult.data as DeviceRow;
     const challenge = challengeResult.data as ChallengeRow;
+    const recoveryVault = recoveryVaultResult.data as RecoveryVaultRow | null;
 
     if (target.revoked_at || target.approval_status === "rejected") {
       return respond(req, 409, { ok: false, code: "DEVICE_REVOKED_OR_REJECTED" });
@@ -343,24 +373,36 @@ serve(async (req) => {
 
     let account: AccountRow;
     if (mode === "account_recovery") {
-      if (!serverAccountResult.data) {
-        return respond(req, 409, { ok: false, code: "ACCOUNT_IDENTITY_NOT_FOUND" });
+      if (serverAccountResult.data) {
+        const serverAccount = serverAccountResult.data as AccountRow;
+        if (
+          serverAccount.identity_key !== inputAccount.identity_key
+          || serverAccount.signing_key !== inputAccount.signing_key
+          || serverAccount.fingerprint !== inputAccount.fingerprint
+          || serverAccount.identity_binding_signature !== inputAccount.identity_binding_signature
+          || serverAccount.identity_binding_version !== inputAccount.identity_binding_version
+        ) {
+          return respond(req, 409, { ok: false, code: "ACCOUNT_RECOVERY_IDENTITY_MISMATCH" });
+        }
+        account = serverAccount;
+      } else {
+        const vaultFingerprint = recoveryVault?.identity_fingerprint?.trim() ?? "";
+        if (!vaultFingerprint || vaultFingerprint !== inputAccount.fingerprint) {
+          return respond(req, 409, { ok: false, code: "ACCOUNT_RECOVERY_IDENTITY_MISMATCH" });
+        }
+        account = inputAccount;
       }
-      const serverAccount = serverAccountResult.data as AccountRow;
-      if (
-        serverAccount.identity_key !== inputAccount.identity_key
-        || serverAccount.signing_key !== inputAccount.signing_key
-        || serverAccount.fingerprint !== inputAccount.fingerprint
-        || serverAccount.identity_binding_signature !== inputAccount.identity_binding_signature
-        || serverAccount.identity_binding_version !== inputAccount.identity_binding_version
-      ) {
-        return respond(req, 409, { ok: false, code: "ACCOUNT_RECOVERY_IDENTITY_MISMATCH" });
-      }
-      account = serverAccount;
     } else {
       if (serverAccountResult.data) {
         return respond(req, 409, { ok: false, code: "FIRST_DEVICE_ACCOUNT_ALREADY_INITIALIZED" });
       }
+      if (recoveryVault?.identity_fingerprint) {
+        return respond(req, 409, { ok: false, code: "FIRST_DEVICE_RECOVERY_VAULT_EXISTS" });
+      }
+      if (backupResult.data) {
+        return respond(req, 409, { ok: false, code: "FIRST_DEVICE_BACKUP_EXISTS" });
+      }
+
       const { data: otherDevices, error: otherDevicesError } = await admin
         .from("user_devices")
         .select("device_id")
