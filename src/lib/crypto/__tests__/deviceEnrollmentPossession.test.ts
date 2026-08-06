@@ -63,6 +63,12 @@ describe('device enrollment possession proof', () => {
     expect(approvalFunction).toContain('p_challenge_id: challenge.id');
   });
 
+  it('rejects an expired challenge before server finalization', () => {
+    expect(approvalFunction).toContain('consumedAt > expiresAt');
+    expect(approvalFunction).toContain('expiresAt <= Date.now()');
+    expect(approvalFunction).toContain('DEVICE_ENROLLMENT_EXPIRED');
+  });
+
   it('binds finalization transactionally to one timely-consumed challenge', () => {
     expect(migration).toContain('approval_challenge_id');
     expect(migration).toContain('device_possession_signature');
