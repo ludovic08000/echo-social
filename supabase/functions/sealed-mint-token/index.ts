@@ -6,6 +6,7 @@ import {
   isUuid,
   sha256Base64Url,
   signTokenPayload,
+  utf8ByteLength,
   type SealedSenderTokenPayloadV1,
 } from '../_shared/sealedSenderToken.ts';
 
@@ -33,7 +34,13 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const tokenSecret = Deno.env.get('SEALED_SENDER_TOKEN_SECRET');
-    if (!supabaseUrl || !anonKey || !serviceRoleKey || !tokenSecret) {
+    if (
+      !supabaseUrl
+      || !anonKey
+      || !serviceRoleKey
+      || !tokenSecret
+      || utf8ByteLength(tokenSecret) < 32
+    ) {
       return json(503, { error: 'sealed_sender_unavailable' });
     }
 
@@ -64,7 +71,7 @@ Deno.serve(async (req) => {
     const recipientUserId = body.recipient_user_id;
     const conversationId = body.conversation_id;
     if (recipientUserId === caller.id) return json(400, { error: 'invalid_recipient' });
-    if (typeof body.context_id === 'string' && body.context_id.length > 256) {
+    if (typeof body.context_id === 'string' && utf8ByteLength(body.context_id) > 256) {
       return json(400, { error: 'context_too_large' });
     }
 
