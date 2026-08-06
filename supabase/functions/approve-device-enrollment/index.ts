@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
 
 type JsonObject = Record<string, unknown>;
@@ -12,6 +13,7 @@ type DeviceRow = {
   device_public_key: string | null;
   device_signing_key: string | null;
   device_authorization_signature: string | null;
+  approval_challenge_id: string | null;
   approval_status: string | null;
   is_active: boolean | null;
   revoked_at: string | null;
@@ -23,6 +25,17 @@ type AccountRow = {
   fingerprint: string;
   identity_binding_signature: string;
   identity_binding_version: number;
+};
+
+type ChallengeRow = {
+  id: string;
+  device_id: string;
+  nonce_hash: string;
+  expires_at: string;
+  consumed_at: string | null;
+  cancelled_at: string | null;
+  device_possession_signature: string | null;
+  possession_payload_version: number | null;
 };
 
 function respond(req: Request, status: number, body: JsonObject): Response {
@@ -53,6 +66,12 @@ function decodeBase64(value: string, expectedLength: number, label: string): Uin
   return bytes;
 }
 
+function normalizeExpiry(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) throw new Error("DEVICE_ENROLLMENT_INVALID_EXPIRY");
+  return new Date(timestamp).toISOString();
+}
+
 function accountBindingPayload(account: AccountRow): string {
   return JSON.stringify({
     protocol: "forsure-aegis-account-identity",
@@ -67,6 +86,24 @@ function deviceAuthorizationPayload(userId: string, device: DeviceRow, account: 
     protocol: "forsure-aegis-device-authorization",
     userId,
     deviceId: device.device_id,
+    accountFingerprint: account.fingerprint,
+    devicePublicKey: device.device_public_key,
+    deviceSigningKey: device.device_signing_key,
+  });
+}
+
+function devicePossessionPayload(
+  challenge: ChallengeRow,
+  device: DeviceRow,
+  account: AccountRow,
+): string {
+  return JSON.stringify({
+    protocol: "forsure-aegis-device-possession",
+    version: 1,
+    challengeId: challenge.id,
+    deviceId: device.device_id,
+    nonceHash: challenge.nonce_hash.toLowerCase(),
+    expiresAt: normalizeExpiry(challenge.expires_at),
     accountFingerprint: account.fingerprint,
     devicePublicKey: device.device_public_key,
     deviceSigningKey: device.device_signing_key,
@@ -150,7 +187,7 @@ serve(async (req) => {
     const [deviceResult, accountResult] = await Promise.all([
       admin
         .from("user_devices")
-        .select("device_id,device_public_key,device_signing_key,device_authorization_signature,approval_status,is_active,revoked_at")
+        .select("device_id,device_public_key,device_signing_key,device_authorization_signature,approval_challenge_id,approval_status,is_active,revoked_at")
         .eq("user_id", user.id)
         .eq("device_id", deviceId)
         .maybeSingle(),
@@ -180,6 +217,9 @@ serve(async (req) => {
     if (!device.device_public_key || !device.device_signing_key || !device.device_authorization_signature) {
       return respond(req, 422, { ok: false, code: "DEVICE_AUTHORIZATION_INCOMPLETE" });
     }
+    if (!device.approval_challenge_id || !UUID_RE.test(device.approval_challenge_id)) {
+      return respond(req, 409, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_NOT_FOUND" });
+    }
     if (
       !account.identity_key ||
       !account.signing_key ||
@@ -188,6 +228,35 @@ serve(async (req) => {
       account.identity_binding_version !== 1
     ) {
       return respond(req, 422, { ok: false, code: "ACCOUNT_BINDING_INCOMPLETE" });
+    }
+
+    const { data: challengeData, error: challengeError } = await admin
+      .from("device_enrollment_challenges")
+      .select("id,device_id,nonce_hash,expires_at,consumed_at,cancelled_at,device_possession_signature,possession_payload_version")
+      .eq("id", device.approval_challenge_id)
+      .eq("user_id", user.id)
+      .eq("device_id", device.device_id)
+      .maybeSingle();
+
+    if (challengeError || !challengeData) {
+      return respond(req, 409, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_NOT_FOUND" });
+    }
+
+    const challenge = challengeData as ChallengeRow;
+    if (challenge.cancelled_at) {
+      return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_CANCELLED" });
+    }
+    if (!challenge.consumed_at) {
+      return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_NOT_COMPLETED" });
+    }
+    if (Date.parse(challenge.consumed_at) > Date.parse(challenge.expires_at)) {
+      return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_EXPIRED" });
+    }
+    if (
+      challenge.possession_payload_version !== 1 ||
+      !challenge.device_possession_signature
+    ) {
+      return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_PROOF_REQUIRED" });
     }
 
     const bindingPayload = accountBindingPayload(account);
@@ -214,14 +283,25 @@ serve(async (req) => {
       return respond(req, 422, { ok: false, code: "DEVICE_AUTHORIZATION_SIGNATURE_INVALID" });
     }
 
+    const devicePossessionValid = await verifyEd25519(
+      device.device_signing_key,
+      challenge.device_possession_signature,
+      devicePossessionPayload(challenge, device, account),
+    );
+    if (!devicePossessionValid) {
+      return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_SIGNATURE_INVALID" });
+    }
+
     const { data: finalizedData, error: finalizedError } = await admin.rpc(
       "finalize_verified_user_device_approval",
       {
         p_user_id: user.id,
+        p_challenge_id: challenge.id,
         p_device_id: device.device_id,
         p_device_public_key: device.device_public_key,
         p_device_signing_key: device.device_signing_key,
         p_device_authorization_signature: device.device_authorization_signature,
+        p_device_possession_signature: challenge.device_possession_signature,
         p_account_identity_key: account.identity_key,
         p_account_signing_key: account.signing_key,
         p_account_fingerprint: account.fingerprint,
@@ -244,6 +324,7 @@ serve(async (req) => {
       ok: true,
       code: "DEVICE_APPROVED",
       device_id: device.device_id,
+      challenge_id: challenge.id,
       existing: finalized.existing === true,
     });
   } catch (error) {
