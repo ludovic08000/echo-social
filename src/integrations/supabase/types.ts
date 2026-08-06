@@ -9185,6 +9185,10 @@ export type Database = {
         Args: { p_id: string }
         Returns: boolean
       }
+      resume_user_device_enrollment: {
+        Args: { p_device_fingerprint: string; p_platform?: string }
+        Returns: Json
+      }
       revoke_user_device: {
         Args: { p_device_id: string; p_replacement_device_id?: string }
         Returns: Json
