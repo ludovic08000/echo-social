@@ -12,8 +12,17 @@ create table if not exists public.user_identity_epochs (
   unique(user_id, epoch)
 );
 
-alter table public.user_public_keys
-  add column if not exists identity_epoch integer not null default 1;
+-- On a full replay, user_public_keys is introduced by a later historical
+-- migration. Upgrade it only on databases where the relation already exists;
+-- the later creation path defines the final schema independently.
+do $user_public_keys_identity_epoch$
+begin
+  if to_regclass('public.user_public_keys') is not null then
+    alter table public.user_public_keys
+      add column if not exists identity_epoch integer not null default 1;
+  end if;
+end;
+$user_public_keys_identity_epoch$;
 
 create table if not exists public.user_devices (
   id uuid primary key default gen_random_uuid(),
