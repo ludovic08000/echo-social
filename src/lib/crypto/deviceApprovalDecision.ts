@@ -1,6 +1,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from '@/lib/crypto/cryptoIntegrity';
-import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
+import {
+  loadDeviceIdentity,
+  signDeviceAuthorization,
+} from '@/lib/crypto/deviceIdentity';
+import { loadIdentityKeys } from '@/lib/crypto/keyManager';
 import { bufferToBase64, encodeString } from '@/lib/crypto/utils';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
@@ -13,6 +17,7 @@ export interface PendingDeviceApprovalTarget {
   challengeId: string;
   devicePublicKey: string;
   deviceSigningKey: string;
+  deviceAuthorizationSignature?: string | null;
 }
 
 export function canonicalDeviceApprovalDecisionPayload(args: {
@@ -23,13 +28,14 @@ export function canonicalDeviceApprovalDecisionPayload(args: {
 }): string {
   return JSON.stringify({
     protocol: 'forsure-aegis-device-approval-decision',
-    version: 1,
+    version: 2,
     userId: args.userId,
     approverDeviceId: args.approverDeviceId,
     targetDeviceId: args.target.deviceId,
     targetChallengeId: args.target.challengeId,
     targetDevicePublicKey: args.target.devicePublicKey,
     targetDeviceSigningKey: args.target.deviceSigningKey,
+    targetDeviceAuthorizationSignature: args.target.deviceAuthorizationSignature ?? null,
     decision: args.decision,
   });
 }
@@ -57,10 +63,32 @@ export async function submitDeviceApprovalDecision(args: {
   const approverIdentity = await loadDeviceIdentity(args.userId, args.approverDeviceId);
   if (!approverIdentity) throw new Error('DEVICE_APPROVER_PRIVATE_KEY_MISSING');
 
+  let targetDeviceAuthorizationSignature: string | null = null;
+  if (args.decision === 'approve') {
+    const accountIdentity = await loadIdentityKeys(args.userId);
+    if (!accountIdentity) throw new Error('DEVICE_APPROVER_ACCOUNT_IDENTITY_MISSING');
+    targetDeviceAuthorizationSignature = await signDeviceAuthorization({
+      userId: args.userId,
+      deviceId: args.target.deviceId,
+      accountFingerprint: accountIdentity.fingerprint,
+      devicePublicKey: args.target.devicePublicKey,
+      deviceSigningKey: args.target.deviceSigningKey,
+      accountSigningPrivateKey: accountIdentity.signingPrivateKey,
+    });
+  }
+
+  const signedTarget: PendingDeviceApprovalTarget = {
+    ...args.target,
+    deviceAuthorizationSignature: targetDeviceAuthorizationSignature,
+  };
+
   const approvalSignature = bufferToBase64(await hardCrypto.sign(
     'Ed25519',
     approverIdentity.privateKey,
-    encodeString(canonicalDeviceApprovalDecisionPayload(args)),
+    encodeString(canonicalDeviceApprovalDecisionPayload({
+      ...args,
+      target: signedTarget,
+    })),
   ) as ArrayBuffer);
 
   const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
@@ -69,6 +97,7 @@ export async function submitDeviceApprovalDecision(args: {
       approver_device_id: args.approverDeviceId,
       target_device_id: args.target.deviceId,
       target_challenge_id: args.target.challengeId,
+      target_device_authorization_signature: targetDeviceAuthorizationSignature,
       approver_signature: approvalSignature,
     },
   });
