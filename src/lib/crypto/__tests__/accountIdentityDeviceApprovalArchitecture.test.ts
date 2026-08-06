@@ -11,6 +11,10 @@ const recoveryMigration = readFileSync(
   'supabase/migrations/20260806213000_allow_recovery_and_first_device_approval.sql',
   'utf8',
 );
+const candidateMetadataMigration = readFileSync(
+  'supabase/migrations/20260806214000_fix_first_device_candidate_metadata.sql',
+  'utf8',
+);
 const supabaseConfig = readFileSync('supabase/config.toml', 'utf8');
 const gate = readFileSync('src/components/security/PendingDeviceApprovalGate.tsx', 'utf8');
 const restoreDialog = readFileSync(
@@ -49,6 +53,13 @@ describe('account identity device approval architecture', () => {
     expect(recoveryMigration).toContain("approval_method = 'first_device_bootstrap'");
     expect(recoveryMigration).toContain('device.device_id <> v_device_id');
     expect(gate).toContain('Activer ce premier appareil');
+  });
+
+  it('computes first-device candidate metadata from the pre-enrollment snapshot', () => {
+    expect(candidateMetadataMigration).toContain('v_account_existed boolean := false');
+    expect(candidateMetadataMigration).toContain('complete_user_device_enrollment_candidate_verified');
+    expect(candidateMetadataMigration).toContain("'first_device_candidate', not v_account_existed");
+    expect(candidateMetadataMigration).not.toContain("'first_device_candidate', not found");
   });
 
   it('fails closed on account lookup errors and invalid device crypto state', () => {
