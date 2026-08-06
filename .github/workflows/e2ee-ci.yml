@@ -2,7 +2,7 @@ name: E2EE CI
 
 on:
   push:
-    branches: [main, fix/pending-device-global-gate]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
