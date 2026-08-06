@@ -1,13 +1,7 @@
 /**
- * Registers the current installation through the server-assigned, verified
- * Aegis enrollment flow, then publishes per-device prekeys.
- *
- * Invariants:
- * - a new DeviceID is chosen by the server before device keys are generated;
- * - completion only stages a pending route;
- * - Ed25519 proofs are verified server-side before approval;
- * - SPK publication and route readiness happen only after approval;
- * - existing approved devices are never silently overwritten or re-keyed.
+ * Registers the current installation through the server-assigned Aegis flow.
+ * New devices are staged as pending and can only be approved by another active,
+ * approved device. Device prekeys and routing become available after approval.
  */
 
 import { useEffect, useRef } from 'react';
@@ -25,7 +19,11 @@ import {
   setCurrentDeviceId,
   setCurrentDeviceUserScope,
 } from '@/lib/messaging/currentDevice';
-import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
+import {
+  deleteRawIdentityKeys,
+  loadIdentityKeys,
+  PinUnlockRequiredError,
+} from '@/lib/crypto/keyManager';
 import { startKeyConsistencyGuard } from '@/lib/crypto/keyConsistencyGuard';
 import {
   refreshDeviceSignedPrekeyIfNeeded,
@@ -48,7 +46,6 @@ import {
   type DeviceIdentityKey,
 } from '@/lib/crypto/deviceIdentity';
 import {
-  approveServerAssignedDevice,
   beginServerAssignedDeviceEnrollment,
   cancelServerAssignedDeviceEnrollment,
   completeServerAssignedDeviceEnrollment,
@@ -69,6 +66,7 @@ import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const MAX_ENROLLMENT_ATTEMPTS = 3;
+const APPROVAL_POLL_MS = 8_000;
 
 type ExistingDeviceRow = {
   device_id: string;
@@ -153,6 +151,73 @@ async function restoreDeviceMaterial(userId: string): Promise<void> {
   await restoreAccountKeysFromActiveSession(userId).catch(() => 'error');
 }
 
+/**
+ * A second device must reuse the account identity already published by the
+ * first device. A mismatched local identity is deleted only when a portable
+ * account backup exists, then restored from the unlocked account vault.
+ */
+async function ensureCanonicalAccountIdentity(userId: string): Promise<void> {
+  const { data: serverIdentity, error: serverError } = await supabase
+    .from('user_public_keys')
+    .select('fingerprint')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (serverError) throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${serverError.message}`);
+  const expectedFingerprint = serverIdentity?.fingerprint;
+  if (!expectedFingerprint) return;
+
+  let local = await loadIdentityKeys(userId).catch(() => null);
+  if (local?.fingerprint === expectedFingerprint) return;
+
+  const { data: backup, error: backupError } = await supabase
+    .from('user_backups' as never)
+    .select('id')
+    .eq('user_id', userId)
+    .eq('backup_type', 'account')
+    .maybeSingle();
+  if (backupError) throw new Error(`ACCOUNT_BACKUP_LOOKUP_FAILED:${backupError.message}`);
+  if (!backup) {
+    throw new PinUnlockRequiredError(
+      'PIN_UNLOCK_REQUIRED: canonical account identity backup is unavailable on this device.',
+    );
+  }
+
+  if (local && local.fingerprint !== expectedFingerprint) {
+    await deleteRawIdentityKeys(userId);
+  }
+
+  await restoreDeviceMaterial(userId);
+  local = await loadIdentityKeys(userId).catch(() => null);
+  if (!local || local.fingerprint !== expectedFingerprint) {
+    try {
+      window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+        detail: {
+          userId,
+          reason: 'account_identity_mismatch',
+          source: 'useDeviceRegistration',
+          expectedFingerprint,
+          actualFingerprint: local?.fingerprint ?? null,
+        },
+      }));
+    } catch {
+      // Browser notification is best-effort.
+    }
+    throw new PinUnlockRequiredError(
+      'PIN_UNLOCK_REQUIRED: restore the existing account identity before enrolling this device.',
+    );
+  }
+}
+
+function dispatchPendingDevice(deviceId: string): void {
+  window.dispatchEvent(new CustomEvent('forsure:e2ee-device-pending', {
+    detail: { deviceId, status: 'pending' },
+  }));
+}
+
 export function useDeviceRegistration() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -164,6 +229,7 @@ export function useDeviceRegistration() {
     setCurrentDeviceUserScope(user.id);
 
     let retryTimer: number | undefined;
+    let approvalPoll: number | undefined;
     let disposed = false;
 
     const scheduleRetry = (reason: string, attempt: number) => {
@@ -252,6 +318,10 @@ export function useDeviceRegistration() {
           return;
         }
 
+        if (!existing || isPending(existing)) {
+          await ensureCanonicalAccountIdentity(user.id);
+        }
+
         if (!existing) {
           challenge = await beginServerAssignedDeviceEnrollment({
             deviceName: getCurrentDeviceLabel(),
@@ -331,13 +401,22 @@ export function useDeviceRegistration() {
         }
 
         if (challenge) {
-          const approvedDeviceId = await completeServerAssignedDeviceEnrollment(challenge, authorization);
-          if (approvedDeviceId !== deviceId) throw new Error('DEVICE_APPROVAL_SERVER_ID_MISMATCH');
-          trace('DEVICE_ENROLLMENT_APPROVED');
-        } else if (existing && isPending(existing)) {
-          await approveServerAssignedDevice(deviceId);
-          trace('DEVICE_PENDING_APPROVED');
-        } else if (!existing || !isApproved(existing)) {
+          const stagedDeviceId = await completeServerAssignedDeviceEnrollment(challenge, authorization);
+          if (stagedDeviceId !== deviceId) throw new Error('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
+          challenge = null;
+          provisionalDeviceId = null;
+          trace('DEVICE_ENROLLMENT_PENDING');
+          dispatchPendingDevice(deviceId);
+          return;
+        }
+
+        if (existing && isPending(existing)) {
+          trace('DEVICE_APPROVAL_WAITING');
+          dispatchPendingDevice(deviceId);
+          return;
+        }
+
+        if (!existing || !isApproved(existing)) {
           throw new Error('DEVICE_APPROVAL_STATE_INVALID');
         }
 
@@ -409,10 +488,10 @@ export function useDeviceRegistration() {
         }).catch(() => undefined);
 
         window.dispatchEvent(new CustomEvent('forsure:e2ee-device-approved', {
-          detail: { source: `server-verified-registration:${reason}`, deviceId },
+          detail: { source: `trusted-device-registration:${reason}`, deviceId },
         }));
         window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
-          detail: { reason: 'server_verified_device_ready', deviceId },
+          detail: { reason: 'trusted_device_ready', deviceId },
         }));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -436,7 +515,11 @@ export function useDeviceRegistration() {
           }
         }
 
-        if (error instanceof PinUnlockRequiredError || message.toLowerCase().includes('pin unlock required')) {
+        if (
+          error instanceof PinUnlockRequiredError
+          || message.toLowerCase().includes('pin unlock required')
+          || message.includes('ACCOUNT_KEY_RESTORE_REQUIRED')
+        ) {
           ranRef.current = false;
           window.dispatchEvent(new CustomEvent('forsure:e2ee-pin-unlock-required', {
             detail: { source: 'useDeviceRegistration' },
@@ -468,6 +551,22 @@ export function useDeviceRegistration() {
       void registerCurrentDevice(source);
     };
 
+    const inspectCurrentDecision = async (source: string) => {
+      const currentDeviceId = getCurrentDeviceId();
+      if (!SERVER_DEVICE_ID_RE.test(currentDeviceId)) return;
+      const row = await readDevice(user.id, currentDeviceId).catch(() => null);
+      if (!row) return;
+      if (isApproved(row) && row.is_active === true) {
+        triggerRegistration(source);
+        return;
+      }
+      if (row.revoked_at || row.approval_status === 'rejected') {
+        window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
+          detail: { deviceId: row.device_id, status: row.approval_status ?? 'revoked' },
+        }));
+      }
+    };
+
     const onKeysAvailable = () => triggerRegistration('keys-available');
     const onAuthenticatedDeviceEnroll = (event: Event) => {
       const detail = (event as CustomEvent<{ userId?: string; source?: string }>).detail;
@@ -486,6 +585,28 @@ export function useDeviceRegistration() {
       triggerRegistration(`self-repair:${reason}`);
     };
 
+    const approvalChannel = supabase
+      .channel(`device-approval:${user.id}:${Math.random().toString(36).slice(2)}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_devices',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const row = payload.new as Partial<ExistingDeviceRow>;
+          if (row.device_id !== getCurrentDeviceId()) return;
+          void inspectCurrentDecision('approval-realtime');
+        },
+      )
+      .subscribe();
+
+    approvalPoll = window.setInterval(() => {
+      void inspectCurrentDecision('approval-poll');
+    }, APPROVAL_POLL_MS);
+
     void registerCurrentDevice('auth-mounted');
     const stopKeyGuard = startKeyConsistencyGuard();
     window.addEventListener('forsure-keys-unlocked', onKeysAvailable);
@@ -496,6 +617,8 @@ export function useDeviceRegistration() {
     return () => {
       disposed = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      if (approvalPoll !== undefined) window.clearInterval(approvalPoll);
+      void supabase.removeChannel(approvalChannel);
       stopKeyGuard();
       window.removeEventListener('forsure-keys-unlocked', onKeysAvailable);
       window.removeEventListener('forsure-keys-restored', onKeysAvailable);
