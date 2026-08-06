@@ -1,5 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { PreparedDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import type {
+  DeviceIdentityKey,
+  PreparedDeviceAuthorization,
+} from '@/lib/crypto/deviceIdentity';
+import type { DeviceKxKey } from '@/lib/crypto/deviceKx';
 import { signDeviceEnrollmentPossession } from '@/lib/crypto/deviceEnrollmentPossession';
 import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
 
@@ -21,6 +25,12 @@ export interface DeviceEnrollmentChallenge {
   deviceId: string;
   nonce: string;
   expiresAt: string;
+}
+
+export interface PendingDeviceCandidate {
+  accountFingerprint: string;
+  deviceKx: DeviceKxKey;
+  deviceSigning: DeviceIdentityKey;
 }
 
 export type DeviceEnrollmentSettlement = {
@@ -198,6 +208,22 @@ export async function hasRegisteredDevice(
   return true;
 }
 
+export async function readActiveAccountFingerprint(userId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('user_public_keys')
+    .select('fingerprint')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`ACCOUNT_IDENTITY_LOOKUP_FAILED:${error.message}`);
+  const fingerprint = String(data?.fingerprint ?? '').trim();
+  if (fingerprint.length < 32) throw new Error('ACCOUNT_IDENTITY_NOT_FOUND');
+  return fingerprint;
+}
+
 export async function beginServerAssignedDeviceEnrollment(
   metadata: DeviceEnrollmentMetadata,
 ): Promise<DeviceEnrollmentChallenge> {
@@ -223,6 +249,44 @@ export async function approveServerAssignedDevice(_deviceId: string): Promise<st
   throw new Error('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
 }
 
+/**
+ * Stage the device before restoring account private keys. The candidate proves
+ * possession of its own Ed25519 key and binds that proof to the public account
+ * fingerprint. A trusted existing device supplies the account authorization
+ * signature later when the user presses Approve.
+ */
+export async function completeServerAssignedDeviceEnrollmentCandidate(
+  challenge: DeviceEnrollmentChallenge,
+  candidate: PendingDeviceCandidate,
+): Promise<string> {
+  const possessionSignature = await signDeviceEnrollmentPossession({
+    challengeId: challenge.challengeId,
+    deviceId: challenge.deviceId,
+    nonce: challenge.nonce,
+    expiresAt: challenge.expiresAt,
+    accountFingerprint: candidate.accountFingerprint,
+    devicePublicKey: candidate.deviceKx.publicB64,
+    deviceSigningKey: candidate.deviceSigning.publicB64,
+    deviceSigningPrivateKey: candidate.deviceSigning.privateKey,
+  });
+
+  const { data, error } = await supabase.rpc(
+    'complete_user_device_enrollment_candidate' as never,
+    {
+      p_challenge_id: challenge.challengeId,
+      p_nonce: challenge.nonce,
+      p_device_public_key: candidate.deviceKx.publicB64,
+      p_device_signing_key: candidate.deviceSigning.publicB64,
+      p_device_possession_signature: possessionSignature,
+      p_account_fingerprint: candidate.accountFingerprint,
+    } as never,
+  );
+
+  if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_FAILED:${error.message}`);
+  return parseCompletedDeviceEnrollment(data, challenge.deviceId);
+}
+
+/** Compatibility path for already restored clients. New registrations use the candidate flow above. */
 export async function completeServerAssignedDeviceEnrollment(
   challenge: DeviceEnrollmentChallenge,
   authorization: PreparedDeviceAuthorization,
