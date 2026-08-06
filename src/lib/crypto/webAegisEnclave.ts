@@ -1,4 +1,9 @@
-import { hardCrypto } from './cryptoIntegrity';
+import {
+  hardCrypto,
+  hardGlobals,
+  isTampered,
+  verifyCryptoIntegrity,
+} from './cryptoIntegrity';
 
 const DB_NAME = 'forsure-ace-web';
 const DB_VERSION = 1;
@@ -7,6 +12,7 @@ const SECRET_STORE = 'secrets';
 const ANCHOR_ID = 'aegis-web-anchor-v1';
 const FORMAT_VERSION = 1;
 const PROBE_KEY = '__aegis_web_enclave_probe__';
+const WRITE_LOCK_NAME = 'forsure-ace-web-write-v1';
 const TRANSIENT_BACKOFF_MS = [50, 150, 400] as const;
 
 type TxMode = 'readonly' | 'readwrite';
@@ -71,6 +77,9 @@ function requireBrowserPrimitives(): void {
   if (typeof globalThis.indexedDB === 'undefined') {
     throw new WebAegisEnclaveUnavailableError('indexeddb');
   }
+  if (!verifyCryptoIntegrity() || isTampered()) {
+    throw new WebAegisEnclaveUnavailableError('crypto_integrity_failed');
+  }
 }
 
 function originBinding(): string {
@@ -83,7 +92,7 @@ function originBinding(): string {
 }
 
 function buildAad(key: string, revision: number): Uint8Array {
-  return new TextEncoder().encode(
+  return new hardGlobals.TextEncoder().encode(
     `forsure-ace-web|${originBinding()}|${key}|v${FORMAT_VERSION}|r${revision}`,
   );
 }
@@ -108,7 +117,7 @@ function openWebEnclaveDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-    const request = globalThis.indexedDB.open(DB_NAME, DB_VERSION);
+    const request = hardGlobals.idbOpen(DB_NAME, DB_VERSION);
     request.onerror = () => {
       dbPromise = null;
       reject(request.error);
@@ -175,6 +184,18 @@ function enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
   const run = writeTail.then(operation, operation);
   writeTail = run.then(() => undefined, () => undefined);
   return run;
+}
+
+function withCrossContextWriteLock<T>(operation: () => Promise<T>): Promise<T> {
+  const locks = globalThis.navigator?.locks;
+  if (locks?.request) {
+    return locks.request(
+      WRITE_LOCK_NAME,
+      { mode: 'exclusive' },
+      () => enqueueWrite(operation),
+    );
+  }
+  return enqueueWrite(operation);
 }
 
 async function readAnchor(): Promise<WebEnclaveAnchorRecord | undefined> {
@@ -272,7 +293,7 @@ export async function webAegisEnclaveGet(key: string): Promise<string | null> {
       anchor.key,
       record.ciphertext,
     );
-    return new TextDecoder().decode(plaintext);
+    return new hardGlobals.TextDecoder().decode(plaintext);
   } catch (error) {
     throw new WebAegisEnclaveIntegrityError(key, error);
   }
@@ -281,9 +302,10 @@ export async function webAegisEnclaveGet(key: string): Promise<string | null> {
 export async function webAegisEnclaveSet(key: string, value: string): Promise<void> {
   requireBrowserPrimitives();
   void requestPersistentStorage();
-  const anchor = await requireAnchorForExistingData();
 
-  await enqueueWrite(async () => {
+  await withCrossContextWriteLock(async () => {
+    requireBrowserPrimitives();
+    const anchor = await requireAnchorForExistingData();
     const current = await readSecret(key);
     const revision = (current?.revision ?? 0) + 1;
     const iv = hardCrypto.getRandomValues(new Uint8Array(12));
@@ -295,7 +317,7 @@ export async function webAegisEnclaveSet(key: string, value: string): Promise<vo
         tagLength: 128,
       },
       anchor.key,
-      new TextEncoder().encode(value),
+      new hardGlobals.TextEncoder().encode(value),
     );
     const now = Date.now();
     const record: WebEnclaveSecretRecord = {
@@ -311,18 +333,21 @@ export async function webAegisEnclaveSet(key: string, value: string): Promise<vo
     await runTransaction([SECRET_STORE], 'readwrite', (tx) =>
       requestToPromise(tx.objectStore(SECRET_STORE).put(record)),
     );
-  });
 
-  const readback = await webAegisEnclaveGet(key);
-  if (readback !== value) throw new WebAegisEnclaveIntegrityError(key);
+    const readback = await webAegisEnclaveGet(key);
+    if (readback !== value) throw new WebAegisEnclaveIntegrityError(key);
+  });
 }
 
 export async function webAegisEnclaveRemove(key: string): Promise<void> {
   requireBrowserPrimitives();
-  await enqueueWrite(() => runTransaction([SECRET_STORE], 'readwrite', (tx) =>
-    requestToPromise(tx.objectStore(SECRET_STORE).delete(key)),
-  ));
-  if (await readSecret(key)) throw new WebAegisEnclaveIntegrityError(key);
+  await withCrossContextWriteLock(async () => {
+    requireBrowserPrimitives();
+    await runTransaction([SECRET_STORE], 'readwrite', (tx) =>
+      requestToPromise(tx.objectStore(SECRET_STORE).delete(key)),
+    );
+    if (await readSecret(key)) throw new WebAegisEnclaveIntegrityError(key);
+  });
 }
 
 export async function verifyWebAegisEnclaveHealth(): Promise<WebAegisEnclaveHealth> {
