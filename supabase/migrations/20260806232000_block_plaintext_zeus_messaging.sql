@@ -4,24 +4,72 @@ begin;
 -- regular messenger causes user prompts and AI replies to be persisted in
 -- public.messages as plaintext. Irreversibly scrub the existing plaintext
 -- while preserving message identifiers referenced by dependent tables.
-update public.message_archives archive
-   set archive_body = '[zeus_messenger_removed]'
- where archive.message_id in (
-   select message.id
-     from public.messages message
-     join public.conversation_participants participant
-       on participant.conversation_id = message.conversation_id
-    where participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
- );
+--
+-- The archive table was introduced independently from the messenger. Use
+-- guarded dynamic SQL so a full migration replay remains valid regardless of
+-- whether that optional table already exists at this point in the history.
+do $zeus_archive_scrub$
+begin
+  if to_regclass('public.message_archives') is not null
+     and exists (
+       select 1
+         from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'message_archives'
+          and column_name = 'message_id'
+     )
+     and exists (
+       select 1
+         from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'message_archives'
+          and column_name = 'archive_body'
+     ) then
+    execute $sql$
+      update public.message_archives archive
+         set archive_body = '[zeus_messenger_removed]'
+       where archive.message_id in (
+         select message.id
+           from public.messages message
+           join public.conversation_participants participant
+             on participant.conversation_id = message.conversation_id
+          where participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
+       )
+    $sql$;
+  end if;
+end;
+$zeus_archive_scrub$;
 
-update public.messages message
-   set body = '[zeus_messenger_removed]',
-       archive_body = null,
-       status = 'blocked',
-       body_kind = 'system'
-  from public.conversation_participants participant
- where participant.conversation_id = message.conversation_id
-   and participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid;
+do $zeus_message_scrub$
+begin
+  if exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'messages'
+       and column_name = 'archive_body'
+  ) then
+    execute $sql$
+      update public.messages message
+         set body = '[zeus_messenger_removed]',
+             archive_body = null,
+             status = 'blocked',
+             body_kind = 'system'
+        from public.conversation_participants participant
+       where participant.conversation_id = message.conversation_id
+         and participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
+    $sql$;
+  else
+    update public.messages message
+       set body = '[zeus_messenger_removed]',
+           status = 'blocked',
+           body_kind = 'system'
+      from public.conversation_participants participant
+     where participant.conversation_id = message.conversation_id
+       and participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid;
+  end if;
+end;
+$zeus_message_scrub$;
 
 create or replace function public.reject_plaintext_zeus_messenger()
 returns trigger
