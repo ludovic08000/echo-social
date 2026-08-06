@@ -302,7 +302,7 @@ export function DevicesPanel() {
 
                   {isCurrent ? (
                     <p className="mt-3 rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-                      Approuvez cet appareil depuis un appareil déjà reconnu, par exemple votre Windows.
+                      Approuvez cet appareil depuis un autre appareil déjà reconnu, ou utilisez la récupération du compte sur cet appareil.
                     </p>
                   ) : (
                     <div className="mt-3 flex gap-2">
