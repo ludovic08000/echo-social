@@ -4,6 +4,16 @@ begin;
 -- regular messenger causes user prompts and AI replies to be persisted in
 -- public.messages as plaintext. Irreversibly scrub the existing plaintext
 -- while preserving message identifiers referenced by dependent tables.
+update public.message_archives archive
+   set archive_body = '[zeus_messenger_removed]'
+ where archive.message_id in (
+   select message.id
+     from public.messages message
+     join public.conversation_participants participant
+       on participant.conversation_id = message.conversation_id
+    where participant.user_id = '00000000-0000-0000-0000-000000000001'::uuid
+ );
+
 update public.messages message
    set body = '[zeus_messenger_removed]',
        archive_body = null,
