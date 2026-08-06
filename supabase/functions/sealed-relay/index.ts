@@ -31,7 +31,12 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const tokenSecret = Deno.env.get('SEALED_SENDER_TOKEN_SECRET');
-    if (!supabaseUrl || !serviceRoleKey || !tokenSecret) {
+    if (
+      !supabaseUrl
+      || !serviceRoleKey
+      || !tokenSecret
+      || utf8ByteLength(tokenSecret) < 32
+    ) {
       return json(503, { error: 'sealed_sender_unavailable' });
     }
 
