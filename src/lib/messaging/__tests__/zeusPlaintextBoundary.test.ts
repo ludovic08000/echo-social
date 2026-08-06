@@ -9,6 +9,10 @@ const durableMigration = readFileSync(
   'supabase/migrations/20260806233500_remove_zeus_plaintext_messenger.sql',
   'utf8',
 );
+const shellCleanupMigration = readFileSync(
+  'supabase/migrations/20260806234000_close_zeus_messenger_shells.sql',
+  'utf8',
+);
 const sqlSecurityTest = readFileSync(
   'supabase/tests/zeus_plaintext_messaging.sql',
   'utf8',
@@ -40,6 +44,15 @@ describe('Zeus plaintext boundary', () => {
     }
   });
 
+  it('guards optional archive relations during full migration replay', () => {
+    for (const migration of [initialMigration, durableMigration]) {
+      expect(migration).toContain("to_regclass('public.message_archives') is not null");
+      expect(migration).toContain("table_name = 'message_archives'");
+      expect(migration).toContain("column_name = 'archive_body'");
+      expect(migration).toContain('execute $sql$');
+    }
+  });
+
   it('persists the blocked conversation before suppressing Zeus', () => {
     expect(durableMigration).toContain('zeus_messenger_blocked_conversations');
     expect(durableMigration).toContain('enable row level security');
@@ -55,9 +68,9 @@ describe('Zeus plaintext boundary', () => {
     expect(durableMigration).toContain('create trigger reject_zeus_messenger_participant');
 
     expect(sqlSecurityTest).toContain("to_regprocedure('public.reject_plaintext_zeus_messenger()')");
-    expect(sqlSecurityTest).toContain("t.tgname = 'reject_plaintext_zeus_messenger'");
+    expect(sqlSecurityTest).toContain("trigger.tgname = 'reject_plaintext_zeus_messenger'");
     expect(sqlSecurityTest).toContain("to_regprocedure('public.reject_zeus_messenger_participant()')");
-    expect(sqlSecurityTest).toContain("t.tgname = 'reject_zeus_messenger_participant'");
+    expect(sqlSecurityTest).toContain("trigger.tgname = 'reject_zeus_messenger_participant'");
   });
 
   it('rejects legacy plaintext paths at the database boundary', () => {
@@ -66,9 +79,12 @@ describe('Zeus plaintext boundary', () => {
     expect(durableMigration).toContain('return null;');
   });
 
-  it('detaches historical Zeus conversations from the normal messenger', () => {
+  it('detaches historical and newly attempted Zeus conversation shells', () => {
     expect(durableMigration).toContain('delete from public.conversation_participants');
     expect(durableMigration).toContain('from public.zeus_messenger_blocked_conversations blocked');
+    expect(shellCleanupMigration).toContain('delete from public.conversation_participants participant');
+    expect(shellCleanupMigration).toContain('participant.conversation_id = new.conversation_id');
+    expect(sqlSecurityTest).toContain("'delete from public.conversation_participants'");
   });
 
   it('documents every legacy caller currently guarded by the database invariant', () => {
