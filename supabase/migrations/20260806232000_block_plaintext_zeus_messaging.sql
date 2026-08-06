@@ -41,6 +41,44 @@ on public.messages
 for each row
 execute function public.reject_plaintext_zeus_messenger();
 
+-- Prevent future code from recreating a Zeus messenger conversation or from
+-- adding participants to a historical Zeus conversation. Existing rows remain
+-- readable only as empty legacy shells; the messages trigger above blocks all
+-- new content until the UI is moved to a dedicated non-E2EE surface.
+create or replace function public.reject_zeus_messenger_participant()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if new.user_id = '00000000-0000-0000-0000-000000000001'::uuid
+     or exists (
+       select 1
+         from public.conversation_participants cp
+        where cp.conversation_id = new.conversation_id
+          and cp.user_id = '00000000-0000-0000-0000-000000000001'::uuid
+     ) then
+    raise exception using
+      errcode = '42501',
+      message = 'zeus_messenger_participant_forbidden';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.reject_zeus_messenger_participant()
+  from public, anon, authenticated;
+
+drop trigger if exists reject_zeus_messenger_participant
+  on public.conversation_participants;
+create trigger reject_zeus_messenger_participant
+before insert or update of conversation_id, user_id
+on public.conversation_participants
+for each row
+execute function public.reject_zeus_messenger_participant();
+
 -- Keep the public welcome-wall greeting, but stop creating a plaintext Zeus
 -- direct-message conversation for every new account.
 create or replace function public.zeus_welcome_new_user()
