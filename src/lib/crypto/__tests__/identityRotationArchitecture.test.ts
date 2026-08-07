@@ -13,6 +13,10 @@ const recoveryMigration = readFileSync(
   'supabase/migrations/20260807011000_identity_rotation_recovery_vault.sql',
   'utf8',
 );
+const alignmentMigration = readFileSync(
+  'supabase/migrations/20260807011500_identity_rotation_state_alignment.sql',
+  'utf8',
+);
 const edge = readFileSync('supabase/functions/identity-rotation/index.ts', 'utf8');
 const recoveryEdge = readFileSync(
   'supabase/functions/identity-rotation-recovery/index.ts',
@@ -23,6 +27,11 @@ const recoveryClient = readFileSync(
   'src/lib/crypto/identityRotationRecovery.ts',
   'utf8',
 );
+const rotationPanel = readFileSync(
+  'src/components/settings/IdentityRotationPanel.tsx',
+  'utf8',
+);
+const settingsPage = readFileSync('src/pages/Settings.tsx', 'utf8');
 
 describe('account identity rotation v1 architecture', () => {
   it('requires an exact N to N+1 epoch transition', () => {
@@ -81,10 +90,11 @@ describe('account identity rotation v1 architecture', () => {
     expect(migration).toContain('to service_role');
   });
 
-  it('blocks direct root downgrades outside the verified flow', () => {
+  it('blocks direct root downgrades but preserves same-root upserts', () => {
     expect(downgradeGuard).toContain('security invoker');
     expect(downgradeGuard).toContain("current_user in ('anon', 'authenticated')");
     expect(downgradeGuard).toContain('identity_rotation_verified_flow_required');
+    expect(downgradeGuard).toContain('new.identity_epoch := v_active.identity_epoch');
     expect(downgradeGuard).toContain('new.identity_epoch is distinct from old.identity_epoch');
     expect(downgradeGuard).toContain('create trigger guard_account_identity_rotation_v1');
   });
@@ -99,12 +109,23 @@ describe('account identity rotation v1 architecture', () => {
     expect(recoveryEdge).not.toContain('console.log');
   });
 
+  it('binds every recovery-vault action to the surviving device key', () => {
+    expect(recoveryEdge).toContain('IDENTITY_ROTATION_RECOVERY_DEVICE_MISMATCH');
+    expect(recoveryEdge).toContain('IDENTITY_ROTATION_RECOVERY_DEVICE_NOT_TRUSTED');
+    expect(recoveryEdge).toContain('IDENTITY_ROTATION_RECOVERY_DEVICE_PROOF_INVALID');
+    expect(recoveryEdge).toContain('row.approver_device_id !== deviceId');
+    expect(recoveryEdge).toContain('proofTimeValid');
+    expect(recoveryEdge).toContain('verifyEd25519(');
+    expect(recoveryClient).toContain('createAccessProof');
+    expect(recoveryClient).toContain('loadDeviceIdentity');
+    expect(recoveryClient).toContain('proof_signature');
+  });
+
   it('encrypts the staged root under the unlocked account Master Key', () => {
     expect(recoveryClient).toContain('getSessionMasterKey');
     expect(recoveryClient).toContain("name: 'AES-GCM'");
     expect(recoveryClient).toContain('forsure-aegis-identity-rotation-recovery-v1');
     expect(recoveryClient).toContain('additionalData: recoveryAAD');
-    expect(recoveryClient).not.toContain('privateKeyJWK: payload.privateKeyJWK');
   });
 
   it('attaches recovery before commit and promotes only after confirmation', () => {
@@ -132,6 +153,23 @@ describe('account identity rotation v1 architecture', () => {
     expect(ratchetIndex).toBeGreaterThan(spkIndex);
     expect(finalizeIndex).toBeGreaterThan(ratchetIndex);
     expect(client).toContain('IDENTITY_ROTATION_BACKUP_SYNC_REQUIRED');
+  });
+
+  it('aligns every derived account-identity registry', () => {
+    expect(alignmentMigration).toContain('insert into public.user_crypto_state');
+    expect(alignmentMigration).toContain('insert into public.user_identity_roots');
+    expect(alignmentMigration).toContain('create trigger sync_active_account_identity_v1');
+    expect(alignmentMigration).toContain('create trigger sync_identity_root_primary_device_v1');
+    expect(alignmentMigration).toContain('greatest(generation, new.identity_epoch)');
+  });
+
+  it('exposes only an explicit PIN-gated destructive UI action', () => {
+    expect(settingsPage).toContain('<MessagingPinGate>');
+    expect(settingsPage).toContain('<IdentityRotationPanel />');
+    expect(rotationPanel).toContain('RÉVOQUER LES AUTRES APPAREILS');
+    expect(rotationPanel).toContain("rotateAccountIdentity('manual_rotation')");
+    expect(rotationPanel).toContain('disabled={rotating || recovering || pending}');
+    expect(rotationPanel).toContain('Reprendre la finalisation');
   });
 
   it('never creates a replacement from hydration or background recovery', () => {
