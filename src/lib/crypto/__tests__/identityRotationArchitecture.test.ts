@@ -90,13 +90,16 @@ describe('account identity rotation v1 architecture', () => {
     expect(migration).toContain('to service_role');
   });
 
-  it('blocks direct root downgrades but preserves same-root upserts', () => {
+  it('blocks direct root lifecycle changes but preserves same-root upserts', () => {
     expect(downgradeGuard).toContain('security invoker');
     expect(downgradeGuard).toContain("current_user in ('anon', 'authenticated')");
     expect(downgradeGuard).toContain('identity_rotation_verified_flow_required');
     expect(downgradeGuard).toContain('new.identity_epoch := v_active.identity_epoch');
     expect(downgradeGuard).toContain('new.identity_epoch is distinct from old.identity_epoch');
+    expect(downgradeGuard).toContain('new.is_active is distinct from old.is_active');
     expect(downgradeGuard).toContain('create trigger guard_account_identity_rotation_v1');
+    expect(downgradeGuard).toContain('create trigger guard_account_identity_deletion_v1');
+    expect(downgradeGuard).toContain("if tg_op = 'DELETE'");
   });
 
   it('requires immutable encrypted recovery before server commit', () => {
