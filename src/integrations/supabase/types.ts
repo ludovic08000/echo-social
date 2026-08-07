@@ -2104,12 +2104,10 @@ export type Database = {
           device_fingerprint: string | null
           device_id: string
           device_name: string | null
-          device_possession_signature: string | null
           expires_at: string
           id: string
           nonce_hash: string
           platform: string
-          possession_payload_version: number | null
           user_agent: string | null
           user_id: string
         }
@@ -2121,12 +2119,10 @@ export type Database = {
           device_fingerprint?: string | null
           device_id: string
           device_name?: string | null
-          device_possession_signature?: string | null
           expires_at: string
           id?: string
           nonce_hash: string
           platform: string
-          possession_payload_version?: number | null
           user_agent?: string | null
           user_id: string
         }
@@ -2138,12 +2134,10 @@ export type Database = {
           device_fingerprint?: string | null
           device_id?: string
           device_name?: string | null
-          device_possession_signature?: string | null
           expires_at?: string
           id?: string
           nonce_hash?: string
           platform?: string
-          possession_payload_version?: number | null
           user_agent?: string | null
           user_id?: string
         }
@@ -7045,7 +7039,6 @@ export type Database = {
       }
       user_devices: {
         Row: {
-          approval_challenge_id: string | null
           approval_email_sent_at: string | null
           approval_requested_at: string | null
           approval_status: string
@@ -7079,7 +7072,6 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          approval_challenge_id?: string | null
           approval_email_sent_at?: string | null
           approval_requested_at?: string | null
           approval_status?: string
@@ -7113,7 +7105,6 @@ export type Database = {
           user_id: string
         }
         Update: {
-          approval_challenge_id?: string | null
           approval_email_sent_at?: string | null
           approval_requested_at?: string | null
           approval_status?: string
@@ -7146,15 +7137,7 @@ export type Database = {
           user_agent?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "user_devices_approval_challenge_id_fkey"
-            columns: ["approval_challenge_id"]
-            isOneToOne: false
-            referencedRelation: "device_enrollment_challenges"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       user_feed: {
         Row: {
@@ -8410,36 +8393,20 @@ export type Database = {
         Returns: boolean
       }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
-      complete_user_device_enrollment:
-        | {
-            Args: {
-              p_account_binding_signature: string
-              p_account_fingerprint: string
-              p_account_identity_key: string
-              p_account_signing_key: string
-              p_challenge_id: string
-              p_device_authorization_signature: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_nonce: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_account_binding_signature: string
-              p_account_fingerprint: string
-              p_account_identity_key: string
-              p_account_signing_key: string
-              p_challenge_id: string
-              p_device_authorization_signature: string
-              p_device_possession_signature: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_nonce: string
-            }
-            Returns: Json
-          }
+      complete_user_device_enrollment: {
+        Args: {
+          p_account_binding_signature: string
+          p_account_fingerprint: string
+          p_account_identity_key: string
+          p_account_signing_key: string
+          p_challenge_id: string
+          p_device_authorization_signature: string
+          p_device_public_key: string
+          p_device_signing_key: string
+          p_nonce: string
+        }
+        Returns: Json
+      }
       consume_device_link_token: {
         Args: { p_token_hash: string }
         Returns: {
@@ -8541,56 +8508,6 @@ export type Database = {
           post_id: string
           reason: string
         }[]
-      }
-      finalize_verified_user_device_approval:
-        | {
-            Args: {
-              p_account_binding_signature: string
-              p_account_binding_version: number
-              p_account_fingerprint: string
-              p_account_identity_key: string
-              p_account_signing_key: string
-              p_challenge_id: string
-              p_device_authorization_signature: string
-              p_device_id: string
-              p_device_possession_signature: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_user_id: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_account_binding_signature: string
-              p_account_binding_version: number
-              p_account_fingerprint: string
-              p_account_identity_key: string
-              p_account_signing_key: string
-              p_device_authorization_signature: string
-              p_device_id: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_user_id: string
-            }
-            Returns: Json
-          }
-      finalize_verified_user_device_approval_verified_proofs: {
-        Args: {
-          p_account_binding_signature: string
-          p_account_binding_version: number
-          p_account_fingerprint: string
-          p_account_identity_key: string
-          p_account_signing_key: string
-          p_challenge_id: string
-          p_device_authorization_signature: string
-          p_device_id: string
-          p_device_possession_signature: string
-          p_device_public_key: string
-          p_device_signing_key: string
-          p_user_id: string
-        }
-        Returns: Json
       }
       finalize_x3dh_initial: {
         Args: { p_fingerprint: string; p_reservation_token: string }
