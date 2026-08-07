@@ -1,0 +1,83 @@
+name: E2EE Diagnostics
+
+on:
+  push:
+    branches:
+      - 'fix/**'
+    paths:
+      - '.github/workflows/e2ee-diagnostics.yml'
+      - 'src/lib/crypto/**'
+      - 'src/lib/messaging/**'
+      - 'supabase/functions/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vitest-diagnostics:
+    name: Vitest diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run crypto and messaging tests with annotations
+        shell: bash
+        run: |
+          set -o pipefail
+          output_file="$(mktemp)"
+          if npm exec vitest run -- src/lib/crypto src/lib/messaging --reporter=verbose 2>&1 | tee "$output_file"; then
+            exit 0
+          fi
+          tail -n 40 "$output_file" | while IFS= read -r line; do
+            escaped="${line//'%'/'%25'}"
+            escaped="${escaped//$'\r'/'%0D'}"
+            escaped="${escaped//$'\n'/'%0A'}"
+            echo "::error title=Vitest failure::$escaped"
+          done
+          exit 1
+
+  edge-diagnostics:
+    name: Edge diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck sensitive Edge Functions with annotations
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            supabase/functions/sealed-mint-token/index.ts
+            supabase/functions/sealed-relay/index.ts
+            supabase/functions/approve-device-enrollment/index.ts
+            supabase/functions/identity-rotation/index.ts
+            supabase/functions/identity-rotation-recovery/index.ts
+            supabase/functions/zeus/index.ts
+          )
+          for file in "${files[@]}"; do
+            output_file="$(mktemp)"
+            if deno check --no-config "$file" >"$output_file" 2>&1; then
+              continue
+            fi
+            echo "::error file=$file,title=Deno check failed::Typecheck failed for $file"
+            tail -n 40 "$output_file" | while IFS= read -r line; do
+              escaped="${line//'%'/'%25'}"
+              escaped="${escaped//$'\r'/'%0D'}"
+              escaped="${escaped//$'\n'/'%0A'}"
+              echo "::error file=$file,title=Deno diagnostic::$escaped"
+            done
+            exit 1
+          done
