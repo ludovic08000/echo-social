@@ -257,11 +257,26 @@ export async function fetchIdentityRotationRecovery(
   return parsed;
 }
 
+export async function hasRemoteIdentityRotationRecovery(): Promise<boolean> {
+  const { data, error } = await supabase.auth.getUser();
+  const user = data.user;
+  if (error || !user || !getSessionMasterKey()) return false;
+  return Boolean(await fetchIdentityRotationRecovery(user.id).catch(() => null));
+}
+
 export async function finalizeIdentityRotationRecovery(
-  userId: string,
   rotationId: string,
+  explicitUserId?: string,
 ): Promise<void> {
   if (!UUID_RE.test(rotationId)) throw new Error('IDENTITY_ROTATION_ID_INVALID');
+  let userId = explicitUserId;
+  if (!userId) {
+    const { data, error } = await supabase.auth.getUser();
+    userId = error ? undefined : data.user?.id;
+  }
+  if (!userId || !UUID_RE.test(userId)) {
+    throw new Error('IDENTITY_ROTATION_NOT_AUTHENTICATED');
+  }
   const proof = await createAccessProof({
     action: 'finalize',
     userId,
