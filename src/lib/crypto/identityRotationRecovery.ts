@@ -1,5 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
+import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { getSessionMasterKey } from './accountKeyBackup';
+import { loadDeviceIdentity } from './deviceIdentity';
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import { base64ToBuffer, bufferToBase64 } from './utils';
 
@@ -28,6 +30,8 @@ type RecoveryFetchResponse = {
   recovery_iv: string;
   recovery_blob_version: number;
 };
+
+type RecoveryAction = 'attach' | 'fetch' | 'finalize';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
@@ -69,6 +73,90 @@ function validatePayload(
   }
 }
 
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
+}
+
+async function sha256Base64Url(value: string): Promise<string> {
+  return bytesToBase64Url(
+    new Uint8Array(await hardCrypto.digest(
+      'SHA-256',
+      new hardGlobals.TextEncoder().encode(value),
+    )),
+  );
+}
+
+function accessProofPayload(args: {
+  action: RecoveryAction;
+  userId: string;
+  deviceId: string;
+  rotationId: string | null;
+  issuedAt: string;
+  recoveryDigest: string | null;
+}): string {
+  return JSON.stringify({
+    protocol: 'forsure-aegis-identity-rotation-recovery-access',
+    version: 1,
+    action: args.action,
+    userId: args.userId,
+    deviceId: args.deviceId,
+    rotationId: args.rotationId,
+    issuedAt: args.issuedAt,
+    recoveryDigest: args.recoveryDigest,
+  });
+}
+
+async function createAccessProof(args: {
+  action: RecoveryAction;
+  userId: string;
+  rotationId: string | null;
+  recoveryBlob?: string;
+  recoveryIv?: string;
+  recoveryVersion?: number;
+}): Promise<{
+  device_id: string;
+  proof_issued_at: string;
+  proof_signature: string;
+}> {
+  const deviceId = getCurrentDeviceId();
+  if (!DEVICE_ID_RE.test(deviceId)) {
+    throw new Error('IDENTITY_ROTATION_RECOVERY_SERVER_DEVICE_REQUIRED');
+  }
+  const deviceIdentity = await loadDeviceIdentity(args.userId, deviceId);
+  if (!deviceIdentity) {
+    throw new Error('IDENTITY_ROTATION_RECOVERY_DEVICE_PRIVATE_KEY_REQUIRED');
+  }
+
+  const issuedAt = new Date().toISOString();
+  const recoveryDigest = args.action === 'attach'
+    ? await sha256Base64Url(JSON.stringify({
+      recoveryBlob: args.recoveryBlob,
+      recoveryIv: args.recoveryIv,
+      recoveryVersion: args.recoveryVersion,
+    }))
+    : null;
+  const signature = await hardCrypto.sign(
+    'Ed25519',
+    deviceIdentity.privateKey,
+    new hardGlobals.TextEncoder().encode(accessProofPayload({
+      action: args.action,
+      userId: args.userId,
+      deviceId,
+      rotationId: args.rotationId,
+      issuedAt,
+      recoveryDigest,
+    })),
+  ) as ArrayBuffer;
+
+  return {
+    device_id: deviceId,
+    proof_issued_at: issuedAt,
+    proof_signature: bufferToBase64(signature),
+  };
+}
+
 async function invokeRecovery<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('identity-rotation-recovery', { body });
   if (error) throw new Error(`IDENTITY_ROTATION_RECOVERY_EDGE_FAILED:${error.message}`);
@@ -93,13 +181,25 @@ export async function attachIdentityRotationRecovery(
     masterKey,
     plaintext,
   );
+  const recoveryBlob = bufferToBase64(ciphertext);
+  const recoveryIv = bufferToBase64(iv.buffer);
+  const recoveryVersion = 1;
+  const proof = await createAccessProof({
+    action: 'attach',
+    userId: payload.userId,
+    rotationId: payload.rotationId,
+    recoveryBlob,
+    recoveryIv,
+    recoveryVersion,
+  });
 
   await invokeRecovery<Record<string, unknown>>({
     action: 'attach',
     rotation_id: payload.rotationId,
-    recovery_blob: bufferToBase64(ciphertext),
-    recovery_iv: bufferToBase64(iv.buffer),
-    recovery_blob_version: 1,
+    recovery_blob: recoveryBlob,
+    recovery_iv: recoveryIv,
+    recovery_blob_version: recoveryVersion,
+    ...proof,
   });
 }
 
@@ -109,9 +209,17 @@ export async function fetchIdentityRotationRecovery(
   const masterKey = getSessionMasterKey();
   if (!masterKey) return null;
 
+  const proof = await createAccessProof({
+    action: 'fetch',
+    userId,
+    rotationId: null,
+  });
   let response: RecoveryFetchResponse;
   try {
-    response = await invokeRecovery<RecoveryFetchResponse>({ action: 'fetch' });
+    response = await invokeRecovery<RecoveryFetchResponse>({
+      action: 'fetch',
+      ...proof,
+    });
   } catch {
     return null;
   }
@@ -122,6 +230,7 @@ export async function fetchIdentityRotationRecovery(
     response.identity_epoch < 2 ||
     typeof response.fingerprint !== 'string' ||
     !DEVICE_ID_RE.test(response.surviving_device_id) ||
+    response.surviving_device_id !== proof.device_id ||
     response.recovery_blob_version !== 1
   ) {
     throw new Error('IDENTITY_ROTATION_RECOVERY_RESPONSE_INVALID');
@@ -148,10 +257,19 @@ export async function fetchIdentityRotationRecovery(
   return parsed;
 }
 
-export async function finalizeIdentityRotationRecovery(rotationId: string): Promise<void> {
+export async function finalizeIdentityRotationRecovery(
+  userId: string,
+  rotationId: string,
+): Promise<void> {
   if (!UUID_RE.test(rotationId)) throw new Error('IDENTITY_ROTATION_ID_INVALID');
+  const proof = await createAccessProof({
+    action: 'finalize',
+    userId,
+    rotationId,
+  });
   await invokeRecovery<Record<string, unknown>>({
     action: 'finalize',
     rotation_id: rotationId,
+    ...proof,
   });
 }
