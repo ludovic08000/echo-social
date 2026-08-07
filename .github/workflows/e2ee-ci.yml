@@ -55,6 +55,7 @@ jobs:
       - name: Lint new and security-sensitive TypeScript files
         run: |
           npm exec eslint -- \
+            src/components/settings/IdentityRotationPanel.tsx \
             src/hooks/useMessages.ts \
             src/hooks/useSendMessageSecure.ts \
             src/lib/crypto/__tests__/deviceEnrollmentGate.test.ts \
@@ -68,6 +69,7 @@ jobs:
             src/lib/messaging/__tests__/stableDeviceIdentityArchitecture.test.ts \
             src/lib/messaging/__tests__/zeusPlaintextBoundary.test.ts \
             src/lib/messaging/currentDevice.ts \
+            src/pages/Settings.tsx \
             supabase/functions/_shared/__tests__/sealedSenderToken.test.ts \
             supabase/functions/_shared/sealedSenderToken.ts \
             supabase/functions/identity-rotation/index.ts \
