@@ -1,6 +1,6 @@
 begin;
 
-select plan(12);
+select plan(15);
 
 select ok(
   (select count(*) = 5
@@ -109,6 +109,36 @@ select ok(
        and not trigger.tgisinternal
   ),
   'account public keys have a downgrade guard trigger'
+);
+
+select ok(
+  exists (
+    select 1
+      from pg_trigger trigger
+      join pg_class relation on relation.oid = trigger.tgrelid
+      join pg_namespace namespace on namespace.oid = relation.relnamespace
+     where namespace.nspname = 'public'
+       and relation.relname = 'user_public_keys'
+       and trigger.tgname = 'guard_account_identity_deletion_v1'
+       and not trigger.tgisinternal
+  ),
+  'account public identity deletion is guarded'
+);
+
+select ok(
+  position(
+    'new.is_active is distinct from old.is_active'
+    in lower(pg_get_functiondef(to_regprocedure('public.guard_account_identity_rotation_v1()')))
+  ) > 0,
+  'authenticated clients cannot directly activate or deactivate a root'
+);
+
+select ok(
+  position(
+    'new.identity_epoch := v_active.identity_epoch'
+    in lower(pg_get_functiondef(to_regprocedure('public.guard_account_identity_rotation_v1()')))
+  ) > 0,
+  'same-root legacy upserts inherit the authoritative server epoch'
 );
 
 select ok(
