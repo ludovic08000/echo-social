@@ -1,69 +1,114 @@
 /**
- * Current device identity (multi-device E2EE).
+ * Stable, account-scoped DeviceID routing identity.
  *
- * Stable per-account/per-installation identifier. The same physical browser can
- * log into multiple accounts, but E2EE device state must remain scoped to the
- * account. Signal/Aegis address devices as (UserID, DeviceID); sharing a single
- * browser-global device id across accounts lets device KX/SPK/ratchet state get
- * confused during account switching.
- *
- * Persistence multi-couche:
- *  1. Mémoire (runtime)
- *  2. localStorage / sessionStorage (web + WebView)
- *  3. Capacitor Preferences (UserDefaults iOS / SharedPreferences Android)
- *     → survit aux purges de cache WebView, aux mises à jour de l'app,
- *       aux faibles mémoires iOS.
- *
- * Used to:
- *  - register the device in `user_devices` at login
- *  - tag outgoing message copies (sender_device_id)
- *  - fetch incoming copies addressed to this device
- *
- * NOTE: this is NOT a cryptographic identity by itself — it's a routing label.
- * The actual E2EE key material lives in IndexedDB (ratchet states, identity keys).
+ * Security invariant: storage failures, key loss, reloads and sync failures may
+ * never allocate a replacement DeviceID. A new identifier is created only by
+ * beginExplicitDeviceEnrollment(), which must be called from an explicit user
+ * action and is consumed by the server enrollment gate.
  */
-
 import { nativeSet, nativeGetSync, isNativePlatform } from '@/lib/nativeStore';
 import { secureGet, secureSet } from '@/lib/secureStore';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  authorizeExplicitDeviceEnrollment,
+  cancelExplicitDeviceEnrollmentAuthorization,
+  type ExplicitDeviceEnrollmentReason,
+} from '@/lib/crypto/deviceEnrollmentGate';
 
 const BASE_STORAGE_KEY = 'forsure-device-id-v1';
 const FINGERPRINT_KEY = 'forsure-device-fingerprint-v1';
 const DEVICE_ID_DB = 'forsure-device-routing-v1';
 const DEVICE_ID_STORE = 'device-ids';
+const DEVICE_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
+const EXPLICIT_ENROLLMENT_TRANSITION_TTL_MS = 10 * 60_000;
+
+export type DeviceIdentityErrorCode =
+  | 'DEVICE_ID_INVALID'
+  | 'DEVICE_ID_UNINITIALIZED'
+  | 'DEVICE_ID_STORAGE_UNAVAILABLE'
+  | 'DEVICE_ID_MISMATCH'
+  | 'DEVICE_ID_REAPPROVAL_REQUIRED'
+  | 'DEVICE_USER_SCOPE_REQUIRED';
+
+export class DeviceIdentityError extends Error {
+  readonly code: DeviceIdentityErrorCode;
+  constructor(code: DeviceIdentityErrorCode) {
+    super(code);
+    this.name = 'DeviceIdentityError';
+    this.code = code;
+  }
+}
+
 let currentDeviceUserScope: string | null = null;
 let memoryDeviceId: string | null = null;
 let hydrationPromise: Promise<string> | null = null;
 let memoryDeviceIdIsTemporary = false;
+let explicitEnrollmentInProgress = false;
+let explicitEnrollmentExpiresAt = 0;
 let cachedFingerprints: { strict: string; loose: string; ultraLoose: string } | null = null;
 
 function storageKey(): string {
   return currentDeviceUserScope ? `${BASE_STORAGE_KEY}:${currentDeviceUserScope}` : BASE_STORAGE_KEY;
 }
 
+function validId(value: unknown): value is string {
+  return typeof value === 'string' && DEVICE_ID_RE.test(value);
+}
+
+function readBrowserStorage(key: string): string[] {
+  const values: string[] = [];
+  try {
+    const value = localStorage.getItem(key);
+    if (validId(value)) values.push(value);
+  } catch {
+    // hydrateDeviceId performs durable reads and fails closed on errors.
+  }
+  try {
+    const value = sessionStorage.getItem(key);
+    if (validId(value)) values.push(value);
+  } catch {
+    // hydrateDeviceId performs durable reads and fails closed on errors.
+  }
+  try {
+    const value = nativeGetSync(key);
+    if (validId(value)) values.push(value);
+  } catch {
+    // hydrateDeviceId performs durable reads and fails closed on errors.
+  }
+  return values;
+}
+
 function readDeviceIdFromIndexedDb(key: string): Promise<string | null> {
   if (typeof indexedDB === 'undefined') return Promise.resolve(null);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const request = indexedDB.open(DEVICE_ID_DB, 1);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(DEVICE_ID_STORE)) {
-        db.createObjectStore(DEVICE_ID_STORE);
-      }
+      if (!db.objectStoreNames.contains(DEVICE_ID_STORE)) db.createObjectStore(DEVICE_ID_STORE);
     };
-    request.onerror = () => resolve(null);
+    request.onerror = () => reject(new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE'));
     request.onsuccess = () => {
       const db = request.result;
-      const transaction = db.transaction(DEVICE_ID_STORE, 'readonly');
+      let transaction: IDBTransaction;
+      try {
+        transaction = db.transaction(DEVICE_ID_STORE, 'readonly');
+      } catch {
+        db.close();
+        reject(new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE'));
+        return;
+      }
       const get = transaction.objectStore(DEVICE_ID_STORE).get(key);
       get.onsuccess = () => {
         const value = get.result;
-        resolve(typeof value === 'string' && value.length >= 16 ? value : null);
         db.close();
+        if (value == null) resolve(null);
+        else if (validId(value)) resolve(value);
+        else reject(new DeviceIdentityError('DEVICE_ID_MISMATCH'));
       };
       get.onerror = () => {
-        resolve(null);
         db.close();
+        reject(new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE'));
       };
     };
   });
@@ -71,81 +116,167 @@ function readDeviceIdFromIndexedDb(key: string): Promise<string | null> {
 
 function writeDeviceIdToIndexedDb(key: string, id: string): Promise<void> {
   if (typeof indexedDB === 'undefined') return Promise.resolve();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const request = indexedDB.open(DEVICE_ID_DB, 1);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(DEVICE_ID_STORE)) {
-        db.createObjectStore(DEVICE_ID_STORE);
-      }
+      if (!db.objectStoreNames.contains(DEVICE_ID_STORE)) db.createObjectStore(DEVICE_ID_STORE);
     };
-    request.onerror = () => resolve();
+    request.onerror = () => reject(new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE'));
     request.onsuccess = () => {
       const db = request.result;
-      const transaction = db.transaction(DEVICE_ID_STORE, 'readwrite');
-      transaction.objectStore(DEVICE_ID_STORE).put(id, key);
-      transaction.oncomplete = () => {
-        db.close();
-        resolve();
-      };
-      transaction.onerror = () => {
-        db.close();
-        resolve();
-      };
+      const tx = db.transaction(DEVICE_ID_STORE, 'readwrite');
+      tx.objectStore(DEVICE_ID_STORE).put(id, key);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE')); };
+      tx.onabort = () => { db.close(); reject(new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE')); };
     };
   });
 }
 
-/**
- * Scope the runtime device id to the authenticated account.
- * Must run before hydrateDeviceId() in account-aware flows.
- */
+async function persistDurably(id: string): Promise<string> {
+  if (!validId(id)) throw new DeviceIdentityError('DEVICE_ID_INVALID');
+  const key = storageKey();
+  let syncWrites = 0;
+  try { localStorage.setItem(key, id); syncWrites += 1; } catch { /* checked below */ }
+  try { sessionStorage.setItem(key, id); syncWrites += 1; } catch { /* checked below */ }
+
+  const results = await Promise.allSettled([
+    secureSet(key, id),
+    nativeSet(key, id),
+    writeDeviceIdToIndexedDb(key, id),
+  ]);
+  if (syncWrites === 0 && results.every(result => result.status === 'rejected')) {
+    throw new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE');
+  }
+  memoryDeviceId = id;
+  memoryDeviceIdIsTemporary = false;
+  return id;
+}
+
+function cancelLocalEnrollmentTransition(): void {
+  explicitEnrollmentInProgress = false;
+  explicitEnrollmentExpiresAt = 0;
+  cancelExplicitDeviceEnrollmentAuthorization();
+}
+
 export function setCurrentDeviceUserScope(userId: string | null | undefined): void {
   const next = userId || null;
   if (currentDeviceUserScope === next) return;
+  cancelLocalEnrollmentTransition();
   currentDeviceUserScope = next;
   memoryDeviceId = null;
   hydrationPromise = null;
   memoryDeviceIdIsTemporary = false;
-  // Fingerprints are scoped to the account (see computeDeviceFingerprints) so a
-  // browser hosting several accounts gives each its own device id. Drop the
-  // cache when the account changes, otherwise the previous account's
-  // fingerprint would leak into the next one.
   cachedFingerprints = null;
-
-  // Do not synchronously copy the unscoped bootstrap ID into the account slot.
-  // The account-scoped ID may still exist in IndexedDB even when localStorage
-  // was cleared. hydrateDeviceId() checks every scoped layer first and only
-  // adopts the bootstrap ID when no established scoped installation exists.
 }
 
 async function ensureUserScopeFromAuth(): Promise<void> {
   if (currentDeviceUserScope) return;
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user?.id) throw new DeviceIdentityError('DEVICE_USER_SCOPE_REQUIRED');
+  setCurrentDeviceUserScope(user.id);
+}
+
+function generateId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** Explicit user action only. Never call from recovery/error catch blocks. */
+export async function beginExplicitDeviceEnrollment(
+  reason: ExplicitDeviceEnrollmentReason,
+): Promise<string> {
+  await ensureUserScopeFromAuth();
+  authorizeExplicitDeviceEnrollment(reason);
+  explicitEnrollmentInProgress = true;
+  explicitEnrollmentExpiresAt = Date.now() + EXPLICIT_ENROLLMENT_TRANSITION_TTL_MS;
+  hydrationPromise = null;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user?.id) setCurrentDeviceUserScope(user.id);
-  } catch {
-    // An unauthenticated bootstrap keeps the unscoped routing identity.
+    return await persistDurably(generateId());
+  } catch (error) {
+    cancelLocalEnrollmentTransition();
+    throw error;
   }
 }
 
-/**
- * iOS Safari ITP rotates UA strings, screen metrics and locale subtly. We
- * therefore compute THREE candidate fingerprints from the most-stable to
- * the loosest, and the server tries them in order:
- *  - strict     : UA + lang + screen + tz + cpu  (matches a stable browser)
- *  - loose      : UA family (iPhone/iPad/Android) + tz                 (survives Safari version bumps)
- *  - ultraLoose : platform family only                                 (last-resort iOS recovery)
- */
-async function sha256Hex(input: string): Promise<string> {
-  try {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
-    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
-  } catch {
-    let h = 0;
-    for (let i = 0; i < input.length; i++) h = ((h << 5) - h + input.charCodeAt(i)) | 0;
-    return `fp${(h >>> 0).toString(16)}`;
+export function setCurrentDeviceId(id: string): string {
+  if (!validId(id)) throw new DeviceIdentityError('DEVICE_ID_INVALID');
+  const existing = memoryDeviceId ?? readBrowserStorage(storageKey())[0] ?? null;
+  const serverTransitionAllowed = explicitEnrollmentInProgress
+    && explicitEnrollmentExpiresAt > Date.now()
+    && SERVER_DEVICE_ID_RE.test(id);
+  if (existing && existing !== id && !serverTransitionAllowed) {
+    throw new DeviceIdentityError('DEVICE_ID_MISMATCH');
   }
+  memoryDeviceId = id;
+  memoryDeviceIdIsTemporary = false;
+  cancelLocalEnrollmentTransition();
+  hydrationPromise = Promise.resolve(id);
+  void persistDurably(id).catch(() => {
+    memoryDeviceId = null;
+    hydrationPromise = null;
+  });
+  return id;
+}
+
+export function adoptDeviceIdFromBackup(_legacyId: string): string {
+  return getCurrentDeviceId();
+}
+
+/** Legacy API retained only to fail closed. */
+export function rotateCurrentDeviceId(_reason = 'device-key-loss'): string {
+  throw new DeviceIdentityError('DEVICE_ID_REAPPROVAL_REQUIRED');
+}
+
+export function getCurrentDeviceId(): string {
+  if (memoryDeviceId) return memoryDeviceId;
+  const candidates = [...new Set(readBrowserStorage(storageKey()))];
+  if (candidates.length > 1) throw new DeviceIdentityError('DEVICE_ID_MISMATCH');
+  if (candidates.length === 1) {
+    memoryDeviceId = candidates[0];
+    memoryDeviceIdIsTemporary = false;
+    return candidates[0];
+  }
+  throw new DeviceIdentityError('DEVICE_ID_UNINITIALIZED');
+}
+
+export function isDeviceIdTemporary(): boolean {
+  return memoryDeviceIdIsTemporary;
+}
+
+export async function hydrateDeviceId(): Promise<string> {
+  await ensureUserScopeFromAuth();
+  if (hydrationPromise) return hydrationPromise;
+  hydrationPromise = (async () => {
+    const key = storageKey();
+    const reads = await Promise.allSettled([
+      secureGet(key),
+      readDeviceIdFromIndexedDb(key),
+    ]);
+    if (reads.some(result => result.status === 'rejected')) {
+      throw new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE');
+    }
+    const candidates = new Set<string>(readBrowserStorage(key));
+    for (const result of reads) {
+      if (result.status === 'fulfilled' && validId(result.value)) candidates.add(result.value);
+    }
+    if (candidates.size > 1) throw new DeviceIdentityError('DEVICE_ID_MISMATCH');
+    const id = [...candidates][0];
+    if (!id) throw new DeviceIdentityError('DEVICE_ID_REAPPROVAL_REQUIRED');
+    return persistDurably(id);
+  })().catch(error => {
+    hydrationPromise = null;
+    memoryDeviceId = null;
+    memoryDeviceIdIsTemporary = false;
+    throw error;
+  });
+  return hydrationPromise;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buffer), byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
 
 function uaFamily(ua: string): string {
@@ -165,29 +296,17 @@ async function computeDeviceFingerprints(): Promise<{ strict: string; loose: str
   const lang = (typeof navigator !== 'undefined' && navigator.language) || '';
   const cpu = String((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || '');
   const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })();
-  const screenStr = (() => {
-    if (typeof screen === 'undefined') return '';
-    const w = Math.min(screen.width, screen.height);
-    const h = Math.max(screen.width, screen.height);
-    return `${w}x${h}x${screen.colorDepth}`;
-  })();
+  const screenValue = typeof screen === 'undefined'
+    ? ''
+    : `${Math.min(screen.width, screen.height)}x${Math.max(screen.width, screen.height)}x${screen.colorDepth}`;
   const family = uaFamily(ua);
-  // Account scope: the SAME physical browser can host MULTIPLE accounts, and
-  // each must get its OWN device id (and recover its own after a storage purge).
-  // Without this, two accounts in one browser resolve to the SAME server device
-  // binding -> identical device_id -> message routing between them breaks.
   const scope = currentDeviceUserScope || '';
-
-  const strict = await sha256Hex([scope, ua, lang, cpu, tz, screenStr].join('|'));
-  const loose = await sha256Hex([scope, family, lang.split('-')[0] || '', tz].join('|'));
-  const ultraLoose = await sha256Hex(`platform:${family}:${scope}`);
-
-  cachedFingerprints = { strict, loose, ultraLoose };
-  try {
-    localStorage.setItem(FINGERPRINT_KEY, strict);
-  } catch {
-    // Fingerprint persistence is advisory; the computed value remains usable.
-  }
+  cachedFingerprints = {
+    strict: await sha256Hex([scope, ua, lang, cpu, tz, screenValue].join('|')),
+    loose: await sha256Hex([scope, family, lang.split('-')[0] || '', tz].join('|')),
+    ultraLoose: await sha256Hex(`platform:${family}:${scope}`),
+  };
+  try { localStorage.setItem(FINGERPRINT_KEY, cachedFingerprints.strict); } catch { /* advisory only */ }
   return cachedFingerprints;
 }
 
@@ -196,199 +315,47 @@ export async function getDeviceFingerprint(): Promise<string> {
 }
 
 export async function getDeviceFingerprintCandidates(): Promise<string[]> {
-  const fps = await computeDeviceFingerprints();
-  return [fps.strict, fps.loose, fps.ultraLoose];
-}
-
-function generateId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function persistEverywhere(id: string): string {
-  const key = storageKey();
-  memoryDeviceId = id;
-  memoryDeviceIdIsTemporary = false;
-  try {
-    localStorage.setItem(key, id);
-  } catch {
-    // Secure/native stores below are independent persistence layers.
-  }
-  try {
-    sessionStorage.setItem(key, id);
-  } catch {
-    // Secure/native stores below are independent persistence layers.
-  }
-  void secureSet(key, id).catch(() => {});
-  void nativeSet(key, id).catch(() => {});
-  void writeDeviceIdToIndexedDb(key, id);
-  return id;
-}
-
-export function setCurrentDeviceId(id: string): string {
-  if (!id || typeof id !== 'string') return getCurrentDeviceId();
-  if (memoryDeviceId === id) return id;
-  hydrationPromise = null;
-  console.log('[device-id] committing authoritative device id', { previous: memoryDeviceId?.slice(0, 8) ?? 'none', next: id.slice(0, 8), scoped: !!currentDeviceUserScope });
-  return persistEverywhere(id);
-}
-
-/**
- * Legacy compatibility only. Device routing identities are installation-local
- * and must never be restored from account or key snapshots. Older backups may
- * still contain `device:id`; callers receive the current local installation ID.
- */
-export function adoptDeviceIdFromBackup(_legacyId: string): string {
-  console.info('[device-id] ignored legacy backup device id; using local installation identity');
-  return getCurrentDeviceId();
-}
-
-export function rotateCurrentDeviceId(reason = 'device-key-loss'): string {
-  const key = storageKey();
-  const previous = memoryDeviceId || nativeGetSync(key) || null;
-  const next = generateId();
-  hydrationPromise = null;
-
-  console.warn('[device-id] rotating current device id', {
-    reason,
-    previous: previous ? previous.slice(0, 8) : 'none',
-    next: next.slice(0, 8),
-    scoped: !!currentDeviceUserScope,
-  });
-
-  persistEverywhere(next);
-  hydrationPromise = Promise.resolve(next);
-  return next;
-}
-
-export function getCurrentDeviceId(): string {
-  if (memoryDeviceId) return memoryDeviceId;
-
-  const key = storageKey();
-  const localId = nativeGetSync(key);
-  if (localId) {
-    memoryDeviceId = localId;
-    void nativeSet(key, localId).catch(() => {});
-    return localId;
-  }
-
-  const fresh = generateId();
-  // IndexedDB is asynchronous. Keep the first synchronous ID temporary until
-  // hydrateDeviceId() has had a chance to recover the established installation
-  // ID from every persistence layer. Persisting this provisional value here
-  // could overwrite a valid IndexedDB ID after localStorage was cleared.
-  memoryDeviceId = fresh;
-  memoryDeviceIdIsTemporary = true;
-  try {
-    sessionStorage.setItem(key, fresh);
-  } catch {
-    // Hydration will persist the final stable ID when storage is available.
-  }
-  console.info('[device-id] generated temporary id pending durable hydration', {
-    native: isNativePlatform(),
-    scoped: !!currentDeviceUserScope,
-  });
-  return fresh;
-}
-
-export function isDeviceIdTemporary(): boolean {
-  return memoryDeviceIdIsTemporary;
-}
-
-export async function hydrateDeviceId(): Promise<string> {
-  await ensureUserScopeFromAuth();
-  if (hydrationPromise) return hydrationPromise;
-  hydrationPromise = (async () => {
-    try {
-      const key = storageKey();
-      const stored = await secureGet(key);
-      if (stored) {
-        if (memoryDeviceId && memoryDeviceId !== stored) {
-          console.log('[device-id] Native store overrides in-memory id', {
-            memory: memoryDeviceId.slice(0, 8),
-            native: stored.slice(0, 8),
-            temporary: memoryDeviceIdIsTemporary,
-            scoped: !!currentDeviceUserScope,
-          });
-        }
-        return persistEverywhere(stored);
-      }
-
-      const indexedDbId = await readDeviceIdFromIndexedDb(key);
-      if (indexedDbId) {
-        console.info('[device-id] restored stable installation id from IndexedDB', {
-          id: indexedDbId.slice(0, 8),
-          scoped: !!currentDeviceUserScope,
-        });
-        return persistEverywhere(indexedDbId);
-      }
-
-      const local = nativeGetSync(key);
-      if (local) {
-        return persistEverywhere(local);
-      }
-
-      if (currentDeviceUserScope) {
-        const bootstrapId =
-          await secureGet(BASE_STORAGE_KEY)
-          ?? await readDeviceIdFromIndexedDb(BASE_STORAGE_KEY)
-          ?? nativeGetSync(BASE_STORAGE_KEY);
-        if (bootstrapId && bootstrapId.length >= 16) {
-          return persistEverywhere(bootstrapId);
-        }
-      }
-
-      // If every local persistence layer has disappeared, this is a new
-      // logical Sesame device. Browser/OS fingerprints are deliberately not
-      // used to reclaim a DeviceID: they are neither unique nor stable and can
-      // route ciphertext to another installation.
-      const current = memoryDeviceId || generateId();
-      return persistEverywhere(current);
-    } catch (e) {
-      console.warn('[device-id] hydration failed:', e);
-      return memoryDeviceId || persistEverywhere(generateId());
-    }
-  })();
-  return hydrationPromise;
+  const values = await computeDeviceFingerprints();
+  return [values.strict, values.loose, values.ultraLoose];
 }
 
 export function getCurrentDeviceLabel(): string {
   if (typeof navigator === 'undefined') return 'Unknown device';
   const ua = navigator.userAgent || '';
   const isIPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-  const os =
-    /iPhone/i.test(ua) ? 'iPhone'
+  const os = /iPhone/i.test(ua) ? 'iPhone'
     : /iPad|iPod/i.test(ua) || isIPadOS ? 'iPad'
     : /Android/i.test(ua) ? 'Android'
     : /Windows/i.test(ua) ? 'Windows'
     : /Macintosh|Mac OS X/i.test(ua) ? 'macOS'
     : /Linux/i.test(ua) ? 'Linux'
     : 'Unknown OS';
-  const browser =
-    /EdgA?|EdgiOS/i.test(ua) ? 'Edge'
+  const browser = /EdgA?|EdgiOS/i.test(ua) ? 'Edge'
     : /CriOS|Chrome/i.test(ua) ? 'Chrome'
     : /FxiOS|Firefox/i.test(ua) ? 'Firefox'
     : /OPiOS|OPR\//i.test(ua) ? 'Opera'
     : /Safari/i.test(ua) ? 'Safari'
     : 'Browser';
-  if (isNativePlatform()) {
-    return `${os} · App`;
-  }
-  return `${browser} · ${os}`;
+  return isNativePlatform() ? `${os} · App` : `${browser} · ${os}`;
 }
 
 export function getCurrentPlatform(): string {
-  if (isNativePlatform()) {
-    if (typeof navigator !== 'undefined') {
-      const ua = navigator.userAgent || '';
-      if (/Android/i.test(ua)) return 'android';
-      if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
-    }
-    return 'mobile';
+  if (typeof navigator !== 'undefined') {
+    const ua = navigator.userAgent || '';
+    if (/Android/i.test(ua)) return 'android';
+    if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
   }
-  if (typeof navigator === 'undefined') return 'web';
-  const ua = navigator.userAgent || '';
-  if (/Android/i.test(ua)) return 'android';
-  if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
-  return 'web';
+  return isNativePlatform() ? 'mobile' : 'web';
 }
+
+export const __test__ = {
+  validId,
+  reset(): void {
+    cancelLocalEnrollmentTransition();
+    currentDeviceUserScope = null;
+    memoryDeviceId = null;
+    hydrationPromise = null;
+    memoryDeviceIdIsTemporary = false;
+    cachedFingerprints = null;
+  },
+};

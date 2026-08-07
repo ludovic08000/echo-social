@@ -1,53 +1,286 @@
-name: E2EE CI
+name: E2EE Security Gate
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'fix/**'
+      - 'security/**'
   pull_request:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
 jobs:
-  verify:
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - run: npm ci
+      - run: npm run typecheck
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Legacy repository lint
-        continue-on-error: true
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Test
-        shell: bash
+  lint:
+    name: Lint Lot 1 changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint new and security-sensitive TypeScript files
         run: |
-          set +e
-          npm run test 2>&1 | tee test-output.txt
-          status=${PIPESTATUS[0]}
-          set -e
-          exit "$status"
+          npm exec eslint -- \
+            src/components/settings/IdentityRotationPanel.tsx \
+            src/hooks/useMessages.ts \
+            src/hooks/useSendMessageSecure.ts \
+            src/lib/crypto/__tests__/deviceEnrollmentGate.test.ts \
+            src/lib/crypto/__tests__/identityRotationArchitecture.test.ts \
+            src/lib/crypto/__tests__/trustedDeviceApproval.test.ts \
+            src/lib/crypto/deviceEnrollmentGate.ts \
+            src/lib/crypto/identityRotation.ts \
+            src/lib/crypto/identityRotationRecovery.ts \
+            src/lib/crypto/serverDeviceEnrollment.ts \
+            src/lib/messaging/__tests__/sealedSenderArchitecture.test.ts \
+            src/lib/messaging/__tests__/stableDeviceIdentityArchitecture.test.ts \
+            src/lib/messaging/__tests__/zeusPlaintextBoundary.test.ts \
+            src/lib/messaging/currentDevice.ts \
+            src/pages/Settings.tsx \
+            supabase/functions/_shared/__tests__/sealedSenderToken.test.ts \
+            supabase/functions/_shared/sealedSenderToken.ts \
+            supabase/functions/identity-rotation/index.ts \
+            supabase/functions/identity-rotation-recovery/index.ts \
+            supabase/functions/sealed-mint-token/index.ts \
+            supabase/functions/sealed-relay/index.ts
 
-      - name: Upload test diagnostics
-        if: failure()
+  device-approval-sync:
+    name: Device approval and account sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:device-approval
+      - name: Stable DeviceID and identity-rotation regression tests
+        run: |
+          npm exec vitest run -- \
+            src/lib/crypto/__tests__/deviceEnrollmentGate.test.ts \
+            src/lib/crypto/__tests__/identityRotationArchitecture.test.ts \
+            src/lib/messaging/__tests__/stableDeviceIdentityArchitecture.test.ts
+
+  sealed-sender:
+    name: Sealed Sender
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Sealed Sender unit and architecture tests
+        run: |
+          npm exec vitest run -- \
+            supabase/functions/_shared/__tests__/sealedSenderToken.test.ts \
+            src/lib/messaging/__tests__/sealedSenderArchitecture.test.ts
+
+  crypto-messaging-suite:
+    name: Crypto and messaging suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run all crypto and messaging tests
+        run: |
+          npm exec vitest run -- \
+            src/lib/crypto \
+            src/lib/messaging \
+            --reporter=default
+
+  full-project-tests:
+    name: Full project tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  edge-functions:
+    name: Sensitive Edge Functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck Lot 1 Edge Functions
+        run: |
+          deno check --no-config supabase/functions/sealed-mint-token/index.ts
+          deno check --no-config supabase/functions/sealed-relay/index.ts
+          deno check --no-config supabase/functions/approve-device-enrollment/index.ts
+          deno check --no-config supabase/functions/identity-rotation/index.ts
+          deno check --no-config supabase/functions/identity-rotation-recovery/index.ts
+          deno check --no-config supabase/functions/zeus/index.ts
+
+  database:
+    name: Migrations and SQL security tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+      - name: Start isolated Supabase stack
+        run: supabase start
+      - name: Apply every migration from scratch
+        run: supabase db reset
+      - name: Run SQL security tests
+        run: supabase test db
+      - name: Stop isolated Supabase stack
+        if: always()
+        run: supabase stop --no-backup
+
+  production-build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify checked-out SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  security-gate:
+    name: E2EE Security Gate
+    if: always()
+    needs:
+      - typecheck
+      - lint
+      - device-approval-sync
+      - sealed-sender
+      - crypto-messaging-suite
+      - full-project-tests
+      - edge-functions
+      - database
+      - production-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+      - name: Verify final SHA and all mandatory jobs
+        env:
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          DEVICE_RESULT: ${{ needs.device-approval-sync.result }}
+          SEALED_RESULT: ${{ needs.sealed-sender.result }}
+          CRYPTO_RESULT: ${{ needs.crypto-messaging-suite.result }}
+          FULL_TEST_RESULT: ${{ needs.full-project-tests.result }}
+          EDGE_RESULT: ${{ needs.edge-functions.result }}
+          DATABASE_RESULT: ${{ needs.database.result }}
+          BUILD_RESULT: ${{ needs.production-build.result }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$EXPECTED_SHA"
+          for result in \
+            "$TYPECHECK_RESULT" \
+            "$LINT_RESULT" \
+            "$DEVICE_RESULT" \
+            "$SEALED_RESULT" \
+            "$CRYPTO_RESULT" \
+            "$FULL_TEST_RESULT" \
+            "$EDGE_RESULT" \
+            "$DATABASE_RESULT" \
+            "$BUILD_RESULT"; do
+            test "$result" = "success"
+          done
+          printf '%s\n' "$actual_sha" > security-gate-sha.txt
+      - name: Upload tested SHA proof
         uses: actions/upload-artifact@v4
         with:
-          name: e2ee-ci-diagnostics
-          retention-days: 2
-          path: test-output.txt
-
-      - name: Build
-        run: npm run build
+          name: e2ee-tested-sha-${{ github.run_id }}
+          path: security-gate-sha.txt
+          retention-days: 30
+          if-no-files-found: error

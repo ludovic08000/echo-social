@@ -16,6 +16,7 @@ import { ContentPreferencesPanel } from '@/components/settings/ContentPreference
 import { AccessibilitySettingsPanel } from '@/components/settings/AccessibilitySettingsPanel';
 import { ParentalControlPanel } from '@/components/settings/ParentalControlPanel';
 import { DevicesPanel } from '@/components/settings/DevicesPanel';
+import { IdentityRotationPanel } from '@/components/settings/IdentityRotationPanel';
 import { MessagingPinGate } from '@/components/MessagingPinGate';
 import { Button } from '@/components/ui/button';
 
@@ -156,7 +157,10 @@ export default function Settings() {
                 Appareils connectés
               </h2>
               <MessagingPinGate>
-                <DevicesPanel />
+                <div className="space-y-5">
+                  <DevicesPanel />
+                  <IdentityRotationPanel />
+                </div>
               </MessagingPinGate>
             </section>
           </div>

@@ -29,6 +29,10 @@ import {
   completeServerAssignedDeviceEnrollment,
 } from '@/lib/crypto/serverDeviceEnrollment';
 import {
+  __test__ as deviceEnrollmentGateTest,
+  authorizeExplicitDeviceEnrollment,
+} from '@/lib/crypto/deviceEnrollmentGate';
+import {
   canonicalDeviceApprovalDecisionPayload,
   submitDeviceApprovalDecision,
 } from '@/lib/crypto/deviceApprovalDecision';
@@ -41,6 +45,7 @@ const expiresAt = new Date(Date.now() + 60_000).toISOString();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  deviceEnrollmentGateTest.reset();
 });
 
 describe('simulated Chrome iPhone enrollment', () => {
@@ -79,6 +84,7 @@ describe('simulated Chrome iPhone enrollment', () => {
       throw new Error(`Unexpected RPC ${name}`);
     });
 
+    authorizeExplicitDeviceEnrollment('user_requested_new_device');
     const challenge = await beginServerAssignedDeviceEnrollment({
       deviceName: 'Chrome · iPhone',
       deviceFingerprint: 'ios-test-fingerprint',
