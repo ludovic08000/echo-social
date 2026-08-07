@@ -10,17 +10,34 @@ language plpgsql
 security invoker
 set search_path = pg_catalog, public
 as $$
+declare
+  v_active public.user_public_keys%rowtype;
 begin
   if current_user in ('anon', 'authenticated') then
-    if tg_op = 'INSERT' and exists (
-      select 1
+    if tg_op = 'INSERT' then
+      select existing.*
+        into v_active
         from public.user_public_keys existing
        where existing.user_id = new.user_id
          and existing.is_active = true
-    ) then
-      raise exception using
-        errcode = '42501',
-        message = 'identity_rotation_verified_flow_required';
+       order by existing.created_at desc
+       limit 1;
+
+      if found then
+        if new.identity_key is distinct from v_active.identity_key
+           or new.signing_key is distinct from v_active.signing_key
+           or new.fingerprint is distinct from v_active.fingerprint
+           or new.identity_binding_signature is distinct from v_active.identity_binding_signature
+           or new.identity_binding_version is distinct from v_active.identity_binding_version then
+          raise exception using
+            errcode = '42501',
+            message = 'identity_rotation_verified_flow_required';
+        end if;
+
+        -- Old clients do not know the identity_epoch column. A same-root upsert
+        -- inherits the authoritative server epoch instead of defaulting to 1.
+        new.identity_epoch := v_active.identity_epoch;
+      end if;
     end if;
 
     if tg_op = 'UPDATE' and (
