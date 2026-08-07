@@ -73,8 +73,8 @@ describe('account identity rotation v1 architecture', () => {
     expect(migration).toContain('device_authorization_signature = p_current_device_authorization_signature');
     expect(migration).toContain("'identity_rotated'");
     expect(migration).toContain('insert into public.user_identity_change_events');
-    expect(migration.trimStart()).toStartWith('begin;');
-    expect(migration.trimEnd()).toEndWith('commit;');
+    expect(migration.trimStart().startsWith('begin;')).toBe(true);
+    expect(migration.trimEnd().endsWith('commit;')).toBe(true);
   });
 
   it('exposes rotation RPCs only to service_role', () => {
