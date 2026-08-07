@@ -18,6 +18,15 @@ import {
 import { KX_KEY_PARAMS, SIG_KEY_PARAMS, STORE_KEYS } from './constants';
 import { txDelete, txGet, txPut } from './indexedDbTx';
 import { clearAllDeviceSessions } from './deviceRatchet';
+import {
+  isAutoBackupActive,
+  syncBackupToServer,
+  syncKeychainSnapshotFromLocal,
+} from './accountKeyBackup';
+import {
+  generateAndUploadDeviceSignedPrekey,
+  refillDeviceOneTimePrekeysIfNeeded,
+} from './x3dh';
 
 export type IdentityRotationReason =
   | 'manual_rotation'
@@ -46,6 +55,10 @@ type CurrentDeviceRow = {
   is_active: boolean;
   revoked_at: string | null;
   crypto_invalid_at: string | null;
+};
+
+type TrustedCurrentDevice = CurrentDeviceRow & {
+  device_signing_key: string;
 };
 
 type BeginResponse = {
@@ -101,7 +114,7 @@ function stageId(userId: string): string {
   return `${ROTATION_STAGE_PREFIX}${userId}`;
 }
 
-function trustedCurrentDevice(row: CurrentDeviceRow | null): row is CurrentDeviceRow {
+function trustedCurrentDevice(row: CurrentDeviceRow | null): row is TrustedCurrentDevice {
   return Boolean(
     row &&
     row.approval_status === 'approved' &&
@@ -115,6 +128,9 @@ function trustedCurrentDevice(row: CurrentDeviceRow | null): row is CurrentDevic
 
 function assertBeginResponse(value: unknown): asserts value is BeginResponse {
   const candidate = value as Partial<BeginResponse> | null;
+  const expiry = typeof candidate?.expires_at === 'string'
+    ? Date.parse(candidate.expires_at)
+    : Number.NaN;
   if (
     !candidate ||
     candidate.ok !== true ||
@@ -126,8 +142,8 @@ function assertBeginResponse(value: unknown): asserts value is BeginResponse {
     candidate.next_epoch !== candidate.current_epoch + 1 ||
     typeof candidate.challenge_payload !== 'string' ||
     candidate.challenge_payload.length < 100 ||
-    typeof candidate.expires_at !== 'string' ||
-    Date.parse(candidate.expires_at) <= Date.now()
+    !Number.isFinite(expiry) ||
+    expiry <= Date.now()
   ) {
     throw new Error('IDENTITY_ROTATION_INVALID_BEGIN_RESPONSE');
   }
@@ -254,9 +270,28 @@ async function promoteStage(userId: string, expected: {
   ) {
     throw new Error('IDENTITY_ROTATION_COMMITTED_STAGE_MISMATCH');
   }
+
   await saveIdentityKeys(userId, staged.keys);
+
+  const backupSynced = await syncBackupToServer();
+  if (!backupSynced) {
+    throw new Error('IDENTITY_ROTATION_BACKUP_SYNC_REQUIRED');
+  }
+
+  const deviceId = getCurrentDeviceId();
+  const deviceIdentity = await loadDeviceIdentity(userId, deviceId);
+  if (!deviceIdentity) throw new Error('IDENTITY_ROTATION_DEVICE_PRIVATE_KEY_REQUIRED');
+
+  await generateAndUploadDeviceSignedPrekey(
+    userId,
+    deviceId,
+    deviceIdentity.privateKey,
+  );
+  await refillDeviceOneTimePrekeysIfNeeded(userId, deviceId);
   await clearAllDeviceSessions();
   await txDelete(STORE_KEYS, stageId(userId));
+  await syncKeychainSnapshotFromLocal(userId).catch(() => false);
+
   try {
     window.dispatchEvent(new CustomEvent('forsure-identity-rotated', {
       detail: {
@@ -270,7 +305,7 @@ async function promoteStage(userId: string, expected: {
   }
 }
 
-async function invokeRotation<T extends JsonObject>(body: JsonObject): Promise<T> {
+async function invokeRotation<T>(body: JsonObject): Promise<T> {
   const { data, error } = await supabase.functions.invoke('identity-rotation', { body });
   if (error) throw new Error(`IDENTITY_ROTATION_EDGE_FAILED:${error.message}`);
   return data as T;
@@ -290,6 +325,9 @@ export async function rotateAccountIdentity(
   const { data: userData, error: userError } = await supabase.auth.getUser();
   const user = userData.user;
   if (userError || !user) throw new Error('IDENTITY_ROTATION_NOT_AUTHENTICATED');
+  if (!isAutoBackupActive()) {
+    throw new Error('IDENTITY_ROTATION_UNLOCKED_BACKUP_REQUIRED');
+  }
 
   const deviceId = getCurrentDeviceId();
   if (!DEVICE_ID_RE.test(deviceId)) throw new Error('IDENTITY_ROTATION_SERVER_DEVICE_REQUIRED');
@@ -410,12 +448,13 @@ export async function rotateAccountIdentity(
 
 /**
  * Complete local promotion after the server committed but the app crashed or
- * storage was temporarily unavailable. Safe to call at startup or after unlock.
+ * storage was temporarily unavailable. Safe to call after the account backup
+ * has been unlocked; it never starts a new rotation.
  */
 export async function recoverPendingIdentityRotation(): Promise<boolean> {
   const { data: userData, error: userError } = await supabase.auth.getUser();
   const user = userData.user;
-  if (userError || !user) return false;
+  if (userError || !user || !isAutoBackupActive()) return false;
   const staged = await loadStage(user.id);
   if (!staged) return false;
 
