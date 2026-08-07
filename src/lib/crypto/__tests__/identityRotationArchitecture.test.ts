@@ -5,8 +5,24 @@ const migration = readFileSync(
   'supabase/migrations/20260807010000_identity_rotation_v1.sql',
   'utf8',
 );
+const downgradeGuard = readFileSync(
+  'supabase/migrations/20260807010500_identity_rotation_downgrade_guard.sql',
+  'utf8',
+);
+const recoveryMigration = readFileSync(
+  'supabase/migrations/20260807011000_identity_rotation_recovery_vault.sql',
+  'utf8',
+);
 const edge = readFileSync('supabase/functions/identity-rotation/index.ts', 'utf8');
+const recoveryEdge = readFileSync(
+  'supabase/functions/identity-rotation-recovery/index.ts',
+  'utf8',
+);
 const client = readFileSync('src/lib/crypto/identityRotation.ts', 'utf8');
+const recoveryClient = readFileSync(
+  'src/lib/crypto/identityRotationRecovery.ts',
+  'utf8',
+);
 
 describe('account identity rotation v1 architecture', () => {
   it('requires an exact N to N+1 epoch transition', () => {
@@ -16,21 +32,24 @@ describe('account identity rotation v1 architecture', () => {
     expect(migration).toContain('identity_rotation_current_identity_changed');
   });
 
-  it('stores one opaque server challenge and a short expiry', () => {
+  it('stores one exact server challenge with a short expiry', () => {
     expect(migration).toContain("interval '10 minutes'");
     expect(migration).toContain('challenge_payload text not null');
     expect(migration).toContain("'protocol', 'forsure-aegis-identity-rotation'");
     expect(migration).toContain('identity_rotation_requests_one_pending_idx');
   });
 
-  it('requires old identity, approved-device and new-binding proofs', () => {
+  it('requires the old root, its authorized device and the proposed root', () => {
+    expect(edge).toContain('IDENTITY_ROTATION_CURRENT_AUTHORITY_INVALID');
     expect(edge).toContain('IDENTITY_ROTATION_OLD_IDENTITY_PROOF_INVALID');
     expect(edge).toContain('IDENTITY_ROTATION_DEVICE_PROOF_INVALID');
     expect(edge).toContain('IDENTITY_ROTATION_NEW_BINDING_INVALID');
     expect(edge).toContain('IDENTITY_ROTATION_DEVICE_AUTHORIZATION_INVALID');
+    expect(edge).toContain('validateCurrentAuthority');
     expect(edge).toContain('verifyEd25519(current.signing_key');
     expect(edge).toContain('verifyEd25519(device.device_signing_key');
-    expect(edge).toContain('validateProposedBinding');
+    expect(edge).toContain('validateIdentityBinding');
+    expect(edge).toContain('device.device_authorization_signature');
   });
 
   it('keeps only the device that possesses the new root', () => {
@@ -62,21 +81,63 @@ describe('account identity rotation v1 architecture', () => {
     expect(migration).toContain('to service_role');
   });
 
-  it('stages private material before commit and promotes only after confirmation', () => {
+  it('blocks direct root downgrades outside the verified flow', () => {
+    expect(downgradeGuard).toContain('security invoker');
+    expect(downgradeGuard).toContain("current_user in ('anon', 'authenticated')");
+    expect(downgradeGuard).toContain('identity_rotation_verified_flow_required');
+    expect(downgradeGuard).toContain('new.identity_epoch is distinct from old.identity_epoch');
+    expect(downgradeGuard).toContain('create trigger guard_account_identity_rotation_v1');
+  });
+
+  it('requires immutable encrypted recovery before server commit', () => {
+    expect(recoveryMigration).toContain('recovery_blob text');
+    expect(recoveryMigration).toContain('create trigger require_identity_rotation_recovery_v1');
+    expect(recoveryMigration).toContain('identity_rotation_recovery_required');
+    expect(recoveryMigration).toContain('identity_rotation_recovery_already_attached');
+    expect(recoveryMigration).toContain('to service_role');
+    expect(recoveryEdge).toContain("'attach', 'fetch', 'finalize'");
+    expect(recoveryEdge).not.toContain('console.log');
+  });
+
+  it('encrypts the staged root under the unlocked account Master Key', () => {
+    expect(recoveryClient).toContain('getSessionMasterKey');
+    expect(recoveryClient).toContain("name: 'AES-GCM'");
+    expect(recoveryClient).toContain('forsure-aegis-identity-rotation-recovery-v1');
+    expect(recoveryClient).toContain('additionalData: recoveryAAD');
+    expect(recoveryClient).not.toContain('privateKeyJWK: payload.privateKeyJWK');
+  });
+
+  it('attaches recovery before commit and promotes only after confirmation', () => {
     const stageIndex = client.indexOf('await createStage({');
+    const recoveryIndex = client.indexOf('await attachIdentityRotationRecovery(staged);');
     const commitIndex = client.indexOf("action: 'commit'");
     const promoteIndex = client.indexOf('await promoteStage(user.id');
     expect(stageIndex).toBeGreaterThan(-1);
-    expect(commitIndex).toBeGreaterThan(stageIndex);
+    expect(recoveryIndex).toBeGreaterThan(stageIndex);
+    expect(commitIndex).toBeGreaterThan(recoveryIndex);
     expect(promoteIndex).toBeGreaterThan(commitIndex);
     expect(client).toContain('IDENTITY_ROTATION_COMMITTED_LOCAL_PROMOTION_PENDING');
-    expect(client).toContain('recoverPendingIdentityRotation');
+    expect(client).toContain('fetchIdentityRotationRecovery');
+  });
+
+  it('backs up the promoted root before discarding recovery material', () => {
+    const saveIndex = client.indexOf('await saveIdentityKeys(userId, staged.keys);');
+    const backupIndex = client.indexOf('await syncBackupToServer();');
+    const spkIndex = client.indexOf('await generateAndUploadDeviceSignedPrekey(');
+    const ratchetIndex = client.indexOf('await clearAllDeviceSessions();');
+    const finalizeIndex = client.indexOf('await finalizeIdentityRotationRecovery');
+    expect(saveIndex).toBeGreaterThan(-1);
+    expect(backupIndex).toBeGreaterThan(saveIndex);
+    expect(spkIndex).toBeGreaterThan(backupIndex);
+    expect(ratchetIndex).toBeGreaterThan(spkIndex);
+    expect(finalizeIndex).toBeGreaterThan(ratchetIndex);
+    expect(client).toContain('IDENTITY_ROTATION_BACKUP_SYNC_REQUIRED');
   });
 
   it('never creates a replacement from hydration or background recovery', () => {
     expect(client).toContain('explicit, high-friction user');
     expect(client).not.toContain('setInterval(');
-    expect(client).not.toContain('addEventListener(\'online\'');
-    expect(client).not.toContain('rotateAccountIdentity(\'');
+    expect(client).not.toContain("addEventListener('online'");
+    expect(client).not.toContain("rotateAccountIdentity('");
   });
 });
