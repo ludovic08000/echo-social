@@ -98,7 +98,8 @@ for each row
 execute function public.sync_active_account_identity_v1();
 
 -- The verified rotation updates the surviving device after the account root.
--- Refresh the legacy primary-device pointer once that device is promoted.
+-- Refresh the legacy primary-device pointer once that device is promoted and
+-- clear the historical primary flag from every revoked installation.
 create or replace function public.sync_identity_root_primary_device_v1()
 returns trigger
 language plpgsql
@@ -110,6 +111,14 @@ begin
      and new.approval_status = 'approved'
      and new.revoked_at is null
      and new.crypto_invalid_at is null then
+    if tg_op = 'UPDATE' and new.identity_epoch > old.identity_epoch then
+      update public.user_devices device
+         set is_primary = (device.device_id = new.device_id),
+             updated_at = clock_timestamp()
+       where device.user_id = new.user_id
+         and device.is_primary is distinct from (device.device_id = new.device_id);
+    end if;
+
     update public.user_identity_roots
        set primary_device_id = new.device_id,
            generation = greatest(generation, new.identity_epoch),
