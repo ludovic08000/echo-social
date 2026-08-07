@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(9);
 
 select ok(
   to_regprocedure('public.sync_active_account_identity_v1()') is not null,
@@ -78,6 +78,14 @@ select ok(
     in lower(pg_get_functiondef(to_regprocedure('public.sync_identity_root_primary_device_v1()')))
   ) > 0,
   'device alignment never lowers the legacy identity generation'
+);
+
+select ok(
+  position(
+    'set is_primary = (device.device_id = new.device_id)'
+    in lower(pg_get_functiondef(to_regprocedure('public.sync_identity_root_primary_device_v1()')))
+  ) > 0,
+  'rotated account keeps exactly one primary device marker'
 );
 
 select * from finish();
