@@ -111,10 +111,11 @@ describe('Zeus plaintext boundary', () => {
 
   it('allows the legacy module only behind the controlled public facade', () => {
     const testPath = 'src/lib/messaging/__tests__/zeusPlaintextBoundary.test.ts';
+    const normalizePath = (path: string) => relative('.', path).replace(/\\/gu, '/');
     const directReferences = collectTypeScriptFiles('src')
-      .filter((path) => relative('.', path).replaceAll('\\', '/') !== testPath)
+      .filter((path) => normalizePath(path) !== testPath)
       .filter((path) => readFileSync(path, 'utf8').includes('useMessages.legacy'))
-      .map((path) => relative('.', path).replaceAll('\\', '/'))
+      .map(normalizePath)
       .sort();
 
     expect(directReferences).toEqual(['src/hooks/useMessages.ts']);
