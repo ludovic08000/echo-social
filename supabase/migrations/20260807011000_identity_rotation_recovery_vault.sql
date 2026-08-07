@@ -49,6 +49,19 @@ begin
     raise exception 'identity_rotation_recovery_invalid';
   end if;
 
+  if v_request.recovery_blob is not null then
+    if v_request.recovery_blob = p_recovery_blob
+       and v_request.recovery_iv = p_recovery_iv
+       and v_request.recovery_blob_version = p_recovery_blob_version then
+      return jsonb_build_object(
+        'ok', true,
+        'code', 'IDENTITY_ROTATION_RECOVERY_ALREADY_ATTACHED',
+        'rotation_id', v_request.id
+      );
+    end if;
+    raise exception 'identity_rotation_recovery_already_attached';
+  end if;
+
   update public.identity_rotation_requests
      set recovery_blob = p_recovery_blob,
          recovery_iv = p_recovery_iv,
