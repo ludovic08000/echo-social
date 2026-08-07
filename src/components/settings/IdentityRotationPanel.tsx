@@ -6,6 +6,7 @@ import {
   recoverPendingIdentityRotation,
   rotateAccountIdentity,
 } from '@/lib/crypto/identityRotation';
+import { hasRemoteIdentityRotationRecovery } from '@/lib/crypto/identityRotationRecovery';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -47,10 +48,15 @@ export function IdentityRotationPanel() {
   const [rotating, setRotating] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [pending, setPending] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const confirmed = confirmation === CONFIRMATION;
 
   const refreshPending = async () => {
-    setPending(await hasPendingIdentityRotation().catch(() => false));
+    const [localPending, remotePending] = await Promise.all([
+      hasPendingIdentityRotation().catch(() => false),
+      hasRemoteIdentityRotationRecovery().catch(() => false),
+    ]);
+    setPending(localPending || remotePending);
   };
 
   useEffect(() => {
@@ -64,6 +70,7 @@ export function IdentityRotationPanel() {
       const result = await rotateAccountIdentity('manual_rotation');
       setConfirmation('');
       setPending(false);
+      setDialogOpen(false);
       toast.success(`Identité E2EE renouvelée · epoch ${result.identityEpoch}`);
     } catch (error) {
       await refreshPending();
@@ -137,7 +144,13 @@ export function IdentityRotationPanel() {
         </div>
       )}
 
-      <AlertDialog onOpenChange={(open) => { if (!open) setConfirmation(''); }}>
+      <AlertDialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (!rotating) setDialogOpen(open);
+          if (!open) setConfirmation('');
+        }}
+      >
         <AlertDialogTrigger asChild>
           <Button
             type="button"
