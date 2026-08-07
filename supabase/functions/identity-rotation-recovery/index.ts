@@ -3,7 +3,10 @@ import { createClient } from 'npm:@supabase/supabase-js@2.57.2';
 import { getCorsHeaders } from '../_shared/cors.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const BASE64_RE = /^[A-Za-z0-9+/_-]+={0,2}$/u;
+const PROOF_MAX_AGE_MS = 60_000;
+const PROOF_FUTURE_SKEW_MS = 15_000;
 const encoder = new TextEncoder();
 
 type JsonObject = Record<string, unknown>;
@@ -18,6 +21,15 @@ type RecoveryRow = {
   recovery_blob: string | null;
   recovery_iv: string | null;
   recovery_blob_version: number | null;
+};
+
+type RecoveryDeviceRow = {
+  device_id: string;
+  device_signing_key: string | null;
+  approval_status: string;
+  is_active: boolean;
+  revoked_at: string | null;
+  crypto_invalid_at: string | null;
 };
 
 function respond(req: Request, status: number, body: JsonObject): Response {
@@ -36,6 +48,99 @@ function boundedText(input: JsonObject, field: string, maxBytes: number): string
   if (typeof value !== 'string') return '';
   const normalized = value.trim();
   return encoder.encode(normalized).byteLength <= maxBytes ? normalized : '';
+}
+
+function decodeBase64(value: string, expectedLength: number): Uint8Array<ArrayBuffer> {
+  const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (!normalized || !/^[A-Za-z0-9+/]*={0,2}$/u.test(normalized)) {
+    throw new Error('BASE64_INVALID');
+  }
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  if (bytes.byteLength !== expectedLength) throw new Error('BASE64_LENGTH_INVALID');
+  return bytes;
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
+}
+
+async function sha256Base64Url(value: string): Promise<string> {
+  return bytesToBase64Url(
+    new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))),
+  );
+}
+
+async function verifyEd25519(
+  publicKeyBase64: string,
+  signatureBase64: string,
+  payload: string,
+): Promise<boolean> {
+  try {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      decodeBase64(publicKeyBase64, 32),
+      { name: 'Ed25519' },
+      false,
+      ['verify'],
+    );
+    return await crypto.subtle.verify(
+      'Ed25519',
+      key,
+      decodeBase64(signatureBase64, 64),
+      encoder.encode(payload),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function accessProofPayload(args: {
+  action: RecoveryAction;
+  userId: string;
+  deviceId: string;
+  rotationId: string | null;
+  issuedAt: string;
+  recoveryDigest: string | null;
+}): string {
+  return JSON.stringify({
+    protocol: 'forsure-aegis-identity-rotation-recovery-access',
+    version: 1,
+    action: args.action,
+    userId: args.userId,
+    deviceId: args.deviceId,
+    rotationId: args.rotationId,
+    issuedAt: args.issuedAt,
+    recoveryDigest: args.recoveryDigest,
+  });
+}
+
+function proofTimeValid(issuedAt: string): boolean {
+  const issuedAtMs = Date.parse(issuedAt);
+  if (!Number.isFinite(issuedAtMs)) return false;
+  const now = Date.now();
+  return issuedAtMs <= now + PROOF_FUTURE_SKEW_MS && now - issuedAtMs <= PROOF_MAX_AGE_MS;
+}
+
+function trustedRecoveryDevice(
+  device: RecoveryDeviceRow | null,
+  expectedDeviceId: string,
+): device is RecoveryDeviceRow & { device_signing_key: string } {
+  return Boolean(
+    device &&
+    device.device_id === expectedDeviceId &&
+    device.device_signing_key &&
+    device.approval_status === 'approved' &&
+    device.is_active === true &&
+    !device.revoked_at &&
+    !device.crypto_invalid_at,
+  );
 }
 
 serve(async (req) => {
@@ -79,19 +184,99 @@ serve(async (req) => {
     : null;
   if (!action) return respond(req, 400, { ok: false, code: 'INVALID_ACTION' });
 
+  const deviceId = boundedText(input, 'device_id', 80);
+  const proofIssuedAt = boundedText(input, 'proof_issued_at', 64);
+  const proofSignature = boundedText(input, 'proof_signature', 256);
+  if (
+    !DEVICE_ID_RE.test(deviceId) ||
+    !proofTimeValid(proofIssuedAt) ||
+    !BASE64_RE.test(proofSignature)
+  ) {
+    return respond(req, 400, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_PROOF_INVALID' });
+  }
+
   try {
-    if (action === 'fetch') {
-      const { data, error } = await admin
-        .from('identity_rotation_requests')
-        .select('id,next_epoch,proposed_fingerprint,approver_device_id,committed_at,recovery_blob,recovery_iv,recovery_blob_version')
-        .eq('user_id', user.id)
+    const rotationId = action === 'fetch'
+      ? null
+      : boundedText(input, 'rotation_id', 64);
+    if (action !== 'fetch' && (!rotationId || !UUID_RE.test(rotationId))) {
+      return respond(req, 400, { ok: false, code: 'IDENTITY_ROTATION_ID_INVALID' });
+    }
+
+    let recoveryBlob = '';
+    let recoveryIv = '';
+    let recoveryVersion = 0;
+    let recoveryDigest: string | null = null;
+    if (action === 'attach') {
+      recoveryBlob = boundedText(input, 'recovery_blob', 131072);
+      recoveryIv = boundedText(input, 'recovery_iv', 64);
+      const versionValue = input.recovery_blob_version;
+      recoveryVersion = typeof versionValue === 'number' ? versionValue : 0;
+      if (
+        recoveryVersion !== 1 ||
+        recoveryBlob.length < 128 ||
+        recoveryIv.length < 16 ||
+        !BASE64_RE.test(recoveryBlob) ||
+        !BASE64_RE.test(recoveryIv)
+      ) {
+        return respond(req, 400, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_INVALID' });
+      }
+      recoveryDigest = await sha256Base64Url(
+        JSON.stringify({ recoveryBlob, recoveryIv, recoveryVersion }),
+      );
+    }
+
+    const rotationQuery = admin
+      .from('identity_rotation_requests')
+      .select('id,next_epoch,proposed_fingerprint,approver_device_id,committed_at,recovery_blob,recovery_iv,recovery_blob_version')
+      .eq('user_id', user.id);
+    const rotationResult = action === 'fetch'
+      ? await rotationQuery
         .not('committed_at', 'is', null)
         .not('recovery_blob', 'is', null)
         .order('committed_at', { ascending: false })
         .limit(1)
+        .maybeSingle()
+      : await rotationQuery
+        .eq('id', rotationId as string)
         .maybeSingle();
-      const row = data as RecoveryRow | null;
-      if (error || !row || !row.committed_at || !row.recovery_blob || !row.recovery_iv) {
+    const row = rotationResult.data as RecoveryRow | null;
+    if (rotationResult.error || !row) {
+      return respond(req, 404, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_NOT_FOUND' });
+    }
+    if (row.approver_device_id !== deviceId) {
+      return respond(req, 403, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_DEVICE_MISMATCH' });
+    }
+
+    const { data: deviceData, error: deviceError } = await admin
+      .from('user_devices')
+      .select('device_id,device_signing_key,approval_status,is_active,revoked_at,crypto_invalid_at')
+      .eq('user_id', user.id)
+      .eq('device_id', deviceId)
+      .maybeSingle();
+    const device = deviceData as RecoveryDeviceRow | null;
+    if (deviceError || !trustedRecoveryDevice(device, deviceId)) {
+      return respond(req, 403, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_DEVICE_NOT_TRUSTED' });
+    }
+
+    const proofValid = await verifyEd25519(
+      device.device_signing_key,
+      proofSignature,
+      accessProofPayload({
+        action,
+        userId: user.id,
+        deviceId,
+        rotationId: action === 'fetch' ? null : row.id,
+        issuedAt: proofIssuedAt,
+        recoveryDigest,
+      }),
+    );
+    if (!proofValid) {
+      return respond(req, 422, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_DEVICE_PROOF_INVALID' });
+    }
+
+    if (action === 'fetch') {
+      if (!row.committed_at || !row.recovery_blob || !row.recovery_iv) {
         return respond(req, 404, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_NOT_FOUND' });
       }
       return respond(req, 200, {
@@ -107,15 +292,10 @@ serve(async (req) => {
       });
     }
 
-    const rotationId = boundedText(input, 'rotation_id', 64);
-    if (!UUID_RE.test(rotationId)) {
-      return respond(req, 400, { ok: false, code: 'IDENTITY_ROTATION_ID_INVALID' });
-    }
-
     if (action === 'finalize') {
       const { data, error } = await admin.rpc('finalize_identity_rotation_recovery_v1', {
         p_user_id: user.id,
-        p_rotation_id: rotationId,
+        p_rotation_id: row.id,
       });
       if (error) {
         return respond(req, 409, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_FINALIZE_REJECTED' });
@@ -123,23 +303,9 @@ serve(async (req) => {
       return respond(req, 200, data as JsonObject);
     }
 
-    const recoveryBlob = boundedText(input, 'recovery_blob', 131072);
-    const recoveryIv = boundedText(input, 'recovery_iv', 64);
-    const recoveryVersion = input.recovery_blob_version;
-    if (
-      typeof recoveryVersion !== 'number' ||
-      recoveryVersion !== 1 ||
-      recoveryBlob.length < 128 ||
-      recoveryIv.length < 16 ||
-      !BASE64_RE.test(recoveryBlob) ||
-      !BASE64_RE.test(recoveryIv)
-    ) {
-      return respond(req, 400, { ok: false, code: 'IDENTITY_ROTATION_RECOVERY_INVALID' });
-    }
-
     const { data, error } = await admin.rpc('attach_identity_rotation_recovery_v1', {
       p_user_id: user.id,
-      p_rotation_id: rotationId,
+      p_rotation_id: row.id,
       p_recovery_blob: recoveryBlob,
       p_recovery_iv: recoveryIv,
       p_recovery_blob_version: recoveryVersion,
