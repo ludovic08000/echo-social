@@ -24,10 +24,16 @@ type DeviceRow = {
   device_id: string;
   device_public_key: string;
   device_signing_key: string | null;
+  device_authorization_signature: string | null;
   approval_status: string;
   is_active: boolean;
   revoked_at: string | null;
   crypto_invalid_at: string | null;
+};
+
+type TrustedDeviceRow = DeviceRow & {
+  device_signing_key: string;
+  device_authorization_signature: string;
 };
 
 type RotationRow = {
@@ -147,7 +153,7 @@ async function fingerprintForBinding(payload: string): Promise<string> {
   return fingerprint.toUpperCase();
 }
 
-function trustedDevice(device: DeviceRow | null): device is DeviceRow {
+function trustedDevice(device: DeviceRow | null): device is TrustedDeviceRow {
   return Boolean(
     device &&
     device.approval_status === 'approved' &&
@@ -155,16 +161,19 @@ function trustedDevice(device: DeviceRow | null): device is DeviceRow {
     !device.revoked_at &&
     !device.crypto_invalid_at &&
     device.device_public_key &&
-    device.device_signing_key,
+    device.device_signing_key &&
+    device.device_authorization_signature,
   );
 }
 
-async function validateProposedBinding(args: {
+async function validateIdentityBinding(args: {
   identityKey: string;
   signingKey: string;
   fingerprint: string;
   bindingSignature: string;
+  bindingVersion?: number | null;
 }): Promise<boolean> {
+  if (args.bindingVersion != null && args.bindingVersion !== 1) return false;
   const payload = accountBindingPayload(args.identityKey, args.signingKey);
   const fingerprint = await fingerprintForBinding(payload);
   return fingerprint === args.fingerprint && await verifyEd25519(
@@ -172,6 +181,35 @@ async function validateProposedBinding(args: {
     args.bindingSignature,
     payload,
   );
+}
+
+async function validateCurrentAuthority(
+  userId: string,
+  current: AccountIdentityRow,
+  device: TrustedDeviceRow,
+): Promise<boolean> {
+  if (!current.identity_binding_signature || current.identity_binding_version !== 1) return false;
+  const [bindingValid, deviceAuthorizationValid] = await Promise.all([
+    validateIdentityBinding({
+      identityKey: current.identity_key,
+      signingKey: current.signing_key,
+      fingerprint: current.fingerprint,
+      bindingSignature: current.identity_binding_signature,
+      bindingVersion: current.identity_binding_version,
+    }),
+    verifyEd25519(
+      current.signing_key,
+      device.device_authorization_signature,
+      deviceAuthorizationPayload({
+        userId,
+        deviceId: device.device_id,
+        accountFingerprint: current.fingerprint,
+        devicePublicKey: device.device_public_key,
+        deviceSigningKey: device.device_signing_key,
+      }),
+    ),
+  ]);
+  return bindingValid && deviceAuthorizationValid;
 }
 
 serve(async (req) => {
@@ -209,10 +247,12 @@ serve(async (req) => {
     return respond(req, 400, { ok: false, code: 'INVALID_JSON' });
   }
 
-  const action = input.action as Action | undefined;
-  if (!action || !['begin', 'commit', 'cancel', 'status'].includes(action)) {
-    return respond(req, 400, { ok: false, code: 'INVALID_ACTION' });
-  }
+  const actionValue = input.action;
+  const action = typeof actionValue === 'string' &&
+    ['begin', 'commit', 'cancel', 'status'].includes(actionValue)
+    ? actionValue as Action
+    : null;
+  if (!action) return respond(req, 400, { ok: false, code: 'INVALID_ACTION' });
 
   try {
     if (action === 'begin') {
@@ -236,11 +276,12 @@ serve(async (req) => {
       if (currentFingerprint === proposedFingerprint) {
         return respond(req, 409, { ok: false, code: 'IDENTITY_ROTATION_FINGERPRINT_UNCHANGED' });
       }
-      if (!await validateProposedBinding({
+      if (!await validateIdentityBinding({
         identityKey: proposedIdentityKey,
         signingKey: proposedSigningKey,
         fingerprint: proposedFingerprint,
         bindingSignature: proposedBindingSignature,
+        bindingVersion: 1,
       })) {
         return respond(req, 422, { ok: false, code: 'IDENTITY_ROTATION_NEW_BINDING_INVALID' });
       }
@@ -256,7 +297,7 @@ serve(async (req) => {
           .maybeSingle(),
         admin
           .from('user_devices')
-          .select('device_id,device_public_key,device_signing_key,approval_status,is_active,revoked_at,crypto_invalid_at')
+          .select('device_id,device_public_key,device_signing_key,device_authorization_signature,approval_status,is_active,revoked_at,crypto_invalid_at')
           .eq('user_id', user.id)
           .eq('device_id', approverDeviceId)
           .maybeSingle(),
@@ -272,6 +313,9 @@ serve(async (req) => {
       }
       if (deviceResult.error || !trustedDevice(device)) {
         return respond(req, 403, { ok: false, code: 'IDENTITY_ROTATION_APPROVER_NOT_TRUSTED' });
+      }
+      if (!await validateCurrentAuthority(user.id, current, device)) {
+        return respond(req, 422, { ok: false, code: 'IDENTITY_ROTATION_CURRENT_AUTHORITY_INVALID' });
       }
 
       const { data, error } = await admin.rpc('begin_identity_rotation_v1', {
@@ -350,7 +394,8 @@ serve(async (req) => {
     if (rotation.cancelled_at) {
       return respond(req, 409, { ok: false, code: 'IDENTITY_ROTATION_CANCELLED' });
     }
-    if (Date.parse(rotation.expires_at) <= Date.now()) {
+    const expiresAt = Date.parse(rotation.expires_at);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
       return respond(req, 409, { ok: false, code: 'IDENTITY_ROTATION_EXPIRED' });
     }
 
@@ -365,7 +410,7 @@ serve(async (req) => {
         .maybeSingle(),
       admin
         .from('user_devices')
-        .select('device_id,device_public_key,device_signing_key,approval_status,is_active,revoked_at,crypto_invalid_at')
+        .select('device_id,device_public_key,device_signing_key,device_authorization_signature,approval_status,is_active,revoked_at,crypto_invalid_at')
         .eq('user_id', user.id)
         .eq('device_id', rotation.approver_device_id)
         .maybeSingle(),
@@ -383,15 +428,19 @@ serve(async (req) => {
     if (deviceResult.error || !trustedDevice(device)) {
       return respond(req, 403, { ok: false, code: 'IDENTITY_ROTATION_APPROVER_NOT_TRUSTED' });
     }
+    if (!await validateCurrentAuthority(user.id, current, device)) {
+      return respond(req, 422, { ok: false, code: 'IDENTITY_ROTATION_CURRENT_AUTHORITY_INVALID' });
+    }
 
     const [oldProofValid, deviceProofValid, proposedBindingValid, deviceAuthorizationValid] = await Promise.all([
       verifyEd25519(current.signing_key, oldIdentitySignature, rotation.challenge_payload),
       verifyEd25519(device.device_signing_key, approverSignature, rotation.challenge_payload),
-      validateProposedBinding({
+      validateIdentityBinding({
         identityKey: rotation.proposed_identity_key,
         signingKey: rotation.proposed_signing_key,
         fingerprint: rotation.proposed_fingerprint,
         bindingSignature: rotation.proposed_binding_signature,
+        bindingVersion: rotation.proposed_binding_version,
       }),
       verifyEd25519(
         rotation.proposed_signing_key,
