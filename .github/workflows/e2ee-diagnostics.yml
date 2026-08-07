@@ -36,7 +36,10 @@ jobs:
           if npm exec vitest run -- src/lib/crypto src/lib/messaging --reporter=verbose 2>&1 | tee "$output_file"; then
             exit 0
           fi
-          tail -n 40 "$output_file" | while IFS= read -r line; do
+          {
+            grep -E 'FAIL|Error|AssertionError|expected|received|Test Files|Tests|❯|×|\bfail' "$output_file" || true
+            tail -n 30 "$output_file"
+          } | tail -n 45 | while IFS= read -r line; do
             escaped="${line//'%'/'%25'}"
             escaped="${escaped//$'\r'/'%0D'}"
             escaped="${escaped//$'\n'/'%0A'}"
@@ -73,7 +76,7 @@ jobs:
               continue
             fi
             echo "::error file=$file,title=Deno check failed::Typecheck failed for $file"
-            tail -n 40 "$output_file" | while IFS= read -r line; do
+            sed -E '/Download.*https:\/\//d' "$output_file" | tail -n 45 | while IFS= read -r line; do
               escaped="${line//'%'/'%25'}"
               escaped="${escaped//$'\r'/'%0D'}"
               escaped="${escaped//$'\n'/'%0A'}"
