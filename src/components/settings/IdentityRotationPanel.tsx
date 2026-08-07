@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, KeyRound, Loader2, RotateCcw, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -51,17 +51,17 @@ export function IdentityRotationPanel() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const confirmed = confirmation === CONFIRMATION;
 
-  const refreshPending = async () => {
+  const refreshPending = useCallback(async () => {
     const [localPending, remotePending] = await Promise.all([
       hasPendingIdentityRotation().catch(() => false),
       hasRemoteIdentityRotationRecovery().catch(() => false),
     ]);
     setPending(localPending || remotePending);
-  };
+  }, []);
 
   useEffect(() => {
     void refreshPending();
-  }, []);
+  }, [refreshPending]);
 
   const handleRotate = async () => {
     if (!confirmed || rotating) return;
