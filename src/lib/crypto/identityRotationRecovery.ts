@@ -1,0 +1,157 @@
+import { supabase } from '@/integrations/supabase/client';
+import { getSessionMasterKey } from './accountKeyBackup';
+import { hardCrypto, hardGlobals } from './cryptoIntegrity';
+import { base64ToBuffer, bufferToBase64 } from './utils';
+
+export interface IdentityRotationRecoveryPayload {
+  userId: string;
+  rotationId: string;
+  currentEpoch: number;
+  nextEpoch: number;
+  fingerprint: string;
+  publicKeyJWK: JsonWebKey;
+  privateKeyJWK: JsonWebKey;
+  signingPublicKeyJWK: JsonWebKey;
+  signingPrivateKeyJWK: JsonWebKey;
+  createdAt: number;
+  expiresAt: string;
+}
+
+type RecoveryFetchResponse = {
+  ok: true;
+  code: 'IDENTITY_ROTATION_RECOVERY_AVAILABLE';
+  rotation_id: string;
+  identity_epoch: number;
+  fingerprint: string;
+  surviving_device_id: string;
+  recovery_blob: string;
+  recovery_iv: string;
+  recovery_blob_version: number;
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
+const IV_BYTES = 12;
+
+function recoveryAAD(userId: string, rotationId: string, fingerprint: string): Uint8Array {
+  return new hardGlobals.TextEncoder().encode(
+    `forsure-aegis-identity-rotation-recovery-v1|${userId}|${rotationId}|${fingerprint}`,
+  );
+}
+
+function validatePayload(
+  payload: IdentityRotationRecoveryPayload,
+  expected?: { userId: string; rotationId: string; epoch: number; fingerprint: string },
+): void {
+  if (
+    !UUID_RE.test(payload.userId) ||
+    !UUID_RE.test(payload.rotationId) ||
+    payload.currentEpoch < 1 ||
+    payload.nextEpoch !== payload.currentEpoch + 1 ||
+    typeof payload.fingerprint !== 'string' ||
+    payload.fingerprint.length < 20 ||
+    !payload.publicKeyJWK ||
+    !payload.privateKeyJWK ||
+    !payload.signingPublicKeyJWK ||
+    !payload.signingPrivateKeyJWK ||
+    !Number.isFinite(payload.createdAt) ||
+    !Number.isFinite(Date.parse(payload.expiresAt))
+  ) {
+    throw new Error('IDENTITY_ROTATION_RECOVERY_PAYLOAD_INVALID');
+  }
+  if (expected && (
+    payload.userId !== expected.userId ||
+    payload.rotationId !== expected.rotationId ||
+    payload.nextEpoch !== expected.epoch ||
+    payload.fingerprint !== expected.fingerprint
+  )) {
+    throw new Error('IDENTITY_ROTATION_RECOVERY_CONTEXT_MISMATCH');
+  }
+}
+
+async function invokeRecovery<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('identity-rotation-recovery', { body });
+  if (error) throw new Error(`IDENTITY_ROTATION_RECOVERY_EDGE_FAILED:${error.message}`);
+  return data as T;
+}
+
+export async function attachIdentityRotationRecovery(
+  payload: IdentityRotationRecoveryPayload,
+): Promise<void> {
+  validatePayload(payload);
+  const masterKey = getSessionMasterKey();
+  if (!masterKey) throw new Error('IDENTITY_ROTATION_MASTER_KEY_REQUIRED');
+
+  const iv = hardCrypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const plaintext = new hardGlobals.TextEncoder().encode(JSON.stringify(payload));
+  const ciphertext = await hardCrypto.encrypt(
+    {
+      name: 'AES-GCM',
+      iv,
+      additionalData: recoveryAAD(payload.userId, payload.rotationId, payload.fingerprint),
+    },
+    masterKey,
+    plaintext,
+  );
+
+  await invokeRecovery<Record<string, unknown>>({
+    action: 'attach',
+    rotation_id: payload.rotationId,
+    recovery_blob: bufferToBase64(ciphertext),
+    recovery_iv: bufferToBase64(iv.buffer),
+    recovery_blob_version: 1,
+  });
+}
+
+export async function fetchIdentityRotationRecovery(
+  userId: string,
+): Promise<IdentityRotationRecoveryPayload | null> {
+  const masterKey = getSessionMasterKey();
+  if (!masterKey) return null;
+
+  let response: RecoveryFetchResponse;
+  try {
+    response = await invokeRecovery<RecoveryFetchResponse>({ action: 'fetch' });
+  } catch {
+    return null;
+  }
+  if (
+    response.ok !== true ||
+    response.code !== 'IDENTITY_ROTATION_RECOVERY_AVAILABLE' ||
+    !UUID_RE.test(response.rotation_id) ||
+    response.identity_epoch < 2 ||
+    typeof response.fingerprint !== 'string' ||
+    !DEVICE_ID_RE.test(response.surviving_device_id) ||
+    response.recovery_blob_version !== 1
+  ) {
+    throw new Error('IDENTITY_ROTATION_RECOVERY_RESPONSE_INVALID');
+  }
+
+  const iv = new Uint8Array(base64ToBuffer(response.recovery_iv));
+  if (iv.byteLength !== IV_BYTES) throw new Error('IDENTITY_ROTATION_RECOVERY_IV_INVALID');
+  const plaintext = await hardCrypto.decrypt(
+    {
+      name: 'AES-GCM',
+      iv,
+      additionalData: recoveryAAD(userId, response.rotation_id, response.fingerprint),
+    },
+    masterKey,
+    base64ToBuffer(response.recovery_blob),
+  );
+  const parsed = JSON.parse(new hardGlobals.TextDecoder().decode(plaintext)) as IdentityRotationRecoveryPayload;
+  validatePayload(parsed, {
+    userId,
+    rotationId: response.rotation_id,
+    epoch: response.identity_epoch,
+    fingerprint: response.fingerprint,
+  });
+  return parsed;
+}
+
+export async function finalizeIdentityRotationRecovery(rotationId: string): Promise<void> {
+  if (!UUID_RE.test(rotationId)) throw new Error('IDENTITY_ROTATION_ID_INVALID');
+  await invokeRecovery<Record<string, unknown>>({
+    action: 'finalize',
+    rotation_id: rotationId,
+  });
+}
