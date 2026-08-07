@@ -62,6 +62,7 @@ jobs:
             src/lib/crypto/__tests__/trustedDeviceApproval.test.ts \
             src/lib/crypto/deviceEnrollmentGate.ts \
             src/lib/crypto/identityRotation.ts \
+            src/lib/crypto/identityRotationRecovery.ts \
             src/lib/crypto/serverDeviceEnrollment.ts \
             src/lib/messaging/__tests__/sealedSenderArchitecture.test.ts \
             src/lib/messaging/__tests__/stableDeviceIdentityArchitecture.test.ts \
@@ -70,6 +71,7 @@ jobs:
             supabase/functions/_shared/__tests__/sealedSenderToken.test.ts \
             supabase/functions/_shared/sealedSenderToken.ts \
             supabase/functions/identity-rotation/index.ts \
+            supabase/functions/identity-rotation-recovery/index.ts \
             supabase/functions/sealed-mint-token/index.ts \
             supabase/functions/sealed-relay/index.ts
 
@@ -180,6 +182,7 @@ jobs:
           deno check --no-config supabase/functions/sealed-relay/index.ts
           deno check --no-config supabase/functions/approve-device-enrollment/index.ts
           deno check --no-config supabase/functions/identity-rotation/index.ts
+          deno check --no-config supabase/functions/identity-rotation-recovery/index.ts
           deno check --no-config supabase/functions/zeus/index.ts
 
   database:
