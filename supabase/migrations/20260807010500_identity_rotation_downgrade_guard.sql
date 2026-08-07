@@ -1,7 +1,7 @@
 begin;
 
 -- Authenticated clients may republish metadata for the same account identity,
--- but changing the account root is reserved for the verified rotation RPC.
+-- but changing or deleting the account root is reserved for verified RPCs.
 -- SECURITY INVOKER is essential here: direct PostgREST writes must observe the
 -- caller role, while commit_identity_rotation_v1 runs as its function owner.
 create or replace function public.guard_account_identity_rotation_v1()
@@ -13,6 +13,15 @@ as $$
 declare
   v_active public.user_public_keys%rowtype;
 begin
+  if tg_op = 'DELETE' then
+    if current_user in ('anon', 'authenticated') then
+      raise exception using
+        errcode = '42501',
+        message = 'identity_rotation_verified_flow_required';
+    end if;
+    return old;
+  end if;
+
   if current_user in ('anon', 'authenticated') then
     if tg_op = 'INSERT' then
       select existing.*
@@ -37,6 +46,7 @@ begin
         -- Old clients do not know the identity_epoch column. A same-root upsert
         -- inherits the authoritative server epoch instead of defaulting to 1.
         new.identity_epoch := v_active.identity_epoch;
+        new.is_active := v_active.is_active;
       end if;
     end if;
 
@@ -47,6 +57,7 @@ begin
       or new.identity_binding_signature is distinct from old.identity_binding_signature
       or new.identity_binding_version is distinct from old.identity_binding_version
       or new.identity_epoch is distinct from old.identity_epoch
+      or new.is_active is distinct from old.is_active
     ) then
       raise exception using
         errcode = '42501',
@@ -70,7 +81,16 @@ before insert or update of
   fingerprint,
   identity_binding_signature,
   identity_binding_version,
-  identity_epoch
+  identity_epoch,
+  is_active
+on public.user_public_keys
+for each row
+execute function public.guard_account_identity_rotation_v1();
+
+drop trigger if exists guard_account_identity_deletion_v1
+  on public.user_public_keys;
+create trigger guard_account_identity_deletion_v1
+before delete
 on public.user_public_keys
 for each row
 execute function public.guard_account_identity_rotation_v1();
