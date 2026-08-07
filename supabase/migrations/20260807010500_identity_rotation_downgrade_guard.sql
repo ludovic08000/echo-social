@@ -2,10 +2,12 @@ begin;
 
 -- Authenticated clients may republish metadata for the same account identity,
 -- but changing the account root is reserved for the verified rotation RPC.
+-- SECURITY INVOKER is essential here: direct PostgREST writes must observe the
+-- caller role, while commit_identity_rotation_v1 runs as its function owner.
 create or replace function public.guard_account_identity_rotation_v1()
 returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = pg_catalog, public
 as $$
 begin
