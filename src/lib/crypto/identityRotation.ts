@@ -27,6 +27,12 @@ import {
   generateAndUploadDeviceSignedPrekey,
   refillDeviceOneTimePrekeysIfNeeded,
 } from './x3dh';
+import {
+  attachIdentityRotationRecovery,
+  fetchIdentityRotationRecovery,
+  finalizeIdentityRotationRecovery,
+  type IdentityRotationRecoveryPayload,
+} from './identityRotationRecovery';
 
 export type IdentityRotationReason =
   | 'manual_rotation'
@@ -91,19 +97,8 @@ type StatusResponse = {
   expires_at: string;
 };
 
-interface StagedIdentityRotation {
+interface StagedIdentityRotation extends IdentityRotationRecoveryPayload {
   id: string;
-  userId: string;
-  rotationId: string;
-  currentEpoch: number;
-  nextEpoch: number;
-  fingerprint: string;
-  publicKeyJWK: JsonWebKey;
-  privateKeyJWK: JsonWebKey;
-  signingPublicKeyJWK: JsonWebKey;
-  signingPrivateKeyJWK: JsonWebKey;
-  createdAt: number;
-  expiresAt: string;
 }
 
 const ROTATION_STAGE_PREFIX = 'identity-rotation-stage::';
@@ -200,7 +195,7 @@ async function createStage(args: {
   keys: IdentityKeyPair;
   fingerprint: string;
   expiresAt: string;
-}): Promise<void> {
+}): Promise<StagedIdentityRotation> {
   if (!args.keys._privJWK || !args.keys._sigPrivJWK) {
     throw new Error('IDENTITY_ROTATION_PRIVATE_STAGE_UNAVAILABLE');
   }
@@ -223,6 +218,19 @@ async function createStage(args: {
     expiresAt: args.expiresAt,
   };
   await txPut(STORE_KEYS, record);
+  return record;
+}
+
+async function persistRecoveredStage(
+  userId: string,
+  payload: IdentityRotationRecoveryPayload,
+): Promise<StagedIdentityRotation> {
+  const record: StagedIdentityRotation = {
+    ...payload,
+    id: stageId(userId),
+  };
+  await txPut(STORE_KEYS, record);
+  return record;
 }
 
 async function loadStage(userId: string): Promise<{
@@ -291,6 +299,7 @@ async function promoteStage(userId: string, expected: {
   await clearAllDeviceSessions();
   await txDelete(STORE_KEYS, stageId(userId));
   await syncKeychainSnapshotFromLocal(userId).catch(() => false);
+  await finalizeIdentityRotationRecovery(expected.rotationId).catch(() => undefined);
 
   try {
     window.dispatchEvent(new CustomEvent('forsure-identity-rotated', {
@@ -305,7 +314,7 @@ async function promoteStage(userId: string, expected: {
   }
 }
 
-async function invokeRotation<T>(body: JsonObject): Promise<T> {
+async function invokeRotation<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('identity-rotation', { body });
   if (error) throw new Error(`IDENTITY_ROTATION_EDGE_FAILED:${error.message}`);
   return data as T;
@@ -388,7 +397,7 @@ export async function rotateAccountIdentity(
   assertBeginResponse(begin);
 
   try {
-    await createStage({
+    const staged = await createStage({
       userId: user.id,
       rotationId: begin.rotation_id,
       currentEpoch: begin.current_epoch,
@@ -397,11 +406,13 @@ export async function rotateAccountIdentity(
       fingerprint: proposedBundle.fingerprint,
       expiresAt: begin.expires_at,
     });
+    await attachIdentityRotationRecovery(staged);
   } catch (error) {
-    await invokeRotation<JsonObject>({
+    await invokeRotation<Record<string, unknown>>({
       action: 'cancel',
       rotation_id: begin.rotation_id,
     }).catch(() => undefined);
+    await txDelete(STORE_KEYS, stageId(user.id)).catch(() => undefined);
     throw error;
   }
 
@@ -455,7 +466,14 @@ export async function recoverPendingIdentityRotation(): Promise<boolean> {
   const { data: userData, error: userError } = await supabase.auth.getUser();
   const user = userData.user;
   if (userError || !user || !isAutoBackupActive()) return false;
-  const staged = await loadStage(user.id);
+
+  let staged = await loadStage(user.id);
+  if (!staged) {
+    const recovered = await fetchIdentityRotationRecovery(user.id);
+    if (!recovered) return false;
+    await persistRecoveredStage(user.id, recovered);
+    staged = await loadStage(user.id);
+  }
   if (!staged) return false;
 
   const status = await invokeRotation<StatusResponse>({
@@ -485,7 +503,7 @@ export async function cancelPendingIdentityRotation(): Promise<boolean> {
   const staged = await loadStage(user.id);
   if (!staged) return false;
 
-  await invokeRotation<JsonObject>({
+  await invokeRotation<Record<string, unknown>>({
     action: 'cancel',
     rotation_id: staged.record.rotationId,
   });
