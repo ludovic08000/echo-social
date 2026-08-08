@@ -28,6 +28,12 @@ import {
   submitDeviceApprovalDecision,
   type DeviceApprovalDecision,
 } from '@/lib/crypto/deviceApprovalDecision';
+import {
+  computeDeviceApprovalFingerprint,
+  formatDeviceApprovalFingerprint,
+} from '@/lib/crypto/deviceApprovalFingerprint';
+import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
+import { loadDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { Button } from '@/components/ui/button';
 import {
