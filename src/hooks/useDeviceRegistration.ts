@@ -4,7 +4,7 @@
  * approved device. Device prekeys and routing become available after approval.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
@@ -63,6 +63,7 @@ import {
   restoreKeysFromKeychainSnapshot,
 } from '@/lib/crypto/accountKeyBackup';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { computeDeviceApprovalFingerprint } from '@/lib/crypto/deviceApprovalFingerprint';
 
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const MAX_ENROLLMENT_ATTEMPTS = 3;
