@@ -15,6 +15,7 @@ import {
   getCurrentPlatform,
   getDeviceFingerprint,
   hydrateDeviceId,
+  isDeviceIdTemporary,
   rotateCurrentDeviceId,
   setCurrentDeviceId,
   setCurrentDeviceUserScope,
