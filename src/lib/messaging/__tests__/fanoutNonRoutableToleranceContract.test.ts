@@ -15,8 +15,12 @@ describe('fanout non-routable device tolerance contract', () => {
     expect(fanout).toContain('return buildFanoutCopies(input, 1)');
   });
 
-  it('permits only one route refresh and keeps partial fanout forbidden', () => {
+  it('permits only one route refresh and tolerates partial coverage', () => {
     expect(fanout).toContain('if (routeRefreshAttempt === 0)');
+    expect(fanout).toContain('FANOUT_PARTIAL_COVERAGE');
+    expect(fanout).toContain('requestOmittedRouteRepair');
+    // Fail-closed conservé: zéro capsule chiffrable => refus, jamais de clair.
     expect(fanout).toContain("throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE')");
+    expect(fanout).not.toContain('plaintextFallback');
   });
 });

@@ -28,6 +28,12 @@ import {
   submitDeviceApprovalDecision,
   type DeviceApprovalDecision,
 } from '@/lib/crypto/deviceApprovalDecision';
+import {
+  computeDeviceApprovalFingerprint,
+  formatDeviceApprovalFingerprint,
+} from '@/lib/crypto/deviceApprovalFingerprint';
+import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
+import { loadDeviceKxKey } from '@/lib/crypto/deviceKx';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { Button } from '@/components/ui/button';
 import {
@@ -149,6 +155,54 @@ export function DevicesPanel() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  // Empreinte de vérification affichée avant approbation. Elle vaut uniquement
+  // par la comparaison humaine avec la valeur montrée sur l'appareil en attente.
+  const [fingerprints, setFingerprints] = useState<Record<string, string>>({});
+  const [localFingerprint, setLocalFingerprint] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const pending = devices.filter(isPending);
+
+    void (async () => {
+      const entries = await Promise.all(pending.map(async (dev) => {
+        if (!dev.device_public_key || !dev.device_signing_key) return null;
+        try {
+          const value = await computeDeviceApprovalFingerprint({
+            deviceId: dev.device_id,
+            devicePublicKey: dev.device_public_key,
+            deviceSigningKey: dev.device_signing_key,
+          });
+          return [dev.device_id, value] as const;
+        } catch {
+          return null;
+        }
+      }));
+      if (cancelled) return;
+      setFingerprints(Object.fromEntries(entries.filter(Boolean) as (readonly [string, string])[]));
+    })();
+
+    void (async () => {
+      if (!user?.id || !currentDeviceId) return;
+      try {
+        const [identity, kx] = await Promise.all([
+          loadDeviceIdentity(user.id, currentDeviceId),
+          loadDeviceKxKey(currentDeviceId, user.id),
+        ]);
+        if (cancelled || !identity?.publicB64 || !kx?.publicB64) return;
+        setLocalFingerprint(await computeDeviceApprovalFingerprint({
+          deviceId: currentDeviceId,
+          devicePublicKey: kx.publicB64,
+          deviceSigningKey: identity.publicB64,
+        }));
+      } catch {
+        // Confort de vérification uniquement.
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [devices, currentDeviceId, user?.id]);
 
   const currentDevice = useMemo(
     () => devices.find((device) => device.device_id === currentDeviceId) ?? null,
@@ -299,6 +353,22 @@ export function DevicesPanel() {
                       </p>
                     </div>
                   </div>
+
+                  {(fingerprints[dev.device_id] || (isCurrent && localFingerprint)) && (
+                    <div className="mt-3 rounded-xl border border-amber-500/30 bg-muted/40 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Empreinte de l’appareil
+                      </p>
+                      <p className="mt-1 font-mono text-xs leading-relaxed tracking-wider">
+                        {formatDeviceApprovalFingerprint(
+                          (isCurrent ? localFingerprint : null) ?? fingerprints[dev.device_id] ?? '',
+                        ).map((line) => <span key={line} className="block">{line}</span>)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Comparez cette valeur avec celle affichée sur le nouvel appareil avant d’approuver.
+                      </p>
+                    </div>
+                  )}
 
                   {isCurrent ? (
                     <p className="mt-3 rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">

@@ -22,6 +22,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
+import { usePendingDeviceApprovalAlert } from "@/hooks/usePendingDeviceApprovalAlert";
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
 import { startAegisDeviceInbox } from "@/lib/messaging/aegisDeviceInbox";
@@ -194,6 +195,7 @@ function AccountKeySyncRunner() {
   useAccountKeySync();
   useCryptoMaintenance();
   useDeviceRegistration();
+  usePendingDeviceApprovalAlert();
   useDeviceCopyRetryWorker();
 
 

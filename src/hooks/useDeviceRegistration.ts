@@ -4,7 +4,7 @@
  * approved device. Device prekeys and routing become available after approval.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,6 +15,7 @@ import {
   getCurrentPlatform,
   getDeviceFingerprint,
   hydrateDeviceId,
+  isDeviceIdTemporary,
   rotateCurrentDeviceId,
   setCurrentDeviceId,
   setCurrentDeviceUserScope,
@@ -63,6 +64,7 @@ import {
   restoreKeysFromKeychainSnapshot,
 } from '@/lib/crypto/accountKeyBackup';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { computeDeviceApprovalFingerprint } from '@/lib/crypto/deviceApprovalFingerprint';
 
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const MAX_ENROLLMENT_ATTEMPTS = 3;
@@ -223,6 +225,47 @@ export function useDeviceRegistration() {
   const queryClient = useQueryClient();
   const ranRef = useRef(false);
   const inFlightRef = useRef(false);
+  const [localDeviceFingerprint, setLocalDeviceFingerprint] = useState<string | null>(null);
+
+  // Empreinte locale du device courant: elle permet à l'appareil en attente
+  // d'afficher exactement la même valeur que l'approbateur avant la décision.
+  useEffect(() => {
+    if (!user?.id) {
+      setLocalDeviceFingerprint(null);
+      return;
+    }
+    let cancelled = false;
+
+    const compute = async () => {
+      try {
+        const deviceId = await hydrateDeviceId();
+        if (!deviceId || isDeviceIdTemporary()) return;
+        const [identity, kx] = await Promise.all([
+          loadDeviceIdentity(user.id, deviceId),
+          loadDeviceKxKey(deviceId, user.id),
+        ]);
+        if (cancelled || !identity?.publicB64 || !kx?.publicB64) return;
+        const fingerprint = await computeDeviceApprovalFingerprint({
+          deviceId,
+          devicePublicKey: kx.publicB64,
+          deviceSigningKey: identity.publicB64,
+        });
+        if (!cancelled) setLocalDeviceFingerprint(fingerprint);
+      } catch {
+        // L'empreinte est un confort de vérification, jamais un bloqueur.
+      }
+    };
+
+    void compute();
+    const onDeviceEvent = () => { void compute(); };
+    window.addEventListener('forsure:e2ee-device-pending', onDeviceEvent);
+    window.addEventListener('forsure:e2ee-device-approved', onDeviceEvent);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('forsure:e2ee-device-pending', onDeviceEvent);
+      window.removeEventListener('forsure:e2ee-device-approved', onDeviceEvent);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -626,4 +669,6 @@ export function useDeviceRegistration() {
       window.removeEventListener('forsure:device-self-repair-required', onSelfRepairRequired);
     };
   }, [queryClient, user]);
+
+  return { localDeviceFingerprint };
 }

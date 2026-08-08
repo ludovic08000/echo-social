@@ -361,16 +361,22 @@ serve(async (req) => {
       return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_NOT_COMPLETED" });
     }
 
+    // Invariant: la preuve de possession doit avoir été produite AVANT
+    // l'expiration du challenge (10 min). Seule la décision humaine dispose
+    // d'une fenêtre de 24 h après cette preuve; le challenge est déjà consommé
+    // et à usage unique, donc aucun rejeu n'est autorisé.
+    const APPROVAL_DECISION_WINDOW_MS = 24 * 60 * 60 * 1000;
     const consumedAt = Date.parse(challenge.consumed_at);
     const expiresAt = Date.parse(challenge.expires_at);
     if (
       !Number.isFinite(consumedAt)
       || !Number.isFinite(expiresAt)
       || consumedAt > expiresAt
-      || expiresAt <= Date.now()
+      || consumedAt + APPROVAL_DECISION_WINDOW_MS <= Date.now()
     ) {
       return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_EXPIRED" });
     }
+
     if (challenge.possession_payload_version !== 1 || !challenge.device_possession_signature) {
       return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_PROOF_REQUIRED" });
     }

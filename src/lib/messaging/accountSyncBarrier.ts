@@ -68,22 +68,43 @@ export function beginAccountSynchronization(
   return active;
 }
 
-/** Message creation must wait until an approval-triggered account sync ends. */
+/** Attente bornée: une panne de sync ne doit jamais bloquer l'envoi ad vitam. */
+export const ACCOUNT_SYNC_WAIT_TIMEOUT_MS = 8_000;
+
+/**
+ * Message creation waits for an approval-triggered account sync, but only for a
+ * bounded window. `ensureAegisDeviceReady` reste l'autorité cryptographique en
+ * aval: la barrière n'est qu'un ordonnancement, pas un contrôle de sécurité.
+ */
 export async function waitForAccountSynchronization(userId: string): Promise<void> {
   if (!userId) throw new Error('ACCOUNT_SYNC_USER_REQUIRED');
   const current = states.get(userId);
   if (!current || current.phase === 'idle' || current.phase === 'ready') return;
-  if (current.active) await current.active;
 
-  const latest = states.get(userId);
-  if (latest?.phase === 'failed') {
-    throw new Error(`ACCOUNT_SYNC_FAILED:${latest.errorCode ?? 'UNKNOWN'}`);
-  }
+  // Un échec passé est signalé à l'initiateur du sync, jamais latché ici.
+  if (current.phase === 'failed') return;
+  if (!current.active) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    current.active.catch(() => undefined),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, ACCOUNT_SYNC_WAIT_TIMEOUT_MS);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 export function getAccountSynchronizationPhase(userId: string): AccountSyncPhase {
   return states.get(userId)?.phase ?? 'idle';
 }
+
+export function getAccountSynchronizationError(userId: string): string | null {
+  const current = states.get(userId);
+  return current?.phase === 'failed' ? (current.errorCode ?? 'UNKNOWN') : null;
+}
+
 
 export function resetAccountSynchronization(userId?: string): void {
   if (userId) {

@@ -184,12 +184,11 @@ describe('multiDeviceFanout security gates', () => {
     ]);
   });
 
-  it('rejects the whole fanout when one canonical device cannot be encrypted', async () => {
+  it('delivers to Windows when the iOS route is not encryptable (partial coverage)', async () => {
     mocks.resolveFanoutRouteSnapshot.mockResolvedValue({
       version: 'route-version-1',
       targets: [
         { userId: 'recipient-user', deviceId: 'ios-device', devicePublicKey: 'ios-key' },
-        { userId: 'recipient-user', deviceId: 'android-device', devicePublicKey: 'android-key' },
         { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
       ],
     });
@@ -198,12 +197,32 @@ describe('multiDeviceFanout security gates', () => {
       _senderDeviceId: string,
       _recipientUserId: string,
       recipientDeviceId: string,
-    ) => recipientDeviceId === 'android-device'
-      ? null
-      : `aegis1.ratchet.${recipientDeviceId}`);
+    ) => recipientDeviceId === 'ios-device' ? null : `aegis1.ratchet.${recipientDeviceId}`);
+
+    const result = await buildFanoutCopies({
+      messageId: 'message-partial-route',
+      conversationId: 'conversation-all-platforms',
+      senderUserId: 'sender-user',
+      plaintext: 'capsule',
+    });
+
+    expect(result.rows.map((row) => row.recipient_device_id)).toEqual(['windows-device']);
+    expect(result.omittedDeviceIds).toEqual(['ios-device']);
+    expect(result.hasTargets).toBe(true);
+  });
+
+  it('fails closed when no route at all is encryptable', async () => {
+    mocks.resolveFanoutRouteSnapshot.mockResolvedValue({
+      version: 'route-version-1',
+      targets: [
+        { userId: 'recipient-user', deviceId: 'ios-device', devicePublicKey: 'ios-key' },
+        { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
+      ],
+    });
+    mocks.ratchetEncrypt.mockResolvedValue(null);
 
     await expect(buildFanoutCopies({
-      messageId: 'message-partial-route',
+      messageId: 'message-no-route',
       conversationId: 'conversation-all-platforms',
       senderUserId: 'sender-user',
       plaintext: 'capsule',
