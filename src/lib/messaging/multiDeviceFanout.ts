@@ -429,7 +429,7 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
   traceE2EE({ ...baseTrace, stage: 'ROUTE_SNAPSHOT', outcome: 'start' });
   if (isDeviceIdTemporary()) {
     traceE2EE({ ...baseTrace, stage: 'ROUTE_SNAPSHOT', outcome: 'error', errorCode: 'AEGIS_TEMPORARY_DEVICE_ID' }, 'warn');
-    return { rows: [], hasTargets: false, routeVersion: '' };
+    return { rows: [], hasTargets: false, routeVersion: '', omittedDeviceIds: [] };
   }
   const senderDeviceId = getCurrentDeviceId();
 
@@ -447,7 +447,7 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
     // Registration/trust publication can finish between two outbox attempts;
     // never keep a negative route cached across the next bounded retry.
     invalidateFanoutRoute(input.conversationId, input.senderUserId);
-    return { rows: [], hasTargets: false, routeVersion: route.version };
+    return { rows: [], hasTargets: false, routeVersion: route.version, omittedDeviceIds: [] };
   }
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
