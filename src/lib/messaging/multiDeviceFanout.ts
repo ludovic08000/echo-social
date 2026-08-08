@@ -417,6 +417,7 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
   rows: FanoutCopyRow[];
   hasTargets: boolean;
   routeVersion: string;
+  omittedDeviceIds: string[];
 }> {
   const startedAt = Date.now();
   const baseTrace = {
