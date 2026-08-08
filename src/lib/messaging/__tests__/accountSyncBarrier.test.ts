@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  ACCOUNT_SYNC_WAIT_TIMEOUT_MS,
   beginAccountSynchronization,
+  getAccountSynchronizationError,
   getAccountSynchronizationPhase,
   resetAccountSynchronization,
   waitForAccountSynchronization,
@@ -48,14 +50,32 @@ describe('account synchronization barrier', () => {
     expect(ignoredOperation).not.toHaveBeenCalled();
   });
 
-  it('fails closed when the account refresh fails', async () => {
+  it('surfaces the failure to the sync initiator without latching senders', async () => {
     await expect(beginAccountSynchronization('user-one', async () => {
       throw new Error('sync exploded');
     })).rejects.toThrow('sync exploded');
 
     expect(getAccountSynchronizationPhase('user-one')).toBe('failed');
-    await expect(waitForAccountSynchronization('user-one'))
-      .rejects.toThrow('ACCOUNT_SYNC_FAILED:SYNC_EXPLODED');
+    expect(getAccountSynchronizationError('user-one')).toBe('SYNC_EXPLODED');
+    // ensureAegisDeviceReady reste l'autorité crypto: la barrière ne bloque pas.
+    await expect(waitForAccountSynchronization('user-one')).resolves.toBeUndefined();
+  });
+
+  it('stops waiting after the bounded 8s window', async () => {
+    vi.useFakeTimers();
+    try {
+      void beginAccountSynchronization('user-slow', () => new Promise<void>(() => undefined))
+        .catch(() => undefined);
+      let released = false;
+      const waiter = waitForAccountSynchronization('user-slow').then(() => { released = true; });
+      await vi.advanceTimersByTimeAsync(ACCOUNT_SYNC_WAIT_TIMEOUT_MS - 1);
+      expect(released).toBe(false);
+      await vi.advanceTimersByTimeAsync(2);
+      await waiter;
+      expect(released).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not block users without a pending synchronization', async () => {
