@@ -77,7 +77,7 @@ export async function computeDeviceApprovalFingerprint(
   if (!input.deviceId || !input.devicePublicKey || !input.deviceSigningKey) {
     throw new Error('DEVICE_FINGERPRINT_INPUT_INCOMPLETE');
   }
-  const seed = encodeString(canonicalDeviceFingerprintPayload(input));
+  const seed = new Uint8Array(encodeString(canonicalDeviceFingerprintPayload(input)));
   const digest = await iterativeSha512(seed, DEVICE_FINGERPRINT_ITERATIONS);
   return groupsFromDigest(digest).join(' ');
 }
