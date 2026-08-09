@@ -23,7 +23,6 @@ import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { useDeviceLifecycle } from "@/hooks/useDeviceLifecycle";
-
 import { usePendingDeviceApprovalAlert } from "@/hooks/usePendingDeviceApprovalAlert";
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
@@ -193,13 +192,17 @@ function IncomingCallHandler() {
 }
 
 /**
- * Runtime cryptographique complet. Invariant : monté uniquement après
- * APPROVED_LOCKED puis déverrouillage du PIN (état >= PIN_UNLOCK).
+ * Runtime cryptographique complet. Invariant : ce sous-arbre n'existe qu'après
+ * APPROVED_LOCKED + déverrouillage du PIN. Tous les hooks qui utilisent le
+ * DeviceID, les prekeys, l'inbox/fanout ou les appels restent donc inactifs
+ * pendant DEVICE_CREDENTIAL_CHECK / LINK_REQUIRED / PENDING_APPROVAL.
  */
 function MessagingRuntimeRunner() {
   const { user } = useAuth();
   useAccountKeySync();
   useCryptoMaintenance();
+  useDeviceRegistration();
+  usePendingDeviceApprovalAlert();
   useDeviceCopyRetryWorker();
 
   useEffect(() => {
@@ -212,17 +215,22 @@ function MessagingRuntimeRunner() {
     };
   }, [user?.id]);
 
-  return null;
+  return (
+    <>
+      <SafetyNumberRevalidationBanner />
+      <IncomingCallHandler />
+      <E2EEDebugPanel />
+    </>
+  );
 }
 
 /**
- * Étape DEVICE_CREDENTIAL_CHECK : enrôlement/lecture d'état appareil seulement.
- * Aucun AccountKeySync, aucun inbox E2EE, aucun fanout ici.
+ * Lecture seule du lifecycle. La cérémonie pré-PIN est gérée par
+ * DeviceApprovalGate dans la messagerie ; aucun ancien hook d'enrôlement ne
+ * tourne ici avant que le lifecycle autorise le runtime cryptographique.
  */
 function AccountKeySyncRunner() {
   const lifecycle = useDeviceLifecycle();
-  useDeviceRegistration();
-  usePendingDeviceApprovalAlert();
 
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
@@ -236,7 +244,6 @@ function AccountKeySyncRunner() {
   if (!lifecycle.canRunCryptoRuntime) return null;
   return <MessagingRuntimeRunner />;
 }
-
 
 function RoutedErrorBoundary({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -256,9 +263,6 @@ function AppContent() {
             <BrowserRouter>
               <RecoveryFlowGuard />
               <AccountKeySyncRunner />
-              <SafetyNumberRevalidationBanner />
-              <IncomingCallHandler />
-              <E2EEDebugPanel />
               <RoutedErrorBoundary>
                 <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
                   <Routes>

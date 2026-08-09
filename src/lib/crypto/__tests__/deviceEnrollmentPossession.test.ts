@@ -32,17 +32,14 @@ describe('device enrollment possession proof', () => {
       deviceId: 'dev_0123456789abcdef0123456789abcdef',
       nonceHash: 'ABCDEF',
       expiresAt: '2026-08-06T15:00:00+00:00',
-      accountFingerprint: 'AA BB CC DD',
       devicePublicKey: 'kx',
       deviceSigningKey: 'sig',
     })).toBe(JSON.stringify({
       protocol: 'forsure-aegis-device-possession',
-      version: 1,
       challengeId: '123e4567-e89b-42d3-a456-426614174000',
       deviceId: 'dev_0123456789abcdef0123456789abcdef',
       nonceHash: 'abcdef',
       expiresAt: '2026-08-06T15:00:00.000Z',
-      accountFingerprint: 'AA BB CC DD',
       devicePublicKey: 'kx',
       deviceSigningKey: 'sig',
     }));
