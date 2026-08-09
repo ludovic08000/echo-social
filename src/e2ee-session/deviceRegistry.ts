@@ -78,7 +78,7 @@ async function verifyCanonicalRoutes(
     if (!previous || currentTs > previousTs) deduped.set(row.device_id, row);
   }
 
-  const verified = await Promise.all(Array.from(deduped.values()).map(async (row) => {
+  const verified = await Promise.all(Array.from(deduped.values()).map(async (row): Promise<DeviceDescriptor | null> => {
     try {
       await ensureApprovedDeviceTrust(userId, row.device_id);
       if (options.verifyPrekeys !== false) {
@@ -90,7 +90,7 @@ async function verifyCanonicalRoutes(
         deviceId: row.device_id,
         devicePublicKey: row.device_public_key,
         lastSeen: normalizeLastSeen(row.last_seen_at),
-      } satisfies DeviceDescriptor;
+      };
     } catch (error) {
       if (import.meta.env.DEV) {
         console.warn('[DEVTRUST] rejected canonical device route', {
