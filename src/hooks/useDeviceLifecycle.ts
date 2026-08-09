@@ -6,6 +6,7 @@ import {
   peekCurrentDeviceId,
   type CurrentDeviceIdStatus,
 } from '@/lib/messaging/currentDevice';
+import { deviceSecurity } from '@/lib/device-manager/deviceSecurity';
 import {
   canPromptForPin,
   canRunCryptoRuntime,
@@ -48,7 +49,6 @@ export interface DeviceLifecycleSnapshot {
 export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const { user } = useAuth();
   const userId = user?.id ?? null;
-
   const [record, setRecord] = useState<DeviceLifecycleRecord | null | 'unknown'>('unknown');
   const [deviceIdStatus, setDeviceIdStatus] = useState<CurrentDeviceIdStatus>(() => getDeviceIdStatus());
   const [deviceId, setDeviceId] = useState<string | null>(() => peekCurrentDeviceId());
@@ -62,32 +62,25 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     setDeviceId(currentId);
 
     if (!userId || !currentId || status !== 'ok') {
-      setRecord(currentId && status === 'ok' ? 'unknown' : null);
+      setRecord(null);
       return;
     }
 
-    void (async () => {
-      const { data, error } = await supabase
-        .from('user_devices')
-        .select('device_id,approval_status,binding_status,routing_status,is_active,revoked_at')
-        .eq('user_id', userId)
-        .eq('device_id', currentId)
-        .maybeSingle();
-
+    setRecord('unknown');
+    void deviceSecurity.getState(userId).then((snapshot) => {
       if (!mountedRef.current) return;
-      if (error) {
-        setRecord('unknown');
-        return;
-      }
-      setRecord(data ? {
-        deviceId: data.device_id,
-        approvalStatus: (data.approval_status as DeviceLifecycleRecord['approvalStatus']) ?? null,
-        bindingStatus: (data.binding_status as DeviceLifecycleRecord['bindingStatus']) ?? null,
-        routingStatus: (data.routing_status as DeviceLifecycleRecord['routingStatus']) ?? null,
-        isActive: data.is_active ?? null,
-        revokedAt: data.revoked_at ?? null,
+      const row = snapshot.record;
+      setRecord(row ? {
+        deviceId: row.deviceId,
+        approvalStatus: row.approvalStatus,
+        bindingStatus: row.bindingStatus,
+        routingStatus: row.routingStatus,
+        isActive: row.isActive,
+        revokedAt: row.revokedAt,
       } : null);
-    })();
+    }).catch(() => {
+      if (mountedRef.current) setRecord('unknown');
+    });
   }, [userId]);
 
   useEffect(() => {
