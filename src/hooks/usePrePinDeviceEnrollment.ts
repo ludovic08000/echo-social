@@ -12,14 +12,13 @@ import {
 import {
   beginServerAssignedDeviceEnrollment,
   cancelServerAssignedDeviceEnrollment,
-  completeServerAssignedDeviceEnrollment,
+  completeServerAssignedDeviceEnrollmentV2,
   type DeviceEnrollmentChallenge,
   type DevicePlatform,
 } from '@/lib/crypto/serverDeviceEnrollment';
 import {
   deleteDeviceIdentity,
   getOrCreateDeviceIdentity,
-  prepareDeviceAuthorization,
 } from '@/lib/crypto/deviceIdentity';
 import {
   deleteDeviceKxKey,
@@ -63,7 +62,7 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
 
     const { data, error: queryError } = await supabase
       .from('user_devices')
-      .select('device_id,device_name,device_public_key,device_signing_key,approval_challenge_id,approval_status,is_active,revoked_at,platform')
+      .select('device_id,device_name,device_public_key,device_signing_key,approval_challenge_id,approval_status,is_active,revoked_at,platform,binding_status')
       .eq('user_id', user.id)
       .eq('device_id', deviceId)
       .maybeSingle();
@@ -95,7 +94,7 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
       });
       fingerprintLines = formatDeviceApprovalFingerprint(fingerprint);
     } catch {
-      // Fingerprint is a human-verification aid, never the trust authority.
+      // Human verification aid only; never a trust authority.
     }
 
     setPending({
@@ -124,12 +123,12 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
     let stagedDeviceId: string | null = null;
 
     try {
-      // Explicit click is the only entry point allowed to allocate a local
-      // provisional identifier and consume the enrollment grant.
+      // Explicit click is the only path allowed to create a fresh logical device.
       await beginExplicitDeviceEnrollment('user_requested_new_device');
 
       challenge = await beginServerAssignedDeviceEnrollment({
         deviceName: getCurrentDeviceLabel(),
+        // Descriptive/risk metadata only. Server never uses it to resume identity.
         deviceFingerprint: await getDeviceFingerprint(),
         platform: normalizePlatform(getCurrentPlatform()),
         userAgent: typeof navigator === 'undefined' ? null : navigator.userAgent.slice(0, 500),
@@ -142,21 +141,14 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
         getOrCreateDeviceKxKey(stagedDeviceId, user.id),
       ]);
 
-      // Existing account binding is used only to authorize this device record.
-      // No SPK/OPK, account sync, fanout or inbox starts in the pre-PIN phase.
-      const authorization = await prepareDeviceAuthorization(user.id, stagedDeviceId, deviceKx);
-      if (
-        authorization.deviceSigning.publicB64 !== deviceIdentity.publicB64
-        || authorization.deviceKx.publicB64 !== deviceKx.publicB64
-      ) {
-        throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
-      }
-
-      await completeServerAssignedDeviceEnrollment(challenge, authorization);
+      // PRE-PIN invariant: no account key, account fingerprint, SPK/OPK, fanout,
+      // inbox, or account sync is touched here. Only the device credential and
+      // a possession proof are staged.
+      await completeServerAssignedDeviceEnrollmentV2(challenge, deviceIdentity, deviceKx);
       challenge = null;
 
       window.dispatchEvent(new CustomEvent('forsure:device-approval-pending', {
-        detail: { deviceId: stagedDeviceId, source: 'explicit-pre-pin-enrollment' },
+        detail: { deviceId: stagedDeviceId, source: 'explicit-pre-pin-enrollment-v2' },
       }));
       onChanged();
       await loadPending();
@@ -164,7 +156,6 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
       const message = cause instanceof Error ? cause.message : 'DEVICE_ENROLLMENT_START_FAILED';
       setError(message);
 
-      // Fail closed. Never rotate/generate another DeviceID from a catch path.
       if (challenge) {
         await cancelServerAssignedDeviceEnrollment(challenge, message.slice(0, 120)).catch(() => undefined);
       }
@@ -199,7 +190,7 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
         ? 'forsure:device-approved'
         : 'forsure:current-device-revoked';
       window.dispatchEvent(new CustomEvent(eventName, {
-        detail: { deviceId: pending.deviceId, source: 'explicit-self-approval-v1' },
+        detail: { deviceId: pending.deviceId, source: 'explicit-self-approval-v2' },
       }));
       setPending(null);
       onChanged();
