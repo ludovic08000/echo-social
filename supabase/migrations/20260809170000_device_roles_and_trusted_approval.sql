@@ -192,14 +192,27 @@ $$;
 revoke all on function public.complete_current_device_synchronization(text) from public, anon;
 grant execute on function public.complete_current_device_synchronization(text) to authenticated, service_role;
 
--- Les anciens finaliseurs ne doivent plus être appelables, même s'ils existent
--- encore pendant la fenêtre de déploiement coordonné.
+-- L'ancien finaliseur d'auto-approbation est supprimé. Une ancienne Edge
+-- Function échoue ainsi fermée jusqu'au déploiement du nouveau serveur.
 do $$
 declare r record;
 begin
   for r in select p.oid::regprocedure signature from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname in ('finalize_self_approved_device','finalize_device_account_binding')
+    where n.nspname = 'public' and p.proname = 'finalize_self_approved_device'
+  loop
+    execute format('drop function if exists %s', r.signature);
+  end loop;
+end $$;
+
+-- La liaison de compte reste utilisée par l'Edge Function, exclusivement avec
+-- la service-role après vérification cryptographique côté serveur.
+do $$
+declare r record;
+begin
+  for r in select p.oid::regprocedure signature from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'finalize_device_account_binding'
   loop
     execute format('revoke all on function %s from public, anon, authenticated', r.signature);
   end loop;
