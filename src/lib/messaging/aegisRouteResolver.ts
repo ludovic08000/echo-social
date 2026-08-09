@@ -1,34 +1,16 @@
 /**
- * Module de routage Aegis (côté client) — miroir de la RPC serveur
- * `aegis_resolve_conversation_route`.
- *
- * Invariant corrigé : la version de route et la liste des appareils sont lues
- * dans UN SEUL appel serveur, donc dans le même instantané transactionnel. Les
- * anciennes lectures séparées (version, puis appareils, puis version) pouvaient
- * diverger et bloquer l'envoi en `E2EE_DEVICE_LIST_STALE`.
- *
- * Le routage ne dépend d'aucune relation d'amitié : tout participant d'une
- * conversation (ami connu ou nouvel interlocuteur) est routé de la même façon.
- * La confiance reste fail-closed : chaque appareil renvoyé par le serveur est
- * re-vérifié localement (liaison d'identité de compte + signature d'autorisation
- * d'appareil) avant d'être accepté comme destination de chiffrement.
+ * Aegis client route resolver. Server route membership is re-verified against
+ * the canonical user_devices registry before any destination is used.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { verifySignedDeviceList, type SignedDeviceEntry } from '@/lib/crypto/signedDeviceList';
+import { fetchVerifiedDeviceIdentity } from '@/lib/crypto/canonicalDeviceRegistry';
 import type { DeviceDescriptor } from '@/e2ee-session/types';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 type RouteDeviceRow = {
   device_id: string;
   device_public_key: string;
-  device_signing_key: string;
-  device_authorization_signature: string;
   last_seen_at: string | null;
-  account_identity_key: string;
-  account_signing_key: string;
-  account_fingerprint: string;
-  account_binding_signature: string;
-  account_binding_version: number;
   is_routable: boolean;
 };
 
@@ -51,27 +33,9 @@ type RouteRpcPayload = {
 
 export interface ResolvedConversationRoute {
   version: string;
-  /** Destinations vérifiées, sans l'appareil courant de l'expéditeur. */
   targets: DeviceDescriptor[];
   senderDeviceRoutable: boolean;
-  /** Participants sans aucune destination exploitable. */
   unroutableUserIds: string[];
-}
-
-function toSignedEntry(row: RouteDeviceRow): SignedDeviceEntry {
-  return {
-    deviceId: row.device_id,
-    devicePublicKey: row.device_public_key,
-    deviceSigningKey: row.device_signing_key,
-    authorizationSignature: row.device_authorization_signature,
-    lastSeenAt: row.last_seen_at ?? null,
-    accountIdentityKey: row.account_identity_key,
-    accountSigningKey: row.account_signing_key,
-    accountFingerprint: row.account_fingerprint,
-    accountBindingSignature: row.account_binding_signature,
-    accountBindingVersion: Number(row.account_binding_version),
-    isRoutable: row.is_routable === true,
-  };
 }
 
 function normalizeLastSeen(raw: string | null): number | undefined {
@@ -90,14 +54,11 @@ function requestSelfRepair(reason: string, deviceId: string | null): void {
     window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
       detail: { reason, deviceId },
     }));
-  } catch { /* best-effort */ }
+  } catch {
+    // best effort only
+  }
 }
 
-/**
- * Résout la route complète d'une conversation. Aucune liste non signée n'est
- * jamais acceptée : un appareil dont la signature d'autorisation est invalide
- * est écarté du routage.
- */
 export async function resolveConversationRoute(
   conversationId: string,
   senderUserId: string,
@@ -123,7 +84,6 @@ export async function resolveConversationRoute(
     p_conversation_id: conversationId,
     p_sender_device_id: senderDeviceId,
   });
-
   if (error) {
     trace('ROUTE_RESOLVE', { outcome: 'error', errorCode: error.message }, 'error');
     throw new Error(error.message || 'E2EE_ROUTE_RESOLUTION_FAILED');
@@ -131,76 +91,57 @@ export async function resolveConversationRoute(
 
   const payload = data as RouteRpcPayload | null;
   if (!payload || typeof payload.route_version !== 'string' || payload.route_version.length < 8) {
-    trace('ROUTE_RESOLVE', { outcome: 'error', errorCode: 'E2EE_ROUTE_VERSION_UNAVAILABLE' }, 'error');
     throw new Error('E2EE_ROUTE_VERSION_UNAVAILABLE');
   }
 
   const participants = Array.isArray(payload.participants) ? payload.participants : [];
-  trace('ROUTE_PARTICIPANTS', { outcome: 'ok', targetCount: participants.length });
   const targets: DeviceDescriptor[] = [];
   const unroutableUserIds: string[] = [];
 
-
   for (const participant of participants) {
-    const rows = Array.isArray(participant.devices) ? participant.devices : [];
-    const entries = rows.filter(row => row.is_routable === true).map(toSignedEntry);
-    trace('ROUTE_PARTICIPANT_DEVICES', {
-      outcome: 'ok',
-      peerDeviceId: participant.is_self ? 'self' : undefined,
-      targetCount: rows.length,
-      copyCount: entries.length,
-    });
+    const rows = (Array.isArray(participant.devices) ? participant.devices : [])
+      .filter((row) => row.is_routable === true);
 
-    if (entries.length === 0) {
-      // Un participant sans appareil routable n'est pas joignable : on ne
-      // dégrade jamais vers un envoi en clair.
+    if (rows.length === 0) {
       if (!participant.is_self) unroutableUserIds.push(participant.user_id);
-      trace('ROUTE_PARTICIPANT_UNROUTABLE', {
-        outcome: 'skip',
-        errorCode: 'E2EE_NO_ROUTABLE_DEVICE',
-      }, participant.is_self ? 'info' : 'warn');
       continue;
     }
 
-    const verifications = await verifySignedDeviceList(participant.user_id, entries);
-    const trusted = new Set(verifications.filter(v => v.ok).map(v => v.deviceId));
-    trace('ROUTE_SIGNATURE_VERIFIED', {
-      outcome: trusted.size === entries.length ? 'ok' : 'retry',
-      targetCount: entries.length,
-      copyCount: trusted.size,
-    }, trusted.size === entries.length ? 'info' : 'warn');
+    const verified = await Promise.all(rows.map(async (row) => ({
+      row,
+      identity: await fetchVerifiedDeviceIdentity(participant.user_id, row.device_id),
+    })));
 
-    const accepted = entries.filter(entry =>
-      trusted.has(entry.deviceId) &&
-      !(participant.is_self && entry.deviceId === senderDeviceId),
-    );
+    const rejectedSelf = participant.is_self
+      && verified.some(({ row, identity }) => row.device_id === senderDeviceId && !identity);
+    if (rejectedSelf) requestSelfRepair('invalid_device_authorization', senderDeviceId);
 
-    if (participant.is_self && verifications.some(v => !v.ok && v.deviceId === senderDeviceId)) {
-      trace('ROUTE_SELF_REPAIR', { outcome: 'retry', errorCode: 'INVALID_DEVICE_AUTHORIZATION' }, 'warn');
-      requestSelfRepair('invalid_device_authorization', senderDeviceId);
-    }
+    const accepted = verified.filter(({ row, identity }) =>
+      Boolean(identity) && !(participant.is_self && row.device_id === senderDeviceId));
+
+    trace('ROUTE_CANONICAL_TRUST_VERIFIED', {
+      outcome: accepted.length === rows.length ? 'ok' : 'retry',
+      targetCount: rows.length,
+      copyCount: accepted.length,
+    }, accepted.length === rows.length ? 'info' : 'warn');
 
     if (!participant.is_self && accepted.length === 0) {
       unroutableUserIds.push(participant.user_id);
-      trace('ROUTE_PARTICIPANT_UNTRUSTED', {
-        outcome: 'skip',
-        errorCode: 'E2EE_NO_TRUSTED_DEVICE',
-      }, 'warn');
       continue;
     }
 
-    for (const entry of accepted) {
+    for (const { row, identity } of accepted) {
+      if (!identity) continue;
       targets.push({
         userId: participant.user_id,
-        deviceId: entry.deviceId,
-        devicePublicKey: entry.devicePublicKey,
-        lastSeen: normalizeLastSeen(entry.lastSeenAt),
+        deviceId: identity.deviceId,
+        devicePublicKey: identity.devicePublicKey,
+        lastSeen: normalizeLastSeen(row.last_seen_at),
       });
     }
   }
 
   if (payload.sender_device_routable === false) {
-    trace('ROUTE_SENDER_NOT_ROUTABLE', { outcome: 'retry', errorCode: 'SENDER_DEVICE_NOT_ROUTABLE' }, 'warn');
     requestSelfRepair('sender_device_not_routable', senderDeviceId);
   }
 
@@ -208,8 +149,8 @@ export async function resolveConversationRoute(
     outcome: unroutableUserIds.length > 0 ? 'retry' : 'ok',
     targetCount: targets.length,
     copyCount: unroutableUserIds.length,
+    senderUserId,
   }, unroutableUserIds.length > 0 ? 'warn' : 'info');
-
 
   return {
     version: payload.route_version,
