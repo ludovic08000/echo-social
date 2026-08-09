@@ -120,6 +120,7 @@ const SEOProtection = lazyWithOneRetry(() => import("./pages/seo/SEOProtection")
 const SEOFeed = lazyWithOneRetry(() => import("./pages/seo/SEOFeed"), 'r-seo-feed');
 const Dashboard = lazyWithOneRetry(() => import("./pages/Dashboard"), 'r-dash');
 const AdsManager = lazyWithOneRetry(() => import("./pages/AdsManager"), 'r-ads');
+const E2EEDeviceEnrollmentTest = lazyWithOneRetry(() => import("./pages/E2EEDeviceEnrollmentTest"), 'r-e2ee-device-test');
 
 const queryClient = new QueryClient();
 
@@ -304,6 +305,7 @@ function AppContent() {
                     <Route path="/creator/quality" element={<ProtectedRoute><CreatorQuality /></ProtectedRoute>} />
                     <Route path="/quality" element={<ProtectedRoute><CreatorQuality /></ProtectedRoute>} />
                     <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                    <Route path="/debug/e2ee-device-test" element={<ProtectedRoute><E2EEDeviceEnrollmentTest /></ProtectedRoute>} />
                     <Route path="/unsubscribe" element={<Unsubscribe />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
