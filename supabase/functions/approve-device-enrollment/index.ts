@@ -329,6 +329,7 @@ serve(async (req) => {
     || !Number.isFinite(consumedAt)
     || !Number.isFinite(expiresAt)
     || consumedAt > expiresAt
+    || expiresAt <= Date.now()
     || consumedAt + 24 * 60 * 60 * 1000 <= Date.now()
   ) {
     return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_EXPIRED" });

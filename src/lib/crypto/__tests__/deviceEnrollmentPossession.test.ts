@@ -47,7 +47,7 @@ describe('device enrollment possession proof', () => {
 
   it('signs possession with the device private key before completion', () => {
     expect(enrollmentClient).toContain('signDeviceEnrollmentPossession');
-    expect(enrollmentClient).toContain('deviceSigningPrivateKey: authorization.deviceSigning.privateKey');
+    expect(enrollmentClient).toContain('deviceSigningPrivateKey: deviceIdentity.privateKey');
     expect(enrollmentClient).toContain('p_device_possession_signature: possessionSignature');
   });
 

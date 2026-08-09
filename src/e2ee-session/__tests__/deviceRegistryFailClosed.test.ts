@@ -1,130 +1,69 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  fetchVerifiedDeviceList: vi.fn(),
-  peekDeviceSignedPrekey: vi.fn(),
-}));
-
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), ensureApprovedDeviceTrust: vi.fn() }));
+vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('@/lib/messaging/currentDevice', () => ({
-  getCurrentDeviceId: () => 'sender-device',
-  isDeviceIdTemporary: () => false,
+  getCurrentDeviceId: () => 'sender-device', isDeviceIdTemporary: () => false,
 }));
-vi.mock('@/lib/crypto/signedDeviceList', () => ({
-  fetchVerifiedDeviceList: mocks.fetchVerifiedDeviceList,
-}));
-vi.mock('@/lib/crypto/x3dh', () => ({
-  peekDeviceSignedPrekey: mocks.peekDeviceSignedPrekey,
-}));
+vi.mock('@/lib/crypto/deviceLinkTrust', () => ({ ensureApprovedDeviceTrust: mocks.ensureApprovedDeviceTrust }));
+vi.mock('@/lib/crypto/x3dh', () => ({ peekDeviceSignedPrekey: vi.fn(async () => ({ signedPrekeyId: 1 })) }));
 
-import {
-  invalidateVerifiedDeviceCache,
-  listFanoutTargets,
-} from '@/e2ee-session/deviceRegistry';
+import { invalidateVerifiedDeviceCache, listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 
-function validRegistry(userId: string, deviceId = `${userId}-device`) {
-  return {
-    signedListPresent: true,
-    trusted: [{
-      deviceId,
-      devicePublicKey: 'A'.repeat(44),
-      lastSeenAt: null,
-      isRoutable: true,
-    }],
-    verifications: [{ deviceId, isRoutable: true, ok: true, reason: 'VALID' }],
-  };
+function route(userId: string, deviceId = `${userId}-device`) {
+  return { device_id: deviceId, device_public_key: 'A'.repeat(44), platform: 'web', last_seen_at: null };
 }
 
 describe('device registry fail-closed fan-out gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     invalidateVerifiedDeviceCache();
-    mocks.peekDeviceSignedPrekey.mockResolvedValue({ signedPrekeyId: 1 });
+    mocks.ensureApprovedDeviceTrust.mockResolvedValue(undefined);
+    mocks.rpc.mockImplementation(async (_name: string, args: { p_user_id: string }) => ({
+      data: [route(args.p_user_id)], error: null,
+    }));
   });
 
-  it('quarantines an invalid historical authorization while retaining a valid signed route', async () => {
-    mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
-      if (userId !== 'peer') return validRegistry(userId);
-      return {
-        signedListPresent: true,
-        trusted: [{ deviceId: 'peer-valid', devicePublicKey: 'A'.repeat(44), lastSeenAt: null, isRoutable: true }],
-        verifications: [
-          { deviceId: 'peer-valid', isRoutable: true, ok: true, reason: 'VALID' },
-          { deviceId: 'peer-invalid', isRoutable: false, ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
-        ],
-      };
+  it('quarantines an invalid route while retaining a valid route', async () => {
+    mocks.rpc.mockImplementation(async (_name: string, args: { p_user_id: string }) => ({
+      data: args.p_user_id === 'peer'
+        ? [route('peer', 'peer-valid'), route('peer', 'peer-invalid')]
+        : [route(args.p_user_id)],
+      error: null,
+    }));
+    mocks.ensureApprovedDeviceTrust.mockImplementation(async (_userId: string, deviceId: string) => {
+      if (deviceId === 'peer-invalid') throw new Error('BAD_DEVICE_AUTHORIZATION');
     });
-
     const targets = await listFanoutTargets('sender', ['peer'], { verifyPrekeys: false });
-    expect(targets.map((target) => target.deviceId).sort()).toEqual([
-      'peer-valid',
-      'sender-device',
-    ]);
-    expect(targets.some((target) => target.deviceId === 'peer-invalid')).toBe(false);
+    expect(targets.map((target) => target.deviceId).sort()).toEqual(['peer-valid', 'sender-device']);
   });
 
-  it('fails closed when an invalid authorization is still server-routable, even if another route is valid', async () => {
-    mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
-      if (userId !== 'peer') return validRegistry(userId);
-      return {
-        signedListPresent: true,
-        trusted: [{ deviceId: 'peer-valid', devicePublicKey: 'A'.repeat(44), lastSeenAt: null, isRoutable: true }],
-        verifications: [
-          { deviceId: 'peer-valid', isRoutable: true, ok: true, reason: 'VALID' },
-          { deviceId: 'peer-invalid', isRoutable: true, ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
-        ],
-      };
+  it('fails closed when every route for a participant is invalid', async () => {
+    mocks.ensureApprovedDeviceTrust.mockImplementation(async (userId: string) => {
+      if (userId === 'peer') throw new Error('BAD_DEVICE_AUTHORIZATION');
     });
-
-    await expect(
-      listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
-    ).rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
+    await expect(listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }))
+      .rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
   });
 
-  it('fails closed when a signed registry contains no valid route', async () => {
-    mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
-      if (userId !== 'peer') return validRegistry(userId);
-      return {
-        signedListPresent: true,
-        trusted: [],
-        verifications: [
-          { deviceId: 'peer-invalid', isRoutable: true, ok: false, reason: 'BAD_DEVICE_AUTHORIZATION' },
-        ],
-      };
-    });
-
-    await expect(
-      listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
-    ).rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
+  it('rejects the complete fanout when a participant has no ready route', async () => {
+    mocks.rpc.mockImplementation(async (_name: string, args: { p_user_id: string }) => ({
+      data: args.p_user_id === 'peer' ? [] : [route(args.p_user_id)], error: null,
+    }));
+    await expect(listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }))
+      .rejects.toThrow('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:peer');
   });
 
-  it('rejects the complete route when any participant has no routable device', async () => {
-    mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) =>
-      userId === 'peer'
-        ? {
-          signedListPresent: true,
-          trusted: [{ deviceId: 'peer-old', devicePublicKey: 'A'.repeat(44), lastSeenAt: null, isRoutable: false }],
-          verifications: [{ deviceId: 'peer-old', isRoutable: false, ok: true, reason: 'VALID' }],
-        }
-        : validRegistry(userId));
-
-    await expect(
-      listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
-    ).rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
+  it('does not downgrade an RPC failure into a partial fanout', async () => {
+    mocks.rpc.mockImplementation(async (_name: string, args: { p_user_id: string }) => ({
+      data: args.p_user_id === 'peer' ? null : [route(args.p_user_id)],
+      error: args.p_user_id === 'peer' ? new Error('network') : null,
+    }));
+    await expect(listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }))
+      .rejects.toThrow('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
   });
 
-  it('does not downgrade a registry fetch failure into a partial route', async () => {
-    mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => {
-      if (userId === 'peer') throw new Error('network');
-      return validRegistry(userId);
-    });
-
-    await expect(
-      listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }),
-    ).rejects.toThrow('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
-  });
-
-  it('returns every route only after every participant registry verifies', async () => {
-    mocks.fetchVerifiedDeviceList.mockImplementation(async (userId: string) => validRegistry(userId));
+  it('returns all routes only after every participant verifies', async () => {
     const targets = await listFanoutTargets('sender', ['peer'], { verifyPrekeys: false });
     expect(targets.map((target) => target.userId).sort()).toEqual(['peer', 'sender']);
   });
