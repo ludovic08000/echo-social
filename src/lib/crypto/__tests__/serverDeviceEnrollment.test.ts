@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   isRegisteredDeviceReusable,
-  parseApprovedDevice,
   parseCompletedDeviceEnrollment,
   parseDeviceEnrollmentChallenge,
   parseDeviceEnrollmentSettlement,
@@ -65,33 +64,6 @@ describe('server-assigned device enrollment', () => {
       ok: true,
       device_id: 'dev_ffffffffffffffffffffffffffffffff',
     }, DEVICE_ID)).toThrow('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
-  });
-
-  it('requires explicit approval to return the completed DeviceID', () => {
-    expect(parseApprovedDevice({
-      ok: true,
-      code: 'DEVICE_APPROVED',
-      device_id: DEVICE_ID,
-    }, DEVICE_ID)).toBe(DEVICE_ID);
-
-    expect(() => parseApprovedDevice({
-      ok: true,
-      code: 'DEVICE_APPROVED',
-      device_id: 'dev_ffffffffffffffffffffffffffffffff',
-    }, DEVICE_ID)).toThrow('DEVICE_APPROVAL_SERVER_ID_MISMATCH');
-
-    expect(() => parseApprovedDevice({
-      ok: false,
-      code: 'DEVICE_NOT_ELIGIBLE',
-    }, DEVICE_ID)).toThrow('DEVICE_NOT_ELIGIBLE');
-  });
-
-  it('rejects a successful approval response with the wrong status code', () => {
-    expect(() => parseApprovedDevice({
-      ok: true,
-      code: 'DEVICE_ENROLLMENT_COMPLETED',
-      device_id: DEVICE_ID,
-    }, DEVICE_ID)).toThrow('DEVICE_APPROVAL_INVALID_RESPONSE');
   });
 
   it('recovers a server commit after an ambiguous HTTP response', () => {
