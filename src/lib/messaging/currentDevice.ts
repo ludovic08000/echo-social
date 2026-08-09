@@ -235,11 +235,7 @@ export type CurrentDeviceIdStatus =
   | 'mismatch'
   | 'storage_unavailable';
 
-/**
- * Lecture non levante du DeviceID. DEVICE_ID_UNINITIALIZED et
- * DEVICE_ID_REAPPROVAL_REQUIRED deviennent des états contrôlés, jamais des
- * exceptions fatales de rendu.
- */
+/** Non-throwing read for lifecycle/UI state. */
 export function peekCurrentDeviceId(): string | null {
   try {
     return getCurrentDeviceId();
@@ -263,7 +259,6 @@ export function getDeviceIdStatus(): CurrentDeviceIdStatus {
 export function isDeviceIdTemporary(): boolean {
   return memoryDeviceIdIsTemporary;
 }
-
 
 export async function hydrateDeviceId(): Promise<string> {
   await ensureUserScopeFromAuth();

@@ -22,10 +22,8 @@ import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceLifecycle } from "@/hooks/useDeviceLifecycle";
-
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
 import { messagingApi } from "@/lib/api/messagingApi";
-
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -190,10 +188,7 @@ function IncomingCallHandler() {
   );
 }
 
-/**
- * Runtime cryptographique complet. Invariant : monté uniquement après
- * APPROVED_LOCKED puis déverrouillage du PIN (état >= PIN_UNLOCK).
- */
+/** Runtime E2EE: mounted only when the canonical lifecycle authorizes it. */
 function MessagingRuntimeRunner() {
   const { user } = useAuth();
   useAccountKeySync();
@@ -202,30 +197,18 @@ function MessagingRuntimeRunner() {
 
   useEffect(() => {
     if (!user?.id) return;
-    let cancelled = false;
-    let handle: { stop: () => void } | null = null;
-    void messagingApi.startRuntime(user.id).then((started) => {
-      if (cancelled) {
-        started.stop();
-        return;
-      }
-      handle = started;
-    });
-    return () => {
-      cancelled = true;
-      handle?.stop();
-      handle = null;
-    };
+    return messagingApi.startRuntime(user.id);
   }, [user?.id]);
 
-
-  return null;
+  return (
+    <>
+      <SafetyNumberRevalidationBanner />
+      <IncomingCallHandler />
+      <E2EEDebugPanel />
+    </>
+  );
 }
 
-/**
- * Étape DEVICE_CREDENTIAL_CHECK : lecture d'état appareil seulement.
- * Aucun AccountKeySync, aucun inbox E2EE, aucun fanout ici.
- */
 function AccountKeySyncRunner() {
   const lifecycle = useDeviceLifecycle();
 
@@ -241,7 +224,6 @@ function AccountKeySyncRunner() {
   if (!lifecycle.canRunCryptoRuntime) return null;
   return <MessagingRuntimeRunner />;
 }
-
 
 function RoutedErrorBoundary({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -261,9 +243,6 @@ function AppContent() {
             <BrowserRouter>
               <RecoveryFlowGuard />
               <AccountKeySyncRunner />
-              <SafetyNumberRevalidationBanner />
-              <IncomingCallHandler />
-              <E2EEDebugPanel />
               <RoutedErrorBoundary>
                 <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
                   <Routes>
@@ -290,7 +269,6 @@ function AppContent() {
                     <Route path="/reset-password" element={<ResetPassword />} />
                     <Route path="/onboarding" element={<Onboarding />} />
                     <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
-
                     <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
                     <Route path="/feed" element={<Feed />} />
                     <Route path="/post/:id" element={<PostDetail />} />
@@ -316,7 +294,6 @@ function AppContent() {
                     <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
                     <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
                     <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
-                    
                     <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
                     <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
                     <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />

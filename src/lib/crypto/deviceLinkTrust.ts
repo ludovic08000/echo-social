@@ -1,79 +1,149 @@
 import { supabase } from '@/integrations/supabase/client';
-import { peekDeviceSignedPrekey } from './x3dh';
+import { verifyPublicIdentityBinding } from './keyManager';
+import { verifyDeviceAuthorization } from './deviceIdentity';
 
-/**
- * Confiance appareil canonique Aegis.
- *
- * Invariant : la confiance provient uniquement de la ligne `user_devices`
- * (approuvée, active, non révoquée, bindée, routable, clés + signature
- * d'autorisation présentes) plus une SPK exploitable. Aucune liste signée,
- * aucune racine d'identité, aucun appareil « primaire ».
- */
+type AccountIdentityRow = {
+  identity_key: string;
+  signing_key: string;
+  fingerprint: string;
+  identity_binding_signature: string;
+  identity_binding_version: number;
+};
 
 type CanonicalDeviceRow = {
-  device_id: string | null;
-  is_active: boolean | null;
-  revoked_at: string | null;
-  stale_at: string | null;
-  approval_status: string | null;
-  binding_status: string | null;
-  routing_status: string | null;
+  device_id: string;
   device_public_key: string | null;
   device_signing_key: string | null;
   device_authorization_signature: string | null;
+  approval_status: string | null;
+  binding_status: string | null;
+  routing_status: string | null;
+  is_active: boolean | null;
+  revoked_at: string | null;
+  stale_at: string | null;
+  crypto_invalid_at: string | null;
 };
 
-function filled(value: unknown): boolean {
-  return typeof value === 'string' && value.trim().length > 0;
-}
+export type CanonicalDeviceIdentity = {
+  deviceId: string;
+  devicePublicKey: string;
+  deviceSigningKey: string;
+};
 
-export function isCanonicalTrustedDevice(row: CanonicalDeviceRow | null | undefined): boolean {
-  if (!row) return false;
-  return row.is_active === true
-    && row.revoked_at == null
-    && row.stale_at == null
-    && row.approval_status === 'approved'
-    && row.binding_status === 'bound'
-    && row.routing_status === 'ready'
-    && filled(row.device_public_key)
-    && filled(row.device_signing_key)
-    && filled(row.device_authorization_signature);
-}
-
-async function fetchCanonicalDevices(userId: string): Promise<CanonicalDeviceRow[]> {
+async function readAccountIdentity(userId: string): Promise<AccountIdentityRow> {
   const { data, error } = await supabase
-    .from('user_devices')
-    .select('device_id,is_active,revoked_at,stale_at,approval_status,binding_status,routing_status,device_public_key,device_signing_key,device_authorization_signature')
-    .eq('user_id', userId);
-  if (error) throw new Error(`DEVICE_TRUST_LOOKUP_FAILED:${error.message}`);
-  return (data ?? []) as unknown as CanonicalDeviceRow[];
+    .from('user_public_keys')
+    .select('identity_key,signing_key,fingerprint,identity_binding_signature,identity_binding_version')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) throw new Error('ACCOUNT_IDENTITY_NOT_FOUND');
+
+  const account = data as AccountIdentityRow;
+  const valid = await verifyPublicIdentityBinding({
+    identityKey: account.identity_key,
+    signingKey: account.signing_key,
+    fingerprint: account.fingerprint,
+    bindingVersion: Number(account.identity_binding_version),
+    bindingSignature: account.identity_binding_signature,
+  });
+  if (!valid) throw new Error('ACCOUNT_IDENTITY_BINDING_INVALID');
+  return account;
 }
 
-export async function ensureApprovedDeviceTrust(
+function assertCanonicalRoute(device: CanonicalDeviceRow): void {
+  if (
+    device.approval_status !== 'approved'
+    || device.is_active !== true
+    || device.revoked_at
+    || device.stale_at
+    || device.crypto_invalid_at
+  ) {
+    throw new Error('DEVICE_ROUTE_NOT_AUTHORIZED');
+  }
+  if (device.binding_status !== 'bound') throw new Error('DEVICE_ACCOUNT_BINDING_REQUIRED');
+  if (device.routing_status !== 'ready') throw new Error('DEVICE_ROUTE_NOT_READY');
+  if (!device.device_public_key || !device.device_signing_key || !device.device_authorization_signature) {
+    throw new Error('DEVICE_AUTHORIZATION_INCOMPLETE');
+  }
+}
+
+async function verifyCanonicalDevice(
+  userId: string,
+  device: CanonicalDeviceRow,
+  account: AccountIdentityRow,
+): Promise<CanonicalDeviceIdentity> {
+  assertCanonicalRoute(device);
+  const authorized = await verifyDeviceAuthorization({
+    userId,
+    deviceId: device.device_id,
+    accountFingerprint: account.fingerprint,
+    accountSigningKey: account.signing_key,
+    devicePublicKey: device.device_public_key!,
+    deviceSigningKey: device.device_signing_key!,
+    authorizationSignature: device.device_authorization_signature!,
+  });
+  if (!authorized) throw new Error('DEVICE_AUTHORIZATION_INVALID');
+  return {
+    deviceId: device.device_id,
+    devicePublicKey: device.device_public_key!,
+    deviceSigningKey: device.device_signing_key!,
+  };
+}
+
+/** Verify one canonical device directly from the account-bound registry. */
+export async function getApprovedDeviceIdentity(
   userId: string,
   deviceId: string,
-): Promise<number> {
+): Promise<CanonicalDeviceIdentity> {
   if (!userId || !deviceId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
-  const [rows, spk] = await Promise.all([
-    fetchCanonicalDevices(userId),
-    peekDeviceSignedPrekey(userId, deviceId).catch(() => null),
+  const [{ data, error }, account] = await Promise.all([
+    supabase
+      .from('user_devices')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .maybeSingle(),
+    readAccountIdentity(userId),
   ]);
-  const row = rows.find(entry => entry.device_id === deviceId) ?? null;
-  if (!row) throw new Error('DEVICE_IDENTITY_UNVERIFIED:MISSING');
-  if (!isCanonicalTrustedDevice(row)) throw new Error('DEVICE_ROUTE_NOT_AUTHORIZED');
-  if (!spk) throw new Error('DEVICE_SIGNED_PREKEY_UNAVAILABLE');
+  if (error || !data) throw new Error('DEVICE_NOT_FOUND');
+  return verifyCanonicalDevice(userId, data as unknown as CanonicalDeviceRow, account);
+}
+
+export async function ensureApprovedDeviceTrust(userId: string, deviceId: string): Promise<number> {
+  await getApprovedDeviceIdentity(userId, deviceId);
   return 0;
 }
 
-/**
- * Vérifie la santé du registre sans laisser une ligne historique invalide
- * bloquer toutes les routes valides. Retourne le nombre d'entrées invalides.
- */
+/** Validate every currently active canonical route. Historical revoked/stale rows are ignored. */
 export async function repairApprovedDeviceTrust(userId: string): Promise<number> {
-  const rows = await fetchCanonicalDevices(userId);
-  const invalidCount = rows.filter(row => !isCanonicalTrustedDevice(row)).length;
-  if (!rows.some(row => isCanonicalTrustedDevice(row))) {
-    throw new Error('DEVICE_REGISTRY_CONTAINS_NO_VALID_ROUTE');
+  if (!userId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
+  const [{ data, error }, account] = await Promise.all([
+    supabase
+      .from('user_devices')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .is('revoked_at', null),
+    readAccountIdentity(userId),
+  ]);
+  if (error) throw new Error('DEVICE_REGISTRY_LOOKUP_FAILED');
+
+  const devices = (data ?? []) as unknown as CanonicalDeviceRow[];
+  if (devices.length === 0) throw new Error('DEVICE_REGISTRY_CONTAINS_NO_VALID_ROUTE');
+
+  let validCount = 0;
+  let invalidCount = 0;
+  for (const device of devices) {
+    try {
+      await verifyCanonicalDevice(userId, device, account);
+      validCount += 1;
+    } catch {
+      invalidCount += 1;
+    }
   }
+  if (validCount === 0) throw new Error('DEVICE_REGISTRY_CONTAINS_NO_VALID_ROUTE');
   return invalidCount;
 }

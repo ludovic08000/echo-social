@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Shield, Loader2, RefreshCw, Cloud } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Cloud, Loader2, RefreshCw, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
-import { isAutoBackupActive, syncBackupToServer, hasLocalKeys } from '@/lib/crypto/accountKeyBackup';
+import { hasLocalKeys, isAutoBackupActive, syncBackupToServer } from '@/lib/crypto/accountKeyBackup';
 import { toast } from 'sonner';
 import { AegisRecoveryKeySection } from '@/components/AegisRecoveryKeySection';
 
@@ -15,10 +15,10 @@ export function KeyBackupPanel() {
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    backup.hasBackup().then(setHasExisting);
+    void backup.hasBackup().then(setHasExisting);
     setAutoBackupOn(isAutoBackupActive());
-    hasLocalKeys().then(setHasLocal);
-  }, []);
+    void hasLocalKeys().then(setHasLocal);
+  }, [backup]);
 
   const handleForceSync = async () => {
     setSyncing(true);
@@ -45,13 +45,13 @@ export function KeyBackupPanel() {
           Coffre E2EE — Sauvegarde
         </CardTitle>
         <CardDescription className="text-xs">
-          Tes clés de chiffrement sont automatiquement sauvegardées avec ton compte. Si tu changes d'appareil ou vides ton cache, elles seront restaurées à la connexion.
+          Tes clés de chiffrement sont automatiquement sauvegardées avec ton compte. Si tu changes d&apos;appareil ou vides ton cache, elles seront restaurées à la connexion.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="p-3 rounded-lg bg-muted/50 space-y-2">
+        <div className="space-y-2 rounded-lg bg-muted/50 p-3">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${autoBackupOn ? 'bg-green-500' : 'bg-yellow-500'}`} />
+            <div className={`h-2 w-2 rounded-full ${autoBackupOn ? 'bg-green-500' : 'bg-yellow-500'}`} />
             <span className="text-xs font-medium">
               {autoBackupOn ? 'Sauvegarde automatique active' : 'Reconnecte-toi pour activer la sauvegarde auto'}
             </span>
@@ -65,13 +65,13 @@ export function KeyBackupPanel() {
 
           {!hasLocal && hasExisting && (
             <p className="text-[10px] text-muted-foreground">
-              ☁️ Sauvegarde disponible — reconnecte-toi pour synchroniser automatiquement
+              ☁️ Sauvegarde disponible — reconnecte-toi pour restaurer les clés après déverrouillage
             </p>
           )}
 
           {!hasLocal && !hasExisting && (
             <p className="text-[10px] text-muted-foreground">
-              ⚠️ Aucune clé locale ni sauvegarde — envoie un premier message chiffré pour générer tes clés
+              ⚠️ Aucune clé locale ni sauvegarde disponible
             </p>
           )}
         </div>
@@ -85,21 +85,21 @@ export function KeyBackupPanel() {
             className="w-full gap-1"
           >
             {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-            Forcer la synchronisation maintenant
+            Forcer la sauvegarde maintenant
           </Button>
         )}
 
         <AegisRecoveryKeySection />
 
-        <div className="p-3 bg-primary/5 rounded-lg space-y-1">
-          <p className="text-xs font-medium flex items-center gap-1">
+        <div className="space-y-1 rounded-lg bg-primary/5 p-3">
+          <p className="flex items-center gap-1 text-xs font-medium">
             <Cloud className="h-3 w-3 text-primary" /> Comment ça marche ?
           </p>
-          <ul className="text-[10px] text-muted-foreground space-y-1 list-disc pl-4">
-            <li>Tes clés sont chiffrées avec un dérivé de ton mot de passe (jamais stocké en clair)</li>
-            <li>À chaque connexion, tes clés sont restaurées automatiquement si absentes localement</li>
-            <li>L'ajout d'un nouvel appareil passe par l'écran d'approbation d'appareil, sans QR</li>
-            <li>Si tu changes ton mot de passe, la sauvegarde sera mise à jour à la prochaine connexion</li>
+          <ul className="list-disc space-y-1 pl-4 text-[10px] text-muted-foreground">
+            <li>Tes clés sont chiffrées avant leur sauvegarde ; le secret de déverrouillage n&apos;est pas stocké en clair.</li>
+            <li>La restauration du coffre intervient uniquement après le déverrouillage prévu par le flow de sécurité.</li>
+            <li>L&apos;ajout d&apos;un appareil passe uniquement par l&apos;écran d&apos;approbation d&apos;appareil, sans QR pour le moment.</li>
+            <li>La sauvegarde ne crée, ne récupère et n&apos;approuve jamais un DeviceID.</li>
           </ul>
         </div>
       </CardContent>

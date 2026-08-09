@@ -6,7 +6,6 @@ export interface DeviceEnrollmentPossessionStatement {
   deviceId: string;
   nonceHash: string;
   expiresAt: string;
-  accountFingerprint: string;
   devicePublicKey: string;
   deviceSigningKey: string;
 }
@@ -30,12 +29,10 @@ export function canonicalDeviceEnrollmentPossessionPayload(
 ): string {
   return JSON.stringify({
     protocol: 'forsure-aegis-device-possession',
-    version: 1,
     challengeId: args.challengeId,
     deviceId: args.deviceId,
     nonceHash: args.nonceHash.toLowerCase(),
     expiresAt: normalizeExpiry(args.expiresAt),
-    accountFingerprint: args.accountFingerprint,
     devicePublicKey: args.devicePublicKey,
     deviceSigningKey: args.deviceSigningKey,
   });
@@ -46,7 +43,6 @@ export async function signDeviceEnrollmentPossession(args: {
   deviceId: string;
   nonce: string;
   expiresAt: string;
-  accountFingerprint: string;
   devicePublicKey: string;
   deviceSigningKey: string;
   deviceSigningPrivateKey: CryptoKey;
@@ -57,7 +53,6 @@ export async function signDeviceEnrollmentPossession(args: {
     deviceId: args.deviceId,
     nonceHash,
     expiresAt: args.expiresAt,
-    accountFingerprint: args.accountFingerprint,
     devicePublicKey: args.devicePublicKey,
     deviceSigningKey: args.deviceSigningKey,
   });

@@ -32,7 +32,6 @@ interface KeyChangePayload {
 }
 
 function scheduleResume(reason: string): void {
-  // A trust publication makes a cached empty route immediately obsolete.
   invalidateAllFanoutRoutes();
   if (resumeTimer) clearTimeout(resumeTimer);
   resumeTimer = setTimeout(() => {

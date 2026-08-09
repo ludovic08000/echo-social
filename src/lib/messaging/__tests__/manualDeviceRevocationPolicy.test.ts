@@ -7,7 +7,7 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8'
 const app = read('src/App.tsx');
 const x3dh = read('src/lib/crypto/x3dh.ts');
 const deviceTrust = read('src/lib/crypto/deviceLinkTrust.ts');
-const managedDevice = read('src/lib/device-manager/currentDevice.ts');
+const managedDevice = read('src/lib/messaging/currentDevice.ts');
 const deviceIdStore = read('src/lib/messaging/currentDevice.ts');
 const devicesPanel = read('src/components/settings/DevicesPanel.tsx');
 const migration = read(

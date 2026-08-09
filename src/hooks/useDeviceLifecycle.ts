@@ -6,9 +6,11 @@ import {
   peekCurrentDeviceId,
   type CurrentDeviceIdStatus,
 } from '@/lib/messaging/currentDevice';
+import { deviceApi } from '@/lib/api/deviceApi';
 import {
   canPromptForPin,
   canRunCryptoRuntime,
+  canRunDeviceKeySetup,
   requiresDeviceApprovalUi,
   resolveDeviceLifecycleState,
   type AegisDeviceLifecycleState,
@@ -22,6 +24,8 @@ const REFRESH_EVENTS = [
   'forsure:current-device-revoked',
   'forsure:e2ee-device-link-required',
   'forsure:device-approved',
+  'forsure:device-account-bound',
+  'forsure:aegis-route-ready',
   'forsure:authenticated-device-enroll',
 ];
 
@@ -36,19 +40,15 @@ export interface DeviceLifecycleSnapshot {
   loading: boolean;
   pinUnlocked: boolean;
   canPromptForPin: boolean;
+  canRunDeviceKeySetup: boolean;
   canRunCryptoRuntime: boolean;
   needsApprovalUi: boolean;
   refresh: () => void;
 }
 
-/**
- * Observateur de la machine d'état appareil. Lecture seule : ce hook ne crée
- * jamais de DeviceID et ne déclenche aucune opération cryptographique.
- */
 export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const { user } = useAuth();
   const userId = user?.id ?? null;
-
   const [record, setRecord] = useState<DeviceLifecycleRecord | null | 'unknown'>('unknown');
   const [deviceIdStatus, setDeviceIdStatus] = useState<CurrentDeviceIdStatus>(() => getDeviceIdStatus());
   const [deviceId, setDeviceId] = useState<string | null>(() => peekCurrentDeviceId());
@@ -62,34 +62,25 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     setDeviceId(currentId);
 
     if (!userId || !currentId || status !== 'ok') {
-      setRecord(currentId && status === 'ok' ? 'unknown' : null);
+      setRecord(null);
       return;
     }
 
-    void (async () => {
-      const { data, error } = await supabase
-        .from('user_devices')
-        .select('device_id, approval_status, is_active, revoked_at')
-        .eq('user_id', userId)
-        .eq('device_id', currentId)
-        .maybeSingle();
-
+    setRecord('unknown');
+    void deviceApi.getState(userId).then((snapshot) => {
       if (!mountedRef.current) return;
-      if (error) {
-        setRecord('unknown');
-        return;
-      }
-      setRecord(
-        data
-          ? {
-              deviceId: data.device_id,
-              approvalStatus: (data.approval_status as DeviceLifecycleRecord['approvalStatus']) ?? null,
-              isActive: data.is_active ?? null,
-              revokedAt: data.revoked_at ?? null,
-            }
-          : null,
-      );
-    })();
+      const row = snapshot.record;
+      setRecord(row ? {
+        deviceId: row.deviceId,
+        approvalStatus: row.approvalStatus,
+        bindingStatus: row.bindingStatus,
+        routingStatus: row.routingStatus,
+        isActive: row.isActive,
+        revokedAt: row.revokedAt,
+      } : null);
+    }).catch(() => {
+      if (mountedRef.current) setRecord('unknown');
+    });
   }, [userId]);
 
   useEffect(() => {
@@ -103,6 +94,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       setPinUnlocked(false);
       return;
     }
+
     setPinUnlocked(readPinUnlocked(userId));
     refresh();
 
@@ -149,6 +141,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       loading: record === 'unknown',
       pinUnlocked,
       canPromptForPin: canPromptForPin(state),
+      canRunDeviceKeySetup: canRunDeviceKeySetup(state),
       canRunCryptoRuntime: canRunCryptoRuntime(state),
       needsApprovalUi: requiresDeviceApprovalUi(state),
       refresh,

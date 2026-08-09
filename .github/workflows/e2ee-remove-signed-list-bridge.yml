@@ -1,0 +1,61 @@
+name: Remove Signed Device List Bridge
+
+on:
+  push:
+    branches:
+      - 'fix/device-lifecycle-signal-order'
+
+permissions:
+  contents: write
+
+jobs:
+  canonicalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/device-lifecycle-signal-order
+      - name: Replace final legacy imports and remove bridge
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          x3dh = Path('src/lib/crypto/x3dh.ts')
+          s = x3dh.read_text()
+          old = "import { fetchVerifiedDeviceIdentity } from './signedDeviceList';"
+          new = "import { fetchVerifiedDeviceIdentity } from './canonicalDeviceRegistry';"
+          count = s.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one signedDeviceList import in x3dh.ts, found {count}')
+          x3dh.write_text(s.replace(old, new))
+
+          fanout = Path('src/lib/messaging/multiDeviceFanout.ts')
+          s = fanout.read_text()
+          old_dynamic = "@/lib/crypto/signedDeviceList"
+          new_dynamic = "@/lib/crypto/canonicalDeviceRegistry"
+          count = s.count(old_dynamic)
+          if count != 2:
+              raise SystemExit(f'expected exactly two signedDeviceList imports in multiDeviceFanout.ts, found {count}')
+          fanout.write_text(s.replace(old_dynamic, new_dynamic))
+
+          bridge = Path('src/lib/crypto/signedDeviceList.ts')
+          if not bridge.exists():
+              raise SystemExit('bridge file already absent; refusing unexpected state')
+          bridge.unlink()
+          PY
+          git diff --check
+          test "$(git diff --name-only | sort)" = $'src/lib/crypto/signedDeviceList.ts\nsrc/lib/crypto/x3dh.ts\nsrc/lib/messaging/multiDeviceFanout.ts'
+      - name: Verify typecheck before commit
+        run: |
+          npm ci
+          npm run typecheck
+      - name: Commit canonicalization
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/lib/crypto/x3dh.ts src/lib/crypto/signedDeviceList.ts src/lib/messaging/multiDeviceFanout.ts
+          git commit -m 'refactor(e2ee): remove signed device list bridge'
+          git push origin HEAD:fix/device-lifecycle-signal-order

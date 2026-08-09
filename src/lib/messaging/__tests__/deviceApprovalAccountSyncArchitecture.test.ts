@@ -1,16 +1,43 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const outbound = readFileSync('src/lib/messaging/aegisOutboundEngine.ts', 'utf8');
+const api = readFileSync('src/lib/api/deviceApi.ts', 'utf8');
+const decision = readFileSync('src/lib/crypto/deviceApprovalDecision.ts', 'utf8');
+const edge = readFileSync('supabase/functions/approve-device-enrollment/index.ts', 'utf8');
+const migration = readFileSync(
+  'supabase/migrations/20260809170000_device_roles_and_trusted_approval.sql',
+  'utf8',
+).toLowerCase();
 
-describe('device approval account synchronization architecture', () => {
-  it('blocks the encrypted outbound engine before device and Ratchet work', () => {
-    const synchronizationGate = outbound.indexOf('await waitForAccountSynchronization');
-    const deviceReadiness = outbound.indexOf('await ensureAegisDeviceReady');
-    const durableOutbox = outbound.indexOf("trace('OUTBOX_DURABLE'");
+describe('canonical primary and secondary device approval', () => {
+  it('keeps bootstrap separate from secondary approval', () => {
+    expect(api).toContain('bootstrapPrimary');
+    expect(decision).toContain('submitPrimaryBootstrapDecision');
+    expect(decision).toContain('submitTrustedDeviceApprovalDecision');
+    expect(decision).toContain('DEVICE_SELF_APPROVAL_FORBIDDEN');
+  });
 
-    expect(synchronizationGate).toBeGreaterThan(-1);
-    expect(deviceReadiness).toBeGreaterThan(synchronizationGate);
-    expect(durableOutbox).toBeGreaterThan(synchronizationGate);
+  it('binds a secondary decision to the approver and target', () => {
+    expect(decision).toContain('approverDeviceId: args.approverDeviceId');
+    expect(decision).toContain('approver_device_id: args.approverDeviceId');
+    expect(edge).toContain('APPROVER_DEVICE_NOT_READY');
+    expect(edge).toContain('DEVICE_SELF_APPROVAL_FORBIDDEN');
+    expect(edge).toContain('finalize_device_approval_decision');
+    expect(edge).not.toContain('finalize_self_approved_device');
+  });
+
+  it('enforces one live primary and a closed lifecycle in PostgreSQL', () => {
+    expect(migration).toContain("device_role in ('primary', 'secondary')");
+    expect(migration).toContain("lifecycle_status in ('pending', 'approved', 'syncing', 'ready', 'revoked')");
+    expect(migration).toContain('user_devices_one_live_primary');
+    expect(migration).toContain("v_approver.lifecycle_status <> 'ready'");
+    expect(migration).toContain("to service_role");
+  });
+
+  it('only marks a device ready after binding and routing are ready', () => {
+    expect(migration).toContain('complete_current_device_synchronization');
+    expect(migration).toContain("v_device.binding_status <> 'bound'");
+    expect(migration).toContain("v_device.routing_status <> 'ready'");
+    expect(api).toContain("updated.lifecycleStatus !== 'ready'");
   });
 });

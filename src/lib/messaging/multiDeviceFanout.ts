@@ -609,7 +609,7 @@ function requestCurrentDeviceRouteRepair(userId: string, deviceId: string): void
   if (deviceRouteHealthInFlight) return;
   lastDeviceRouteHealthAt = Date.now();
 
-  deviceRouteHealthInFlight = import('@/lib/crypto/signedDeviceList')
+  deviceRouteHealthInFlight = import('@/lib/crypto/canonicalDeviceRegistry')
     .then(({ fetchVerifiedDeviceList }) => fetchVerifiedDeviceList(userId))
     .then((verified) => {
       if (verified.trusted.some((entry) => entry.deviceId === deviceId && entry.isRoutable)) return;
@@ -784,7 +784,7 @@ async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
     if (prefix === 'aegis1.init.v1') {
-      const { fetchVerifiedDeviceIdentity } = await import('@/lib/crypto/signedDeviceList');
+      const { fetchVerifiedDeviceIdentity } = await import('@/lib/crypto/canonicalDeviceRegistry');
       const senderDevice = await fetchVerifiedDeviceIdentity(
         row.sender_user_id,
         row.sender_device_id,
