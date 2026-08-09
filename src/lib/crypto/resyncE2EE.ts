@@ -332,20 +332,12 @@ async function republishDeviceIdentity(
     const enrollmentUserAgent = typeof navigator !== 'undefined'
       ? (navigator.userAgent || '').slice(0, 500)
       : null;
-    let enrollmentFingerprint: string | null = null;
-    try {
-      const { getDeviceFingerprint } = await import('@/lib/messaging/currentDevice');
-      enrollmentFingerprint = await getDeviceFingerprint();
-    } catch {
-      // Advisory metadata only. The challenge and device keys are authoritative.
-    }
 
     diag?.push('identity', 'info', 'stage server_device_id.begin', {
       platform: enrollmentPlatform,
     });
     enrollmentChallenge = await beginServerAssignedDeviceEnrollment({
       deviceName: enrollmentDeviceName,
-      deviceFingerprint: enrollmentFingerprint,
       platform: enrollmentPlatform,
       userAgent: enrollmentUserAgent,
     });
