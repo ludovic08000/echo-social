@@ -4,24 +4,18 @@ import {
   callIdFromRoomName,
   roomNameForCall,
 } from '../aegisCallProtocol';
-import type { SignedDeviceEntry } from '@/lib/crypto/signedDeviceList';
+import type { CanonicalRoutableDevice } from '@/lib/crypto/canonicalDeviceRegistry';
 
 const CALL_ID = '018f65a7-8c4a-4bda-9f4f-f449c40f4b40';
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
 
-function device(deviceId: string, isRoutable = true): SignedDeviceEntry {
+function device(deviceId: string, isRoutable = true): CanonicalRoutableDevice {
   return {
     deviceId,
     devicePublicKey: `public-${deviceId}`,
     deviceSigningKey: `signing-${deviceId}`,
-    authorizationSignature: `authorization-${deviceId}`,
     lastSeenAt: null,
-    accountIdentityKey: 'account-identity',
-    accountSigningKey: 'account-signing',
-    accountFingerprint: 'account-fingerprint',
-    accountBindingSignature: 'account-binding',
-    accountBindingVersion: 1,
     isRoutable,
   };
 }
@@ -34,8 +28,8 @@ describe('Aegis call protocol', () => {
     expect(callIdFromRoomName('call-conversation-id')).toBeNull();
   });
 
-  it('fans the call key out to every routable authorized device deterministically', () => {
-    const devices = new Map<string, readonly SignedDeviceEntry[]>([
+  it('fans the call key out to every routable canonical device deterministically', () => {
+    const devices = new Map<string, readonly CanonicalRoutableDevice[]>([
       [USER_B, [device('b-device-2'), device('b-device-1')]],
       [USER_A, [device('a-device-1'), device('a-offline', false)]],
     ]);
@@ -60,7 +54,7 @@ describe('Aegis call protocol', () => {
   });
 
   it('fails closed when one invited user has no routable device', () => {
-    const devices = new Map<string, readonly SignedDeviceEntry[]>([
+    const devices = new Map<string, readonly CanonicalRoutableDevice[]>([
       [USER_A, [device('offline-device', false)]],
     ]);
     expect(() => buildCallInvitationPlan([USER_A], devices)).toThrow(
