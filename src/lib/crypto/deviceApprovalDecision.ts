@@ -68,7 +68,7 @@ export async function submitTrustedDeviceApprovalDecision(args: {
   });
 
   if (error) throw new Error(`DEVICE_APPROVAL_DECISION_FAILED:${error.message}`);
-  const result = data as Record<string, unknown> | null;
+  const result = data as unknown as Record<string, unknown> | null;
   if (!result || result.ok !== true || result.device_id !== args.target.deviceId) {
     throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_APPROVAL_DECISION_REJECTED');
   }
@@ -106,7 +106,7 @@ export async function submitPrimaryBootstrapDecision(args: {
     p_signature: signature,
   });
   if (error) throw new Error(`DEVICE_BOOTSTRAP_FAILED:${error.message}`);
-  const result = data as Record<string, unknown> | null;
+  const result = data as unknown as Record<string, unknown> | null;
   if (!result || result.ok !== true || result.code !== 'DEVICE_APPROVED' || result.device_role !== 'primary') {
     throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_BOOTSTRAP_REJECTED');
   }
