@@ -22,6 +22,7 @@ const REFRESH_EVENTS = [
   'forsure:current-device-revoked',
   'forsure:e2ee-device-link-required',
   'forsure:device-approved',
+  'forsure:device-account-bound',
   'forsure:authenticated-device-enroll',
 ];
 
@@ -41,10 +42,6 @@ export interface DeviceLifecycleSnapshot {
   refresh: () => void;
 }
 
-/**
- * Observateur de la machine d'état appareil. Lecture seule : ce hook ne crée
- * jamais de DeviceID et ne déclenche aucune opération cryptographique.
- */
 export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -69,7 +66,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     void (async () => {
       const { data, error } = await supabase
         .from('user_devices')
-        .select('device_id, approval_status, is_active, revoked_at')
+        .select('device_id,approval_status,binding_status,is_active,revoked_at')
         .eq('user_id', userId)
         .eq('device_id', currentId)
         .maybeSingle();
@@ -84,6 +81,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           ? {
               deviceId: data.device_id,
               approvalStatus: (data.approval_status as DeviceLifecycleRecord['approvalStatus']) ?? null,
+              bindingStatus: (data.binding_status as DeviceLifecycleRecord['bindingStatus']) ?? null,
               isActive: data.is_active ?? null,
               revokedAt: data.revoked_at ?? null,
             }
@@ -139,17 +137,21 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       pinUnlocked,
       accountSyncPhase: 'idle',
     });
+    const stableRecord = record === 'unknown' ? null : record;
+    const bindingReady = stableRecord?.bindingStatus === 'bound';
 
     return {
       state,
       reason,
       deviceId,
       deviceIdStatus,
-      record: record === 'unknown' ? null : record,
+      record: stableRecord,
       loading: record === 'unknown',
       pinUnlocked,
       canPromptForPin: canPromptForPin(state),
-      canRunCryptoRuntime: canRunCryptoRuntime(state),
+      // A state rank alone is not enough: an approved-but-unbound device must
+      // remain unable to start crypto runtime until the post-PIN binding lands.
+      canRunCryptoRuntime: bindingReady && canRunCryptoRuntime(state),
       needsApprovalUi: requiresDeviceApprovalUi(state),
       refresh,
     };
