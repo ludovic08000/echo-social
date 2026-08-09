@@ -53,15 +53,16 @@ describe('server-assigned device enrollment', () => {
     })).toThrow('DEVICE_ENROLLMENT_RATE_LIMITED');
   });
 
-  it('requires completion to return the challenged DeviceID', () => {
+  it('requires staged completion to return the challenged DeviceID', () => {
     expect(parseCompletedDeviceEnrollment({
       ok: true,
-      code: 'DEVICE_ENROLLMENT_COMPLETED',
+      code: 'DEVICE_ENROLLMENT_STAGED',
       device_id: DEVICE_ID,
     }, DEVICE_ID)).toBe(DEVICE_ID);
 
     expect(() => parseCompletedDeviceEnrollment({
       ok: true,
+      code: 'DEVICE_ENROLLMENT_STAGED',
       device_id: 'dev_ffffffffffffffffffffffffffffffff',
     }, DEVICE_ID)).toThrow('DEVICE_ENROLLMENT_SERVER_ID_MISMATCH');
   });
