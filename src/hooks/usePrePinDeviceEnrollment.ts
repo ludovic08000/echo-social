@@ -1,27 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { supabase } from '@/integrations/supabase/client';
-import {
-  beginExplicitDeviceEnrollment,
-  getCurrentDeviceLabel,
-  getCurrentPlatform,
-  getDeviceFingerprint,
-  setCurrentDeviceId,
-  setCurrentDeviceUserScope,
-} from '@/lib/messaging/currentDevice';
-import {
-  beginServerAssignedDeviceEnrollment,
-  cancelServerAssignedDeviceEnrollment,
-  completeServerAssignedDeviceEnrollment,
-  type DeviceEnrollmentChallenge,
-  type DevicePlatform,
-} from '@/lib/crypto/serverDeviceEnrollment';
-import { deleteDeviceIdentity, getOrCreateDeviceIdentity } from '@/lib/crypto/deviceIdentity';
-import { deleteDeviceKxKey, getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
-import {
-  submitCurrentDeviceApprovalDecision,
-  type DeviceApprovalDecision,
-} from '@/lib/crypto/deviceApprovalDecision';
+import { deviceSecurity, type DeviceSecurityRecord } from '@/lib/device-manager/deviceSecurity';
 import {
   computeDeviceApprovalFingerprint,
   formatDeviceApprovalFingerprint,
@@ -37,150 +16,87 @@ export interface PendingDeviceApproval {
   fingerprintLines: string[];
 }
 
-function normalizePlatform(value: unknown): DevicePlatform {
-  const platform = String(value ?? '').toLowerCase();
-  return platform === 'ios' || platform === 'android' ? platform : 'web';
+async function toPending(record: DeviceSecurityRecord | null): Promise<PendingDeviceApproval | null> {
+  if (
+    !record
+    || record.approvalStatus !== 'pending'
+    || !record.approvalChallengeId
+    || !record.devicePublicKey
+    || !record.deviceSigningKey
+  ) {
+    return null;
+  }
+
+  const fingerprint = await computeDeviceApprovalFingerprint({
+    deviceId: record.deviceId,
+    devicePublicKey: record.devicePublicKey,
+    deviceSigningKey: record.deviceSigningKey,
+  }).catch(() => null);
+
+  return {
+    deviceId: record.deviceId,
+    challengeId: record.approvalChallengeId,
+    deviceName: record.deviceName ?? 'Nouvel appareil',
+    platform: record.platform,
+    devicePublicKey: record.devicePublicKey,
+    deviceSigningKey: record.deviceSigningKey,
+    fingerprintLines: fingerprint ? formatDeviceApprovalFingerprint(fingerprint) : [],
+  };
 }
 
-export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: () => void) {
+export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: () => void) {
   const { user } = useAuth();
   const [pending, setPending] = useState<PendingDeviceApproval | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPending = useCallback(async () => {
-    if (!user?.id || !deviceId) {
+  const reloadPending = useCallback(async () => {
+    if (!user?.id) {
       setPending(null);
       return;
     }
-
-    const { data, error: queryError } = await supabase
-      .from('user_devices')
-      .select('device_id,device_name,device_public_key,device_signing_key,approval_challenge_id,approval_status,is_active,revoked_at,platform,binding_status')
-      .eq('user_id', user.id)
-      .eq('device_id', deviceId)
-      .maybeSingle();
-
-    if (queryError) {
-      setError(`DEVICE_PENDING_LOOKUP_FAILED:${queryError.message}`);
-      return;
-    }
-
-    if (
-      !data
-      || data.approval_status !== 'pending'
-      || data.is_active !== false
-      || data.revoked_at
-      || !data.approval_challenge_id
-      || !data.device_public_key
-      || !data.device_signing_key
-    ) {
-      setPending(null);
-      return;
-    }
-
-    let fingerprintLines: string[] = [];
-    try {
-      const fingerprint = await computeDeviceApprovalFingerprint({
-        deviceId: data.device_id,
-        devicePublicKey: data.device_public_key,
-        deviceSigningKey: data.device_signing_key,
-      });
-      fingerprintLines = formatDeviceApprovalFingerprint(fingerprint);
-    } catch {
-      // Human verification aid only. It never establishes device trust.
-    }
-
-    setPending({
-      deviceId: data.device_id,
-      challengeId: data.approval_challenge_id,
-      deviceName: data.device_name || getCurrentDeviceLabel(),
-      platform: data.platform,
-      devicePublicKey: data.device_public_key,
-      deviceSigningKey: data.device_signing_key,
-      fingerprintLines,
-    });
+    const snapshot = await deviceSecurity.getState(user.id);
+    setPending(await toPending(snapshot.record));
     setError(null);
-  }, [deviceId, user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
-    void loadPending();
-  }, [loadPending]);
+    void reloadPending().catch((cause) => {
+      setError(cause instanceof Error ? cause.message : 'DEVICE_STATE_LOOKUP_FAILED');
+    });
+  }, [reloadPending]);
 
   const startEnrollment = useCallback(async () => {
     if (!user?.id || processing) return;
     setProcessing(true);
     setError(null);
-    setCurrentDeviceUserScope(user.id);
-
-    let challenge: DeviceEnrollmentChallenge | null = null;
-    let stagedDeviceId: string | null = null;
-
     try {
-      await beginExplicitDeviceEnrollment('user_requested_new_device');
-
-      challenge = await beginServerAssignedDeviceEnrollment({
-        deviceName: getCurrentDeviceLabel(),
-        deviceFingerprint: await getDeviceFingerprint(),
-        platform: normalizePlatform(getCurrentPlatform()),
-        userAgent: typeof navigator === 'undefined' ? null : navigator.userAgent.slice(0, 500),
-      });
-
-      stagedDeviceId = setCurrentDeviceId(challenge.deviceId);
-      const [deviceIdentity, deviceKx] = await Promise.all([
-        getOrCreateDeviceIdentity(user.id, stagedDeviceId),
-        getOrCreateDeviceKxKey(stagedDeviceId, user.id),
-      ]);
-
-      // Pre-PIN phase: only device-local keys + proof of possession.
-      await completeServerAssignedDeviceEnrollment(challenge, deviceIdentity, deviceKx);
-      challenge = null;
-
+      const record = await deviceSecurity.enroll(user.id);
+      setPending(await toPending(record));
       window.dispatchEvent(new CustomEvent('forsure:device-approval-pending', {
-        detail: { deviceId: stagedDeviceId, source: 'explicit-pre-pin-enrollment' },
+        detail: { deviceId: record.deviceId, source: 'deviceSecurity.enroll' },
       }));
       onChanged();
-      await loadPending();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'DEVICE_ENROLLMENT_START_FAILED';
-      setError(message);
-
-      if (challenge) {
-        await cancelServerAssignedDeviceEnrollment(challenge, message.slice(0, 120)).catch(() => undefined);
-      }
-      if (stagedDeviceId) {
-        await Promise.allSettled([
-          deleteDeviceIdentity(user.id, stagedDeviceId),
-          deleteDeviceKxKey(stagedDeviceId, user.id),
-        ]);
-      }
+      setError(cause instanceof Error ? cause.message : 'DEVICE_ENROLLMENT_START_FAILED');
     } finally {
       setProcessing(false);
     }
-  }, [loadPending, onChanged, processing, user?.id]);
+  }, [onChanged, processing, user?.id]);
 
-  const decide = useCallback(async (decision: DeviceApprovalDecision) => {
+  const decide = useCallback(async (decision: 'approve' | 'reject') => {
     if (!user?.id || !pending || processing) return;
     setProcessing(true);
     setError(null);
     try {
-      await submitCurrentDeviceApprovalDecision({
-        userId: user.id,
-        target: {
-          deviceId: pending.deviceId,
-          challengeId: pending.challengeId,
-          devicePublicKey: pending.devicePublicKey,
-          deviceSigningKey: pending.deviceSigningKey,
-        },
-        decision,
-      });
+      const record = decision === 'approve'
+        ? await deviceSecurity.approve(user.id)
+        : await deviceSecurity.reject(user.id);
 
-      const eventName = decision === 'approve'
-        ? 'forsure:device-approved'
-        : 'forsure:current-device-revoked';
-      window.dispatchEvent(new CustomEvent(eventName, {
-        detail: { deviceId: pending.deviceId, source: 'explicit-device-approval' },
-      }));
+      window.dispatchEvent(new CustomEvent(
+        decision === 'approve' ? 'forsure:device-approved' : 'forsure:current-device-revoked',
+        { detail: { deviceId: record.deviceId, source: 'deviceSecurity.approval' } },
+      ));
       setPending(null);
       onChanged();
     } catch (cause) {
@@ -196,6 +112,6 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
     error,
     startEnrollment,
     decide,
-    reloadPending: loadPending,
+    reloadPending,
   };
 }
