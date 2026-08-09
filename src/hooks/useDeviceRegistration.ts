@@ -1,16 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
-import { deviceSecurity } from '@/lib/device-manager/deviceSecurity';
+import { deviceApi } from '@/lib/api/deviceApi';
 import { readPinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
-import {
-  computeDeviceApprovalFingerprint,
-} from '@/lib/crypto/deviceApprovalFingerprint';
+import { computeDeviceApprovalFingerprint } from '@/lib/crypto/deviceApprovalFingerprint';
 
-/**
- * Post-approval/post-PIN device key setup only.
- * Enrollment, approval and account binding are handled by deviceSecurity.
- */
+/** Post-approval/post-PIN device key setup only. */
 export function useDeviceRegistration() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -25,7 +20,7 @@ export function useDeviceRegistration() {
     let cancelled = false;
 
     const run = async () => {
-      const snapshot = await deviceSecurity.getState(user.id);
+      const snapshot = await deviceApi.getState(user.id);
       const record = snapshot.record;
       if (!record) return;
 
@@ -41,18 +36,18 @@ export function useDeviceRegistration() {
       if (!readPinUnlocked(user.id)) return;
       if (snapshot.state !== 'key_setup_required') return;
 
-      await deviceSecurity.prepareKeys(user.id);
+      await deviceApi.prepareKeys(user.id);
       if (cancelled) return;
       await queryClient.invalidateQueries({ refetchType: 'none' });
       await queryClient.refetchQueries({ type: 'active' });
       window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
-        detail: { source: 'deviceSecurity.prepareKeys', deviceId: record.deviceId },
+        detail: { source: 'deviceApi.prepareKeys', deviceId: record.deviceId },
       }));
     };
 
     const safeRun = () => {
       void run().catch((error) => {
-        console.warn('[deviceSecurity] key setup deferred', error);
+        console.warn('[deviceApi] key setup deferred', error);
       });
     };
 
