@@ -14,10 +14,6 @@ const KEY_TABLES = [
   'user_devices',
   'signed_prekeys',
   'device_signed_prekeys',
-  // Invariant : une révocation ou une republication de liste signée doit
-  // purger immédiatement le cache de routes (sinon jusqu'à 30 s de périmé).
-  'user_device_signatures',
-  'signed_device_lists',
 ] as const;
 
 let activeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -36,7 +32,6 @@ interface KeyChangePayload {
 }
 
 function scheduleResume(reason: string): void {
-  // A trust publication makes a cached empty route immediately obsolete.
   invalidateAllFanoutRoutes();
   if (resumeTimer) clearTimeout(resumeTimer);
   resumeTimer = setTimeout(() => {
