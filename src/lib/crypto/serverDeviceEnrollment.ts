@@ -11,7 +11,6 @@ export type DevicePlatform = 'ios' | 'android' | 'web';
 
 export interface DeviceEnrollmentMetadata {
   deviceName: string;
-  deviceFingerprint: string | null;
   platform: DevicePlatform;
   userAgent: string | null;
 }
