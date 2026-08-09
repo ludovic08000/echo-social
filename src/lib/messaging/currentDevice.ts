@@ -16,7 +16,6 @@ import {
 } from '@/lib/crypto/deviceEnrollmentGate';
 
 const BASE_STORAGE_KEY = 'forsure-device-id-v1';
-const FINGERPRINT_KEY = 'forsure-device-fingerprint-v1';
 const DEVICE_ID_DB = 'forsure-device-routing-v1';
 const DEVICE_ID_STORE = 'device-ids';
 const DEVICE_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
@@ -46,7 +45,6 @@ let hydrationPromise: Promise<string> | null = null;
 let memoryDeviceIdIsTemporary = false;
 let explicitEnrollmentInProgress = false;
 let explicitEnrollmentExpiresAt = 0;
-let cachedFingerprints: { strict: string; loose: string; ultraLoose: string } | null = null;
 
 function storageKey(): string {
   return currentDeviceUserScope ? `${BASE_STORAGE_KEY}:${currentDeviceUserScope}` : BASE_STORAGE_KEY;
@@ -168,7 +166,6 @@ export function setCurrentDeviceUserScope(userId: string | null | undefined): vo
   memoryDeviceId = null;
   hydrationPromise = null;
   memoryDeviceIdIsTemporary = false;
-  cachedFingerprints = null;
 }
 
 async function ensureUserScopeFromAuth(): Promise<void> {
@@ -218,15 +215,6 @@ export function setCurrentDeviceId(id: string): string {
     hydrationPromise = null;
   });
   return id;
-}
-
-export function adoptDeviceIdFromBackup(_legacyId: string): string {
-  return getCurrentDeviceId();
-}
-
-/** Legacy API retained only to fail closed. */
-export function rotateCurrentDeviceId(_reason = 'device-key-loss'): string {
-  throw new DeviceIdentityError('DEVICE_ID_REAPPROVAL_REQUIRED');
 }
 
 export function getCurrentDeviceId(): string {
@@ -306,51 +294,6 @@ export async function hydrateDeviceId(): Promise<string> {
   return hydrationPromise;
 }
 
-async function sha256Hex(input: string): Promise<string> {
-  const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(buffer), byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 32);
-}
-
-function uaFamily(ua: string): string {
-  if (/iPhone/i.test(ua)) return 'iPhone';
-  if (/iPad/i.test(ua)) return 'iPad';
-  if (/iPod/i.test(ua)) return 'iPod';
-  if (/Android/i.test(ua)) return 'Android';
-  if (/Macintosh/i.test(ua)) return 'Mac';
-  if (/Windows/i.test(ua)) return 'Windows';
-  if (/Linux/i.test(ua)) return 'Linux';
-  return 'Unknown';
-}
-
-async function computeDeviceFingerprints(): Promise<{ strict: string; loose: string; ultraLoose: string }> {
-  if (cachedFingerprints) return cachedFingerprints;
-  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-  const lang = (typeof navigator !== 'undefined' && navigator.language) || '';
-  const cpu = String((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || '');
-  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })();
-  const screenValue = typeof screen === 'undefined'
-    ? ''
-    : `${Math.min(screen.width, screen.height)}x${Math.max(screen.width, screen.height)}x${screen.colorDepth}`;
-  const family = uaFamily(ua);
-  const scope = currentDeviceUserScope || '';
-  cachedFingerprints = {
-    strict: await sha256Hex([scope, ua, lang, cpu, tz, screenValue].join('|')),
-    loose: await sha256Hex([scope, family, lang.split('-')[0] || '', tz].join('|')),
-    ultraLoose: await sha256Hex(`platform:${family}:${scope}`),
-  };
-  try { localStorage.setItem(FINGERPRINT_KEY, cachedFingerprints.strict); } catch { /* advisory only */ }
-  return cachedFingerprints;
-}
-
-export async function getDeviceFingerprint(): Promise<string> {
-  return (await computeDeviceFingerprints()).strict;
-}
-
-export async function getDeviceFingerprintCandidates(): Promise<string[]> {
-  const values = await computeDeviceFingerprints();
-  return [values.strict, values.loose, values.ultraLoose];
-}
-
 export function getCurrentDeviceLabel(): string {
   if (typeof navigator === 'undefined') return 'Unknown device';
   const ua = navigator.userAgent || '';
@@ -388,6 +331,5 @@ export const __test__ = {
     memoryDeviceId = null;
     hydrationPromise = null;
     memoryDeviceIdIsTemporary = false;
-    cachedFingerprints = null;
   },
 };
