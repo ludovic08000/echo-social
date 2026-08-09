@@ -14,10 +14,7 @@ import {
   getAccountSynchronizationPhase,
 } from '@/lib/messaging/accountSyncBarrier';
 
-export type MessagingApiState =
-  | 'blocked'
-  | 'syncing'
-  | 'ready';
+export type MessagingApiState = 'blocked' | 'syncing' | 'ready';
 
 export interface MessagingRuntimeHandle {
   stop: () => void;
@@ -44,14 +41,33 @@ async function syncInbox(userId: string): Promise<void> {
   await syncAegisDeviceInbox(userId);
 }
 
-async function startRuntime(userId: string): Promise<MessagingRuntimeHandle> {
-  await ensureReady(userId);
-  const stopRealtime = startRealtimeKeySync({ userId });
-  const stopInbox = startAegisDeviceInbox(userId);
+/**
+ * Start the messaging runtime behind the canonical crypto/sync gates.
+ * The returned stop handle is synchronous so React effects can own it safely,
+ * while initialization remains asynchronous and cancellable.
+ */
+function startRuntime(userId: string): MessagingRuntimeHandle {
+  let stopped = false;
+  let stopRealtime: (() => void) | null = null;
+  let stopInbox: (() => void) | null = null;
+
+  void ensureReady(userId)
+    .then(() => {
+      if (stopped) return;
+      stopRealtime = startRealtimeKeySync({ userId });
+      stopInbox = startAegisDeviceInbox(userId);
+    })
+    .catch((error) => {
+      if (!stopped) console.warn('[messagingApi] runtime start deferred', error);
+    });
+
   return {
     stop: () => {
-      stopRealtime();
-      stopInbox();
+      stopped = true;
+      stopRealtime?.();
+      stopInbox?.();
+      stopRealtime = null;
+      stopInbox = null;
     },
   };
 }
