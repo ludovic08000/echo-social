@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { deviceSecurity, type DeviceSecurityRecord } from '@/lib/device-manager/deviceSecurity';
+import { deviceApi, type DeviceApiRecord } from '@/lib/api/deviceApi';
 import {
   computeDeviceApprovalFingerprint,
   formatDeviceApprovalFingerprint,
@@ -16,7 +16,7 @@ export interface PendingDeviceApproval {
   fingerprintLines: string[];
 }
 
-async function toPending(record: DeviceSecurityRecord | null): Promise<PendingDeviceApproval | null> {
+async function toPending(record: DeviceApiRecord | null): Promise<PendingDeviceApproval | null> {
   if (
     !record
     || record.approvalStatus !== 'pending'
@@ -55,7 +55,7 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
       setPending(null);
       return;
     }
-    const snapshot = await deviceSecurity.getState(user.id);
+    const snapshot = await deviceApi.getState(user.id);
     setPending(await toPending(snapshot.record));
     setError(null);
   }, [user?.id]);
@@ -71,10 +71,10 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
     setProcessing(true);
     setError(null);
     try {
-      const record = await deviceSecurity.enroll(user.id);
+      const record = await deviceApi.enroll(user.id);
       setPending(await toPending(record));
       window.dispatchEvent(new CustomEvent('forsure:device-approval-pending', {
-        detail: { deviceId: record.deviceId, source: 'deviceSecurity.enroll' },
+        detail: { deviceId: record.deviceId, source: 'deviceApi.enroll' },
       }));
       onChanged();
     } catch (cause) {
@@ -90,12 +90,12 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
     setError(null);
     try {
       const record = decision === 'approve'
-        ? await deviceSecurity.approve(user.id)
-        : await deviceSecurity.reject(user.id);
+        ? await deviceApi.approve(user.id)
+        : await deviceApi.reject(user.id);
 
       window.dispatchEvent(new CustomEvent(
         decision === 'approve' ? 'forsure:device-approved' : 'forsure:current-device-revoked',
-        { detail: { deviceId: record.deviceId, source: 'deviceSecurity.approval' } },
+        { detail: { deviceId: record.deviceId, source: 'deviceApi.approval' } },
       ));
       setPending(null);
       onChanged();
