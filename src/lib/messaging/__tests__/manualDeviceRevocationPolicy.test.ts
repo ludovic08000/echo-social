@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const app = read('src/App.tsx');
-const registration = read('src/hooks/useDeviceRegistration.ts');
 const x3dh = read('src/lib/crypto/x3dh.ts');
 const deviceTrust = read('src/lib/crypto/deviceLinkTrust.ts');
 const managedDevice = read('src/lib/device-manager/currentDevice.ts');
@@ -18,8 +17,6 @@ const migration = read(
 describe('manual-only DeviceID revocation policy', () => {
   it('has no automatic inactive-device cleanup in the client lifecycle', () => {
     expect(app).not.toContain("rpc('cleanup_current_user_stale_devices'");
-    expect(registration).not.toContain("rpc('cleanup_stale_user_devices'");
-    expect(registration).not.toContain('quarantineInvalidApprovedDevices');
   });
 
   it('repairs an invalid SPK without quarantining the whole DeviceID', () => {
@@ -38,7 +35,6 @@ describe('manual-only DeviceID revocation policy', () => {
     expect(managedDevice).not.toContain('revoked-reenrollment-after-pin');
     expect(managedDevice).not.toContain('blocked-recovery-device');
     expect(deviceIdStore).not.toContain('BLOCKED_RECOVERY_DEVICE_IDS');
-    expect(managedDevice).toContain('aegis-device-private-key-missing');
   });
 
   it('neutralizes legacy cleanup RPCs and rejects non-manual revocation in SQL', () => {

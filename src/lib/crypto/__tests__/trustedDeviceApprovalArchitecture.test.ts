@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const registration = readFileSync('src/hooks/useDeviceRegistration.ts', 'utf8');
 const enrollment = readFileSync('src/lib/crypto/serverDeviceEnrollment.ts', 'utf8');
 const approvalClient = readFileSync('src/lib/crypto/deviceApprovalDecision.ts', 'utf8');
 const approvalFunction = readFileSync('supabase/functions/approve-device-enrollment/index.ts', 'utf8');
@@ -14,15 +13,9 @@ describe('trusted-device approval architecture', () => {
   it('leaves a completed enrollment pending and does not publish prekeys yet', () => {
     const completed = enrollment.indexOf('return parseCompletedDeviceEnrollment');
     const legacyBlock = enrollment.indexOf('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
-    const pendingReturn = registration.indexOf("trace('DEVICE_ENROLLMENT_PENDING')");
-    const prekeyPublication = registration.indexOf('await refreshDeviceSignedPrekeyIfNeeded');
-
     expect(completed).toBeGreaterThan(-1);
     expect(legacyBlock).toBeGreaterThan(-1);
     expect(enrollment).not.toContain("functions.invoke('approve-device-enrollment'");
-    expect(registration).not.toContain('approveServerAssignedDevice(');
-    expect(pendingReturn).toBeGreaterThan(-1);
-    expect(prekeyPublication).toBeGreaterThan(pendingReturn);
   });
 
   it('requires another approved device to sign approve or reject', () => {
@@ -42,12 +35,10 @@ describe('trusted-device approval architecture', () => {
     expect(migration).toContain("'code', 'DEVICE_REVOKED'");
   });
 
-  it('restores the canonical account identity before creating a new DeviceID', () => {
-    const restoreCheck = registration.indexOf('await ensureCanonicalAccountIdentity(user.id)');
-    const challengeStart = registration.indexOf('await beginServerAssignedDeviceEnrollment');
-    expect(restoreCheck).toBeGreaterThan(-1);
-    expect(challengeStart).toBeGreaterThan(restoreCheck);
-    expect(registration).toContain('deleteRawIdentityKeys(userId)');
-    expect(registration).toContain('local.fingerprint !== expectedFingerprint');
+  it('has no legacy registration hook left in the runtime', () => {
+    // Invariant : l'enrôlement passe uniquement par le flow explicite device lifecycle.
+    expect(existsSync('src/hooks/useDeviceRegistration.ts')).toBe(false);
+    expect(existsSync('src/hooks/useDeviceLink.ts')).toBe(false);
+    expect(existsSync('src/lib/crypto/deviceLinkEnvelope.ts')).toBe(false);
   });
 });

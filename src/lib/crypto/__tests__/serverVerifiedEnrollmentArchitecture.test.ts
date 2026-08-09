@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const enrollmentClient = readFileSync('src/lib/crypto/serverDeviceEnrollment.ts', 'utf8');
-const registrationHook = readFileSync('src/hooks/useDeviceRegistration.ts', 'utf8');
 const deviceRuntime = readFileSync('src/lib/messaging/aegisDeviceRuntime.ts', 'utf8');
 const approvalFunction = readFileSync(
   'supabase/functions/approve-device-enrollment/index.ts',
@@ -18,12 +17,9 @@ describe('server-verified device enrollment architecture', () => {
     expect(enrollmentClient).not.toContain("supabase.rpc(\n    'approve_user_device'");
   });
 
-  it('routes the live registration hook through server-assigned enrollment', () => {
-    expect(registrationHook).toContain('beginServerAssignedDeviceEnrollment');
-    expect(registrationHook).toContain('completeServerAssignedDeviceEnrollment');
-    expect(registrationHook).toContain('setCurrentDeviceId(challenge.deviceId)');
-    expect(registrationHook).not.toContain('register_user_device_safe');
-    expect(registrationHook).not.toContain('approve_user_device');
+  it('keeps enrollment metadata free of any hardware signal', () => {
+    expect(enrollmentClient).not.toContain('deviceFingerprint');
+    expect(enrollmentClient).not.toContain('p_device_fingerprint');
   });
 
   it('requires authorization, routing and a valid SPK before send', () => {
