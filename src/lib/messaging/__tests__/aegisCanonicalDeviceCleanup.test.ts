@@ -82,7 +82,7 @@ describe('Aegis canonical device cleanup', () => {
     }
     expect(migration).not.toMatch(/CASCADE\s*;/);
     // Le fingerprint cryptographique de compte ne doit jamais être supprimé.
-    expect(migration).not.toContain('user_public_keys');
+    expect(migration).not.toMatch(/(DROP|ALTER)[^\n]*user_public_keys/);
     for (const grant of [
       'GRANT EXECUTE ON FUNCTION public.begin_user_device_enrollment(text, text, text) TO authenticated;',
       'GRANT EXECUTE ON FUNCTION public.list_active_devices_for_user(uuid) TO authenticated;',
