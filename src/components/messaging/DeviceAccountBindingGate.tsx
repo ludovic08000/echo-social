@@ -3,7 +3,7 @@ import { Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
-import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
+import { deviceSecurity } from '@/lib/device-manager/deviceSecurity';
 import { cn } from '@/lib/utils';
 
 interface DeviceAccountBindingGateProps {
@@ -33,11 +33,11 @@ export function DeviceAccountBindingGate({ children, compact = false }: DeviceAc
     setProcessing(true);
     setError(null);
     try {
-      await bindApprovedDeviceToAccount(user.id, lifecycle.deviceId);
+      const record = await deviceSecurity.bind(user.id);
       attemptedRef.current = null;
       lifecycle.refresh();
       window.dispatchEvent(new CustomEvent('forsure:device-account-bound', {
-        detail: { deviceId: lifecycle.deviceId, source: 'post-pin-binding' },
+        detail: { deviceId: record.deviceId, source: 'deviceSecurity.bind' },
       }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'DEVICE_ACCOUNT_BIND_FAILED');
