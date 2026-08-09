@@ -70,6 +70,20 @@ export interface DeviceApiSnapshot {
   record: DeviceApiRecord | null;
 }
 
+type DeviceDbRow = {
+  device_id: string;
+  approval_status: string | null;
+  binding_status: string | null;
+  routing_status: string | null;
+  is_active: boolean | null;
+  revoked_at: string | null;
+  device_name: string | null;
+  platform: string | null;
+  device_public_key: string | null;
+  device_signing_key: string | null;
+  approval_challenge_id: string | null;
+};
+
 function normalizePlatform(value: unknown): DevicePlatform {
   const platform = String(value ?? '').toLowerCase();
   return platform === 'ios' || platform === 'android' ? platform : 'web';
@@ -86,26 +100,29 @@ function stateFromRecord(record: DeviceApiRecord | null): DeviceApiState {
 }
 
 async function readDeviceRecord(userId: string, deviceId: string): Promise<DeviceApiRecord | null> {
+  // The generated Supabase type file can lag a production migration. Keep that
+  // schema mismatch contained inside this API instead of leaking it into UI/hooks.
   const { data, error } = await supabase
     .from('user_devices')
-    .select('device_id,approval_status,binding_status,routing_status,is_active,revoked_at,device_name,platform,device_public_key,device_signing_key,approval_challenge_id')
+    .select('*')
     .eq('user_id', userId)
     .eq('device_id', deviceId)
     .maybeSingle();
   if (error) throw new Error(`DEVICE_LOOKUP_FAILED:${error.message}`);
   if (!data) return null;
+  const row = data as unknown as DeviceDbRow;
   return {
-    deviceId: data.device_id,
-    approvalStatus: data.approval_status as DeviceApiRecord['approvalStatus'],
-    bindingStatus: data.binding_status as DeviceApiRecord['bindingStatus'],
-    routingStatus: data.routing_status as DeviceApiRecord['routingStatus'],
-    isActive: data.is_active === true,
-    revokedAt: data.revoked_at ?? null,
-    deviceName: data.device_name ?? null,
-    platform: data.platform ?? null,
-    devicePublicKey: data.device_public_key ?? null,
-    deviceSigningKey: data.device_signing_key ?? null,
-    approvalChallengeId: data.approval_challenge_id ?? null,
+    deviceId: row.device_id,
+    approvalStatus: row.approval_status as DeviceApiRecord['approvalStatus'],
+    bindingStatus: row.binding_status as DeviceApiRecord['bindingStatus'],
+    routingStatus: row.routing_status as DeviceApiRecord['routingStatus'],
+    isActive: row.is_active === true,
+    revokedAt: row.revoked_at ?? null,
+    deviceName: row.device_name ?? null,
+    platform: row.platform ?? null,
+    devicePublicKey: row.device_public_key ?? null,
+    deviceSigningKey: row.device_signing_key ?? null,
+    approvalChallengeId: row.approval_challenge_id ?? null,
   };
 }
 
