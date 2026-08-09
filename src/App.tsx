@@ -202,8 +202,20 @@ function MessagingRuntimeRunner() {
 
   useEffect(() => {
     if (!user?.id) return;
-    const stopRuntime = messagingApi.startRuntime(user.id);
-    return () => stopRuntime();
+    let cancelled = false;
+    let handle: { stop: () => void } | null = null;
+    void messagingApi.startRuntime(user.id).then((started) => {
+      if (cancelled) {
+        started.stop();
+        return;
+      }
+      handle = started;
+    });
+    return () => {
+      cancelled = true;
+      handle?.stop();
+      handle = null;
+    };
   }, [user?.id]);
 
 
@@ -211,13 +223,11 @@ function MessagingRuntimeRunner() {
 }
 
 /**
- * Étape DEVICE_CREDENTIAL_CHECK : enrôlement/lecture d'état appareil seulement.
+ * Étape DEVICE_CREDENTIAL_CHECK : lecture d'état appareil seulement.
  * Aucun AccountKeySync, aucun inbox E2EE, aucun fanout ici.
  */
 function AccountKeySyncRunner() {
   const lifecycle = useDeviceLifecycle();
-  useDeviceRegistration();
-  usePendingDeviceApprovalAlert();
 
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
