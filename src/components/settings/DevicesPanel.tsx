@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Monitor, Smartphone, Tablet, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, Monitor, Smartphone, Tablet, Loader2, ShieldCheck, Trash2, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -45,13 +45,14 @@ export function DevicesPanel() {
   const [devices, setDevices] = useState<DeviceApiListRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState<string | null>(null);
 
   const currentDeviceId = useMemo(
     () => (user?.id ? deviceApi.getCurrentId(user.id) : null),
     [user?.id],
   );
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!user?.id) {
       setDevices([]);
       setLoading(false);
@@ -65,11 +66,11 @@ export function DevicesPanel() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     void load();
-  }, [user?.id]);
+  }, [load]);
 
   const handleRevoke = async (device: DeviceApiListRecord) => {
     if (!user?.id) return;
@@ -82,6 +83,21 @@ export function DevicesPanel() {
       toast.error(error instanceof Error ? error.message : 'Échec de la révocation');
     } finally {
       setRevoking(null);
+    }
+  };
+
+  const handleDecision = async (device: DeviceApiListRecord, decision: 'approve' | 'reject') => {
+    if (!user?.id) return;
+    setDeciding(device.deviceId);
+    try {
+      if (decision === 'approve') await deviceApi.approve(user.id, device.deviceId);
+      else await deviceApi.reject(user.id, device.deviceId);
+      await load();
+      toast.success(decision === 'approve' ? 'Appareil approuvé' : 'Appareil refusé');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Décision impossible');
+    } finally {
+      setDeciding(null);
     }
   };
 
@@ -101,8 +117,7 @@ export function DevicesPanel() {
           <div>
             <h3 className="text-sm font-semibold">Appareils sécurisés</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              L’approbation d’un nouvel appareil se fait uniquement dans le flux sécurisé de cet appareil.
-              Ce panneau sert à consulter et révoquer les appareils existants.
+              Les nouveaux appareils secondaires apparaissent ici. Vous décidez explicitement de les approuver ou de les refuser depuis cet appareil reconnu.
             </p>
           </div>
         </div>
@@ -137,6 +152,9 @@ export function DevicesPanel() {
                           Cet appareil
                         </span>
                       )}
+                      <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                        {device.deviceRole === 'primary' ? 'Principal' : 'Secondaire'}
+                      </span>
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">{statusLabel(device)} · vu {lastSeen}</p>
                     <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground/70">
@@ -144,7 +162,18 @@ export function DevicesPanel() {
                     </p>
                   </div>
 
-                  {!isCurrent && (
+                  {!isCurrent && device.approvalStatus === 'pending' && (
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" disabled={deciding !== null} onClick={() => void handleDecision(device, 'approve')} aria-label="Approuver cet appareil">
+                        {deciding === device.deviceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      </Button>
+                      <Button size="icon" variant="ghost" disabled={deciding !== null} onClick={() => void handleDecision(device, 'reject')} aria-label="Refuser cet appareil">
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {!isCurrent && device.approvalStatus !== 'pending' && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button

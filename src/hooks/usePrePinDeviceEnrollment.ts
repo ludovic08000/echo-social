@@ -49,6 +49,7 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
   const [pending, setPending] = useState<PendingDeviceApproval | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canBootstrapPrimary, setCanBootstrapPrimary] = useState(false);
 
   const reloadPending = useCallback(async () => {
     if (!user?.id) {
@@ -57,6 +58,8 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
     }
     const snapshot = await deviceApi.getState(user.id);
     setPending(await toPending(snapshot.record));
+    const devices = await deviceApi.listDevices(user.id);
+    setCanBootstrapPrimary(Boolean(snapshot.record) && devices.every((device) => device.deviceId === snapshot.record?.deviceId));
     setError(null);
   }, [user?.id]);
 
@@ -89,9 +92,8 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
     setProcessing(true);
     setError(null);
     try {
-      const record = decision === 'approve'
-        ? await deviceApi.approve(user.id)
-        : await deviceApi.reject(user.id);
+      if (!canBootstrapPrimary || decision !== 'approve') throw new Error('DEVICE_WAITING_FOR_TRUSTED_APPROVER');
+      const record = await deviceApi.bootstrapPrimary(user.id);
 
       window.dispatchEvent(new CustomEvent(
         decision === 'approve' ? 'forsure:device-approved' : 'forsure:current-device-revoked',
@@ -104,12 +106,13 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
     } finally {
       setProcessing(false);
     }
-  }, [onChanged, pending, processing, user?.id]);
+  }, [canBootstrapPrimary, onChanged, pending, processing, user?.id]);
 
   return {
     pending,
     processing,
     error,
+    canBootstrapPrimary,
     startEnrollment,
     decide,
     reloadPending,

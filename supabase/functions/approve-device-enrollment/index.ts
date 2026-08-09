@@ -20,6 +20,8 @@ type DeviceRow = {
   revoked_at: string | null;
   binding_status: string | null;
   possession_verified_at: string | null;
+  lifecycle_status: string | null;
+  device_role: string | null;
 };
 
 type ChallengeRow = {
@@ -105,6 +107,7 @@ function normalizeExpiry(value: string): string {
 
 function approvalPayload(
   userId: string,
+  approverDeviceId: string,
   device: DeviceRow,
   challengeId: string,
   decision: Decision,
@@ -112,6 +115,7 @@ function approvalPayload(
   return JSON.stringify({
     protocol: "forsure-aegis-device-approval-decision",
     userId,
+    approverDeviceId,
     deviceId: device.device_id,
     challengeId,
     devicePublicKey: device.device_public_key,
@@ -209,7 +213,7 @@ serve(async (req) => {
 
   const { data: deviceData, error: deviceError } = await admin
     .from("user_devices")
-    .select("device_id,device_public_key,device_signing_key,device_authorization_signature,approval_challenge_id,approval_status,is_active,revoked_at,binding_status,possession_verified_at")
+    .select("device_id,device_public_key,device_signing_key,device_authorization_signature,approval_challenge_id,approval_status,is_active,revoked_at,binding_status,possession_verified_at,lifecycle_status,device_role")
     .eq("user_id", user.id)
     .eq("device_id", deviceId)
     .maybeSingle();
@@ -294,7 +298,9 @@ serve(async (req) => {
       : null;
   const challengeId = typeof input.challenge_id === "string" ? input.challenge_id.trim() : "";
   const signature = typeof input.signature === "string" ? input.signature.trim() : "";
-  if (!decision || !UUID_RE.test(challengeId) || signature.length < 80) {
+  const approverDeviceId = typeof input.approver_device_id === "string" ? input.approver_device_id.trim() : "";
+  const bootstrapPrimary = input.bootstrap_primary === true;
+  if (!decision || !UUID_RE.test(challengeId) || signature.length < 80 || !DEVICE_ID_RE.test(approverDeviceId)) {
     return respond(req, 400, { ok: false, code: "INVALID_APPROVAL_REQUEST" });
   }
   if (device.approval_status !== "pending" || device.is_active !== false || device.revoked_at) {
@@ -331,8 +337,40 @@ serve(async (req) => {
     return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_PROOF_REQUIRED" });
   }
 
+  const { data: otherDevices, error: otherDevicesError } = await admin
+    .from("user_devices")
+    .select("device_id,device_signing_key,approval_status,is_active,revoked_at,lifecycle_status")
+    .eq("user_id", user.id)
+    .neq("device_id", device.device_id);
+  if (otherDevicesError) return respond(req, 500, { ok: false, code: "DEVICE_APPROVER_LOOKUP_FAILED" });
+  const firstDevice = (otherDevices ?? []).length === 0;
+  if (bootstrapPrimary !== firstDevice) {
+    return respond(req, 409, { ok: false, code: "DEVICE_BOOTSTRAP_STATE_MISMATCH" });
+  }
+
+  let approverSigningKey: string;
+  let finalizerApproverId: string | null;
+  if (firstDevice) {
+    if (decision !== "approve" || approverDeviceId !== device.device_id) {
+      return respond(req, 409, { ok: false, code: "PRIMARY_BOOTSTRAP_INVALID" });
+    }
+    approverSigningKey = device.device_signing_key;
+    finalizerApproverId = null;
+  } else {
+    if (approverDeviceId === device.device_id) {
+      return respond(req, 409, { ok: false, code: "DEVICE_SELF_APPROVAL_FORBIDDEN" });
+    }
+    const approver = (otherDevices ?? []).find((row) => row.device_id === approverDeviceId);
+    if (!approver || approver.approval_status !== "approved" || approver.is_active !== true
+      || approver.revoked_at || approver.lifecycle_status !== "ready" || !approver.device_signing_key) {
+      return respond(req, 409, { ok: false, code: "APPROVER_DEVICE_NOT_READY" });
+    }
+    approverSigningKey = approver.device_signing_key;
+    finalizerApproverId = approverDeviceId;
+  }
+
   const [approvalValid, possessionValid] = await Promise.all([
-    verifyEd25519(device.device_signing_key, signature, approvalPayload(user.id, device, challengeId, decision)),
+    verifyEd25519(approverSigningKey, signature, approvalPayload(user.id, approverDeviceId, device, challengeId, decision)),
     verifyEd25519(device.device_signing_key, challenge.device_possession_signature, possessionPayload(challenge, device)),
   ]);
   if (!approvalValid) {
@@ -342,41 +380,12 @@ serve(async (req) => {
     return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_SIGNATURE_INVALID" });
   }
 
-  if (decision === "reject") {
-    const now = new Date().toISOString();
-    const { data: rejected, error: rejectError } = await admin
-      .from("user_devices")
-      .update({
-        approval_status: "rejected",
-        is_active: false,
-        rejected_at: now,
-        rejected_by: user.id,
-        revoked_at: now,
-        revoke_reason: "user_rejected_pending_device",
-        stale_at: now,
-        binding_status: "revoked",
-        routing_status: "unavailable",
-        routing_error: "DEVICE_REJECTED",
-        updated_at: now,
-      })
-      .eq("user_id", user.id)
-      .eq("device_id", device.device_id)
-      .eq("approval_status", "pending")
-      .is("revoked_at", null)
-      .select("device_id");
-    if (rejectError || !rejected || rejected.length !== 1) {
-      return respond(req, 409, { ok: false, code: "DEVICE_REJECTION_RACE_LOST" });
-    }
-    return respond(req, 200, { ok: true, code: "DEVICE_REVOKED", device_id: device.device_id });
-  }
-
-  const { data: approvedData, error: approvedError } = await admin.rpc("finalize_self_approved_device", {
+  const { data: approvedData, error: approvedError } = await admin.rpc("finalize_device_approval_decision", {
     p_user_id: user.id,
+    p_target_device_id: device.device_id,
     p_challenge_id: challenge.id,
-    p_device_id: device.device_id,
-    p_device_public_key: device.device_public_key,
-    p_device_signing_key: device.device_signing_key,
-    p_device_possession_signature: challenge.device_possession_signature,
+    p_decision: decision,
+    p_approver_device_id: finalizerApproverId,
   });
   if (approvedError) {
     return respond(req, 500, { ok: false, code: "DEVICE_APPROVAL_FINALIZER_FAILED" });
@@ -388,9 +397,10 @@ serve(async (req) => {
 
   return respond(req, 200, {
     ok: true,
-    code: "DEVICE_APPROVED",
+    code: decision === "approve" ? "DEVICE_APPROVED" : "DEVICE_REVOKED",
     device_id: device.device_id,
     challenge_id: challenge.id,
+    device_role: approved.device_role,
     binding_status: "pending",
   });
 });

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Check, Loader2, ShieldCheck, ShieldQuestion, Smartphone, X } from 'lucide-react';
+import { Check, Loader2, ShieldCheck, ShieldQuestion, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
@@ -93,9 +93,11 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
               <ShieldQuestion className="h-5 w-5 text-amber-700" />
             </div>
             <div>
-              <h2 className="text-base font-bold">Approuver cet appareil ?</h2>
+              <h2 className="text-base font-bold">{actions.canBootstrapPrimary ? 'Confirmer le premier appareil ?' : 'Approbation requise'}</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Pour cette première version, vous approuvez vous-même l’appareil. Le serveur vérifie la signature et la preuve de possession avant activation.
+                {actions.canBootstrapPrimary
+                  ? 'Aucun appareil n’existe encore. Votre confirmation créera l’unique appareil principal du compte.'
+                  : 'Une alerte a été envoyée à vos appareils déjà connectés. Approuvez cette demande depuis l’un d’eux.'}
               </p>
             </div>
           </div>
@@ -126,7 +128,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
                 <p className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{actions.error}</p>
               )}
 
-              <div className="grid grid-cols-2 gap-2">
+              {actions.canBootstrapPrimary && <div className="grid grid-cols-1 gap-2">
                 <Button
                   className="rounded-xl"
                   disabled={actions.processing}
@@ -135,15 +137,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
                   {actions.processing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 h-4 w-4" />}
                   Approuver
                 </Button>
-                <Button
-                  variant="destructive"
-                  className="rounded-xl"
-                  disabled={actions.processing}
-                  onClick={() => void actions.decide('reject')}
-                >
-                  <X className="mr-1.5 h-4 w-4" /> Refuser
-                </Button>
-              </div>
+              </div>}
             </>
           )}
 

@@ -54,7 +54,8 @@ describe('stable DeviceID architecture', () => {
   it('uses deviceApi as the canonical lifecycle orchestrator', () => {
     expect(deviceApi).toContain('beginServerAssignedDeviceEnrollment');
     expect(deviceApi).toContain('completeServerAssignedDeviceEnrollment');
-    expect(deviceApi).toContain('submitCurrentDeviceApprovalDecision');
+    expect(deviceApi).toContain('submitTrustedDeviceApprovalDecision');
+    expect(deviceApi).toContain('submitPrimaryBootstrapDecision');
     expect(deviceApi).toContain('bindApprovedDeviceToAccount');
     expect(deviceApi).toContain('prepareKeys');
     expect(deviceApi).not.toContain('register_user_device_safe');

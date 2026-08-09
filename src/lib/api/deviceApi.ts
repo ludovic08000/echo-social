@@ -25,7 +25,8 @@ import {
   loadDeviceKxKey,
 } from '@/lib/crypto/deviceKx';
 import {
-  submitCurrentDeviceApprovalDecision,
+  submitTrustedDeviceApprovalDecision,
+  submitPrimaryBootstrapDecision,
   type DeviceApprovalDecision,
 } from '@/lib/crypto/deviceApprovalDecision';
 import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
@@ -53,6 +54,8 @@ export type DeviceApiState =
 
 export interface DeviceApiRecord {
   deviceId: string;
+  deviceRole: 'primary' | 'secondary' | null;
+  lifecycleStatus: 'pending' | 'approved' | 'syncing' | 'ready' | 'revoked' | null;
   approvalStatus: 'pending' | 'approved' | 'rejected' | null;
   bindingStatus: 'pending' | 'bound' | 'revoked' | null;
   routingStatus: 'repairing' | 'ready' | 'unavailable' | null;
@@ -63,6 +66,7 @@ export interface DeviceApiRecord {
   devicePublicKey: string | null;
   deviceSigningKey: string | null;
   approvalChallengeId: string | null;
+  approvedByDeviceId: string | null;
 }
 
 export interface DeviceApiListRecord extends DeviceApiRecord {
@@ -83,6 +87,8 @@ export interface DeviceApiSnapshot {
 type DeviceDbRow = {
   id?: string;
   device_id: string;
+  device_role?: string | null;
+  lifecycle_status?: string | null;
   approval_status: string | null;
   binding_status: string | null;
   routing_status: string | null;
@@ -93,6 +99,7 @@ type DeviceDbRow = {
   device_public_key: string | null;
   device_signing_key: string | null;
   approval_challenge_id: string | null;
+  approved_by_device_id?: string | null;
   approval_requested_at?: string | null;
   user_agent?: string | null;
   last_seen_at?: string | null;
@@ -108,17 +115,19 @@ function normalizePlatform(value: unknown): DevicePlatform {
 
 function stateFromRecord(record: DeviceApiRecord | null): DeviceApiState {
   if (!record) return 'unregistered';
-  if (record.revokedAt || record.approvalStatus === 'rejected' || record.bindingStatus === 'revoked') return 'revoked';
+  if (record.revokedAt || record.lifecycleStatus === 'revoked' || record.approvalStatus === 'rejected' || record.bindingStatus === 'revoked') return 'revoked';
   if (record.approvalStatus !== 'approved') return 'pending_approval';
   if (!record.isActive) return 'revoked';
   if (record.bindingStatus !== 'bound') return 'binding_required';
-  if (record.routingStatus !== 'ready') return 'key_setup_required';
+  if (record.routingStatus !== 'ready' || record.lifecycleStatus !== 'ready') return 'key_setup_required';
   return 'ready';
 }
 
 function mapDbRecord(row: DeviceDbRow): DeviceApiRecord {
   return {
     deviceId: row.device_id,
+    deviceRole: row.device_role as DeviceApiRecord['deviceRole'] ?? null,
+    lifecycleStatus: row.lifecycle_status as DeviceApiRecord['lifecycleStatus'] ?? null,
     approvalStatus: row.approval_status as DeviceApiRecord['approvalStatus'],
     bindingStatus: row.binding_status as DeviceApiRecord['bindingStatus'],
     routingStatus: row.routing_status as DeviceApiRecord['routingStatus'],
@@ -129,6 +138,7 @@ function mapDbRecord(row: DeviceDbRow): DeviceApiRecord {
     devicePublicKey: row.device_public_key ?? null,
     deviceSigningKey: row.device_signing_key ?? null,
     approvalChallengeId: row.approval_challenge_id ?? null,
+    approvedByDeviceId: row.approved_by_device_id ?? null,
   };
 }
 
@@ -164,7 +174,6 @@ async function listDevices(userId: string): Promise<DeviceApiListRecord[]> {
     .from('user_devices')
     .select('*')
     .eq('user_id', userId)
-    .is('revoked_at', null)
     .order('last_seen_at', { ascending: false });
   if (error) throw new Error(`DEVICE_LIST_FAILED:${error.message}`);
 
@@ -221,13 +230,20 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
   }
 }
 
-async function decide(userId: string, decision: DeviceApprovalDecision): Promise<DeviceApiRecord> {
-  const snapshot = await getState(userId);
-  const record = snapshot.record;
+async function decide(userId: string, targetDeviceId: string, decision: DeviceApprovalDecision): Promise<DeviceApiRecord> {
+  const approverDeviceId = getCurrentId(userId);
+  if (!approverDeviceId) throw new Error('DEVICE_APPROVER_REQUIRED');
+  if (approverDeviceId === targetDeviceId) throw new Error('DEVICE_SELF_APPROVAL_FORBIDDEN');
+  const approver = await readDeviceRecord(userId, approverDeviceId);
+  if (!approver || approver.lifecycleStatus !== 'ready' || approver.approvalStatus !== 'approved' || !approver.isActive || approver.revokedAt) {
+    throw new Error('APPROVER_DEVICE_NOT_READY');
+  }
+  const record = await readDeviceRecord(userId, targetDeviceId);
   if (!record || record.approvalStatus !== 'pending' || !record.approvalChallengeId) throw new Error('DEVICE_APPROVAL_NOT_PENDING');
   if (!record.devicePublicKey || !record.deviceSigningKey) throw new Error('DEVICE_PUBLIC_KEYS_MISSING');
-  await submitCurrentDeviceApprovalDecision({
+  await submitTrustedDeviceApprovalDecision({
     userId,
+    approverDeviceId,
     target: {
       deviceId: record.deviceId,
       challengeId: record.approvalChallengeId,
@@ -238,6 +254,31 @@ async function decide(userId: string, decision: DeviceApprovalDecision): Promise
   });
   const updated = await readDeviceRecord(userId, record.deviceId);
   if (!updated) throw new Error('DEVICE_APPROVAL_RESULT_MISSING');
+  return updated;
+}
+
+async function bootstrapPrimary(userId: string): Promise<DeviceApiRecord> {
+  const snapshot = await getState(userId);
+  const record = snapshot.record;
+  if (!record || record.approvalStatus !== 'pending' || !record.approvalChallengeId
+      || !record.devicePublicKey || !record.deviceSigningKey) {
+    throw new Error('DEVICE_BOOTSTRAP_NOT_PENDING');
+  }
+  const devices = await listDevices(userId);
+  if (devices.some((device) => device.deviceId !== record.deviceId)) {
+    throw new Error('DEVICE_BOOTSTRAP_FORBIDDEN_EXISTING_ACCOUNT');
+  }
+  await submitPrimaryBootstrapDecision({
+    userId,
+    target: {
+      deviceId: record.deviceId,
+      challengeId: record.approvalChallengeId,
+      devicePublicKey: record.devicePublicKey,
+      deviceSigningKey: record.deviceSigningKey,
+    },
+  });
+  const updated = await readDeviceRecord(userId, record.deviceId);
+  if (!updated || updated.deviceRole !== 'primary') throw new Error('DEVICE_BOOTSTRAP_RESULT_INVALID');
   return updated;
 }
 
@@ -278,11 +319,18 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   const { data, error } = await supabase.rpc('mark_current_device_route_ready' as never, { p_device_id: record.deviceId } as never);
   const route = data as { ok?: boolean; code?: string } | null;
   if (error || route?.ok !== true) throw new Error(`DEVICE_ROUTE_NOT_READY:${route?.code ?? error?.message ?? 'UNKNOWN'}`);
+  const { data: syncData, error: syncError } = await supabase.rpc('complete_current_device_synchronization' as never, {
+    p_device_id: record.deviceId,
+  } as never);
+  const syncResult = syncData as { ok?: boolean; code?: string } | null;
+  if (syncError || syncResult?.ok !== true) {
+    throw new Error(`DEVICE_SYNCHRONIZATION_INCOMPLETE:${syncResult?.code ?? syncError?.message ?? 'UNKNOWN'}`);
+  }
   invalidateAllFanoutRoutes();
   invalidateAegisDeviceRuntime(userId);
   await ensureApprovedDeviceTrust(userId, record.deviceId);
   const updated = await readDeviceRecord(userId, record.deviceId);
-  if (!updated || updated.routingStatus !== 'ready') throw new Error('DEVICE_KEY_SETUP_INCOMPLETE');
+  if (!updated || updated.routingStatus !== 'ready' || updated.lifecycleStatus !== 'ready') throw new Error('DEVICE_KEY_SETUP_INCOMPLETE');
   return updated;
 }
 
@@ -308,8 +356,9 @@ export const deviceApi = {
   getCurrentId,
   listDevices,
   enroll,
-  approve: (userId: string) => decide(userId, 'approve'),
-  reject: (userId: string) => decide(userId, 'reject'),
+  bootstrapPrimary,
+  approve: (userId: string, targetDeviceId: string) => decide(userId, targetDeviceId, 'approve'),
+  reject: (userId: string, targetDeviceId: string) => decide(userId, targetDeviceId, 'reject'),
   bind,
   prepareKeys,
   revokeDevice,
