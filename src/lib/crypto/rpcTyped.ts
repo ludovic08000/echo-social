@@ -43,3 +43,27 @@ export interface MarkUserCryptoReadyArgs {
 export function rpcMarkUserCryptoReady(args: MarkUserCryptoReadyArgs) {
   return callRpc<ServerCryptoStateRow>('mark_user_crypto_ready', args);
 }
+
+// ---------- Temporary device approval bridge ----------
+
+export interface ApproveDeviceEnrollmentDecisionArgs {
+  p_decision: 'approve' | 'reject';
+  p_bootstrap_primary: boolean;
+  p_approver_device_id: string;
+  p_device_id: string;
+  p_challenge_id: string;
+  p_signature: string;
+}
+
+export interface ApproveDeviceEnrollmentDecisionResult {
+  ok: boolean;
+  code: string;
+  device_id?: string;
+  challenge_id?: string;
+  device_role?: string | null;
+  binding_status?: string | null;
+}
+
+export function rpcApproveDeviceEnrollmentDecision(args: ApproveDeviceEnrollmentDecisionArgs) {
+  return callRpc<ApproveDeviceEnrollmentDecisionResult>('approve_device_enrollment_decision', args);
+}
