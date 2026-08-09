@@ -1,27 +1,20 @@
 /**
- * Device registry façade — wraps the existing per-device key publishing
- * (`useDeviceRegistration` + `list_active_devices_for_user` RPC) into a
- * Aegis-style API: "give me all devices of user X".
+ * Canonical per-user device registry.
  *
- * No new tables are created. The Supabase RPC `list_active_devices_for_user`
- * already returns the canonical device list with `device_public_key`.
+ * Server routing eligibility comes only from list_active_devices_for_user:
+ * approved + active + account-bound + route-ready + valid SPK. Each returned
+ * route is then cryptographically verified against the account identity and
+ * the device authorization before it is exposed to X3DH/fanout.
  */
+import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
-import { fetchVerifiedDeviceList } from '@/lib/crypto/signedDeviceList';
+import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
-// A send may need the sender and recipient device lists. Re-verifying both over
-// the network before every message dominated warm-message latency. Keep only a
-// very short RAM cache; verification remains fail-closed and is refreshed often.
 const VERIFIED_DEVICE_CACHE_TTL_MS = 30_000;
 
 interface DeviceListOptions {
-  /**
-   * Hot-path sends should not block on SPK network checks for every device.
-   * X3DH bootstrap verifies the SPK when a new session is actually needed;
-   * active Double Ratchet sessions do not need a fresh prekey fetch per send.
-   */
   verifyPrekeys?: boolean;
 }
 
@@ -29,6 +22,13 @@ interface CachedDeviceList {
   expiresAt: number;
   devices: DeviceDescriptor[];
 }
+
+type CanonicalRouteRow = {
+  device_id: string;
+  device_public_key: string;
+  platform: string | null;
+  last_seen_at: string | null;
+};
 
 const verifiedDeviceCache = new Map<string, CachedDeviceList>();
 const verifiedDeviceInflight = new Map<string, Promise<DeviceDescriptor[]>>();
@@ -39,183 +39,91 @@ function cacheKey(userId: UserId, options: DeviceListOptions): string {
 }
 
 function cloneDevices(devices: DeviceDescriptor[]): DeviceDescriptor[] {
-  return devices.map(device => ({ ...device }));
+  return devices.map((device) => ({ ...device }));
 }
 
-/** Stable device id of the current installation. Persisted in Keychain on iOS. */
 export function selfDeviceId(): DeviceId {
   return getCurrentDeviceId();
 }
 
-/**
- * True when `selfDeviceId()` is still a hydration-pending fallback. Callers
- * that would otherwise pin a long-lived session (X3DH respond, ratchet
- * establish) should wait for `hydrateDeviceId()` to complete first.
- */
 export function isSelfDeviceIdTemporary(): boolean {
   return isDeviceIdTemporary();
 }
 
-function normalizeLastSeen(raw?: string): number | undefined {
+function normalizeLastSeen(raw: string | null): number | undefined {
   if (!raw) return undefined;
   const ts = new Date(raw).getTime();
   return Number.isFinite(ts) ? ts : undefined;
 }
 
-async function hygieneFilterDevices(devices: DeviceDescriptor[], options: DeviceListOptions = {}): Promise<DeviceDescriptor[]> {
-  const deduped = new Map<string, DeviceDescriptor>();
+async function readCanonicalRoutes(userId: UserId): Promise<CanonicalRouteRow[]> {
+  const { data, error } = await (supabase as any).rpc('list_active_devices_for_user', {
+    p_user_id: userId,
+  });
+  if (error) throw new Error('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
+  return (data ?? []) as CanonicalRouteRow[];
+}
 
-  for (const device of devices) {
-    if (!device.deviceId || !device.devicePublicKey) continue;
-
-    const previous = deduped.get(device.deviceId);
-    if (!previous || (device.lastSeen ?? 0) > (previous.lastSeen ?? 0)) {
-      deduped.set(device.deviceId, device);
-    }
+async function verifyCanonicalRoutes(
+  userId: UserId,
+  rows: CanonicalRouteRow[],
+  options: DeviceListOptions,
+): Promise<DeviceDescriptor[]> {
+  const deduped = new Map<string, CanonicalRouteRow>();
+  for (const row of rows) {
+    if (!row.device_id || !row.device_public_key) continue;
+    const previous = deduped.get(row.device_id);
+    const currentTs = normalizeLastSeen(row.last_seen_at) ?? 0;
+    const previousTs = previous ? (normalizeLastSeen(previous.last_seen_at) ?? 0) : -1;
+    if (!previous || currentTs > previousTs) deduped.set(row.device_id, row);
   }
 
-  const candidates = Array.from(deduped.values());
-
-  if (options.verifyPrekeys === false) return candidates;
-
-  const verified = await Promise.all(candidates.map(async (device) => {
+  const verified = await Promise.all(Array.from(deduped.values()).map(async (row) => {
     try {
-      const spk = await peekDeviceSignedPrekey(device.userId, device.deviceId);
-      if (!spk) {
-        console.warn('[A1] skipping device without valid signed prekey', {
-          userId: device.userId,
-          deviceId: device.deviceId,
-        });
-        return null;
+      await ensureApprovedDeviceTrust(userId, row.device_id);
+      if (options.verifyPrekeys !== false) {
+        const spk = await peekDeviceSignedPrekey(userId, row.device_id);
+        if (!spk) return null;
       }
-      return device;
-    } catch {
+      return {
+        userId,
+        deviceId: row.device_id,
+        devicePublicKey: row.device_public_key,
+        lastSeen: normalizeLastSeen(row.last_seen_at),
+      } satisfies DeviceDescriptor;
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn('[DEVTRUST] rejected canonical device route', {
+          userId: String(userId).slice(0, 8),
+          deviceId: row.device_id.slice(0, 12),
+          reason: error instanceof Error ? error.message : 'UNKNOWN',
+        });
+      }
       return null;
     }
   }));
 
-  return verified.filter(Boolean) as DeviceDescriptor[];
+  return verified.filter((value): value is DeviceDescriptor => value !== null);
 }
 
-/**
- * Invariant corrigé : après un remplacement d'identité de compte, l'autorisation
- * locale devient invalide. On demande une ré-autorisation de CET appareil au
- * lieu de rester bloqué indéfiniment sur un registre invalide.
- */
-let lastSelfRepairAt = 0;
-function requestSelfRepairIfNeeded(deviceIds: DeviceId[], reason: string): void {
-  try {
-    const self = selfDeviceId();
-    if (!self || isDeviceIdTemporary()) return;
-    if (!deviceIds.includes(self)) return;
-    const now = Date.now();
-    if (now - lastSelfRepairAt < 30_000) return;
-    lastSelfRepairAt = now;
-    if (typeof window === 'undefined') return;
-    window.dispatchEvent(new CustomEvent('forsure:device-self-repair-required', {
-      detail: { reason, deviceId: self },
-    }));
-  } catch { /* best-effort */ }
-}
+async function resolveDevicesForUser(
+  userId: UserId,
+  options: DeviceListOptions,
+): Promise<DeviceDescriptor[]> {
+  const rows = await readCanonicalRoutes(userId);
+  if (rows.length === 0) return [];
 
-
-
-async function resolveDevicesForUser(userId: UserId, options: DeviceListOptions): Promise<DeviceDescriptor[]> {
-  // Trusted (signed) list only. Invalid historical rows are quarantined: they
-  // are never returned as routes, but they also cannot deny service to a valid
-  // current device that is signed by the same canonical account identity.
-  try {
-    const verified = await fetchVerifiedDeviceList(userId);
-    if (import.meta.env.DEV && typeof console !== 'undefined') {
-      const reasons: Record<string, number> = {};
-      for (const v of verified.verifications) {
-        const k = `${v.reason ?? '?'}${v.ok ? '' : '!'}`;
-        reasons[k] = (reasons[k] ?? 0) + 1;
-      }
-      console.info('[DEVTRUST] device list resolved', {
-        userId: String(userId).slice(0, 8),
-        signedListPresent: verified.signedListPresent,
-        total: verified.verifications.length,
-        trusted: verified.trusted.length,
-        trustedIds: verified.trusted.map(t => String(t.deviceId).slice(0, 8)),
-        reasons,
-      });
-    }
-
-    if (verified.signedListPresent) {
-      const rejectedRoutable = verified.verifications.filter(
-        (entry) => !entry.ok && entry.isRoutable,
-      );
-      const quarantinedHistorical = verified.verifications.filter(
-        (entry) => !entry.ok && !entry.isRoutable,
-      );
-      const trustedRoutable = verified.trusted.filter(
-        entry => entry.isRoutable && Boolean(entry.devicePublicKey),
-      );
-
-      if (rejectedRoutable.length > 0) {
-        requestSelfRepairIfNeeded(rejectedRoutable.map(entry => entry.deviceId), 'invalid_device_authorization');
-        throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
-      }
-
-      if (quarantinedHistorical.length > 0 && typeof console !== 'undefined') {
-        console.warn('[A1] quarantining invalid historical device authorizations', {
-          userId: String(userId).slice(0, 8),
-          total: verified.verifications.length,
-          quarantined: quarantinedHistorical.map((entry) => ({
-            deviceId: String(entry.deviceId).slice(0, 8),
-            reason: entry.reason ?? 'UNKNOWN',
-          })),
-          trustedRoutable: trustedRoutable.length,
-        });
-      }
-
-      if (trustedRoutable.length === 0) {
-        // Une identité de compte remplacée invalide toutes les autorisations
-        // d'appareil : l'appareil courant doit se ré-autoriser lui-même.
-        requestSelfRepairIfNeeded(
-          [selfDeviceId()],
-          'missing_device_authorization',
-        );
-        throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
-      }
-
-
-      return hygieneFilterDevices(
-        trustedRoutable.map(entry => ({
-          userId,
-          deviceId: entry.deviceId,
-          devicePublicKey: entry.devicePublicKey,
-          lastSeen: normalizeLastSeen(entry.lastSeenAt ?? undefined),
-        })),
-        options,
-      );
-    }
-  } catch (e) {
-    if (typeof console !== 'undefined') {
-      console.warn('[A1] signed device list fetch failed; refusing raw fallback', e);
-    }
-    if (e instanceof Error && e.message === 'E2EE_DEVICE_REGISTRY_INVALID') throw e;
-    throw new Error('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
+  const devices = await verifyCanonicalRoutes(userId, rows, options);
+  if (rows.length > 0 && devices.length === 0) {
+    throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
   }
-
-  // Signal-style trust is fail-closed: an unsigned server device list is not
-  // sufficient authority to add a recipient device.
-  if (typeof console !== 'undefined') {
-    console.warn('[A1] no canonical signed device list; refusing unsigned device routing', { userId });
-  }
-  return [];
+  return devices;
 }
 
-/**
- * Lot A1 — Trust gate. Returns only signed and verified device routes.
- *
- * Results are cached in RAM for thirty seconds. This does not weaken the trust
- * gate: cached entries already passed canonical-root and signature checks, and
- * no unsigned fallback is introduced. The short TTL bounds device-revocation
- * staleness while removing repeated Supabase + Ed25519 work from every message.
- */
-export async function listDevicesForUser(userId: UserId, options: DeviceListOptions = {}): Promise<DeviceDescriptor[]> {
+export async function listDevicesForUser(
+  userId: UserId,
+  options: DeviceListOptions = {},
+): Promise<DeviceDescriptor[]> {
   const key = cacheKey(userId, options);
   const cached = verifiedDeviceCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cloneDevices(cached.devices);
@@ -226,7 +134,7 @@ export async function listDevicesForUser(userId: UserId, options: DeviceListOpti
 
   const generation = verifiedDeviceGeneration;
   const request = resolveDevicesForUser(userId, options)
-    .then(devices => {
+    .then((devices) => {
       if (generation === verifiedDeviceGeneration) {
         verifiedDeviceCache.set(key, {
           expiresAt: Date.now() + VERIFIED_DEVICE_CACHE_TTL_MS,
@@ -243,7 +151,6 @@ export async function listDevicesForUser(userId: UserId, options: DeviceListOpti
   return cloneDevices(await request);
 }
 
-/** Explicit invalidation for registration, pairing or revocation flows. */
 export function invalidateVerifiedDeviceCache(userId?: UserId): void {
   verifiedDeviceGeneration += 1;
   if (!userId) {
@@ -251,6 +158,7 @@ export function invalidateVerifiedDeviceCache(userId?: UserId): void {
     verifiedDeviceInflight.clear();
     return;
   }
+
   const prefix = `${userId}:`;
   for (const key of verifiedDeviceCache.keys()) {
     if (key.startsWith(prefix)) verifiedDeviceCache.delete(key);
@@ -260,19 +168,13 @@ export function invalidateVerifiedDeviceCache(userId?: UserId): void {
   }
 }
 
-/**
- * List every device that should receive a copy of a message sent by
- * `senderUserId` to `recipientUserIds`. Includes ALL of the sender's own
- * devices — even the current one — so that after an iOS Safari ITP storage
- * purge the sender can recover outgoing messages from encrypted device copies.
- */
 export async function listFanoutTargets(
   senderUserId: UserId,
   recipientUserIds: UserId[],
   options: DeviceListOptions = {},
 ): Promise<DeviceDescriptor[]> {
   const userIds = Array.from(new Set([...recipientUserIds, senderUserId]));
-  const lists = await Promise.all(userIds.map(userId => listDevicesForUser(userId, options)));
+  const lists = await Promise.all(userIds.map((userId) => listDevicesForUser(userId, options)));
   const unroutable = userIds.filter((_, index) => lists[index].length === 0);
   if (unroutable.length > 0) {
     throw new Error(`E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:${unroutable.join(',')}`);
