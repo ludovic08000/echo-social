@@ -460,7 +460,7 @@ async function republishDeviceIdentity(
         }
       }
     } else {
-      const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe', {
+      const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe' as never, {
         p_user_id: payload.user_id,
         p_device_id: payload.device_id,
         p_device_name: payload.device_name,
@@ -473,7 +473,7 @@ async function republishDeviceIdentity(
         p_account_signing_key: authorization.account.signingKey,
         p_account_fingerprint: authorization.account.fingerprint,
         p_account_binding_signature: authorization.account.bindingSignature,
-      });
+      } as never);
       const registerResult = registerData as {
         ok?: boolean;
         code?: string;

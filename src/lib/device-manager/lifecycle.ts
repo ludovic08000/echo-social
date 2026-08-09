@@ -4,7 +4,6 @@ import { prepareDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
 import {
   getCurrentDeviceLabel,
   getCurrentPlatform,
-  getDeviceFingerprint,
 } from './currentDevice';
 import { requireAuthenticatedDeviceSession } from './sessionGate';
 
@@ -56,10 +55,9 @@ async function registerMissingStableDevice(
   userId: string,
   deviceId: string,
 ): Promise<void> {
-  const [deviceKx, fingerprint] = await Promise.all([
-    getOrCreateDeviceKxKey(deviceId, userId),
-    getDeviceFingerprint().catch(() => null),
-  ]);
+  // Invariant : l'enrôlement ne transporte aucun signal matériel ; seules les
+  // clés cryptographiques de l'appareil établissent la route.
+  const deviceKx = await getOrCreateDeviceKxKey(deviceId, userId);
   const devicePublicKey = deviceKx.publicB64;
   if (!devicePublicKey) throw new Error('DEVICE_REGISTRATION_PUBLIC_KEY_MISSING');
   const authorization = await prepareDeviceAuthorization(userId, deviceId, deviceKx);
@@ -69,7 +67,6 @@ async function registerMissingStableDevice(
     p_device_id: deviceId,
     p_device_name: getCurrentDeviceLabel(),
     p_device_public_key: devicePublicKey,
-    p_device_fingerprint: fingerprint,
     p_platform: getCurrentPlatform(),
     p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
     p_device_signing_key: authorization.deviceSigning.publicB64,
@@ -81,8 +78,8 @@ async function registerMissingStableDevice(
   };
 
   const { data: rpcData, error: rpcError } = await supabase.rpc(
-    'register_user_device_safe',
-    args,
+    'register_user_device_safe' as never,
+    args as never,
   );
   const rpcResult = rpcData as { ok?: boolean; code?: string; message?: string } | null;
 
