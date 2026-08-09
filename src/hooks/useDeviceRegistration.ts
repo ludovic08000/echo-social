@@ -581,8 +581,9 @@ export function useDeviceRegistration() {
           /DEVICE_IDENTITY_UNVERIFIED|DEVICE_ROUTE_NOT_AUTHORIZED|E2EE_SENDER_DEVICE_NOT_TRUSTED/.test(message)
           && attempt < MAX_ENROLLMENT_ATTEMPTS - 1
         ) {
-          const failedDeviceId = tracedDeviceId ?? getCurrentDeviceId();
-          await markRouteUnavailable(failedDeviceId, 'VERIFIED_ROUTE_CHECK_FAILED');
+          const failedDeviceId = tracedDeviceId ?? peekCurrentDeviceId();
+          if (failedDeviceId) await markRouteUnavailable(failedDeviceId, 'VERIFIED_ROUTE_CHECK_FAILED');
+
           requireExplicitReenrollment('verified-route-check-failed');
           return;
         }
