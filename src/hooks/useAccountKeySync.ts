@@ -340,136 +340,24 @@ export function useAccountKeySync() {
     };
   }, [user, triggerSync]);
 
-  // Auto-trigger a full E2EE re-sync whenever keys have just been restored.
-  //
-  // Robustness layers — all three are needed because the restore event can
-  // fire BEFORE this listener mounts (it's emitted from auth.tsx during password
-  // unwrap, or from earlier effects in this same hook):
-  //   1) live event listener for in-session restores
-  //   2) sessionStorage marker so a restore that fired before mount is replayed
-  //   3) safety net that runs a resync once per session if the device id is
-  //      not yet registered server-side (covers the "no event ever fired" case)
+  // Après une restauration de clés, on ne fait qu'une chose : garantir que
+  // l'identité locale est prête. Le lifecycle canonique (device-manager) gère
+  // device/binding/prekeys — aucune hydratation ni recovery de DeviceID ici.
   useEffect(() => {
     if (!user) return;
-    let cancelled = false;
-    let inFlight = false;
 
-    const RESYNC_PENDING_KEY = `forsure:e2ee-resync-pending:${user.id}`;
-    const RESYNC_DONE_KEY = `forsure:e2ee-resync-done:${user.id}`;
-    const RESYNC_HEALTH_KEY = `forsure:e2ee-resync-health:${user.id}`;
-
-    const runResync = async (reason: string, detail: unknown = {}) => {
-      if (inFlight) return;
-      inFlight = true;
-      console.log('[AccountKeySync] running E2EE resync', { reason, detail });
-      try {
-        // Make sure the persisted device id from native storage wins before
-        // we re-publish anything to the server.
-        try {
-          await hydrateDeviceId();
-        } catch {
-          // The stable browser DeviceID remains available as fallback.
-        }
-        const { resyncE2EE } = await import('@/lib/crypto/resyncE2EE');
-        const report = await resyncE2EE(user.id);
-        console.log('[AccountKeySync] resync report:', report);
-        try {
-          sessionStorage.setItem(RESYNC_DONE_KEY, String(Date.now()));
-          sessionStorage.removeItem(RESYNC_PENDING_KEY);
-        } catch {
-          // Session storage is an optimisation, not durable crypto state.
-        }
-      } catch (e) {
-        console.warn('[AccountKeySync] resync failed:', e);
-      } finally {
-        inFlight = false;
-      }
-    };
-
-    const onKeysRestored = (ev: Event) => {
-      const detail = (ev as CustomEvent).detail ?? {};
-      try {
-        sessionStorage.setItem(RESYNC_PENDING_KEY, JSON.stringify({ at: Date.now(), detail }));
-      } catch {
-        // Immediate resync below does not depend on session storage.
-      }
-      void runResync('keys-restored-event', detail);
+    const onKeysRestored = () => {
+      void import('@/lib/crypto/cryptoApi')
+        .then(({ cryptoApi }) => cryptoApi.ensureReady(user.id))
+        .catch((e) => console.warn('[AccountKeySync] ensureReady failed:', e));
     };
 
     window.addEventListener('forsure-keys-restored', onKeysRestored as EventListener);
-
-    // Replay any pending restore event that fired before this listener mounted.
-    void (async () => {
-      try {
-        const pending = sessionStorage.getItem(RESYNC_PENDING_KEY);
-        if (pending) {
-          await runResync('pending-on-mount', JSON.parse(pending));
-          return;
-        }
-      } catch {
-        // No pending marker is equivalent to a normal mount.
-      }
-
-      // Safety net: if there are local keys but we've never resynced this
-      // session AND the current device id isn't registered server-side,
-      // run one resync to publish identity/SPK/OPK.
-      try {
-        if (cancelled) return;
-        const done = sessionStorage.getItem(RESYNC_DONE_KEY);
-        if (!(await hasLocalKeys(user.id))) return;
-        const did = await hydrateDeviceId();
-        const { data: row } = await supabase
-          .from('user_devices')
-          .select('device_id,is_active,revoked_at')
-          .eq('user_id', user.id)
-          .eq('device_id', did)
-          .maybeSingle();
-
-        if (row && (row.is_active === false || row.revoked_at)) {
-          console.warn('[AccountKeySync] current device is revoked/inactive during health check - resync blocked', {
-            did: did.slice(0, 8),
-          });
-          window.dispatchEvent(new CustomEvent('forsure:current-device-revoked', {
-            detail: { deviceId: did, status: 'revoked' },
-          }));
-          return;
-        }
-
-        const { data: spkRow } = await supabase
-          .from('device_signed_prekeys')
-          .select('spk_id')
-          .eq('user_id', user.id)
-          .eq('device_id', did)
-          .eq('is_active', true)
-          .maybeSingle();
-        if (cancelled) return;
-
-        const registered =
-          !!row &&
-          row.device_id === did &&
-          row.is_active !== false &&
-          !row.revoked_at;
-        const previousHealth = sessionStorage.getItem(RESYNC_HEALTH_KEY);
-        const currentHealth = JSON.stringify({ did, registered, spk: !!spkRow });
-        if (!registered || !spkRow || (!done && previousHealth !== currentHealth)) {
-          console.warn('[AccountKeySync] E2EE device health incomplete — auto-resync', {
-            did: did.slice(0, 8),
-            registered,
-            deviceSpk: !!spkRow,
-          });
-          await runResync(!registered ? 'device-not-registered' : 'device-prekeys-missing');
-          sessionStorage.setItem(RESYNC_HEALTH_KEY, currentHealth);
-        }
-      } catch (e) {
-        console.warn('[AccountKeySync] safety-net resync check failed:', e);
-      }
-    })();
-
     return () => {
-      cancelled = true;
       window.removeEventListener('forsure-keys-restored', onKeysRestored as EventListener);
     };
   }, [user]);
+
 
   // Cleanup on logout
   useEffect(() => {

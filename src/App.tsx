@@ -26,8 +26,8 @@ import { useDeviceLifecycle } from "@/hooks/useDeviceLifecycle";
 
 import { usePendingDeviceApprovalAlert } from "@/hooks/usePendingDeviceApprovalAlert";
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
-import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
-import { startAegisDeviceInbox } from "@/lib/messaging/aegisDeviceInbox";
+import { messagingApi } from "@/lib/messaging/messagingApi";
+
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -204,13 +204,10 @@ function MessagingRuntimeRunner() {
 
   useEffect(() => {
     if (!user?.id) return;
-    const stop = startRealtimeKeySync({ userId: user.id });
-    const stopInbox = startAegisDeviceInbox(user.id);
-    return () => {
-      stop();
-      stopInbox();
-    };
+    const stopRuntime = messagingApi.startRuntime(user.id);
+    return () => stopRuntime();
   }, [user?.id]);
+
 
   return null;
 }
