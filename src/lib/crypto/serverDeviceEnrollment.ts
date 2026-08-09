@@ -22,7 +22,6 @@ type RegisteredDeviceRow = {
 
 export interface DeviceEnrollmentMetadata {
   deviceName: string;
-  deviceFingerprint: string | null;
   platform: DevicePlatform;
   userAgent: string | null;
 }
@@ -147,7 +146,6 @@ export async function beginServerAssignedDeviceEnrollment(
   consumeExplicitDeviceEnrollmentAuthorization();
   const { data, error } = await supabase.rpc('begin_user_device_enrollment' as never, {
     p_device_name: metadata.deviceName,
-    p_device_fingerprint: metadata.deviceFingerprint,
     p_platform: metadata.platform,
     p_user_agent: metadata.userAgent,
   } as never);
