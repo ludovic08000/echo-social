@@ -17,7 +17,11 @@ import { supabase } from '@/integrations/supabase/client';
 type RpcResult<T> = { data: T | null; error: Error | null };
 
 async function callRpc<T>(fn: string, args?: object): Promise<RpcResult<T>> {
-  const { data, error } = await (supabase.rpc as any)(fn, args);
+  const rpc = supabase.rpc as unknown as (
+    name: string,
+    parameters?: object,
+  ) => Promise<{ data: unknown; error: unknown }>;
+  const { data, error } = await rpc(fn, args);
   return { data: (data ?? null) as T | null, error: (error ?? null) as Error | null };
 }
 
@@ -42,4 +46,44 @@ export interface MarkUserCryptoReadyArgs {
 
 export function rpcMarkUserCryptoReady(args: MarkUserCryptoReadyArgs) {
   return callRpc<ServerCryptoStateRow>('mark_user_crypto_ready', args);
+}
+
+// ---------- Temporary device approval bridge ----------
+
+export interface ApproveDeviceEnrollmentDecisionArgs {
+  p_decision: 'approve' | 'reject';
+  p_bootstrap_primary: boolean;
+  p_approver_device_id: string;
+  p_device_id: string;
+  p_challenge_id: string;
+  p_signature: string;
+}
+
+export interface ApproveDeviceEnrollmentDecisionResult {
+  ok: boolean;
+  code: string;
+  device_id?: string;
+  challenge_id?: string;
+  device_role?: string | null;
+  binding_status?: string | null;
+}
+
+export function rpcApproveDeviceEnrollmentDecision(args: ApproveDeviceEnrollmentDecisionArgs) {
+  return callRpc<ApproveDeviceEnrollmentDecisionResult>('approve_device_enrollment_decision', args);
+}
+
+export interface BindDeviceAccountArgs {
+  p_device_id: string;
+  p_device_authorization_signature: string;
+}
+
+export interface BindDeviceAccountResult {
+  ok: boolean;
+  code: string;
+  device_id?: string;
+  existing?: boolean;
+}
+
+export function rpcBindDeviceAccount(args: BindDeviceAccountArgs) {
+  return callRpc<BindDeviceAccountResult>('bind_device_account', args);
 }

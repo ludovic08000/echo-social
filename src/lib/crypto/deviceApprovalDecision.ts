@@ -1,6 +1,6 @@
-import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
+import { rpcApproveDeviceEnrollmentDecision } from '@/lib/crypto/rpcTyped';
 import { bufferToBase64, encodeString } from '@/lib/crypto/utils';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
@@ -58,19 +58,17 @@ export async function submitTrustedDeviceApprovalDecision(args: {
     encodeString(canonicalDeviceApprovalDecisionPayload(args)),
   ) as ArrayBuffer);
 
-  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
-    body: {
-      action: 'decision',
-      decision: args.decision,
-      approver_device_id: args.approverDeviceId,
-      device_id: args.target.deviceId,
-      challenge_id: args.target.challengeId,
-      signature,
-    },
+  const { data, error } = await rpcApproveDeviceEnrollmentDecision({
+    p_decision: args.decision,
+    p_bootstrap_primary: false,
+    p_approver_device_id: args.approverDeviceId,
+    p_device_id: args.target.deviceId,
+    p_challenge_id: args.target.challengeId,
+    p_signature: signature,
   });
 
   if (error) throw new Error(`DEVICE_APPROVAL_DECISION_FAILED:${error.message}`);
-  const result = data as Record<string, unknown> | null;
+  const result = data as unknown as Record<string, unknown> | null;
   if (!result || result.ok !== true || result.device_id !== args.target.deviceId) {
     throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_APPROVAL_DECISION_REJECTED');
   }
@@ -99,15 +97,16 @@ export async function submitPrimaryBootstrapDecision(args: {
   const signature = bufferToBase64(await hardCrypto.sign(
     'Ed25519', identity.privateKey, encodeString(canonicalDeviceApprovalDecisionPayload(payloadArgs)),
   ) as ArrayBuffer);
-  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
-    body: {
-      action: 'decision', decision: 'approve', bootstrap_primary: true,
-      approver_device_id: args.target.deviceId, device_id: args.target.deviceId,
-      challenge_id: args.target.challengeId, signature,
-    },
+  const { data, error } = await rpcApproveDeviceEnrollmentDecision({
+    p_decision: 'approve',
+    p_bootstrap_primary: true,
+    p_approver_device_id: args.target.deviceId,
+    p_device_id: args.target.deviceId,
+    p_challenge_id: args.target.challengeId,
+    p_signature: signature,
   });
   if (error) throw new Error(`DEVICE_BOOTSTRAP_FAILED:${error.message}`);
-  const result = data as Record<string, unknown> | null;
+  const result = data as unknown as Record<string, unknown> | null;
   if (!result || result.ok !== true || result.code !== 'DEVICE_APPROVED' || result.device_role !== 'primary') {
     throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_BOOTSTRAP_REJECTED');
   }

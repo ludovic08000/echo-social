@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { prepareDeviceAuthorization, loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
 import { loadDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { rpcBindDeviceAccount } from '@/lib/crypto/rpcTyped';
 
 type DeviceBindingRow = {
   device_id: string;
@@ -50,16 +51,15 @@ export async function bindApprovedDeviceToAccount(
     throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
   }
 
-  const { data: resultData, error: invokeError } = await supabase.functions.invoke('approve-device-enrollment', {
-    body: {
-      action: 'bind',
-      device_id: deviceId,
-      device_authorization_signature: authorization.authorizationSignature,
-    },
+  // Invariant : le navigateur signe, mais seul le noyau SQL vérifie l'identité
+  // du compte et autorise le finalizer privé de liaison.
+  const { data: resultData, error: invokeError } = await rpcBindDeviceAccount({
+    p_device_id: deviceId,
+    p_device_authorization_signature: authorization.authorizationSignature,
   });
   if (invokeError) throw new Error(`DEVICE_ACCOUNT_BIND_FAILED:${invokeError.message}`);
 
-  const result = resultData as Record<string, unknown> | null;
+  const result = resultData as unknown as Record<string, unknown> | null;
   if (!result || result.ok !== true || result.code !== 'DEVICE_ACCOUNT_BOUND' || result.device_id !== deviceId) {
     throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_ACCOUNT_BIND_REJECTED');
   }
