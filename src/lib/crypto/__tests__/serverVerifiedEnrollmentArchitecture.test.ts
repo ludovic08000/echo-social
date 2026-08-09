@@ -10,11 +10,10 @@ const approvalFunction = readFileSync(
 const supabaseConfig = readFileSync('supabase/config.toml', 'utf8');
 
 describe('server-verified device enrollment architecture', () => {
-  it('uses the verification Edge Function instead of direct approval RPC', () => {
-    expect(enrollmentClient).toContain(
-      "supabase.functions.invoke('approve-device-enrollment'",
-    );
+  it('never approves a device directly from the enrollment client', () => {
+    // Invariant : l'approbation passe par deviceApprovalDecision + Edge Function signée.
     expect(enrollmentClient).not.toContain("supabase.rpc(\n    'approve_user_device'");
+    expect(enrollmentClient).not.toContain('approveServerAssignedDevice(');
   });
 
   it('keeps enrollment metadata free of any hardware signal', () => {
