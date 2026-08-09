@@ -40,6 +40,7 @@ import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
+import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
@@ -65,12 +66,23 @@ export interface DeviceApiRecord {
   approvalChallengeId: string | null;
 }
 
+export interface DeviceApiListRecord extends DeviceApiRecord {
+  id: string;
+  userAgent: string | null;
+  approvalRequestedAt: string | null;
+  lastSeenAt: string;
+  createdAt: string;
+  staleAt: string | null;
+  revokeReason: string | null;
+}
+
 export interface DeviceApiSnapshot {
   state: DeviceApiState;
   record: DeviceApiRecord | null;
 }
 
 type DeviceDbRow = {
+  id?: string;
   device_id: string;
   approval_status: string | null;
   binding_status: string | null;
@@ -82,6 +94,12 @@ type DeviceDbRow = {
   device_public_key: string | null;
   device_signing_key: string | null;
   approval_challenge_id: string | null;
+  approval_requested_at?: string | null;
+  user_agent?: string | null;
+  last_seen_at?: string | null;
+  created_at?: string | null;
+  stale_at?: string | null;
+  revoke_reason?: string | null;
 };
 
 function normalizePlatform(value: unknown): DevicePlatform {
@@ -99,18 +117,7 @@ function stateFromRecord(record: DeviceApiRecord | null): DeviceApiState {
   return 'ready';
 }
 
-async function readDeviceRecord(userId: string, deviceId: string): Promise<DeviceApiRecord | null> {
-  // The generated Supabase type file can lag a production migration. Keep that
-  // schema mismatch contained inside this API instead of leaking it into UI/hooks.
-  const { data, error } = await supabase
-    .from('user_devices')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('device_id', deviceId)
-    .maybeSingle();
-  if (error) throw new Error(`DEVICE_LOOKUP_FAILED:${error.message}`);
-  if (!data) return null;
-  const row = data as unknown as DeviceDbRow;
+function mapDbRecord(row: DeviceDbRow): DeviceApiRecord {
   return {
     deviceId: row.device_id,
     approvalStatus: row.approval_status as DeviceApiRecord['approvalStatus'],
@@ -126,12 +133,55 @@ async function readDeviceRecord(userId: string, deviceId: string): Promise<Devic
   };
 }
 
+async function readDeviceRecord(userId: string, deviceId: string): Promise<DeviceApiRecord | null> {
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+  if (error) throw new Error(`DEVICE_LOOKUP_FAILED:${error.message}`);
+  if (!data) return null;
+  return mapDbRecord(data as unknown as DeviceDbRow);
+}
+
 async function getState(userId: string): Promise<DeviceApiSnapshot> {
   setCurrentDeviceUserScope(userId);
   const deviceId = peekCurrentDeviceId();
   if (!deviceId || !DEVICE_ID_RE.test(deviceId)) return { state: 'unregistered', record: null };
   const record = await readDeviceRecord(userId, deviceId);
   return { state: stateFromRecord(record), record };
+}
+
+function getCurrentId(userId: string): string | null {
+  setCurrentDeviceUserScope(userId);
+  const deviceId = peekCurrentDeviceId();
+  return deviceId && DEVICE_ID_RE.test(deviceId) ? deviceId : null;
+}
+
+async function listDevices(userId: string): Promise<DeviceApiListRecord[]> {
+  setCurrentDeviceUserScope(userId);
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('*')
+    .eq('user_id', userId)
+    .is('revoked_at', null)
+    .order('last_seen_at', { ascending: false });
+  if (error) throw new Error(`DEVICE_LIST_FAILED:${error.message}`);
+
+  return (data ?? []).map((raw) => {
+    const row = raw as unknown as DeviceDbRow;
+    return {
+      ...mapDbRecord(row),
+      id: row.id ?? row.device_id,
+      userAgent: row.user_agent ?? null,
+      approvalRequestedAt: row.approval_requested_at ?? null,
+      lastSeenAt: row.last_seen_at ?? row.created_at ?? new Date(0).toISOString(),
+      createdAt: row.created_at ?? new Date(0).toISOString(),
+      staleAt: row.stale_at ?? null,
+      revokeReason: row.revoke_reason ?? null,
+    };
+  });
 }
 
 async function enroll(userId: string): Promise<DeviceApiRecord> {
@@ -238,11 +288,31 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   return updated;
 }
 
+async function revokeDevice(userId: string, targetDeviceId: string): Promise<void> {
+  if (!DEVICE_ID_RE.test(targetDeviceId)) throw new Error('DEVICE_INVALID_ID');
+  const currentDeviceId = getCurrentId(userId);
+  if (!currentDeviceId) throw new Error('DEVICE_CURRENT_ID_REQUIRED');
+  if (targetDeviceId === currentDeviceId) throw new Error('DEVICE_CANNOT_REVOKE_CURRENT');
+
+  const { data, error } = await supabase.rpc('revoke_user_device' as never, {
+    p_device_id: targetDeviceId,
+  } as never);
+  const result = data as { ok?: boolean } | null;
+  if (error || result?.ok !== true) throw new Error(`DEVICE_REVOCATION_REJECTED:${error?.message ?? 'UNKNOWN'}`);
+
+  invalidateAllFanoutRoutes();
+  invalidateAegisDeviceRuntime(userId);
+  await invalidateDeviceSession(userId, currentDeviceId, userId, targetDeviceId).catch(() => undefined);
+}
+
 export const deviceApi = {
   getState,
+  getCurrentId,
+  listDevices,
   enroll,
   approve: (userId: string) => decide(userId, 'approve'),
   reject: (userId: string) => decide(userId, 'reject'),
   bind,
   prepareKeys,
+  revokeDevice,
 } as const;
