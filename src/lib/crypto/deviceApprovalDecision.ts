@@ -15,29 +15,20 @@ export interface PendingDeviceApprovalTarget {
   deviceSigningKey: string;
 }
 
-type ApprovalPayloadArgs = {
+export function canonicalDeviceApprovalDecisionPayload(args: {
   userId: string;
-  approverDeviceId: string;
   target: PendingDeviceApprovalTarget;
   decision: DeviceApprovalDecision;
-  selfApproval?: boolean;
-};
-
-export function canonicalDeviceApprovalDecisionPayload(args: ApprovalPayloadArgs): string {
-  const payload = {
+}): string {
+  return JSON.stringify({
     protocol: 'forsure-aegis-device-approval-decision',
-    version: 1,
     userId: args.userId,
-    approverDeviceId: args.approverDeviceId,
-    targetDeviceId: args.target.deviceId,
-    targetChallengeId: args.target.challengeId,
-    targetDevicePublicKey: args.target.devicePublicKey,
-    targetDeviceSigningKey: args.target.deviceSigningKey,
+    deviceId: args.target.deviceId,
+    challengeId: args.target.challengeId,
+    devicePublicKey: args.target.devicePublicKey,
+    deviceSigningKey: args.target.deviceSigningKey,
     decision: args.decision,
-  };
-  return JSON.stringify(args.selfApproval === true
-    ? { ...payload, selfApproval: true }
-    : payload);
+  });
 }
 
 function validateTarget(target: PendingDeviceApprovalTarget): void {
@@ -45,84 +36,43 @@ function validateTarget(target: PendingDeviceApprovalTarget): void {
   if (!UUID_RE.test(target.challengeId)) throw new Error('DEVICE_APPROVAL_INVALID_CHALLENGE_ID');
 }
 
-async function invokeApproval(args: ApprovalPayloadArgs): Promise<{ deviceId: string; decision: DeviceApprovalDecision }> {
-  const approverIdentity = await loadDeviceIdentity(args.userId, args.approverDeviceId);
-  if (!approverIdentity) throw new Error('DEVICE_APPROVER_PRIVATE_KEY_MISSING');
+export async function submitCurrentDeviceApprovalDecision(args: {
+  userId: string;
+  target: PendingDeviceApprovalTarget;
+  decision: DeviceApprovalDecision;
+}): Promise<{ deviceId: string; decision: DeviceApprovalDecision }> {
+  if (!args.userId) throw new Error('DEVICE_APPROVAL_USER_REQUIRED');
+  validateTarget(args.target);
 
-  if (args.selfApproval === true && approverIdentity.publicB64 !== args.target.deviceSigningKey) {
-    throw new Error('DEVICE_SELF_APPROVAL_KEY_MISMATCH');
+  const identity = await loadDeviceIdentity(args.userId, args.target.deviceId);
+  if (!identity) throw new Error('DEVICE_PRIVATE_KEY_MISSING');
+  if (identity.publicB64 !== args.target.deviceSigningKey) {
+    throw new Error('DEVICE_APPROVAL_KEY_MISMATCH');
   }
 
-  const approvalSignature = bufferToBase64(await hardCrypto.sign(
+  const signature = bufferToBase64(await hardCrypto.sign(
     'Ed25519',
-    approverIdentity.privateKey,
+    identity.privateKey,
     encodeString(canonicalDeviceApprovalDecisionPayload(args)),
   ) as ArrayBuffer);
 
-  const functionName = args.selfApproval === true
-    ? 'approve-device-enrollment-v2'
-    : 'approve-device-enrollment';
-  const { data, error } = await supabase.functions.invoke(functionName, {
+  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
     body: {
+      action: 'decision',
       decision: args.decision,
-      approver_device_id: args.approverDeviceId,
-      target_device_id: args.target.deviceId,
-      target_challenge_id: args.target.challengeId,
-      approver_signature: approvalSignature,
-      ...(args.selfApproval === true ? { self_approval: true } : {}),
+      device_id: args.target.deviceId,
+      challenge_id: args.target.challengeId,
+      signature,
     },
   });
 
   if (error) throw new Error(`DEVICE_APPROVAL_DECISION_FAILED:${error.message}`);
   const result = data as Record<string, unknown> | null;
-  if (!result || result.ok !== true) {
+  if (!result || result.ok !== true || result.device_id !== args.target.deviceId) {
     throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_APPROVAL_DECISION_REJECTED');
   }
 
-  const validApproveCodes = args.selfApproval === true
-    ? new Set(['DEVICE_APPROVED_UNBOUND', 'DEVICE_APPROVED'])
-    : new Set(['DEVICE_APPROVED']);
-  const validCode = args.decision === 'approve'
-    ? validApproveCodes.has(String(result.code ?? ''))
-    : result.code === 'DEVICE_REVOKED';
-  if (!validCode || result.device_id !== args.target.deviceId) {
-    throw new Error('DEVICE_APPROVAL_DECISION_INVALID_RESPONSE');
-  }
-
+  const expectedCode = args.decision === 'approve' ? 'DEVICE_APPROVED' : 'DEVICE_REVOKED';
+  if (result.code !== expectedCode) throw new Error('DEVICE_APPROVAL_DECISION_INVALID_RESPONSE');
   return { deviceId: args.target.deviceId, decision: args.decision };
-}
-
-export async function submitDeviceApprovalDecision(args: {
-  userId: string;
-  approverDeviceId: string;
-  target: PendingDeviceApprovalTarget;
-  decision: DeviceApprovalDecision;
-}): Promise<{ deviceId: string; decision: DeviceApprovalDecision }> {
-  if (!args.userId) throw new Error('DEVICE_APPROVAL_USER_REQUIRED');
-  if (!DEVICE_ID_RE.test(args.approverDeviceId)) throw new Error('DEVICE_APPROVER_INVALID_DEVICE_ID');
-  validateTarget(args.target);
-  if (args.approverDeviceId === args.target.deviceId) {
-    throw new Error('DEVICE_SELF_APPROVAL_REQUIRES_EXPLICIT_FLOW');
-  }
-  return invokeApproval(args);
-}
-
-/**
- * Temporary V2 self-approval until email/QR approval exists. It proves the
- * authenticated user explicitly approved the request and that this exact
- * installation owns the pending Ed25519 private key. It does NOT bind the
- * account identity; that happens only after the PIN unlocks the account key.
- */
-export async function submitSelfDeviceApprovalDecision(args: {
-  userId: string;
-  target: PendingDeviceApprovalTarget;
-  decision: DeviceApprovalDecision;
-}): Promise<{ deviceId: string; decision: DeviceApprovalDecision }> {
-  if (!args.userId) throw new Error('DEVICE_APPROVAL_USER_REQUIRED');
-  validateTarget(args.target);
-  return invokeApproval({
-    ...args,
-    approverDeviceId: args.target.deviceId,
-    selfApproval: true,
-  });
 }
