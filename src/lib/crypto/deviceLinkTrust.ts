@@ -10,10 +10,6 @@ import { peekDeviceSignedPrekey } from './x3dh';
  * aucune racine d'identité, aucun appareil « primaire ».
  */
 
-const DEVICE_TRUST_COLUMNS =
-  'device_id,is_active,revoked_at,stale_at,approval_status,binding_status,routing_status,' +
-  'device_public_key,device_signing_key,device_authorization_signature';
-
 type CanonicalDeviceRow = {
   device_id: string | null;
   is_active: boolean | null;
@@ -47,10 +43,10 @@ export function isCanonicalTrustedDevice(row: CanonicalDeviceRow | null | undefi
 async function fetchCanonicalDevices(userId: string): Promise<CanonicalDeviceRow[]> {
   const { data, error } = await supabase
     .from('user_devices')
-    .select(DEVICE_TRUST_COLUMNS)
+    .select('device_id,is_active,revoked_at,stale_at,approval_status,binding_status,routing_status,device_public_key,device_signing_key,device_authorization_signature')
     .eq('user_id', userId);
   if (error) throw new Error(`DEVICE_TRUST_LOOKUP_FAILED:${error.message}`);
-  return (data ?? []) as CanonicalDeviceRow[];
+  return (data ?? []) as unknown as CanonicalDeviceRow[];
 }
 
 export async function ensureApprovedDeviceTrust(
