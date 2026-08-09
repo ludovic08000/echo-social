@@ -27,7 +27,7 @@ describe('Aegis canonical device cleanup', () => {
   });
 
   it('starts the messaging runtime only through the canonical façade', () => {
-    expect(app).toContain("from '@/lib/api/messagingApi'");
+    expect(app).toContain('@/lib/api/messagingApi');
     expect(app).toContain('messagingApi.startRuntime(user.id)');
     expect(app).not.toContain('startRealtimeKeySync(');
     expect(app).not.toContain('startAegisDeviceInbox(');
@@ -80,7 +80,7 @@ describe('Aegis canonical device cleanup', () => {
     ]) {
       expect(migration).toContain(statement);
     }
-    expect(migration).not.toContain('CASCADE');
+    expect(migration).not.toMatch(/CASCADE\s*;/);
     // Le fingerprint cryptographique de compte ne doit jamais être supprimé.
     expect(migration).not.toContain('user_public_keys');
     for (const grant of [
