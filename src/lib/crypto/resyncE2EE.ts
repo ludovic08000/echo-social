@@ -465,7 +465,6 @@ async function republishDeviceIdentity(
         p_device_id: payload.device_id,
         p_device_name: payload.device_name,
         p_device_public_key: payload.device_public_key,
-        p_device_fingerprint: payload.device_fingerprint,
         p_platform: payload.platform,
         p_user_agent: payload.user_agent,
         p_device_signing_key: payload.device_signing_key,
