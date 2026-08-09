@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { DeviceApprovalGate } from '@/components/messaging/DeviceApprovalGate';
 import { DeviceAccountBindingGate } from '@/components/messaging/DeviceAccountBindingGate';
-import { MessagingPinGate as LegacyMessagingPinGate } from '@/components/LegacyMessagingPinGate';
+import { PinUnlockGate } from '@/components/messaging/PinUnlockGate';
 
 interface MessagingPinGateProps {
   children: ReactNode;
@@ -10,17 +10,17 @@ interface MessagingPinGateProps {
 
 /**
  * Strict order:
- * authenticated session -> device credential -> explicit approval -> PIN ->
+ * authenticated session -> explicit device approval -> PIN unlock ->
  * account binding -> messaging.
  */
 export function MessagingPinGate({ children, compact = false }: MessagingPinGateProps) {
   return (
     <DeviceApprovalGate compact={compact}>
-      <LegacyMessagingPinGate compact={compact}>
+      <PinUnlockGate compact={compact}>
         <DeviceAccountBindingGate compact={compact}>
           {children}
         </DeviceAccountBindingGate>
-      </LegacyMessagingPinGate>
+      </PinUnlockGate>
     </DeviceApprovalGate>
   );
 }
