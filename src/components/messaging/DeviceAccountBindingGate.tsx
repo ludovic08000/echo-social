@@ -3,7 +3,7 @@ import { Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
-import { bindApprovedDeviceToAccountV2 } from '@/lib/crypto/deviceAccountBindingV2';
+import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
 import { cn } from '@/lib/utils';
 
 interface DeviceAccountBindingGateProps {
@@ -33,11 +33,11 @@ export function DeviceAccountBindingGate({ children, compact = false }: DeviceAc
     setProcessing(true);
     setError(null);
     try {
-      await bindApprovedDeviceToAccountV2(user.id, lifecycle.deviceId);
+      await bindApprovedDeviceToAccount(user.id, lifecycle.deviceId);
       attemptedRef.current = null;
       lifecycle.refresh();
       window.dispatchEvent(new CustomEvent('forsure:device-account-bound', {
-        detail: { deviceId: lifecycle.deviceId, source: 'post-pin-binding-v2' },
+        detail: { deviceId: lifecycle.deviceId, source: 'post-pin-binding' },
       }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'DEVICE_ACCOUNT_BIND_FAILED');
@@ -66,7 +66,7 @@ export function DeviceAccountBindingGate({ children, compact = false }: DeviceAc
         </div>
         <h2 className="text-sm font-bold">Finalisation de cet appareil</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          L’appareil a été approuvé. Echo Social lie maintenant sa clé publique à votre identité de compte avant d’activer la messagerie.
+          L’appareil a été approuvé. Echo Social lie maintenant sa clé cryptographique à votre identité de compte avant d’activer la messagerie.
         </p>
         {error && (
           <div className="mt-3">
