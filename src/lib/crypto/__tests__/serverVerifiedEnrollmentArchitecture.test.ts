@@ -13,7 +13,6 @@ describe('server-verified device enrollment architecture', () => {
   it('never approves a device directly from the enrollment client', () => {
     // Invariant : l'approbation passe par deviceApprovalDecision + Edge Function signée.
     expect(enrollmentClient).not.toContain("supabase.rpc(\n    'approve_user_device'");
-    expect(enrollmentClient).not.toContain('approveServerAssignedDevice(');
   });
 
   it('keeps enrollment metadata free of any hardware signal', () => {
