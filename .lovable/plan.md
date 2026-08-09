@@ -1,91 +1,85 @@
-# Stabilisation E2EE — « Aucun message perdu »
+# Ordre strict du cycle de vie appareil (Aegis V1)
 
-## Problème
+Analyse faite sur HEAD `702ae1d6`. Objectif : imposer
+`AUTHENTICATED -> DEVICE_CREDENTIAL_CHECK -> LINK_REQUIRED/PENDING_APPROVAL -> APPROVED_LOCKED -> PIN_UNLOCK -> ACCOUNT_KEY_SYNC -> MESSAGING_READY`
+sans casser l'existant.
 
-Aujourd'hui chaque message est chiffré par Double Ratchet (forward secrecy). Si le device qui détenait la session DR disparaît (nouveau navigateur, cache iOS purgé, ghost device quarantiné), **les anciens messages deviennent définitivement illisibles** — c'est ce qui s'est passé pour 7 messages de la conv `b20b5f51…`.
+## Ce que le code fait aujourd'hui (vérifié)
 
-Le fanout multi-device (A1) ne résout que les **futurs** messages. Il faut une couche d'archive pour le passé.
+- `src/App.tsx:193-205` monte `useAccountKeySync()`, `useCryptoMaintenance()`, `useDeviceRegistration()`, `usePendingDeviceApprovalAlert()`, `useDeviceCopyRetryWorker()`, `startRealtimeKeySync()` et `startAegisDeviceInbox()` dès qu'un utilisateur est authentifié — donc avant toute approbation d'appareil et avant tout PIN.
+- `src/components/MessagingPinGate.tsx` est PIN-first : après les écrans d'identité, il affiche directement PinSetup/PinEntry. Aucun écran Approuver/Refuser n'existe avant le PIN.
+- `src/lib/messaging/currentDevice.ts:229/241/266` lève `DeviceIdentityError` (`DEVICE_ID_UNINITIALIZED`, `DEVICE_ID_REAPPROVAL_REQUIRED`) — et `usePendingDeviceApprovalAlert.ts:43` appelle `getCurrentDeviceId()` sans try/catch, donc une exception fatale dans un hook global.
+- `src/hooks/useDeviceRegistration.ts` appelle `restartWithFreshServerDevice()` (donc `rotateCurrentDeviceId`) depuis des chemins d'erreur/catch (`device-private-key-missing`, `device-key-mismatch`, `account-device-authorization-changed`, `verified-route-check-failed`, `cancelled-server-enrollment`) : génération silencieuse d'un nouveau DeviceID.
+- `src/lib/device-manager/currentDevice.ts:14-21` autorise encore la rotation automatique via `aegis-device-private-key-missing`.
+- Après approbation, la même fonction enchaîne SPK/OPK, `mark_current_device_route_ready`, `ensureApprovedDeviceTrust`, `beginAccountSynchronization` + `syncAegisDeviceInbox` sans jamais vérifier que le PIN est déverrouillé.
+- `supabase/functions/approve-device-enrollment/index.ts:229` refuse `approver_device_id === target_device_id` : aucune auto-approbation V1 possible aujourd'hui.
 
-## Solution : Archive Key par conversation
+## Correctif proposé (minimal, non régressif)
 
-On ajoute une **clé symétrique long-life** par conversation (`ConvArchiveKey`, AES-256-GCM), chiffrée par la clé maître du compte (déjà existante via Backup PIN L5 / Key Sync Backup). À chaque envoi, on duplique le ciphertext :
+### 1. Machine d'état explicite (nouveau)
 
-- **Payload DR** (inchangé) → forward secrecy pour le temps réel
-- **Payload Archive** → chiffré avec `ConvArchiveKey`, lisible par tout device qui peut dériver la clé maître
+`src/lib/device-manager/deviceLifecycleMachine.ts`
+- Type `AegisDeviceLifecycleState = 'AUTHENTICATED' | 'DEVICE_CREDENTIAL_CHECK' | 'LINK_REQUIRED' | 'PENDING_APPROVAL' | 'APPROVED_LOCKED' | 'PIN_UNLOCK' | 'ACCOUNT_KEY_SYNC' | 'MESSAGING_READY'`.
+- `resolveDeviceLifecycleState({ deviceIdStatus, deviceRow, pinUnlocked, accountSyncPhase })` : fonction pure, ordonnée, sans effet de bord.
+- Mapping : DeviceID absent/incohérent -> `LINK_REQUIRED` (jamais exception) ; ligne `user_devices` absente ou `approval_status='pending'` -> `PENDING_APPROVAL` ; approuvée+active -> `APPROVED_LOCKED` ; PIN déverrouillé -> `PIN_UNLOCK` ; sync en cours -> `ACCOUNT_KEY_SYNC` ; sync `ready` -> `MESSAGING_READY`.
+- `canRunCryptoRuntime(state)` = state >= `PIN_UNLOCK` ; `canRunDeviceCredentialWork(state)` = state >= `DEVICE_CREDENTIAL_CHECK`.
 
-Un nouveau device qui s'authentifie récupère la clé maître (via password/PIN/recovery code → backup déjà en place), déchiffre toutes les `ConvArchiveKey` de l'utilisateur, et peut relire 100 % de l'historique.
+`src/hooks/useDeviceLifecycle.ts` (nouveau) : lit `user_devices` (Realtime déjà en place) + statut DeviceID + `useChatPin().unlocked` + `getAccountSynchronizationPhase()`, expose `{ state, deviceRow, refresh, selfApprove, reject }`.
 
-C'est exactement le modèle WhatsApp **« sauvegarde chiffrée de bout en bout »** activée.
+### 2. États contrôlés au lieu d'exceptions fatales
 
-## Architecture
+`src/lib/messaging/currentDevice.ts`
+- Ajouter `peekCurrentDeviceId(): string | null` et `getDeviceIdStatus(): 'ok' | 'uninitialized' | 'mismatch' | 'storage_unavailable'` (aucune levée).
+- `getCurrentDeviceId()` / `hydrateDeviceId()` conservent leur contrat fail-closed (pas de régression pour les appelants crypto).
+- `usePendingDeviceApprovalAlert.ts:43` : remplacer `getCurrentDeviceId()` par `peekCurrentDeviceId()`.
+- Auditer et corriger les autres appels `getCurrentDeviceId()` faits hors try/catch dans du code de rendu.
 
-```text
-account_master_key  (déjà dérivé par PBKDF2 du password, jamais en DB clair)
-        │
-        ▼ wrap (AES-GCM)
-conversation_archive_keys   ← nouvelle table (RLS user)
-  conversation_id | wrapped_key | created_at
-        │
-        ▼ unwrap en RAM
-ConvArchiveKey  (AES-GCM 256)
-        │
-        ▼ encrypt
-messages.archive_body  ← nouvelle colonne nullable
-```
+### 3. UI Approuver/Refuser AVANT le PIN
 
-À l'envoi : `body` (DR fanout) **+** `archive_body` (single archive payload).
-À la lecture : essayer DR → fallback archive → fallback placeholder.
+`src/components/messaging/DeviceApprovalGate.tsx` (nouveau)
+- Écrans : `LINK_REQUIRED` (enrôler cet appareil, action explicite utilisateur -> `beginExplicitDeviceEnrollment`), `PENDING_APPROVAL` (empreinte d'approbation affichée via `computeDeviceApprovalFingerprint`, boutons **Approuver cet appareil** / **Refuser**), `REJECTED/REVOKED` (fail-closed, aucun contournement).
+- Les signaux matériels (UA, timezone, écran) sont affichés en contexte/risque uniquement, jamais utilisés pour décider de la confiance.
 
-## Lots de livraison
+`src/components/MessagingPinGate.tsx`
+- Insérer le gate **avant** tout rendu PIN : si `state` ∈ {`LINK_REQUIRED`, `PENDING_APPROVAL`, rejeté} -> `DeviceApprovalGate`. Le cycle PIN existant n'est atteint qu'à partir de `APPROVED_LOCKED`.
 
-### Lot 1 — Backend (migration)
-- Table `conversation_archive_keys (conversation_id, user_id, wrapped_key, kdf_version, created_at)` + RLS owner + GRANTs.
-- Colonne `messages.archive_body text NULL`.
-- RPC `get_or_create_archive_key(conv_id)` (security definer, retourne le wrapped_key existant ou exige du client qu'il en publie un nouveau).
-- Trigger : `archive_body` immuable après insert.
+### 4. Auto-approbation V1 (sans QR ni email)
 
-### Lot 2 — Crypto client (`src/lib/messaging/archive/`)
-- `archiveKeyManager.ts` : génère/dérive/wrap `ConvArchiveKey` à la 1ère utilisation d'une conv, persiste dans IndexedDB **et** sur Supabase (wrappé).
-- `encryptArchive(plaintext, convId)` / `decryptArchive(payload, convId)`.
-- Hook dans `messageSender.ts` : duplique le plaintext en `archive_body` avant insert.
+`supabase/functions/approve-device-enrollment/index.ts`
+- Nouvelle branche `self_approval: true` où `approver_device_id === target_device_id` est autorisé **uniquement si** le compte n'a aucun autre appareil approuvé, actif et non révoqué (premier/seul appareil). Sinon la règle actuelle `DEVICE_SELF_APPROVAL_FORBIDDEN` reste inchangée.
+- La preuve de possession existante (challenge consommé, signature Ed25519 de l'appareil cible) reste obligatoire : l'auto-approbation ne saute aucune vérification cryptographique.
+- Si un autre appareil approuvé existe, l'UI affiche « approuvez depuis votre appareil déjà connecté » — comportement actuel préservé.
 
-### Lot 3 — Lecture
-- Dans `decryptIncomingMessage` : si DR échoue (2 essais + refanout déjà tenté), tenter `decryptArchive`. Logger en INFO, pas en ERROR.
-- Suppression du log « unsupported encrypted messages left visible ».
+`src/lib/crypto/deviceApprovalDecision.ts` : ajouter `submitSelfDeviceApproval()` (payload canonique dédié, `decision`, `selfApproval: true`) sans modifier le chemin multi-appareils existant.
 
-### Lot 4 — Restauration nouveau device
-- À l'unlock du compte (via password ou Backup PIN), déclencher `restoreArchiveKeys()` : récupère toutes les `wrapped_key`, les unwrap en RAM, déchiffre l'historique.
-- Bandeau « Historique restauré ✓ » discret.
+### 5. Aucun runtime crypto avant APPROVED_LOCKED + PIN
 
-### Lot 5 — Migration des messages existants
-- Impossible pour les 7 messages déjà perdus (plaintexts inexistants).
-- Pour les conversations actives, à la prochaine ouverture le sender produit la `ConvArchiveKey` et tous les **nouveaux** messages seront archivés. Un message bot système une fois indique « ✓ Historique chiffré activé ».
+`src/App.tsx`
+- Scinder `AccountKeySyncRunner` en deux : un `DeviceLifecycleRunner` (toujours monté, ne fait que `useDeviceRegistration` limité à l'enrôlement/credential-check + `usePendingDeviceApprovalAlert`) et un `MessagingRuntimeRunner` monté conditionnellement quand `canRunCryptoRuntime(state)`.
+- `useAccountKeySync`, `useCryptoMaintenance`, `useDeviceCopyRetryWorker`, `startRealtimeKeySync`, `startAegisDeviceInbox` passent dans le runner conditionnel.
 
-### Lot 6 — UX
-- Toggle dans `Paramètres → Sécurité` : « Sauvegarde chiffrée d'historique » (activé par défaut).
-- Si désactivé → comportement actuel (forward secrecy stricte).
-- Note explicative : « Permet de relire vos messages sur un nouvel appareil. Toujours chiffré de bout en bout, le serveur ne peut pas les lire. »
+`src/hooks/useDeviceRegistration.ts`
+- Couper la fonction en deux phases : phase A (credential check + enrôlement + attente d'approbation, autorisée dès `DEVICE_CREDENTIAL_CHECK`) et phase B (SPK/OPK, `mark_current_device_route_ready`, `ensureApprovedDeviceTrust`, `beginAccountSynchronization`, `syncAegisDeviceInbox`) qui n'est exécutée que si `pinUnlocked` est vrai ; sinon on s'arrête à `APPROVED_LOCKED` et la phase B est relancée sur l'événement de déverrouillage PIN.
+- Le polling d'approbation (`APPROVAL_POLL_MS`) reste, il ne touche aucun secret.
 
-## Garanties préservées
+### 6. Suppression du flow « PIN-first » et des rotations silencieuses
 
-- **Zero-access** : le serveur ne voit que `wrapped_key` (chiffré par la clé maître dérivée du password, jamais transmise).
-- **PIN purge** : l'archive key est elle aussi purgée d'IndexedDB sur blur/idle/PIN, comme les autres clés.
-- **Quarantaine** : ghost devices toujours filtrés (A1 + quarantine_ghost_e2ee_devices déjà en place).
-- **Audit** : chaque création/restauration loggée dans `user_recovery_events`.
+- `src/hooks/useDeviceRegistration.ts` : supprimer `restartWithFreshServerDevice()` et tous ses appels. Les cas correspondants deviennent `markRouteUnavailable(...)` + passage en `LINK_REQUIRED` (état contrôlé, ré-enrôlement uniquement sur action utilisateur). Retirer aussi `rotateCurrentDeviceId('cancelled-server-enrollment')` du bloc `catch`.
+- `src/lib/device-manager/currentDevice.ts` : retirer `'aegis-device-private-key-missing'` de `EXPLICIT_ROTATION_REASONS`.
+- `src/components/MessagingPinGate.tsx` : le PIN n'est plus le premier écran ; aucun écran de setup PIN ne doit pouvoir s'afficher pour un appareil non approuvé.
+- Aucun fichier n'est supprimé ; `useDeviceLink`/QR reste en place, non utilisé par le chemin V1.
 
-## Trade-off assumé
+## Tests de non-régression indispensables
 
-Cette couche **assouplit la forward secrecy** : si la clé maître est compromise, l'attaquant peut déchiffrer tout l'historique archivé. C'est le compromis que font WhatsApp/Telegram/iMessage avec leurs backups. L'utilisateur peut le refuser via le toggle.
+1. `deviceLifecycleMachine.test.ts` : ordre strict, aucune transition sautée, PIN jamais atteignable depuis `PENDING_APPROVAL`/`LINK_REQUIRED`.
+2. `currentDeviceStates.test.ts` : `peekCurrentDeviceId`/`getDeviceIdStatus` ne lèvent jamais ; `rotateCurrentDeviceId` lève toujours `DEVICE_ID_REAPPROVAL_REQUIRED`.
+3. `noSilentDeviceIdGeneration.test.ts` : test statique sur la source de `useDeviceRegistration.ts` — aucune occurrence de `rotateCurrentDeviceId` / `beginExplicitDeviceEnrollment` dans un bloc `catch`.
+4. `runtimeGating.test.ts` : `canRunCryptoRuntime` faux pour tous les états < `PIN_UNLOCK` ; la phase B de l'enrôlement n'appelle ni `beginAccountSynchronization` ni `syncAegisDeviceInbox` sans PIN.
+5. `selfApprovalPolicy.test.ts` : auto-approbation acceptée uniquement sans autre appareil approuvé actif ; refusée sinon ; preuve de possession toujours exigée.
+6. `MessagingPinGate` : rendu `DeviceApprovalGate` pour `PENDING_APPROVAL`, PIN uniquement à partir de `APPROVED_LOCKED`.
+7. Conserver verts les tests existants `stableDeviceIdentityArchitecture`, `deviceEnrollmentGate`, `deviceRegistryTrust/FailClosed`, `multiDeviceFanoutSecurity`, `accountSyncBarrier`.
 
-## Détails techniques
+## Points à confirmer
 
-- AES-256-GCM avec IV 12 octets aléatoires par message d'archive.
-- `wrapped_key` = AES-GCM(account_master_key, ConvArchiveKey) + IV.
-- Rotation : `ConvArchiveKey` rotée à chaque changement de PIN (re-wrap en lot).
-- Format de `archive_body` : `{v:1, iv, ct}` JSON base64 (~ +30 % de taille par message).
-
-## Ordre d'exécution
-
-1. Migration SQL (Lot 1) — bloquante, requiert approbation.
-2. Code crypto + sender + decryptor (Lots 2-3) — en parallèle après migration.
-3. Restauration + UX (Lots 4-6) — après tests Lots 2-3.
+- L'auto-approbation V1 doit-elle rester limitée au cas « aucun autre appareil approuvé » (recommandé) ou être permise même quand un autre appareil approuvé existe ?
+- Le changement côté Edge Function implique un déploiement : je ne le fais qu'après votre accord explicite.
