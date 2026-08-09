@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { peekCurrentDeviceId } from '@/lib/messaging/currentDevice';
 
 export interface PendingDeviceApproval {
   deviceId: string;
