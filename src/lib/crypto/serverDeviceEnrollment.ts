@@ -11,7 +11,6 @@ export type DevicePlatform = 'ios' | 'android' | 'web';
 
 export interface DeviceEnrollmentMetadata {
   deviceName: string;
-  deviceFingerprint: string | null;
   platform: DevicePlatform;
   userAgent: string | null;
 }
@@ -130,10 +129,11 @@ export async function beginServerAssignedDeviceEnrollment(
 ): Promise<DeviceEnrollmentChallenge> {
   // One-shot in-memory authorization created only by an explicit UI action.
   // Recovery, reload, sync and key errors cannot silently reach this RPC.
+  // Invariant : aucun signal matériel (UA/langue/CPU/timezone/écran) ne participe
+  // à l'identité ou à la confiance de l'appareil.
   consumeExplicitDeviceEnrollmentAuthorization();
   const { data, error } = await supabase.rpc('begin_user_device_enrollment' as never, {
     p_device_name: metadata.deviceName,
-    p_device_fingerprint: metadata.deviceFingerprint,
     p_platform: metadata.platform,
     p_user_agent: metadata.userAgent,
   } as never);

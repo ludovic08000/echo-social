@@ -87,7 +87,6 @@ describe('simulated Chrome iPhone enrollment', () => {
     authorizeExplicitDeviceEnrollment('user_requested_new_device');
     const challenge = await beginServerAssignedDeviceEnrollment({
       deviceName: 'Chrome · iPhone',
-      deviceFingerprint: 'ios-test-fingerprint',
       platform: 'ios',
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) CriOS/140 Mobile/15E148 Safari/604.1',
     });

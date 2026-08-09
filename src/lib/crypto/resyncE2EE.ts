@@ -332,20 +332,12 @@ async function republishDeviceIdentity(
     const enrollmentUserAgent = typeof navigator !== 'undefined'
       ? (navigator.userAgent || '').slice(0, 500)
       : null;
-    let enrollmentFingerprint: string | null = null;
-    try {
-      const { getDeviceFingerprint } = await import('@/lib/messaging/currentDevice');
-      enrollmentFingerprint = await getDeviceFingerprint();
-    } catch {
-      // Advisory metadata only. The challenge and device keys are authoritative.
-    }
 
     diag?.push('identity', 'info', 'stage server_device_id.begin', {
       platform: enrollmentPlatform,
     });
     enrollmentChallenge = await beginServerAssignedDeviceEnrollment({
       deviceName: enrollmentDeviceName,
-      deviceFingerprint: enrollmentFingerprint,
       platform: enrollmentPlatform,
       userAgent: enrollmentUserAgent,
     });
@@ -388,13 +380,8 @@ async function republishDeviceIdentity(
   const platform = normalizePlatform(getCurrentPlatform());
   const deviceName = (getCurrentDeviceLabel() || 'Unknown device').slice(0, 120);
   const userAgent = typeof navigator !== 'undefined' ? (navigator.userAgent || '').slice(0, 500) : null;
-  let deviceFingerprint: string | null = null;
-  try {
-    const { getDeviceFingerprint } = await import('@/lib/messaging/currentDevice');
-    deviceFingerprint = await getDeviceFingerprint();
-  } catch {
-    // Fingerprint metadata is optional; the device public key is authoritative.
-  }
+
+
 
   const authorization = await prepareDeviceAuthorization(userId, deviceId);
   if (authorization.deviceKx.publicB64 !== devicePublicKeyB64) {
@@ -411,7 +398,6 @@ async function republishDeviceIdentity(
     user_agent: userAgent,
     is_active: true,
     last_seen_at: new Date().toISOString(),
-    device_fingerprint: deviceFingerprint,
   };
 
   // The registration RPC pins the account root and device authorization in one
@@ -474,12 +460,11 @@ async function republishDeviceIdentity(
         }
       }
     } else {
-      const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe', {
+      const { data: registerData, error: registerErr } = await supabase.rpc('register_user_device_safe' as never, {
         p_user_id: payload.user_id,
         p_device_id: payload.device_id,
         p_device_name: payload.device_name,
         p_device_public_key: payload.device_public_key,
-        p_device_fingerprint: payload.device_fingerprint,
         p_platform: payload.platform,
         p_user_agent: payload.user_agent,
         p_device_signing_key: payload.device_signing_key,
@@ -488,7 +473,7 @@ async function republishDeviceIdentity(
         p_account_signing_key: authorization.account.signingKey,
         p_account_fingerprint: authorization.account.fingerprint,
         p_account_binding_signature: authorization.account.bindingSignature,
-      });
+      } as never);
       const registerResult = registerData as {
         ok?: boolean;
         code?: string;

@@ -21,12 +21,10 @@ import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
-import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { useDeviceLifecycle } from "@/hooks/useDeviceLifecycle";
 
-import { usePendingDeviceApprovalAlert } from "@/hooks/usePendingDeviceApprovalAlert";
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
-import { messagingApi } from "@/lib/messaging/messagingApi";
+import { messagingApi } from "@/lib/api/messagingApi";
 
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -204,8 +202,20 @@ function MessagingRuntimeRunner() {
 
   useEffect(() => {
     if (!user?.id) return;
-    const stopRuntime = messagingApi.startRuntime(user.id);
-    return () => stopRuntime();
+    let cancelled = false;
+    let handle: { stop: () => void } | null = null;
+    void messagingApi.startRuntime(user.id).then((started) => {
+      if (cancelled) {
+        started.stop();
+        return;
+      }
+      handle = started;
+    });
+    return () => {
+      cancelled = true;
+      handle?.stop();
+      handle = null;
+    };
   }, [user?.id]);
 
 
@@ -213,13 +223,11 @@ function MessagingRuntimeRunner() {
 }
 
 /**
- * Étape DEVICE_CREDENTIAL_CHECK : enrôlement/lecture d'état appareil seulement.
+ * Étape DEVICE_CREDENTIAL_CHECK : lecture d'état appareil seulement.
  * Aucun AccountKeySync, aucun inbox E2EE, aucun fanout ici.
  */
 function AccountKeySyncRunner() {
   const lifecycle = useDeviceLifecycle();
-  useDeviceRegistration();
-  usePendingDeviceApprovalAlert();
 
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
