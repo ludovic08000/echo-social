@@ -119,8 +119,9 @@ function approvalDecisionPayload(args: {
   target: DeviceRow;
   challengeId: string;
   decision: ApprovalDecision;
+  selfApproval?: boolean;
 }): string {
-  return JSON.stringify({
+  const payload = {
     protocol: "forsure-aegis-device-approval-decision",
     version: 1,
     userId: args.userId,
@@ -130,7 +131,10 @@ function approvalDecisionPayload(args: {
     targetDevicePublicKey: args.target.device_public_key,
     targetDeviceSigningKey: args.target.device_signing_key,
     decision: args.decision,
-  });
+  };
+  return JSON.stringify(args.selfApproval === true
+    ? { ...payload, selfApproval: true }
+    : payload);
 }
 
 async function fingerprintForAccountPayload(payload: string): Promise<string> {
@@ -210,6 +214,7 @@ serve(async (req) => {
     }
 
     const decision = input.decision === "reject" ? "reject" : input.decision === "approve" ? "approve" : null;
+    const selfApproval = input.self_approval === true;
     const approverDeviceId = typeof input.approver_device_id === "string"
       ? input.approver_device_id.trim()
       : "";
@@ -227,8 +232,11 @@ serve(async (req) => {
     if (!DEVICE_ID_RE.test(approverDeviceId) || !DEVICE_ID_RE.test(targetDeviceId)) {
       return respond(req, 400, { ok: false, code: "INVALID_DEVICE_ID" });
     }
-    if (approverDeviceId === targetDeviceId) {
-      return respond(req, 403, { ok: false, code: "DEVICE_SELF_APPROVAL_FORBIDDEN" });
+    if (approverDeviceId === targetDeviceId && !selfApproval) {
+      return respond(req, 403, { ok: false, code: "DEVICE_SELF_APPROVAL_REQUIRES_EXPLICIT_FLOW" });
+    }
+    if (selfApproval && approverDeviceId !== targetDeviceId) {
+      return respond(req, 400, { ok: false, code: "DEVICE_SELF_APPROVAL_TARGET_MISMATCH" });
     }
     if (!UUID_RE.test(targetChallengeId)) {
       return respond(req, 400, { ok: false, code: "INVALID_CHALLENGE_ID" });
@@ -271,7 +279,11 @@ serve(async (req) => {
     const approver = approverResult.data as DeviceRow;
     const target = targetResult.data as DeviceRow;
 
-    if (!isTrustedApprover(approver)) {
+    // Trusted-device approval retains its original trust requirement. V1
+    // self-approval is deliberately different: the target is still pending,
+    // and trust is established only after all target possession/binding proofs
+    // below have been verified.
+    if (!selfApproval && !isTrustedApprover(approver)) {
       return respond(req, 403, { ok: false, code: "APPROVER_DEVICE_NOT_TRUSTED" });
     }
     if (!approver.device_signing_key) {
@@ -286,6 +298,9 @@ serve(async (req) => {
     if (!target.device_public_key || !target.device_signing_key || !target.device_authorization_signature) {
       return respond(req, 422, { ok: false, code: "DEVICE_AUTHORIZATION_INCOMPLETE" });
     }
+    if (selfApproval && approver.device_signing_key !== target.device_signing_key) {
+      return respond(req, 422, { ok: false, code: "DEVICE_SELF_APPROVAL_SIGNING_KEY_CHANGED" });
+    }
     if (target.approval_challenge_id !== targetChallengeId) {
       return respond(req, 409, { ok: false, code: "DEVICE_APPROVAL_CHALLENGE_CHANGED" });
     }
@@ -299,6 +314,7 @@ serve(async (req) => {
         target,
         challengeId: targetChallengeId,
         decision,
+        selfApproval,
       }),
     );
     if (!approvalSignatureValid) {
@@ -318,42 +334,6 @@ serve(async (req) => {
     }
     const challenge = challengeData as ChallengeRow;
 
-    if (decision === "reject") {
-      const { data: rejectedData, error: rejectedError } = await admin.rpc(
-        "reject_verified_user_device_enrollment",
-        {
-          p_user_id: user.id,
-          p_approver_device_id: approver.device_id,
-          p_challenge_id: challenge.id,
-          p_device_id: target.device_id,
-        },
-      );
-      const rejected = rejectedData as JsonObject | null;
-      if (rejectedError) {
-        console.error("[approve-device-enrollment] rejection finalizer failed", rejectedError.message);
-        return respond(req, 500, { ok: false, code: "DEVICE_REJECTION_FINALIZER_FAILED" });
-      }
-      if (!rejected || rejected.ok !== true || rejected.code !== "DEVICE_REVOKED") {
-        return respond(req, 409, {
-          ok: false,
-          code: typeof rejected?.code === "string" ? rejected.code : "DEVICE_REJECTION_REJECTED",
-        });
-      }
-      return respond(req, 200, {
-        ok: true,
-        code: "DEVICE_REVOKED",
-        decision,
-        device_id: target.device_id,
-        challenge_id: challenge.id,
-        approver_device_id: approver.device_id,
-      });
-    }
-
-    if (accountResult.error || !accountResult.data) {
-      return respond(req, 409, { ok: false, code: "ACCOUNT_IDENTITY_NOT_FOUND" });
-    }
-    const account = accountResult.data as AccountRow;
-
     if (challenge.cancelled_at) {
       return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_CANCELLED" });
     }
@@ -361,10 +341,8 @@ serve(async (req) => {
       return respond(req, 409, { ok: false, code: "DEVICE_ENROLLMENT_NOT_COMPLETED" });
     }
 
-    // Invariant: la preuve de possession doit avoir été produite AVANT
-    // l'expiration du challenge (10 min). Seule la décision humaine dispose
-    // d'une fenêtre de 24 h après cette preuve; le challenge est déjà consommé
-    // et à usage unique, donc aucun rejeu n'est autorisé.
+    // Proof of possession must have been produced before the original
+    // challenge expiry. Human approval may happen for 24h after consumption.
     const APPROVAL_DECISION_WINDOW_MS = 24 * 60 * 60 * 1000;
     const consumedAt = Date.parse(challenge.consumed_at);
     const expiresAt = Date.parse(challenge.expires_at);
@@ -380,6 +358,55 @@ serve(async (req) => {
     if (challenge.possession_payload_version !== 1 || !challenge.device_possession_signature) {
       return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_PROOF_REQUIRED" });
     }
+
+    if (decision === "reject") {
+      // Rejection is also explicit and signed. Use one conditional update so a
+      // concurrent approval cannot be overwritten after the row stopped being
+      // pending.
+      const now = new Date().toISOString();
+      const { data: rejectedRows, error: rejectedError } = await admin
+        .from("user_devices")
+        .update({
+          approval_status: "rejected",
+          is_active: false,
+          rejected_at: now,
+          rejected_by: user.id,
+          revoked_at: now,
+          revoke_reason: selfApproval ? "self_rejected_pending_device" : "trusted_device_rejected",
+          stale_at: now,
+          routing_status: "unavailable",
+          routing_error: "DEVICE_REJECTED",
+          updated_at: now,
+        })
+        .eq("user_id", user.id)
+        .eq("device_id", target.device_id)
+        .eq("approval_status", "pending")
+        .is("revoked_at", null)
+        .select("device_id");
+
+      if (rejectedError) {
+        console.error("[approve-device-enrollment] rejection update failed", rejectedError.message);
+        return respond(req, 500, { ok: false, code: "DEVICE_REJECTION_FINALIZER_FAILED" });
+      }
+      if (!rejectedRows || rejectedRows.length !== 1) {
+        return respond(req, 409, { ok: false, code: "DEVICE_REJECTION_RACE_LOST" });
+      }
+      return respond(req, 200, {
+        ok: true,
+        code: "DEVICE_REVOKED",
+        decision,
+        device_id: target.device_id,
+        challenge_id: challenge.id,
+        approver_device_id: approver.device_id,
+        self_approval: selfApproval,
+      });
+    }
+
+    if (accountResult.error || !accountResult.data) {
+      return respond(req, 409, { ok: false, code: "ACCOUNT_IDENTITY_NOT_FOUND" });
+    }
+    const account = accountResult.data as AccountRow;
+
     if (
       !account.identity_key
       || !account.signing_key
@@ -424,11 +451,13 @@ serve(async (req) => {
       return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_SIGNATURE_INVALID" });
     }
 
+    // This finalizer exists in the production schema and atomically re-checks
+    // account/device/challenge proofs before activation. The previous
+    // *_from_device RPC name did not exist in the current schema.
     const { data: finalizedData, error: finalizedError } = await admin.rpc(
-      "finalize_verified_user_device_approval_from_device",
+      "finalize_verified_user_device_approval_verified_proofs",
       {
         p_user_id: user.id,
-        p_approver_device_id: approver.device_id,
         p_challenge_id: challenge.id,
         p_device_id: target.device_id,
         p_device_public_key: target.device_public_key,
@@ -460,6 +489,7 @@ serve(async (req) => {
       device_id: target.device_id,
       challenge_id: challenge.id,
       approver_device_id: approver.device_id,
+      self_approval: selfApproval,
       existing: finalized.existing === true,
     });
   } catch (error) {
