@@ -21,12 +21,9 @@ import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
-import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
 import { useDeviceLifecycle } from "@/hooks/useDeviceLifecycle";
-import { usePendingDeviceApprovalAlert } from "@/hooks/usePendingDeviceApprovalAlert";
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
-import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
-import { startAegisDeviceInbox } from "@/lib/messaging/aegisDeviceInbox";
+import { messagingApi } from "@/lib/api/messagingApi";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
@@ -191,28 +188,16 @@ function IncomingCallHandler() {
   );
 }
 
-/**
- * Runtime cryptographique complet. Invariant : ce sous-arbre n'existe qu'après
- * APPROVED_LOCKED + déverrouillage du PIN. Tous les hooks qui utilisent le
- * DeviceID, les prekeys, l'inbox/fanout ou les appels restent donc inactifs
- * pendant DEVICE_CREDENTIAL_CHECK / LINK_REQUIRED / PENDING_APPROVAL.
- */
+/** Runtime E2EE: mounted only when the canonical lifecycle authorizes it. */
 function MessagingRuntimeRunner() {
   const { user } = useAuth();
   useAccountKeySync();
   useCryptoMaintenance();
-  useDeviceRegistration();
-  usePendingDeviceApprovalAlert();
   useDeviceCopyRetryWorker();
 
   useEffect(() => {
     if (!user?.id) return;
-    const stop = startRealtimeKeySync({ userId: user.id });
-    const stopInbox = startAegisDeviceInbox(user.id);
-    return () => {
-      stop();
-      stopInbox();
-    };
+    return messagingApi.startRuntime(user.id);
   }, [user?.id]);
 
   return (
@@ -224,11 +209,6 @@ function MessagingRuntimeRunner() {
   );
 }
 
-/**
- * Lecture seule du lifecycle. La cérémonie pré-PIN est gérée par
- * DeviceApprovalGate dans la messagerie ; aucun ancien hook d'enrôlement ne
- * tourne ici avant que le lifecycle autorise le runtime cryptographique.
- */
 function AccountKeySyncRunner() {
   const lifecycle = useDeviceLifecycle();
 
@@ -289,7 +269,6 @@ function AppContent() {
                     <Route path="/reset-password" element={<ResetPassword />} />
                     <Route path="/onboarding" element={<Onboarding />} />
                     <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
-
                     <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
                     <Route path="/feed" element={<Feed />} />
                     <Route path="/post/:id" element={<PostDetail />} />
@@ -315,7 +294,6 @@ function AppContent() {
                     <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
                     <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
                     <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
-                    
                     <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
                     <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
                     <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
