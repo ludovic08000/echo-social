@@ -398,7 +398,6 @@ async function republishDeviceIdentity(
     user_agent: userAgent,
     is_active: true,
     last_seen_at: new Date().toISOString(),
-    device_fingerprint: deviceFingerprint,
   };
 
   // The registration RPC pins the account root and device authorization in one
