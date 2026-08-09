@@ -10,6 +10,16 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 type RpcObject = Record<string, unknown>;
 export type DevicePlatform = 'ios' | 'android' | 'web';
 
+type RegisteredDeviceRow = {
+  device_id: string;
+  platform: string | null;
+  is_active: boolean | null;
+  approval_status: string | null;
+  revoked_at: string | null;
+  crypto_invalid_at: string | null;
+  binding_status: string | null;
+};
+
 export interface DeviceEnrollmentMetadata {
   deviceName: string;
   deviceFingerprint: string | null;
@@ -115,17 +125,19 @@ export async function hasRegisteredDevice(userId: string, deviceId: string): Pro
   if (!deviceId) return false;
   const { data, error } = await supabase
     .from('user_devices')
-    .select('device_id,platform,is_active,approval_status,revoked_at,crypto_invalid_at,binding_status')
+    .select('*')
     .eq('user_id', userId)
     .eq('device_id', deviceId)
     .maybeSingle();
   if (error) throw new Error(`DEVICE_ROUTE_LOOKUP_FAILED:${error.message}`);
-  if (!data?.device_id || data.binding_status !== 'bound') return false;
-  return isRegisteredDeviceReusable(data.platform, getCurrentPlatform(), {
-    isActive: data.is_active,
-    approvalStatus: data.approval_status,
-    revokedAt: data.revoked_at,
-    cryptoInvalidAt: data.crypto_invalid_at,
+  if (!data) return false;
+  const row = data as unknown as RegisteredDeviceRow;
+  if (!row.device_id || row.binding_status !== 'bound') return false;
+  return isRegisteredDeviceReusable(row.platform, getCurrentPlatform(), {
+    isActive: row.is_active,
+    approvalStatus: row.approval_status,
+    revokedAt: row.revoked_at,
+    cryptoInvalidAt: row.crypto_invalid_at,
   });
 }
 
