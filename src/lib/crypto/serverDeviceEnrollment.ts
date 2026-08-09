@@ -1,8 +1,13 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PreparedDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
-import { signDeviceEnrollmentPossession } from '@/lib/crypto/deviceEnrollmentPossession';
+import {
+  signDeviceEnrollmentPossession,
+  signDeviceEnrollmentPossessionV2,
+} from '@/lib/crypto/deviceEnrollmentPossession';
 import { consumeExplicitDeviceEnrollmentAuthorization } from '@/lib/crypto/deviceEnrollmentGate';
 import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
+import type { DeviceIdentityKey } from '@/lib/crypto/deviceIdentity';
+import type { DeviceKxKey } from '@/lib/crypto/deviceKx';
 
 const SERVER_DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -11,6 +16,7 @@ export type DevicePlatform = 'ios' | 'android' | 'web';
 
 export interface DeviceEnrollmentMetadata {
   deviceName: string;
+  /** Metadata/risk signal only. Never used to establish or resume identity. */
   deviceFingerprint: string | null;
   platform: DevicePlatform;
   userAgent: string | null;
@@ -74,7 +80,11 @@ export function parseCompletedDeviceEnrollment(value: unknown, expectedDeviceId:
   const result = asObject(value);
   if (result.ok !== true) throw new Error(responseCode(result));
   const code = responseCode(result);
-  if (code !== 'DEVICE_ENROLLMENT_COMPLETED' && code !== 'DEVICE_ENROLLMENT_ALREADY_COMPLETED') {
+  if (![
+    'DEVICE_ENROLLMENT_COMPLETED',
+    'DEVICE_ENROLLMENT_ALREADY_COMPLETED',
+    'DEVICE_ENROLLMENT_STAGED_V2',
+  ].includes(code)) {
     throw new Error('DEVICE_ENROLLMENT_NOT_STAGED');
   }
   const deviceId = typeof result.device_id === 'string' ? result.device_id : '';
@@ -86,7 +96,10 @@ export function parseCompletedDeviceEnrollment(value: unknown, expectedDeviceId:
 export function parseApprovedDevice(value: unknown, expectedDeviceId: string): string {
   const result = asObject(value);
   if (result.ok !== true) throw new Error(responseCode(result));
-  if (responseCode(result) !== 'DEVICE_APPROVED') throw new Error('DEVICE_APPROVAL_INVALID_RESPONSE');
+  const code = responseCode(result);
+  if (code !== 'DEVICE_APPROVED' && code !== 'DEVICE_APPROVED_UNBOUND') {
+    throw new Error('DEVICE_APPROVAL_INVALID_RESPONSE');
+  }
   const deviceId = typeof result.device_id === 'string' ? result.device_id : '';
   if (!SERVER_DEVICE_ID_RE.test(deviceId)) throw new Error('DEVICE_APPROVAL_INVALID_DEVICE_ID');
   if (deviceId !== expectedDeviceId) throw new Error('DEVICE_APPROVAL_SERVER_ID_MISMATCH');
@@ -128,8 +141,6 @@ export async function hasRegisteredDevice(userId: string, deviceId: string): Pro
 export async function beginServerAssignedDeviceEnrollment(
   metadata: DeviceEnrollmentMetadata,
 ): Promise<DeviceEnrollmentChallenge> {
-  // One-shot in-memory authorization created only by an explicit UI action.
-  // Recovery, reload, sync and key errors cannot silently reach this RPC.
   consumeExplicitDeviceEnrollmentAuthorization();
   const { data, error } = await supabase.rpc('begin_user_device_enrollment' as never, {
     p_device_name: metadata.deviceName,
@@ -142,9 +153,10 @@ export async function beginServerAssignedDeviceEnrollment(
 }
 
 export async function approveServerAssignedDevice(_deviceId: string): Promise<string> {
-  throw new Error('DEVICE_APPROVAL_REQUIRES_TRUSTED_DEVICE');
+  throw new Error('DEVICE_APPROVAL_REQUIRES_EXPLICIT_FLOW');
 }
 
+/** Legacy v1 completion: account identity is already unlocked. */
 export async function completeServerAssignedDeviceEnrollment(
   challenge: DeviceEnrollmentChallenge,
   authorization: PreparedDeviceAuthorization,
@@ -172,6 +184,37 @@ export async function completeServerAssignedDeviceEnrollment(
     p_account_binding_signature: authorization.account.bindingSignature,
   } as never);
   if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_FAILED:${error.message}`);
+  return parseCompletedDeviceEnrollment(data, challenge.deviceId);
+}
+
+/**
+ * Signal-like pre-PIN completion. Only the installation's own X25519/Ed25519
+ * public keys and an Ed25519 possession proof are staged. Account binding is a
+ * separate post-PIN operation.
+ */
+export async function completeServerAssignedDeviceEnrollmentV2(
+  challenge: DeviceEnrollmentChallenge,
+  deviceIdentity: DeviceIdentityKey,
+  deviceKx: DeviceKxKey,
+): Promise<string> {
+  const possessionSignature = await signDeviceEnrollmentPossessionV2({
+    challengeId: challenge.challengeId,
+    deviceId: challenge.deviceId,
+    nonce: challenge.nonce,
+    expiresAt: challenge.expiresAt,
+    devicePublicKey: deviceKx.publicB64,
+    deviceSigningKey: deviceIdentity.publicB64,
+    deviceSigningPrivateKey: deviceIdentity.privateKey,
+  });
+
+  const { data, error } = await supabase.rpc('complete_user_device_enrollment_v2' as never, {
+    p_challenge_id: challenge.challengeId,
+    p_nonce: challenge.nonce,
+    p_device_public_key: deviceKx.publicB64,
+    p_device_signing_key: deviceIdentity.publicB64,
+    p_device_possession_signature: possessionSignature,
+  } as never);
+  if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_V2_FAILED:${error.message}`);
   return parseCompletedDeviceEnrollment(data, challenge.deviceId);
 }
 
