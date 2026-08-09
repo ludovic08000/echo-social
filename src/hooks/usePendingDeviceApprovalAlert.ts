@@ -40,7 +40,7 @@ export function usePendingDeviceApprovalAlert() {
       .eq('user_id', user.id);
     if (error || !data) return;
 
-    const currentDeviceId = getCurrentDeviceId();
+    const currentDeviceId = peekCurrentDeviceId();
     const rows = data as Array<Record<string, unknown>>;
 
     setHasApprovedDevice(rows.some((row) => (
