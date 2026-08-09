@@ -464,8 +464,11 @@ export function useDeviceRegistration() {
         }
 
         if (!existing || !isApproved(existing)) {
-          throw new Error('DEVICE_APPROVAL_STATE_INVALID');
+          // État contrôlé : l'appareil doit repasser par la cérémonie d'approbation.
+          requireExplicitReenrollment('device-approval-state-invalid');
+          return;
         }
+
 
         const signingPrivateKey = deviceIdentity.privateKey;
 
