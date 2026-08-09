@@ -1,0 +1,55 @@
+name: E2EE Cleanup Diagnostics
+
+on:
+  push:
+    branches:
+      - 'fix/device-lifecycle-signal-order'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Crypto messaging suite
+        id: crypto
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm exec vitest run -- src/lib/crypto src/lib/messaging --reporter=verbose 2>&1 | tee crypto.log
+      - name: Full project tests
+        id: full
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee full.log
+      - name: Production build
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2ee-cleanup-diagnostics
+          path: |
+            crypto.log
+            full.log
+            build.log
+      - name: Fail if any command failed
+        if: steps.crypto.outcome != 'success' || steps.full.outcome != 'success' || steps.build.outcome != 'success'
+        run: exit 1
