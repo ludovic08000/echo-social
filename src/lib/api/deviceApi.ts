@@ -3,7 +3,6 @@ import {
   beginExplicitDeviceEnrollment,
   getCurrentDeviceLabel,
   getCurrentPlatform,
-  getDeviceFingerprint,
   peekCurrentDeviceId,
   setCurrentDeviceId,
   setCurrentDeviceUserScope,
@@ -192,7 +191,6 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
   try {
     challenge = await beginServerAssignedDeviceEnrollment({
       deviceName: getCurrentDeviceLabel(),
-      deviceFingerprint: await getDeviceFingerprint(),
       platform: normalizePlatform(getCurrentPlatform()),
       userAgent: typeof navigator === 'undefined' ? null : navigator.userAgent.slice(0, 500),
     });
