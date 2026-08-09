@@ -380,13 +380,8 @@ async function republishDeviceIdentity(
   const platform = normalizePlatform(getCurrentPlatform());
   const deviceName = (getCurrentDeviceLabel() || 'Unknown device').slice(0, 120);
   const userAgent = typeof navigator !== 'undefined' ? (navigator.userAgent || '').slice(0, 500) : null;
-  let deviceFingerprint: string | null = null;
-  try {
-    const { getDeviceFingerprint } = await import('@/lib/messaging/currentDevice');
-    deviceFingerprint = await getDeviceFingerprint();
-  } catch {
-    // Fingerprint metadata is optional; the device public key is authoritative.
-  }
+
+
 
   const authorization = await prepareDeviceAuthorization(userId, deviceId);
   if (authorization.deviceKx.publicB64 !== devicePublicKeyB64) {
