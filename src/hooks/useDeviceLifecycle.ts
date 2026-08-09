@@ -6,7 +6,7 @@ import {
   peekCurrentDeviceId,
   type CurrentDeviceIdStatus,
 } from '@/lib/messaging/currentDevice';
-import { deviceSecurity } from '@/lib/device-manager/deviceSecurity';
+import { deviceApi } from '@/lib/api/deviceApi';
 import {
   canPromptForPin,
   canRunCryptoRuntime,
@@ -67,7 +67,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     }
 
     setRecord('unknown');
-    void deviceSecurity.getState(userId).then((snapshot) => {
+    void deviceApi.getState(userId).then((snapshot) => {
       if (!mountedRef.current) return;
       const row = snapshot.record;
       setRecord(row ? {
