@@ -143,10 +143,18 @@ async function fingerprintForAccountPayload(payload: string): Promise<string> {
   return fingerprint.toUpperCase();
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 async function verifyEd25519(publicKeyB64: string, signatureB64: string, payload: string): Promise<boolean> {
   try {
-    const publicKey = decodeBase64(publicKeyB64, 32, "ED25519_PUBLIC_KEY");
-    const signature = decodeBase64(signatureB64, 64, "ED25519_SIGNATURE");
+    // Invariant : l'algorithme Ed25519 est inchangé ; seuls des ArrayBuffer
+    // explicites sont passés à WebCrypto pour satisfaire le typage Deno.
+    const publicKey = toArrayBuffer(decodeBase64(publicKeyB64, 32, "ED25519_PUBLIC_KEY"));
+    const signature = toArrayBuffer(decodeBase64(signatureB64, 64, "ED25519_SIGNATURE"));
     const key = await crypto.subtle.importKey(
       "raw",
       publicKey,
@@ -154,7 +162,12 @@ async function verifyEd25519(publicKeyB64: string, signatureB64: string, payload
       false,
       ["verify"],
     );
-    return await crypto.subtle.verify("Ed25519", key, signature, encoder.encode(payload));
+    return await crypto.subtle.verify(
+      "Ed25519",
+      key,
+      signature,
+      toArrayBuffer(encoder.encode(payload)),
+    );
   } catch {
     return false;
   }
