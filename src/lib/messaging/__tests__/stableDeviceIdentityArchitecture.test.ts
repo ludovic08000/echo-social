@@ -7,14 +7,11 @@ const enrollmentGate = readFileSync('src/lib/crypto/deviceEnrollmentGate.ts', 'u
 const resync = readFileSync('src/lib/crypto/resyncE2EE.ts', 'utf8');
 
 describe('stable DeviceID architecture', () => {
-  it('never generates a replacement from get, rotate or hydrate error paths', () => {
-    const rotateBody = currentDevice.match(/export function rotateCurrentDeviceId[\s\S]*?\n}/)?.[0] ?? '';
+  it('never generates a replacement from get or hydrate error paths', () => {
     const getBody = currentDevice.match(/export function getCurrentDeviceId[\s\S]*?\n}/)?.[0] ?? '';
     const hydrateBody = currentDevice.match(/export async function hydrateDeviceId[\s\S]*?\n}/)?.[0] ?? '';
-    expect(rotateBody).not.toContain('generateId()');
     expect(getBody).not.toContain('generateId()');
     expect(hydrateBody).not.toContain('generateId()');
-    expect(rotateBody).toContain('DEVICE_ID_REAPPROVAL_REQUIRED');
     expect(hydrateBody).toContain('DEVICE_ID_REAPPROVAL_REQUIRED');
   });
 
@@ -49,9 +46,24 @@ describe('stable DeviceID architecture', () => {
     expect(enrollment).toContain('consumeExplicitDeviceEnrollmentAuthorization();');
   });
 
-  it('ignores the legacy backup value instead of adopting it', () => {
-    const backupBody = currentDevice.match(/export function adoptDeviceIdFromBackup[\s\S]*?\n}/)?.[0] ?? '';
-    expect(backupBody).toContain('return getCurrentDeviceId();');
-    expect(backupBody).not.toContain('setCurrentDeviceId(_legacyId)');
+  it('drops every legacy device-identity escape hatch', () => {
+    // Invariant : plus aucune rotation silencieuse ni adoption d'un DeviceID de sauvegarde.
+    expect(currentDevice).not.toContain('adoptDeviceIdFromBackup');
+    expect(currentDevice).not.toContain('rotateCurrentDeviceId');
+  });
+
+  it('never derives device identity from hardware or UA signals', () => {
+    for (const symbol of [
+      'getDeviceFingerprint',
+      'getDeviceFingerprintCandidates',
+      'computeDeviceFingerprints',
+      'navigator.hardwareConcurrency',
+      'screen.width',
+      'Intl.DateTimeFormat',
+    ]) {
+      expect(currentDevice).not.toContain(symbol);
+    }
+    expect(enrollment).not.toContain('deviceFingerprint');
+    expect(enrollment).not.toContain('p_device_fingerprint');
   });
 });
