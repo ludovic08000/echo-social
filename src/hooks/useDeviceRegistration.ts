@@ -16,7 +16,7 @@ import {
   getDeviceFingerprint,
   hydrateDeviceId,
   isDeviceIdTemporary,
-  rotateCurrentDeviceId,
+  peekCurrentDeviceId,
   setCurrentDeviceId,
   setCurrentDeviceUserScope,
 } from '@/lib/messaging/currentDevice';
