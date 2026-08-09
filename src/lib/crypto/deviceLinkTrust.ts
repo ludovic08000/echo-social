@@ -1,7 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { verifyPublicIdentityBinding } from './keyManager';
 import { verifyDeviceAuthorization } from './deviceIdentity';
-import { peekDeviceSignedPrekey } from './x3dh';
 
 type AccountIdentityRow = {
   identity_key: string;
@@ -23,6 +22,12 @@ type CanonicalDeviceRow = {
   revoked_at: string | null;
   stale_at: string | null;
   crypto_invalid_at: string | null;
+};
+
+export type CanonicalDeviceIdentity = {
+  deviceId: string;
+  devicePublicKey: string;
+  deviceSigningKey: string;
 };
 
 async function readAccountIdentity(userId: string): Promise<AccountIdentityRow> {
@@ -69,7 +74,7 @@ async function verifyCanonicalDevice(
   userId: string,
   device: CanonicalDeviceRow,
   account: AccountIdentityRow,
-): Promise<void> {
+): Promise<CanonicalDeviceIdentity> {
   assertCanonicalRoute(device);
   const authorized = await verifyDeviceAuthorization({
     userId,
@@ -81,20 +86,18 @@ async function verifyCanonicalDevice(
     authorizationSignature: device.device_authorization_signature!,
   });
   if (!authorized) throw new Error('DEVICE_AUTHORIZATION_INVALID');
-
-  const spk = await peekDeviceSignedPrekey(userId, device.device_id).catch(() => null);
-  if (!spk) throw new Error('DEVICE_SIGNED_PREKEY_UNAVAILABLE');
+  return {
+    deviceId: device.device_id,
+    devicePublicKey: device.device_public_key!,
+    deviceSigningKey: device.device_signing_key!,
+  };
 }
 
-/**
- * Verify one canonical device directly from the account-bound registry.
- * No primary-device, signed-list, fingerprint-recovery or cross-device trust
- * layer participates in this decision.
- */
-export async function ensureApprovedDeviceTrust(
+/** Verify one canonical device directly from the account-bound registry. */
+export async function getApprovedDeviceIdentity(
   userId: string,
   deviceId: string,
-): Promise<number> {
+): Promise<CanonicalDeviceIdentity> {
   if (!userId || !deviceId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
   const [{ data, error }, account] = await Promise.all([
     supabase
@@ -106,14 +109,15 @@ export async function ensureApprovedDeviceTrust(
     readAccountIdentity(userId),
   ]);
   if (error || !data) throw new Error('DEVICE_NOT_FOUND');
-  await verifyCanonicalDevice(userId, data as unknown as CanonicalDeviceRow, account);
+  return verifyCanonicalDevice(userId, data as unknown as CanonicalDeviceRow, account);
+}
+
+export async function ensureApprovedDeviceTrust(userId: string, deviceId: string): Promise<number> {
+  await getApprovedDeviceIdentity(userId, deviceId);
   return 0;
 }
 
-/**
- * Validate every currently active canonical route. Historical revoked/stale
- * rows are ignored; an active malformed route is counted as invalid.
- */
+/** Validate every currently active canonical route. Historical revoked/stale rows are ignored. */
 export async function repairApprovedDeviceTrust(userId: string): Promise<number> {
   if (!userId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
   const [{ data, error }, account] = await Promise.all([
