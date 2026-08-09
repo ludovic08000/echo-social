@@ -2110,6 +2110,7 @@ export type Database = {
           nonce_hash: string
           platform: string
           possession_payload_version: number | null
+          possession_verified_at: string | null
           user_agent: string | null
           user_id: string
         }
@@ -2127,6 +2128,7 @@ export type Database = {
           nonce_hash: string
           platform: string
           possession_payload_version?: number | null
+          possession_verified_at?: string | null
           user_agent?: string | null
           user_id: string
         }
@@ -2144,6 +2146,7 @@ export type Database = {
           nonce_hash?: string
           platform?: string
           possession_payload_version?: number | null
+          possession_verified_at?: string | null
           user_agent?: string | null
           user_id?: string
         }
@@ -7045,13 +7048,16 @@ export type Database = {
       }
       user_devices: {
         Row: {
+          account_bound_at: string | null
           approval_challenge_id: string | null
           approval_email_sent_at: string | null
           approval_requested_at: string | null
           approval_status: string
           approved_at: string | null
           approved_by: string | null
+          binding_status: string
           created_at: string
+          credential_version: number
           crypto_invalid_at: string | null
           crypto_invalid_reason: string | null
           device_authorization_signature: string | null
@@ -7065,6 +7071,7 @@ export type Database = {
           is_primary: boolean
           last_seen_at: string
           platform: string | null
+          possession_verified_at: string | null
           prekey_repair_requested_at: string | null
           rejected_at: string | null
           rejected_by: string | null
@@ -7079,13 +7086,16 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          account_bound_at?: string | null
           approval_challenge_id?: string | null
           approval_email_sent_at?: string | null
           approval_requested_at?: string | null
           approval_status?: string
           approved_at?: string | null
           approved_by?: string | null
+          binding_status?: string
           created_at?: string
+          credential_version?: number
           crypto_invalid_at?: string | null
           crypto_invalid_reason?: string | null
           device_authorization_signature?: string | null
@@ -7099,6 +7109,7 @@ export type Database = {
           is_primary?: boolean
           last_seen_at?: string
           platform?: string | null
+          possession_verified_at?: string | null
           prekey_repair_requested_at?: string | null
           rejected_at?: string | null
           rejected_by?: string | null
@@ -7113,13 +7124,16 @@ export type Database = {
           user_id: string
         }
         Update: {
+          account_bound_at?: string | null
           approval_challenge_id?: string | null
           approval_email_sent_at?: string | null
           approval_requested_at?: string | null
           approval_status?: string
           approved_at?: string | null
           approved_by?: string | null
+          binding_status?: string
           created_at?: string
+          credential_version?: number
           crypto_invalid_at?: string | null
           crypto_invalid_reason?: string | null
           device_authorization_signature?: string | null
@@ -7133,6 +7147,7 @@ export type Database = {
           is_primary?: boolean
           last_seen_at?: string
           platform?: string | null
+          possession_verified_at?: string | null
           prekey_repair_requested_at?: string | null
           rejected_at?: string | null
           rejected_by?: string | null
@@ -8440,6 +8455,26 @@ export type Database = {
             }
             Returns: Json
           }
+        | {
+            Args: {
+              p_challenge_id: string
+              p_device_possession_signature: string
+              p_device_public_key: string
+              p_device_signing_key: string
+              p_nonce: string
+            }
+            Returns: Json
+          }
+      complete_user_device_enrollment_v2: {
+        Args: {
+          p_challenge_id: string
+          p_device_possession_signature: string
+          p_device_public_key: string
+          p_device_signing_key: string
+          p_nonce: string
+        }
+        Returns: Json
+      }
       consume_device_link_token: {
         Args: { p_token_hash: string }
         Returns: {
@@ -8541,6 +8576,44 @@ export type Database = {
           post_id: string
           reason: string
         }[]
+      }
+      finalize_device_account_binding: {
+        Args: {
+          p_device_authorization_signature: string
+          p_device_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      finalize_device_account_binding_v2: {
+        Args: {
+          p_device_authorization_signature: string
+          p_device_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      finalize_self_approved_device: {
+        Args: {
+          p_challenge_id: string
+          p_device_id: string
+          p_device_possession_signature: string
+          p_device_public_key: string
+          p_device_signing_key: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      finalize_self_approved_device_v2: {
+        Args: {
+          p_challenge_id: string
+          p_device_id: string
+          p_device_possession_signature: string
+          p_device_public_key: string
+          p_device_signing_key: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       finalize_verified_user_device_approval:
         | {
