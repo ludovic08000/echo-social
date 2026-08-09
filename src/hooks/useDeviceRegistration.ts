@@ -311,15 +311,19 @@ export function useDeviceRegistration() {
         ...details,
       }, level);
 
-      const restartWithFreshServerDevice = async (restartReason: string): Promise<void> => {
-        rotateCurrentDeviceId(restartReason);
+      /**
+       * Invariant corrigé : une incohérence locale ne génère plus jamais de
+       * DeviceID de remplacement. La route est marquée indisponible et l'UI
+       * passe en état contrôlé LINK_REQUIRED jusqu'à une action utilisateur.
+       */
+      const requireExplicitReenrollment = (blockReason: string): void => {
         invalidateAegisDeviceRuntime(user.id);
-        ranRef.current = false;
-        inFlightRef.current = false;
-        if (attempt < MAX_ENROLLMENT_ATTEMPTS - 1) {
-          await registerCurrentDevice(`fresh-device:${restartReason}`, attempt + 1);
-        }
+        trace('DEVICE_LINK_REQUIRED', { errorCode: blockReason.slice(0, 120) }, 'warn');
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-device-link-required', {
+          detail: { source: 'useDeviceRegistration', reason: blockReason },
+        }));
       };
+
 
       trace('DEVICE_REGISTRATION_START');
 
