@@ -3,7 +3,7 @@ import { getApprovedDeviceIdentity, type CanonicalDeviceIdentity } from './devic
 
 export type CanonicalRoutableDevice = CanonicalDeviceIdentity & {
   lastSeenAt: string | null;
-  isRoutable: true;
+  isRoutable: boolean;
 };
 
 type ActiveDeviceRow = {
@@ -39,7 +39,7 @@ export async function fetchVerifiedDeviceList(userId: string): Promise<{
     try {
       const identity = await getApprovedDeviceIdentity(userId, row.device_id);
       return {
-        device: { ...identity, lastSeenAt: row.last_seen_at ?? null, isRoutable: true as const },
+        device: { ...identity, lastSeenAt: row.last_seen_at ?? null, isRoutable: true },
         verification: { deviceId: row.device_id, isRoutable: true, ok: true, reason: 'VALID' },
       };
     } catch (error) {
@@ -56,8 +56,6 @@ export async function fetchVerifiedDeviceList(userId: string): Promise<{
   }));
 
   return {
-    // Kept only as a compatibility field for callers while they migrate. It now
-    // means "canonical registry returned rows", never "signed device list".
     signedListPresent: rows.length > 0,
     trusted: settled.flatMap((entry) => entry.device ? [entry.device] : []),
     verifications: settled.map((entry) => entry.verification),
