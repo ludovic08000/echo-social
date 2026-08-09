@@ -1,10 +1,12 @@
 // Shared AI Engine event logger — used by both `zeus` and `ai-engine` edge fns.
-// Inserts into public.ai_engine_events (Realtime publication enabled).
-// Never throws — fire-and-forget for AI pipelines.
+// Inserts into public.ai_engine_events. Logging is best-effort and never breaks
+// the caller's AI pipeline.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-type SupaClient = ReturnType<typeof createClient>;
+type AIEventClient = {
+  from(table: string): {
+    insert(values: Record<string, unknown>): PromiseLike<unknown>;
+  };
+};
 
 export interface AIEventInput {
   module_id: string;
@@ -15,9 +17,9 @@ export interface AIEventInput {
   success: boolean;
 }
 
-export async function logAIEvent(supabase: SupaClient, evt: AIEventInput) {
+export async function logAIEvent(supabase: AIEventClient, evt: AIEventInput) {
   try {
-    await supabase.from("ai_engine_events" as any).insert({
+    await supabase.from("ai_engine_events").insert({
       module_id: evt.module_id,
       source: evt.source,
       action: evt.action ?? null,
@@ -25,12 +27,11 @@ export async function logAIEvent(supabase: SupaClient, evt: AIEventInput) {
       latency_ms: Math.max(0, Math.round(evt.latency_ms)),
       success: evt.success,
     });
-  } catch (_) {
-    // intentional: logging must not break AI flows
+  } catch {
+    // Intentional: telemetry must not break AI flows.
   }
 }
 
-// Map a Zeus (domain, action) tuple to one of the registered aiEngine module ids.
 export function zeusModuleId(domain: string, action?: string): string {
   switch (domain) {
     case "content":
