@@ -6,6 +6,8 @@ export const getDeviceFingerprintCandidates = legacy.getDeviceFingerprintCandida
 export const setCurrentDeviceId = legacy.setCurrentDeviceId;
 export const adoptDeviceIdFromBackup = legacy.adoptDeviceIdFromBackup;
 export const getCurrentDeviceId = legacy.getCurrentDeviceId;
+export const peekCurrentDeviceId = legacy.peekCurrentDeviceId;
+export const getDeviceIdStatus = legacy.getDeviceIdStatus;
 export const isDeviceIdTemporary = legacy.isDeviceIdTemporary;
 export const hydrateDeviceId = legacy.hydrateDeviceId;
 export const getCurrentDeviceLabel = legacy.getCurrentDeviceLabel;
@@ -14,11 +16,8 @@ export const getCurrentPlatform = legacy.getCurrentPlatform;
 const EXPLICIT_ROTATION_REASONS = new Set([
   'explicit-user-reset',
   'fresh-install-without-stable-id',
-  // Loss of the private device key is not an authorization revocation. The old
-  // route is first marked unavailable, then a new cryptographic installation
-  // is enrolled under the authenticated account session.
-  'aegis-device-private-key-missing',
 ]);
+
 
 /**
  * Device IDs are immutable routing identities. Automatic rotation is forbidden.

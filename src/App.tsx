@@ -22,6 +22,8 @@ import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
 import { useAccountKeySync } from "@/hooks/useAccountKeySync";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceRegistration } from "@/hooks/useDeviceRegistration";
+import { useDeviceLifecycle } from "@/hooks/useDeviceLifecycle";
+
 import { usePendingDeviceApprovalAlert } from "@/hooks/usePendingDeviceApprovalAlert";
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
 import { startRealtimeKeySync } from "@/lib/messaging/realtimeKeySync";
@@ -190,14 +192,15 @@ function IncomingCallHandler() {
   );
 }
 
-function AccountKeySyncRunner() {
+/**
+ * Runtime cryptographique complet. Invariant : monté uniquement après
+ * APPROVED_LOCKED puis déverrouillage du PIN (état >= PIN_UNLOCK).
+ */
+function MessagingRuntimeRunner() {
   const { user } = useAuth();
   useAccountKeySync();
   useCryptoMaintenance();
-  useDeviceRegistration();
-  usePendingDeviceApprovalAlert();
   useDeviceCopyRetryWorker();
-
 
   useEffect(() => {
     if (!user?.id) return;
@@ -209,6 +212,17 @@ function AccountKeySyncRunner() {
     };
   }, [user?.id]);
 
+  return null;
+}
+
+/**
+ * Étape DEVICE_CREDENTIAL_CHECK : enrôlement/lecture d'état appareil seulement.
+ * Aucun AccountKeySync, aucun inbox E2EE, aucun fanout ici.
+ */
+function AccountKeySyncRunner() {
+  const lifecycle = useDeviceLifecycle();
+  useDeviceRegistration();
+  usePendingDeviceApprovalAlert();
 
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
@@ -219,8 +233,10 @@ function AccountKeySyncRunner() {
     return () => window.removeEventListener('forsure:device-kx-restore-required', onRestoreNeeded);
   }, []);
 
-  return null;
+  if (!lifecycle.canRunCryptoRuntime) return null;
+  return <MessagingRuntimeRunner />;
 }
+
 
 function RoutedErrorBoundary({ children }: { children: React.ReactNode }) {
   const location = useLocation();

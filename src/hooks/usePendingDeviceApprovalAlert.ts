@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
+import { peekCurrentDeviceId } from '@/lib/messaging/currentDevice';
 
 export interface PendingDeviceApproval {
   deviceId: string;
@@ -40,7 +40,7 @@ export function usePendingDeviceApprovalAlert() {
       .eq('user_id', user.id);
     if (error || !data) return;
 
-    const currentDeviceId = getCurrentDeviceId();
+    const currentDeviceId = peekCurrentDeviceId();
     const rows = data as Array<Record<string, unknown>>;
 
     setHasApprovedDevice(rows.some((row) => (

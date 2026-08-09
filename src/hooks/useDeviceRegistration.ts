@@ -16,7 +16,7 @@ import {
   getDeviceFingerprint,
   hydrateDeviceId,
   isDeviceIdTemporary,
-  rotateCurrentDeviceId,
+  peekCurrentDeviceId,
   setCurrentDeviceId,
   setCurrentDeviceUserScope,
 } from '@/lib/messaging/currentDevice';
@@ -311,15 +311,19 @@ export function useDeviceRegistration() {
         ...details,
       }, level);
 
-      const restartWithFreshServerDevice = async (restartReason: string): Promise<void> => {
-        rotateCurrentDeviceId(restartReason);
+      /**
+       * Invariant corrigé : une incohérence locale ne génère plus jamais de
+       * DeviceID de remplacement. La route est marquée indisponible et l'UI
+       * passe en état contrôlé LINK_REQUIRED jusqu'à une action utilisateur.
+       */
+      const requireExplicitReenrollment = (blockReason: string): void => {
         invalidateAegisDeviceRuntime(user.id);
-        ranRef.current = false;
-        inFlightRef.current = false;
-        if (attempt < MAX_ENROLLMENT_ATTEMPTS - 1) {
-          await registerCurrentDevice(`fresh-device:${restartReason}`, attempt + 1);
-        }
+        trace('DEVICE_LINK_REQUIRED', { errorCode: blockReason.slice(0, 120) }, 'warn');
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-device-link-required', {
+          detail: { source: 'useDeviceRegistration', reason: blockReason },
+        }));
       };
+
 
       trace('DEVICE_REGISTRATION_START');
 
@@ -342,7 +346,7 @@ export function useDeviceRegistration() {
 
         if (existing && normalizePlatform(existing.platform) !== platform) {
           await markRouteUnavailable(existing.device_id, 'CROSS_PLATFORM_DEVICE_ID');
-          await restartWithFreshServerDevice('cross-platform-device-id');
+          requireExplicitReenrollment('cross-platform-device-id');
           return;
         }
 
@@ -398,7 +402,7 @@ export function useDeviceRegistration() {
 
           if (!deviceIdentity || !deviceKx) {
             await markRouteUnavailable(deviceId, 'LOCAL_DEVICE_PRIVATE_KEY_MISSING');
-            await restartWithFreshServerDevice('device-private-key-missing');
+            requireExplicitReenrollment('device-private-key-missing');
             return;
           }
 
@@ -408,7 +412,7 @@ export function useDeviceRegistration() {
             !existing.device_authorization_signature
           ) {
             await markRouteUnavailable(deviceId, 'DEVICE_AUTHORIZATION_INCOMPLETE');
-            await restartWithFreshServerDevice('device-authorization-incomplete');
+            requireExplicitReenrollment('device-authorization-incomplete');
             return;
           }
 
@@ -417,7 +421,7 @@ export function useDeviceRegistration() {
             deviceIdentity.publicB64 !== existing.device_signing_key
           ) {
             await markRouteUnavailable(deviceId, 'LOCAL_DEVICE_KEY_MISMATCH');
-            await restartWithFreshServerDevice('device-key-mismatch');
+            requireExplicitReenrollment('device-key-mismatch');
             return;
           }
         } else {
@@ -439,7 +443,7 @@ export function useDeviceRegistration() {
 
         if (existing && existing.device_authorization_signature !== authorization.authorizationSignature) {
           await markRouteUnavailable(deviceId, 'ACCOUNT_DEVICE_AUTHORIZATION_CHANGED');
-          await restartWithFreshServerDevice('account-device-authorization-changed');
+          requireExplicitReenrollment('account-device-authorization-changed');
           return;
         }
 
@@ -460,8 +464,11 @@ export function useDeviceRegistration() {
         }
 
         if (!existing || !isApproved(existing)) {
-          throw new Error('DEVICE_APPROVAL_STATE_INVALID');
+          // État contrôlé : l'appareil doit repasser par la cérémonie d'approbation.
+          requireExplicitReenrollment('device-approval-state-invalid');
+          return;
         }
+
 
         const signingPrivateKey = deviceIdentity.privateKey;
 
@@ -547,12 +554,15 @@ export function useDeviceRegistration() {
               message.slice(0, 120),
             );
             if (settlement.status === 'cancelled' && provisionalDeviceId) {
+              // Jamais de nouveau DeviceID généré dans un catch : on purge
+              // seulement le matériel provisoire, l'enrôlement reste explicite.
               await Promise.allSettled([
                 deleteDeviceIdentity(user.id, provisionalDeviceId),
                 deleteDeviceKxKey(provisionalDeviceId, user.id),
               ]);
-              rotateCurrentDeviceId('cancelled-server-enrollment');
+              requireExplicitReenrollment('cancelled-server-enrollment');
             }
+
           } catch (settlementError) {
             console.warn('[useDeviceRegistration] enrollment settlement unavailable; provisional keys preserved', settlementError);
           }
@@ -574,9 +584,10 @@ export function useDeviceRegistration() {
           /DEVICE_IDENTITY_UNVERIFIED|DEVICE_ROUTE_NOT_AUTHORIZED|E2EE_SENDER_DEVICE_NOT_TRUSTED/.test(message)
           && attempt < MAX_ENROLLMENT_ATTEMPTS - 1
         ) {
-          const failedDeviceId = tracedDeviceId ?? getCurrentDeviceId();
-          await markRouteUnavailable(failedDeviceId, 'VERIFIED_ROUTE_CHECK_FAILED');
-          await restartWithFreshServerDevice('verified-route-check-failed');
+          const failedDeviceId = tracedDeviceId ?? peekCurrentDeviceId();
+          if (failedDeviceId) await markRouteUnavailable(failedDeviceId, 'VERIFIED_ROUTE_CHECK_FAILED');
+
+          requireExplicitReenrollment('verified-route-check-failed');
           return;
         }
 

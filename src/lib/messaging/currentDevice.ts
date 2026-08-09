@@ -241,9 +241,41 @@ export function getCurrentDeviceId(): string {
   throw new DeviceIdentityError('DEVICE_ID_UNINITIALIZED');
 }
 
+export type CurrentDeviceIdStatus =
+  | 'ok'
+  | 'uninitialized'
+  | 'mismatch'
+  | 'storage_unavailable';
+
+/**
+ * Lecture non levante du DeviceID. DEVICE_ID_UNINITIALIZED et
+ * DEVICE_ID_REAPPROVAL_REQUIRED deviennent des états contrôlés, jamais des
+ * exceptions fatales de rendu.
+ */
+export function peekCurrentDeviceId(): string | null {
+  try {
+    return getCurrentDeviceId();
+  } catch {
+    return null;
+  }
+}
+
+export function getDeviceIdStatus(): CurrentDeviceIdStatus {
+  try {
+    getCurrentDeviceId();
+    return 'ok';
+  } catch (error) {
+    const code = error instanceof DeviceIdentityError ? error.code : 'DEVICE_ID_STORAGE_UNAVAILABLE';
+    if (code === 'DEVICE_ID_UNINITIALIZED') return 'uninitialized';
+    if (code === 'DEVICE_ID_MISMATCH' || code === 'DEVICE_ID_REAPPROVAL_REQUIRED') return 'mismatch';
+    return 'storage_unavailable';
+  }
+}
+
 export function isDeviceIdTemporary(): boolean {
   return memoryDeviceIdIsTemporary;
 }
+
 
 export async function hydrateDeviceId(): Promise<string> {
   await ensureUserScopeFromAuth();
