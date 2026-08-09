@@ -551,12 +551,15 @@ export function useDeviceRegistration() {
               message.slice(0, 120),
             );
             if (settlement.status === 'cancelled' && provisionalDeviceId) {
+              // Jamais de nouveau DeviceID généré dans un catch : on purge
+              // seulement le matériel provisoire, l'enrôlement reste explicite.
               await Promise.allSettled([
                 deleteDeviceIdentity(user.id, provisionalDeviceId),
                 deleteDeviceKxKey(provisionalDeviceId, user.id),
               ]);
-              rotateCurrentDeviceId('cancelled-server-enrollment');
+              requireExplicitReenrollment('cancelled-server-enrollment');
             }
+
           } catch (settlementError) {
             console.warn('[useDeviceRegistration] enrollment settlement unavailable; provisional keys preserved', settlementError);
           }
