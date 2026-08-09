@@ -346,7 +346,7 @@ export function useDeviceRegistration() {
 
         if (existing && normalizePlatform(existing.platform) !== platform) {
           await markRouteUnavailable(existing.device_id, 'CROSS_PLATFORM_DEVICE_ID');
-          await restartWithFreshServerDevice('cross-platform-device-id');
+          requireExplicitReenrollment('cross-platform-device-id');
           return;
         }
 
@@ -402,7 +402,7 @@ export function useDeviceRegistration() {
 
           if (!deviceIdentity || !deviceKx) {
             await markRouteUnavailable(deviceId, 'LOCAL_DEVICE_PRIVATE_KEY_MISSING');
-            await restartWithFreshServerDevice('device-private-key-missing');
+            requireExplicitReenrollment('device-private-key-missing');
             return;
           }
 
@@ -412,7 +412,7 @@ export function useDeviceRegistration() {
             !existing.device_authorization_signature
           ) {
             await markRouteUnavailable(deviceId, 'DEVICE_AUTHORIZATION_INCOMPLETE');
-            await restartWithFreshServerDevice('device-authorization-incomplete');
+            requireExplicitReenrollment('device-authorization-incomplete');
             return;
           }
 
@@ -421,7 +421,7 @@ export function useDeviceRegistration() {
             deviceIdentity.publicB64 !== existing.device_signing_key
           ) {
             await markRouteUnavailable(deviceId, 'LOCAL_DEVICE_KEY_MISMATCH');
-            await restartWithFreshServerDevice('device-key-mismatch');
+            requireExplicitReenrollment('device-key-mismatch');
             return;
           }
         } else {
@@ -443,7 +443,7 @@ export function useDeviceRegistration() {
 
         if (existing && existing.device_authorization_signature !== authorization.authorizationSignature) {
           await markRouteUnavailable(deviceId, 'ACCOUNT_DEVICE_AUTHORIZATION_CHANGED');
-          await restartWithFreshServerDevice('account-device-authorization-changed');
+          requireExplicitReenrollment('account-device-authorization-changed');
           return;
         }
 
@@ -580,7 +580,7 @@ export function useDeviceRegistration() {
         ) {
           const failedDeviceId = tracedDeviceId ?? getCurrentDeviceId();
           await markRouteUnavailable(failedDeviceId, 'VERIFIED_ROUTE_CHECK_FAILED');
-          await restartWithFreshServerDevice('verified-route-check-failed');
+          requireExplicitReenrollment('verified-route-check-failed');
           return;
         }
 
