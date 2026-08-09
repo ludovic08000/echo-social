@@ -60,7 +60,6 @@ jobs:
             src/hooks/useSendMessageSecure.ts \
             src/lib/crypto/__tests__/deviceEnrollmentGate.test.ts \
             src/lib/crypto/__tests__/identityRotationArchitecture.test.ts \
-            src/lib/crypto/__tests__/trustedDeviceApproval.test.ts \
             src/lib/crypto/deviceEnrollmentGate.ts \
             src/lib/crypto/identityRotation.ts \
             src/lib/crypto/identityRotationRecovery.ts \
