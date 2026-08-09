@@ -99,14 +99,14 @@ export async function ensureApprovedDeviceTrust(
   const [{ data, error }, account] = await Promise.all([
     supabase
       .from('user_devices')
-      .select('device_id,device_public_key,device_signing_key,device_authorization_signature,approval_status,binding_status,routing_status,is_active,revoked_at,stale_at,crypto_invalid_at')
+      .select('*')
       .eq('user_id', userId)
       .eq('device_id', deviceId)
       .maybeSingle(),
     readAccountIdentity(userId),
   ]);
   if (error || !data) throw new Error('DEVICE_NOT_FOUND');
-  await verifyCanonicalDevice(userId, data as CanonicalDeviceRow, account);
+  await verifyCanonicalDevice(userId, data as unknown as CanonicalDeviceRow, account);
   return 0;
 }
 
@@ -119,7 +119,7 @@ export async function repairApprovedDeviceTrust(userId: string): Promise<number>
   const [{ data, error }, account] = await Promise.all([
     supabase
       .from('user_devices')
-      .select('device_id,device_public_key,device_signing_key,device_authorization_signature,approval_status,binding_status,routing_status,is_active,revoked_at,stale_at,crypto_invalid_at')
+      .select('*')
       .eq('user_id', userId)
       .eq('is_active', true)
       .is('revoked_at', null),
@@ -127,7 +127,7 @@ export async function repairApprovedDeviceTrust(userId: string): Promise<number>
   ]);
   if (error) throw new Error('DEVICE_REGISTRY_LOOKUP_FAILED');
 
-  const devices = (data ?? []) as CanonicalDeviceRow[];
+  const devices = (data ?? []) as unknown as CanonicalDeviceRow[];
   if (devices.length === 0) throw new Error('DEVICE_REGISTRY_CONTAINS_NO_VALID_ROUTE');
 
   let validCount = 0;
