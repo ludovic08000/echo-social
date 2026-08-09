@@ -59,7 +59,10 @@ async function invokeApproval(args: ApprovalPayloadArgs): Promise<{ deviceId: st
     encodeString(canonicalDeviceApprovalDecisionPayload(args)),
   ) as ArrayBuffer);
 
-  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
+  const functionName = args.selfApproval === true
+    ? 'approve-device-enrollment-v2'
+    : 'approve-device-enrollment';
+  const { data, error } = await supabase.functions.invoke(functionName, {
     body: {
       decision: args.decision,
       approver_device_id: args.approverDeviceId,
