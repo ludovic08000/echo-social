@@ -93,11 +93,11 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
               <ShieldQuestion className="h-5 w-5 text-amber-700" />
             </div>
             <div>
-              <h2 className="text-base font-bold">{actions.canBootstrapPrimary ? 'Confirmer le premier appareil ?' : 'Approbation requise'}</h2>
+              <h2 className="text-base font-bold">{actions.canBootstrapPrimary ? 'Confirmer le premier appareil ?' : 'En attente d’approbation sur un appareil déjà approuvé'}</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 {actions.canBootstrapPrimary
                   ? 'Aucun appareil n’existe encore. Votre confirmation créera l’unique appareil principal du compte.'
-                  : 'Une alerte a été envoyée à vos appareils déjà connectés. Approuvez cette demande depuis l’un d’eux.'}
+                  : 'Ouvrez Echo Social sur un appareil déjà reconnu : une demande d’approbation y apparaîtra automatiquement. Comparez l’empreinte ci-dessous avant d’approuver. Cet appareil ne peut pas s’approuver lui-même.'}
               </p>
             </div>
           </div>
