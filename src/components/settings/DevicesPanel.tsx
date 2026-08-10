@@ -364,6 +364,22 @@ export function DevicesPanel() {
                         </div>
                       )}
 
+                      {isCurrent && (
+                        <IosDeviceDiagnosticsSection
+                          userId={user?.id ?? null}
+                          deviceId={device.deviceId}
+                          server={{
+                            bindingStatus: device.bindingStatus,
+                            routingStatus: device.routingStatus,
+                            routingError: diag?.routingError ?? null,
+                            spkCount: diag?.spkCount ?? null,
+                            opkCount: diag?.opkCount ?? null,
+                          }}
+                        />
+                      )}
+
+
+
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" className="h-8" onClick={() => void load(true)} disabled={refreshing}>
                           <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
