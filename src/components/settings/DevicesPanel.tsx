@@ -9,6 +9,7 @@ import { deviceApi, type DeviceApiListRecord } from '@/lib/api/deviceApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { WindowsHelloDeviceRecoverySection } from '@/components/settings/WindowsHelloDeviceRecoverySection';
+import { IosDeviceDiagnosticsSection } from '@/components/settings/IosDeviceDiagnosticsSection';
 import {
   AlertDialog,
   AlertDialogAction,
