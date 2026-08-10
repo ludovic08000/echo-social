@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
 import { deviceApi, type DeviceApiRecord } from '@/lib/api/deviceApi';
 import {
   computeDeviceApprovalFingerprint,
@@ -54,12 +55,41 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
   const reloadPending = useCallback(async () => {
     if (!user?.id) {
       setPending(null);
+      setCanBootstrapPrimary(false);
       return;
     }
+
     const snapshot = await deviceApi.getState(user.id);
-    setPending(await toPending(snapshot.record));
-    const devices = await deviceApi.listDevices(user.id);
-    setCanBootstrapPrimary(Boolean(snapshot.record) && devices.every((device) => device.deviceId === snapshot.record?.deviceId));
+    const pendingDevice = await toPending(snapshot.record);
+    setPending(pendingDevice);
+
+    if (!snapshot.record || !pendingDevice) {
+      setCanBootstrapPrimary(false);
+      setError(null);
+      return;
+    }
+
+    const { data, error: modeError } = await supabase.rpc(
+      'get_device_enrollment_approval_mode' as never,
+      { p_device_id: snapshot.record.deviceId } as never,
+    );
+
+    if (modeError) {
+      throw new Error(`DEVICE_APPROVAL_MODE_LOOKUP_FAILED:${modeError.message}`);
+    }
+
+    const mode = data as {
+      ok?: boolean;
+      code?: string;
+      bootstrap_primary?: boolean;
+      approval_mode?: string;
+    } | null;
+
+    if (!mode || mode.ok !== true) {
+      throw new Error(mode?.code ?? 'DEVICE_APPROVAL_MODE_LOOKUP_REJECTED');
+    }
+
+    setCanBootstrapPrimary(mode.bootstrap_primary === true);
     setError(null);
   }, [user?.id]);
 
@@ -80,12 +110,13 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
         detail: { deviceId: record.deviceId, source: 'deviceApi.enroll' },
       }));
       onChanged();
+      await reloadPending();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'DEVICE_ENROLLMENT_START_FAILED');
     } finally {
       setProcessing(false);
     }
-  }, [onChanged, processing, user?.id]);
+  }, [onChanged, processing, reloadPending, user?.id]);
 
   const decide = useCallback(async (decision: 'approve' | 'reject') => {
     if (!user?.id || !pending || processing) return;
