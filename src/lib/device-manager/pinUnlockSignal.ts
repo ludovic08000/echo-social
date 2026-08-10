@@ -1,15 +1,18 @@
 /**
- * Signal léger d'état PIN, sans monter le hook complet `useChatPin`.
+ * Messaging PIN protection is currently disabled.
  *
- * Invariant : le runtime crypto n'est autorisé qu'après un déverrouillage
- * explicite. La lecture ne crée jamais d'état, elle observe uniquement.
+ * Device approval, account binding and E2EE key checks remain authoritative.
+ * The lifecycle must not wait for a PIN-unlock signal while the PIN gate is
+ * disabled, otherwise approved devices can become stuck before binding/ready.
  */
 
 const PIN_STATE_CHANGED_EVENT = 'forsure:chat-pin-state-changed';
 const SESSION_KEY = 'forsure-pin-unlocked';
+const PIN_PROTECTION_ENABLED = false;
 
 export function readPinUnlocked(userId: string | null | undefined): boolean {
   if (!userId) return false;
+  if (!PIN_PROTECTION_ENABLED) return true;
   try {
     return sessionStorage.getItem(SESSION_KEY) === userId;
   } catch {
@@ -22,6 +25,11 @@ export function subscribePinUnlocked(
   listener: (unlocked: boolean) => void,
 ): () => void {
   if (typeof window === 'undefined') return () => undefined;
+
+  if (!PIN_PROTECTION_ENABLED) {
+    listener(!!userId);
+    return () => undefined;
+  }
 
   const emit = () => listener(readPinUnlocked(userId));
 
@@ -46,4 +54,4 @@ export function subscribePinUnlocked(
   };
 }
 
-export const __test__ = { PIN_STATE_CHANGED_EVENT, SESSION_KEY };
+export const __test__ = { PIN_STATE_CHANGED_EVENT, SESSION_KEY, PIN_PROTECTION_ENABLED };
