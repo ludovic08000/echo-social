@@ -50,13 +50,22 @@ export async function collectIosDeviceDiagnostics(args: {
   deviceId?: string | null;
   server?: IosDiagnosticsServerContext;
 }): Promise<IosDeviceDiagnosticsReport> {
-  const diagnostics = await iosDeviceProvider.collectDiagnostics({
-    userId: args.userId ?? null,
-    deviceId: args.deviceId ?? null,
-  });
+  const [diagnostics, metadata, deviceIdAnchored] = await Promise.all([
+    iosDeviceProvider.collectDiagnostics({
+      userId: args.userId ?? null,
+      deviceId: args.deviceId ?? null,
+    }),
+    collectIosPlatformMetadata(),
+    hasIosDeviceIdAnchor(iosDeviceIdStorageKey(args.userId ?? null)),
+  ]);
+  const rpcError = getLastIosRpcError();
 
   return {
     platform: diagnostics.isNativeRuntime ? 'iOS natif (Capacitor)' : 'iOS web (WebKit)',
+    appVersion: metadata.appVersion,
+    deviceModel: metadata.deviceModel,
+    deviceId: args.deviceId ?? null,
+    deviceIdAnchored,
     keychainState: keychainState(diagnostics),
     keychainTier: diagnostics.secureStorage.tier,
     hasLocalIdentity: diagnostics.hasLocalIdentity,
@@ -67,6 +76,8 @@ export async function collectIosDeviceDiagnostics(args: {
     spkCount: args.server?.spkCount ?? null,
     opkCount: args.server?.opkCount ?? null,
     lastError: args.server?.routingError ?? diagnostics.lastError,
+    lastRpcError: rpcError ? `${rpcError.operation}: ${rpcError.message}` : null,
     collectedAt: diagnostics.collectedAt,
   };
 }
+
