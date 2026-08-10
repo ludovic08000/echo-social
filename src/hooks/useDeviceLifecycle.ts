@@ -3,7 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import {
   getDeviceIdStatus,
+  hydrateDeviceId,
   peekCurrentDeviceId,
+  setCurrentDeviceUserScope,
   type CurrentDeviceIdStatus,
 } from '@/lib/messaging/currentDevice';
 import { deviceApi } from '@/lib/api/deviceApi';
@@ -50,37 +52,67 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const [record, setRecord] = useState<DeviceLifecycleRecord | null | 'unknown'>('unknown');
-  const [deviceIdStatus, setDeviceIdStatus] = useState<CurrentDeviceIdStatus>(() => getDeviceIdStatus());
-  const [deviceId, setDeviceId] = useState<string | null>(() => peekCurrentDeviceId());
+  const [deviceIdStatus, setDeviceIdStatus] = useState<CurrentDeviceIdStatus>('uninitialized');
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const mountedRef = useRef(true);
+  const refreshGenerationRef = useRef(0);
 
   const refresh = useCallback(() => {
-    const status = getDeviceIdStatus();
-    const currentId = peekCurrentDeviceId();
-    setDeviceIdStatus(status);
-    setDeviceId(currentId);
+    const generation = ++refreshGenerationRef.current;
 
-    if (!userId || !currentId || status !== 'ok') {
+    if (!userId) {
+      setCurrentDeviceUserScope(null);
+      setDeviceIdStatus('uninitialized');
+      setDeviceId(null);
       setRecord(null);
       return;
     }
 
+    // DeviceID persistence is account-scoped. Always establish the user scope
+    // and hydrate the durable ID before making any lifecycle decision. Without
+    // this step a reload reads the unscoped key, falsely reports
+    // DEVICE_ID_UNINITIALIZED and offers a new enrollment for an already
+    // approved device.
+    setCurrentDeviceUserScope(userId);
     setRecord('unknown');
-    void deviceApi.getState(userId).then((snapshot) => {
-      if (!mountedRef.current) return;
-      const row = snapshot.record;
-      setRecord(row ? {
-        deviceId: row.deviceId,
-        approvalStatus: row.approvalStatus,
-        bindingStatus: row.bindingStatus,
-        routingStatus: row.routingStatus,
-        isActive: row.isActive,
-        revokedAt: row.revokedAt,
-      } : null);
-    }).catch(() => {
-      if (mountedRef.current) setRecord('unknown');
-    });
+
+    void (async () => {
+      try {
+        await hydrateDeviceId();
+      } catch {
+        // A genuinely missing/mismatched durable ID is handled below through
+        // getDeviceIdStatus(). Never allocate a replacement ID here.
+      }
+
+      if (!mountedRef.current || generation !== refreshGenerationRef.current) return;
+
+      const status = getDeviceIdStatus();
+      const currentId = peekCurrentDeviceId();
+      setDeviceIdStatus(status);
+      setDeviceId(currentId);
+
+      if (!currentId || status !== 'ok') {
+        setRecord(null);
+        return;
+      }
+
+      try {
+        const snapshot = await deviceApi.getState(userId);
+        if (!mountedRef.current || generation !== refreshGenerationRef.current) return;
+        const row = snapshot.record;
+        setRecord(row ? {
+          deviceId: row.deviceId,
+          approvalStatus: row.approvalStatus,
+          bindingStatus: row.bindingStatus,
+          routingStatus: row.routingStatus,
+          isActive: row.isActive,
+          revokedAt: row.revokedAt,
+        } : null);
+      } catch {
+        if (mountedRef.current && generation === refreshGenerationRef.current) setRecord('unknown');
+      }
+    })();
   }, [userId]);
 
   useEffect(() => {
@@ -90,11 +122,15 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
 
   useEffect(() => {
     if (!userId) {
+      setCurrentDeviceUserScope(null);
       setRecord(null);
       setPinUnlocked(false);
+      setDeviceId(null);
+      setDeviceIdStatus('uninitialized');
       return;
     }
 
+    setCurrentDeviceUserScope(userId);
     setPinUnlocked(readPinUnlocked(userId));
     refresh();
 
