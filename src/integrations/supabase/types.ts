@@ -2101,7 +2101,6 @@ export type Database = {
           cancelled_at: string | null
           consumed_at: string | null
           created_at: string
-          device_fingerprint: string | null
           device_id: string
           device_name: string | null
           device_possession_signature: string | null
@@ -2119,7 +2118,6 @@ export type Database = {
           cancelled_at?: string | null
           consumed_at?: string | null
           created_at?: string
-          device_fingerprint?: string | null
           device_id: string
           device_name?: string | null
           device_possession_signature?: string | null
@@ -2137,7 +2135,6 @@ export type Database = {
           cancelled_at?: string | null
           consumed_at?: string | null
           created_at?: string
-          device_fingerprint?: string | null
           device_id?: string
           device_name?: string | null
           device_possession_signature?: string | null
@@ -2248,84 +2245,6 @@ export type Database = {
         }
         Relationships: []
       }
-      device_link_requests: {
-        Row: {
-          approved_at: string | null
-          approver_device_id: string | null
-          claimed_at: string | null
-          created_at: string
-          encrypted_payload: string | null
-          expires_at: string
-          id: string
-          requester_device_id: string
-          requester_label: string | null
-          requester_public_key: Json
-          status: string
-          token_hash: string
-          user_id: string
-        }
-        Insert: {
-          approved_at?: string | null
-          approver_device_id?: string | null
-          claimed_at?: string | null
-          created_at?: string
-          encrypted_payload?: string | null
-          expires_at?: string
-          id?: string
-          requester_device_id: string
-          requester_label?: string | null
-          requester_public_key: Json
-          status?: string
-          token_hash: string
-          user_id: string
-        }
-        Update: {
-          approved_at?: string | null
-          approver_device_id?: string | null
-          claimed_at?: string | null
-          created_at?: string
-          encrypted_payload?: string | null
-          expires_at?: string
-          id?: string
-          requester_device_id?: string
-          requester_label?: string | null
-          requester_public_key?: Json
-          status?: string
-          token_hash?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      device_link_tokens: {
-        Row: {
-          claimed_at: string | null
-          created_at: string
-          encrypted_payload: string | null
-          expires_at: string
-          id: string
-          token_hash: string
-          user_id: string
-        }
-        Insert: {
-          claimed_at?: string | null
-          created_at?: string
-          encrypted_payload?: string | null
-          expires_at?: string
-          id?: string
-          token_hash: string
-          user_id: string
-        }
-        Update: {
-          claimed_at?: string | null
-          created_at?: string
-          encrypted_payload?: string | null
-          expires_at?: string
-          id?: string
-          token_hash?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       device_one_time_prekeys: {
         Row: {
           created_at: string
@@ -2389,33 +2308,6 @@ export type Database = {
           reporter_user_id?: string
           resolved_at?: string | null
           status?: string
-        }
-        Relationships: []
-      }
-      device_primary_repair_requests: {
-        Row: {
-          candidate_device_ids: string[]
-          created_at: string
-          id: string
-          reason: string
-          resolved_at: string | null
-          user_id: string
-        }
-        Insert: {
-          candidate_device_ids?: string[]
-          created_at?: string
-          id?: string
-          reason: string
-          resolved_at?: string | null
-          user_id: string
-        }
-        Update: {
-          candidate_device_ids?: string[]
-          created_at?: string
-          id?: string
-          reason?: string
-          resolved_at?: string | null
-          user_id?: string
         }
         Relationships: []
       }
@@ -6430,36 +6322,6 @@ export type Database = {
         }
         Relationships: []
       }
-      signed_device_lists: {
-        Row: {
-          created_at: string
-          device_ids: string[]
-          list_version: number
-          signature: string | null
-          signer_device_id: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          device_ids?: string[]
-          list_version?: number
-          signature?: string | null
-          signer_device_id?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          device_ids?: string[]
-          list_version?: number
-          signature?: string | null
-          signer_device_id?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       stories: {
         Row: {
           caption: string | null
@@ -7013,39 +6875,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_device_signatures: {
-        Row: {
-          device_id: string
-          id: string
-          primary_device_id: string
-          primary_pub_b64: string
-          revoked_at: string | null
-          signature_b64: string
-          signed_at: string
-          user_id: string
-        }
-        Insert: {
-          device_id: string
-          id?: string
-          primary_device_id: string
-          primary_pub_b64: string
-          revoked_at?: string | null
-          signature_b64: string
-          signed_at?: string
-          user_id: string
-        }
-        Update: {
-          device_id?: string
-          id?: string
-          primary_device_id?: string
-          primary_pub_b64?: string
-          revoked_at?: string | null
-          signature_b64?: string
-          signed_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       user_devices: {
         Row: {
           account_bound_at: string | null
@@ -7055,26 +6884,27 @@ export type Database = {
           approval_status: string
           approved_at: string | null
           approved_by: string | null
+          approved_by_device_id: string | null
           binding_status: string
           created_at: string
-          credential_version: number
           crypto_invalid_at: string | null
           crypto_invalid_reason: string | null
           device_authorization_signature: string | null
-          device_fingerprint: string | null
           device_id: string
           device_name: string | null
           device_public_key: string
+          device_role: string
           device_signing_key: string | null
           id: string
           is_active: boolean
-          is_primary: boolean
           last_seen_at: string
+          lifecycle_status: string
           platform: string | null
           possession_verified_at: string | null
           prekey_repair_requested_at: string | null
           rejected_at: string | null
           rejected_by: string | null
+          rejected_by_device_id: string | null
           revoke_reason: string | null
           revoked_at: string | null
           routing_checked_at: string | null
@@ -7093,26 +6923,27 @@ export type Database = {
           approval_status?: string
           approved_at?: string | null
           approved_by?: string | null
+          approved_by_device_id?: string | null
           binding_status?: string
           created_at?: string
-          credential_version?: number
           crypto_invalid_at?: string | null
           crypto_invalid_reason?: string | null
           device_authorization_signature?: string | null
-          device_fingerprint?: string | null
           device_id: string
           device_name?: string | null
           device_public_key: string
+          device_role?: string
           device_signing_key?: string | null
           id?: string
           is_active?: boolean
-          is_primary?: boolean
           last_seen_at?: string
+          lifecycle_status?: string
           platform?: string | null
           possession_verified_at?: string | null
           prekey_repair_requested_at?: string | null
           rejected_at?: string | null
           rejected_by?: string | null
+          rejected_by_device_id?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           routing_checked_at?: string | null
@@ -7131,26 +6962,27 @@ export type Database = {
           approval_status?: string
           approved_at?: string | null
           approved_by?: string | null
+          approved_by_device_id?: string | null
           binding_status?: string
           created_at?: string
-          credential_version?: number
           crypto_invalid_at?: string | null
           crypto_invalid_reason?: string | null
           device_authorization_signature?: string | null
-          device_fingerprint?: string | null
           device_id?: string
           device_name?: string | null
           device_public_key?: string
+          device_role?: string
           device_signing_key?: string | null
           id?: string
           is_active?: boolean
-          is_primary?: boolean
           last_seen_at?: string
+          lifecycle_status?: string
           platform?: string | null
           possession_verified_at?: string | null
           prekey_repair_requested_at?: string | null
           rejected_at?: string | null
           rejected_by?: string | null
+          rejected_by_device_id?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           routing_checked_at?: string | null
@@ -7288,33 +7120,6 @@ export type Database = {
           observer_user_id?: string
           peer_user_id?: string
           previous_fingerprint?: string | null
-        }
-        Relationships: []
-      }
-      user_identity_roots: {
-        Row: {
-          created_at: string
-          generation: number
-          identity_pub_b64: string
-          primary_device_id: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          generation?: number
-          identity_pub_b64: string
-          primary_device_id: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          generation?: number
-          identity_pub_b64?: string
-          primary_device_id?: string
-          updated_at?: string
-          user_id?: string
         }
         Relationships: []
       }
@@ -8299,26 +8104,31 @@ export type Database = {
         }[]
       }
       apply_security_auto_mitigations: { Args: never; Returns: Json }
-      approve_device_link_request: {
+      approve_device_enrollment_decision: {
         Args: {
           p_approver_device_id: string
-          p_encrypted_payload: string
-          p_token_hash: string
+          p_bootstrap_primary: boolean
+          p_challenge_id: string
+          p_decision: string
+          p_device_id: string
+          p_signature: string
         }
-        Returns: boolean
+        Returns: Json
       }
-      approve_user_device: { Args: { p_device_id: string }; Returns: Json }
       begin_aegis_view_once_consume: {
         Args: { p_device_id: string; p_message_id: string }
         Returns: Json
       }
       begin_user_device_enrollment: {
         Args: {
-          p_device_fingerprint?: string
           p_device_name?: string
           p_platform?: string
           p_user_agent?: string
         }
+        Returns: Json
+      }
+      bind_device_account: {
+        Args: { p_device_authorization_signature: string; p_device_id: string }
         Returns: Json
       }
       bump_aegis_user_route_version: {
@@ -8383,8 +8193,6 @@ export type Database = {
         Returns: Json
       }
       cleanup_edge_rate_limits: { Args: never; Returns: undefined }
-      cleanup_expired_device_link_requests: { Args: never; Returns: undefined }
-      cleanup_expired_device_links: { Args: never; Returns: undefined }
       cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
@@ -8412,6 +8220,10 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_current_device_synchronization: {
+        Args: { p_device_id: string }
+        Returns: Json
+      }
       complete_device_copy_retry: {
         Args: {
           p_encrypted_body: string
@@ -8420,52 +8232,8 @@ export type Database = {
         }
         Returns: Json
       }
-      complete_device_link_request: {
-        Args: { p_requester_device_id: string; p_token_hash: string }
-        Returns: boolean
-      }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
-      complete_user_device_enrollment:
-        | {
-            Args: {
-              p_account_binding_signature: string
-              p_account_fingerprint: string
-              p_account_identity_key: string
-              p_account_signing_key: string
-              p_challenge_id: string
-              p_device_authorization_signature: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_nonce: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_account_binding_signature: string
-              p_account_fingerprint: string
-              p_account_identity_key: string
-              p_account_signing_key: string
-              p_challenge_id: string
-              p_device_authorization_signature: string
-              p_device_possession_signature: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_nonce: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_challenge_id: string
-              p_device_possession_signature: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_nonce: string
-            }
-            Returns: Json
-          }
-      complete_user_device_enrollment_v2: {
+      complete_user_device_enrollment: {
         Args: {
           p_challenge_id: string
           p_device_possession_signature: string
@@ -8474,13 +8242,6 @@ export type Database = {
           p_nonce: string
         }
         Returns: Json
-      }
-      consume_device_link_token: {
-        Args: { p_token_hash: string }
-        Returns: {
-          encrypted_payload: string
-          user_id: string
-        }[]
       }
       consume_device_prekey_repair_requests: {
         Args: { p_limit?: number }
@@ -8495,15 +8256,6 @@ export type Database = {
       count_device_one_time_prekeys: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
-      }
-      create_device_link_request: {
-        Args: {
-          p_requester_device_id: string
-          p_requester_label?: string
-          p_requester_public_key: Json
-          p_token_hash: string
-        }
-        Returns: string
       }
       create_group_conversation: {
         Args: { p_member_ids: string[]; p_name: string }
@@ -8544,10 +8296,6 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
-      ensure_primary_device_exists: {
-        Args: { p_user_id: string }
-        Returns: undefined
-      }
       ensure_user_crypto_state: {
         Args: never
         Returns: {
@@ -8585,82 +8333,12 @@ export type Database = {
         }
         Returns: Json
       }
-      finalize_device_account_binding_v2: {
+      finalize_device_approval_decision: {
         Args: {
-          p_device_authorization_signature: string
-          p_device_id: string
-          p_user_id: string
-        }
-        Returns: Json
-      }
-      finalize_self_approved_device: {
-        Args: {
+          p_approver_device_id?: string
           p_challenge_id: string
-          p_device_id: string
-          p_device_possession_signature: string
-          p_device_public_key: string
-          p_device_signing_key: string
-          p_user_id: string
-        }
-        Returns: Json
-      }
-      finalize_self_approved_device_v2: {
-        Args: {
-          p_challenge_id: string
-          p_device_id: string
-          p_device_possession_signature: string
-          p_device_public_key: string
-          p_device_signing_key: string
-          p_user_id: string
-        }
-        Returns: Json
-      }
-      finalize_verified_user_device_approval:
-        | {
-            Args: {
-              p_account_binding_signature: string
-              p_account_binding_version: number
-              p_account_fingerprint: string
-              p_account_identity_key: string
-              p_account_signing_key: string
-              p_challenge_id: string
-              p_device_authorization_signature: string
-              p_device_id: string
-              p_device_possession_signature: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_user_id: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_account_binding_signature: string
-              p_account_binding_version: number
-              p_account_fingerprint: string
-              p_account_identity_key: string
-              p_account_signing_key: string
-              p_device_authorization_signature: string
-              p_device_id: string
-              p_device_public_key: string
-              p_device_signing_key: string
-              p_user_id: string
-            }
-            Returns: Json
-          }
-      finalize_verified_user_device_approval_verified_proofs: {
-        Args: {
-          p_account_binding_signature: string
-          p_account_binding_version: number
-          p_account_fingerprint: string
-          p_account_identity_key: string
-          p_account_signing_key: string
-          p_challenge_id: string
-          p_device_authorization_signature: string
-          p_device_id: string
-          p_device_possession_signature: string
-          p_device_public_key: string
-          p_device_signing_key: string
+          p_decision: string
+          p_target_device_id: string
           p_user_id: string
         }
         Returns: Json
@@ -8685,13 +8363,6 @@ export type Database = {
       get_ai_data_sharing_enabled: {
         Args: { p_user_id: string }
         Returns: boolean
-      }
-      get_approved_device_link_payload: {
-        Args: { p_requester_device_id: string; p_token_hash: string }
-        Returns: {
-          approver_device_id: string
-          encrypted_payload: string
-        }[]
       }
       get_conversation_deliverable_devices: {
         Args: { p_conversation_id: string; p_exclude_device_id?: string }
@@ -8748,17 +8419,6 @@ export type Database = {
           encrypted_body: string
           sender_device_id: string
           sender_user_id: string
-        }[]
-      }
-      get_device_link_request_for_approval: {
-        Args: { p_token_hash: string }
-        Returns: {
-          expires_at: string
-          id: string
-          requester_device_id: string
-          requester_label: string
-          requester_public_key: Json
-          status: string
         }[]
       }
       get_device_prekey_bundle: {
@@ -8904,7 +8564,6 @@ export type Database = {
           device_signing_key: string
           is_routable: boolean
           last_seen_at: string
-          revoked_at: string
         }[]
       }
       get_signed_prekey: {
@@ -8984,12 +8643,6 @@ export type Database = {
           requester_device_id: string
           requester_device_public_key: string
           requester_user_id: string
-        }[]
-      }
-      list_predecessor_device_ids: {
-        Args: { p_fingerprints: string[] }
-        Returns: {
-          device_id: string
         }[]
       }
       live_feed_bundle: {
@@ -9188,10 +8841,6 @@ export type Database = {
         }
         Returns: Json
       }
-      publish_user_identity_root: {
-        Args: { p_identity_pub_b64: string; p_primary_device_id: string }
-        Returns: Json
-      }
       purge_old_ai_engine_events: { Args: never; Returns: undefined }
       purge_old_audit_logs: { Args: never; Returns: undefined }
       purge_old_crypto_error_logs: { Args: never; Returns: number }
@@ -9243,24 +8892,6 @@ export type Database = {
           p_user_agent?: string
         }
         Returns: undefined
-      }
-      register_user_device_safe: {
-        Args: {
-          p_account_binding_signature: string
-          p_account_fingerprint: string
-          p_account_identity_key: string
-          p_account_signing_key: string
-          p_device_authorization_signature: string
-          p_device_fingerprint: string
-          p_device_id: string
-          p_device_name: string
-          p_device_public_key: string
-          p_device_signing_key: string
-          p_platform: string
-          p_user_agent: string
-          p_user_id: string
-        }
-        Returns: Json
       }
       release_aegis_view_once_claim: {
         Args: {
@@ -9333,29 +8964,7 @@ export type Database = {
         Args: { _user_id: string }
         Returns: undefined
       }
-      resolve_device_id_by_fingerprint: {
-        Args: { p_fingerprint: string }
-        Returns: string
-      }
-      resolve_device_primary_repair_request: {
-        Args: { p_id: string }
-        Returns: boolean
-      }
-      resume_user_device_enrollment: {
-        Args: { p_device_fingerprint: string; p_platform?: string }
-        Returns: Json
-      }
-      revoke_user_device: {
-        Args: { p_device_id: string; p_replacement_device_id?: string }
-        Returns: Json
-      }
-      rotate_user_identity_root: {
-        Args: {
-          p_new_identity_pub_b64: string
-          p_new_primary_device_id: string
-        }
-        Returns: Json
-      }
+      revoke_user_device: { Args: { p_device_id: string }; Returns: Json }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
       set_message_archive_body: {
         Args: { p_archive_body: string; p_message_id: string }
@@ -9417,18 +9026,6 @@ export type Database = {
           attempts_remaining: number
           locked_until: string
         }[]
-      }
-      upsert_signed_device_list: {
-        Args: {
-          p_device_ids: string[]
-          p_signature?: string
-          p_signer_device_id?: string
-        }
-        Returns: Json
-      }
-      verify_own_key_consistency: {
-        Args: { p_device_id: string }
-        Returns: Json
       }
       video_score_batch: {
         Args: { p_user_id: string; p_video_ids: string[] }
