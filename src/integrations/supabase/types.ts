@@ -7566,6 +7566,117 @@ export type Database = {
           },
         ]
       }
+      webauthn_device_challenges: {
+        Row: {
+          challenge: string
+          consumed_at: string | null
+          created_at: string
+          device_id: string | null
+          expires_at: string
+          id: string
+          origin: string
+          purpose: string
+          rp_id: string
+          user_id: string
+        }
+        Insert: {
+          challenge: string
+          consumed_at?: string | null
+          created_at?: string
+          device_id?: string | null
+          expires_at: string
+          id?: string
+          origin: string
+          purpose: string
+          rp_id: string
+          user_id: string
+        }
+        Update: {
+          challenge?: string
+          consumed_at?: string | null
+          created_at?: string
+          device_id?: string | null
+          expires_at?: string
+          id?: string
+          origin?: string
+          purpose?: string
+          rp_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      webauthn_device_credentials: {
+        Row: {
+          algorithm: number
+          created_at: string
+          credential_id: string
+          device_id: string
+          last_used_at: string | null
+          public_key_spki: string
+          revoked_at: string | null
+          rp_id: string
+          sign_count: number
+          transports: string[]
+          user_id: string
+        }
+        Insert: {
+          algorithm: number
+          created_at?: string
+          credential_id: string
+          device_id: string
+          last_used_at?: string | null
+          public_key_spki: string
+          revoked_at?: string | null
+          rp_id: string
+          sign_count?: number
+          transports?: string[]
+          user_id: string
+        }
+        Update: {
+          algorithm?: number
+          created_at?: string
+          credential_id?: string
+          device_id?: string
+          last_used_at?: string | null
+          public_key_spki?: string
+          revoked_at?: string | null
+          rp_id?: string
+          sign_count?: number
+          transports?: string[]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      webauthn_device_vaults: {
+        Row: {
+          ciphertext: string
+          created_at: string
+          device_id: string
+          iv: string
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          ciphertext: string
+          created_at?: string
+          device_id: string
+          iv: string
+          updated_at?: string
+          user_id: string
+          version: number
+        }
+        Update: {
+          ciphertext?: string
+          created_at?: string
+          device_id?: string
+          iv?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
       wellbeing_preferences: {
         Row: {
           bedtime_hour: number
@@ -8364,6 +8475,22 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: boolean
       }
+      get_canonical_remote_device_identity: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: {
+          approval_status: string
+          binding_status: string
+          crypto_invalid_at: string
+          device_authorization_signature: string
+          device_id: string
+          device_public_key: string
+          device_signing_key: string
+          is_active: boolean
+          revoked_at: string
+          routing_status: string
+          stale_at: string
+        }[]
+      }
       get_conversation_deliverable_devices: {
         Args: { p_conversation_id: string; p_exclude_device_id?: string }
         Returns: {
@@ -8420,6 +8547,10 @@ export type Database = {
           sender_device_id: string
           sender_user_id: string
         }[]
+      }
+      get_device_enrollment_approval_mode: {
+        Args: { p_device_id: string }
+        Returns: Json
       }
       get_device_prekey_bundle: {
         Args: { p_device_id: string; p_user_id: string }
@@ -9036,6 +9167,70 @@ export type Database = {
           video_id: string
           wellbeing_score: number
         }[]
+      }
+      webauthn_begin_device_recovery: {
+        Args: { p_origin: string; p_rp_id: string }
+        Returns: Json
+      }
+      webauthn_begin_device_registration: {
+        Args: { p_device_id: string; p_origin: string; p_rp_id: string }
+        Returns: Json
+      }
+      webauthn_credential_id_valid: {
+        Args: { p_value: string }
+        Returns: boolean
+      }
+      webauthn_device_status: {
+        Args: { p_device_id: string; p_rp_id: string }
+        Returns: Json
+      }
+      webauthn_finalize_device_recovery: {
+        Args: {
+          p_challenge_id: string
+          p_credential_id: string
+          p_new_sign_count: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      webauthn_finalize_device_registration: {
+        Args: {
+          p_algorithm: number
+          p_challenge_id: string
+          p_credential_id: string
+          p_device_id: string
+          p_public_key_spki: string
+          p_rp_id: string
+          p_sign_count: number
+          p_transports: string[]
+          p_user_id: string
+          p_vault_ciphertext: string
+          p_vault_iv: string
+          p_vault_version: number
+        }
+        Returns: Json
+      }
+      webauthn_finalize_device_registration_rpc: {
+        Args: {
+          p_algorithm: number
+          p_challenge_id: string
+          p_credential_id: string
+          p_device_id: string
+          p_device_proof_b64: string
+          p_proof_payload: string
+          p_public_key_spki: string
+          p_rp_id: string
+          p_sign_count: number
+          p_transports: string[]
+          p_vault_ciphertext: string
+          p_vault_iv: string
+          p_vault_version: number
+        }
+        Returns: Json
+      }
+      webauthn_recover_device_vault_rpc: {
+        Args: { p_challenge_id: string; p_credential_id: string }
+        Returns: Json
       }
       write_aegis_recovery_vault: {
         Args: {
