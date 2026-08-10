@@ -26,8 +26,12 @@ export interface IosDeviceDiagnosticsReport {
   opkCount: number | null;
   lastError: string | null;
   lastRpcError: string | null;
+  passkeySupported: boolean;
+  passkeyRegistered: boolean | null;
+  passkeyLastError: string | null;
   collectedAt: string;
 }
+
 
 
 export interface IosDiagnosticsServerContext {
