@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { deviceApi, type DeviceApiListRecord } from '@/lib/api/deviceApi';
 import { Button } from '@/components/ui/button';
+import { WindowsHelloDeviceRecoverySection } from '@/components/settings/WindowsHelloDeviceRecoverySection';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -122,6 +123,10 @@ export function DevicesPanel() {
           </div>
         </div>
       </div>
+
+      {user?.id && currentDeviceId && (
+        <WindowsHelloDeviceRecoverySection userId={user.id} deviceId={currentDeviceId} />
+      )}
 
       {devices.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
