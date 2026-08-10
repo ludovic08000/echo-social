@@ -13,7 +13,6 @@ import {
 } from '@/lib/messaging/currentDevice';
 import { deviceApi } from '@/lib/api/deviceApi';
 
-const API_PATH = '/api/webauthn-device';
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
 interface ApiEnvelope<T> {
@@ -96,34 +95,27 @@ async function sha256B64Url(value: ArrayBuffer | Uint8Array | string): Promise<s
   return toBase64Url(digest);
 }
 
-async function accessToken(): Promise<string> {
-  const { data, error } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (error || !token) throw new Error('NOT_AUTHENTICATED');
-  return token;
-}
-
 async function apiCall<T>(action: string, body: Record<string, unknown> = {}): Promise<T> {
-  const token = await accessToken();
-  const response = await fetch(API_PATH, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${token}`,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify({ action, ...body }),
+  const { data, error } = await supabase.functions.invoke('webauthn-device', {
+    body: { action, ...body },
   });
 
-  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
-  if (!contentType.includes('application/json')) {
-    const preview = (await response.text()).slice(0, 80).replace(/\s+/g, ' ');
-    throw new Error(`WEBAUTHN_API_NON_JSON:${response.status}:${preview || 'empty response'}`);
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    if (context && typeof context.clone === 'function') {
+      try {
+        const payload = await context.clone().json() as ApiEnvelope<T>;
+        throw new Error(payload.error?.code ?? payload.error?.message ?? error.message);
+      } catch (parseError) {
+        if (parseError instanceof Error && parseError.message !== 'Unexpected end of JSON input') throw parseError;
+      }
+    }
+    throw new Error(error.message || 'WEBAUTHN_FUNCTION_FAILED');
   }
 
-  const payload = await response.json() as ApiEnvelope<T>;
-  if (!response.ok || payload.error || !payload.data) {
-    throw new Error(payload.error?.code ?? payload.error?.message ?? `WEBAUTHN_HTTP_${response.status}`);
+  const payload = data as ApiEnvelope<T> | null;
+  if (!payload || payload.error || !payload.data) {
+    throw new Error(payload?.error?.code ?? payload?.error?.message ?? 'WEBAUTHN_EMPTY_RESPONSE');
   }
   return payload.data;
 }
