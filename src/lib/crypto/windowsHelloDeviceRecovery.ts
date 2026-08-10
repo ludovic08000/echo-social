@@ -110,9 +110,17 @@ async function apiCall<T>(action: string, body: Record<string, unknown> = {}): P
     headers: {
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
+      accept: 'application/json',
     },
     body: JSON.stringify({ action, ...body }),
   });
+
+  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+  if (!contentType.includes('application/json')) {
+    const preview = (await response.text()).slice(0, 80).replace(/\s+/g, ' ');
+    throw new Error(`WEBAUTHN_API_NON_JSON:${response.status}:${preview || 'empty response'}`);
+  }
+
   const payload = await response.json() as ApiEnvelope<T>;
   if (!response.ok || payload.error || !payload.data) {
     throw new Error(payload.error?.code ?? payload.error?.message ?? `WEBAUTHN_HTTP_${response.status}`);
