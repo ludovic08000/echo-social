@@ -4,9 +4,17 @@
  */
 import type { DeviceSecureProviderDiagnostics } from '@/platforms/deviceSecureProvider';
 import { iosDeviceProvider } from '@/platforms/ios/iosDeviceProvider';
+import { hasIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';
+import { iosDeviceIdStorageKey } from '@/platforms/ios/iosDeviceIdStorageKey';
+import { getLastIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
+import { collectIosPlatformMetadata } from '@/platforms/ios/iosPlatformMetadata';
 
 export interface IosDeviceDiagnosticsReport {
   platform: string;
+  appVersion: string | null;
+  deviceModel: string | null;
+  deviceId: string | null;
+  deviceIdAnchored: boolean;
   keychainState: 'ok' | 'degraded' | 'unavailable';
   keychainTier: string;
   hasLocalIdentity: boolean;
@@ -17,8 +25,10 @@ export interface IosDeviceDiagnosticsReport {
   spkCount: number | null;
   opkCount: number | null;
   lastError: string | null;
+  lastRpcError: string | null;
   collectedAt: string;
 }
+
 
 export interface IosDiagnosticsServerContext {
   bindingStatus?: string | null;
