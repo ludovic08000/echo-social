@@ -64,6 +64,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const mountedRef = useRef(true);
   const refreshGenerationRef = useRef(0);
+  const bindingInFlightRef = useRef<string | null>(null);
   const keySetupInFlightRef = useRef<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -148,6 +149,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       setPinUnlocked(false);
       setDeviceId(null);
       setDeviceIdStatus('uninitialized');
+      bindingInFlightRef.current = null;
       keySetupInFlightRef.current = null;
       return;
     }
@@ -181,6 +183,63 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       void supabase.removeChannel(channel);
     };
   }, [userId, refresh]);
+
+  // Canonical transition: approved -> bound. The previous lifecycle waited for
+  // bindingStatus='bound' but never actually triggered deviceApi.bind(), which
+  // could leave a freshly bootstrapped primary device stuck forever in
+  // "Finalisation de l'appareil..." with DEVICE_SYNC_REQUIRED.
+  useEffect(() => {
+    if (!userId || !deviceId || record === 'unknown' || !record) return;
+    if (deviceIdStatus !== 'ok') return;
+    if (record.deviceId !== deviceId) return;
+    if (record.approvalStatus !== 'approved') return;
+    if (!record.isActive || record.revokedAt) return;
+    if (record.bindingStatus === 'bound') return;
+    if (record.bindingStatus !== 'pending') return;
+    if (bindingInFlightRef.current === deviceId) {
+      logDeviceLifecycle('bind-account-skip-inflight', { deviceId });
+      return;
+    }
+
+    bindingInFlightRef.current = deviceId;
+    const startedAt = Date.now();
+    logDeviceLifecycle('bind-account-start', {
+      deviceId,
+      approvalStatus: record.approvalStatus,
+      bindingStatus: record.bindingStatus,
+      routingStatus: record.routingStatus,
+    });
+
+    void deviceApi.bind(userId)
+      .then((updated) => {
+        logDeviceLifecycle('bind-account-success', {
+          deviceId,
+          elapsedMs: Date.now() - startedAt,
+          bindingStatus: updated.bindingStatus,
+          routingStatus: updated.routingStatus,
+          lifecycleStatus: updated.lifecycleStatus,
+        });
+        window.dispatchEvent(new CustomEvent('forsure:device-account-bound', {
+          detail: { userId, deviceId },
+        }));
+        if (mountedRef.current) refresh();
+      })
+      .catch((error) => {
+        logDeviceLifecycle('bind-account-failed', {
+          deviceId,
+          elapsedMs: Date.now() - startedAt,
+          name: error instanceof Error ? error.name : undefined,
+          message: error instanceof Error ? error.message : String(error),
+        }, 'error');
+      })
+      .finally(() => {
+        logDeviceLifecycle('bind-account-finished', {
+          deviceId,
+          elapsedMs: Date.now() - startedAt,
+        });
+        if (bindingInFlightRef.current === deviceId) bindingInFlightRef.current = null;
+      });
+  }, [userId, deviceId, deviceIdStatus, record, refresh]);
 
   useEffect(() => {
     if (!userId || !deviceId || record === 'unknown' || !record) return;
