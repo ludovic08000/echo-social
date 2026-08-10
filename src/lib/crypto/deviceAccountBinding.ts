@@ -50,14 +50,14 @@ export async function bindApprovedDeviceToAccount(
     throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
   }
 
-  const { data: resultData, error: invokeError } = await supabase.functions.invoke('approve-device-enrollment', {
-    body: {
-      action: 'bind',
-      device_id: deviceId,
-      device_authorization_signature: authorization.authorizationSignature,
-    },
-  });
-  if (invokeError) throw new Error(`DEVICE_ACCOUNT_BIND_FAILED:${invokeError.message}`);
+  const { data: resultData, error: rpcError } = await supabase.rpc(
+    'bind_device_account' as never,
+    {
+      p_device_id: deviceId,
+      p_device_authorization_signature: authorization.authorizationSignature,
+    } as never,
+  );
+  if (rpcError) throw new Error(`DEVICE_ACCOUNT_BIND_FAILED:${rpcError.message}`);
 
   const result = resultData as Record<string, unknown> | null;
   if (!result || result.ok !== true || result.code !== 'DEVICE_ACCOUNT_BOUND' || result.device_id !== deviceId) {
