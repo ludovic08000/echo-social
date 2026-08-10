@@ -39,6 +39,7 @@ jobs:
           src/lib/crypto/__tests__/deviceRatchet.test.ts
           src/lib/crypto/__tests__/x3dhOpkClaim.test.ts
           src/lib/messaging/__tests__/aegisCrossPlatformDeviceCopy.test.ts
+          src/platforms/ios/__tests__/iosMessagingProtection.test.ts
 
       - name: Typecheck
         run: npm run typecheck
