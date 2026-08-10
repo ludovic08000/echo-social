@@ -129,6 +129,9 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           isActive: row.isActive,
           revokedAt: row.revokedAt,
         } : null);
+        // Adaptateur iOS isolé : no-op complet hors runtime iOS.
+        if (row) void syncIosDeviceAdapter(userId, row.deviceId);
+
       } catch (error) {
         logDeviceLifecycle('server-device-state-failed', {
           deviceId: currentId,
