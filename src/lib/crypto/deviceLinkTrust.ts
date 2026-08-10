@@ -93,23 +93,31 @@ async function verifyCanonicalDevice(
   };
 }
 
-/** Verify one canonical device directly from the account-bound registry. */
+async function readCanonicalDevice(userId: string, deviceId: string): Promise<CanonicalDeviceRow> {
+  const { data, error } = await supabase.rpc('get_canonical_remote_device_identity' as never, {
+    p_user_id: userId,
+    p_device_id: deviceId,
+  } as never);
+  if (error) {
+    console.error('[E2EE][DEVICE_TRUST] canonical RPC failed', { userId, deviceId, code: error.code, message: error.message });
+    throw new Error('DEVICE_REGISTRY_LOOKUP_FAILED');
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('DEVICE_NOT_FOUND');
+  return row as unknown as CanonicalDeviceRow;
+}
+
+/** Verify one canonical device through the RLS-safe public cryptographic registry RPC. */
 export async function getApprovedDeviceIdentity(
   userId: string,
   deviceId: string,
 ): Promise<CanonicalDeviceIdentity> {
   if (!userId || !deviceId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
-  const [{ data, error }, account] = await Promise.all([
-    supabase
-      .from('user_devices')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('device_id', deviceId)
-      .maybeSingle(),
+  const [device, account] = await Promise.all([
+    readCanonicalDevice(userId, deviceId),
     readAccountIdentity(userId),
   ]);
-  if (error || !data) throw new Error('DEVICE_NOT_FOUND');
-  return verifyCanonicalDevice(userId, data as unknown as CanonicalDeviceRow, account);
+  return verifyCanonicalDevice(userId, device, account);
 }
 
 export async function ensureApprovedDeviceTrust(userId: string, deviceId: string): Promise<number> {
@@ -117,28 +125,22 @@ export async function ensureApprovedDeviceTrust(userId: string, deviceId: string
   return 0;
 }
 
-/** Validate every currently active canonical route. Historical revoked/stale rows are ignored. */
+/** Validate every route returned by the canonical Sesame registry, without direct cross-user table reads. */
 export async function repairApprovedDeviceTrust(userId: string): Promise<number> {
   if (!userId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
-  const [{ data, error }, account] = await Promise.all([
-    supabase
-      .from('user_devices')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .is('revoked_at', null),
-    readAccountIdentity(userId),
-  ]);
+  const { data, error } = await supabase.rpc('get_sesame_device_list' as never, { p_user_id: userId } as never);
   if (error) throw new Error('DEVICE_REGISTRY_LOOKUP_FAILED');
-
-  const devices = (data ?? []) as unknown as CanonicalDeviceRow[];
-  if (devices.length === 0) throw new Error('DEVICE_REGISTRY_CONTAINS_NO_VALID_ROUTE');
+  const rows = Array.isArray(data) ? data : [];
+  const ids = rows
+    .filter((row: any) => row?.is_routable === true && typeof row?.device_id === 'string')
+    .map((row: any) => row.device_id as string);
+  if (ids.length === 0) throw new Error('DEVICE_REGISTRY_CONTAINS_NO_VALID_ROUTE');
 
   let validCount = 0;
   let invalidCount = 0;
-  for (const device of devices) {
+  for (const deviceId of ids) {
     try {
-      await verifyCanonicalDevice(userId, device, account);
+      await getApprovedDeviceIdentity(userId, deviceId);
       validCount += 1;
     } catch {
       invalidCount += 1;
