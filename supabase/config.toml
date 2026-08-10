@@ -111,3 +111,5 @@ project_id = "vkpmoqfzrihcijjochks"
     verify_jwt = false
   [functions.approve-device-enrollment]
     verify_jwt = true
+  [functions.webauthn-device]
+    verify_jwt = true
