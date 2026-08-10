@@ -20,6 +20,7 @@ import {
   type DeviceLifecycleReason,
 } from '@/lib/device-manager/deviceLifecycleMachine';
 import { readPinUnlocked, subscribePinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
+import { syncIosDeviceAdapter } from '@/platforms/ios/iosLifecycleAdapter';
 
 const REFRESH_EVENTS = [
   'forsure:device-approval-pending',
