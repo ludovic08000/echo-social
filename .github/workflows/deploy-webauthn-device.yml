@@ -1,0 +1,40 @@
+name: Deploy webauthn-device
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - supabase/functions/webauthn-device/**
+      - supabase/config.toml
+      - .github/workflows/deploy-webauthn-device.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: vkpmoqfzrihcijjochks
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.113.0
+
+      - name: Validate deployment credentials
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || {
+            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN" >&2
+            exit 1
+          }
+
+      - name: Deploy authenticated WebAuthn device recovery function
+        run: |
+          supabase functions deploy webauthn-device \
+            --project-ref "$SUPABASE_PROJECT_REF"
