@@ -38,6 +38,29 @@ function validateTarget(target: PendingDeviceApprovalTarget): void {
   if (!UUID_RE.test(target.challengeId)) throw new Error('DEVICE_APPROVAL_INVALID_CHALLENGE_ID');
 }
 
+async function submitDecisionRpc(args: {
+  approverDeviceId: string;
+  target: PendingDeviceApprovalTarget;
+  decision: DeviceApprovalDecision;
+  bootstrapPrimary: boolean;
+  signature: string;
+}): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase.rpc('approve_device_enrollment_decision' as never, {
+    p_decision: args.decision,
+    p_bootstrap_primary: args.bootstrapPrimary,
+    p_approver_device_id: args.approverDeviceId,
+    p_device_id: args.target.deviceId,
+    p_challenge_id: args.target.challengeId,
+    p_signature: args.signature,
+  } as never);
+  if (error) throw new Error(`DEVICE_APPROVAL_DECISION_FAILED:${error.message}`);
+  const result = data as Record<string, unknown> | null;
+  if (!result || result.ok !== true || result.device_id !== args.target.deviceId) {
+    throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_APPROVAL_DECISION_REJECTED');
+  }
+  return result;
+}
+
 export async function submitTrustedDeviceApprovalDecision(args: {
   userId: string;
   approverDeviceId: string;
@@ -58,22 +81,13 @@ export async function submitTrustedDeviceApprovalDecision(args: {
     encodeString(canonicalDeviceApprovalDecisionPayload(args)),
   ) as ArrayBuffer);
 
-  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
-    body: {
-      action: 'decision',
-      decision: args.decision,
-      approver_device_id: args.approverDeviceId,
-      device_id: args.target.deviceId,
-      challenge_id: args.target.challengeId,
-      signature,
-    },
+  const result = await submitDecisionRpc({
+    approverDeviceId: args.approverDeviceId,
+    target: args.target,
+    decision: args.decision,
+    bootstrapPrimary: false,
+    signature,
   });
-
-  if (error) throw new Error(`DEVICE_APPROVAL_DECISION_FAILED:${error.message}`);
-  const result = data as Record<string, unknown> | null;
-  if (!result || result.ok !== true || result.device_id !== args.target.deviceId) {
-    throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_APPROVAL_DECISION_REJECTED');
-  }
 
   const expectedCode = args.decision === 'approve' ? 'DEVICE_APPROVED' : 'DEVICE_REVOKED';
   if (result.code !== expectedCode) throw new Error('DEVICE_APPROVAL_DECISION_INVALID_RESPONSE');
@@ -83,33 +97,37 @@ export async function submitTrustedDeviceApprovalDecision(args: {
 export async function submitPrimaryBootstrapDecision(args: {
   userId: string;
   target: PendingDeviceApprovalTarget;
-}): Promise<{ deviceId: string; decision: 'approve' }> {
+  decision: DeviceApprovalDecision;
+}): Promise<{ deviceId: string; decision: DeviceApprovalDecision }> {
   if (!args.userId) throw new Error('DEVICE_APPROVAL_USER_REQUIRED');
   validateTarget(args.target);
   const identity = await loadDeviceIdentity(args.userId, args.target.deviceId);
   if (!identity || identity.publicB64 !== args.target.deviceSigningKey) {
     throw new Error('DEVICE_BOOTSTRAP_LOCAL_IDENTITY_INVALID');
   }
+
   const payloadArgs = {
     userId: args.userId,
     approverDeviceId: args.target.deviceId,
     target: args.target,
-    decision: 'approve' as const,
+    decision: args.decision,
   };
   const signature = bufferToBase64(await hardCrypto.sign(
     'Ed25519', identity.privateKey, encodeString(canonicalDeviceApprovalDecisionPayload(payloadArgs)),
   ) as ArrayBuffer);
-  const { data, error } = await supabase.functions.invoke('approve-device-enrollment', {
-    body: {
-      action: 'decision', decision: 'approve', bootstrap_primary: true,
-      approver_device_id: args.target.deviceId, device_id: args.target.deviceId,
-      challenge_id: args.target.challengeId, signature,
-    },
+
+  const result = await submitDecisionRpc({
+    approverDeviceId: args.target.deviceId,
+    target: args.target,
+    decision: args.decision,
+    bootstrapPrimary: true,
+    signature,
   });
-  if (error) throw new Error(`DEVICE_BOOTSTRAP_FAILED:${error.message}`);
-  const result = data as Record<string, unknown> | null;
-  if (!result || result.ok !== true || result.code !== 'DEVICE_APPROVED' || result.device_role !== 'primary') {
-    throw new Error(typeof result?.code === 'string' ? result.code : 'DEVICE_BOOTSTRAP_REJECTED');
+
+  const expectedCode = args.decision === 'approve' ? 'DEVICE_APPROVED' : 'DEVICE_REVOKED';
+  if (result.code !== expectedCode) throw new Error('DEVICE_BOOTSTRAP_INVALID_RESPONSE');
+  if (args.decision === 'approve' && result.device_role !== 'primary') {
+    throw new Error('DEVICE_BOOTSTRAP_ROLE_INVALID');
   }
-  return { deviceId: args.target.deviceId, decision: 'approve' };
+  return { deviceId: args.target.deviceId, decision: args.decision };
 }
