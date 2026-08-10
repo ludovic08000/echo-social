@@ -8,6 +8,8 @@ import { hasIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';
 import { iosDeviceIdStorageKey } from '@/platforms/ios/iosDeviceIdStorageKey';
 import { getLastIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 import { collectIosPlatformMetadata } from '@/platforms/ios/iosPlatformMetadata';
+import { getIosPasskeyDebugState } from '@/platforms/ios/iosPasskeyState';
+import { isIosPasskeySupported } from '@/platforms/ios/iosPasskeyProvider';
 
 export interface IosDeviceDiagnosticsReport {
   platform: string;
@@ -54,14 +56,16 @@ export async function collectIosDeviceDiagnostics(args: {
   deviceId?: string | null;
   server?: IosDiagnosticsServerContext;
 }): Promise<IosDeviceDiagnosticsReport> {
-  const [diagnostics, metadata, deviceIdAnchored] = await Promise.all([
+  const [diagnostics, metadata, deviceIdAnchored, passkeySupported] = await Promise.all([
     iosDeviceProvider.collectDiagnostics({
       userId: args.userId ?? null,
       deviceId: args.deviceId ?? null,
     }),
     collectIosPlatformMetadata(),
     hasIosDeviceIdAnchor(iosDeviceIdStorageKey(args.userId ?? null)),
+    isIosPasskeySupported(),
   ]);
+  const passkey = getIosPasskeyDebugState();
   const rpcError = getLastIosRpcError();
 
   return {
@@ -81,6 +85,9 @@ export async function collectIosDeviceDiagnostics(args: {
     opkCount: args.server?.opkCount ?? null,
     lastError: args.server?.routingError ?? diagnostics.lastError,
     lastRpcError: rpcError ? `${rpcError.operation}: ${rpcError.message}` : null,
+    passkeySupported,
+    passkeyRegistered: passkey.registered,
+    passkeyLastError: passkey.lastError,
     collectedAt: diagnostics.collectedAt,
   };
 }
