@@ -124,7 +124,7 @@ export function DevicesPanel() {
         </div>
       </div>
 
-      {user?.id && currentDeviceId && (
+      {user?.id && (
         <WindowsHelloDeviceRecoverySection userId={user.id} deviceId={currentDeviceId} />
       )}
 
