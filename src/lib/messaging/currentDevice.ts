@@ -14,6 +14,7 @@ import {
   cancelExplicitDeviceEnrollmentAuthorization,
   type ExplicitDeviceEnrollmentReason,
 } from '@/lib/crypto/deviceEnrollmentGate';
+import { readIosDeviceIdAnchor, writeIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';
 
 const BASE_STORAGE_KEY = 'forsure-device-id-v1';
 const DEVICE_ID_DB = 'forsure-device-routing-v1';
