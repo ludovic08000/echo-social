@@ -51,10 +51,9 @@ export interface IosMessagingIntegrityReport {
   repairablePrekeys: boolean;
 }
 
-function isReadyRecord(record: DeviceApiRecord | null): record is DeviceApiRecord {
+function isReadyRecord(record: DeviceApiRecord): boolean {
   return Boolean(
-    record
-      && record.approvalStatus === 'approved'
+    record.approvalStatus === 'approved'
       && record.bindingStatus === 'bound'
       && record.routingStatus === 'ready'
       && record.lifecycleStatus === 'ready'
@@ -125,7 +124,7 @@ export async function inspectIosMessagingIntegrity(
     };
   }
 
-  if (!isReadyRecord(record)) {
+  if (!record || !isReadyRecord(record)) {
     return {
       issue: 'not-ready',
       deviceId: record?.deviceId ?? null,
