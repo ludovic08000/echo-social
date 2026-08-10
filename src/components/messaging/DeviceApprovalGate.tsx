@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Check, Loader2, ShieldCheck, ShieldQuestion, Smartphone } from 'lucide-react';
+import { Check, Loader2, ShieldCheck, ShieldQuestion, Smartphone, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
@@ -85,6 +85,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
 
   if (lifecycle.state === 'PENDING_APPROVAL') {
     const pending = actions.pending;
+    const bootstrap = actions.approvalMode === 'bootstrap' && actions.canBootstrapPrimary;
     return (
       <Shell compact={compact}>
         <div className="rounded-2xl border border-amber-500/40 bg-card p-5 shadow-sm">
@@ -93,11 +94,11 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
               <ShieldQuestion className="h-5 w-5 text-amber-700" />
             </div>
             <div>
-              <h2 className="text-base font-bold">{actions.canBootstrapPrimary ? 'Confirmer le premier appareil ?' : 'En attente d’approbation sur un appareil déjà approuvé'}</h2>
+              <h2 className="text-base font-bold">{bootstrap ? 'Autoriser ce premier appareil ?' : 'En attente d’approbation sur un appareil déjà approuvé'}</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {actions.canBootstrapPrimary
-                  ? 'Aucun appareil n’existe encore. Votre confirmation créera l’unique appareil principal du compte.'
-                  : 'Ouvrez Echo Social sur un appareil déjà reconnu : une demande d’approbation y apparaîtra automatiquement. Comparez l’empreinte ci-dessous avant d’approuver. Cet appareil ne peut pas s’approuver lui-même.'}
+                {bootstrap
+                  ? 'Le serveur confirme qu’aucun appareil approuvé n’existe encore pour ce compte. Vous pouvez autoriser ou refuser l’enregistrement de cet appareil.'
+                  : 'Le serveur a détecté au moins un appareil approuvé. Ouvrez Echo Social sur un appareil déjà reconnu pour approuver ou refuser cette demande.'}
               </p>
             </div>
           </div>
@@ -128,16 +129,27 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
                 <p className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{actions.error}</p>
               )}
 
-              {actions.canBootstrapPrimary && <div className="grid grid-cols-1 gap-2">
-                <Button
-                  className="rounded-xl"
-                  disabled={actions.processing}
-                  onClick={() => void actions.decide('approve')}
-                >
-                  {actions.processing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 h-4 w-4" />}
-                  Approuver
-                </Button>
-              </div>}
+              {bootstrap && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    className="rounded-xl"
+                    disabled={actions.processing}
+                    onClick={() => void actions.decide('reject')}
+                  >
+                    <X className="mr-1.5 h-4 w-4" />
+                    Refuser
+                  </Button>
+                  <Button
+                    className="rounded-xl"
+                    disabled={actions.processing}
+                    onClick={() => void actions.decide('approve')}
+                  >
+                    {actions.processing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 h-4 w-4" />}
+                    Approuver
+                  </Button>
+                </div>
+              )}
             </>
           )}
 
