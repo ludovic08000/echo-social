@@ -2278,6 +2278,59 @@ export type Database = {
         }
         Relationships: []
       }
+      device_platform_metadata: {
+        Row: {
+          app_version: string | null
+          created_at: string
+          device_id: string
+          device_model: string | null
+          id: string
+          last_error: string | null
+          platform: string
+          runtime: string | null
+          secure_enclave_available: boolean
+          secure_storage_tier: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string
+          device_id: string
+          device_model?: string | null
+          id?: string
+          last_error?: string | null
+          platform: string
+          runtime?: string | null
+          secure_enclave_available?: boolean
+          secure_storage_tier?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string
+          device_id?: string
+          device_model?: string | null
+          id?: string
+          last_error?: string | null
+          platform?: string
+          runtime?: string | null
+          secure_enclave_available?: boolean
+          secure_storage_tier?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_platform_metadata_device_fkey"
+            columns: ["user_id", "device_id"]
+            isOneToOne: true
+            referencedRelation: "user_devices"
+            referencedColumns: ["user_id", "device_id"]
+          },
+        ]
+      }
       device_prekey_repair_requests: {
         Row: {
           created_at: string
