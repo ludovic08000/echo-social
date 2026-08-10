@@ -73,7 +73,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
         <div className="flex flex-col items-center gap-3 text-center">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
           <p className="text-sm font-medium">Vérification de cet appareil…</p>
-          <p className="text-xs text-muted-foreground">Le PIN reste bloqué pendant cette vérification.</p>
+          <p className="text-xs text-muted-foreground">Vérification de l’état cryptographique en cours.</p>
         </div>
       </Shell>
     );
@@ -209,19 +209,20 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           )}
 
           <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            Le PIN apparaîtra uniquement après l’approbation.
+            La finalisation cryptographique démarre automatiquement après l’approbation.
           </p>
         </div>
       </Shell>
     );
   }
 
-  if (!lifecycle.canPromptForPin) {
+  if (!lifecycle.canRunCryptoRuntime) {
     return (
       <Shell compact={compact}>
         <div className="flex flex-col items-center gap-3 text-center">
-          <ShieldCheck className="h-6 w-6 text-primary" />
-          <p className="text-sm font-medium">Validation de l’appareil…</p>
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <p className="text-sm font-medium">Finalisation de cet appareil…</p>
+          <p className="text-xs text-muted-foreground">Publication des clés de session sécurisée en cours.</p>
         </div>
       </Shell>
     );
