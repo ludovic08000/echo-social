@@ -28,14 +28,15 @@ export function WindowsHelloDeviceRecoverySection({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!deviceId || !isWindowsWeb()) {
+      if (!isWindowsWeb()) {
         if (!cancelled) setLoading(false);
         return;
       }
       const supported = await isWindowsHelloAvailable();
       if (cancelled) return;
       setAvailable(supported);
-      if (!supported) {
+      if (!supported || !deviceId) {
+        setRegistered(false);
         setLoading(false);
         return;
       }
@@ -51,7 +52,8 @@ export function WindowsHelloDeviceRecoverySection({
     return () => { cancelled = true; };
   }, [deviceId]);
 
-  if (!deviceId || !isWindowsWeb()) return null;
+  if (!isWindowsWeb()) return null;
+
   if (loading) {
     return (
       <div className="rounded-2xl border bg-card p-4">
@@ -61,10 +63,11 @@ export function WindowsHelloDeviceRecoverySection({
       </div>
     );
   }
-  if (!available) return null;
+
+  const canActivate = Boolean(deviceId && available);
 
   const activate = async () => {
-    if (busy) return;
+    if (busy || !deviceId || !available) return;
     if (!getSessionMasterKey() && !password) {
       setNeedsPassword(true);
       return;
@@ -100,12 +103,16 @@ export function WindowsHelloDeviceRecoverySection({
           <p className="mt-1 text-xs text-muted-foreground">
             {registered
               ? 'Ce device peut être restauré avec Windows Hello après suppression des données du navigateur, sans créer un nouveau DeviceID.'
-              : 'Associez Windows Hello à ce device pour pouvoir restaurer le même DeviceID et ses clés après suppression des données du navigateur.'}
+              : !deviceId
+                ? 'Windows Hello est disponible. Enregistrez et approuvez d’abord cet appareil, puis activez sa récupération ici.'
+                : !available
+                  ? 'Windows Hello/WebAuthn n’est pas disponible dans ce navigateur ou sur cette machine.'
+                  : 'Associez Windows Hello à ce device pour pouvoir restaurer le même DeviceID et ses clés après suppression des données du navigateur.'}
           </p>
         </div>
       </div>
 
-      {!registered && needsPassword && (
+      {!registered && needsPassword && canActivate && (
         <Input
           className="mt-3"
           type="password"
@@ -118,7 +125,7 @@ export function WindowsHelloDeviceRecoverySection({
       )}
 
       {!registered && (
-        <Button className="mt-3 w-full" disabled={busy} onClick={() => void activate()}>
+        <Button className="mt-3 w-full" disabled={busy || !canActivate} onClick={() => void activate()}>
           {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Fingerprint className="mr-2 h-4 w-4" />}
           Activer Windows Hello
         </Button>
