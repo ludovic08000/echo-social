@@ -280,6 +280,11 @@ export async function hydrateDeviceId(): Promise<string> {
     for (const result of reads) {
       if (result.status === 'fulfilled' && validId(result.value)) candidates.add(result.value);
     }
+    // iOS uniquement : l'ancrage Keychain survit aux purges WebKit et évite
+    // toute rotation de DeviceID après réouverture ou nettoyage du cache.
+    const iosAnchor = await readIosDeviceIdAnchor(key);
+    if (validId(iosAnchor)) candidates.add(iosAnchor);
+
     if (candidates.size > 1) throw new DeviceIdentityError('DEVICE_ID_MISMATCH');
     const id = [...candidates][0];
     if (!id) throw new DeviceIdentityError('DEVICE_ID_REAPPROVAL_REQUIRED');
