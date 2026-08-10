@@ -41,6 +41,8 @@ import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { adoptReusableIosDevice } from '@/platforms/ios/iosDeviceReuse';
+import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
