@@ -9,6 +9,7 @@ import {
   isIosPasskeySupported,
 } from '@/platforms/ios/iosPasskeyProvider';
 import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
+import { recordIosDiagnostic } from '@/platforms/ios/iosSupabaseDiagnostics';
 
 export interface IosDeviceDiagnosticsReport {
   platform: string;
@@ -48,8 +49,7 @@ export async function collectIosDeviceDiagnostics(args: {
 
   const passkey = getIosPasskeyDebugState();
   const rpcError = getLastIosRpcError();
-
-  return {
+  const report: IosDeviceDiagnosticsReport = {
     platform: iosWeb ? 'iOS Web · WebAuthn/Passkey' : 'non-iOS',
     deviceId: args.deviceId ?? null,
     bindingStatus: args.server?.bindingStatus ?? null,
@@ -63,4 +63,26 @@ export async function collectIosDeviceDiagnostics(args: {
     passkeyLastError: passkey.lastError,
     collectedAt: new Date().toISOString(),
   };
+
+  if (iosWeb) {
+    const combinedError = report.lastError || report.lastRpcError || report.passkeyLastError;
+    recordIosDiagnostic({
+      event: 'ios.diagnostics.snapshot',
+      severity: combinedError ? 'warn' : 'info',
+      deviceId: report.deviceId,
+      metadata: {
+        source: 'iosDiagnostics',
+        bindingStatus: report.bindingStatus,
+        routingStatus: report.routingStatus,
+        spkCount: report.spkCount,
+        opkCount: report.opkCount,
+        passkeySupported: report.passkeySupported,
+        passkeyRegistered: report.passkeyRegistered,
+        outcome: combinedError ? 'degraded' : 'ok',
+        errorMessage: combinedError?.slice(0, 500) ?? null,
+      },
+    });
+  }
+
+  return report;
 }
