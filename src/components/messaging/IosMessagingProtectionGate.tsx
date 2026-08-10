@@ -76,17 +76,14 @@ export function IosMessagingProtectionGate({ children }: { children: ReactNode }
         nextReport = await inspectIosMessagingIntegrity(user.id, nextRecord);
       }
 
-      setReport(nextReport);
-
-      if (nextReport.issue !== 'none') {
-        setPasskeySupported(null);
-        setPasskeyRegistered(null);
-        return;
-      }
-
+      // Passkey status is read even when the local device keys are damaged.
+      // That keeps the verified recovery path available instead of forcing a
+      // new DeviceID when a valid iOS vault already exists server-side.
       const supported = await isIosPasskeySupported();
+      const registered = supported ? await getIosPasskeyStatus(nextRecord.deviceId) : false;
       setPasskeySupported(supported);
-      setPasskeyRegistered(supported ? await getIosPasskeyStatus(nextRecord.deviceId) : false);
+      setPasskeyRegistered(registered);
+      setReport(nextReport);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'IOS_MESSAGING_PROTECTION_CHECK_FAILED');
     } finally {
@@ -184,6 +181,7 @@ export function IosMessagingProtectionGate({ children }: { children: ReactNode }
       }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'IOS_DEVICE_REENROLL_FAILED');
+    } finally {
       setBusy(false);
     }
   };
