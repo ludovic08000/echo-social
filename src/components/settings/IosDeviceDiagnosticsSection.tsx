@@ -75,6 +75,20 @@ export function IosDeviceDiagnosticsSection({ userId, deviceId, server }: Props)
           <div><span className="text-muted-foreground">Routing : </span>{line(report.routingStatus === 'ready', 'ready', report.routingStatus ?? 'inconnu')}</div>
           <div><span className="text-muted-foreground">SPK : </span><span className="font-mono">{report.spkCount ?? '…'}</span></div>
           <div><span className="text-muted-foreground">OPK : </span><span className="font-mono">{report.opkCount ?? '…'}</span></div>
+          <div><span className="text-muted-foreground">Passkey iOS : </span>{line(report.passkeySupported, 'disponible', 'indisponible')}</div>
+          <div>
+            <span className="text-muted-foreground">Credential passkey : </span>
+            {report.passkeyRegistered === null
+              ? <span className="font-mono text-muted-foreground">inconnu</span>
+              : line(report.passkeyRegistered, 'enregistrée', 'non enregistrée')}
+          </div>
+          {report.passkeyLastError ? (
+            <div className="sm:col-span-2">
+              <span className="text-muted-foreground">Erreur passkey : </span>
+              <span className="break-all font-mono text-destructive">{report.passkeyLastError}</span>
+            </div>
+          ) : null}
+
           <div className="sm:col-span-2">
             <span className="text-muted-foreground">Dernière erreur RPC : </span>
             {report.lastRpcError
