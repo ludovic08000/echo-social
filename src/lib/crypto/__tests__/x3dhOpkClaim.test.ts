@@ -28,7 +28,7 @@ vi.mock('@/lib/crypto/keyManager', () => ({
   exportPublicKeyRaw: vi.fn(),
 }));
 
-vi.mock('@/lib/crypto/signedDeviceList', () => ({
+vi.mock('@/lib/crypto/canonicalDeviceRegistry', () => ({
   fetchVerifiedDeviceIdentity: mocks.fetchVerifiedDeviceIdentity,
 }));
 
@@ -51,6 +51,10 @@ function installPrekeyResponses() {
   });
 }
 
+function opkClaimCalls() {
+  return mocks.rpc.mock.calls.filter(([name]) => name === 'claim_device_one_time_prekey');
+}
+
 describe('fetchPrekeyBundleForDevice OPK claiming', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -66,22 +70,23 @@ describe('fetchPrekeyBundleForDevice OPK claiming', () => {
     });
     expect(bundle).toMatchObject({ signedPrekeyId: 7 });
     expect(bundle?.oneTimePrekey).toBeUndefined();
-    expect(mocks.rpc).not.toHaveBeenCalledWith('claim_device_one_time_prekey', expect.anything());
+    expect(opkClaimCalls()).toHaveLength(0);
   });
 
   it('uses SPK-only X3DH when no sending relationship authorizes a claim', async () => {
     const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device');
     expect(bundle?.oneTimePrekeyId).toBeUndefined();
-    expect(mocks.rpc).not.toHaveBeenCalledWith('claim_device_one_time_prekey', expect.anything());
+    expect(opkClaimCalls()).toHaveLength(0);
   });
 
-  it('binds a destructive OPK claim to the conversation and sender device', async () => {
+  it('claims exactly one OPK and binds it to the conversation and sender device', async () => {
     const conversationId = '11111111-1111-4111-8111-111111111111';
     const bundle = await fetchPrekeyBundleForDevice('peer-user', 'peer-device', {
       conversationId,
       senderDeviceId: 'sender-device',
     });
     expect(bundle?.oneTimePrekeyId).toBe(42);
+    expect(opkClaimCalls()).toHaveLength(1);
     expect(mocks.rpc).toHaveBeenCalledWith('claim_device_one_time_prekey', {
       p_user_id: 'peer-user',
       p_device_id: 'peer-device',
