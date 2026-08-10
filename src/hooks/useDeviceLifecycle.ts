@@ -70,12 +70,11 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     }
 
     // DeviceID persistence is account-scoped. Always establish the user scope
-    // and hydrate the durable ID before making any lifecycle decision. Without
-    // this step a reload reads the unscoped key, falsely reports
-    // DEVICE_ID_UNINITIALIZED and offers a new enrollment for an already
-    // approved device.
+    // and hydrate the durable ID before making any lifecycle decision. During
+    // background refreshes we intentionally keep the last known device record
+    // instead of switching to `unknown`; otherwise the approval gate replaces
+    // the entire messaging UI with a loading screen every poll/event refresh.
     setCurrentDeviceUserScope(userId);
-    setRecord('unknown');
 
     void (async () => {
       try {
@@ -110,7 +109,9 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           revokedAt: row.revokedAt,
         } : null);
       } catch {
-        if (mountedRef.current && generation === refreshGenerationRef.current) setRecord('unknown');
+        // Keep the last known good record on a transient refresh failure. A
+        // subsequent poll/realtime event will retry. This avoids destructive UI
+        // flicker while preserving fail-closed behaviour on initial load.
       }
     })();
   }, [userId]);
@@ -131,6 +132,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     }
 
     setCurrentDeviceUserScope(userId);
+    setRecord('unknown');
     setPinUnlocked(readPinUnlocked(userId));
     refresh();
 
