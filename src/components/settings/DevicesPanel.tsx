@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Check, Monitor, Smartphone, Tablet, Loader2, ShieldCheck, Trash2, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
+import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
 import { deviceApi, type DeviceApiListRecord } from '@/lib/api/deviceApi';
 import { Button } from '@/components/ui/button';
 import { WindowsHelloDeviceRecoverySection } from '@/components/settings/WindowsHelloDeviceRecoverySection';
@@ -43,35 +44,50 @@ function statusLabel(device: DeviceApiListRecord): string {
 
 export function DevicesPanel() {
   const { user } = useAuth();
+  const lifecycle = useDeviceLifecycle();
   const [devices, setDevices] = useState<DeviceApiListRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
 
-  const currentDeviceId = useMemo(
-    () => (user?.id ? deviceApi.getCurrentId(user.id) : null),
-    [user?.id],
-  );
+  // Canonical current device comes from the hydrated lifecycle. Do not cache
+  // deviceApi.getCurrentId() from the first render: it can legitimately be null
+  // before account-scoped DeviceID hydration completes and would then remain
+  // stale for the lifetime of this panel.
+  const currentDeviceId = lifecycle.deviceId;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
     if (!user?.id) {
       setDevices([]);
-      setLoading(false);
+      setInitialLoading(false);
+      setRefreshing(false);
       return;
     }
-    setLoading(true);
+
+    if (background) setRefreshing(true);
+    else if (devices.length === 0) setInitialLoading(true);
+
     try {
       setDevices(await deviceApi.listDevices(user.id));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Impossible de charger les appareils');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setRefreshing(false);
     }
-  }, [user?.id]);
+  }, [user?.id, devices.length]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(false);
+  }, [user?.id]); // intentionally not tied to load/devices.length: first load only
+
+  // When the canonical lifecycle changes after approval/binding/recovery, refresh
+  // the rows in place without unmounting the panel or replacing it with a spinner.
+  useEffect(() => {
+    if (!user?.id || lifecycle.loading) return;
+    void load(true);
+  }, [user?.id, lifecycle.deviceId, lifecycle.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRevoke = async (device: DeviceApiListRecord) => {
     if (!user?.id) return;
@@ -93,7 +109,7 @@ export function DevicesPanel() {
     try {
       if (decision === 'approve') await deviceApi.approve(user.id, device.deviceId);
       else await deviceApi.reject(user.id, device.deviceId);
-      await load();
+      await load(true);
       toast.success(decision === 'approve' ? 'Appareil approuvé' : 'Appareil refusé');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Décision impossible');
@@ -102,7 +118,7 @@ export function DevicesPanel() {
     }
   };
 
-  if (loading) {
+  if (initialLoading && devices.length === 0) {
     return (
       <div className="flex items-center justify-center py-10">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -115,8 +131,11 @@ export function DevicesPanel() {
       <div className="rounded-2xl border bg-card p-4">
         <div className="flex items-start gap-3">
           <ShieldCheck className="mt-0.5 h-5 w-5 text-primary" />
-          <div>
-            <h3 className="text-sm font-semibold">Appareils sécurisés</h3>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold">Appareils sécurisés</h3>
+              {refreshing && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">
               Les nouveaux appareils secondaires apparaissent ici. Vous décidez explicitement de les approuver ou de les refuser depuis cet appareil reconnu.
             </p>
