@@ -102,7 +102,7 @@ async function readCanonicalDevice(userId: string, deviceId: string): Promise<Ca
     console.error('[E2EE][DEVICE_TRUST] canonical RPC failed', { userId, deviceId, code: error.code, message: error.message });
     throw new Error('DEVICE_REGISTRY_LOOKUP_FAILED');
   }
-  const row = Array.isArray(data) ? data[0] : data;
+  const row = Array.isArray(data) ? data[0] : (data ?? null);
   if (!row) throw new Error('DEVICE_NOT_FOUND');
   return row as unknown as CanonicalDeviceRow;
 }
