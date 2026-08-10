@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const isIosRuntimeMock = vi.fn(() => false);
+const isIosWebRuntimeMock = vi.fn(() => false);
 const isWindowsWebMock = vi.fn(() => false);
 
-vi.mock('@/platforms/ios/capacitorBridge', () => ({
-  isIosRuntime: () => isIosRuntimeMock(),
-  isNativeIosRuntime: () => false,
-  inspectIosBridge: () => ({ isNativeIos: false, isIosWeb: isIosRuntimeMock(), reportedPlatform: 'web', userAgent: '' }),
+vi.mock('@/platforms/ios/iosRuntime', () => ({
+  isIosWebRuntime: () => isIosWebRuntimeMock(),
 }));
 
 vi.mock('@/lib/crypto/windowsHelloDeviceRecovery', () => ({
@@ -29,12 +27,12 @@ import {
 
 describe('deviceLifecycleCore provider selection', () => {
   beforeEach(() => {
-    isIosRuntimeMock.mockReturnValue(false);
+    isIosWebRuntimeMock.mockReturnValue(false);
     isWindowsWebMock.mockReturnValue(false);
   });
 
-  it('sélectionne le provider iOS sur runtime iOS', () => {
-    isIosRuntimeMock.mockReturnValue(true);
+  it('sélectionne le provider iOS sur runtime iOS Web', () => {
+    isIosWebRuntimeMock.mockReturnValue(true);
     expect(detectDevicePlatformKind()).toBe('ios');
     expect(resolveDevicePlatformProvider().platform).toBe('ios');
   });

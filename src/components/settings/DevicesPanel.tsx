@@ -9,6 +9,7 @@ import { deviceApi, type DeviceApiListRecord } from '@/lib/api/deviceApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { WindowsHelloDeviceRecoverySection } from '@/components/settings/WindowsHelloDeviceRecoverySection';
+import { IosPasskeyRecoverySection } from '@/components/settings/IosPasskeyRecoverySection';
 import { IosDeviceDiagnosticsSection } from '@/components/settings/IosDeviceDiagnosticsSection';
 import {
   AlertDialog,
@@ -78,6 +79,7 @@ export function DevicesPanel() {
     }
 
     const next: Record<string, DeviceDiagnostic> = {};
+    const rpId = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
 
     await Promise.all(rows.map(async (device) => {
       try {
@@ -98,23 +100,24 @@ export function DevicesPanel() {
             .select('*', { count: 'exact', head: true })
             .eq('user_id', user.id)
             .eq('device_id', device.deviceId),
-          supabase
-            .from('webauthn_device_credentials' as never)
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .eq('device_id', device.deviceId)
-            .is('revoked_at', null),
+          rpId
+            ? supabase.rpc('webauthn_device_status' as never, {
+                p_device_id: device.deviceId,
+                p_rp_id: rpId,
+              } as never)
+            : Promise.resolve({ data: null, error: null }),
         ]);
 
         const firstError = deviceState.error || spk.error || opk.error || webauthn.error;
         const state = deviceState.data as { routing_error?: string | null; lifecycle_status?: string | null } | null;
+        const webauthnState = webauthn.data as { registered?: boolean } | null;
 
         next[device.deviceId] = {
           routingError: state?.routing_error ?? null,
           lifecycleStatus: state?.lifecycle_status ?? device.lifecycleStatus ?? null,
           spkCount: spk.count ?? 0,
           opkCount: opk.count ?? 0,
-          webauthnCount: webauthn.count ?? 0,
+          webauthnCount: webauthnState?.registered === true ? 1 : 0,
           loadedAt: new Date().toISOString(),
           error: firstError?.message ?? null,
         };
@@ -257,6 +260,20 @@ export function DevicesPanel() {
         <WindowsHelloDeviceRecoverySection userId={user.id} deviceId={currentDeviceId} />
       )}
 
+      {user?.id && (
+        <IosPasskeyRecoverySection
+          userId={user.id}
+          deviceId={currentDeviceId}
+          ready={Boolean(
+            lifecycle.canRunCryptoRuntime
+            && lifecycle.record?.bindingStatus === 'bound'
+            && lifecycle.record?.routingStatus === 'ready'
+            && lifecycle.record?.isActive
+            && !lifecycle.record?.revokedAt
+          )}
+        />
+      )}
+
       {devices.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
           Aucun appareil enregistré.
@@ -377,8 +394,6 @@ export function DevicesPanel() {
                           }}
                         />
                       )}
-
-
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" className="h-8" onClick={() => void load(true)} disabled={refreshing}>

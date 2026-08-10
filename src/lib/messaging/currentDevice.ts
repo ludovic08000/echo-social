@@ -14,7 +14,6 @@ import {
   cancelExplicitDeviceEnrollmentAuthorization,
   type ExplicitDeviceEnrollmentReason,
 } from '@/lib/crypto/deviceEnrollmentGate';
-import { readIosDeviceIdAnchor, writeIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';
 
 const BASE_STORAGE_KEY = 'forsure-device-id-v1';
 const DEVICE_ID_DB = 'forsure-device-routing-v1';
@@ -148,13 +147,10 @@ async function persistDurably(id: string): Promise<string> {
   if (syncWrites === 0 && results.every(result => result.status === 'rejected')) {
     throw new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE');
   }
-  // iOS uniquement : ancre le DeviceID hors des stockages purgés par ITP.
-  void writeIosDeviceIdAnchor(key, id).catch(() => undefined);
   memoryDeviceId = id;
   memoryDeviceIdIsTemporary = false;
   return id;
 }
-
 
 function cancelLocalEnrollmentTransition(): void {
   explicitEnrollmentInProgress = false;
@@ -280,10 +276,6 @@ export async function hydrateDeviceId(): Promise<string> {
     for (const result of reads) {
       if (result.status === 'fulfilled' && validId(result.value)) candidates.add(result.value);
     }
-    // iOS uniquement : l'ancrage Keychain survit aux purges WebKit et évite
-    // toute rotation de DeviceID après réouverture ou nettoyage du cache.
-    const iosAnchor = await readIosDeviceIdAnchor(key);
-    if (validId(iosAnchor)) candidates.add(iosAnchor);
 
     if (candidates.size > 1) throw new DeviceIdentityError('DEVICE_ID_MISMATCH');
     const id = [...candidates][0];

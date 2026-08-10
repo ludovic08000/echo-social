@@ -16,6 +16,10 @@
     {
       "source": "/v1/rpc/aegis_ack_device_messages",
       "destination": "/api/aegis-ack-device-messages"
+    },
+    {
+      "source": "/diagnostics/device-messaging",
+      "destination": "/index.html"
     }
   ],
   "headers": [

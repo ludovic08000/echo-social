@@ -20,7 +20,6 @@ import {
   type DeviceLifecycleReason,
 } from '@/lib/device-manager/deviceLifecycleMachine';
 import { readPinUnlocked, subscribePinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
-import { syncIosDeviceAdapter } from '@/platforms/ios/iosLifecycleAdapter';
 
 const REFRESH_EVENTS = [
   'forsure:device-approval-pending',
@@ -30,6 +29,7 @@ const REFRESH_EVENTS = [
   'forsure:device-account-bound',
   'forsure:aegis-route-ready',
   'forsure:authenticated-device-enroll',
+  'forsure:webauthn-device-restored',
 ];
 
 const POLL_MS = 15_000;
@@ -129,9 +129,6 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           isActive: row.isActive,
           revokedAt: row.revokedAt,
         } : null);
-        // Adaptateur iOS isolé : no-op complet hors runtime iOS.
-        if (row) void syncIosDeviceAdapter(userId, row.deviceId);
-
       } catch (error) {
         logDeviceLifecycle('server-device-state-failed', {
           deviceId: currentId,
@@ -188,10 +185,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     };
   }, [userId, refresh]);
 
-  // Canonical transition: approved -> bound. The previous lifecycle waited for
-  // bindingStatus='bound' but never actually triggered deviceApi.bind(), which
-  // could leave a freshly bootstrapped primary device stuck forever in
-  // "Finalisation de l'appareil..." with DEVICE_SYNC_REQUIRED.
+  // Canonical transition: approved -> bound. Do not duplicate this per platform.
   useEffect(() => {
     if (!userId || !deviceId || record === 'unknown' || !record) return;
     if (deviceIdStatus !== 'ok') return;

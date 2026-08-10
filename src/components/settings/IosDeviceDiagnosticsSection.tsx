@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2, RefreshCw, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { isIosRuntime } from '@/platforms/ios/capacitorBridge';
+import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
 import {
   collectIosDeviceDiagnostics,
   type IosDeviceDiagnosticsReport,
@@ -22,7 +22,7 @@ function line(ok: boolean, okLabel: string, badLabel: string) {
   );
 }
 
-/** Bloc de debug iOS isolé : lecture seule, sans impact sur le flux Windows. */
+/** Read-only iOS Web Passkey diagnostics. */
 export function IosDeviceDiagnosticsSection({ userId, deviceId, server }: Props) {
   const [report, setReport] = useState<IosDeviceDiagnosticsReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,17 +37,17 @@ export function IosDeviceDiagnosticsSection({ userId, deviceId, server }: Props)
   }, [userId, deviceId, server]);
 
   useEffect(() => {
-    if (!isIosRuntime()) return;
+    if (!isIosWebRuntime()) return;
     void load();
   }, [load]);
 
-  if (!isIosRuntime()) return null;
+  if (!isIosWebRuntime()) return null;
 
   return (
     <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs">
       <div className="flex items-center gap-2">
         <Smartphone className="h-4 w-4 text-primary" />
-        <span className="font-semibold">Diagnostic iOS</span>
+        <span className="font-semibold">Diagnostic iOS Web</span>
         <Button
           size="icon"
           variant="ghost"
@@ -65,12 +65,7 @@ export function IosDeviceDiagnosticsSection({ userId, deviceId, server }: Props)
       ) : (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <div><span className="text-muted-foreground">Plateforme : </span><span className="font-mono">{report.platform}</span></div>
-          <div><span className="text-muted-foreground">App / modèle : </span><span className="font-mono">{report.appVersion ?? '—'} · {report.deviceModel ?? '—'}</span></div>
           <div className="sm:col-span-2"><span className="text-muted-foreground">Device ID : </span><span className="break-all font-mono">{report.deviceId ?? 'inconnu'}</span></div>
-          <div><span className="text-muted-foreground">DeviceID ancré : </span>{line(report.deviceIdAnchored, 'Keychain', 'non ancré')}</div>
-          <div><span className="text-muted-foreground">Keychain : </span>{line(report.keychainState === 'ok', `${report.keychainTier}`, `${report.keychainState} (${report.keychainTier})`)}</div>
-          <div><span className="text-muted-foreground">Identité locale : </span>{line(report.hasLocalIdentity, 'présente', 'absente')}</div>
-          <div><span className="text-muted-foreground">Secure Enclave : </span>{line(report.secureEnclaveAvailable, report.secureEnclaveBacking, report.secureEnclaveBacking)}</div>
           <div><span className="text-muted-foreground">Binding serveur : </span>{line(report.bindingStatus === 'bound', 'bound', report.bindingStatus ?? 'inconnu')}</div>
           <div><span className="text-muted-foreground">Routing : </span>{line(report.routingStatus === 'ready', 'ready', report.routingStatus ?? 'inconnu')}</div>
           <div><span className="text-muted-foreground">SPK : </span><span className="font-mono">{report.spkCount ?? '…'}</span></div>
@@ -88,21 +83,19 @@ export function IosDeviceDiagnosticsSection({ userId, deviceId, server }: Props)
               <span className="break-all font-mono text-destructive">{report.passkeyLastError}</span>
             </div>
           ) : null}
-
           <div className="sm:col-span-2">
-            <span className="text-muted-foreground">Dernière erreur RPC : </span>
+            <span className="text-muted-foreground">Dernière erreur protocole : </span>
             {report.lastRpcError
               ? <span className="break-all font-mono text-destructive">{report.lastRpcError}</span>
               : <span className="text-emerald-600 dark:text-emerald-400">aucune</span>}
           </div>
           <div className="sm:col-span-2">
-            <span className="text-muted-foreground">Dernière erreur : </span>
+            <span className="text-muted-foreground">Dernière erreur routing : </span>
             {report.lastError
               ? <span className="break-all font-mono text-destructive">{report.lastError}</span>
               : <span className="text-emerald-600 dark:text-emerald-400">aucune</span>}
           </div>
         </div>
-
       )}
     </div>
   );

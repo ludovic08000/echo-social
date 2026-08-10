@@ -1,27 +1,19 @@
 /**
- * Rapport de diagnostic iOS destiné à l'écran « Appareil connecté ».
- * Lecture seule : aucune écriture de secret, aucun appel réseau protocolaire.
+ * Read-only diagnostics for the iOS Web Passkey device flow.
+ * No Keychain/Secure Enclave/Capacitor assumptions are exposed here.
  */
-import type { DeviceSecureProviderDiagnostics } from '@/platforms/deviceSecureProvider';
-import { iosDeviceProvider } from '@/platforms/ios/iosDeviceProvider';
-import { hasIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';
-import { iosDeviceIdStorageKey } from '@/platforms/ios/iosDeviceIdStorageKey';
 import { getLastIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
-import { collectIosPlatformMetadata } from '@/platforms/ios/iosPlatformMetadata';
 import { getIosPasskeyDebugState } from '@/platforms/ios/iosPasskeyState';
-import { isIosPasskeySupported } from '@/platforms/ios/iosPasskeyProvider';
+import {
+  getIosPasskeyStatus,
+  isIosPasskeySupported,
+} from '@/platforms/ios/iosPasskeyProvider';
+import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
+import { recordIosDiagnostic } from '@/platforms/ios/iosSupabaseDiagnostics';
 
 export interface IosDeviceDiagnosticsReport {
   platform: string;
-  appVersion: string | null;
-  deviceModel: string | null;
   deviceId: string | null;
-  deviceIdAnchored: boolean;
-  keychainState: 'ok' | 'degraded' | 'unavailable';
-  keychainTier: string;
-  hasLocalIdentity: boolean;
-  secureEnclaveAvailable: boolean;
-  secureEnclaveBacking: string;
   bindingStatus: string | null;
   routingStatus: string | null;
   spkCount: number | null;
@@ -34,8 +26,6 @@ export interface IosDeviceDiagnosticsReport {
   collectedAt: string;
 }
 
-
-
 export interface IosDiagnosticsServerContext {
   bindingStatus?: string | null;
   routingStatus?: string | null;
@@ -44,51 +34,55 @@ export interface IosDiagnosticsServerContext {
   opkCount?: number | null;
 }
 
-function keychainState(
-  diagnostics: DeviceSecureProviderDiagnostics,
-): IosDeviceDiagnosticsReport['keychainState'] {
-  if (!diagnostics.secureStorage.available) return 'unavailable';
-  return diagnostics.secureStorage.roundTripOk ? 'ok' : 'degraded';
-}
-
 export async function collectIosDeviceDiagnostics(args: {
   userId?: string | null;
   deviceId?: string | null;
   server?: IosDiagnosticsServerContext;
 }): Promise<IosDeviceDiagnosticsReport> {
-  const [diagnostics, metadata, deviceIdAnchored, passkeySupported] = await Promise.all([
-    iosDeviceProvider.collectDiagnostics({
-      userId: args.userId ?? null,
-      deviceId: args.deviceId ?? null,
-    }),
-    collectIosPlatformMetadata(),
-    hasIosDeviceIdAnchor(iosDeviceIdStorageKey(args.userId ?? null)),
-    isIosPasskeySupported(),
-  ]);
+  const iosWeb = isIosWebRuntime();
+  const passkeySupported = iosWeb ? await isIosPasskeySupported() : false;
+  let passkeyRegistered: boolean | null = null;
+
+  if (iosWeb && passkeySupported && args.deviceId) {
+    passkeyRegistered = await getIosPasskeyStatus(args.deviceId);
+  }
+
   const passkey = getIosPasskeyDebugState();
   const rpcError = getLastIosRpcError();
-
-  return {
-    platform: diagnostics.isNativeRuntime ? 'iOS natif (Capacitor)' : 'iOS web (WebKit)',
-    appVersion: metadata.appVersion,
-    deviceModel: metadata.deviceModel,
+  const report: IosDeviceDiagnosticsReport = {
+    platform: iosWeb ? 'iOS Web · WebAuthn/Passkey' : 'non-iOS',
     deviceId: args.deviceId ?? null,
-    deviceIdAnchored,
-    keychainState: keychainState(diagnostics),
-    keychainTier: diagnostics.secureStorage.tier,
-    hasLocalIdentity: diagnostics.hasLocalIdentity,
-    secureEnclaveAvailable: diagnostics.enclave.available,
-    secureEnclaveBacking: diagnostics.enclave.backing,
     bindingStatus: args.server?.bindingStatus ?? null,
     routingStatus: args.server?.routingStatus ?? null,
     spkCount: args.server?.spkCount ?? null,
     opkCount: args.server?.opkCount ?? null,
-    lastError: args.server?.routingError ?? diagnostics.lastError,
+    lastError: args.server?.routingError ?? null,
     lastRpcError: rpcError ? `${rpcError.operation}: ${rpcError.message}` : null,
     passkeySupported,
-    passkeyRegistered: passkey.registered,
+    passkeyRegistered: passkeyRegistered ?? passkey.registered,
     passkeyLastError: passkey.lastError,
-    collectedAt: diagnostics.collectedAt,
+    collectedAt: new Date().toISOString(),
   };
-}
 
+  if (iosWeb) {
+    const combinedError = report.lastError || report.lastRpcError || report.passkeyLastError;
+    recordIosDiagnostic({
+      event: 'ios.diagnostics.snapshot',
+      severity: combinedError ? 'warn' : 'info',
+      deviceId: report.deviceId,
+      metadata: {
+        source: 'iosDiagnostics',
+        bindingStatus: report.bindingStatus,
+        routingStatus: report.routingStatus,
+        spkCount: report.spkCount,
+        opkCount: report.opkCount,
+        passkeySupported: report.passkeySupported,
+        passkeyRegistered: report.passkeyRegistered,
+        outcome: combinedError ? 'degraded' : 'ok',
+        errorMessage: combinedError?.slice(0, 500) ?? null,
+      },
+    });
+  }
+
+  return report;
+}

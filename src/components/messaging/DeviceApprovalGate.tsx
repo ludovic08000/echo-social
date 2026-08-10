@@ -11,6 +11,8 @@ import {
   isWindowsWeb,
   recoverCurrentWindowsHelloDevice,
 } from '@/lib/crypto/windowsHelloDeviceRecovery';
+import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
+import { recoverIosDeviceWithPasskey } from '@/platforms/ios/iosPasskeyProvider';
 
 interface DeviceApprovalGateProps {
   children: ReactNode;
@@ -38,7 +40,9 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
   const [recoveryPassword, setRecoveryPassword] = useState('');
   const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const iosWeb = isIosWebRuntime();
 
+  // Windows reference flow: keep behavior unchanged.
   const recoverWithWindowsHello = async () => {
     if (!user?.id || recovering) return;
     setRecoveryError(null);
@@ -67,6 +71,34 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
     }
   };
 
+  const recoverWithIosPasskey = async () => {
+    if (!user?.id || recovering) return;
+    setRecoveryError(null);
+    if (!getSessionMasterKey() && !recoveryPassword) {
+      setShowRecoveryPassword(true);
+      return;
+    }
+    setRecovering(true);
+    try {
+      if (!getSessionMasterKey()) {
+        const status = await initAccountKeySync(recoveryPassword, user.id);
+        if (status !== 'restored' && status !== 'local_ok') {
+          throw new Error(status === 'no_backup'
+            ? 'Aucune sauvegarde de compte disponible pour restaurer les clés.'
+            : 'Mot de passe incorrect ou sauvegarde du compte illisible.');
+        }
+      }
+      await recoverIosDeviceWithPasskey(user.id);
+      setRecoveryPassword('');
+      setShowRecoveryPassword(false);
+      lifecycle.refresh();
+    } catch (error) {
+      setRecoveryError(error instanceof Error ? error.message : 'IOS_PASSKEY_DEVICE_RECOVERY_FAILED');
+    } finally {
+      setRecovering(false);
+    }
+  };
+
   if (lifecycle.loading) {
     return (
       <Shell compact={compact}>
@@ -90,7 +122,9 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
             <div>
               <h2 className="text-base font-bold">Appareil non retrouvé</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Si vous avez supprimé les données du navigateur, restaurez d’abord le même appareil avec Windows Hello. Un nouvel enrôlement ne doit être créé que si cette récupération est impossible.
+                {iosWeb
+                  ? 'Si vous avez supprimé les données Safari, restaurez d’abord le même appareil avec votre Passkey Apple. Un nouvel enrôlement ne doit être créé que si cette récupération est impossible.'
+                  : 'Si vous avez supprimé les données du navigateur, restaurez d’abord le même appareil avec Windows Hello. Un nouvel enrôlement ne doit être créé que si cette récupération est impossible.'}
               </p>
             </div>
           </div>
@@ -98,7 +132,9 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           <div className="mb-4 rounded-xl bg-muted/50 px-3 py-2.5">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Sécurité</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Le DeviceID et ses clés privées sont restaurés uniquement après preuve Windows Hello et vérification du coffre chiffré du compte.
+              {iosWeb
+                ? 'Le DeviceID et ses clés privées sont restaurés uniquement après une assertion Passkey vérifiée côté serveur et vérification du coffre chiffré du compte.'
+                : 'Le DeviceID et ses clés privées sont restaurés uniquement après preuve Windows Hello et vérification du coffre chiffré du compte.'}
             </p>
           </div>
 
@@ -128,6 +164,31 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
               >
                 {recovering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Fingerprint className="mr-2 h-4 w-4" />}
                 Reconnaître cet appareil avec Windows Hello
+              </Button>
+              <p className="text-center text-[10px] text-muted-foreground">ou, uniquement si cet appareil n’a jamais été enregistré</p>
+            </div>
+          )}
+
+          {iosWeb && (
+            <div className="mb-3 space-y-2">
+              {showRecoveryPassword && !getSessionMasterKey() && (
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  value={recoveryPassword}
+                  disabled={recovering}
+                  onChange={(event) => setRecoveryPassword(event.target.value)}
+                  placeholder="Mot de passe du compte"
+                />
+              )}
+              <Button
+                variant="outline"
+                className="w-full rounded-xl"
+                disabled={recovering || actions.processing}
+                onClick={() => void recoverWithIosPasskey()}
+              >
+                {recovering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Fingerprint className="mr-2 h-4 w-4" />}
+                Reconnaître cet appareil avec Face ID / Passkey
               </Button>
               <p className="text-center text-[10px] text-muted-foreground">ou, uniquement si cet appareil n’a jamais été enregistré</p>
             </div>

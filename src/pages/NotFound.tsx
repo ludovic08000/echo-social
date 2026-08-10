@@ -1,8 +1,23 @@
-import { Link } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+const DeviceMessagingTest = lazy(() => import("./DeviceMessagingTest"));
+
 const NotFound = () => {
+  const location = useLocation();
+
+  // Temporary isolated diagnostic route. Keeping it behind the wildcard avoids
+  // touching the production messaging route table or the Windows/iOS runtimes.
+  if (location.pathname === "/diagnostics/device-messaging") {
+    return (
+      <Suspense fallback={<div className="min-h-screen grid place-items-center bg-background">Chargement du diagnostic…</div>}>
+        <DeviceMessagingTest />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
       <div className="text-center">

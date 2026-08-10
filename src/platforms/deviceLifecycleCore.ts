@@ -7,23 +7,19 @@
  *   ACCOUNT_KEY_SYNC -> MESSAGING_READY) reste inchangé ;
  * - un provider n'ajoute qu'une couche d'attestation/récupération locale,
  *   jamais une identité E2EE alternative ;
- * - Windows délègue au chemin existant, iOS au provider passkey WebAuthn.
+ * - Windows délègue au chemin existant, iOS au provider Passkey WebAuthn pur web.
  */
 import { iosPasskeyProvider } from '@/platforms/ios/iosPasskeyProvider';
 import { windowsPasskeyProvider, isWindowsWeb } from '@/platforms/windows/windowsPasskeyProvider';
-import { isIosRuntime } from '@/platforms/ios/capacitorBridge';
+import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
 
 export type DevicePlatformKind = 'ios' | 'windows' | 'generic';
 
 export interface DevicePlatformProvider {
   platform: DevicePlatformKind;
-  /** Authentificateur plateforme utilisable dans ce runtime. */
   isSupported(): Promise<boolean>;
-  /** Une credential locale est-elle déjà enregistrée pour ce device ? */
   getStatus(deviceId: string | null): Promise<boolean>;
-  /** Scelle le coffre de récupération du device déjà approuvé + bound. */
   register(args: { userId: string; deviceId: string }): Promise<void>;
-  /** Restaure le device existant après purge du stockage navigateur. */
   recover(userId: string): Promise<string>;
 }
 
@@ -36,7 +32,7 @@ const genericProvider: DevicePlatformProvider = {
 };
 
 export function detectDevicePlatformKind(): DevicePlatformKind {
-  if (isIosRuntime()) return 'ios';
+  if (isIosWebRuntime()) return 'ios';
   if (isWindowsWeb()) return 'windows';
   return 'generic';
 }
