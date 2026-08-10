@@ -33,6 +33,13 @@ const REFRESH_EVENTS = [
 
 const POLL_MS = 15_000;
 
+function logDeviceLifecycle(stage: string, details: Record<string, unknown> = {}, level: 'info' | 'warn' | 'error' = 'info') {
+  const payload = { ts: new Date().toISOString(), stage, ...details };
+  if (level === 'error') console.error('[E2EE][DEVICE_LIFECYCLE]', payload);
+  else if (level === 'warn') console.warn('[E2EE][DEVICE_LIFECYCLE]', payload);
+  else console.info('[E2EE][DEVICE_LIFECYCLE]', payload);
+}
+
 export interface DeviceLifecycleSnapshot {
   state: AegisDeviceLifecycleState;
   reason: DeviceLifecycleReason;
@@ -70,19 +77,15 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       return;
     }
 
-    // DeviceID persistence is account-scoped. Always establish the user scope
-    // and hydrate the durable ID before making any lifecycle decision. During
-    // background refreshes we intentionally keep the last known device record
-    // instead of switching to `unknown`; otherwise the approval gate replaces
-    // the entire messaging UI with a loading screen every poll/event refresh.
     setCurrentDeviceUserScope(userId);
 
     void (async () => {
       try {
         await hydrateDeviceId();
-      } catch {
-        // A genuinely missing/mismatched durable ID is handled below through
-        // getDeviceIdStatus(). Never allocate a replacement ID here.
+      } catch (error) {
+        logDeviceLifecycle('hydrate-device-id-failed', {
+          message: error instanceof Error ? error.message : String(error),
+        }, 'warn');
       }
 
       if (!mountedRef.current || generation !== refreshGenerationRef.current) return;
@@ -91,6 +94,11 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       const currentId = peekCurrentDeviceId();
       setDeviceIdStatus(status);
       setDeviceId(currentId);
+
+      logDeviceLifecycle('device-id-state', {
+        deviceId: currentId,
+        deviceIdStatus: status,
+      });
 
       if (!currentId || status !== 'ok') {
         setRecord(null);
@@ -101,6 +109,16 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
         const snapshot = await deviceApi.getState(userId);
         if (!mountedRef.current || generation !== refreshGenerationRef.current) return;
         const row = snapshot.record;
+        logDeviceLifecycle('server-device-state', {
+          deviceId: row?.deviceId ?? currentId,
+          state: snapshot.state,
+          approvalStatus: row?.approvalStatus ?? null,
+          bindingStatus: row?.bindingStatus ?? null,
+          routingStatus: row?.routingStatus ?? null,
+          lifecycleStatus: row?.lifecycleStatus ?? null,
+          isActive: row?.isActive ?? null,
+          revoked: Boolean(row?.revokedAt),
+        });
         setRecord(row ? {
           deviceId: row.deviceId,
           approvalStatus: row.approvalStatus,
@@ -109,10 +127,11 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           isActive: row.isActive,
           revokedAt: row.revokedAt,
         } : null);
-      } catch {
-        // Keep the last known good record on a transient refresh failure. A
-        // subsequent poll/realtime event will retry. This avoids destructive UI
-        // flicker while preserving fail-closed behaviour on initial load.
+      } catch (error) {
+        logDeviceLifecycle('server-device-state-failed', {
+          deviceId: currentId,
+          message: error instanceof Error ? error.message : String(error),
+        }, 'error');
       }
     })();
   }, [userId]);
@@ -163,30 +182,53 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     };
   }, [userId, refresh]);
 
-  // After approval + account binding the device is not routable until its
-  // Signed PreKey / OPKs have been published and synchronization has completed.
-  // This used to be left to a UI transition, so a device could remain forever
-  // in SIGNED_PREKEY_VALIDATION_PENDING and therefore could not approve a
-  // secondary device. Complete that cryptographic setup automatically for the
-  // current device, while keeping the operation single-flight per device.
   useEffect(() => {
     if (!userId || !deviceId || record === 'unknown' || !record) return;
     if (deviceIdStatus !== 'ok') return;
     if (record.deviceId !== deviceId) return;
     if (record.approvalStatus !== 'approved' || record.bindingStatus !== 'bound') return;
     if (!record.isActive || record.revokedAt) return;
-    if (record.routingStatus === 'ready') return;
-    if (keySetupInFlightRef.current === deviceId) return;
+    if (record.routingStatus === 'ready') {
+      logDeviceLifecycle('prepare-keys-skip-ready', { deviceId });
+      return;
+    }
+    if (keySetupInFlightRef.current === deviceId) {
+      logDeviceLifecycle('prepare-keys-skip-inflight', { deviceId });
+      return;
+    }
 
     keySetupInFlightRef.current = deviceId;
+    const startedAt = Date.now();
+    logDeviceLifecycle('prepare-keys-start', {
+      deviceId,
+      approvalStatus: record.approvalStatus,
+      bindingStatus: record.bindingStatus,
+      routingStatus: record.routingStatus,
+    });
+
     void deviceApi.prepareKeys(userId)
-      .then(() => {
+      .then((updated) => {
+        logDeviceLifecycle('prepare-keys-success', {
+          deviceId,
+          elapsedMs: Date.now() - startedAt,
+          routingStatus: updated.routingStatus,
+          lifecycleStatus: updated.lifecycleStatus,
+        });
         if (mountedRef.current) refresh();
       })
       .catch((error) => {
-        console.error('[DeviceLifecycle] automatic device key setup failed', error);
+        logDeviceLifecycle('prepare-keys-failed', {
+          deviceId,
+          elapsedMs: Date.now() - startedAt,
+          name: error instanceof Error ? error.name : undefined,
+          message: error instanceof Error ? error.message : String(error),
+        }, 'error');
       })
       .finally(() => {
+        logDeviceLifecycle('prepare-keys-finished', {
+          deviceId,
+          elapsedMs: Date.now() - startedAt,
+        });
         if (keySetupInFlightRef.current === deviceId) keySetupInFlightRef.current = null;
       });
   }, [userId, deviceId, deviceIdStatus, record, refresh]);
