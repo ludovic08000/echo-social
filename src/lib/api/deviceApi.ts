@@ -371,15 +371,30 @@ async function revokeDevice(userId: string, targetDeviceId: string): Promise<voi
   await invalidateDeviceSession(userId, currentDeviceId, userId, targetDeviceId).catch(() => undefined);
 }
 
+/**
+ * Trace diagnostique iOS : capture l'erreur pour le panneau « Appareil
+ * connecté » puis la relance telle quelle. Le comportement (y compris Windows)
+ * est strictement inchangé.
+ */
+async function withIosDiagnostics<T>(operation: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    recordIosRpcError(operation, error);
+    throw error;
+  }
+}
+
 export const deviceApi = {
   getState,
   getCurrentId,
   listDevices,
-  enroll,
+  enroll: (userId: string) => withIosDiagnostics('deviceApi.enroll', () => enroll(userId)),
   bootstrapPrimary,
   approve: (userId: string, targetDeviceId: string) => decide(userId, targetDeviceId, 'approve'),
   reject: (userId: string, targetDeviceId: string) => decide(userId, targetDeviceId, 'reject'),
-  bind,
-  prepareKeys,
+  bind: (userId: string) => withIosDiagnostics('deviceApi.bind', () => bind(userId)),
+  prepareKeys: (userId: string) => withIosDiagnostics('deviceApi.prepareKeys', () => prepareKeys(userId)),
   revokeDevice,
 } as const;
+
