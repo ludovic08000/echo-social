@@ -41,6 +41,8 @@ import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { adoptReusableIosDevice } from '@/platforms/ios/iosDeviceReuse';
+import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
@@ -194,6 +196,18 @@ async function listDevices(userId: string): Promise<DeviceApiListRecord[]> {
 
 async function enroll(userId: string): Promise<DeviceApiRecord> {
   setCurrentDeviceUserScope(userId);
+
+  // iOS uniquement : aucun nouveau device si une identité locale existe déjà
+  // (Keychain/Secure Enclave). No-op complet sur Windows/web.
+  const reusedDeviceId = await adoptReusableIosDevice(userId).catch((error) => {
+    recordIosRpcError('ios.enroll.reuse', error);
+    return null;
+  });
+  if (reusedDeviceId) {
+    const existing = await readDeviceRecord(userId, reusedDeviceId);
+    if (existing && !existing.revokedAt && existing.approvalStatus !== 'rejected') return existing;
+  }
+
   await beginExplicitDeviceEnrollment('user_requested_new_device');
   let challenge: DeviceEnrollmentChallenge | null = null;
   let deviceId: string | null = null;
@@ -357,15 +371,30 @@ async function revokeDevice(userId: string, targetDeviceId: string): Promise<voi
   await invalidateDeviceSession(userId, currentDeviceId, userId, targetDeviceId).catch(() => undefined);
 }
 
+/**
+ * Trace diagnostique iOS : capture l'erreur pour le panneau « Appareil
+ * connecté » puis la relance telle quelle. Le comportement (y compris Windows)
+ * est strictement inchangé.
+ */
+async function withIosDiagnostics<T>(operation: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    recordIosRpcError(operation, error);
+    throw error;
+  }
+}
+
 export const deviceApi = {
   getState,
   getCurrentId,
   listDevices,
-  enroll,
+  enroll: (userId: string) => withIosDiagnostics('deviceApi.enroll', () => enroll(userId)),
   bootstrapPrimary,
   approve: (userId: string, targetDeviceId: string) => decide(userId, targetDeviceId, 'approve'),
   reject: (userId: string, targetDeviceId: string) => decide(userId, targetDeviceId, 'reject'),
-  bind,
-  prepareKeys,
+  bind: (userId: string) => withIosDiagnostics('deviceApi.bind', () => bind(userId)),
+  prepareKeys: (userId: string) => withIosDiagnostics('deviceApi.prepareKeys', () => prepareKeys(userId)),
   revokeDevice,
 } as const;
+
