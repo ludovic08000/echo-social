@@ -11,6 +11,7 @@ import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
 import { SafetyNumberRevalidationBanner } from "@/components/messages/SafetyNumberRevalidationBanner";
+import { PendingDeviceApprovalDialog } from "@/components/messaging/PendingDeviceApprovalDialog";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useVersionWatcher } from "@/hooks/useVersionWatcher";
