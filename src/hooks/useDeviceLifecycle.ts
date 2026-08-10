@@ -57,6 +57,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const mountedRef = useRef(true);
   const refreshGenerationRef = useRef(0);
+  const keySetupInFlightRef = useRef<string | null>(null);
 
   const refresh = useCallback(() => {
     const generation = ++refreshGenerationRef.current;
@@ -128,6 +129,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       setPinUnlocked(false);
       setDeviceId(null);
       setDeviceIdStatus('uninitialized');
+      keySetupInFlightRef.current = null;
       return;
     }
 
@@ -160,6 +162,34 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       void supabase.removeChannel(channel);
     };
   }, [userId, refresh]);
+
+  // After approval + account binding the device is not routable until its
+  // Signed PreKey / OPKs have been published and synchronization has completed.
+  // This used to be left to a UI transition, so a device could remain forever
+  // in SIGNED_PREKEY_VALIDATION_PENDING and therefore could not approve a
+  // secondary device. Complete that cryptographic setup automatically for the
+  // current device, while keeping the operation single-flight per device.
+  useEffect(() => {
+    if (!userId || !deviceId || record === 'unknown' || !record) return;
+    if (deviceIdStatus !== 'ok') return;
+    if (record.deviceId !== deviceId) return;
+    if (record.approvalStatus !== 'approved' || record.bindingStatus !== 'bound') return;
+    if (!record.isActive || record.revokedAt) return;
+    if (record.routingStatus === 'ready') return;
+    if (keySetupInFlightRef.current === deviceId) return;
+
+    keySetupInFlightRef.current = deviceId;
+    void deviceApi.prepareKeys(userId)
+      .then(() => {
+        if (mountedRef.current) refresh();
+      })
+      .catch((error) => {
+        console.error('[DeviceLifecycle] automatic device key setup failed', error);
+      })
+      .finally(() => {
+        if (keySetupInFlightRef.current === deviceId) keySetupInFlightRef.current = null;
+      });
+  }, [userId, deviceId, deviceIdStatus, record, refresh]);
 
   return useMemo(() => {
     const { state, reason } = resolveDeviceLifecycleState({
