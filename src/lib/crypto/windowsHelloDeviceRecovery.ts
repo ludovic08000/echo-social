@@ -15,60 +15,39 @@ import { deviceApi } from '@/lib/api/deviceApi';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
-interface ApiEnvelope<T> {
-  data: T | null;
-  error: { code?: string; message?: string } | null;
-}
+type CredentialDescriptorJson = {
+  id: string;
+  transports?: AuthenticatorTransport[];
+};
 
-interface RegisterOptionsResponse {
+type RegistrationBegin = {
   ok: true;
   challengeId: string;
   challenge: string;
   rpId: string;
   origin: string;
-  publicKey: {
-    challenge: string;
-    rp: { id: string; name: string };
-    user: { id: string; name: string; displayName: string };
-    pubKeyCredParams: Array<{ type: 'public-key'; alg: number }>;
-    timeout: number;
-    attestation: AttestationConveyancePreference;
-    authenticatorSelection: AuthenticatorSelectionCriteria;
-    excludeCredentials: Array<{
-      type: 'public-key';
-      id: string;
-      transports?: AuthenticatorTransport[];
-    }>;
-  };
-}
+  userId: string;
+  email: string;
+  excludeCredentials: CredentialDescriptorJson[];
+};
 
-interface RecoverOptionsResponse {
+type RecoveryBegin = {
   ok: true;
   challengeId: string;
   challenge: string;
   rpId: string;
   origin: string;
-  publicKey: {
-    challenge: string;
-    rpId: string;
-    timeout: number;
-    userVerification: UserVerificationRequirement;
-    allowCredentials: Array<{
-      type: 'public-key';
-      id: string;
-      transports?: AuthenticatorTransport[];
-    }>;
-  };
-}
+  allowCredentials: Array<CredentialDescriptorJson & { deviceId: string }>;
+};
 
-interface RecoveryVerifyResponse {
+type RecoveryResult = {
   ok: true;
   code: 'WEBAUTHN_DEVICE_RECOVERED';
   device_id: string;
   vault: EncryptedWebDeviceVault;
   device_signing_key: string;
   device_public_key: string;
-}
+};
 
 function toBase64Url(bytes: ArrayBuffer | Uint8Array): string {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -95,55 +74,71 @@ async function sha256B64Url(value: ArrayBuffer | Uint8Array | string): Promise<s
   return toBase64Url(digest);
 }
 
-async function apiCall<T>(action: string, body: Record<string, unknown> = {}): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('webauthn-device', {
-    body: { action, ...body },
-  });
-
-  if (error) {
-    const context = (error as { context?: Response }).context;
-    if (context && typeof context.clone === 'function') {
-      try {
-        const payload = await context.clone().json() as ApiEnvelope<T>;
-        throw new Error(payload.error?.code ?? payload.error?.message ?? error.message);
-      } catch (parseError) {
-        if (parseError instanceof Error && parseError.message !== 'Unexpected end of JSON input') throw parseError;
-      }
-    }
-    throw new Error(error.message || 'WEBAUTHN_FUNCTION_FAILED');
+function requireWebAuthn(): void {
+  if (typeof window === 'undefined'
+    || !window.isSecureContext
+    || typeof PublicKeyCredential === 'undefined'
+    || typeof navigator.credentials?.create !== 'function'
+    || typeof navigator.credentials?.get !== 'function') {
+    throw new Error('WEBAUTHN_NOT_SUPPORTED');
   }
-
-  const payload = data as ApiEnvelope<T> | null;
-  if (!payload || payload.error || !payload.data) {
-    throw new Error(payload?.error?.code ?? payload?.error?.message ?? 'WEBAUTHN_EMPTY_RESPONSE');
-  }
-  return payload.data;
 }
 
-function registrationPublicKey(options: RegisterOptionsResponse['publicKey']): PublicKeyCredentialCreationOptions {
+function currentRpContext(): { origin: string; rpId: string } {
+  if (typeof window === 'undefined') throw new Error('WEBAUTHN_WINDOW_REQUIRED');
+  return { origin: window.location.origin, rpId: window.location.hostname.toLowerCase() };
+}
+
+function rpcError(prefix: string, error: { message?: string; code?: string } | null): never {
+  throw new Error(`${prefix}:${error?.message ?? error?.code ?? 'UNKNOWN'}`);
+}
+
+async function rpc<T>(name: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.rpc(name as never, args as never);
+  if (error) rpcError(name, error);
+  if (!data) throw new Error(`${name}:EMPTY_RESPONSE`);
+  return data as T;
+}
+
+function registrationPublicKey(options: RegistrationBegin): PublicKeyCredentialCreationOptions {
+  const userId = new hardGlobals.TextEncoder().encode(options.userId);
   return {
-    ...options,
     challenge: fromBase64Url(options.challenge),
+    rp: { id: options.rpId, name: 'ForSure' },
     user: {
-      ...options.user,
-      id: fromBase64Url(options.user.id),
+      id: userId,
+      name: options.email || options.userId,
+      displayName: options.email || 'ForSure user',
     },
-    excludeCredentials: options.excludeCredentials.map((credential) => ({
-      ...credential,
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+    timeout: 60_000,
+    attestation: 'none',
+    authenticatorSelection: {
+      authenticatorAttachment: 'platform',
+      residentKey: 'preferred',
+      requireResidentKey: false,
+      userVerification: 'required',
+    },
+    excludeCredentials: (options.excludeCredentials ?? []).map((credential) => ({
+      type: 'public-key',
       id: fromBase64Url(credential.id),
+      transports: credential.transports,
     })),
-  } as PublicKeyCredentialCreationOptions;
+  };
 }
 
-function authenticationPublicKey(options: RecoverOptionsResponse['publicKey']): PublicKeyCredentialRequestOptions {
+function authenticationPublicKey(options: RecoveryBegin): PublicKeyCredentialRequestOptions {
   return {
-    ...options,
     challenge: fromBase64Url(options.challenge),
-    allowCredentials: options.allowCredentials.map((credential) => ({
-      ...credential,
+    rpId: options.rpId,
+    timeout: 60_000,
+    userVerification: 'required',
+    allowCredentials: (options.allowCredentials ?? []).map((credential) => ({
+      type: 'public-key',
       id: fromBase64Url(credential.id),
+      transports: credential.transports,
     })),
-  } as PublicKeyCredentialRequestOptions;
+  };
 }
 
 function registrationProofPayload(args: {
@@ -170,13 +165,38 @@ function registrationProofPayload(args: {
   });
 }
 
-function requireWebAuthn(): void {
-  if (typeof window === 'undefined'
-    || !window.isSecureContext
-    || typeof PublicKeyCredential === 'undefined'
-    || typeof navigator.credentials?.create !== 'function'
-    || typeof navigator.credentials?.get !== 'function') {
-    throw new Error('WEBAUTHN_NOT_SUPPORTED');
+function signCountFromAuthenticatorData(authenticatorData: ArrayBuffer): number {
+  if (authenticatorData.byteLength < 37) throw new Error('WEBAUTHN_AUTHENTICATOR_DATA_INVALID');
+  return new DataView(authenticatorData).getUint32(33, false);
+}
+
+async function validateLocalAssertion(
+  response: AuthenticatorAssertionResponse,
+  options: RecoveryBegin,
+): Promise<void> {
+  let clientData: { type?: string; challenge?: string; origin?: string; crossOrigin?: boolean };
+  try {
+    clientData = JSON.parse(new hardGlobals.TextDecoder().decode(response.clientDataJSON));
+  } catch {
+    throw new Error('WEBAUTHN_CLIENT_DATA_INVALID');
+  }
+  if (clientData.type !== 'webauthn.get') throw new Error('WEBAUTHN_CLIENT_TYPE_MISMATCH');
+  if (clientData.challenge !== options.challenge) throw new Error('WEBAUTHN_CHALLENGE_MISMATCH');
+  if (clientData.origin !== options.origin) throw new Error('WEBAUTHN_ORIGIN_MISMATCH');
+  if (clientData.crossOrigin === true) throw new Error('WEBAUTHN_CROSS_ORIGIN_DENIED');
+
+  const auth = new Uint8Array(response.authenticatorData);
+  if (auth.length < 37) throw new Error('WEBAUTHN_AUTHENTICATOR_DATA_INVALID');
+  const expectedRpHash = new Uint8Array(await hardCrypto.digest(
+    'SHA-256',
+    new hardGlobals.TextEncoder().encode(options.rpId),
+  ));
+  for (let index = 0; index < 32; index += 1) {
+    if (auth[index] !== expectedRpHash[index]) throw new Error('WEBAUTHN_RP_ID_HASH_MISMATCH');
+  }
+  const flags = auth[32];
+  if ((flags & 0x01) === 0 || (flags & 0x04) === 0) {
+    throw new Error('WEBAUTHN_USER_VERIFICATION_REQUIRED');
   }
 }
 
@@ -195,7 +215,11 @@ export async function isWindowsHelloAvailable(): Promise<boolean> {
 
 export async function getWindowsHelloRecoveryStatus(deviceId: string): Promise<boolean> {
   if (!DEVICE_ID_RE.test(deviceId) || !isWindowsWeb()) return false;
-  const result = await apiCall<{ ok: true; registered: boolean }>('status', { deviceId });
+  const { rpId } = currentRpContext();
+  const result = await rpc<{ ok: true; registered: boolean }>('webauthn_device_status', {
+    p_device_id: deviceId,
+    p_rp_id: rpId,
+  });
   return result.registered === true;
 }
 
@@ -207,25 +231,32 @@ export async function registerCurrentWindowsHelloDevice(args: {
   if (!isWindowsWeb()) throw new Error('WEBAUTHN_WINDOWS_ONLY');
   if (!DEVICE_ID_RE.test(args.deviceId)) throw new Error('DEVICE_INVALID_ID');
 
+  const { origin, rpId } = currentRpContext();
   const vault = await captureEncryptedWebDeviceVault(args.userId, args.deviceId);
-  const options = await apiCall<RegisterOptionsResponse>('register-options', {
-    deviceId: args.deviceId,
+  const options = await rpc<RegistrationBegin>('webauthn_begin_device_registration', {
+    p_device_id: args.deviceId,
+    p_origin: origin,
+    p_rp_id: rpId,
   });
+
   const credential = await navigator.credentials.create({
-    publicKey: registrationPublicKey(options.publicKey),
+    publicKey: registrationPublicKey(options),
   }) as PublicKeyCredential | null;
   if (!credential) throw new Error('WEBAUTHN_REGISTRATION_CANCELLED');
+
   const response = credential.response as AuthenticatorAttestationResponse;
   if (typeof response.getPublicKey !== 'function'
     || typeof response.getAuthenticatorData !== 'function'
     || typeof response.getPublicKeyAlgorithm !== 'function') {
     throw new Error('WEBAUTHN_BROWSER_TOO_OLD');
   }
+
   const publicKey = response.getPublicKey();
   const authenticatorData = response.getAuthenticatorData();
   if (!publicKey || !authenticatorData) throw new Error('WEBAUTHN_PUBLIC_KEY_UNAVAILABLE');
   const algorithm = response.getPublicKeyAlgorithm();
   if (algorithm !== -7) throw new Error('WEBAUTHN_ALGORITHM_UNSUPPORTED');
+
   const credentialId = toBase64Url(credential.rawId);
   const publicKeySha256 = await sha256B64Url(publicKey);
   const vaultSha256 = await sha256B64Url(JSON.stringify(vault));
@@ -239,6 +270,7 @@ export async function registerCurrentWindowsHelloDevice(args: {
     vaultSha256,
     rpId: options.rpId,
   });
+
   const deviceIdentity = await loadDeviceIdentity(args.userId, args.deviceId);
   if (!deviceIdentity) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
   const proof = await hardCrypto.sign(
@@ -247,45 +279,51 @@ export async function registerCurrentWindowsHelloDevice(args: {
     encodeString(payload),
   ) as ArrayBuffer;
 
-  await apiCall('register-verify', {
-    challengeId: options.challengeId,
-    deviceId: args.deviceId,
-    vault,
-    deviceProof: bufferToBase64(proof),
-    credential: {
-      id: credentialId,
-      rawId: credentialId,
-      clientDataJSON: toBase64Url(response.clientDataJSON),
-      authenticatorData: toBase64Url(authenticatorData),
-      publicKey: toBase64Url(publicKey),
-      publicKeyAlgorithm: algorithm,
-      transports: typeof response.getTransports === 'function' ? response.getTransports() : [],
-    },
+  await rpc('webauthn_finalize_device_registration_rpc', {
+    p_device_id: args.deviceId,
+    p_challenge_id: options.challengeId,
+    p_credential_id: credentialId,
+    p_rp_id: options.rpId,
+    p_public_key_spki: toBase64Url(publicKey),
+    p_algorithm: algorithm,
+    p_sign_count: signCountFromAuthenticatorData(authenticatorData),
+    p_transports: typeof response.getTransports === 'function' ? response.getTransports() : [],
+    p_vault_version: vault.version,
+    p_vault_iv: vault.iv,
+    p_vault_ciphertext: vault.ciphertext,
+    p_device_proof_b64: bufferToBase64(proof),
+    p_proof_payload: payload,
   });
 }
 
 export async function recoverCurrentWindowsHelloDevice(userId: string): Promise<string> {
   requireWebAuthn();
   if (!isWindowsWeb()) throw new Error('WEBAUTHN_WINDOWS_ONLY');
-  const options = await apiCall<RecoverOptionsResponse>('recover-options');
+
+  const { origin, rpId } = currentRpContext();
+  const options = await rpc<RecoveryBegin>('webauthn_begin_device_recovery', {
+    p_origin: origin,
+    p_rp_id: rpId,
+  });
+
   const credential = await navigator.credentials.get({
-    publicKey: authenticationPublicKey(options.publicKey),
+    publicKey: authenticationPublicKey(options),
   }) as PublicKeyCredential | null;
   if (!credential) throw new Error('WEBAUTHN_RECOVERY_CANCELLED');
+
   const response = credential.response as AuthenticatorAssertionResponse;
+  await validateLocalAssertion(response, options);
   const credentialId = toBase64Url(credential.rawId);
-  const result = await apiCall<RecoveryVerifyResponse>('recover-verify', {
-    challengeId: options.challengeId,
-    credential: {
-      id: credentialId,
-      rawId: credentialId,
-      clientDataJSON: toBase64Url(response.clientDataJSON),
-      authenticatorData: toBase64Url(response.authenticatorData),
-      signature: toBase64Url(response.signature),
-      userHandle: response.userHandle ? toBase64Url(response.userHandle) : null,
-    },
+  if (!(options.allowCredentials ?? []).some((item) => item.id === credentialId)) {
+    throw new Error('WEBAUTHN_CREDENTIAL_NOT_ALLOWED');
+  }
+
+  const result = await rpc<RecoveryResult>('webauthn_recover_device_vault_rpc', {
+    p_challenge_id: options.challengeId,
+    p_credential_id: credentialId,
   });
   if (!DEVICE_ID_RE.test(result.device_id)) throw new Error('WEBAUTHN_RECOVERED_DEVICE_INVALID');
+
   await restoreEncryptedWebDeviceVault({
     userId,
     deviceId: result.device_id,
@@ -293,6 +331,7 @@ export async function recoverCurrentWindowsHelloDevice(userId: string): Promise<
     expectedDeviceSigningKey: result.device_signing_key,
     expectedDevicePublicKey: result.device_public_key,
   });
+
   setCurrentDeviceUserScope(userId);
   setCurrentDeviceId(result.device_id);
   await deviceApi.prepareKeys(userId);
