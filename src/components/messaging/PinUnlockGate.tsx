@@ -56,6 +56,23 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
     );
   }
 
+  // A remote PIN continuity envelope cannot be opened without the account
+  // Master Key. Showing the PIN field in this state is a dead end: the PIN
+  // verifier itself is still sealed. Route through account recovery first;
+  // once the Master Key is restored, useChatPin receives the restoration event,
+  // restores the local verifier, and the normal PIN gate becomes usable.
+  const pinContinuityLocked = pin.error?.startsWith('Votre PIN existe toujours.') === true;
+  if (pinContinuityLocked) {
+    return (
+      <IdentityRestoreScreen
+        onRestored={() => {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored'));
+          void crypto.refresh();
+        }}
+      />
+    );
+  }
+
   if (pin.unlocked) return <PinValidatedMessaging>{children}</PinValidatedMessaging>;
 
   const submit = async () => {
