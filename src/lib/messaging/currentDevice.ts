@@ -148,10 +148,13 @@ async function persistDurably(id: string): Promise<string> {
   if (syncWrites === 0 && results.every(result => result.status === 'rejected')) {
     throw new DeviceIdentityError('DEVICE_ID_STORAGE_UNAVAILABLE');
   }
+  // iOS uniquement : ancre le DeviceID hors des stockages purgés par ITP.
+  void writeIosDeviceIdAnchor(key, id).catch(() => undefined);
   memoryDeviceId = id;
   memoryDeviceIdIsTemporary = false;
   return id;
 }
+
 
 function cancelLocalEnrollmentTransition(): void {
   explicitEnrollmentInProgress = false;
