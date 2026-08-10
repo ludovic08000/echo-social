@@ -9,6 +9,7 @@ import { deviceApi, type DeviceApiListRecord } from '@/lib/api/deviceApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { WindowsHelloDeviceRecoverySection } from '@/components/settings/WindowsHelloDeviceRecoverySection';
+import { IosDeviceDiagnosticsSection } from '@/components/settings/IosDeviceDiagnosticsSection';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -362,6 +363,22 @@ export function DevicesPanel() {
                           {diag.error && <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">Diagnostic: {diag.error}</p>}
                         </div>
                       )}
+
+                      {isCurrent && (
+                        <IosDeviceDiagnosticsSection
+                          userId={user?.id ?? null}
+                          deviceId={device.deviceId}
+                          server={{
+                            bindingStatus: device.bindingStatus,
+                            routingStatus: device.routingStatus,
+                            routingError: diag?.routingError ?? null,
+                            spkCount: diag?.spkCount ?? null,
+                            opkCount: diag?.opkCount ?? null,
+                          }}
+                        />
+                      )}
+
+
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" className="h-8" onClick={() => void load(true)} disabled={refreshing}>
