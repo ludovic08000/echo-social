@@ -264,10 +264,16 @@ async function bootstrapPrimary(userId: string): Promise<DeviceApiRecord> {
       || !record.devicePublicKey || !record.deviceSigningKey) {
     throw new Error('DEVICE_BOOTSTRAP_NOT_PENDING');
   }
-  const devices = await listDevices(userId);
-  if (devices.some((device) => device.deviceId !== record.deviceId)) {
-    throw new Error('DEVICE_BOOTSTRAP_FORBIDDEN_EXISTING_ACCOUNT');
-  }
+
+  const { data: modeData, error: modeError } = await supabase.rpc(
+    'get_device_enrollment_approval_mode' as never,
+    { p_device_id: record.deviceId } as never,
+  );
+  const mode = modeData as { ok?: boolean; bootstrap_primary?: boolean; code?: string } | null;
+  if (modeError) throw new Error(`DEVICE_BOOTSTRAP_MODE_FAILED:${modeError.message}`);
+  if (mode?.ok === false) throw new Error(`DEVICE_BOOTSTRAP_MODE_REJECTED:${mode.code ?? 'UNKNOWN'}`);
+  if (mode?.bootstrap_primary !== true) throw new Error('DEVICE_BOOTSTRAP_FORBIDDEN_TRUSTED_APPROVER_REQUIRED');
+
   await submitPrimaryBootstrapDecision({
     userId,
     target: {
