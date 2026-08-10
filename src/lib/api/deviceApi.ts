@@ -196,6 +196,18 @@ async function listDevices(userId: string): Promise<DeviceApiListRecord[]> {
 
 async function enroll(userId: string): Promise<DeviceApiRecord> {
   setCurrentDeviceUserScope(userId);
+
+  // iOS uniquement : aucun nouveau device si une identité locale existe déjà
+  // (Keychain/Secure Enclave). No-op complet sur Windows/web.
+  const reusedDeviceId = await adoptReusableIosDevice(userId).catch((error) => {
+    recordIosRpcError('ios.enroll.reuse', error);
+    return null;
+  });
+  if (reusedDeviceId) {
+    const existing = await readDeviceRecord(userId, reusedDeviceId);
+    if (existing && !existing.revokedAt && existing.approvalStatus !== 'rejected') return existing;
+  }
+
   await beginExplicitDeviceEnrollment('user_requested_new_device');
   let challenge: DeviceEnrollmentChallenge | null = null;
   let deviceId: string | null = null;
