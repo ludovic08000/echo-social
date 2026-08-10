@@ -20,6 +20,7 @@ import {
   type DeviceLifecycleReason,
 } from '@/lib/device-manager/deviceLifecycleMachine';
 import { readPinUnlocked, subscribePinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
+import { syncIosDeviceAdapter } from '@/platforms/ios/iosLifecycleAdapter';
 
 const REFRESH_EVENTS = [
   'forsure:device-approval-pending',
@@ -128,6 +129,9 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           isActive: row.isActive,
           revokedAt: row.revokedAt,
         } : null);
+        // Adaptateur iOS isolé : no-op complet hors runtime iOS.
+        if (row) void syncIosDeviceAdapter(userId, row.deviceId);
+
       } catch (error) {
         logDeviceLifecycle('server-device-state-failed', {
           deviceId: currentId,

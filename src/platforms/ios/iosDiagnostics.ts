@@ -4,9 +4,17 @@
  */
 import type { DeviceSecureProviderDiagnostics } from '@/platforms/deviceSecureProvider';
 import { iosDeviceProvider } from '@/platforms/ios/iosDeviceProvider';
+import { hasIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';
+import { iosDeviceIdStorageKey } from '@/platforms/ios/iosDeviceIdStorageKey';
+import { getLastIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
+import { collectIosPlatformMetadata } from '@/platforms/ios/iosPlatformMetadata';
 
 export interface IosDeviceDiagnosticsReport {
   platform: string;
+  appVersion: string | null;
+  deviceModel: string | null;
+  deviceId: string | null;
+  deviceIdAnchored: boolean;
   keychainState: 'ok' | 'degraded' | 'unavailable';
   keychainTier: string;
   hasLocalIdentity: boolean;
@@ -17,8 +25,10 @@ export interface IosDeviceDiagnosticsReport {
   spkCount: number | null;
   opkCount: number | null;
   lastError: string | null;
+  lastRpcError: string | null;
   collectedAt: string;
 }
+
 
 export interface IosDiagnosticsServerContext {
   bindingStatus?: string | null;
@@ -40,13 +50,22 @@ export async function collectIosDeviceDiagnostics(args: {
   deviceId?: string | null;
   server?: IosDiagnosticsServerContext;
 }): Promise<IosDeviceDiagnosticsReport> {
-  const diagnostics = await iosDeviceProvider.collectDiagnostics({
-    userId: args.userId ?? null,
-    deviceId: args.deviceId ?? null,
-  });
+  const [diagnostics, metadata, deviceIdAnchored] = await Promise.all([
+    iosDeviceProvider.collectDiagnostics({
+      userId: args.userId ?? null,
+      deviceId: args.deviceId ?? null,
+    }),
+    collectIosPlatformMetadata(),
+    hasIosDeviceIdAnchor(iosDeviceIdStorageKey(args.userId ?? null)),
+  ]);
+  const rpcError = getLastIosRpcError();
 
   return {
     platform: diagnostics.isNativeRuntime ? 'iOS natif (Capacitor)' : 'iOS web (WebKit)',
+    appVersion: metadata.appVersion,
+    deviceModel: metadata.deviceModel,
+    deviceId: args.deviceId ?? null,
+    deviceIdAnchored,
     keychainState: keychainState(diagnostics),
     keychainTier: diagnostics.secureStorage.tier,
     hasLocalIdentity: diagnostics.hasLocalIdentity,
@@ -57,6 +76,8 @@ export async function collectIosDeviceDiagnostics(args: {
     spkCount: args.server?.spkCount ?? null,
     opkCount: args.server?.opkCount ?? null,
     lastError: args.server?.routingError ?? diagnostics.lastError,
+    lastRpcError: rpcError ? `${rpcError.operation}: ${rpcError.message}` : null,
     collectedAt: diagnostics.collectedAt,
   };
 }
+
