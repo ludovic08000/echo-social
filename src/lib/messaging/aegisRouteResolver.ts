@@ -116,7 +116,18 @@ export async function resolveConversationRoute(
 
     const verified = await Promise.all(rows.map(async (row) => ({
       row,
-      identity: await fetchVerifiedDeviceIdentity(participant.user_id, row.device_id),
+      identity: await verifyRouteDeviceIdentityOffline({
+        userId: participant.user_id,
+        deviceId: row.device_id,
+        devicePublicKey: row.device_public_key,
+        deviceSigningKey: row.device_signing_key,
+        deviceAuthorizationSignature: row.device_authorization_signature,
+        accountIdentityKey: row.account_identity_key,
+        accountSigningKey: row.account_signing_key,
+        accountFingerprint: row.account_fingerprint,
+        accountBindingSignature: row.account_binding_signature,
+        accountBindingVersion: row.account_binding_version,
+      }),
     })));
 
     const rejectedSelf = participant.is_self
