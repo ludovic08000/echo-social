@@ -210,6 +210,6 @@ export async function deleteDeviceKxKey(deviceId: string, userId: string): Promi
   creationJobs.delete(id);
   await Promise.allSettled([
     dbDelete(id),
-    removeNativeKeyRecord(id),
+    removeDeviceVaultRecord(id),
   ]);
 }
