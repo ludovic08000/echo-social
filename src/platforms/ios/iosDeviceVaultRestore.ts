@@ -7,6 +7,7 @@
  * lifecycle canonique reprend la main (LINK_REQUIRED / PENDING_APPROVAL).
  */
 
+import { supabase } from '@/integrations/supabase/client';
 import { peekCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { fetchVerifiedDeviceIdentity } from '@/lib/crypto/canonicalDeviceRegistry';
 import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
@@ -17,10 +18,12 @@ import {
   restoreDeviceVaultFromCloud,
 } from '@/lib/crypto/deviceVaultSync';
 import { logDeviceVaultEvent } from '@/lib/crypto/deviceVault';
-import { isIosRuntime } from '@/platforms/ios/capacitorBridge';
+import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
 
-const isIosWebRuntime = isIosRuntime;
-
+const BACKUP_RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000] as const;
+const backupRetryAttempts = new Map<string, number>();
+const backupRetryTimers = new Map<string, number>();
+const backupInFlight = new Map<string, Promise<boolean>>();
 
 export type IosVaultRestoreOutcome =
   | 'restored'
@@ -41,6 +44,55 @@ async function hasLocalDeviceKeys(userId: string, deviceId: string): Promise<boo
   } catch {
     return false;
   }
+}
+
+async function isServerDeviceReady(userId: string, deviceId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_devices')
+    .select('approval_status,binding_status,lifecycle_status,routing_status,is_active,revoked_at')
+    .eq('user_id', userId)
+    .eq('device_id', deviceId)
+    .maybeSingle();
+  if (error || !data) return false;
+  const row = data as {
+    approval_status?: string | null;
+    binding_status?: string | null;
+    lifecycle_status?: string | null;
+    routing_status?: string | null;
+    is_active?: boolean | null;
+    revoked_at?: string | null;
+  };
+  return row.approval_status === 'approved'
+    && row.binding_status === 'bound'
+    && row.lifecycle_status === 'ready'
+    && row.routing_status === 'ready'
+    && row.is_active === true
+    && row.revoked_at == null;
+}
+
+function clearBackupRetry(cacheKey: string): void {
+  backupRetryAttempts.delete(cacheKey);
+  const timer = backupRetryTimers.get(cacheKey);
+  if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer);
+  backupRetryTimers.delete(cacheKey);
+}
+
+function scheduleBackupRetry(userId: string, deviceId: string, reason: string): void {
+  if (!isIosWebRuntime() || typeof window === 'undefined') return;
+  const cacheKey = `${userId}:${deviceId}`;
+  if (backupRetryTimers.has(cacheKey)) return;
+  const attempt = backupRetryAttempts.get(cacheKey) ?? 0;
+  if (attempt >= BACKUP_RETRY_DELAYS_MS.length) {
+    logDeviceVaultEvent('ios_backup', 'failed', { reason: `retry_exhausted:${reason}` });
+    return;
+  }
+  backupRetryAttempts.set(cacheKey, attempt + 1);
+  const timer = window.setTimeout(() => {
+    backupRetryTimers.delete(cacheKey);
+    void backupIosDeviceVaultIfReady(userId);
+  }, BACKUP_RETRY_DELAYS_MS[attempt]);
+  backupRetryTimers.set(cacheKey, timer);
+  logDeviceVaultEvent('ios_backup', 'skipped', { reason: `retry_scheduled:${reason}` });
 }
 
 export async function ensureIosDeviceVaultRestored(userId: string): Promise<IosVaultRestoreOutcome> {
@@ -81,11 +133,53 @@ export async function ensureIosDeviceVaultRestored(userId: string): Promise<IosV
   return 'restored';
 }
 
-/** Sauvegarde opportuniste du coffre une fois le device prêt et déverrouillé. */
+/**
+ * Sauvegarde opportuniste du coffre iOS Web uniquement une fois le device
+ * serveur réellement READY. Si le lifecycle ou la Master Key arrivent quelques
+ * secondes plus tard, un retry borné reprend le même DeviceID sans rotation.
+ */
 export async function backupIosDeviceVaultIfReady(userId: string): Promise<boolean> {
   if (!isIosWebRuntime()) return false;
   const deviceId = peekCurrentDeviceId();
-  if (!userId || !deviceId || !getSessionMasterKey()) return false;
-  if (!(await hasLocalDeviceKeys(userId, deviceId))) return false;
-  return backupDeviceVaultToCloud({ userId, deviceId, platform: 'ios-web' });
+  if (!userId || !deviceId) return false;
+  const cacheKey = `${userId}:${deviceId}`;
+  const existing = backupInFlight.get(cacheKey);
+  if (existing) return existing;
+
+  const run = (async (): Promise<boolean> => {
+    if (!(await isServerDeviceReady(userId, deviceId))) {
+      scheduleBackupRetry(userId, deviceId, 'device_not_ready');
+      return false;
+    }
+    if (!getSessionMasterKey()) {
+      scheduleBackupRetry(userId, deviceId, 'master_key_locked');
+      return false;
+    }
+    if (!(await hasLocalDeviceKeys(userId, deviceId))) {
+      logDeviceVaultEvent('ios_backup', 'failed', { reason: 'local_device_keys_missing' });
+      return false;
+    }
+
+    const backedUp = await backupDeviceVaultToCloud({ userId, deviceId, platform: 'ios-web' });
+    if (!backedUp) {
+      scheduleBackupRetry(userId, deviceId, 'cloud_backup_failed');
+      return false;
+    }
+    clearBackupRetry(cacheKey);
+    logDeviceVaultEvent('ios_backup', 'ok');
+    return true;
+  })().finally(() => {
+    backupInFlight.delete(cacheKey);
+  });
+
+  backupInFlight.set(cacheKey, run);
+  return run;
 }
+
+export const __test__ = {
+  resetBackupRetries(): void {
+    for (const cacheKey of backupRetryTimers.keys()) clearBackupRetry(cacheKey);
+    backupRetryAttempts.clear();
+    backupInFlight.clear();
+  },
+};
