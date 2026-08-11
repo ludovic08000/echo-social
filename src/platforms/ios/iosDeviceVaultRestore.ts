@@ -17,7 +17,10 @@ import {
   restoreDeviceVaultFromCloud,
 } from '@/lib/crypto/deviceVaultSync';
 import { logDeviceVaultEvent } from '@/lib/crypto/deviceVault';
-import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
+import { isIosRuntime } from '@/platforms/ios/capacitorBridge';
+
+const isIosWebRuntime = isIosRuntime;
+
 
 export type IosVaultRestoreOutcome =
   | 'restored'
