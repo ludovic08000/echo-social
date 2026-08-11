@@ -238,14 +238,6 @@ serve(async (req) => {
     if (!device.device_public_key || !device.device_signing_key) {
       return respond(req, 422, { ok: false, code: "DEVICE_KEYS_INCOMPLETE" });
     }
-    if (device.binding_status === "bound" && device.device_authorization_signature) {
-      return respond(req, 200, {
-        ok: true,
-        code: "DEVICE_ACCOUNT_BOUND",
-        device_id: device.device_id,
-        existing: true,
-      });
-    }
 
     const { data: accountData, error: accountError } = await admin
       .from("user_public_keys")
@@ -274,6 +266,20 @@ serve(async (req) => {
     }
     if (!deviceValid) {
       return respond(req, 422, { ok: false, code: "DEVICE_AUTHORIZATION_SIGNATURE_INVALID" });
+    }
+
+    // "Already bound" is only a valid fast path after the current account
+    // binding and the exact stored device authorization have been verified.
+    if (
+      device.binding_status === "bound"
+      && device.device_authorization_signature === signature
+    ) {
+      return respond(req, 200, {
+        ok: true,
+        code: "DEVICE_ACCOUNT_BOUND",
+        device_id: device.device_id,
+        existing: true,
+      });
     }
 
     const { data: boundData, error: boundError } = await admin.rpc("finalize_device_account_binding", {
