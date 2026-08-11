@@ -3,13 +3,20 @@
  * the canonical user_devices registry before any destination is used.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { fetchVerifiedDeviceIdentity } from '@/lib/crypto/canonicalDeviceRegistry';
+import { verifyRouteDeviceIdentityOffline } from '@/lib/crypto/deviceLinkTrust';
 import type { DeviceDescriptor } from '@/e2ee-session/types';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 type RouteDeviceRow = {
   device_id: string;
   device_public_key: string;
+  device_signing_key: string | null;
+  device_authorization_signature: string | null;
+  account_identity_key: string | null;
+  account_signing_key: string | null;
+  account_fingerprint: string | null;
+  account_binding_signature: string | null;
+  account_binding_version: number | null;
   last_seen_at: string | null;
   is_routable: boolean;
 };
