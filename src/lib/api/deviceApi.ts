@@ -1,5 +1,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
+  backupIosDeviceVaultIfReady,
+  ensureIosDeviceVaultRestored,
+} from '@/platforms/ios/iosDeviceVaultRestore';
+
+import {
   beginExplicitDeviceEnrollment,
   getCurrentDeviceLabel,
   getCurrentPlatform,
