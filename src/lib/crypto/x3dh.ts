@@ -24,8 +24,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { exportPublicKeyRaw } from './keyManager';
 import type { DeviceKxKey } from './deviceKx';
 import { fetchVerifiedDeviceIdentity } from './canonicalDeviceRegistry';
-import { isSecureStoreNative } from '@/lib/secureStore';
-import { readNativeKeyRecord, removeNativeKeyRecord, writeNativeKeyRecord } from './nativeKeyVault';
+import {
+  adoptLegacyPlaintextRecord,
+  deviceVaultMirrorsPlaintext,
+  readDeviceVaultRecord,
+  removeDeviceVaultRecord,
+  writeDeviceVaultRecord,
+} from './deviceVault';
+
 
 export interface X3DHPrekeyBundle {
   identityKey: string;
