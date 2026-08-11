@@ -14,8 +14,15 @@ import { exportKeyToJWK, importKeyFromJWK, bufferToBase64 } from './utils';
 import { hardCrypto } from './cryptoIntegrity';
 import { runTx, reqToPromise } from './indexedDbTx';
 import { runCrossTabExclusive } from './crossTabLock';
-import { isSecureStoreNative } from '@/lib/secureStore';
-import { readNativeKeyRecord, removeNativeKeyRecord, writeNativeKeyRecord } from './nativeKeyVault';
+import {
+  adoptLegacyPlaintextRecord,
+  deviceVaultMirrorsPlaintext,
+  logDeviceVaultEvent,
+  readDeviceVaultRecord,
+  removeDeviceVaultRecord,
+  writeDeviceVaultRecord,
+} from './deviceVault';
+
 
 export interface DeviceKxKey {
   publicKey: CryptoKey;
