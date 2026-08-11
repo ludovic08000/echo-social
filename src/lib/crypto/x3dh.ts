@@ -207,53 +207,58 @@ function isStoredPrekey(value: unknown, id: string): value is StoredSPK {
   );
 }
 
-async function persistStoredPrekey(record: StoredSPK): Promise<void> {
-  if (isSecureStoreNative()) {
-    await writeNativeKeyRecord(nativePrekeyKey(record.id), record);
-    await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
-      tx.objectStore(SPK_STORE).put(record);
-    }).catch(() => undefined);
-    return;
-  }
-  await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+function spkIdbPut(record: StoredSPK): Promise<void> {
+  return runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
     tx.objectStore(SPK_STORE).put(record);
   });
 }
 
-async function loadStoredPrekey(id: string): Promise<StoredSPK | null> {
-  if (isSecureStoreNative()) {
-    const native = await readNativeKeyRecord(nativePrekeyKey(id), (value): value is StoredSPK =>
-      isStoredPrekey(value, id));
-    if (native) {
-      await runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
-        tx.objectStore(SPK_STORE).put(native);
-      }).catch(() => undefined);
-      return native;
-    }
-    const legacy = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
-      reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(id)),
-    ).catch(() => undefined);
-    if (!legacy) return null;
-    if (!isStoredPrekey(legacy, id)) throw new Error('E2EE_PREKEY_RECORD_INVALID');
-    await writeNativeKeyRecord(nativePrekeyKey(id), legacy);
-    return legacy;
+function spkIdbDelete(id: string): Promise<void> {
+  return runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
+    tx.objectStore(SPK_STORE).delete(id);
+  });
+}
+
+async function persistStoredPrekey(record: StoredSPK): Promise<void> {
+  await writeDeviceVaultRecord(nativePrekeyKey(record.id), record);
+  if (deviceVaultMirrorsPlaintext()) {
+    await spkIdbPut(record).catch(() => undefined);
+    return;
   }
-  const stored = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+  // Web : la clé privée du prekey ne doit jamais rester en clair.
+  await spkIdbDelete(record.id).catch(() => undefined);
+}
+
+async function loadStoredPrekey(id: string): Promise<StoredSPK | null> {
+  const validate = (value: unknown): value is StoredSPK => isStoredPrekey(value, id);
+
+  const sealed = await readDeviceVaultRecord(nativePrekeyKey(id), validate);
+  if (sealed) {
+    if (deviceVaultMirrorsPlaintext()) await spkIdbPut(sealed).catch(() => undefined);
+    return sealed;
+  }
+
+  const legacy = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
     reqToPromise<StoredSPK | undefined>(tx.objectStore(SPK_STORE).get(id)),
   ).catch(() => undefined);
-  if (!stored) return null;
-  if (!isStoredPrekey(stored, id)) throw new Error('E2EE_PREKEY_RECORD_INVALID');
-  return stored;
+  if (!legacy) return null;
+  if (!validate(legacy)) throw new Error('E2EE_PREKEY_RECORD_INVALID');
+  return adoptLegacyPlaintextRecord({
+    storageId: nativePrekeyKey(id),
+    legacy,
+    validate,
+    deleteLegacy: () => spkIdbDelete(id),
+    stage: 'device_prekey',
+  });
 }
 
 async function deleteStoredPrekey(id: string): Promise<void> {
   await Promise.allSettled([
-    runTxOn('spk', [SPK_STORE], 'readwrite', (tx) => {
-      tx.objectStore(SPK_STORE).delete(id);
-    }),
-    removeNativeKeyRecord(nativePrekeyKey(id)),
+    spkIdbDelete(id),
+    removeDeviceVaultRecord(nativePrekeyKey(id)),
   ]);
 }
+
 
 async function saveDeviceSPKPrivate(userId: string, deviceId: string, spkId: number, privateKey: CryptoKey, publicBase64: string): Promise<void> {
   const jwk = await hardCrypto.exportKey('jwk', privateKey);
