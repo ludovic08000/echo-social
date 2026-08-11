@@ -2095,6 +2095,36 @@ export type Database = {
         }
         Relationships: []
       }
+      device_encrypted_vaults: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          platform: string
+          updated_at: string
+          user_id: string
+          vault: Json
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          id?: string
+          platform?: string
+          updated_at?: string
+          user_id: string
+          vault: Json
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          platform?: string
+          updated_at?: string
+          user_id?: string
+          vault?: Json
+        }
+        Relationships: []
+      }
       device_enrollment_challenges: {
         Row: {
           cancel_reason: string | null
