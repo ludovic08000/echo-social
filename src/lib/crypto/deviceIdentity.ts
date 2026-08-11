@@ -239,7 +239,7 @@ export async function deleteDeviceIdentity(userId: string, deviceId: string): Pr
   creationJobs.delete(id);
   await Promise.allSettled([
     dbDelete(id),
-    removeNativeKeyRecord(id),
+    removeDeviceVaultRecord(id),
   ]);
 }
 
