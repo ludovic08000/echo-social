@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runTxOn = vi.fn();
-const readDeviceVaultRecord = vi.fn();
-const establishDeviceSession = vi.fn();
-const isIosWebRuntime = vi.fn();
+const {
+  runTxOn,
+  readDeviceVaultRecord,
+  establishDeviceSession,
+  isIosWebRuntime,
+} = vi.hoisted(() => ({
+  runTxOn: vi.fn(),
+  readDeviceVaultRecord: vi.fn(),
+  establishDeviceSession: vi.fn(),
+  isIosWebRuntime: vi.fn(),
+}));
 
 vi.mock('../indexedDbTx', () => ({
   runTxOn,
