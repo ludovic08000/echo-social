@@ -121,17 +121,32 @@ async function readDeviceRecords(userId: string, deviceId: string): Promise<{
   signing: StoredDeviceIdentityRecovery;
   kx: StoredDeviceKxRecovery;
 }> {
+  const signingId = signingStorageKey(userId, deviceId);
+  const kxId = kxStorageKey(userId, deviceId);
+
+  // Le coffre scellé fait autorité ; l'IndexedDB en clair n'est qu'un héritage.
+  const [sealedSigning, sealedKx] = await Promise.all([
+    readDeviceVaultRecord(signingId, (value): value is StoredDeviceIdentityRecovery =>
+      validateSigningRecord(value, userId, deviceId)),
+    readDeviceVaultRecord(kxId, (value): value is StoredDeviceKxRecovery =>
+      validateKxRecord(value, userId, deviceId)),
+  ]);
+  if (sealedSigning && sealedKx) return { signing: sealedSigning, kx: sealedKx };
+
   const [signing, kx] = await runTx([STORE_KEYS], 'readonly', async (tx) => {
     const store = tx.objectStore(STORE_KEYS);
     return Promise.all([
-      reqToPromise(store.get(signingStorageKey(userId, deviceId))),
-      reqToPromise(store.get(kxStorageKey(userId, deviceId))),
+      reqToPromise(store.get(signingId)),
+      reqToPromise(store.get(kxId)),
     ]);
   });
-  if (!validateSigningRecord(signing, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_SIGNING_KEYS_MISSING');
-  if (!validateKxRecord(kx, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_KX_KEYS_MISSING');
-  return { signing, kx };
+  const resolvedSigning = sealedSigning ?? signing;
+  const resolvedKx = sealedKx ?? kx;
+  if (!validateSigningRecord(resolvedSigning, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_SIGNING_KEYS_MISSING');
+  if (!validateKxRecord(resolvedKx, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_KX_KEYS_MISSING');
+  return { signing: resolvedSigning, kx: resolvedKx };
 }
+
 
 export async function captureEncryptedWebDeviceVault(
   userId: string,
