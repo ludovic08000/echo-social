@@ -1,0 +1,39 @@
+name: Live iOS Anonymous Device Vault
+
+on:
+  push:
+    branches:
+      - test/ios-anonymous-vault
+    paths:
+      - scripts/live-ios-anonymous-vault.mjs
+      - .github/workflows/live-ios-anonymous-vault.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-ios-anonymous-vault
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: https://vkpmoqfzrihcijjochks.supabase.co
+      SUPABASE_ANON_KEY: sb_publishable_API-35uviPFiptNrXqATAQ_8JtM7G_9
+
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+        with:
+          ref: test/ios-anonymous-vault
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run live anonymous iOS device/vault probe
+        run: node scripts/live-ios-anonymous-vault.mjs
