@@ -1,9 +1,10 @@
 -- Signal-style server validation for Aegis device trust and signed prekeys.
 --
--- The server now cryptographically validates the same public trust chain that
--- clients validate before X3DH/session creation:
+-- The server validates the same public trust chain that clients validate before
+-- X3DH/session creation:
 --   account identity binding -> account-authorized device -> device-signed SPK.
--- Invalid historical rows are fail-closed without replacing any key material.
+-- Existing key material is never rewritten by the integrity sweep; invalid
+-- historical states are only quarantined and made non-routable.
 
 begin;
 
@@ -235,9 +236,14 @@ revoke all on function public.aegis_device_authorization_payload(uuid,text,text,
 revoke all on function public.aegis_verify_device_authorization(uuid,text,text,text,text,text,text) from public, anon, authenticated;
 revoke all on function public.aegis_verify_signed_prekey(text,text,text) from public, anon, authenticated;
 
--- Defense in depth: the service-role finalizer independently validates the
--- authorization instead of trusting that the Edge Function already did so.
-create or replace function public.finalize_device_account_binding(
+-- Keep the already-tested state transitions, but put a cryptographic guard in
+-- front of the service-role finalizer.
+alter function public.finalize_device_account_binding(uuid,text,text)
+  rename to finalize_device_account_binding_pre_signal_validation;
+revoke all on function public.finalize_device_account_binding_pre_signal_validation(uuid,text,text)
+  from public, anon, authenticated, service_role;
+
+create function public.finalize_device_account_binding(
   p_user_id uuid,
   p_device_id text,
   p_device_authorization_signature text
@@ -251,7 +257,8 @@ declare
   v_now timestamptz := now();
   v_device public.user_devices%rowtype;
   v_account public.user_public_keys%rowtype;
-  v_same_binding boolean := false;
+  v_existing_valid_binding boolean := false;
+  v_result jsonb;
 begin
   if p_user_id is null
      or trim(coalesce(p_device_id,'')) !~ '^dev_[a-f0-9]{32}$'
@@ -275,10 +282,6 @@ begin
   end if;
   if v_device.possession_verified_at is null then
     return jsonb_build_object('ok',false,'code','DEVICE_POSSESSION_NOT_VERIFIED');
-  end if;
-  if nullif(trim(coalesce(v_device.device_public_key, '')), '') is null
-     or nullif(trim(coalesce(v_device.device_signing_key, '')), '') is null then
-    return jsonb_build_object('ok',false,'code','DEVICE_KEYS_INCOMPLETE');
   end if;
 
   select * into v_account
@@ -329,37 +332,39 @@ begin
     return jsonb_build_object('ok',false,'code','DEVICE_AUTHORIZATION_SIGNATURE_INVALID');
   end if;
 
-  v_same_binding := v_device.binding_status = 'bound'
+  v_existing_valid_binding := v_device.binding_status = 'bound'
     and v_device.account_bound_at is not null
     and v_device.device_authorization_signature is not distinct from trim(p_device_authorization_signature);
 
-  update public.user_devices
-  set device_authorization_signature = trim(p_device_authorization_signature),
-      binding_status = 'bound',
-      account_bound_at = case
-        when v_same_binding then coalesce(account_bound_at, v_now)
-        else v_now
-      end,
-      crypto_invalid_at = null,
-      crypto_invalid_reason = null,
-      routing_status = case
-        when v_same_binding and v_device.routing_status = 'ready' then 'ready'
-        else 'repairing'
-      end,
-      routing_error = case
-        when v_same_binding and v_device.routing_status = 'ready' then null
-        else 'SIGNED_PREKEY_VALIDATION_PENDING'
-      end,
-      routing_checked_at = v_now,
-      updated_at = v_now
-  where id = v_device.id;
+  if v_existing_valid_binding then
+    update public.user_devices
+    set crypto_invalid_at = null,
+        crypto_invalid_reason = null,
+        routing_checked_at = v_now,
+        updated_at = v_now
+    where id = v_device.id;
+    return jsonb_build_object(
+      'ok',true,
+      'code','DEVICE_ACCOUNT_BOUND',
+      'device_id',trim(p_device_id),
+      'existing',true
+    );
+  end if;
 
-  return jsonb_build_object(
-    'ok',true,
-    'code','DEVICE_ACCOUNT_BOUND',
-    'device_id',trim(p_device_id),
-    'existing',v_same_binding
+  v_result := public.finalize_device_account_binding_pre_signal_validation(
+    p_user_id,
+    trim(p_device_id),
+    trim(p_device_authorization_signature)
   );
+
+  if coalesce((v_result ->> 'ok')::boolean, false) then
+    update public.user_devices
+    set crypto_invalid_at = null,
+        crypto_invalid_reason = null,
+        updated_at = v_now
+    where id = v_device.id;
+  end if;
+  return v_result;
 end;
 $$;
 
@@ -368,9 +373,15 @@ revoke all on function public.finalize_device_account_binding(uuid,text,text)
 grant execute on function public.finalize_device_account_binding(uuid,text,text)
   to service_role;
 
--- Signal's key endpoint validates the signed prekey before accepting it. Do the
--- same here: the device Ed25519 signing key must sign the raw X25519 SPK bytes.
-create or replace function public.publish_device_signed_prekey(
+-- Signal validates a signed prekey before accepting it. Preserve the existing
+-- publish transaction behind a guard that verifies account trust, device
+-- authorization and the Ed25519 signature over the raw X25519 SPK bytes.
+alter function public.publish_device_signed_prekey(text,integer,text,text)
+  rename to publish_device_signed_prekey_pre_signal_validation;
+revoke all on function public.publish_device_signed_prekey_pre_signal_validation(text,integer,text,text)
+  from public, anon, authenticated, service_role;
+
+create function public.publish_device_signed_prekey(
   p_device_id text,
   p_spk_id integer,
   p_public_key text,
@@ -384,10 +395,10 @@ as $$
 declare
   v_uid uuid := auth.uid();
   v_device_id text := trim(coalesce(p_device_id, ''));
-  v_existing public.device_signed_prekeys%rowtype;
   v_device public.user_devices%rowtype;
   v_account public.user_public_keys%rowtype;
   v_now timestamptz := now();
+  v_result jsonb;
 begin
   if v_uid is null then
     return jsonb_build_object('ok', false, 'code', 'NOT_AUTHENTICATED');
@@ -475,51 +486,21 @@ begin
     return jsonb_build_object('ok', false, 'code', 'DEVICE_SPK_SIGNATURE_INVALID');
   end if;
 
-  select * into v_existing
-  from public.device_signed_prekeys
-  where user_id = v_uid and device_id = v_device_id and spk_id = p_spk_id
-  for update;
-  if found and (
-    v_existing.public_key is distinct from p_public_key
-    or v_existing.signature is distinct from p_signature
-  ) then
-    return jsonb_build_object('ok', false, 'code', 'SPK_ID_CONFLICT');
-  end if;
-
-  update public.device_signed_prekeys
-  set is_active = false,
-      is_last_resort = false
-  where user_id = v_uid
-    and device_id = v_device_id
-    and spk_id <> p_spk_id
-    and (is_active = true or is_last_resort = true);
-
-  insert into public.device_signed_prekeys (
-    user_id, device_id, spk_id, public_key, signature,
-    is_active, is_last_resort, created_at, expires_at
-  ) values (
-    v_uid, v_device_id, p_spk_id, p_public_key, p_signature,
-    true, false, v_now, v_now + interval '30 days'
-  )
-  on conflict (user_id, device_id, spk_id) do update
-  set is_active = true,
-      is_last_resort = false,
-      expires_at = greatest(public.device_signed_prekeys.expires_at, v_now + interval '30 days');
-
-  update public.user_devices
-  set routing_status = 'ready',
-      routing_error = null,
-      routing_checked_at = v_now,
-      crypto_invalid_at = null,
-      crypto_invalid_reason = null,
-      updated_at = v_now
-  where id = v_device.id;
-
-  return jsonb_build_object(
-    'ok', true,
-    'code', 'SIGNED_PREKEY_PUBLISHED',
-    'spk_id', p_spk_id
+  v_result := public.publish_device_signed_prekey_pre_signal_validation(
+    v_device_id,
+    p_spk_id,
+    p_public_key,
+    p_signature
   );
+
+  if coalesce((v_result ->> 'ok')::boolean, false) then
+    update public.user_devices
+    set crypto_invalid_at = null,
+        crypto_invalid_reason = null,
+        updated_at = v_now
+    where id = v_device.id;
+  end if;
+  return v_result;
 end;
 $$;
 
@@ -620,9 +601,14 @@ revoke all on function public.get_sesame_device_list(uuid) from public, anon;
 grant execute on function public.get_sesame_device_list(uuid)
   to authenticated, service_role;
 
--- OPKs may be replenished only by a device whose complete server route is
--- cryptographically valid. Claims already go through get_sesame_device_list.
-create or replace function public.publish_device_one_time_prekeys(
+-- Keep the atomic inventory implementation, but put the same cryptographic
+-- route guard in front of it.
+alter function public.publish_device_one_time_prekeys(text,jsonb)
+  rename to publish_device_one_time_prekeys_pre_signal_validation;
+revoke all on function public.publish_device_one_time_prekeys_pre_signal_validation(text,jsonb)
+  from public, anon, authenticated, service_role;
+
+create function public.publish_device_one_time_prekeys(
   p_device_id text,
   p_prekeys jsonb
 )
@@ -634,33 +620,9 @@ as $$
 declare
   v_uid uuid := auth.uid();
   v_device_id text := trim(coalesce(p_device_id, ''));
-  v_count integer;
-  v_distinct integer;
-  v_conflicts integer;
-  v_existing integer;
-  v_capacity integer;
-  v_accepted integer[];
 begin
   if v_uid is null then
     return jsonb_build_object('ok', false, 'code', 'NOT_AUTHENTICATED');
-  end if;
-  if jsonb_typeof(p_prekeys) <> 'array' then
-    return jsonb_build_object('ok', false, 'code', 'INVALID_ONE_TIME_PREKEY_BATCH');
-  end if;
-
-  select count(*), count(distinct item.opk_id)
-    into v_count, v_distinct
-  from jsonb_to_recordset(p_prekeys) as item(opk_id integer, public_key text);
-  if v_count < 1 or v_count > 100 or v_count <> v_distinct then
-    return jsonb_build_object('ok', false, 'code', 'INVALID_ONE_TIME_PREKEY_BATCH');
-  end if;
-  if exists (
-    select 1
-    from jsonb_to_recordset(p_prekeys) as item(opk_id integer, public_key text)
-    where item.opk_id <= 0
-       or length(trim(coalesce(item.public_key, ''))) < 40
-  ) then
-    return jsonb_build_object('ok', false, 'code', 'INVALID_ONE_TIME_PREKEY');
   end if;
   if not exists (
     select 1
@@ -671,78 +633,9 @@ begin
     return jsonb_build_object('ok', false, 'code', 'DEVICE_NOT_AUTHORIZED');
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(v_uid::text || ':' || v_device_id, 1));
-
-  select count(*) into v_existing
-  from public.device_one_time_prekeys existing
-  where existing.user_id = v_uid
-    and existing.device_id = v_device_id;
-  v_capacity := greatest(0, 100 - v_existing);
-
-  select count(*) into v_conflicts
-  from jsonb_to_recordset(p_prekeys) as item(opk_id integer, public_key text)
-  join public.device_one_time_prekeys existing
-    on existing.user_id = v_uid
-   and existing.device_id = v_device_id
-   and existing.opk_id = item.opk_id
-  where existing.public_key is distinct from item.public_key;
-  if v_conflicts > 0 then
-    return jsonb_build_object('ok', false, 'code', 'OPK_ID_CONFLICT');
-  end if;
-
-  with incoming as (
-    select item.opk_id, item.public_key
-    from jsonb_to_recordset(p_prekeys) as item(opk_id integer, public_key text)
-  ), same_existing as (
-    select incoming.opk_id
-    from incoming
-    join public.device_one_time_prekeys existing
-      on existing.user_id = v_uid
-     and existing.device_id = v_device_id
-     and existing.opk_id = incoming.opk_id
-     and existing.public_key = incoming.public_key
-  ), candidates as (
-    select incoming.opk_id, incoming.public_key
-    from incoming
-    left join public.device_one_time_prekeys existing
-      on existing.user_id = v_uid
-     and existing.device_id = incoming.opk_id::text
-    where false
-  ), new_candidates as (
-    select incoming.opk_id, incoming.public_key
-    from incoming
-    left join public.device_one_time_prekeys existing
-      on existing.user_id = v_uid
-     and existing.device_id = v_device_id
-     and existing.opk_id = incoming.opk_id
-    where existing.id is null
-    order by incoming.opk_id
-    limit v_capacity
-  ), inserted as (
-    insert into public.device_one_time_prekeys (user_id, device_id, opk_id, public_key)
-    select v_uid, v_device_id, new_candidates.opk_id, new_candidates.public_key
-    from new_candidates
-    on conflict (user_id, device_id, opk_id) do nothing
-    returning opk_id
-  ), accepted as (
-    select opk_id from same_existing
-    union
-    select opk_id from inserted
-  )
-  select array_agg(opk_id order by opk_id)
-    into v_accepted
-  from accepted;
-
-  select count(*) into v_existing
-  from public.device_one_time_prekeys existing
-  where existing.user_id = v_uid
-    and existing.device_id = v_device_id;
-
-  return jsonb_build_object(
-    'ok', true,
-    'code', 'ONE_TIME_PREKEYS_PUBLISHED',
-    'accepted_ids', to_jsonb(coalesce(v_accepted, array[]::integer[])),
-    'inventory_count', v_existing
+  return public.publish_device_one_time_prekeys_pre_signal_validation(
+    v_device_id,
+    p_prekeys
   );
 end;
 $$;
@@ -752,9 +645,8 @@ revoke all on function public.publish_device_one_time_prekeys(text,jsonb)
 grant execute on function public.publish_device_one_time_prekeys(text,jsonb)
   to authenticated, service_role;
 
--- One-time integrity sweep for historical states. No keys/signatures are
--- rewritten: invalid trust is only quarantined so the normal controlled
--- re-authorization/re-enrollment flow can repair it.
+-- One-time integrity sweep for historical states. This is intentionally a
+-- quarantine only: no public key or signature is repaired/forged server-side.
 with current_account as (
   select distinct on (k.user_id)
     k.user_id,
