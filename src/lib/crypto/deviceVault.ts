@@ -1,15 +1,10 @@
 /**
- * Device Vault — couche unique de persistance des clés privées d'appareil.
+ * Device Vault — persistance protégée des clés privées device.
  *
- * Invariant corrigé : sur navigateur, les clés privées device (Ed25519, X25519,
- * SPK/OPK) ne doivent plus exister en clair dans IndexedDB. Elles sont scellées
- * par l'enclave logicielle ACE Web (anchor AES-GCM non extractible), qui
- * échoue fermé si l'anchor disparaît.
- *
- * - Natif (iOS/Android) : délègue à nativeKeyVault (Keychain), comportement
- *   inchangé, y compris le miroir IndexedDB existant.
- * - Web (iOS Safari, Chrome, Windows) : scelle l'enregistrement via
- *   secureSetCriticalSecret -> ACE Web. Aucun miroir en clair.
+ * IMPORTANT : le chemin WebCrypto ACE est STRICTEMENT limité à iOS Web/PWA.
+ * Windows Web conserve exactement son stockage historique IndexedDB et ne
+ * passe jamais par ACE via ce module. Les plateformes natives conservent leur
+ * nativeKeyVault/Keychain existant.
  */
 
 import {
@@ -18,6 +13,7 @@ import {
   secureRemoveCriticalSecret,
   secureSetCriticalSecret,
 } from '@/lib/secureStore';
+import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
 import {
   readNativeKeyRecord,
   removeNativeKeyRecord,
@@ -26,7 +22,9 @@ import {
 import { logCryptoError } from './errorLogger';
 
 const VAULT_VERSION = 1 as const;
-const WEB_KEY_PREFIX = 'aegis.device-vault.v1:';
+const IOS_WEB_KEY_PREFIX = 'aegis.device-vault.v1:';
+
+type DeviceVaultMode = 'native' | 'ios-web' | 'legacy-web';
 
 interface WebVaultEnvelope {
   version: typeof VAULT_VERSION;
@@ -41,13 +39,22 @@ export class DeviceVaultCorruptError extends Error {
   }
 }
 
-function webKey(storageId: string): string {
-  return `${WEB_KEY_PREFIX}${storageId}`;
+function mode(): DeviceVaultMode {
+  if (isSecureStoreNative()) return 'native';
+  if (isIosWebRuntime()) return 'ios-web';
+  return 'legacy-web';
 }
 
-/** Le miroir IndexedDB en clair n'est conservé que sur les plateformes natives. */
+function webKey(storageId: string): string {
+  return `${IOS_WEB_KEY_PREFIX}${storageId}`;
+}
+
+/**
+ * Le miroir IndexedDB historique reste l'autorité sur Windows Web et reste
+ * conservé sur natif. Seul iOS Web interdit le miroir privé en clair.
+ */
 export function deviceVaultMirrorsPlaintext(): boolean {
-  return isSecureStoreNative();
+  return mode() !== 'ios-web';
 }
 
 export function logDeviceVaultEvent(
@@ -55,6 +62,7 @@ export function logDeviceVaultEvent(
   status: 'ok' | 'skipped' | 'failed',
   extra: { reason?: string; count?: number } = {},
 ): void {
+  const vaultMode = mode();
   logCryptoError({
     severity: status === 'failed' ? 'warning' : 'info',
     context: 'backup',
@@ -63,7 +71,7 @@ export function logDeviceVaultEvent(
     metadata: {
       stage,
       status,
-      platform: isSecureStoreNative() ? 'native' : 'web',
+      platform: vaultMode,
       ...(extra.reason ? { reason: extra.reason } : {}),
       ...(typeof extra.count === 'number' ? { count: extra.count } : {}),
     },
@@ -74,7 +82,15 @@ export async function readDeviceVaultRecord<T>(
   storageId: string,
   validate: (value: unknown) => value is T,
 ): Promise<T | null> {
-  if (isSecureStoreNative()) return readNativeKeyRecord(storageId, validate);
+  const vaultMode = mode();
+
+  if (vaultMode === 'native') {
+    return readNativeKeyRecord(storageId, validate);
+  }
+
+  // Windows/desktop Web : comportement historique inchangé. Le caller relit
+  // son IndexedDB legacy comme avant ce chantier.
+  if (vaultMode === 'legacy-web') return null;
 
   const encoded = await secureGetCriticalSecret(webKey(storageId));
   if (encoded === null) return null;
@@ -95,35 +111,58 @@ export async function readDeviceVaultRecord<T>(
   ) {
     throw new DeviceVaultCorruptError(storageId);
   }
+
   return envelope.payload;
 }
 
 export async function writeDeviceVaultRecord<T>(storageId: string, payload: T): Promise<void> {
-  if (isSecureStoreNative()) {
+  const vaultMode = mode();
+
+  if (vaultMode === 'native') {
     await writeNativeKeyRecord(storageId, payload);
     return;
   }
+
+  // Windows/desktop Web : no-op volontaire. Le caller écrit ensuite dans son
+  // IndexedDB historique, donc zéro modification du flux Windows validé.
+  if (vaultMode === 'legacy-web') return;
+
   const encoded = JSON.stringify({
     version: VAULT_VERSION,
     storageId,
     payload,
   } satisfies WebVaultEnvelope);
-  // secureSetCriticalSecret relit systématiquement la valeur scellée (fail-closed).
+
   await secureSetCriticalSecret(webKey(storageId), encoded);
+
+  // Invariant fail-closed : readback explicite sur iOS Web en plus du readback
+  // interne de secureSetCriticalSecret/webAegisEnclaveSet.
+  const readback = await secureGetCriticalSecret(webKey(storageId));
+  if (readback !== encoded) {
+    throw new Error(`E2EE_IOS_WEB_DEVICE_VAULT_READBACK_FAILED:${storageId}`);
+  }
 }
 
 export async function removeDeviceVaultRecord(storageId: string): Promise<void> {
-  if (isSecureStoreNative()) {
+  const vaultMode = mode();
+
+  if (vaultMode === 'native') {
     await removeNativeKeyRecord(storageId);
     return;
   }
+
+  if (vaultMode === 'legacy-web') return;
   await secureRemoveCriticalSecret(webKey(storageId));
 }
 
 /**
- * Migration sécurisée d'un ancien enregistrement en clair :
- * lire -> sceller -> vérifier la relecture -> supprimer le clair (web seulement).
- * Retourne l'enregistrement adopté, ou null si aucun héritage exploitable.
+ * Migration d'un ancien record privé en clair.
+ *
+ * - iOS Web : legacy -> ACE -> readback -> suppression du legacy.
+ * - natif : comportement historique nativeKeyVault + miroir conservé.
+ * - Windows/desktop Web : retourne simplement le legacy, sans migration ni
+ *   suppression. C'est volontaire afin de ne modifier aucun comportement
+ *   Windows dans ce lot.
  */
 export async function adoptLegacyPlaintextRecord<T>(args: {
   storageId: string;
@@ -134,9 +173,15 @@ export async function adoptLegacyPlaintextRecord<T>(args: {
 }): Promise<T | null> {
   const { storageId, legacy, validate, deleteLegacy, stage } = args;
   if (legacy === null || legacy === undefined) return null;
+
   if (!validate(legacy)) {
     logDeviceVaultEvent(stage, 'failed', { reason: 'legacy_invalid' });
     throw new DeviceVaultCorruptError(storageId);
+  }
+
+  const vaultMode = mode();
+  if (vaultMode === 'legacy-web') {
+    return legacy;
   }
 
   await writeDeviceVaultRecord(storageId, legacy);
@@ -146,9 +191,10 @@ export async function adoptLegacyPlaintextRecord<T>(args: {
     throw new Error(`E2EE_DEVICE_VAULT_READBACK_FAILED:${storageId}`);
   }
 
-  if (!deviceVaultMirrorsPlaintext()) {
+  if (vaultMode === 'ios-web') {
     await deleteLegacy();
   }
+
   logDeviceVaultEvent(stage, 'ok', { reason: 'migrated' });
   return readback;
 }
