@@ -121,6 +121,58 @@ export async function getApprovedDeviceIdentity(
   return verifyCanonicalDevice(userId, device, account);
 }
 
+/**
+ * Invariant corrigé : une route déjà validée par le module de routage serveur
+ * est vérifiée cryptographiquement hors-ligne, sans RPC supplémentaire. Une
+ * panne réseau ne peut donc plus faire disparaître un destinataire valide
+ * (E2EE_PARTICIPANT_ROUTE_UNAVAILABLE), seule une signature invalide rejette.
+ */
+export async function verifyRouteDeviceIdentityOffline(args: {
+  userId: string;
+  deviceId: string;
+  devicePublicKey: string | null;
+  deviceSigningKey: string | null;
+  deviceAuthorizationSignature: string | null;
+  accountIdentityKey: string | null;
+  accountSigningKey: string | null;
+  accountFingerprint: string | null;
+  accountBindingSignature: string | null;
+  accountBindingVersion: number | null;
+}): Promise<CanonicalDeviceIdentity | null> {
+  if (
+    !args.userId || !args.deviceId
+    || !args.devicePublicKey || !args.deviceSigningKey || !args.deviceAuthorizationSignature
+    || !args.accountIdentityKey || !args.accountSigningKey || !args.accountFingerprint
+    || !args.accountBindingSignature
+  ) return null;
+
+  const bindingValid = await verifyPublicIdentityBinding({
+    identityKey: args.accountIdentityKey,
+    signingKey: args.accountSigningKey,
+    fingerprint: args.accountFingerprint,
+    bindingVersion: Number(args.accountBindingVersion ?? 0),
+    bindingSignature: args.accountBindingSignature,
+  });
+  if (!bindingValid) return null;
+
+  const authorized = await verifyDeviceAuthorization({
+    userId: args.userId,
+    deviceId: args.deviceId,
+    accountFingerprint: args.accountFingerprint,
+    accountSigningKey: args.accountSigningKey,
+    devicePublicKey: args.devicePublicKey,
+    deviceSigningKey: args.deviceSigningKey,
+    authorizationSignature: args.deviceAuthorizationSignature,
+  });
+  if (!authorized) return null;
+
+  return {
+    deviceId: args.deviceId,
+    devicePublicKey: args.devicePublicKey,
+    deviceSigningKey: args.deviceSigningKey,
+  };
+}
+
 export async function ensureApprovedDeviceTrust(userId: string, deviceId: string): Promise<number> {
   await getApprovedDeviceIdentity(userId, deviceId);
   return 0;

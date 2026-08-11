@@ -3,13 +3,20 @@
  * the canonical user_devices registry before any destination is used.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { fetchVerifiedDeviceIdentity } from '@/lib/crypto/canonicalDeviceRegistry';
+import { verifyRouteDeviceIdentityOffline } from '@/lib/crypto/deviceLinkTrust';
 import type { DeviceDescriptor } from '@/e2ee-session/types';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 type RouteDeviceRow = {
   device_id: string;
   device_public_key: string;
+  device_signing_key: string | null;
+  device_authorization_signature: string | null;
+  account_identity_key: string | null;
+  account_signing_key: string | null;
+  account_fingerprint: string | null;
+  account_binding_signature: string | null;
+  account_binding_version: number | null;
   last_seen_at: string | null;
   is_routable: boolean;
 };
@@ -109,7 +116,18 @@ export async function resolveConversationRoute(
 
     const verified = await Promise.all(rows.map(async (row) => ({
       row,
-      identity: await fetchVerifiedDeviceIdentity(participant.user_id, row.device_id),
+      identity: await verifyRouteDeviceIdentityOffline({
+        userId: participant.user_id,
+        deviceId: row.device_id,
+        devicePublicKey: row.device_public_key,
+        deviceSigningKey: row.device_signing_key,
+        deviceAuthorizationSignature: row.device_authorization_signature,
+        accountIdentityKey: row.account_identity_key,
+        accountSigningKey: row.account_signing_key,
+        accountFingerprint: row.account_fingerprint,
+        accountBindingSignature: row.account_binding_signature,
+        accountBindingVersion: row.account_binding_version,
+      }),
     })));
 
     const rejectedSelf = participant.is_self
