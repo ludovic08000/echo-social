@@ -27,7 +27,18 @@ function isEncryptedVault(value: unknown): value is EncryptedWebDeviceVault {
   );
 }
 
-/** Scelle les clés locales et pousse le blob chiffré. Silencieux si impossible. */
+function sameEncryptedVault(left: unknown, right: EncryptedWebDeviceVault): boolean {
+  return isEncryptedVault(left)
+    && left.version === right.version
+    && left.iv === right.iv
+    && left.ciphertext === right.ciphertext;
+}
+
+/**
+ * Scelle les clés locales et pousse uniquement le blob chiffré. Le succès
+ * n'est retourné qu'après relecture du même user/device et comparaison exacte
+ * du vault ; un upsert sans readback n'est jamais considéré durable.
+ */
 export async function backupDeviceVaultToCloud(args: {
   userId: string;
   deviceId: string;
@@ -53,6 +64,23 @@ export async function backupDeviceVaultToCloud(args: {
       logDeviceVaultEvent('cloud_backup', 'failed', { reason: 'upsert_rejected' });
       return false;
     }
+
+    const { data: readback, error: readbackError } = await supabase
+      .from('device_encrypted_vaults')
+      .select('vault,platform')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .maybeSingle();
+    if (readbackError || !readback) {
+      logDeviceVaultEvent('cloud_backup', 'failed', { reason: 'readback_missing' });
+      return false;
+    }
+    const row = readback as { vault: unknown; platform?: string | null };
+    if (!sameEncryptedVault(row.vault, vault)) {
+      logDeviceVaultEvent('cloud_backup', 'failed', { reason: 'readback_mismatch' });
+      return false;
+    }
+
     logDeviceVaultEvent('cloud_backup', 'ok');
     return true;
   } catch {
