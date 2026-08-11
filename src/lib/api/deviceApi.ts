@@ -1,5 +1,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
+  backupIosDeviceVaultIfReady,
+  ensureIosDeviceVaultRestored,
+} from '@/platforms/ios/iosDeviceVaultRestore';
+
+import {
   beginExplicitDeviceEnrollment,
   getCurrentDeviceLabel,
   getCurrentPlatform,
@@ -320,12 +325,25 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   if (record.approvalStatus !== 'approved' || !record.isActive || record.bindingStatus !== 'bound' || record.revokedAt) {
     throw new Error('DEVICE_NOT_READY_FOR_KEYS');
   }
-  const [identity, kx] = await Promise.all([
+  let [identity, kx] = await Promise.all([
     loadDeviceIdentity(userId, record.deviceId),
     loadDeviceKxKey(record.deviceId, userId),
   ]);
+  if (!identity || !kx) {
+    // iOS Web : Safari peut purger l'IndexedDB. On restaure le coffre scellé
+    // du MÊME DeviceID déjà approuvé, sans jamais en créer un nouveau.
+    const restored = await ensureIosDeviceVaultRestored(userId);
+    if (restored === 'restored') {
+      [identity, kx] = await Promise.all([
+        loadDeviceIdentity(userId, record.deviceId),
+        loadDeviceKxKey(record.deviceId, userId),
+      ]);
+    }
+  }
   if (!identity || !kx) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
   if (identity.publicB64 !== record.deviceSigningKey || kx.publicB64 !== record.devicePublicKey) throw new Error('DEVICE_LOCAL_KEY_MISMATCH');
+  void backupIosDeviceVaultIfReady(userId);
+
   try {
     await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
     if (!await peekDeviceSignedPrekey(userId, record.deviceId)) {

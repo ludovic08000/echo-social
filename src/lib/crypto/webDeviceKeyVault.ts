@@ -2,6 +2,12 @@ import { STORE_KEYS } from '@/lib/crypto/constants';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { runTx, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import { getSessionMasterKey } from '@/lib/crypto/accountKeyBackup';
+import {
+  deviceVaultMirrorsPlaintext,
+  readDeviceVaultRecord,
+  writeDeviceVaultRecord,
+} from '@/lib/crypto/deviceVault';
+
 
 const VAULT_VERSION = 1 as const;
 const IV_BYTES = 12;
@@ -121,17 +127,32 @@ async function readDeviceRecords(userId: string, deviceId: string): Promise<{
   signing: StoredDeviceIdentityRecovery;
   kx: StoredDeviceKxRecovery;
 }> {
+  const signingId = signingStorageKey(userId, deviceId);
+  const kxId = kxStorageKey(userId, deviceId);
+
+  // Le coffre scellé fait autorité ; l'IndexedDB en clair n'est qu'un héritage.
+  const [sealedSigning, sealedKx] = await Promise.all([
+    readDeviceVaultRecord(signingId, (value): value is StoredDeviceIdentityRecovery =>
+      validateSigningRecord(value, userId, deviceId)),
+    readDeviceVaultRecord(kxId, (value): value is StoredDeviceKxRecovery =>
+      validateKxRecord(value, userId, deviceId)),
+  ]);
+  if (sealedSigning && sealedKx) return { signing: sealedSigning, kx: sealedKx };
+
   const [signing, kx] = await runTx([STORE_KEYS], 'readonly', async (tx) => {
     const store = tx.objectStore(STORE_KEYS);
     return Promise.all([
-      reqToPromise(store.get(signingStorageKey(userId, deviceId))),
-      reqToPromise(store.get(kxStorageKey(userId, deviceId))),
+      reqToPromise(store.get(signingId)),
+      reqToPromise(store.get(kxId)),
     ]);
   });
-  if (!validateSigningRecord(signing, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_SIGNING_KEYS_MISSING');
-  if (!validateKxRecord(kx, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_KX_KEYS_MISSING');
-  return { signing, kx };
+  const resolvedSigning = sealedSigning ?? signing;
+  const resolvedKx = sealedKx ?? kx;
+  if (!validateSigningRecord(resolvedSigning, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_SIGNING_KEYS_MISSING');
+  if (!validateKxRecord(resolvedKx, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_KX_KEYS_MISSING');
+  return { signing: resolvedSigning, kx: resolvedKx };
 }
+
 
 export async function captureEncryptedWebDeviceVault(
   userId: string,
@@ -205,9 +226,15 @@ export async function restoreEncryptedWebDeviceVault(args: {
     || jwkXToStandardBase64(plain.kx.publicKeyJWK.x!) !== args.expectedDevicePublicKey) {
     throw new Error('WEBAUTHN_DEVICE_VAULT_KEY_MISMATCH');
   }
-  await runTx([STORE_KEYS], 'readwrite', (tx) => {
-    const store = tx.objectStore(STORE_KEYS);
-    store.put(plain.signing as object);
-    store.put(plain.kx as object);
-  });
+  // Restauration : les clés reviennent dans le coffre scellé, jamais en clair sur web.
+  await writeDeviceVaultRecord(plain.signing.id, plain.signing);
+  await writeDeviceVaultRecord(plain.kx.id, plain.kx);
+  if (deviceVaultMirrorsPlaintext()) {
+    await runTx([STORE_KEYS], 'readwrite', (tx) => {
+      const store = tx.objectStore(STORE_KEYS);
+      store.put(plain.signing as object);
+      store.put(plain.kx as object);
+    });
+  }
+
 }

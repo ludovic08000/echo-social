@@ -14,8 +14,15 @@ import { exportKeyToJWK, importKeyFromJWK, bufferToBase64 } from './utils';
 import { hardCrypto } from './cryptoIntegrity';
 import { runTx, reqToPromise } from './indexedDbTx';
 import { runCrossTabExclusive } from './crossTabLock';
-import { isSecureStoreNative } from '@/lib/secureStore';
-import { readNativeKeyRecord, removeNativeKeyRecord, writeNativeKeyRecord } from './nativeKeyVault';
+import {
+  adoptLegacyPlaintextRecord,
+  deviceVaultMirrorsPlaintext,
+  logDeviceVaultEvent,
+  readDeviceVaultRecord,
+  removeDeviceVaultRecord,
+  writeDeviceVaultRecord,
+} from './deviceVault';
+
 
 export interface DeviceKxKey {
   publicKey: CryptoKey;
@@ -53,37 +60,40 @@ function isStoredDeviceKx(value: unknown, deviceId: string, userId: string): val
 
 async function loadStoredDeviceKx(deviceId: string, userId: string): Promise<StoredDeviceKx | null> {
   const id = storageKey(deviceId, userId);
-  if (isSecureStoreNative()) {
-    const native = await readNativeKeyRecord(id, (value): value is StoredDeviceKx =>
-      isStoredDeviceKx(value, deviceId, userId));
-    if (native) {
-      await dbPut(native).catch(() => undefined);
-      return native;
-    }
-    const legacy = await dbGet<StoredDeviceKx>(id);
-    if (!legacy) return null;
-    if (!isStoredDeviceKx(legacy, deviceId, userId)) {
-      throw new Error('E2EE_DEVICE_KX_RECORD_INVALID');
-    }
-    await writeNativeKeyRecord(id, legacy);
-    return legacy;
+  const validate = (value: unknown): value is StoredDeviceKx =>
+    isStoredDeviceKx(value, deviceId, userId);
+
+  const sealed = await readDeviceVaultRecord(id, validate);
+  if (sealed) {
+    if (deviceVaultMirrorsPlaintext()) await dbPut(sealed).catch(() => undefined);
+    return sealed;
   }
-  const stored = await dbGet<StoredDeviceKx>(id);
-  if (!stored) return null;
-  if (!isStoredDeviceKx(stored, deviceId, userId)) {
+
+  // Héritage : ancien enregistrement en clair -> scellé, puis clair supprimé sur web.
+  const legacy = await dbGet<StoredDeviceKx>(id);
+  if (!legacy) return null;
+  if (!validate(legacy)) {
     throw new Error('E2EE_DEVICE_KX_RECORD_INVALID');
   }
-  return stored;
+  return adoptLegacyPlaintextRecord({
+    storageId: id,
+    legacy,
+    validate,
+    deleteLegacy: () => dbDelete(id),
+    stage: 'device_kx',
+  });
 }
 
 async function persistStoredDeviceKx(record: StoredDeviceKx): Promise<void> {
-  if (isSecureStoreNative()) {
-    await writeNativeKeyRecord(record.id, record);
+  await writeDeviceVaultRecord(record.id, record);
+  if (deviceVaultMirrorsPlaintext()) {
     await dbPut(record).catch(() => undefined);
     return;
   }
-  await dbPut(record);
+  await dbDelete(record.id).catch(() => undefined);
+  logDeviceVaultEvent('device_kx', 'ok', { reason: 'sealed' });
 }
+
 
 /**
  * iOS Safari fallback: WebKit sometimes throws `DataError` on
@@ -200,6 +210,6 @@ export async function deleteDeviceKxKey(deviceId: string, userId: string): Promi
   creationJobs.delete(id);
   await Promise.allSettled([
     dbDelete(id),
-    removeNativeKeyRecord(id),
+    removeDeviceVaultRecord(id),
   ]);
 }

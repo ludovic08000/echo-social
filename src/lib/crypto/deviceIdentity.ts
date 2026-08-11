@@ -15,8 +15,15 @@ import {
   type PublicIdentityBundle,
 } from './keyManager';
 import { getOrCreateDeviceKxKey, type DeviceKxKey } from './deviceKx';
-import { isSecureStoreNative } from '@/lib/secureStore';
-import { readNativeKeyRecord, removeNativeKeyRecord, writeNativeKeyRecord } from './nativeKeyVault';
+import {
+  adoptLegacyPlaintextRecord,
+  deviceVaultMirrorsPlaintext,
+  logDeviceVaultEvent,
+  readDeviceVaultRecord,
+  removeDeviceVaultRecord,
+  writeDeviceVaultRecord,
+} from './deviceVault';
+
 
 export interface DeviceIdentityKey {
   publicKey: CryptoKey;
@@ -68,37 +75,41 @@ async function loadStoredDeviceIdentity(
   deviceId: string,
 ): Promise<StoredDeviceIdentity | null> {
   const id = storageKey(userId, deviceId);
-  if (isSecureStoreNative()) {
-    const native = await readNativeKeyRecord(id, (value): value is StoredDeviceIdentity =>
-      isStoredDeviceIdentity(value, userId, deviceId));
-    if (native) {
-      await dbPut(native).catch(() => undefined);
-      return native;
-    }
-    const legacy = await dbGet<StoredDeviceIdentity>(id);
-    if (!legacy) return null;
-    if (!isStoredDeviceIdentity(legacy, userId, deviceId)) {
-      throw new Error('E2EE_DEVICE_SIGNING_RECORD_INVALID');
-    }
-    await writeNativeKeyRecord(id, legacy);
-    return legacy;
+  const validate = (value: unknown): value is StoredDeviceIdentity =>
+    isStoredDeviceIdentity(value, userId, deviceId);
+
+  const sealed = await readDeviceVaultRecord(id, validate);
+  if (sealed) {
+    if (deviceVaultMirrorsPlaintext()) await dbPut(sealed).catch(() => undefined);
+    return sealed;
   }
-  const stored = await dbGet<StoredDeviceIdentity>(id);
-  if (!stored) return null;
-  if (!isStoredDeviceIdentity(stored, userId, deviceId)) {
+
+  // Héritage : ancien enregistrement en clair -> scellé, puis clair supprimé sur web.
+  const legacy = await dbGet<StoredDeviceIdentity>(id);
+  if (!legacy) return null;
+  if (!validate(legacy)) {
     throw new Error('E2EE_DEVICE_SIGNING_RECORD_INVALID');
   }
-  return stored;
+  return adoptLegacyPlaintextRecord({
+    storageId: id,
+    legacy,
+    validate,
+    deleteLegacy: () => dbDelete(id),
+    stage: 'device_signing',
+  });
 }
 
 async function persistStoredDeviceIdentity(record: StoredDeviceIdentity): Promise<void> {
-  if (isSecureStoreNative()) {
-    await writeNativeKeyRecord(record.id, record);
+  await writeDeviceVaultRecord(record.id, record);
+  if (deviceVaultMirrorsPlaintext()) {
     await dbPut(record).catch(() => undefined);
     return;
   }
-  await dbPut(record);
+  // Web : aucune clé privée en clair ne doit subsister.
+  await dbDelete(record.id).catch(() => undefined);
+  logDeviceVaultEvent('device_signing', 'ok', { reason: 'sealed' });
 }
+
 
 function dbGet<T>(key: string): Promise<T | undefined> {
   return runTx([STORE_KEYS], 'readonly', (tx) =>
@@ -228,7 +239,7 @@ export async function deleteDeviceIdentity(userId: string, deviceId: string): Pr
   creationJobs.delete(id);
   await Promise.allSettled([
     dbDelete(id),
-    removeNativeKeyRecord(id),
+    removeDeviceVaultRecord(id),
   ]);
 }
 
