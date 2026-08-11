@@ -2,6 +2,12 @@ import { STORE_KEYS } from '@/lib/crypto/constants';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { runTx, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import { getSessionMasterKey } from '@/lib/crypto/accountKeyBackup';
+import {
+  deviceVaultMirrorsPlaintext,
+  readDeviceVaultRecord,
+  writeDeviceVaultRecord,
+} from '@/lib/crypto/deviceVault';
+
 
 const VAULT_VERSION = 1 as const;
 const IV_BYTES = 12;
