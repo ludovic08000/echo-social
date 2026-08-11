@@ -15,8 +15,15 @@ import {
   type PublicIdentityBundle,
 } from './keyManager';
 import { getOrCreateDeviceKxKey, type DeviceKxKey } from './deviceKx';
-import { isSecureStoreNative } from '@/lib/secureStore';
-import { readNativeKeyRecord, removeNativeKeyRecord, writeNativeKeyRecord } from './nativeKeyVault';
+import {
+  adoptLegacyPlaintextRecord,
+  deviceVaultMirrorsPlaintext,
+  logDeviceVaultEvent,
+  readDeviceVaultRecord,
+  removeDeviceVaultRecord,
+  writeDeviceVaultRecord,
+} from './deviceVault';
+
 
 export interface DeviceIdentityKey {
   publicKey: CryptoKey;
