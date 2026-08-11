@@ -9,8 +9,16 @@ const entrypointMigration = readFileSync(
   'supabase/migrations/20260811143100_guard_all_device_route_entrypoints.sql',
   'utf8',
 );
+const atomicApprovalMigration = readFileSync(
+  'supabase/migrations/20260811143200_atomic_device_approval_authorization.sql',
+  'utf8',
+);
 const approvalFunction = readFileSync(
   'supabase/functions/approve-device-enrollment/index.ts',
+  'utf8',
+);
+const approvalClient = readFileSync(
+  'src/lib/crypto/deviceApprovalDecision.ts',
   'utf8',
 );
 
@@ -83,6 +91,38 @@ describe('Signal-style server route trust validation', () => {
     expect(invalidAuthorizationCheck).toBeGreaterThanOrEqual(0);
     expect(existingFastPath).toBeGreaterThan(invalidAuthorizationCheck);
     expect(bindBlock).toContain('device.device_authorization_signature === signature');
+  });
+
+  it('forces account authorization into the trusted-device approval transaction', () => {
+    expect(approvalClient).toContain('signDeviceAuthorization');
+    expect(approvalClient).toContain('loadIdentityKeys');
+    expect(approvalClient).toContain('p_device_authorization_signature');
+    expect(approvalClient).toContain('DEVICE_APPROVAL_ACCOUNT_PRIVATE_KEY_MISSING');
+    expect(approvalClient).toContain("result.binding_status !== 'bound'");
+    expect(approvalClient).toContain('result.account_authorized !== true');
+
+    expect(atomicApprovalMigration).toContain(
+      'rename to approve_device_enrollment_decision_pre_account_authorization',
+    );
+    expect(atomicApprovalMigration).toContain('DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED');
+    expect(atomicApprovalMigration).toContain('APPROVER_DEVICE_CRYPTO_TRUST_INVALID');
+    expect(atomicApprovalMigration).toContain('public.aegis_verify_account_binding(');
+    expect(atomicApprovalMigration).toContain('public.aegis_verify_device_authorization(');
+    expect(atomicApprovalMigration).toContain('public.finalize_device_account_binding(');
+    expect(atomicApprovalMigration).toContain('ATOMIC_DEVICE_APPROVAL_BINDING_FAILED');
+    expect(atomicApprovalMigration).toContain("'approval_rolled_back', true");
+
+    const verifyIndex = atomicApprovalMigration.indexOf('public.aegis_verify_device_authorization(');
+    const approvalIndex = atomicApprovalMigration.indexOf(
+      'public.approve_device_enrollment_decision_pre_account_authorization(',
+    );
+    const bindingIndex = atomicApprovalMigration.indexOf(
+      'v_binding := public.finalize_device_account_binding(',
+    );
+
+    expect(verifyIndex).toBeGreaterThanOrEqual(0);
+    expect(approvalIndex).toBeGreaterThan(verifyIndex);
+    expect(bindingIndex).toBeGreaterThan(approvalIndex);
   });
 
   it('guards compatibility route entrypoints with the verified Sesame trust set', () => {
