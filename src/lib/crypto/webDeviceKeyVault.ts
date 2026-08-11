@@ -226,9 +226,15 @@ export async function restoreEncryptedWebDeviceVault(args: {
     || jwkXToStandardBase64(plain.kx.publicKeyJWK.x!) !== args.expectedDevicePublicKey) {
     throw new Error('WEBAUTHN_DEVICE_VAULT_KEY_MISMATCH');
   }
-  await runTx([STORE_KEYS], 'readwrite', (tx) => {
-    const store = tx.objectStore(STORE_KEYS);
-    store.put(plain.signing as object);
-    store.put(plain.kx as object);
-  });
+  // Restauration : les clés reviennent dans le coffre scellé, jamais en clair sur web.
+  await writeDeviceVaultRecord(plain.signing.id, plain.signing);
+  await writeDeviceVaultRecord(plain.kx.id, plain.kx);
+  if (deviceVaultMirrorsPlaintext()) {
+    await runTx([STORE_KEYS], 'readwrite', (tx) => {
+      const store = tx.objectStore(STORE_KEYS);
+      store.put(plain.signing as object);
+      store.put(plain.kx as object);
+    });
+  }
+
 }
