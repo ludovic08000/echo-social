@@ -164,8 +164,12 @@ export async function captureEncryptedWebDeviceVault(
   const masterKey = getSessionMasterKey();
   if (!masterKey) throw new Error('ACCOUNT_MASTER_KEY_REQUIRED');
   const { signing, kx } = await readDeviceRecords(userId, deviceId);
-  const { captureDeviceX3dhPrivatePrekeys } = await import('@/lib/crypto/x3dh');
+  const {
+    assertDeviceX3dhSnapshotMatchesPublishedKeys,
+    captureDeviceX3dhPrivatePrekeys,
+  } = await import('@/lib/crypto/x3dh');
   const x3dh = await captureDeviceX3dhPrivatePrekeys(userId, deviceId);
+  await assertDeviceX3dhSnapshotMatchesPublishedKeys(userId, deviceId, x3dh);
   const plain: PlainDeviceVault = {
     version: VAULT_VERSION,
     userId,

@@ -199,6 +199,12 @@ function deviceSpkKey(userId: string, deviceId: string, spkId: number): string {
 function deviceOPKKey(userId: string, deviceId: string, opkId: number): string { return `${userId}::dev::${deviceId}::opk::${opkId}`; }
 function nativePrekeyKey(id: string): string { return `x3dh-prekey::${id}`; }
 
+function jwkPublicXToBase64(value: JsonWebKey): string | null {
+  if (value.kty !== 'OKP' || value.crv !== 'X25519' || typeof value.x !== 'string') return null;
+  const base64 = value.x.replace(/-/g, '+').replace(/_/g, '/');
+  return base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+}
+
 function isStoredPrekey(value: unknown, id: string): value is StoredSPK {
   const candidate = value as Partial<StoredSPK> | null;
   return Boolean(
@@ -207,6 +213,7 @@ function isStoredPrekey(value: unknown, id: string): value is StoredSPK {
     typeof candidate.spkId === 'number' && Number.isInteger(candidate.spkId) && candidate.spkId > 0 &&
     candidate.privateKeyJWK && typeof candidate.privateKeyJWK === 'object' &&
     typeof candidate.publicKeyBase64 === 'string' && candidate.publicKeyBase64.length >= 40 &&
+    jwkPublicXToBase64(candidate.privateKeyJWK) === candidate.publicKeyBase64 &&
     typeof candidate.createdAt === 'number' && Number.isFinite(candidate.createdAt)
   );
 }
@@ -312,6 +319,45 @@ export async function restoreDeviceX3dhPrivatePrekeys(
     }
   }
   await Promise.all(snapshot.records.map((record) => persistStoredPrekey(record)));
+}
+
+/**
+ * Signal-style store consistency check. The active public Signed PreKey and
+ * every still-published one-time prekey must have their exact private half in
+ * the local snapshot before that snapshot may be uploaded. Extra local OPKs
+ * are allowed because a claimed OPK must remain available until its pending
+ * PreKey message has been authenticated and the session committed.
+ */
+export async function assertDeviceX3dhSnapshotMatchesPublishedKeys(
+  userId: string,
+  deviceId: string,
+  snapshot: X3dhPrivatePrekeySnapshot,
+): Promise<void> {
+  const { data, error } = await (supabase as any).rpc('get_current_device_prekey_inventory', {
+    p_device_id: deviceId,
+  });
+  if (error) throw new Error(`X3DH_PUBLIC_INVENTORY_UNAVAILABLE:${error.message ?? 'UNKNOWN'}`);
+  const inventory = data as {
+    ok?: boolean;
+    spk?: { spk_id?: number; public_key?: string } | null;
+    opks?: Array<{ opk_id?: number; public_key?: string }>;
+  } | null;
+  if (!inventory?.ok || !inventory.spk) throw new Error('X3DH_PUBLIC_INVENTORY_INCOMPLETE');
+
+  const prefix = `${userId}::dev::${deviceId}::`;
+  const byId = new Map(snapshot.records.map((record) => [record.id, record]));
+  const spkId = Number(inventory.spk.spk_id);
+  const spk = byId.get(deviceSpkKey(userId, deviceId, spkId));
+  if (!spk || spk.publicKeyBase64 !== inventory.spk.public_key) {
+    throw new Error('X3DH_PRIVATE_SPK_PUBLIC_MISMATCH');
+  }
+  for (const published of inventory.opks ?? []) {
+    const opkId = Number(published.opk_id);
+    const opk = byId.get(deviceOPKKey(userId, deviceId, opkId));
+    if (!opk || !opk.id.startsWith(prefix) || opk.publicKeyBase64 !== published.public_key) {
+      throw new Error('X3DH_PRIVATE_OPK_PUBLIC_MISMATCH');
+    }
+  }
 }
 
 
