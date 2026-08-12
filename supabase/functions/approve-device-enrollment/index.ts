@@ -187,14 +187,15 @@ serve(async (req) => {
   }
 
   const token = authorization.slice(7).trim();
-  const authClient = createClient(url, anonKey, {
+  const userClient = createClient(url, anonKey, {
+    global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const admin = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: userData, error: userError } = await authClient.auth.getUser(token);
+  const { data: userData, error: userError } = await userClient.auth.getUser(token);
   const user = userData.user;
   if (userError || !user) return respond(req, 401, { ok: false, code: "NOT_AUTHENTICATED" });
 
@@ -306,6 +307,9 @@ serve(async (req) => {
   const signature = typeof input.signature === "string" ? input.signature.trim() : "";
   const approverDeviceId = typeof input.approver_device_id === "string" ? input.approver_device_id.trim() : "";
   const bootstrapPrimary = input.bootstrap_primary === true;
+  const deviceAuthorizationSignature = typeof input.device_authorization_signature === "string"
+    ? input.device_authorization_signature.trim()
+    : "";
   if (!decision || !UUID_RE.test(challengeId) || signature.length < 80 || !DEVICE_ID_RE.test(approverDeviceId)) {
     return respond(req, 400, { ok: false, code: "INVALID_APPROVAL_REQUEST" });
   }
@@ -356,13 +360,11 @@ serve(async (req) => {
   }
 
   let approverSigningKey: string;
-  let finalizerApproverId: string | null;
   if (firstDevice) {
     if (decision !== "approve" || approverDeviceId !== device.device_id) {
       return respond(req, 409, { ok: false, code: "PRIMARY_BOOTSTRAP_INVALID" });
     }
     approverSigningKey = device.device_signing_key;
-    finalizerApproverId = null;
   } else {
     if (approverDeviceId === device.device_id) {
       return respond(req, 409, { ok: false, code: "DEVICE_SELF_APPROVAL_FORBIDDEN" });
@@ -373,7 +375,44 @@ serve(async (req) => {
       return respond(req, 409, { ok: false, code: "APPROVER_DEVICE_NOT_READY" });
     }
     approverSigningKey = approver.device_signing_key;
-    finalizerApproverId = approverDeviceId;
+  }
+
+  if (!firstDevice && decision === "approve") {
+    if (deviceAuthorizationSignature.length < 80) {
+      return respond(req, 400, { ok: false, code: "DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED" });
+    }
+
+    const { data: accountData, error: accountError } = await admin
+      .from("user_public_keys")
+      .select("identity_key,signing_key,fingerprint,identity_binding_signature,identity_binding_version")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (accountError || !accountData) {
+      return respond(req, 409, { ok: false, code: "ACCOUNT_IDENTITY_NOT_FOUND" });
+    }
+    const account = accountData as AccountRow;
+    const bindingPayload = accountBindingPayload(account);
+    if (await fingerprintForAccountPayload(bindingPayload) !== account.fingerprint) {
+      return respond(req, 422, { ok: false, code: "ACCOUNT_FINGERPRINT_INVALID" });
+    }
+
+    const [accountValid, authorizationValid] = await Promise.all([
+      verifyEd25519(account.signing_key, account.identity_binding_signature, bindingPayload),
+      verifyEd25519(
+        account.signing_key,
+        deviceAuthorizationSignature,
+        deviceAuthorizationPayload(user.id, device, account),
+      ),
+    ]);
+    if (!accountValid) {
+      return respond(req, 422, { ok: false, code: "ACCOUNT_BINDING_SIGNATURE_INVALID" });
+    }
+    if (!authorizationValid) {
+      return respond(req, 422, { ok: false, code: "DEVICE_AUTHORIZATION_SIGNATURE_INVALID" });
+    }
   }
 
   const [approvalValid, possessionValid] = await Promise.all([
@@ -387,12 +426,18 @@ serve(async (req) => {
     return respond(req, 422, { ok: false, code: "DEVICE_POSSESSION_SIGNATURE_INVALID" });
   }
 
-  const { data: approvedData, error: approvedError } = await admin.rpc("finalize_device_approval_decision", {
-    p_user_id: user.id,
-    p_target_device_id: device.device_id,
-    p_challenge_id: challenge.id,
+  // Use the caller's JWT here so auth.uid() inside the atomic SQL wrapper is
+  // the real account owner. Service-role finalization would bypass that trust boundary.
+  const { data: approvedData, error: approvedError } = await userClient.rpc("approve_device_enrollment_decision", {
     p_decision: decision,
-    p_approver_device_id: finalizerApproverId,
+    p_bootstrap_primary: bootstrapPrimary,
+    p_approver_device_id: approverDeviceId,
+    p_device_id: device.device_id,
+    p_challenge_id: challenge.id,
+    p_signature: signature,
+    p_device_authorization_signature: !firstDevice && decision === "approve"
+      ? deviceAuthorizationSignature
+      : null,
   });
   if (approvedError) {
     return respond(req, 500, { ok: false, code: "DEVICE_APPROVAL_FINALIZER_FAILED" });
@@ -408,6 +453,7 @@ serve(async (req) => {
     device_id: device.device_id,
     challenge_id: challenge.id,
     device_role: approved.device_role,
-    binding_status: "pending",
+    binding_status: approved.binding_status ?? (decision === "approve" ? "pending" : null),
+    account_authorized: approved.account_authorized ?? false,
   });
 });
