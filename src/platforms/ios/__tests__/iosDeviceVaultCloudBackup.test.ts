@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   iosWeb: true,
   masterKey: true,
   localKeys: true,
+  bound: true,
   ready: true,
   backupOk: true,
   backups: [] as Array<Record<string, unknown>>,
@@ -56,14 +57,14 @@ vi.mock('@/integrations/supabase/client', () => ({
       chain.maybeSingle = async () => ({
         data: state.ready ? {
           approval_status: 'approved',
-          binding_status: 'bound',
+          binding_status: state.bound ? 'bound' : 'pending',
           lifecycle_status: 'ready',
           routing_status: 'ready',
           is_active: true,
           revoked_at: null,
         } : {
           approval_status: 'approved',
-          binding_status: 'bound',
+          binding_status: state.bound ? 'bound' : 'pending',
           lifecycle_status: 'syncing',
           routing_status: 'repairing',
           is_active: true,
@@ -85,6 +86,7 @@ describe('iOS Web encrypted device vault backup', () => {
     state.iosWeb = true;
     state.masterKey = true;
     state.localKeys = true;
+    state.bound = true;
     state.ready = true;
     state.backupOk = true;
     state.backups = [];
@@ -92,7 +94,7 @@ describe('iOS Web encrypted device vault backup', () => {
     vi.resetModules();
   });
 
-  it('backs up only a READY iOS Web device and uses ios-web platform metadata', async () => {
+  it('backs up a bound iOS Web device before it becomes routable', async () => {
     const vault = await load();
     await expect(vault.backupIosDeviceVaultIfReady('user-1')).resolves.toBe(true);
 
@@ -110,15 +112,15 @@ describe('iOS Web encrypted device vault backup', () => {
     expect(state.backups).toEqual([]);
   });
 
-  it('retries after the server lifecycle becomes READY instead of losing the backup', async () => {
+  it('retries until the server device is bound instead of losing the backup', async () => {
     vi.useFakeTimers();
-    state.ready = false;
+    state.bound = false;
     const vault = await load();
 
     await expect(vault.backupIosDeviceVaultIfReady('user-1')).resolves.toBe(false);
     expect(state.backups).toEqual([]);
 
-    state.ready = true;
+    state.bound = true;
     await vi.advanceTimersByTimeAsync(1_000);
     expect(state.backups).toHaveLength(1);
     vault.__test__.resetBackupRetries();

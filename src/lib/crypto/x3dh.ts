@@ -191,6 +191,10 @@ interface StoredSPK {
   createdAt: number;
 }
 
+export interface X3dhPrivatePrekeySnapshot {
+  records: StoredSPK[];
+}
+
 function deviceSpkKey(userId: string, deviceId: string, spkId: number): string { return `${userId}::dev::${deviceId}::${spkId}`; }
 function deviceOPKKey(userId: string, deviceId: string, opkId: number): string { return `${userId}::dev::${deviceId}::opk::${opkId}`; }
 function nativePrekeyKey(id: string): string { return `x3dh-prekey::${id}`; }
@@ -259,6 +263,57 @@ async function deleteStoredPrekey(id: string): Promise<void> {
   ]);
 }
 
+export async function captureDeviceX3dhPrivatePrekeys(
+  userId: string,
+  deviceId: string,
+): Promise<X3dhPrivatePrekeySnapshot> {
+  const { listDeviceVaultStorageIds } = await import('./deviceVault');
+  const logicalPrefix = `${userId}::dev::${deviceId}::`;
+  const storageIds = await listDeviceVaultStorageIds(nativePrekeyKey(logicalPrefix));
+  const recordsById = new Map<string, StoredSPK>();
+  for (const storageId of storageIds) {
+    const logicalId = storageId.slice('x3dh-prekey::'.length);
+    const record = await loadStoredPrekey(logicalId);
+    if (!record) throw new Error('X3DH_PRIVATE_PREKEY_SNAPSHOT_INCOMPLETE');
+    recordsById.set(record.id, record);
+  }
+
+  // Windows/desktop Web keeps its private X3DH records in the historical
+  // IndexedDB store. Enumerate that store so the Windows Hello recovery vault
+  // contains the exact same SPK/OPK material as the live device.
+  const indexedDbRecords = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
+    reqToPromise<StoredSPK[]>(tx.objectStore(SPK_STORE).getAll()),
+  ).catch(() => [] as StoredSPK[]);
+  for (const record of indexedDbRecords) {
+    if (record?.id?.startsWith(logicalPrefix) && isStoredPrekey(record, record.id)) {
+      recordsById.set(record.id, record);
+    }
+  }
+
+  const records = [...recordsById.values()];
+  if (!records.some((record) => !record.id.includes('::opk::'))) {
+    throw new Error('X3DH_PRIVATE_PREKEY_SNAPSHOT_SPK_MISSING');
+  }
+  return { records };
+}
+
+export async function restoreDeviceX3dhPrivatePrekeys(
+  userId: string,
+  deviceId: string,
+  snapshot: X3dhPrivatePrekeySnapshot,
+): Promise<void> {
+  if (!Array.isArray(snapshot?.records)) {
+    throw new Error('X3DH_PRIVATE_PREKEY_SNAPSHOT_INVALID');
+  }
+  const prefix = `${userId}::dev::${deviceId}::`;
+  for (const record of snapshot.records) {
+    if (!record?.id?.startsWith(prefix) || !isStoredPrekey(record, record.id)) {
+      throw new Error('X3DH_PRIVATE_PREKEY_SNAPSHOT_SCOPE_INVALID');
+    }
+  }
+  await Promise.all(snapshot.records.map((record) => persistStoredPrekey(record)));
+}
+
 
 async function saveDeviceSPKPrivate(userId: string, deviceId: string, spkId: number, privateKey: CryptoKey, publicBase64: string): Promise<void> {
   const jwk = await hardCrypto.exportKey('jwk', privateKey);
@@ -283,6 +338,13 @@ function randomPositiveId(): number {
   const bytes = randomBytes(4);
   const value = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0) & 0x7fffffff;
   return value === 0 ? 1 : value;
+}
+
+async function syncDeviceX3dhVault(userId: string): Promise<void> {
+  const { backupIosDeviceVaultIfReady } = await import('@/platforms/ios/iosDeviceVaultRestore');
+  if (await backupIosDeviceVaultIfReady(userId)) return;
+  const { backupWindowsHelloDeviceVaultIfReady } = await import('./windowsHelloDeviceRecovery');
+  await backupWindowsHelloDeviceVaultIfReady(userId);
 }
 
 async function pruneOldDeviceSPKs(userId: string, deviceId: string, activeSpkId: number): Promise<void> {
@@ -326,6 +388,7 @@ export async function generateAndUploadDeviceSignedPrekey(
     const result = data as { ok?: boolean; code?: string } | null;
     if (!error && result?.ok === true) {
       await pruneOldDeviceSPKs(userId, deviceId, spkId).catch(() => undefined);
+      await syncDeviceX3dhVault(userId);
       return { spkId, publicKey: publicBase64, signature: signatureBase64 };
     }
 
@@ -459,6 +522,7 @@ export async function refillDeviceOneTimePrekeysIfNeeded(userId: string, deviceI
   await Promise.all(rows
     .filter((row) => !accepted.has(row.opk_id))
     .map((row) => deleteDeviceOPKPrivate(userId, deviceId, row.opk_id)));
+  await syncDeviceX3dhVault(userId);
 }
 
 async function claimPeerDeviceOPK(
@@ -652,6 +716,7 @@ export async function finalizeDeviceX3DHInitial(args: {
   await finalizeAegisInitial(args.replayReservation);
   if (args.usedOpkId !== undefined) {
     await deleteDeviceOPKPrivate(args.userId, args.deviceId, args.usedOpkId);
+    await syncDeviceX3dhVault(args.userId);
   }
 }
 

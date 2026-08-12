@@ -7,6 +7,7 @@ import {
   readDeviceVaultRecord,
   writeDeviceVaultRecord,
 } from '@/lib/crypto/deviceVault';
+import type { X3dhPrivatePrekeySnapshot } from '@/lib/crypto/x3dh';
 
 
 const VAULT_VERSION = 1 as const;
@@ -37,6 +38,7 @@ interface PlainDeviceVault {
   deviceId: string;
   signing: StoredDeviceIdentityRecovery;
   kx: StoredDeviceKxRecovery;
+  x3dh: X3dhPrivatePrekeySnapshot;
   createdAt: number;
 }
 
@@ -162,12 +164,15 @@ export async function captureEncryptedWebDeviceVault(
   const masterKey = getSessionMasterKey();
   if (!masterKey) throw new Error('ACCOUNT_MASTER_KEY_REQUIRED');
   const { signing, kx } = await readDeviceRecords(userId, deviceId);
+  const { captureDeviceX3dhPrivatePrekeys } = await import('@/lib/crypto/x3dh');
+  const x3dh = await captureDeviceX3dhPrivatePrekeys(userId, deviceId);
   const plain: PlainDeviceVault = {
     version: VAULT_VERSION,
     userId,
     deviceId,
     signing,
     kx,
+    x3dh,
     createdAt: Date.now(),
   };
   const iv = hardCrypto.getRandomValues(new Uint8Array(IV_BYTES));
@@ -219,7 +224,8 @@ export async function restoreEncryptedWebDeviceVault(args: {
     || plain.userId !== userId
     || plain.deviceId !== deviceId
     || !validateSigningRecord(plain.signing, userId, deviceId)
-    || !validateKxRecord(plain.kx, userId, deviceId)) {
+    || !validateKxRecord(plain.kx, userId, deviceId)
+    || !Array.isArray(plain.x3dh?.records)) {
     throw new Error('WEBAUTHN_DEVICE_VAULT_INVALID');
   }
   if (jwkXToStandardBase64(plain.signing.publicKeyJWK.x!) !== args.expectedDeviceSigningKey
@@ -229,6 +235,8 @@ export async function restoreEncryptedWebDeviceVault(args: {
   // Restauration : les clés reviennent dans le coffre scellé, jamais en clair sur web.
   await writeDeviceVaultRecord(plain.signing.id, plain.signing);
   await writeDeviceVaultRecord(plain.kx.id, plain.kx);
+  const { restoreDeviceX3dhPrivatePrekeys } = await import('@/lib/crypto/x3dh');
+  await restoreDeviceX3dhPrivatePrekeys(userId, deviceId, plain.x3dh!);
   if (deviceVaultMirrorsPlaintext()) {
     await runTx([STORE_KEYS], 'readwrite', (tx) => {
       const store = tx.objectStore(STORE_KEYS);

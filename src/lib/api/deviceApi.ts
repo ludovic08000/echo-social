@@ -375,6 +375,12 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
     await repairCurrentDevicePrekeys(userId, record.deviceId, identity.privateKey, 'device-spk-signature-invalid');
   }
   await refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId);
+  // iOS becomes routable only after the exact private X3DH material has been
+  // sealed, uploaded and read back successfully for this DeviceID.
+  const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');
+  if (isIosWebRuntime() && !await backupIosDeviceVaultIfReady(userId)) {
+    throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
+  }
   const { data, error } = await supabase.rpc('mark_current_device_route_ready' as never, { p_device_id: record.deviceId } as never);
   const route = data as { ok?: boolean; code?: string } | null;
   if (error || route?.ok !== true) throw new Error(`DEVICE_ROUTE_NOT_READY:${route?.code ?? error?.message ?? 'UNKNOWN'}`);
