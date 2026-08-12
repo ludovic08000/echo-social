@@ -23,6 +23,13 @@ const approvalClient = readFileSync(
 );
 
 describe('Signal-style server route trust validation', () => {
+  it('declares pgsodium and aborts on a failing Ed25519 primitive self-test', () => {
+    expect(cryptoMigration).toContain('create extension if not exists pgsodium');
+    expect(cryptoMigration).toContain('AEGIS_ED25519_SELFTEST_FAILED');
+    expect(cryptoMigration).toContain('AEGIS_ED25519_SELFTEST_FALSE_ACCEPT');
+    expect(cryptoMigration).toMatch(/do\s+\$\$[\s\S]*?aegis_verify_ed25519\([\s\S]*?raise exception/i);
+  });
+
   it('uses PostgreSQL Ed25519 verification for the canonical account/device/SPK chain', () => {
     expect(cryptoMigration).toContain('pgsodium.crypto_sign_verify_detached');
     expect(cryptoMigration).toContain('forsure-aegis-account-identity');
