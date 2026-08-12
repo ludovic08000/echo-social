@@ -112,17 +112,36 @@ describe('Signal-style server route trust validation', () => {
     expect(atomicApprovalMigration).toContain('ATOMIC_DEVICE_APPROVAL_BINDING_FAILED');
     expect(atomicApprovalMigration).toContain("'approval_rolled_back', true");
 
-    const verifyIndex = atomicApprovalMigration.indexOf('public.aegis_verify_device_authorization(');
-    const approvalIndex = atomicApprovalMigration.indexOf(
-      'public.approve_device_enrollment_decision_pre_account_authorization(',
+    const wrapperStart = atomicApprovalMigration.indexOf(
+      'create function public.approve_device_enrollment_decision(\n  p_decision text,\n  p_bootstrap_primary boolean,\n  p_approver_device_id text,\n  p_device_id text,\n  p_challenge_id uuid,\n  p_signature text,\n  p_device_authorization_signature text',
     );
-    const bindingIndex = atomicApprovalMigration.indexOf(
+    const compatibilityStart = atomicApprovalMigration.indexOf(
+      '-- Compatibility overload:',
+      wrapperStart,
+    );
+    expect(wrapperStart).toBeGreaterThanOrEqual(0);
+    expect(compatibilityStart).toBeGreaterThan(wrapperStart);
+
+    const atomicWrapper = atomicApprovalMigration.slice(wrapperStart, compatibilityStart);
+    const verifyIndex = atomicWrapper.indexOf('public.aegis_verify_device_authorization(');
+    const approvalIndex = atomicWrapper.indexOf(
+      'v_result := public.approve_device_enrollment_decision_pre_account_authorization(',
+    );
+    const bindingIndex = atomicWrapper.indexOf(
       'v_binding := public.finalize_device_account_binding(',
     );
 
     expect(verifyIndex).toBeGreaterThanOrEqual(0);
     expect(approvalIndex).toBeGreaterThan(verifyIndex);
     expect(bindingIndex).toBeGreaterThan(approvalIndex);
+  });
+
+  it('routes secondary Edge approval through the account-authorized atomic RPC', () => {
+    expect(approvalFunction).toContain('DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED');
+    expect(approvalFunction).toContain('deviceAuthorizationPayload(user.id, device, account)');
+    expect(approvalFunction).toContain('rpc("approve_device_enrollment_decision"');
+    expect(approvalFunction).toContain('p_device_authorization_signature: deviceAuthorizationSignature');
+    expect(approvalFunction).not.toContain('rpc("finalize_device_approval_decision"');
   });
 
   it('guards compatibility route entrypoints with the verified Sesame trust set', () => {
