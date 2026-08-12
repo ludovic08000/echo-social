@@ -28,7 +28,7 @@ vi.mock('@/lib/crypto/keyManager', () => ({
   exportPublicKeyRaw: vi.fn(),
 }));
 
-vi.mock('@/lib/crypto/signedDeviceList', () => ({
+vi.mock('@/lib/crypto/canonicalDeviceRegistry', () => ({
   fetchVerifiedDeviceIdentity: mocks.fetchVerifiedDeviceIdentity,
 }));
 

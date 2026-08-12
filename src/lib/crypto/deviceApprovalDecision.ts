@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from '@/lib/crypto/cryptoIntegrity';
-import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
+import { loadDeviceIdentity, signDeviceAuthorization } from '@/lib/crypto/deviceIdentity';
+import { exportPublicKeyBundle, loadIdentityKeys } from '@/lib/crypto/keyManager';
 import { bufferToBase64, encodeString } from '@/lib/crypto/utils';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
@@ -38,12 +39,34 @@ function validateTarget(target: PendingDeviceApprovalTarget): void {
   if (!UUID_RE.test(target.challengeId)) throw new Error('DEVICE_APPROVAL_INVALID_CHALLENGE_ID');
 }
 
+async function createAccountDeviceAuthorization(args: {
+  userId: string;
+  target: PendingDeviceApprovalTarget;
+}): Promise<string> {
+  // A trusted-device approval must use the already-existing ACCOUNT signing
+  // private key. Never create a replacement identity here: if continuity is
+  // missing, approval fails closed and recovery must restore the account key.
+  const accountKeys = await loadIdentityKeys(args.userId);
+  if (!accountKeys) throw new Error('DEVICE_APPROVAL_ACCOUNT_PRIVATE_KEY_MISSING');
+
+  const account = await exportPublicKeyBundle(accountKeys);
+  return signDeviceAuthorization({
+    userId: args.userId,
+    deviceId: args.target.deviceId,
+    accountFingerprint: account.fingerprint,
+    devicePublicKey: args.target.devicePublicKey,
+    deviceSigningKey: args.target.deviceSigningKey,
+    accountSigningPrivateKey: accountKeys.signingPrivateKey,
+  });
+}
+
 async function callApprovalRpc(args: {
   decision: DeviceApprovalDecision;
   bootstrapPrimary: boolean;
   approverDeviceId: string;
   target: PendingDeviceApprovalTarget;
   signature: string;
+  deviceAuthorizationSignature: string | null;
 }): Promise<Record<string, unknown>> {
   const { data, error } = await supabase.rpc('approve_device_enrollment_decision' as never, {
     p_decision: args.decision,
@@ -52,6 +75,7 @@ async function callApprovalRpc(args: {
     p_device_id: args.target.deviceId,
     p_challenge_id: args.target.challengeId,
     p_signature: args.signature,
+    p_device_authorization_signature: args.deviceAuthorizationSignature,
   } as never);
 
   if (error) throw new Error(`DEVICE_APPROVAL_RPC_FAILED:${error.message}`);
@@ -74,11 +98,20 @@ export async function submitTrustedDeviceApprovalDecision(args: {
   const identity = await loadDeviceIdentity(args.userId, args.approverDeviceId);
   if (!identity) throw new Error('DEVICE_PRIVATE_KEY_MISSING');
 
+  // The approving DEVICE signs the user's explicit decision, binding the
+  // challenge and target public keys to the trusted device that made it.
   const signature = bufferToBase64(await hardCrypto.sign(
     'Ed25519',
     identity.privateKey,
     encodeString(canonicalDeviceApprovalDecisionPayload(args)),
   ) as ArrayBuffer);
+
+  // On approval only, the ACCOUNT identity additionally authorizes the target
+  // device. This is generated at the click, before the server may transition
+  // the target to approved. Rejecting a device never grants account trust.
+  const deviceAuthorizationSignature = args.decision === 'approve'
+    ? await createAccountDeviceAuthorization({ userId: args.userId, target: args.target })
+    : null;
 
   const result = await callApprovalRpc({
     decision: args.decision,
@@ -86,6 +119,7 @@ export async function submitTrustedDeviceApprovalDecision(args: {
     approverDeviceId: args.approverDeviceId,
     target: args.target,
     signature,
+    deviceAuthorizationSignature,
   });
 
   if (result.ok !== true || result.device_id !== args.target.deviceId) {
@@ -94,6 +128,9 @@ export async function submitTrustedDeviceApprovalDecision(args: {
 
   const expectedCode = args.decision === 'approve' ? 'DEVICE_APPROVED' : 'DEVICE_REVOKED';
   if (result.code !== expectedCode) throw new Error('DEVICE_APPROVAL_DECISION_INVALID_RESPONSE');
+  if (args.decision === 'approve' && (result.binding_status !== 'bound' || result.account_authorized !== true)) {
+    throw new Error('DEVICE_APPROVAL_ACCOUNT_AUTHORIZATION_MISSING');
+  }
   return { deviceId: args.target.deviceId, decision: args.decision };
 }
 
@@ -126,6 +163,7 @@ export async function submitPrimaryBootstrapDecision(args: {
     approverDeviceId: args.target.deviceId,
     target: args.target,
     signature,
+    deviceAuthorizationSignature: null,
   });
 
   if (result.ok !== true || result.code !== 'DEVICE_APPROVED' || result.device_role !== 'primary') {

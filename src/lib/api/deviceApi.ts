@@ -46,7 +46,11 @@ import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
 import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
-import { adoptReusableIosDevice } from '@/platforms/ios/iosDeviceReuse';
+import {
+  adoptExistingIosDevice,
+  adoptReusableIosDevice,
+  resolveExistingIosDevice,
+} from '@/platforms/ios/iosDeviceReuse';
 import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
@@ -211,6 +215,23 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
   if (reusedDeviceId) {
     const existing = await readDeviceRecord(userId, reusedDeviceId);
     if (existing && !existing.revokedAt && existing.approvalStatus !== 'rejected') return existing;
+  }
+
+  // A Keychain/current DeviceID without locally readable keys is continuity
+  // evidence, not permission to allocate another server device. Restore the
+  // exact vault first; otherwise surface the recovery flow explicitly.
+  const existingIosDevice = await resolveExistingIosDevice(userId);
+  if (existingIosDevice) {
+    adoptExistingIosDevice(existingIosDevice);
+    const restored = await ensureIosDeviceVaultRestored(userId);
+    if (restored === 'restored' || restored === 'not_needed') {
+      const reusableAfterRestore = await adoptReusableIosDevice(userId);
+      if (reusableAfterRestore) {
+        const existing = await readDeviceRecord(userId, reusableAfterRestore);
+        if (existing && !existing.revokedAt && existing.approvalStatus !== 'rejected') return existing;
+      }
+    }
+    throw new Error(`DEVICE_VAULT_RECOVERY_REQUIRED:${existingIosDevice.deviceId}:${restored}`);
   }
 
   await beginExplicitDeviceEnrollment('user_requested_new_device');

@@ -25,6 +25,23 @@ export interface IosReusableDevice {
 }
 
 /**
+ * Returns the stable local iOS DeviceID even when its private keys need vault
+ * restoration. Its presence is continuity evidence and must block creation of
+ * a replacement DeviceID.
+ */
+export async function resolveExistingIosDevice(userId: string): Promise<IosReusableDevice | null> {
+  if (!isIosRuntime() || !userId) return null;
+  const current = peekCurrentDeviceId();
+  if (current && SERVER_DEVICE_ID_RE.test(current)) {
+    return { deviceId: current, source: 'current' };
+  }
+  const anchored = await readIosDeviceIdAnchor(iosDeviceIdStorageKey(userId));
+  return anchored && SERVER_DEVICE_ID_RE.test(anchored)
+    ? { deviceId: anchored, source: 'keychain-anchor' }
+    : null;
+}
+
+/**
  * Renvoie le DeviceID iOS réutilisable, ou null si un enrôlement est réellement
  * nécessaire. N'écrit rien côté serveur et ne génère aucun identifiant.
  */
@@ -55,6 +72,12 @@ export async function resolveReusableIosDevice(userId: string): Promise<IosReusa
   }
 
   return null;
+}
+
+export function adoptExistingIosDevice(existing: IosReusableDevice): string {
+  return existing.source === 'current'
+    ? existing.deviceId
+    : setCurrentDeviceId(existing.deviceId);
 }
 
 /**

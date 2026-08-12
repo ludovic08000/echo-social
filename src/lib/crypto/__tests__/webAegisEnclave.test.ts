@@ -6,6 +6,7 @@ import {
   webAegisEnclaveGet,
   webAegisEnclaveRemove,
   webAegisEnclaveSet,
+  resolveWebAegisLogicalIdentity,
 } from '../webAegisEnclave';
 
 const DB_NAME = 'forsure-ace-web';
@@ -77,6 +78,13 @@ describe('ACE Web', () => {
 
     await webAegisEnclaveRemove('identity');
     expect(await webAegisEnclaveGet('identity')).toBeNull();
+  });
+
+  it('separates the production enclave from Lovable and preview environments', () => {
+    expect(resolveWebAegisLogicalIdentity('forsure.fans').environmentId).toBe('prod');
+    expect(resolveWebAegisLogicalIdentity('www.forsure.fans').environmentId).toBe('prod');
+    expect(resolveWebAegisLogicalIdentity('calm-connect-05.lovable.app').environmentId).toBe('dev');
+    expect(resolveWebAegisLogicalIdentity('id-preview--example.lovable.app').environmentId).toBe('dev');
   });
 
   it('keeps the AES anchor non-extractable', async () => {

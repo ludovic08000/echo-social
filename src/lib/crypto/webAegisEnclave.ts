@@ -14,6 +14,8 @@ const FORMAT_VERSION = 1;
 const PROBE_KEY = '__aegis_web_enclave_probe__';
 const WRITE_LOCK_NAME = 'forsure-ace-web-write-v1';
 const TRANSIENT_BACKOFF_MS = [50, 150, 400] as const;
+const DEFAULT_APP_ID = 'forsure';
+const PRODUCTION_HOSTS = new Set(['forsure.fans', 'www.forsure.fans']);
 
 type TxMode = 'readonly' | 'readwrite';
 
@@ -82,7 +84,7 @@ function requireBrowserPrimitives(): void {
   }
 }
 
-function originBinding(): string {
+function legacyOriginBinding(): string {
   try {
     const origin = globalThis.location?.origin;
     return origin && origin !== 'null' ? origin : 'opaque-origin';
@@ -91,9 +93,37 @@ function originBinding(): string {
   }
 }
 
+function configuredAegisId(name: 'VITE_AEGIS_APP_ID' | 'VITE_AEGIS_ENVIRONMENT_ID'): string | null {
+  const value = import.meta.env[name];
+  return typeof value === 'string' && /^[a-z0-9_-]{1,32}$/i.test(value.trim())
+    ? value.trim().toLowerCase()
+    : null;
+}
+
+export function resolveWebAegisLogicalIdentity(hostname = globalThis.location?.hostname ?? ''): {
+  appId: string;
+  environmentId: string;
+} {
+  const appId = configuredAegisId('VITE_AEGIS_APP_ID') ?? DEFAULT_APP_ID;
+  const configuredEnvironment = configuredAegisId('VITE_AEGIS_ENVIRONMENT_ID');
+  const normalizedHost = hostname.trim().toLowerCase();
+  return {
+    appId,
+    environmentId: configuredEnvironment
+      ?? (PRODUCTION_HOSTS.has(normalizedHost) ? 'prod' : 'dev'),
+  };
+}
+
 function buildAad(key: string, revision: number): Uint8Array {
+  const { appId, environmentId } = resolveWebAegisLogicalIdentity();
   return new hardGlobals.TextEncoder().encode(
-    `forsure-ace-web|${originBinding()}|${key}|v${FORMAT_VERSION}|r${revision}`,
+    `${appId}:${environmentId}:${key}:v${FORMAT_VERSION}:r${revision}`,
+  );
+}
+
+function buildLegacyAad(key: string, revision: number): Uint8Array {
+  return new hardGlobals.TextEncoder().encode(
+    `forsure-ace-web|${legacyOriginBinding()}|${key}|v${FORMAT_VERSION}|r${revision}`,
   );
 }
 
@@ -282,20 +312,32 @@ export async function webAegisEnclaveGet(key: string): Promise<string | null> {
   const anchor = await readAnchor();
   if (!anchor) throw new WebAegisEnclaveAnchorMissingError();
 
-  try {
+  const decryptWithAad = async (additionalData: Uint8Array): Promise<string> => {
     const plaintext = await hardCrypto.decrypt(
       {
         name: 'AES-GCM',
         iv: new Uint8Array(record.iv),
-        additionalData: buildAad(key, record.revision),
+        additionalData,
         tagLength: 128,
       },
       anchor.key,
       record.ciphertext,
     );
     return new hardGlobals.TextDecoder().decode(plaintext);
+  };
+
+  try {
+    return await decryptWithAad(buildAad(key, record.revision));
   } catch (error) {
-    throw new WebAegisEnclaveIntegrityError(key, error);
+    // One-time forward migration for records sealed before logical PROD/DEV
+    // identities replaced the physical window.location.origin binding.
+    try {
+      const legacyValue = await decryptWithAad(buildLegacyAad(key, record.revision));
+      await webAegisEnclaveSet(key, legacyValue);
+      return legacyValue;
+    } catch {
+      throw new WebAegisEnclaveIntegrityError(key, error);
+    }
   }
 }
 
