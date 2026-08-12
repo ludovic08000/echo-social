@@ -8,6 +8,8 @@
 
 begin;
 
+create extension if not exists pgsodium;
+
 create or replace function public.aegis_decode_base64(p_value text)
 returns bytea
 language plpgsql
@@ -23,8 +25,9 @@ begin
   end if;
   v_value := v_value || repeat('=', (4 - (length(v_value) % 4)) % 4);
   return decode(v_value, 'base64');
-exception when others then
-  return null;
+exception
+  when data_exception or invalid_parameter_value then
+    return null;
 end;
 $$;
 
@@ -49,10 +52,33 @@ begin
     return false;
   end if;
   return pgsodium.crypto_sign_verify_detached(v_signature, p_message, v_key);
-exception when others then
-  return false;
+exception
+  when data_exception or invalid_parameter_value then
+    return false;
 end;
 $$;
+
+-- RFC 8032 section 7.1, Ed25519 TEST 2. This must run before any function that
+-- can quarantine devices so an unavailable/broken primitive aborts the whole
+-- migration instead of being misreported as invalid device signatures.
+do $$
+begin
+  if not public.aegis_verify_ed25519(
+    'PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=',
+    'kqAJqfDUyrhyDoILX2QlQKKye1QWUD+Ps3YiI+vbadoIWsHkPhWZbkWPNhPQ8R2MOHsurrQwKu6wDSkWErsMAA==',
+    '\x72'::bytea
+  ) then
+    raise exception 'AEGIS_ED25519_SELFTEST_FAILED: pgsodium unavailable or incorrect';
+  end if;
+
+  if public.aegis_verify_ed25519(
+    'PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=',
+    'kqAJqfDUyrhyDoILX2QlQKKye1QWUD+Ps3YiI+vbadoIWsHkPhWZbkWPNhPQ8R2MOHsurrQwKu6wDSkWErsMAQ==',
+    '\x72'::bytea
+  ) then
+    raise exception 'AEGIS_ED25519_SELFTEST_FALSE_ACCEPT';
+  end if;
+end $$;
 
 create or replace function public.aegis_account_binding_payload(
   p_identity_key text,
@@ -128,8 +154,6 @@ begin
     p_binding_signature,
     convert_to(v_payload, 'UTF8')
   );
-exception when others then
-  return false;
 end;
 $$;
 
@@ -195,8 +219,6 @@ begin
     p_device_authorization_signature,
     convert_to(v_payload, 'UTF8')
   );
-exception when others then
-  return false;
 end;
 $$;
 
@@ -222,8 +244,6 @@ begin
     p_spk_signature,
     v_spk
   );
-exception when others then
-  return false;
 end;
 $$;
 
