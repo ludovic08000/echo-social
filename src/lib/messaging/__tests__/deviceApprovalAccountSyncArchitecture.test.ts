@@ -17,12 +17,16 @@ describe('canonical primary and secondary device approval', () => {
     expect(decision).toContain('DEVICE_SELF_APPROVAL_FORBIDDEN');
   });
 
-  it('binds a secondary decision to the approver and target', () => {
+  it('binds a secondary decision to the approver, target and account authorization', () => {
     expect(decision).toContain('approverDeviceId: args.approverDeviceId');
-    expect(decision).toContain('approver_device_id: args.approverDeviceId');
+    expect(decision).toContain('p_approver_device_id: args.approverDeviceId');
+    expect(decision).toContain('p_device_authorization_signature: args.deviceAuthorizationSignature');
     expect(edge).toContain('APPROVER_DEVICE_NOT_READY');
     expect(edge).toContain('DEVICE_SELF_APPROVAL_FORBIDDEN');
-    expect(edge).toContain('finalize_device_approval_decision');
+    expect(edge).toContain('DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED');
+    expect(edge).toContain('rpc("approve_device_enrollment_decision"');
+    expect(edge).toContain('p_device_authorization_signature');
+    expect(edge).not.toContain('rpc("finalize_device_approval_decision"');
     expect(edge).not.toContain('finalize_self_approved_device');
   });
 
