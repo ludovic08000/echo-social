@@ -26,13 +26,18 @@ describe('server-verified device enrollment architecture', () => {
     expect(deviceRuntime).not.toContain('readyByUser.set(userId, ready);\n    return ready;\n  })();');
   });
 
-  it('verifies both canonical Ed25519 proofs before finalization', () => {
+  it('verifies canonical Ed25519 proofs and uses the atomic account-authorized approval RPC', () => {
     expect(approvalFunction).toContain('forsure-aegis-account-identity');
     expect(approvalFunction).toContain('forsure-aegis-device-authorization');
     expect(approvalFunction).toContain('crypto.subtle.verify');
     expect(approvalFunction).toContain('ACCOUNT_BINDING_SIGNATURE_INVALID');
     expect(approvalFunction).toContain('DEVICE_AUTHORIZATION_SIGNATURE_INVALID');
-    expect(approvalFunction).toContain('finalize_verified_user_device_approval');
+    expect(approvalFunction).toContain('DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED');
+    expect(approvalFunction).toContain('rpc("approve_device_enrollment_decision"');
+    expect(approvalFunction).toContain('p_device_authorization_signature');
+    expect(approvalFunction).not.toContain('rpc("finalize_device_approval_decision"');
+    expect(approvalFunction).not.toContain('rpc("approve_device_enrollment_request"');
+    expect(approvalFunction).not.toContain('rpc("approve_user_device_for_current_user"');
   });
 
   it('enables JWT verification for the approval function', () => {
