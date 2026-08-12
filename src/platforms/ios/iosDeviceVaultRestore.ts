@@ -46,7 +46,7 @@ async function hasLocalDeviceKeys(userId: string, deviceId: string): Promise<boo
   }
 }
 
-async function isServerDeviceReady(userId: string, deviceId: string): Promise<boolean> {
+async function isServerDeviceBound(userId: string, deviceId: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('user_devices')
     .select('approval_status,binding_status,lifecycle_status,routing_status,is_active,revoked_at')
@@ -64,8 +64,6 @@ async function isServerDeviceReady(userId: string, deviceId: string): Promise<bo
   };
   return row.approval_status === 'approved'
     && row.binding_status === 'bound'
-    && row.lifecycle_status === 'ready'
-    && row.routing_status === 'ready'
     && row.is_active === true
     && row.revoked_at == null;
 }
@@ -147,8 +145,8 @@ export async function backupIosDeviceVaultIfReady(userId: string): Promise<boole
   if (existing) return existing;
 
   const run = (async (): Promise<boolean> => {
-    if (!(await isServerDeviceReady(userId, deviceId))) {
-      scheduleBackupRetry(userId, deviceId, 'device_not_ready');
+    if (!(await isServerDeviceBound(userId, deviceId))) {
+      scheduleBackupRetry(userId, deviceId, 'device_not_bound');
       return false;
     }
     if (!getSessionMasterKey()) {

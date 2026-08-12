@@ -23,6 +23,7 @@ import { logCryptoError } from './errorLogger';
 
 const VAULT_VERSION = 1 as const;
 const IOS_WEB_KEY_PREFIX = 'aegis.device-vault.v1:';
+const IOS_WEB_MANIFEST_KEY = 'aegis.device-vault.v1:manifest';
 
 type DeviceVaultMode = 'native' | 'ios-web' | 'legacy-web';
 
@@ -47,6 +48,29 @@ function mode(): DeviceVaultMode {
 
 function webKey(storageId: string): string {
   return `${IOS_WEB_KEY_PREFIX}${storageId}`;
+}
+
+async function readIosManifest(): Promise<string[]> {
+  const encoded = await secureGetCriticalSecret(IOS_WEB_MANIFEST_KEY);
+  if (!encoded) return [];
+  try {
+    const parsed = JSON.parse(encoded);
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+async function updateIosManifest(storageId: string, present: boolean): Promise<void> {
+  const current = new Set(await readIosManifest());
+  if (present) current.add(storageId);
+  else current.delete(storageId);
+  await secureSetCriticalSecret(IOS_WEB_MANIFEST_KEY, JSON.stringify([...current].sort()));
+}
+
+export async function listDeviceVaultStorageIds(prefix: string): Promise<string[]> {
+  if (mode() !== 'ios-web') return [];
+  return (await readIosManifest()).filter((storageId) => storageId.startsWith(prefix));
 }
 
 /**
@@ -134,6 +158,7 @@ export async function writeDeviceVaultRecord<T>(storageId: string, payload: T): 
   } satisfies WebVaultEnvelope);
 
   await secureSetCriticalSecret(webKey(storageId), encoded);
+  await updateIosManifest(storageId, true);
 
   // Invariant fail-closed : readback explicite sur iOS Web en plus du readback
   // interne de secureSetCriticalSecret/webAegisEnclaveSet.
@@ -153,6 +178,7 @@ export async function removeDeviceVaultRecord(storageId: string): Promise<void> 
 
   if (vaultMode === 'legacy-web') return;
   await secureRemoveCriticalSecret(webKey(storageId));
+  await updateIosManifest(storageId, false);
 }
 
 /**

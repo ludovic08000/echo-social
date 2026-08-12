@@ -14,6 +14,7 @@ const KEY_TABLES = [
   'user_devices',
   'signed_prekeys',
   'device_signed_prekeys',
+  'device_one_time_prekeys',
 ] as const;
 
 let activeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -136,7 +137,7 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
       { event: '*', schema: 'public', table },
       (payload: KeyChangePayload) => {
         scheduleResume(`${payload?.table ?? table}:${payload?.eventType ?? 'change'}`);
-        if (table === 'device_signed_prekeys' && payload?.eventType === 'UPDATE') {
+        if (table === 'device_signed_prekeys') {
           void handleDeviceSpkUpdate(payload, userId);
         }
         if (table === 'user_devices') {

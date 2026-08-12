@@ -8,6 +8,7 @@ import {
   type EncryptedWebDeviceVault,
 } from '@/lib/crypto/webDeviceKeyVault';
 import {
+  peekCurrentDeviceId,
   setCurrentDeviceId,
   setCurrentDeviceUserScope,
 } from '@/lib/messaging/currentDevice';
@@ -221,6 +222,20 @@ export async function getWindowsHelloRecoveryStatus(deviceId: string): Promise<b
     p_rp_id: rpId,
   });
   return result.registered === true;
+}
+
+/**
+ * Refresh the encrypted recovery snapshot without prompting the user again.
+ * Windows Hello remains mandatory when the snapshot is later recovered; this
+ * write only replaces the opaque AES-GCM blob for the already authenticated
+ * owner and never exposes private material to Supabase.
+ */
+export async function backupWindowsHelloDeviceVaultIfReady(userId: string): Promise<boolean> {
+  if (!userId || !isWindowsWeb()) return false;
+  const deviceId = peekCurrentDeviceId();
+  if (!deviceId || !DEVICE_ID_RE.test(deviceId)) return false;
+  const { backupDeviceVaultToCloud } = await import('@/lib/crypto/deviceVaultSync');
+  return backupDeviceVaultToCloud({ userId, deviceId, platform: 'windows-hello' });
 }
 
 export async function registerCurrentWindowsHelloDevice(args: {
