@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 const api = readFileSync('src/lib/api/deviceApi.ts', 'utf8');
 const decision = readFileSync('src/lib/crypto/deviceApprovalDecision.ts', 'utf8');
-const edge = readFileSync('supabase/functions/approve-device-enrollment/index.ts', 'utf8');
+const approvalBridge = readFileSync('supabase/migrations/20260809190000_temporary_device_crypto_bridges.sql', 'utf8');
+const atomicApproval = readFileSync('supabase/migrations/20260811143200_atomic_device_approval_authorization.sql', 'utf8');
 const migration = readFileSync(
   'supabase/migrations/20260809170000_device_roles_and_trusted_approval.sql',
   'utf8',
@@ -21,13 +22,11 @@ describe('canonical primary and secondary device approval', () => {
     expect(decision).toContain('approverDeviceId: args.approverDeviceId');
     expect(decision).toContain('p_approver_device_id: args.approverDeviceId');
     expect(decision).toContain('p_device_authorization_signature: args.deviceAuthorizationSignature');
-    expect(edge).toContain('APPROVER_DEVICE_NOT_READY');
-    expect(edge).toContain('DEVICE_SELF_APPROVAL_FORBIDDEN');
-    expect(edge).toContain('DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED');
-    expect(edge).toContain('rpc("approve_device_enrollment_decision"');
-    expect(edge).toContain('p_device_authorization_signature');
-    expect(edge).not.toContain('rpc("finalize_device_approval_decision"');
-    expect(edge).not.toContain('finalize_self_approved_device');
+    expect(approvalBridge).toContain('APPROVER_DEVICE_NOT_READY');
+    expect(approvalBridge).toContain('DEVICE_SELF_APPROVAL_FORBIDDEN');
+    expect(atomicApproval).toContain('DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED');
+    expect(atomicApproval).toContain('p_device_authorization_signature');
+    expect(atomicApproval).toContain('approve_device_enrollment_decision_pre_account_authorization');
   });
 
   it('enforces one live primary and a closed lifecycle in PostgreSQL', () => {

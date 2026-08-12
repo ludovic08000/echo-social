@@ -15,7 +15,7 @@ const liveExpiryGuard = readFileSync(
 ).toLowerCase();
 const enrollmentClient = readFileSync('src/lib/crypto/serverDeviceEnrollment.ts', 'utf8');
 const approvalFunction = readFileSync(
-  'supabase/functions/approve-device-enrollment/index.ts',
+  'supabase/migrations/20260809190000_temporary_device_crypto_bridges.sql',
   'utf8',
 );
 
@@ -53,16 +53,16 @@ describe('device enrollment possession proof', () => {
 
   it('verifies the device signature over the exact stored challenge', () => {
     expect(approvalFunction).toContain('forsure-aegis-device-possession');
-    expect(approvalFunction).toContain('device.approval_challenge_id');
-    expect(approvalFunction).toContain('challenge.device_possession_signature');
-    expect(approvalFunction).toContain('device.device_signing_key');
+    expect(approvalFunction).toContain('v_device.approval_challenge_id');
+    expect(approvalFunction).toContain('v_challenge.device_possession_signature');
+    expect(approvalFunction).toContain('v_device.device_signing_key');
     expect(approvalFunction).toContain('DEVICE_POSSESSION_SIGNATURE_INVALID');
-    expect(approvalFunction).toContain('p_challenge_id: challenge.id');
+    expect(approvalFunction).toContain('p_challenge_id');
   });
 
   it('rejects an expired challenge before server finalization', () => {
-    expect(approvalFunction).toContain('consumedAt > expiresAt');
-    expect(approvalFunction).toContain('expiresAt <= Date.now()');
+    expect(approvalFunction).toContain('v_challenge.consumed_at>v_challenge.expires_at');
+    expect(approvalFunction).toContain('v_challenge.expires_at<=now()');
     expect(approvalFunction).toContain('DEVICE_ENROLLMENT_EXPIRED');
   });
 

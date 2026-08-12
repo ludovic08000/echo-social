@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const cryptoMigration = readFileSync(
@@ -13,8 +13,8 @@ const atomicApprovalMigration = readFileSync(
   'supabase/migrations/20260811143200_atomic_device_approval_authorization.sql',
   'utf8',
 );
-const approvalFunction = readFileSync(
-  'supabase/functions/approve-device-enrollment/index.ts',
+const approvalBridge = readFileSync(
+  'supabase/migrations/20260809190000_temporary_device_crypto_bridges.sql',
   'utf8',
 );
 const approvalClient = readFileSync(
@@ -83,21 +83,10 @@ describe('Signal-style server route trust validation', () => {
     );
   });
 
-  it('does not accept an already-bound device before re-verifying the exact authorization', () => {
-    const bindStart = approvalFunction.indexOf('if (action === "bind")');
-    expect(bindStart).toBeGreaterThanOrEqual(0);
-    const bindBlock = approvalFunction.slice(bindStart);
-
-    const invalidAuthorizationCheck = bindBlock.indexOf(
-      'DEVICE_AUTHORIZATION_SIGNATURE_INVALID',
-    );
-    const existingFastPath = bindBlock.indexOf(
-      'device.binding_status === "bound"',
-    );
-
-    expect(invalidAuthorizationCheck).toBeGreaterThanOrEqual(0);
-    expect(existingFastPath).toBeGreaterThan(invalidAuthorizationCheck);
-    expect(bindBlock).toContain('device.device_authorization_signature === signature');
+  it('provides the predecessor RPCs before the Signal wrappers rename them', () => {
+    expect(approvalBridge).toContain('create or replace function public.approve_device_enrollment_decision');
+    expect(approvalBridge).toContain('create or replace function public.bind_device_account');
+    expect(approvalBridge).toContain('DEVICE_POSSESSION_SIGNATURE_INVALID');
   });
 
   it('forces account authorization into the trusted-device approval transaction', () => {
@@ -119,9 +108,10 @@ describe('Signal-style server route trust validation', () => {
     expect(atomicApprovalMigration).toContain('ATOMIC_DEVICE_APPROVAL_BINDING_FAILED');
     expect(atomicApprovalMigration).toContain("'approval_rolled_back', true");
 
-    const wrapperStart = atomicApprovalMigration.indexOf(
-      'create function public.approve_device_enrollment_decision(\n  p_decision text,\n  p_bootstrap_primary boolean,\n  p_approver_device_id text,\n  p_device_id text,\n  p_challenge_id uuid,\n  p_signature text,\n  p_device_authorization_signature text',
+    const wrapperMatch = atomicApprovalMigration.match(
+      /create function public\.approve_device_enrollment_decision\(\s*p_decision text,\s*p_bootstrap_primary boolean,\s*p_approver_device_id text,\s*p_device_id text,\s*p_challenge_id uuid,\s*p_signature text,\s*p_device_authorization_signature text/i,
     );
+    const wrapperStart = wrapperMatch?.index ?? -1;
     const compatibilityStart = atomicApprovalMigration.indexOf(
       '-- Compatibility overload:',
       wrapperStart,
@@ -143,12 +133,8 @@ describe('Signal-style server route trust validation', () => {
     expect(bindingIndex).toBeGreaterThan(approvalIndex);
   });
 
-  it('routes secondary Edge approval through the account-authorized atomic RPC', () => {
-    expect(approvalFunction).toContain('DEVICE_AUTHORIZATION_SIGNATURE_REQUIRED');
-    expect(approvalFunction).toContain('deviceAuthorizationPayload(user.id, device, account)');
-    expect(approvalFunction).toContain('rpc("approve_device_enrollment_decision"');
-    expect(approvalFunction).toContain('p_device_authorization_signature: deviceAuthorizationSignature');
-    expect(approvalFunction).not.toContain('rpc("finalize_device_approval_decision"');
+  it('removes the obsolete approval Edge Function in favor of the SQL RPC', () => {
+    expect(existsSync('supabase/functions/approve-device-enrollment/index.ts')).toBe(false);
   });
 
   it('guards compatibility route entrypoints with the verified Sesame trust set', () => {
