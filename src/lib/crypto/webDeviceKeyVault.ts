@@ -8,6 +8,7 @@ import {
   writeDeviceVaultRecord,
 } from '@/lib/crypto/deviceVault';
 import type { X3dhPrivatePrekeySnapshot } from '@/lib/crypto/x3dh';
+import type { DeviceSessionSnapshot } from '@/lib/crypto/deviceSessionStore';
 
 
 const VAULT_VERSION = 1 as const;
@@ -39,6 +40,7 @@ interface PlainDeviceVault {
   signing: StoredDeviceIdentityRecovery;
   kx: StoredDeviceKxRecovery;
   x3dh: X3dhPrivatePrekeySnapshot;
+  sessions: DeviceSessionSnapshot;
   createdAt: number;
 }
 
@@ -170,6 +172,8 @@ export async function captureEncryptedWebDeviceVault(
   } = await import('@/lib/crypto/x3dh');
   const x3dh = await captureDeviceX3dhPrivatePrekeys(userId, deviceId);
   await assertDeviceX3dhSnapshotMatchesPublishedKeys(userId, deviceId, x3dh);
+  const { captureDeviceSessionSnapshot } = await import('@/lib/crypto/deviceSessionStore');
+  const sessions = await captureDeviceSessionSnapshot(userId, deviceId);
   const plain: PlainDeviceVault = {
     version: VAULT_VERSION,
     userId,
@@ -177,6 +181,7 @@ export async function captureEncryptedWebDeviceVault(
     signing,
     kx,
     x3dh,
+    sessions,
     createdAt: Date.now(),
   };
   const iv = hardCrypto.getRandomValues(new Uint8Array(IV_BYTES));
@@ -229,7 +234,11 @@ export async function restoreEncryptedWebDeviceVault(args: {
     || plain.deviceId !== deviceId
     || !validateSigningRecord(plain.signing, userId, deviceId)
     || !validateKxRecord(plain.kx, userId, deviceId)
-    || !Array.isArray(plain.x3dh?.records)) {
+    || !Array.isArray(plain.x3dh?.records)
+    || (plain.sessions !== undefined && (
+      !Array.isArray(plain.sessions?.sessions)
+      || !Array.isArray(plain.sessions?.initiating)
+    ))) {
     throw new Error('WEBAUTHN_DEVICE_VAULT_INVALID');
   }
   if (jwkXToStandardBase64(plain.signing.publicKeyJWK.x!) !== args.expectedDeviceSigningKey
@@ -241,6 +250,8 @@ export async function restoreEncryptedWebDeviceVault(args: {
   await writeDeviceVaultRecord(plain.kx.id, plain.kx);
   const { restoreDeviceX3dhPrivatePrekeys } = await import('@/lib/crypto/x3dh');
   await restoreDeviceX3dhPrivatePrekeys(userId, deviceId, plain.x3dh!);
+  const { restoreDeviceSessionSnapshot } = await import('@/lib/crypto/deviceSessionStore');
+  await restoreDeviceSessionSnapshot(userId, deviceId, plain.sessions ?? { sessions: [], initiating: [] });
   if (deviceVaultMirrorsPlaintext()) {
     await runTx([STORE_KEYS], 'readwrite', (tx) => {
       const store = tx.objectStore(STORE_KEYS);

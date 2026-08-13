@@ -36,7 +36,6 @@ import {
 } from './aegisDeviceWire';
 import { logCryptoError } from './errorLogger';
 import { exportPublicKeyRaw } from './keyManager';
-import { runTxOn, reqToPromise } from './indexedDbTx';
 import {
   RATCHET_MAX_SKIP,
   RATCHET_MAX_SKIPPED_CACHE,
@@ -45,6 +44,13 @@ import {
 import { runDeviceSessionJob } from './deviceSessionQueue';
 import { wrapSkippedKey, unwrapSkippedKey } from './skippedKeyVault';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import {
+  clearDeviceSessionRecords,
+  listDeviceSessionRecords,
+  readDeviceSessionRecord,
+  removeDeviceSessionRecord,
+  writeDeviceSessionRecord,
+} from './deviceSessionStore';
 
 const STORE = 'sessions';
 
@@ -194,34 +200,20 @@ function parseCompositeKey(key: string): { myUserId: string; myDeviceId: string;
 }
 
 async function loadSession(key: string): Promise<StoredSession | null> {
-  try {
-    const result = await runTxOn('device-sessions', [STORE], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore(STORE).get(key) as IDBRequest<StoredSession | undefined>),
-    );
-    return result ?? null;
-  } catch {
-    return null;
-  }
+  return readDeviceSessionRecord<StoredSession>(STORE, key).catch(() => null);
 }
 
 async function saveSession(key: string, session: StoredSession): Promise<void> {
-  await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
-    tx.objectStore(STORE).put({ ...session, id: key });
-  });
+  await writeDeviceSessionRecord(STORE, { ...session, id: key });
 }
 
 async function installActiveSession(key: string, session: StoredSession): Promise<void> {
-  await runTxOn('device-sessions', [STORE], 'readwrite', (tx) =>
-    new Promise<void>((resolve, reject) => {
-      const store = tx.objectStore(STORE);
-      const request = store.getAll();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
+  {
+      const all = await listDeviceSessionRecords<StoredSession>(STORE, key);
         const now = Date.now();
-        const all = (request.result as StoredSession[]) ?? [];
         const active = all.find((candidate) => candidate.id === key);
         if (active && active.sessionId !== session.sessionId) {
-          store.put({
+          await writeDeviceSessionRecord(STORE, {
             ...active,
             id: inactiveSessionKey(key, active.sessionId),
             inactiveAt: now,
@@ -236,8 +228,8 @@ async function installActiveSession(key: string, session: StoredSession): Promis
           });
         }
 
-        store.delete(inactiveSessionKey(key, session.sessionId));
-        store.put({
+        await removeDeviceSessionRecord(STORE, inactiveSessionKey(key, session.sessionId));
+        await writeDeviceSessionRecord(STORE, {
           ...session,
           id: key,
           inactiveAt: undefined,
@@ -257,16 +249,12 @@ async function installActiveSession(key: string, session: StoredSession): Promis
           .filter((candidate) => candidate.id.startsWith(`${key}::inactive::`))
           .filter((candidate) => candidate.sessionId !== session.sessionId)
           .sort((a, b) => (b.inactiveAt ?? b.lastUsedAt ?? b.createdAt) - (a.inactiveAt ?? a.lastUsedAt ?? a.createdAt));
-        inactive.forEach((candidate, index) => {
+        const expired = inactive.filter((candidate, index) => {
           const age = now - (candidate.inactiveAt ?? candidate.lastUsedAt ?? candidate.createdAt);
-          if (index >= MAX_INACTIVE_SESSIONS || age > INACTIVE_SESSION_TTL_MS) {
-            store.delete(candidate.id);
-          }
+          return index >= MAX_INACTIVE_SESSIONS || age > INACTIVE_SESSION_TTL_MS;
         });
-        resolve();
-      };
-    }),
-  );
+        await Promise.all(expired.map((candidate) => removeDeviceSessionRecord(STORE, candidate.id)));
+  }
 }
 
 async function persistSuccessfulDecrypt(
@@ -294,9 +282,7 @@ async function lookupSessionById(
   sessionId: string,
 ): Promise<{ key: string; activeKey: string; session: StoredSession } | null> {
   try {
-    const all = await runTxOn('device-sessions', [STORE], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore(STORE).getAll() as IDBRequest<StoredSession[]>),
-    );
+    const all = await listDeviceSessionRecords<StoredSession>(STORE, `${myUserId}::${myDeviceId}::`);
     const prefix = `${myUserId}::${myDeviceId}::`;
     for (const s of all ?? []) {
       if (s.sessionId === sessionId && s.id.startsWith(prefix)) {
@@ -350,6 +336,68 @@ async function importMessageKey(mkB64: string): Promise<CryptoKey> {
   return hardCrypto.importKey(
     'raw', base64ToBuffer(mkB64), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'],
   );
+}
+
+function shouldUseWindowsWasm(): boolean {
+  return typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent || '');
+}
+
+async function encryptChainStep(
+  chainKeyB64: string,
+  aad: Uint8Array,
+  plaintext: string,
+): Promise<{ nextChainKeyB64: string; iv: Uint8Array; ciphertext: Uint8Array }> {
+  if (shouldUseWindowsWasm()) {
+    const { wasmRatchetEncrypt } = await import('./aegisWasmBridge');
+    const result = await wasmRatchetEncrypt({
+      chainKey: new Uint8Array(base64ToBuffer(chainKeyB64)),
+      aad,
+      plaintext: new hardGlobals.TextEncoder().encode(plaintext),
+    });
+    return {
+      nextChainKeyB64: bufferToBase64(result.nextChainKey.buffer as ArrayBuffer),
+      iv: result.iv,
+      ciphertext: result.ciphertext,
+    };
+  }
+  const { ck, mk } = await kdfCK(chainKeyB64);
+  const aes = await importMessageKey(mk);
+  const iv = randomBytes(12);
+  const ciphertext = await hardCrypto.encrypt(
+    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> },
+    aes,
+    new hardGlobals.TextEncoder().encode(plaintext),
+  );
+  return { nextChainKeyB64: ck, iv, ciphertext: new Uint8Array(ciphertext) };
+}
+
+async function decryptChainStep(
+  chainKeyB64: string,
+  aad: Uint8Array,
+  iv: Uint8Array,
+  ciphertext: ArrayBuffer,
+): Promise<{ nextChainKeyB64: string; plaintext: string }> {
+  if (shouldUseWindowsWasm()) {
+    const { wasmRatchetDecrypt } = await import('./aegisWasmBridge');
+    const result = await wasmRatchetDecrypt({
+      chainKey: new Uint8Array(base64ToBuffer(chainKeyB64)),
+      aad,
+      iv,
+      ciphertext: new Uint8Array(ciphertext),
+    });
+    return {
+      nextChainKeyB64: bufferToBase64(result.nextChainKey.buffer as ArrayBuffer),
+      plaintext: new hardGlobals.TextDecoder().decode(result.plaintext),
+    };
+  }
+  const { ck, mk } = await kdfCK(chainKeyB64);
+  const aes = await importMessageKey(mk);
+  const plaintext = await hardCrypto.decrypt(
+    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
+    aes,
+    ciphertext,
+  );
+  return { nextChainKeyB64: ck, plaintext: new hardGlobals.TextDecoder().decode(plaintext) };
 }
 
 async function generateRatchetKeyPair(): Promise<{ priv: CryptoKey; privJwk: JsonWebKey; pubB64: string }> {
@@ -617,9 +665,6 @@ async function ratchetEncryptUnlocked(
     return null;
   }
 
-  const { ck, mk } = await kdfCK(session.ckSendB64);
-  const aes = await importMessageKey(mk);
-  const iv = randomBytes(12);
   const Ns = session.Ns;
   const header = { dh: session.dhsPubB64, pn: session.PN, n: Ns };
   const aad = buildDevAADWithHeader(
@@ -631,20 +676,16 @@ async function ratchetEncryptUnlocked(
     header,
     identity,
   );
-  const ct = await hardCrypto.encrypt(
-    { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> },
-    aes,
-    new hardGlobals.TextEncoder().encode(plaintext),
-  );
-  await saveSession(key, { ...session, ckSendB64: ck, Ns: Ns + 1 });
+  const encrypted = await encryptChainStep(session.ckSendB64, aad, plaintext);
+  await saveSession(key, { ...session, ckSendB64: encrypted.nextChainKeyB64, Ns: Ns + 1 });
 
   return [
     AEGIS_RATCHET_PREFIX + session.sessionId,
     session.dhsPubB64,
     String(Ns),
     String(session.PN),
-    bufferToBase64(iv.buffer as ArrayBuffer),
-    bufferToBase64(ct as ArrayBuffer),
+    bufferToBase64(encrypted.iv.buffer as ArrayBuffer),
+    bufferToBase64(encrypted.ciphertext.buffer as ArrayBuffer),
   ].join('.');
 }
 
@@ -813,16 +854,10 @@ async function decryptAegisWithStored(
     }
     session = await skipMessageKeys(session, Ns);
 
-    const { ck, mk } = await kdfCK(session.ckRecvB64!);
-    const aes = await importMessageKey(mk);
-    const pt = await hardCrypto.decrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer>, tagLength: 128, additionalData: aad as Uint8Array<ArrayBuffer> } as AesGcmParams,
-      aes,
-      ct,
-    );
-    session = { ...session, ckRecvB64: ck, Nr: session.Nr + 1 };
+    const decrypted = await decryptChainStep(session.ckRecvB64!, aad, iv, ct);
+    session = { ...session, ckRecvB64: decrypted.nextChainKeyB64, Nr: session.Nr + 1 };
     await persistSuccessfulDecrypt(activeKey, storageKey, session);
-    return new hardGlobals.TextDecoder().decode(pt);
+    return decrypted.plaintext;
   } catch (err) {
     void logCryptoError({
       severity: 'error',
@@ -856,22 +891,10 @@ async function invalidateDeviceSessionUnlocked(
 ): Promise<void> {
   try {
     const key = compositeKey(myUserId, myDeviceId, peerUserId, peerDeviceId);
-    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) =>
-      new Promise<void>((resolve, reject) => {
-        const store = tx.objectStore(STORE);
-        const request = store.getAllKeys();
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-          for (const storedKey of request.result) {
-            const value = String(storedKey);
-            if (value === key || value.startsWith(`${key}::inactive::`)) {
-              store.delete(storedKey);
-            }
-          }
-          resolve();
-        };
-      }),
-    );
+    const records = await listDeviceSessionRecords<StoredSession>(STORE, key);
+    await Promise.all(records
+      .filter((record) => record.id === key || record.id.startsWith(`${key}::inactive::`))
+      .map((record) => removeDeviceSessionRecord(STORE, record.id)));
   } catch {
     // non-fatal
   }
@@ -897,9 +920,7 @@ export async function listKnownSessionIds(
   myDeviceId: string,
 ): Promise<Array<{ peerUserId: string; peerDeviceId: string; sessionId: string; lastUsedAt: number }>> {
   try {
-    const all = await runTxOn('device-sessions', [STORE], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore(STORE).getAll() as IDBRequest<StoredSession[]>),
-    );
+    const all = await listDeviceSessionRecords<StoredSession>(STORE, `${myUserId}::${myDeviceId}::`);
     const prefix = `${myUserId}::${myDeviceId}::`;
     const out: Array<{ peerUserId: string; peerDeviceId: string; sessionId: string; lastUsedAt: number }> = [];
     for (const s of all ?? []) {
@@ -921,9 +942,7 @@ export async function listKnownSessionIds(
 
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
-    await runTxOn('device-sessions', [STORE], 'readwrite', (tx) => {
-      tx.objectStore(STORE).clear();
-    });
+    await clearDeviceSessionRecords(STORE);
   } catch {
     // non-fatal
   }

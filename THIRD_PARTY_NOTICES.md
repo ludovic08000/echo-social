@@ -1,5 +1,18 @@
 # Third-party notices
 
+## libsignal Rust
+
+Aegis conserve une copie traçable du workspace Rust officiel libsignal dans
+`third_party/libsignal`, au commit
+`857c4dca03537dc5e395a5e1eda6bf18f59c3601` du 6 août 2026.
+
+Copyright Signal Messenger, LLC and other contributors.
+
+Original project: https://github.com/signalapp/libsignal
+
+License: GNU Affero General Public License version 3 only
+(`AGPL-3.0-only`). La copie inclut la licence et les acknowledgments amont.
+
 ## Signal Desktop
 
 Aegis contains adapted user-interface, retry and message-state logic from Signal Desktop:

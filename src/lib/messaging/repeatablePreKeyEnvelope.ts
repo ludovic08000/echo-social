@@ -1,5 +1,9 @@
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
-import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
+import {
+  readDeviceSessionRecord,
+  removeDeviceSessionRecord,
+  writeDeviceSessionRecord,
+} from '@/lib/crypto/deviceSessionStore';
 import { getOrCreateDeviceKxKey } from '@/lib/crypto/deviceKx';
 import {
   establishDeviceSession,
@@ -228,54 +232,38 @@ export function parseRepeatablePreKeyEnvelope(payload: string): ParsedRepeatable
 }
 
 async function readSession(key: string): Promise<StoredSessionRecord | null> {
-  const value = await runTxOn('device-sessions', [SESSION_STORE], 'readonly', (tx) =>
-    reqToPromise(tx.objectStore(SESSION_STORE).get(key) as IDBRequest<StoredSessionRecord | undefined>),
-  );
-  return value ?? null;
+  return readDeviceSessionRecord<StoredSessionRecord>(SESSION_STORE, key);
 }
 
 async function readInitiating(key: string): Promise<InitiatingEnvelopeRecord | null> {
-  const value = await runTxOn('device-sessions', [INITIATING_STORE], 'readonly', (tx) =>
-    reqToPromise(tx.objectStore(INITIATING_STORE).get(key) as IDBRequest<InitiatingEnvelopeRecord | undefined>),
-  );
-  return value ?? null;
+  return readDeviceSessionRecord<InitiatingEnvelopeRecord>(INITIATING_STORE, key);
 }
 
 async function writeInitiating(record: InitiatingEnvelopeRecord): Promise<void> {
-  await runTxOn('device-sessions', [INITIATING_STORE], 'readwrite', (tx) => {
-    tx.objectStore(INITIATING_STORE).put(record);
-  });
+  await writeDeviceSessionRecord(INITIATING_STORE, record);
 }
 
 async function deleteInitiating(key: string): Promise<void> {
-  await runTxOn('device-sessions', [INITIATING_STORE], 'readwrite', (tx) => {
-    tx.objectStore(INITIATING_STORE).delete(key);
-  });
+  await removeDeviceSessionRecord(INITIATING_STORE, key);
 }
 
 async function snapshotPair(key: string): Promise<PairSnapshot> {
-  const result = await runTxOn('device-sessions', [SESSION_STORE, INITIATING_STORE], 'readonly', async (tx) => {
-    const [session, initiating] = await Promise.all([
-      reqToPromise(tx.objectStore(SESSION_STORE).get(key) as IDBRequest<StoredSessionRecord | undefined>),
-      reqToPromise(tx.objectStore(INITIATING_STORE).get(key) as IDBRequest<InitiatingEnvelopeRecord | undefined>),
-    ]);
-    return { session: session ?? null, initiating: initiating ?? null };
-  });
+  const [session, initiating] = await Promise.all([readSession(key), readInitiating(key)]);
   return {
-    session: result.session ? structuredClone(result.session) : null,
-    initiating: result.initiating ? structuredClone(result.initiating) : null,
+    session: session ? structuredClone(session) : null,
+    initiating: initiating ? structuredClone(initiating) : null,
   };
 }
 
 async function restorePair(key: string, snapshot: PairSnapshot): Promise<void> {
-  await runTxOn('device-sessions', [SESSION_STORE, INITIATING_STORE], 'readwrite', (tx) => {
-    const sessions = tx.objectStore(SESSION_STORE);
-    const initiating = tx.objectStore(INITIATING_STORE);
-    if (snapshot.session) sessions.put(structuredClone(snapshot.session));
-    else sessions.delete(key);
-    if (snapshot.initiating) initiating.put(structuredClone(snapshot.initiating));
-    else initiating.delete(key);
-  });
+  await Promise.all([
+    snapshot.session
+      ? writeDeviceSessionRecord(SESSION_STORE, structuredClone(snapshot.session))
+      : removeDeviceSessionRecord(SESSION_STORE, key),
+    snapshot.initiating
+      ? writeDeviceSessionRecord(INITIATING_STORE, structuredClone(snapshot.initiating))
+      : removeDeviceSessionRecord(INITIATING_STORE, key),
+  ]);
 }
 
 export async function clearInitiatingSessionForPair(args: {
