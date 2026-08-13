@@ -52,6 +52,8 @@ import {
   resolveExistingIosDevice,
 } from '@/platforms/ios/iosDeviceReuse';
 import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
+import { adoptReusableAndroidDevice, resolveExistingAndroidDevice } from '@/platforms/android/androidDeviceReuse';
+import { backupAndroidDeviceVault, restoreAndroidDeviceVault } from '@/platforms/android/androidDeviceVault';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
@@ -205,6 +207,22 @@ async function listDevices(userId: string): Promise<DeviceApiListRecord[]> {
 
 async function enroll(userId: string): Promise<DeviceApiRecord> {
   setCurrentDeviceUserScope(userId);
+
+  const reusedAndroidDeviceId = await adoptReusableAndroidDevice(userId).catch(() => null);
+  if (reusedAndroidDeviceId) {
+    const existing = await readDeviceRecord(userId, reusedAndroidDeviceId);
+    if (existing && !existing.revokedAt && existing.approvalStatus !== 'rejected') return existing;
+  }
+
+  const existingAndroidDeviceId = await resolveExistingAndroidDevice(userId);
+  if (existingAndroidDeviceId) {
+    setCurrentDeviceId(existingAndroidDeviceId);
+    if (await restoreAndroidDeviceVault(userId)) {
+      const existing = await readDeviceRecord(userId, existingAndroidDeviceId);
+      if (existing && !existing.revokedAt && existing.approvalStatus !== 'rejected') return existing;
+    }
+    throw new Error(`DEVICE_VAULT_RECOVERY_REQUIRED:${existingAndroidDeviceId}:android`);
+  }
 
   // iOS uniquement : aucun nouveau device si une identité locale existe déjà
   // (Keychain/Secure Enclave). No-op complet sur Windows/web.
@@ -360,10 +378,17 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
         loadDeviceKxKey(record.deviceId, userId),
       ]);
     }
+    if ((!identity || !kx) && await restoreAndroidDeviceVault(userId)) {
+      [identity, kx] = await Promise.all([
+        loadDeviceIdentity(userId, record.deviceId),
+        loadDeviceKxKey(record.deviceId, userId),
+      ]);
+    }
   }
   if (!identity || !kx) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
   if (identity.publicB64 !== record.deviceSigningKey || kx.publicB64 !== record.devicePublicKey) throw new Error('DEVICE_LOCAL_KEY_MISMATCH');
   void backupIosDeviceVaultIfReady(userId);
+  void backupAndroidDeviceVault(userId);
 
   try {
     await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
@@ -379,6 +404,10 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   // sealed, uploaded and read back successfully for this DeviceID.
   const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');
   if (isIosWebRuntime() && !await backupIosDeviceVaultIfReady(userId)) {
+    throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
+  }
+  const { isAndroidRuntime } = await import('@/platforms/android/androidRuntime');
+  if (isAndroidRuntime() && !await backupAndroidDeviceVault(userId)) {
     throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
   }
   const { data, error } = await supabase.rpc('mark_current_device_route_ready' as never, { p_device_id: record.deviceId } as never);

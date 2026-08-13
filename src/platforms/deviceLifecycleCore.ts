@@ -12,8 +12,10 @@
 import { iosPasskeyProvider } from '@/platforms/ios/iosPasskeyProvider';
 import { windowsPasskeyProvider, isWindowsWeb } from '@/platforms/windows/windowsPasskeyProvider';
 import { isIosRuntime } from '@/platforms/ios/capacitorBridge';
+import { androidDeviceProvider } from '@/platforms/android/androidDeviceProvider';
+import { isAndroidRuntime } from '@/platforms/android/androidRuntime';
 
-export type DevicePlatformKind = 'ios' | 'windows' | 'generic';
+export type DevicePlatformKind = 'ios' | 'android' | 'windows' | 'generic';
 
 export interface DevicePlatformProvider {
   platform: DevicePlatformKind;
@@ -37,6 +39,7 @@ const genericProvider: DevicePlatformProvider = {
 
 export function detectDevicePlatformKind(): DevicePlatformKind {
   if (isIosRuntime()) return 'ios';
+  if (isAndroidRuntime()) return 'android';
   if (isWindowsWeb()) return 'windows';
   return 'generic';
 }
@@ -45,6 +48,8 @@ export function resolveDevicePlatformProvider(): DevicePlatformProvider {
   switch (detectDevicePlatformKind()) {
     case 'ios':
       return iosPasskeyProvider;
+    case 'android':
+      return androidDeviceProvider;
     case 'windows':
       return windowsPasskeyProvider;
     default:

@@ -15,6 +15,7 @@ import {
   type ExplicitDeviceEnrollmentReason,
 } from '@/lib/crypto/deviceEnrollmentGate';
 import { readIosDeviceIdAnchor, writeIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';
+import { readAndroidDeviceIdAnchor, writeAndroidDeviceIdAnchor } from '@/platforms/android/androidDeviceIdAnchor';
 
 const BASE_STORAGE_KEY = 'forsure-device-id-v1';
 const DEVICE_ID_DB = 'forsure-device-routing-v1';
@@ -150,6 +151,7 @@ async function persistDurably(id: string): Promise<string> {
   }
   // iOS uniquement : ancre le DeviceID hors des stockages purgés par ITP.
   void writeIosDeviceIdAnchor(key, id).catch(() => undefined);
+  void writeAndroidDeviceIdAnchor(key, id).catch(() => undefined);
   memoryDeviceId = id;
   memoryDeviceIdIsTemporary = false;
   return id;
@@ -284,6 +286,8 @@ export async function hydrateDeviceId(): Promise<string> {
     // toute rotation de DeviceID après réouverture ou nettoyage du cache.
     const iosAnchor = await readIosDeviceIdAnchor(key);
     if (validId(iosAnchor)) candidates.add(iosAnchor);
+    const androidAnchor = await readAndroidDeviceIdAnchor(key);
+    if (validId(androidAnchor)) candidates.add(androidAnchor);
 
     if (candidates.size > 1) throw new DeviceIdentityError('DEVICE_ID_MISMATCH');
     const id = [...candidates][0];

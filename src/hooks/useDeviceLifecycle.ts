@@ -21,6 +21,7 @@ import {
 } from '@/lib/device-manager/deviceLifecycleMachine';
 import { readPinUnlocked, subscribePinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
 import { syncIosDeviceAdapter } from '@/platforms/ios/iosLifecycleAdapter';
+import { syncAndroidDeviceAdapter } from '@/platforms/android/androidLifecycleAdapter';
 
 const REFRESH_EVENTS = [
   'forsure:device-approval-pending',
@@ -131,6 +132,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
         } : null);
         // Adaptateur iOS isolé : no-op complet hors runtime iOS.
         if (row) void syncIosDeviceAdapter(userId, row.deviceId);
+        if (row) void syncAndroidDeviceAdapter(userId, row.deviceId);
 
       } catch (error) {
         logDeviceLifecycle('server-device-state-failed', {
