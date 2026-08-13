@@ -6,7 +6,7 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8'
 
 const app = read('src/App.tsx');
 const deviceIdStore = read('src/lib/messaging/currentDevice.ts');
-const managedDevice = read('src/lib/device-manager/currentDevice.ts');
+const managedDevice = deviceIdStore;
 const enrollment = read('src/lib/crypto/serverDeviceEnrollment.ts');
 const deviceTrust = read('src/lib/crypto/deviceLinkTrust.ts');
 const realtime = read('src/lib/messaging/realtimeKeySync.ts');
@@ -54,10 +54,10 @@ describe('Aegis canonical device cleanup', () => {
   it('validates device trust directly against user_devices', () => {
     expect(deviceTrust).not.toContain('signedDeviceList');
     expect(deviceTrust).not.toContain('finalizeLinkedDeviceAfterRestore');
-    expect(deviceTrust).toContain("approval_status === 'approved'");
-    expect(deviceTrust).toContain("binding_status === 'bound'");
-    expect(deviceTrust).toContain("routing_status === 'ready'");
-    expect(deviceTrust).toContain('DEVICE_SIGNED_PREKEY_UNAVAILABLE');
+    expect(deviceTrust).toContain("approval_status !== 'approved'");
+    expect(deviceTrust).toContain("binding_status !== 'bound'");
+    expect(deviceTrust).toContain("routing_status !== 'ready'");
+    expect(deviceTrust).toContain('DEVICE_ROUTE_NOT_READY');
   });
 
   it('drops the legacy realtime device tables', () => {

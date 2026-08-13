@@ -103,17 +103,21 @@ describe('Zeus plaintext boundary', () => {
     expect(secureSendHook).toContain("from('conversation_participants')");
     expect(secureSendHook).toContain(".eq('user_id', ZEUS_BOT_ID)");
     expect(secureSendHook).toContain('await assertRegularMessengerConversation(conversationId);');
-    expect(secureSendHook.indexOf('await assertRegularMessengerConversation(conversationId);'))
-      .toBeLessThan(secureSendHook.indexOf('sendAegisOutboundMessage'));
+    const guardCall = secureSendHook.indexOf('await assertRegularMessengerConversation(conversationId);');
+    const sendCall = secureSendHook.indexOf('sent = await sendAegisOutboundMessage');
+    expect(guardCall).toBeLessThan(sendCall);
     expect(secureSendHook).not.toContain('onMutate:');
     expect(secureSendHook).not.toContain('optimistic-');
   });
 
   it('allows the legacy module only behind the controlled public facade', () => {
-    const testPath = 'src/lib/messaging/__tests__/zeusPlaintextBoundary.test.ts';
+    const testPaths = new Set([
+      'src/lib/messaging/__tests__/zeusPlaintextBoundary.test.ts',
+      'src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts',
+    ]);
     const normalizePath = (path: string) => relative('.', path).replace(/\\/gu, '/');
     const directReferences = collectTypeScriptFiles('src')
-      .filter((path) => normalizePath(path) !== testPath)
+      .filter((path) => !testPaths.has(normalizePath(path)))
       .filter((path) => readFileSync(path, 'utf8').includes('useMessages.legacy'))
       .map(normalizePath)
       .sort();

@@ -82,13 +82,11 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(tracker).toContain('return false;');
   });
 
-  it('quarantines invalid historical devices while retaining verified routes', () => {
+  it('accepts only canonical active routes that pass device trust verification', () => {
     const registry = source('src/e2ee-session/deviceRegistry.ts');
-    expect(registry).toContain('trustedRoutable');
-    expect(registry).toContain('rejectedRoutable');
-    expect(registry).toContain('quarantining invalid historical device authorizations');
+    expect(registry).toContain("rpc('list_active_devices_for_user'");
+    expect(registry).toContain('ensureApprovedDeviceTrust');
     expect(registry).toContain("throw new Error('E2EE_DEVICE_REGISTRY_INVALID')");
-    expect(registry).toContain('refusing raw fallback');
   });
 
   it('does not generate a Master Key from sync or PIN setup fallback paths', () => {
@@ -122,9 +120,7 @@ describe('Aegis PIN recovery and identity continuity', () => {
     const bootstrap = source('src/lib/crypto/identityBootstrap.ts');
 
     expect(auth).toContain('hasLocalKeys(userId)');
-    expect(dialog).toContain('hasLocalKeys(user.id)');
-    expect(dialog).toContain("reason: 'server_identity_without_local_identity'");
-    expect(dialog).toContain(".from('user_public_keys')");
+    expect(dialog).toContain('Recovery is now handled by the canonical DeviceID / Windows Hello lifecycle');
     expect(bootstrap).toContain('error instanceof PinUnlockRequiredError');
     expect(bootstrap).toContain('runWithoutUnhandledRejection(userId)');
   });

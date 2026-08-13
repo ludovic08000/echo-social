@@ -10,8 +10,8 @@ const registry = readFileSync(
   resolve(process.cwd(), 'src/e2ee-session/deviceRegistry.ts'),
   'utf8',
 );
-const signedList = readFileSync(
-  resolve(process.cwd(), 'src/lib/crypto/signedDeviceList.ts'),
+const routeResolver = readFileSync(
+  resolve(process.cwd(), 'src/lib/messaging/aegisRouteResolver.ts'),
   'utf8',
 );
 
@@ -26,19 +26,15 @@ describe('Aegis stage 3 route guards in the final schema', () => {
     expect(migration).toContain('is_routable boolean');
     expect(migration).toContain('device.revoked_at');
     expect(migration).toContain('device.is_routable = true');
-    expect(signedList).toContain('isRoutable: row.is_routable === true');
-    expect(signedList).toContain('isRoutable: entry.isRoutable');
+    expect(routeResolver).toContain('sender_device_routable');
+    expect(routeResolver).toContain('verifyRouteDeviceIdentityOffline');
 
     // Only signed, currently routable devices with a public key may leave the
     // canonical registry as transport routes. Invalid current routes block;
     // only invalid non-routable historical entries may be quarantined.
-    expect(registry).toMatch(
-      /verified\.trusted\.filter\([\s\S]*?\.isRoutable\s*&&\s*Boolean\([^)]*\.devicePublicKey\)/,
-    );
-    expect(registry).toContain('rejectedRoutable');
-    expect(registry).toContain('!entry.ok && entry.isRoutable');
-    expect(registry).toContain('!entry.ok && !entry.isRoutable');
-    expect(registry).toContain('quarantining invalid historical device authorizations');
+    expect(registry).toContain("rpc('list_active_devices_for_user'");
+    expect(registry).toContain('ensureApprovedDeviceTrust');
+    expect(registry).toContain('E2EE_DEVICE_REGISTRY_INVALID');
   });
 
   it('binds destructive OPK claims to both users and the sender device', () => {

@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  fetchVerifiedDeviceList: vi.fn(),
+  listActiveDevices: vi.fn(),
   peekDeviceSignedPrekey: vi.fn(),
+  ensureApprovedDeviceTrust: vi.fn(),
+}));
+
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: { rpc: mocks.listActiveDevices },
 }));
 
 vi.mock('@/lib/messaging/currentDevice', () => ({
@@ -10,8 +15,8 @@ vi.mock('@/lib/messaging/currentDevice', () => ({
   isDeviceIdTemporary: () => false,
 }));
 
-vi.mock('@/lib/crypto/signedDeviceList', () => ({
-  fetchVerifiedDeviceList: mocks.fetchVerifiedDeviceList,
+vi.mock('@/lib/crypto/deviceLinkTrust', () => ({
+  ensureApprovedDeviceTrust: mocks.ensureApprovedDeviceTrust,
 }));
 
 vi.mock('@/lib/crypto/x3dh', () => ({
@@ -26,22 +31,13 @@ import {
 describe('verified device routing cache', () => {
   beforeEach(() => {
     invalidateVerifiedDeviceCache();
-    mocks.fetchVerifiedDeviceList.mockReset();
+    mocks.listActiveDevices.mockReset();
+    mocks.ensureApprovedDeviceTrust.mockReset();
     mocks.peekDeviceSignedPrekey.mockReset();
-    mocks.fetchVerifiedDeviceList.mockResolvedValue({
-      signedListPresent: true,
-      trusted: [{
-        deviceId: 'device-a',
-        devicePublicKey: 'public-key-a',
-        isPrimary: true,
-        primaryDeviceId: null,
-        primaryPubB64: 'root',
-        signatureB64: null,
-        signedAt: null,
-        isRoutable: true,
-      }],
-      verifications: [{ deviceId: 'device-a', ok: true, reason: 'PRIMARY' }],
-    });
+    mocks.ensureApprovedDeviceTrust.mockResolvedValue(undefined);
+    mocks.listActiveDevices.mockResolvedValue({ data: [{
+      device_id: 'device-a', device_public_key: 'public-key-a', platform: 'ios', last_seen_at: null,
+    }], error: null });
   });
 
   it('reuses a recently verified signed device list for warm sends', async () => {
@@ -50,7 +46,7 @@ describe('verified device routing cache', () => {
 
     const second = await listDevicesForUser('user-a', { verifyPrekeys: false });
 
-    expect(mocks.fetchVerifiedDeviceList).toHaveBeenCalledTimes(1);
+    expect(mocks.listActiveDevices).toHaveBeenCalledTimes(1);
     expect(second).toEqual([{
       userId: 'user-a',
       deviceId: 'device-a',
@@ -60,7 +56,7 @@ describe('verified device routing cache', () => {
   });
 
   it('surfaces canonical registry verification failures', async () => {
-    mocks.fetchVerifiedDeviceList.mockRejectedValueOnce(new Error('network'));
+    mocks.listActiveDevices.mockResolvedValueOnce({ data: null, error: { message: 'network' } });
 
     await expect(listDevicesForUser('user-b', { verifyPrekeys: false }))
       .rejects.toThrow('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
@@ -68,32 +64,21 @@ describe('verified device routing cache', () => {
 
   it('does not cache a stale in-flight empty list after invalidation', async () => {
     let release!: (value: unknown) => void;
-    mocks.fetchVerifiedDeviceList.mockImplementationOnce(() => new Promise((resolve) => {
+    mocks.listActiveDevices.mockImplementationOnce(() => new Promise((resolve) => {
       release = resolve;
     }));
 
     const stale = listDevicesForUser('user-c', { verifyPrekeys: false });
     invalidateVerifiedDeviceCache('user-c');
-    release({ signedListPresent: false, trusted: [], verifications: [] });
+    release({ data: [], error: null });
     await expect(stale).resolves.toEqual([]);
 
-    mocks.fetchVerifiedDeviceList.mockResolvedValueOnce({
-      signedListPresent: true,
-      trusted: [{
-        deviceId: 'device-c',
-        devicePublicKey: 'public-key-c',
-        isPrimary: true,
-        primaryDeviceId: null,
-        primaryPubB64: 'root',
-        signatureB64: null,
-        signedAt: null,
-        isRoutable: true,
-      }],
-      verifications: [{ deviceId: 'device-c', ok: true, reason: 'PRIMARY' }],
-    });
+    mocks.listActiveDevices.mockResolvedValueOnce({ data: [{
+      device_id: 'device-c', device_public_key: 'public-key-c', platform: 'windows', last_seen_at: null,
+    }], error: null });
 
     await expect(listDevicesForUser('user-c', { verifyPrekeys: false }))
       .resolves.toEqual([expect.objectContaining({ deviceId: 'device-c' })]);
-    expect(mocks.fetchVerifiedDeviceList).toHaveBeenCalledTimes(2);
+    expect(mocks.listActiveDevices).toHaveBeenCalledTimes(2);
   });
 });

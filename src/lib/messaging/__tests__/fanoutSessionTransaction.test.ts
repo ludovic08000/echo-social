@@ -17,6 +17,16 @@ vi.mock('@/lib/crypto/deviceSessionQueue', () => ({
   ) => job()),
 }));
 
+vi.mock('@/lib/crypto/deviceVault', () => ({
+  deviceVaultMirrorsPlaintext: () => true,
+  readDeviceVaultRecord: vi.fn(async () => null),
+  writeDeviceVaultRecord: vi.fn(async () => undefined),
+  removeDeviceVaultRecord: vi.fn(async () => undefined),
+  listDeviceVaultStorageIds: vi.fn(async () => []),
+  adoptLegacyPlaintextRecord: vi.fn(async ({ legacy }: { legacy: unknown }) => legacy),
+  logDeviceVaultEvent: vi.fn(),
+}));
+
 vi.mock('@/lib/crypto/indexedDbTx', () => ({
   reqToPromise: vi.fn(async (request: { value?: StoredRecord }) => request.value),
   runTxOn: vi.fn(async (

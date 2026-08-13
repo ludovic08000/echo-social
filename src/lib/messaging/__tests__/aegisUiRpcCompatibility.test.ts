@@ -63,7 +63,7 @@ describe('Aegis UI and final schema compatibility', () => {
   });
 
   it('does not force the conversations query to refetch on every widget mount', () => {
-    const source = read('src/hooks/useMessages.ts');
+    const source = read('src/hooks/useMessages.legacy.ts');
     const start = source.indexOf('export function useConversations()');
     const end = source.indexOf('export function useMessages(');
     expect(start).toBeGreaterThanOrEqual(0);
@@ -77,7 +77,7 @@ describe('Aegis UI and final schema compatibility', () => {
   });
 
   it('scopes every conversation invalidation to the authenticated user', () => {
-    const source = read('src/hooks/useMessages.ts');
+    const source = read('src/hooks/useMessages.legacy.ts');
     expect(source).toContain('invalidateUserConversations');
     expect(source).not.toContain("queryClient.invalidateQueries({ queryKey: ['conversations'] });");
   });

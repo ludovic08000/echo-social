@@ -10,6 +10,7 @@ const deviceTrust = read('src/lib/crypto/deviceLinkTrust.ts');
 const managedDevice = read('src/lib/messaging/currentDevice.ts');
 const deviceIdStore = read('src/lib/messaging/currentDevice.ts');
 const devicesPanel = read('src/components/settings/DevicesPanel.tsx');
+const deviceApi = read('src/lib/api/deviceApi.ts');
 const migration = read(
   'supabase/migrations/20260722120000_manual_device_revocation_only.sql',
 ).toLowerCase();
@@ -26,9 +27,10 @@ describe('manual-only DeviceID revocation policy', () => {
   });
 
   it('keeps the explicit connected-devices menu as the revocation entry point', () => {
-    expect(devicesPanel).toContain("rpc('revoke_user_device'");
+    expect(devicesPanel).toContain('deviceApi.revokeDevice');
+    expect(deviceApi).toContain("'revoke_user_device'");
     expect(devicesPanel).toContain('Révoquer cet appareil ?');
-    expect(devicesPanel).toContain('onClick={() => void handleRevoke(dev)}');
+    expect(devicesPanel).toContain('onClick={() => void handleRevoke(device)}');
   });
 
   it('has no automatic DeviceID rotation escape for a revoked route', () => {
