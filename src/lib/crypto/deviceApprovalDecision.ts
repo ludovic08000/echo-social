@@ -41,12 +41,25 @@ function validateTarget(target: PendingDeviceApprovalTarget): void {
 
 async function createAccountDeviceAuthorization(args: {
   userId: string;
+  approverDeviceId: string;
   target: PendingDeviceApprovalTarget;
 }): Promise<string> {
   // A trusted-device approval must use the already-existing ACCOUNT signing
   // private key. Never create a replacement identity here: if continuity is
   // missing, approval fails closed and recovery must restore the account key.
-  const accountKeys = await loadIdentityKeys(args.userId);
+  let accountKeys = await loadIdentityKeys(args.userId);
+  if (!accountKeys) {
+    const { isWindowsWeb, recoverCurrentWindowsHelloDevice } = await import(
+      '@/lib/crypto/windowsHelloDeviceRecovery'
+    );
+    if (isWindowsWeb()) {
+      const recoveredDeviceId = await recoverCurrentWindowsHelloDevice(args.userId);
+      if (recoveredDeviceId !== args.approverDeviceId) {
+        throw new Error('DEVICE_APPROVAL_WINDOWS_HELLO_DEVICE_MISMATCH');
+      }
+      accountKeys = await loadIdentityKeys(args.userId);
+    }
+  }
   if (!accountKeys) throw new Error('DEVICE_APPROVAL_ACCOUNT_PRIVATE_KEY_MISSING');
 
   const account = await exportPublicKeyBundle(accountKeys);
@@ -110,7 +123,11 @@ export async function submitTrustedDeviceApprovalDecision(args: {
   // device. This is generated at the click, before the server may transition
   // the target to approved. Rejecting a device never grants account trust.
   const deviceAuthorizationSignature = args.decision === 'approve'
-    ? await createAccountDeviceAuthorization({ userId: args.userId, target: args.target })
+    ? await createAccountDeviceAuthorization({
+      userId: args.userId,
+      approverDeviceId: args.approverDeviceId,
+      target: args.target,
+    })
     : null;
 
   const result = await callApprovalRpc({
