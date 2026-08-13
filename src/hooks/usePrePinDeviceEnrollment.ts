@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { deviceApi, type DeviceApiRecord } from '@/lib/api/deviceApi';
@@ -45,12 +45,13 @@ async function toPending(record: DeviceApiRecord | null): Promise<PendingDeviceA
   };
 }
 
-export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: () => void) {
+export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: () => void) {
   const { user } = useAuth();
   const [pending, setPending] = useState<PendingDeviceApproval | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [canBootstrapPrimary, setCanBootstrapPrimary] = useState(false);
+  const enrollmentInFlightRef = useRef(false);
 
   const reloadPending = useCallback(async () => {
     if (!user?.id) {
@@ -100,7 +101,8 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
   }, [reloadPending]);
 
   const startEnrollment = useCallback(async () => {
-    if (!user?.id || processing) return;
+    if (!user?.id || processing || enrollmentInFlightRef.current || deviceId || pending) return;
+    enrollmentInFlightRef.current = true;
     setProcessing(true);
     setError(null);
     try {
@@ -114,9 +116,10 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'DEVICE_ENROLLMENT_START_FAILED');
     } finally {
+      enrollmentInFlightRef.current = false;
       setProcessing(false);
     }
-  }, [onChanged, processing, reloadPending, user?.id]);
+  }, [deviceId, onChanged, pending, processing, reloadPending, user?.id]);
 
   const decide = useCallback(async (decision: 'approve' | 'reject') => {
     if (!user?.id || !pending || processing) return;
@@ -144,6 +147,7 @@ export function usePrePinDeviceEnrollment(_deviceId: string | null, onChanged: (
     processing,
     error,
     canBootstrapPrimary,
+    canStartEnrollment: !deviceId && !pending && !processing,
     startEnrollment,
     decide,
     reloadPending,
