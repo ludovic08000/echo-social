@@ -13,7 +13,6 @@ import {
   secureRemoveCriticalSecret,
   secureSetCriticalSecret,
 } from '@/lib/secureStore';
-import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
 import {
   readNativeKeyRecord,
   removeNativeKeyRecord,
@@ -25,7 +24,7 @@ const VAULT_VERSION = 1 as const;
 const IOS_WEB_KEY_PREFIX = 'aegis.device-vault.v1:';
 const IOS_WEB_MANIFEST_KEY = 'aegis.device-vault.v1:manifest';
 
-type DeviceVaultMode = 'native' | 'ios-web' | 'legacy-web';
+type DeviceVaultMode = 'native' | 'web';
 
 interface WebVaultEnvelope {
   version: typeof VAULT_VERSION;
@@ -42,8 +41,7 @@ export class DeviceVaultCorruptError extends Error {
 
 function mode(): DeviceVaultMode {
   if (isSecureStoreNative()) return 'native';
-  if (isIosWebRuntime()) return 'ios-web';
-  return 'legacy-web';
+  return 'web';
 }
 
 function webKey(storageId: string): string {
@@ -69,7 +67,7 @@ async function updateIosManifest(storageId: string, present: boolean): Promise<v
 }
 
 export async function listDeviceVaultStorageIds(prefix: string): Promise<string[]> {
-  if (mode() !== 'ios-web') return [];
+  if (mode() !== 'web') return [];
   return (await readIosManifest()).filter((storageId) => storageId.startsWith(prefix));
 }
 
@@ -78,7 +76,7 @@ export async function listDeviceVaultStorageIds(prefix: string): Promise<string[
  * conservé sur natif. Seul iOS Web interdit le miroir privé en clair.
  */
 export function deviceVaultMirrorsPlaintext(): boolean {
-  return mode() !== 'ios-web';
+  return mode() === 'native';
 }
 
 export function logDeviceVaultEvent(
@@ -114,7 +112,6 @@ export async function readDeviceVaultRecord<T>(
 
   // Windows/desktop Web : comportement historique inchangé. Le caller relit
   // son IndexedDB legacy comme avant ce chantier.
-  if (vaultMode === 'legacy-web') return null;
 
   const encoded = await secureGetCriticalSecret(webKey(storageId));
   if (encoded === null) return null;
@@ -149,7 +146,6 @@ export async function writeDeviceVaultRecord<T>(storageId: string, payload: T): 
 
   // Windows/desktop Web : no-op volontaire. Le caller écrit ensuite dans son
   // IndexedDB historique, donc zéro modification du flux Windows validé.
-  if (vaultMode === 'legacy-web') return;
 
   const encoded = JSON.stringify({
     version: VAULT_VERSION,
@@ -176,7 +172,6 @@ export async function removeDeviceVaultRecord(storageId: string): Promise<void> 
     return;
   }
 
-  if (vaultMode === 'legacy-web') return;
   await secureRemoveCriticalSecret(webKey(storageId));
   await updateIosManifest(storageId, false);
 }
@@ -206,10 +201,6 @@ export async function adoptLegacyPlaintextRecord<T>(args: {
   }
 
   const vaultMode = mode();
-  if (vaultMode === 'legacy-web') {
-    return legacy;
-  }
-
   await writeDeviceVaultRecord(storageId, legacy);
   const readback = await readDeviceVaultRecord(storageId, validate);
   if (!readback) {
@@ -217,7 +208,7 @@ export async function adoptLegacyPlaintextRecord<T>(args: {
     throw new Error(`E2EE_DEVICE_VAULT_READBACK_FAILED:${storageId}`);
   }
 
-  if (vaultMode === 'ios-web') {
+  if (vaultMode === 'web') {
     await deleteLegacy();
   }
 

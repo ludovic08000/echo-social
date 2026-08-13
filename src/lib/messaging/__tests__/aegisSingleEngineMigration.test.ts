@@ -12,11 +12,12 @@ const wireRepair = readFileSync(
   'utf8',
 ).toLowerCase();
 const lifecycle = readFileSync(
-  resolve(root, 'src/lib/device-manager/lifecycle.ts'),
+  resolve(root, 'src/lib/messaging/aegisDeviceRuntime.ts'),
   'utf8',
 ).toLowerCase();
 const queueHook = readFileSync(resolve(root, 'src/hooks/useAegisMessageQueue.ts'), 'utf8');
 const mutationHook = readFileSync(resolve(root, 'src/hooks/useMessages.ts'), 'utf8');
+const secureMutationHook = readFileSync(resolve(root, 'src/hooks/useSendMessageSecure.ts'), 'utf8');
 const queueFacade = readFileSync(resolve(root, 'src/hooks/useMessageQueue.ts'), 'utf8');
 const messageBody = readFileSync(
   resolve(root, 'src/components/messages/DecryptedMessageBody.tsx'),
@@ -45,12 +46,14 @@ describe('Aegis single-engine cutover', () => {
     expect(migration).toContain('set primary_device_id = v_replacement_id');
     expect(migration).toContain('create trigger aegis_reconcile_device_root');
     expect(lifecycle).not.toContain(".from('user_devices').upsert");
-    expect(lifecycle).toContain('device_registration_rpc_required');
+    expect(lifecycle).toContain('deviceapi.preparekeys(userid)');
+    expect(lifecycle).toContain('ensureapproveddevicetrust(userid, deviceid)');
   });
 
   it('routes every encrypted UI send through the canonical engine', () => {
     expect(queueHook).toContain('sendAegisOutboundMessage');
-    expect(mutationHook).toContain('sendAegisOutboundMessage');
+    expect(mutationHook).toContain("export { useSendMessage } from './useSendMessageSecure'");
+    expect(secureMutationHook).toContain('sendAegisOutboundMessage');
     expect(existsSync(resolve(root, 'src/lib/messaging/sendAegisMessage.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'src/hooks/useMessageQueueSignal.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'src/lib/messaging/signalWebConversationQueue.ts'))).toBe(false);

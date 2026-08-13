@@ -8,7 +8,7 @@ function source(path: string): string {
 
 const migration = source('supabase/migrations/20260730090000_aegis_clean_rebuild.sql').toLowerCase();
 const identity = source('src/lib/crypto/deviceIdentity.ts');
-const signedList = source('src/lib/crypto/signedDeviceList.ts');
+const deviceTrust = source('src/lib/crypto/deviceLinkTrust.ts');
 const fanout = source('src/lib/messaging/multiDeviceFanout.ts');
 const registry = source('src/e2ee-session/deviceRegistry.ts');
 const ratchet = source('src/lib/crypto/deviceRatchet.ts');
@@ -21,8 +21,8 @@ describe('Aegis stage 3 architecture', () => {
     expect(identity).toContain('verifyDeviceAuthorization');
     expect(identity).toContain("protocol: 'forsure-aegis-device-authorization'");
     expect(identity).not.toContain('signDeviceIdentityBinding');
-    expect(signedList).toContain('verifyPublicIdentityBinding');
-    expect(signedList).toContain('verifyDeviceAuthorization');
+    expect(deviceTrust).toContain('verifyPublicIdentityBinding');
+    expect(deviceTrust).toContain('verifyDeviceAuthorization');
   });
 
   it('removes the self-signed schema instead of keeping a second reader', () => {

@@ -29,11 +29,6 @@ import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
 import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { discardLegacyDeviceIdFromBackup } from '@/lib/crypto/deviceBackupPolicy';
-import {
-  exportPlaintextCache,
-  importPlaintextCache,
-  type PlaintextCacheExportEntry,
-} from '@/lib/crypto/plaintextStore';
 import { runPostRestoreSync, type RestoreReason } from '@/lib/crypto/postRestoreSync';
 import {
   createSingleFlightByKey,
@@ -289,13 +284,6 @@ async function collectAllKeys(userId: string, scope: BackupScope = 'aegis-vault'
 
   const hasIdentity = data['e2ee:identity-keys']?.some((row: any) => row?.id === userId);
   if (!hasIdentity) return null;
-  if (includeDeviceSecrets) try {
-    // Decrypted history is confined to the native device snapshot. The
-    // portable account vault is identity continuity, not a chat backup.
-    const plaintextCache = await exportPlaintextCache();
-    if (plaintextCache.length > 0) data['plaintext:cache'] = plaintextCache;
-  } catch {}
-
   data['_meta'] = {
     scope,
     userId,
@@ -461,14 +449,6 @@ const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
         if (oldFps) localStorage.setItem('forsure-known-fps', oldFps);
         else localStorage.removeItem('forsure-known-fps');
       });
-    }
-
-    // Phase 6: recent decrypted history cache. This is already encrypted at
-    // rest by the Master Key backup, and re-imports into an IndexedDB cache
-    // protected by a fresh local AES key. It lets the app show the latest
-    // messages/media immediately after iOS clears WebView storage.
-    if (Array.isArray(data['plaintext:cache'])) {
-      await importPlaintextCache(data['plaintext:cache'] as PlaintextCacheExportEntry[]);
     }
 
     console.log('[MasterKey] ✅ Atomic restore complete');

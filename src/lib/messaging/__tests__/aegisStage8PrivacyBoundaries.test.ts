@@ -80,7 +80,7 @@ describe('Aegis stage 8 privacy boundaries', () => {
 
     expect(read('src/hooks/useAegisMessageQueue.ts')).not.toContain("console.info('[MSG_TRACE]'");
     expect(read('src/lib/crypto/x3dh.ts')).not.toContain('UPSERT_PAYLOAD');
-    expect(read('src/lib/crypto/resyncE2EE.ts')).not.toContain('UPSERT_PAYLOAD');
+    expect(read('src/lib/messaging/realtimeKeySync.ts')).not.toContain('UPSERT_PAYLOAD');
     expect(read('supabase/functions/sealed-relay/index.ts')).not.toContain('console.error("[sealed-relay]');
     expect(read('supabase/functions/sealed-mint-token/index.ts')).not.toContain('console.error("[sealed-mint]');
     expect(read('supabase/functions/livekit-token/index.ts')).not.toContain('LiveKit token error:');
