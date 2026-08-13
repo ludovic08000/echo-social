@@ -8203,6 +8203,14 @@ export type Database = {
         Args: { _expected_step: number; _user_id: string }
         Returns: number
       }
+      aegis_account_binding_payload: {
+        Args: { p_identity_key: string; p_signing_key: string }
+        Returns: string
+      }
+      aegis_account_fingerprint: {
+        Args: { p_payload: string }
+        Returns: string
+      }
       aegis_ack_device_messages: {
         Args: {
           p_device_id: string
@@ -8233,6 +8241,17 @@ export type Database = {
       aegis_call_update_status: {
         Args: { p_call_id: string; p_device_id: string; p_status: string }
         Returns: Json
+      }
+      aegis_decode_base64: { Args: { p_value: string }; Returns: string }
+      aegis_device_authorization_payload: {
+        Args: {
+          p_account_fingerprint: string
+          p_device_id: string
+          p_device_public_key: string
+          p_device_signing_key: string
+          p_user_id: string
+        }
+        Returns: string
       }
       aegis_pin_continuity_delete: { Args: never; Returns: boolean }
       aegis_pin_continuity_get: {
@@ -8287,6 +8306,40 @@ export type Database = {
           sender_user_id: string
         }[]
       }
+      aegis_verify_account_binding: {
+        Args: {
+          p_binding_signature: string
+          p_binding_version: number
+          p_fingerprint: string
+          p_identity_key: string
+          p_signing_key: string
+        }
+        Returns: boolean
+      }
+      aegis_verify_device_authorization: {
+        Args: {
+          p_account_fingerprint: string
+          p_account_signing_key: string
+          p_device_authorization_signature: string
+          p_device_id: string
+          p_device_public_key: string
+          p_device_signing_key: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
+      aegis_verify_ed25519: {
+        Args: { p_message: string; p_public_key: string; p_signature: string }
+        Returns: boolean
+      }
+      aegis_verify_signed_prekey: {
+        Args: {
+          p_device_signing_key: string
+          p_spk_public_key: string
+          p_spk_signature: string
+        }
+        Returns: boolean
+      }
       ai_engine_module_stats: {
         Args: { p_window_minutes?: number }
         Returns: {
@@ -8298,7 +8351,31 @@ export type Database = {
         }[]
       }
       apply_security_auto_mitigations: { Args: never; Returns: Json }
-      approve_device_enrollment_decision: {
+      approve_device_enrollment_decision:
+        | {
+            Args: {
+              p_approver_device_id: string
+              p_bootstrap_primary: boolean
+              p_challenge_id: string
+              p_decision: string
+              p_device_id: string
+              p_signature: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_approver_device_id: string
+              p_bootstrap_primary: boolean
+              p_challenge_id: string
+              p_decision: string
+              p_device_authorization_signature: string
+              p_device_id: string
+              p_signature: string
+            }
+            Returns: Json
+          }
+      approve_device_enrollment_decision_pre_account_authorization: {
         Args: {
           p_approver_device_id: string
           p_bootstrap_primary: boolean
@@ -8527,6 +8604,14 @@ export type Database = {
         }
         Returns: Json
       }
+      finalize_device_account_binding_pre_signal_validation: {
+        Args: {
+          p_device_authorization_signature: string
+          p_device_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       finalize_device_approval_decision: {
         Args: {
           p_approver_device_id?: string
@@ -8600,6 +8685,10 @@ export type Database = {
           other_user_id: string
           unread_count: number
         }[]
+      }
+      get_current_device_prekey_inventory: {
+        Args: { p_device_id: string }
+        Returns: Json
       }
       get_device_copies_for_messages: {
         Args: { p_device_id: string; p_message_ids: string[] }
@@ -9046,7 +9135,20 @@ export type Database = {
         Args: { p_device_id: string; p_prekeys: Json }
         Returns: Json
       }
+      publish_device_one_time_prekeys_pre_signal_validation: {
+        Args: { p_device_id: string; p_prekeys: Json }
+        Returns: Json
+      }
       publish_device_signed_prekey: {
+        Args: {
+          p_device_id: string
+          p_public_key: string
+          p_signature: string
+          p_spk_id: number
+        }
+        Returns: Json
+      }
+      publish_device_signed_prekey_pre_signal_validation: {
         Args: {
           p_device_id: string
           p_public_key: string
