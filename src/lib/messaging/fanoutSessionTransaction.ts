@@ -1,5 +1,9 @@
-import { runTxOn, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import { runDeviceSessionJob } from '@/lib/crypto/deviceSessionQueue';
+import {
+  readDeviceSessionRecord,
+  removeDeviceSessionRecord,
+  writeDeviceSessionRecord,
+} from '@/lib/crypto/deviceSessionStore';
 
 const SESSION_STORE = 'sessions';
 const INITIATING_STORE = 'initiating-sessions';
@@ -14,19 +18,14 @@ type PairSnapshot = {
 const attempts = new Map<string, Map<string, PairSnapshot>>();
 
 async function restoreSnapshot(snapshot: PairSnapshot): Promise<void> {
-  await runDeviceSessionJob('route', snapshot.key, () => runTxOn(
-    'device-sessions',
-    [SESSION_STORE, INITIATING_STORE],
-    'readwrite',
-    (tx) => {
-      const sessions = tx.objectStore(SESSION_STORE);
-      const initiating = tx.objectStore(INITIATING_STORE);
-      if (snapshot.session) sessions.put(structuredClone(snapshot.session));
-      else sessions.delete(snapshot.key);
-      if (snapshot.initiating) initiating.put(structuredClone(snapshot.initiating));
-      else initiating.delete(snapshot.key);
-    },
-  ));
+  await runDeviceSessionJob('route', snapshot.key, () => Promise.all([
+    snapshot.session
+      ? writeDeviceSessionRecord(SESSION_STORE, structuredClone(snapshot.session))
+      : removeDeviceSessionRecord(SESSION_STORE, snapshot.key),
+    snapshot.initiating
+      ? writeDeviceSessionRecord(INITIATING_STORE, structuredClone(snapshot.initiating))
+      : removeDeviceSessionRecord(INITIATING_STORE, snapshot.key),
+  ]).then(() => undefined));
 }
 
 function compositeKey(
@@ -68,15 +67,10 @@ export async function captureFanoutSessionBeforeMutation(args: {
   }
   if (transaction.has(key)) return;
 
-  const snapshot = await runTxOn(
-    'device-sessions',
-    [SESSION_STORE, INITIATING_STORE],
-    'readonly',
-    (tx) => Promise.all([
-      reqToPromise(tx.objectStore(SESSION_STORE).get(key) as IDBRequest<StoredRecord | undefined>),
-      reqToPromise(tx.objectStore(INITIATING_STORE).get(key) as IDBRequest<StoredRecord | undefined>),
-    ]),
-  );
+  const snapshot = await Promise.all([
+    readDeviceSessionRecord<StoredRecord>(SESSION_STORE, key),
+    readDeviceSessionRecord<StoredRecord>(INITIATING_STORE, key),
+  ]);
 
   transaction.set(key, {
     key,

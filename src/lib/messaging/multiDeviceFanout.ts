@@ -76,6 +76,10 @@ type CopyRow = {
   recipient_device_id?: string;
 };
 
+export type SyncedDeviceCopyRow = Required<Pick<CopyRow,
+  'message_id' | 'encrypted_body' | 'sender_user_id' | 'sender_device_id' | 'recipient_device_id'
+>>;
+
 const deviceCopyCache = new Map<string, CopyRow | null>();
 const deviceCopyMissAt = new Map<string, number>();
 const deviceCopyPreloads = new Map<string, Promise<void>>();
@@ -108,6 +112,23 @@ export function clearDeviceCopyCacheForMessage(messageId: string): void {
       deviceCopyMissAt.delete(key);
     }
   }
+}
+
+/**
+ * Injecte la capsule authentifiée rendue par l'inbox dans l'unique file locale.
+ * Invariant Signal : on ne relit pas le réseau entre réception et déchiffrement.
+ */
+export function stageSyncedDeviceCopy(
+  userId: string,
+  deviceId: string,
+  row: SyncedDeviceCopyRow,
+): void {
+  if (!userId || !deviceId || row.recipient_device_id !== deviceId) {
+    throw new Error('AEGIS_SYNCED_COPY_SCOPE_MISMATCH');
+  }
+  const key = copyCacheKey(userId, deviceId, row.message_id);
+  deviceCopyCache.set(key, row);
+  deviceCopyMissAt.delete(key);
 }
 
 /**

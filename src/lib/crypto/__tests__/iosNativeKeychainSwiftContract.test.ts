@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const source = readFileSync('ios/App/App/AegisKeychainPlugin.swift', 'utf8');
+const secureStore = readFileSync('src/lib/secureStore.ts', 'utf8');
 
 describe('native iOS Aegis Continuity Enclave contract', () => {
   it('binds the root anchor to the Secure Enclave and physical device', () => {
@@ -46,5 +47,18 @@ describe('native iOS Aegis Continuity Enclave contract', () => {
   it('does not tie unattended messaging continuity to mutable biometrics', () => {
     expect(source).not.toContain('biometryCurrentSet');
     expect(source).not.toContain('kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly');
+  });
+
+  it('routes complete X3DH and session snapshots through ACE as one record', () => {
+    const setSecret = secureStore.slice(
+      secureStore.indexOf('export async function secureSetSecret'),
+      secureStore.indexOf('export async function secureGetSecret'),
+    );
+    expect(setSecret).toContain('if (isIOSNative())');
+    expect(setSecret).toContain('await AegisKeychain.set({ key, value })');
+    expect(setSecret).toContain('await AegisKeychain.get({ key })');
+    expect(setSecret.indexOf('if (isIOSNative())')).toBeLessThan(
+      setSecret.indexOf('SecureStoragePlugin.set'),
+    );
   });
 });

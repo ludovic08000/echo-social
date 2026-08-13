@@ -2,7 +2,7 @@
  * Aegis secure storage router.
  *
  * - Native iOS: AegisKeychain backed by the Secure Enclave anchor.
- * - Native Android: platform secure storage.
+ * - Native Android: AegisKeychain backed by a non-exportable Android Keystore key.
  * - Web browsers: ACE Web, a software enclave using a non-extractable
  *   WebCrypto AES-GCM anchor and authenticated records in IndexedDB.
  *
@@ -71,7 +71,8 @@ function criticalKey(key: string): string {
 }
 
 function isIOSNative(): boolean {
-  return isSecureStoreNative() && Capacitor.getPlatform() === 'ios';
+  const platform = Capacitor.getPlatform();
+  return isSecureStoreNative() && (platform === 'ios' || platform === 'android');
 }
 
 async function criticalPlatformGet(key: string): Promise<string | null> {
@@ -222,6 +223,19 @@ export async function secureSetSecret(key: string, value: string): Promise<boole
     }
   }
 
+  // Invariant ACE : sur iOS le snapshot X3DH + sessions est un unique
+  // enregistrement authentifié. Le découpage Keychain générique pourrait
+  // exposer un mélange ancien/nouveau après une interruption entre chunks.
+  if (isIOSNative()) {
+    try {
+      await AegisKeychain.set({ key, value });
+      const result = await AegisKeychain.get({ key });
+      return result?.value === value;
+    } catch {
+      return false;
+    }
+  }
+
   try {
     const chunks = value.match(new RegExp(`.{1,${SECRET_CHUNK_SIZE}}`, 'gs')) ?? [''];
     await SecureStoragePlugin.set({ key, value: chunks.length === 1 ? value : '' });
@@ -239,6 +253,15 @@ export async function secureSetSecret(key: string, value: string): Promise<boole
 
 export async function secureGetSecret(key: string): Promise<string | null> {
   if (!isSecureStoreNative()) return webAegisEnclaveGet(key);
+
+  if (isIOSNative()) {
+    try {
+      const result = await AegisKeychain.get({ key });
+      return typeof result?.value === 'string' ? result.value : null;
+    } catch {
+      return null;
+    }
+  }
 
   try {
     const meta = await rawSecureGet(secretMetaKey(key));
@@ -259,6 +282,13 @@ export async function secureGetSecret(key: string): Promise<string | null> {
 export async function secureRemoveSecret(key: string): Promise<void> {
   if (!isSecureStoreNative()) {
     await webAegisEnclaveRemove(key);
+    return;
+  }
+
+  if (isIOSNative()) {
+    await AegisKeychain.remove({ key });
+    const result = await AegisKeychain.get({ key });
+    if (result?.value != null) throw new Error('E2EE_ENCLAVE_DELETE_READBACK_MISMATCH');
     return;
   }
 
