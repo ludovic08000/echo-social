@@ -107,8 +107,9 @@ describe('Aegis durable inbox client wiring', () => {
   it('routes send, sync and ack through the stable Aegis transport', () => {
     expect(transport).toContain("| 'aegis_sync_device'");
     expect(transport).toContain("| 'aegis_ack_device_messages'");
-    expect(inboxClient).toContain("callAegisServer<AegisInboxRow[]>(\n      'aegis_sync_device'");
-    expect(inboxClient).toContain("callAegisServer<number>(\n      'aegis_ack_device_messages'");
+    expect(inboxClient).toMatch(/callAegisServer<AegisInboxRow\[\]>\(\s*'aegis_sync_device'/);
+    expect(inboxClient).toMatch(/callAegisServer<number>\(\s*'aegis_ack_device_messages'/);
+    expect(inboxClient).toContain('stageSyncedDeviceCopy(userId, deviceId');
   });
 
   it('does not enumerate conversation messages or read sealed copies directly', () => {

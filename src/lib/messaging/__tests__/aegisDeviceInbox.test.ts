@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
     removeChannel: vi.fn(),
     trace: vi.fn(),
     transportKind: vi.fn(),
+    stageCopy: vi.fn(),
   };
 });
 
@@ -36,6 +37,10 @@ vi.mock('@/lib/messaging/aegisTransport', () => ({
 
 vi.mock('@/lib/messaging/e2eeTrace', () => ({
   traceE2EE: mocks.trace,
+}));
+
+vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
+  stageSyncedDeviceCopy: mocks.stageCopy,
 }));
 
 import {
@@ -88,7 +93,30 @@ describe('Aegis durable device inbox client', () => {
       p_limit: 100,
     });
     expect(listener).toHaveBeenCalledTimes(1);
+    expect(mocks.stageCopy).toHaveBeenCalledWith('user-one', 'device-stable', {
+      message_id: 'message-one',
+      encrypted_body: 'aegis1.ratchet.payload',
+      sender_user_id: 'user-two',
+      sender_device_id: 'device-two',
+      recipient_device_id: 'device-stable',
+    });
     window.removeEventListener('forsure-decrypt-retry', listener);
+  });
+
+  it('re-stages a still-pending capsule until decrypt and ACK succeed', async () => {
+    const row = {
+      copy_id: 'copy-retry', message_id: 'message-retry', conversation_id: 'conversation-one',
+      sender_user_id: 'user-two', sender_device_id: 'device-two', recipient_device_id: 'device-stable',
+      encrypted_body: 'aegis1.init.v1.payload', parent_body: '{}',
+      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(),
+    };
+    mocks.callAegisServer.mockResolvedValue({ data: [row], error: null });
+
+    await syncAegisDeviceInbox('user-one');
+    await syncAegisDeviceInbox('user-one');
+
+    expect(mocks.stageCopy).toHaveBeenCalledTimes(2);
+    expect(mocks.callAegisServer).toHaveBeenCalledTimes(2);
   });
 
   it('preserves PostgREST error details instead of reporting E_UNKNOWN', () => {

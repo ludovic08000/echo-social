@@ -7,7 +7,6 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { ParentalGateProvider } from "@/components/ParentalGate";
 import { I18nProvider } from "@/lib/i18n";
 import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContext";
-import { ChatWidget } from "@/components/ChatWidget";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
 import { SafetyNumberRevalidationBanner } from "@/components/messages/SafetyNumberRevalidationBanner";
@@ -32,14 +31,6 @@ import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
 import { E2EERestorePromptDialog } from "@/components/messages/E2EERestorePromptDialog";
 import { ContactVerificationDialog } from "@/components/messages/ContactVerificationDialog";
 import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
-
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import OAuthConsent from "./pages/OAuthConsent";
-import Signup from "./pages/Signup";
-import Feed from "./pages/Feed";
-
-import NotFound from "./pages/NotFound";
 
 const isChunkLoadError = (e: unknown): boolean => {
   const msg = (e as Error)?.message || '';
@@ -81,6 +72,13 @@ const lazyWithOneRetry = <TModule extends { default: React.ComponentType<object>
 });
 
 const PostDetail = lazyWithOneRetry(() => import("./pages/PostDetail"), 'r-post');
+const Landing = lazyWithOneRetry(() => import("./pages/Landing"), 'r-landing');
+const Login = lazyWithOneRetry(() => import("./pages/Login"), 'r-login');
+const OAuthConsent = lazyWithOneRetry(() => import("./pages/OAuthConsent"), 'r-oauth');
+const Signup = lazyWithOneRetry(() => import("./pages/Signup"), 'r-signup');
+const Feed = lazyWithOneRetry(() => import("./pages/Feed"), 'r-feed');
+const NotFound = lazyWithOneRetry(() => import("./pages/NotFound"), 'r-not-found');
+const ChatWidget = lazy(() => import("@/components/ChatWidget").then((module) => ({ default: module.ChatWidget })));
 const CreatePostPage = lazyWithOneRetry(() => import("./pages/CreatePostPage"), 'r-create');
 const Search = lazyWithOneRetry(() => import("./pages/Search"), 'r-search');
 const Notifications = lazyWithOneRetry(() => import("./pages/Notifications"), 'r-notifs');

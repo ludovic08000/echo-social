@@ -5,6 +5,7 @@ import {
   getAegisTransportKind,
 } from '@/lib/messaging/aegisTransport';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { stageSyncedDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
 
 export type AegisInboxRow = {
   copy_id: string;
@@ -22,7 +23,6 @@ export type AegisInboxRow = {
 const syncInflight = new Map<string, Promise<AegisInboxRow[]>>();
 const ackInflight = new Map<string, Promise<void>>();
 const acknowledged = new Set<string>();
-const delivered = new Set<string>();
 const MAX_LOCAL_CACHE = 1_000;
 
 function rememberBounded(cache: Set<string>, key: string): void {
@@ -60,10 +60,17 @@ export function formatAegisInboxError(error: unknown): string {
   return 'UNKNOWN';
 }
 
-function dispatchInboxRow(row: AegisInboxRow, deviceId: string): void {
-  const deliveryKey = `${deviceId}:${row.copy_id}`;
-  if (delivered.has(deliveryKey)) return;
-  rememberBounded(delivered, deliveryKey);
+function dispatchInboxRow(row: AegisInboxRow, userId: string, deviceId: string): void {
+  if (row.recipient_device_id && row.recipient_device_id !== deviceId) {
+    throw new Error('AEGIS_INBOX_RECIPIENT_MISMATCH');
+  }
+  stageSyncedDeviceCopy(userId, deviceId, {
+    message_id: row.message_id,
+    encrypted_body: row.encrypted_body,
+    sender_user_id: row.sender_user_id,
+    sender_device_id: row.sender_device_id,
+    recipient_device_id: deviceId,
+  });
   traceE2EE({
     direction: 'receive',
     component: 'device_inbox',
@@ -118,7 +125,9 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
     if (error) throw error;
 
     const rows = data ?? [];
-    for (const row of rows) dispatchInboxRow(row, ready.deviceId);
+    // Tant que le serveur conserve l'état pending, chaque synchronisation peut
+    // rejouer la capsule. Elle ne devient livrée qu'après decrypt + stockage + ACK.
+    for (const row of rows) dispatchInboxRow(row, userId, ready.deviceId);
     traceE2EE({
       direction: 'receive',
       component: 'device_inbox',

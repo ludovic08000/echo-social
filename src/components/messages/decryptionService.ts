@@ -286,9 +286,32 @@ function cacheAndPersist(
     savePlaintextForCiphertext(body, persisted),
   ]).then(async () => {
     if (currentUserId && messageId) {
-      await acknowledgeAegisMessage(currentUserId, messageId).catch(() => undefined);
+      await acknowledgeAfterPersistence(currentUserId, messageId);
     }
     return outcome;
+  });
+}
+
+async function acknowledgeAfterPersistence(userId: string, messageId: string): Promise<void> {
+  try {
+    await acknowledgeAegisMessage(userId, messageId);
+  } catch (error) {
+    traceE2EE({
+      direction: 'receive',
+      component: 'decryption_service',
+      stage: 'SERVER_INBOX_ACK_FAILED',
+      outcome: 'error',
+      messageId,
+      errorCode: error instanceof Error ? error.message : String(error),
+    }, 'error');
+    throw error;
+  }
+}
+
+function scheduleAcknowledgement(userId: string, messageId: string): void {
+  void acknowledgeAfterPersistence(userId, messageId).catch(() => {
+    // L'échec est déjà tracé et le serveur conserve la capsule pending : la
+    // prochaine synchronisation retentera sans faux état livré côté client.
   });
 }
 
@@ -338,8 +361,7 @@ export async function resolvePlaintext(opts: {
     trace('PLAINTEXT_RESOLVE', { outcome: 'ok', cache: 'memory' });
     if (messageId) {
       void getCachedAuthUserId()
-        .then((userId) => userId && acknowledgeAegisMessage(userId, messageId))
-        .catch(() => undefined);
+        .then((userId) => { if (userId) scheduleAcknowledgement(userId, messageId); });
     }
     return cached;
   }
@@ -350,8 +372,7 @@ export async function resolvePlaintext(opts: {
     cache.set(key, persisted);
     if (messageId) {
       void getCachedAuthUserId()
-        .then((userId) => userId && acknowledgeAegisMessage(userId, messageId))
-        .catch(() => undefined);
+        .then((userId) => { if (userId) scheduleAcknowledgement(userId, messageId); });
     }
     return persisted;
   }
