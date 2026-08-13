@@ -24,6 +24,7 @@ import {
   getSessionPeerSpkId,
   establishDeviceSession,
   listKnownSessionIds,
+  reconcileDeviceSessionsWithRoute,
 } from '../deviceRatchet';
 import { hardCrypto } from '../cryptoIntegrity';
 import { bufferToBase64, randomBytes } from '../utils';
@@ -298,6 +299,24 @@ describe('Sesame active and inactive sessions', () => {
 });
 
 describe('multi-device E2EE — session invalidation & revocation', () => {
+  it('prunes sessions for devices removed from the canonical Sesame route', async () => {
+    await seedSession(A, A2);
+    await seedSession(A, B);
+    await seedSession(A, B2);
+
+    const removed = await reconcileDeviceSessionsWithRoute(
+      A.user,
+      A.device,
+      [A.user, B.user],
+      [{ userId: A2.user, deviceId: A2.device }, { userId: B2.user, deviceId: B2.device }],
+    );
+
+    expect(removed).toBe(1);
+    expect(await ratchetEncrypt(A.user, A.device, B.user, B.device, 'revoked')).toBeNull();
+    expect(await ratchetEncrypt(A.user, A.device, A2.user, A2.device, 'sync')).not.toBeNull();
+    expect(await ratchetEncrypt(A.user, A.device, B2.user, B2.device, 'active')).not.toBeNull();
+  });
+
   it('invalidating a session breaks future encryption (forces re-X3DH)', async () => {
     await seedSession(A, B);
     expect(

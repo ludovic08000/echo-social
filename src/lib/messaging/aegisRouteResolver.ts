@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { verifyRouteDeviceIdentityOffline } from '@/lib/crypto/deviceLinkTrust';
 import type { DeviceDescriptor } from '@/e2ee-session/types';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { reconcileDeviceSessionsWithRoute } from '@/lib/crypto/deviceRatchet';
 
 type RouteDeviceRow = {
   device_id: string;
@@ -163,11 +164,19 @@ export async function resolveConversationRoute(
     requestSelfRepair('sender_device_not_routable', senderDeviceId);
   }
 
+  const prunedSessionCount = await reconcileDeviceSessionsWithRoute(
+    senderUserId,
+    senderDeviceId,
+    participants.map((participant) => participant.user_id),
+    targets,
+  );
+
   trace('ROUTE_RESOLVED', {
     outcome: unroutableUserIds.length > 0 ? 'retry' : 'ok',
     targetCount: targets.length,
     copyCount: unroutableUserIds.length,
     senderUserId,
+    prunedSessionCount,
   }, unroutableUserIds.length > 0 ? 'warn' : 'info');
 
   return {

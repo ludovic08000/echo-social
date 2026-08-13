@@ -7,7 +7,7 @@ const migration = readFileSync(
   'utf8',
 );
 
-describe('fanout non-routable device tolerance contract', () => {
+describe('fanout exact device coverage contract', () => {
   it('builds exact coverage only over the canonical routable snapshot', () => {
     expect(migration).toContain('exists (');
     expect(migration).toContain('from public.device_signed_prekeys spk');
@@ -15,9 +15,9 @@ describe('fanout non-routable device tolerance contract', () => {
     expect(fanout).toContain('return buildFanoutCopies(input, 1)');
   });
 
-  it('permits only one route refresh and tolerates partial coverage', () => {
+  it('permits only one route refresh then fails closed on partial coverage', () => {
     expect(fanout).toContain('if (routeRefreshAttempt === 0)');
-    expect(fanout).toContain('FANOUT_PARTIAL_COVERAGE');
+    expect(fanout).toContain('FANOUT_EXACT_COVERAGE');
     expect(fanout).toContain('requestOmittedRouteRepair');
     // Fail-closed conservé: zéro capsule chiffrable => refus, jamais de clair.
     expect(fanout).toContain("throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE')");
