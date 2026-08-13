@@ -2,14 +2,13 @@
  * Canonical per-user device registry.
  *
  * Server routing eligibility comes only from list_active_devices_for_user:
- * approved + active + account-bound + route-ready + valid SPK. Each returned
+ * approved + active + account-bound + route-ready + bundle Libsignal. Each returned
  * route is then cryptographically verified against the account identity and
  * the device authorization before it is exposed to X3DH/fanout.
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
-import { peekDeviceSignedPrekey } from '@/lib/crypto/x3dh';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
 const VERIFIED_DEVICE_CACHE_TTL_MS = 30_000;
@@ -81,10 +80,8 @@ async function verifyCanonicalRoutes(
   const verified = await Promise.all(Array.from(deduped.values()).map(async (row): Promise<DeviceDescriptor | null> => {
     try {
       await ensureApprovedDeviceTrust(userId, row.device_id);
-      if (options.verifyPrekeys !== false) {
-        const spk = await peekDeviceSignedPrekey(userId, row.device_id);
-        if (!spk) return null;
-      }
+      // La RPC canonique vérifie atomiquement la présence du bundle public.
+      void options.verifyPrekeys;
       return {
         userId,
         deviceId: row.device_id,

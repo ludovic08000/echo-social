@@ -41,6 +41,7 @@ interface PlainDeviceVault {
   kx: StoredDeviceKxRecovery;
   x3dh: X3dhPrivatePrekeySnapshot;
   sessions: DeviceSessionSnapshot;
+  libsignalStore?: string;
   createdAt: number;
 }
 
@@ -174,6 +175,8 @@ export async function captureEncryptedWebDeviceVault(
   await assertDeviceX3dhSnapshotMatchesPublishedKeys(userId, deviceId, x3dh);
   const { captureDeviceSessionSnapshot } = await import('@/lib/crypto/deviceSessionStore');
   const sessions = await captureDeviceSessionSnapshot(userId, deviceId);
+  const { captureLibsignalStore } = await import('@/lib/crypto/aegisWasmBridge');
+  const libsignalStore = await captureLibsignalStore(userId, deviceId);
   const plain: PlainDeviceVault = {
     version: VAULT_VERSION,
     userId,
@@ -182,6 +185,7 @@ export async function captureEncryptedWebDeviceVault(
     kx,
     x3dh,
     sessions,
+    libsignalStore,
     createdAt: Date.now(),
   };
   const iv = hardCrypto.getRandomValues(new Uint8Array(IV_BYTES));
@@ -235,6 +239,9 @@ export async function restoreEncryptedWebDeviceVault(args: {
     || !validateSigningRecord(plain.signing, userId, deviceId)
     || !validateKxRecord(plain.kx, userId, deviceId)
     || !Array.isArray(plain.x3dh?.records)
+    || (plain.libsignalStore !== undefined && (
+      typeof plain.libsignalStore !== 'string' || plain.libsignalStore.length < 32
+    ))
     || (plain.sessions !== undefined && (
       !Array.isArray(plain.sessions?.sessions)
       || !Array.isArray(plain.sessions?.initiating)
@@ -252,6 +259,10 @@ export async function restoreEncryptedWebDeviceVault(args: {
   await restoreDeviceX3dhPrivatePrekeys(userId, deviceId, plain.x3dh!);
   const { restoreDeviceSessionSnapshot } = await import('@/lib/crypto/deviceSessionStore');
   await restoreDeviceSessionSnapshot(userId, deviceId, plain.sessions ?? { sessions: [], initiating: [] });
+  if (plain.libsignalStore) {
+    const { restoreLibsignalStore } = await import('@/lib/crypto/aegisWasmBridge');
+    await restoreLibsignalStore(userId, deviceId, plain.libsignalStore);
+  }
   if (deviceVaultMirrorsPlaintext()) {
     await runTx([STORE_KEYS], 'readwrite', (tx) => {
       const store = tx.objectStore(STORE_KEYS);

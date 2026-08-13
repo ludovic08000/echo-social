@@ -23,10 +23,7 @@ import {
   syncBackupToServer,
   syncKeychainSnapshotFromLocal,
 } from './accountKeyBackup';
-import {
-  generateAndUploadDeviceSignedPrekey,
-  refillDeviceOneTimePrekeysIfNeeded,
-} from './x3dh';
+import { provisionLibsignalDevice } from './libsignalProvisioning';
 import {
   attachIdentityRotationRecovery,
   fetchIdentityRotationRecovery,
@@ -290,12 +287,7 @@ async function promoteStage(userId: string, expected: {
   const deviceIdentity = await loadDeviceIdentity(userId, deviceId);
   if (!deviceIdentity) throw new Error('IDENTITY_ROTATION_DEVICE_PRIVATE_KEY_REQUIRED');
 
-  await generateAndUploadDeviceSignedPrekey(
-    userId,
-    deviceId,
-    deviceIdentity.privateKey,
-  );
-  await refillDeviceOneTimePrekeysIfNeeded(userId, deviceId);
+  await provisionLibsignalDevice(userId, deviceId);
   await clearAllDeviceSessions();
   await txDelete(STORE_KEYS, stageId(userId));
   await syncKeychainSnapshotFromLocal(userId).catch(() => false);

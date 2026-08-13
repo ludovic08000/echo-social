@@ -59,6 +59,15 @@ vi.mock('@/lib/crypto/deviceRatchet', () => ({
   ratchetDecryptWithSession: vi.fn(),
 }));
 
+vi.mock('@/lib/crypto/libsignalRuntime', () => ({
+  decodeLibsignalWire: () => null,
+  decryptFromLibsignalDevice: vi.fn(),
+  encryptForLibsignalDevice: async ({ remoteDeviceId }: { remoteDeviceId: string }) => {
+    runtime.encryptionCount += 1;
+    return `aegis.libsignal.2.${Buffer.from(`cipher-${runtime.encryptionCount}-${remoteDeviceId}`).toString('base64')}`;
+  },
+}));
+
 vi.mock('@/lib/crypto/aegisDeviceWire', () => ({
   parseAegisRatchetPayload: () => null,
 }));

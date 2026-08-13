@@ -65,9 +65,9 @@ describe('canonical trust-gated device registry', () => {
       .rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
   });
 
-  it('requires a current signed prekey by default', async () => {
+  it('trusts the canonical RPC to require a current Libsignal bundle', async () => {
     mocks.rpc.mockResolvedValue({ data: [route('dev-current')], error: null });
     mocks.peekDeviceSignedPrekey.mockResolvedValue(null);
-    await expect(listDevicesForUser('user-no-spk')).rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
+    await expect(listDevicesForUser('user-no-spk')).resolves.toHaveLength(1);
   });
 });

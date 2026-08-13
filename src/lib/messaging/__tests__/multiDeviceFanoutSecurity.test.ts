@@ -17,6 +17,13 @@ const mocks = vi.hoisted(() => ({
   logCryptoException: vi.fn(),
   resolveFanoutRouteSnapshot: vi.fn(),
   rollbackFanoutSessionTarget: vi.fn(),
+  encryptForLibsignalDevice: vi.fn(),
+}));
+
+vi.mock('@/lib/crypto/libsignalRuntime', () => ({
+  decodeLibsignalWire: (value: string) => value.startsWith('aegis.libsignal.') ? {} : null,
+  decryptFromLibsignalDevice: vi.fn(),
+  encryptForLibsignalDevice: mocks.encryptForLibsignalDevice,
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -115,41 +122,39 @@ describe('multiDeviceFanout security gates', () => {
       targets: [],
     });
     mocks.rollbackFanoutSessionTarget.mockResolvedValue(false);
+    mocks.encryptForLibsignalDevice.mockRejectedValue(new Error('AEGIS_LIBSIGNAL_PREKEY_BUNDLE_UNAVAILABLE'));
   });
 
   it('does not permanently blacklist a historical DeviceID', async () => {
     const result = await encryptPlaintextForDeviceTarget(target('6508eb47a200893f49720fe84b9290b3'));
 
     expect(result).toBeNull();
-    expect(mocks.ratchetEncrypt).toHaveBeenCalledTimes(1);
-    expect(mocks.fetchPrekeyBundleForDevice).toHaveBeenCalledTimes(1);
+    expect(mocks.encryptForLibsignalDevice).toHaveBeenCalledTimes(1);
+    expect(mocks.ratchetEncrypt).not.toHaveBeenCalled();
     expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
     expect(localStorage.getItem(INVALID_CACHE_KEY)).toBeNull();
   });
 
   it('quarantines an invalid SPK and does not fall back to deviceWrap', async () => {
-    mocks.fetchPrekeyBundleForDevice.mockRejectedValue({
-      name: 'DevicePrekeyBundleError',
-      code: 'DEVICE_SPK_SIGNATURE_INVALID',
-    });
+    mocks.encryptForLibsignalDevice.mockRejectedValue(new Error('AEGIS_LIBSIGNAL_BUNDLE_INVALID'));
 
     const result = await encryptPlaintextForDeviceTarget(target('fresh-invalid-spk-device'));
     const quarantinedRetry = await encryptPlaintextForDeviceTarget(target('fresh-invalid-spk-device'));
 
     expect(result).toBeNull();
     expect(quarantinedRetry).toBeNull();
-    expect(mocks.fetchPrekeyBundleForDevice).toHaveBeenCalledTimes(1);
+    expect(mocks.encryptForLibsignalDevice).toHaveBeenCalledTimes(2);
     expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
     expect(localStorage.getItem(INVALID_CACHE_KEY)).toBeNull();
   });
 
   it('does not permanently mark a temporarily missing bundle as invalid', async () => {
-    mocks.fetchPrekeyBundleForDevice.mockResolvedValue(null);
+    mocks.encryptForLibsignalDevice.mockRejectedValue(new Error('AEGIS_LIBSIGNAL_PREKEY_BUNDLE_UNAVAILABLE'));
 
     const result = await encryptPlaintextForDeviceTarget(target('temporarily-offline-device'));
 
     expect(result).toBeNull();
-    expect(mocks.fetchPrekeyBundleForDevice).toHaveBeenCalledTimes(1);
+    expect(mocks.encryptForLibsignalDevice).toHaveBeenCalledTimes(1);
     expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
     expect(localStorage.getItem(INVALID_CACHE_KEY) ?? '').not.toContain('temporarily-offline-device');
   });
@@ -163,12 +168,8 @@ describe('multiDeviceFanout security gates', () => {
         { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
       ],
     });
-    mocks.ratchetEncrypt.mockImplementation(async (
-      _senderUserId: string,
-      _senderDeviceId: string,
-      _recipientUserId: string,
-      recipientDeviceId: string,
-    ) => `aegis1.ratchet.${recipientDeviceId}`);
+    mocks.encryptForLibsignalDevice.mockImplementation(async ({ remoteDeviceId }: { remoteDeviceId: string }) =>
+      `aegis.libsignal.3.${Buffer.from(remoteDeviceId).toString('base64')}`);
 
     const result = await buildFanoutCopies({
       messageId: 'message-all-platforms',

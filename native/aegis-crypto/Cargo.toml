@@ -11,6 +11,8 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 libsignal-protocol = { path = "../../third_party/libsignal/rust/protocol" }
 rand = "0.9.4"
+async-trait = "0.1.89"
+futures = "0.3.31"
 aes-gcm = "0.10.3"
 hmac = "0.12.1"
 sha2 = "0.10.9"
@@ -22,3 +24,4 @@ jni = "0.22.4"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom02 = { package = "getrandom", version = "0.2", features = ["js"] }
 wasm-bindgen = "=0.2.104"
+wasm-bindgen-futures = "=0.4.54"

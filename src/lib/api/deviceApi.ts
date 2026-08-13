@@ -35,13 +35,7 @@ import {
   type DeviceApprovalDecision,
 } from '@/lib/crypto/deviceApprovalDecision';
 import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
-import {
-  refreshDeviceSignedPrekeyIfNeeded,
-  refillDeviceOneTimePrekeysIfNeeded,
-  peekDeviceSignedPrekey,
-  isDevicePrekeyBundleError,
-} from '@/lib/crypto/x3dh';
-import { repairCurrentDevicePrekeys } from '@/lib/crypto/devicePrekeyRepair';
+import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
@@ -390,16 +384,7 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   void backupIosDeviceVaultIfReady(userId);
   void backupAndroidDeviceVault(userId);
 
-  try {
-    await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
-    if (!await peekDeviceSignedPrekey(userId, record.deviceId)) {
-      await repairCurrentDevicePrekeys(userId, record.deviceId, identity.privateKey, 'device-key-setup');
-    }
-  } catch (error) {
-    if (!isDevicePrekeyBundleError(error, 'DEVICE_SPK_SIGNATURE_INVALID')) throw error;
-    await repairCurrentDevicePrekeys(userId, record.deviceId, identity.privateKey, 'device-spk-signature-invalid');
-  }
-  await refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId);
+  await provisionLibsignalDevice(userId, record.deviceId);
   // iOS becomes routable only after the exact private X3DH material has been
   // sealed, uploaded and read back successfully for this DeviceID.
   const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');

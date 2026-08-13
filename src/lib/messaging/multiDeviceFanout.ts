@@ -4,16 +4,6 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from './currentDevice';
-import {
-  isDevicePrekeyBundleError,
-} from '@/lib/crypto/x3dh';
-import { PinUnlockRequiredError } from '@/lib/crypto/keyManager';
-import {
-  ratchetEncrypt,
-  ratchetDecryptWithSession,
-  AEGIS_RATCHET_PREFIX,
-} from '@/lib/crypto/deviceRatchet';
-import { parseAegisRatchetPayload } from '@/lib/crypto/aegisDeviceWire';
 import { logCryptoException, logCryptoError } from '@/lib/crypto/errorLogger';
 import { getCachedAuthUserId } from '@/lib/crypto/peerKeyCache';
 import {
@@ -24,19 +14,9 @@ import {
   captureFanoutSessionBeforeMutation,
   rollbackFanoutSessionTarget,
 } from '@/lib/messaging/fanoutSessionTransaction';
-import {
-  acknowledgeInitiatingSessionFromRatchetPayload,
-  createRepeatablePreKeyEnvelope,
-  isRepeatablePreKeyEnvelope,
-  prepareInitiatingSessionForSend,
-  restartExpiredInitiatingSession,
-  unwrapRepeatablePreKeyEnvelope,
-  wrapRatchetForInitiatingSession,
-} from '@/lib/messaging/repeatablePreKeyEnvelope';
 import { runDeviceSessionJob } from '@/lib/crypto/deviceSessionQueue';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
-import { isAegisLibSignalCopy, openAegisCapsuleWithLibSignal, sealAegisCapsuleWithLibSignal } from '@/lib/messaging/aegisCryptoEngine';
-import { claimLibSignalBundle } from '@/lib/messaging/libsignalBundleRegistry';
+import { decodeLibsignalWire, decryptFromLibsignalDevice, encryptForLibsignalDevice } from '@/lib/crypto/libsignalRuntime';
 
 interface FanoutInput {
   messageId: string;
@@ -61,7 +41,7 @@ interface DeviceEncryptTargetInput {
 const FANOUT_ENCRYPT_CONCURRENCY = 2;
 const INVALID_DEVICE_QUARANTINE_MS = 60_000;
 
-type DeviceCopyPrefix = 'aegis2.libsignal' | 'aegis1.init.v1' | 'aegis1.ratchet' | 'unsupported';
+type DeviceCopyPrefix = 'libsignal' | 'unsupported';
 
 interface DeviceCopyDecryptAttempt {
   plaintext: string | null;
@@ -182,9 +162,7 @@ export async function preloadDeviceCopies(messageIds: string[]): Promise<void> {
 }
 
 function classifyDeviceCopyPrefix(body: string): DeviceCopyPrefix {
-  if (isAegisLibSignalCopy(body)) return 'aegis2.libsignal';
-  if (isRepeatablePreKeyEnvelope(body)) return 'aegis1.init.v1';
-  if (parseAegisRatchetPayload(body)) return 'aegis1.ratchet';
+  if (decodeLibsignalWire(body)) return 'libsignal';
   return 'unsupported';
 }
 
@@ -239,67 +217,6 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function x3dhWrapForDevice(
-  plaintext: string,
-  senderUserId: string,
-  senderDeviceId: string,
-  recipientUserId: string,
-  recipientDeviceId: string,
-  conversationId?: string,
-  options: { useOneTimePrekey?: boolean } = {},
-): Promise<string | null> {
-  try {
-    return await createRepeatablePreKeyEnvelope({
-      plaintext,
-      senderUserId,
-      senderDeviceId,
-      recipientUserId,
-      recipientDeviceId,
-      conversationId,
-      useOneTimePrekey: options.useOneTimePrekey,
-    });
-  } catch (error) {
-    if (error instanceof PinUnlockRequiredError || String(error).toLowerCase().includes('pin unlock required')) {
-      throw error;
-    }
-    if (isDevicePrekeyBundleError(error, 'DEVICE_SPK_SIGNATURE_INVALID')) {
-      markInvalidDeviceId(recipientDeviceId);
-      logCryptoException('fanout', error, {
-        severity: 'error',
-        peerUserId: recipientUserId,
-        peerDeviceId: recipientDeviceId,
-        metadata: { stage: 'aegis_device_init_v1', action: 'device_quarantined' },
-      });
-    } else {
-      logCryptoException('fanout', error, {
-        severity: 'warning',
-        peerUserId: recipientUserId,
-        peerDeviceId: recipientDeviceId,
-        metadata: { stage: 'aegis_device_init_v1' },
-      });
-    }
-    return null;
-  }
-}
-
-async function x3dhUnwrapForDevice(
-  payload: string,
-  recipientUserId: string,
-  senderIdentityKeyB64: string | undefined,
-  senderUserId: string,
-  senderDeviceId: string,
-): Promise<string | null> {
-  if (!isRepeatablePreKeyEnvelope(payload)) return null;
-  return unwrapRepeatablePreKeyEnvelope({
-    payload,
-    recipientUserId,
-    recipientDeviceId: getCurrentDeviceId(),
-    senderUserId,
-    senderDeviceId,
-    expectedSenderIdentityKeyB64: senderIdentityKeyB64,
-  });
-}
-
 export async function encryptPlaintextForDeviceTarget(
   input: DeviceEncryptTargetInput,
 ): Promise<{ encryptedBody: string; senderDeviceId: string } | null> {
@@ -325,17 +242,28 @@ export async function encryptPlaintextForDeviceTarget(
 async function encryptPlaintextForDeviceTargetUnlocked(
   input: DeviceEncryptTargetInput,
 ): Promise<{ encryptedBody: string; senderDeviceId: string } | null> {
+  if (!input.recipientDevicePublicKey) return null;
   if (isDeviceIdTemporary()) return null;
   if (isKnownInvalidDeviceId(input.recipientDeviceId)) return null;
 
   const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
-  const bundle = await claimLibSignalBundle(input.recipientUserId, input.recipientDeviceId);
-  const encryptedBody = await sealAegisCapsuleWithLibSignal(input.plaintext, {
-    recipientUserId: input.recipientUserId,
-    recipientDeviceId: input.recipientDeviceId,
-    bundle,
-  });
-  return { encryptedBody, senderDeviceId };
+
+  if (!input.conversationId) throw new Error('AEGIS_LIBSIGNAL_CONVERSATION_REQUIRED');
+  try {
+    const encryptedBody = await encryptForLibsignalDevice({
+      conversationId: input.conversationId,
+      ownerUserId: input.senderUserId,
+      ownerDeviceId: senderDeviceId,
+      remoteUserId: input.recipientUserId,
+      remoteDeviceId: input.recipientDeviceId,
+      plaintext: input.plaintext,
+    });
+    return { encryptedBody, senderDeviceId };
+  } catch (error) {
+    logCryptoException('fanout', error, { severity: 'error', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: input.recipientUserId, peerDeviceId: input.recipientDeviceId, metadata: { stage: 'libsignal_encrypt' } });
+    return null;
+  }
+
 }
 
 export interface FanoutCopyRow {
@@ -694,47 +622,10 @@ async function tryDecryptCopy(row: { encrypted_body: string; sender_user_id: str
 async function tryDecryptCopyUnlocked(row: { encrypted_body: string; sender_user_id: string; sender_device_id: string }, userId: string, myDeviceId: string): Promise<DeviceCopyDecryptAttempt> {
   const prefix = classifyDeviceCopyPrefix(row.encrypted_body);
   try {
-    if (prefix === 'aegis2.libsignal') {
-      const plaintext = await openAegisCapsuleWithLibSignal({ senderUserId: row.sender_user_id, senderDeviceId: row.sender_device_id, encryptedBody: row.encrypted_body });
-      return { plaintext, attemptedSupportedEnvelope: true, retryable: false };
+    if (prefix === 'libsignal') {
+      const plaintext = await decryptFromLibsignalDevice({ ownerUserId: userId, ownerDeviceId: myDeviceId, remoteUserId: row.sender_user_id, remoteDeviceId: row.sender_device_id, payload: row.encrypted_body });
+      return { plaintext, attemptedSupportedEnvelope: true, retryable: plaintext === null, reason: plaintext === null ? 'libsignal_decrypt_returned_null' : undefined };
     }
-    if (prefix === 'aegis1.init.v1') {
-      const { fetchVerifiedDeviceIdentity } = await import('@/lib/crypto/canonicalDeviceRegistry');
-      const senderDevice = await fetchVerifiedDeviceIdentity(
-        row.sender_user_id,
-        row.sender_device_id,
-      );
-      if (!senderDevice) {
-        return { plaintext: null, attemptedSupportedEnvelope: true, retryable: false, reason: 'sender_device_not_authorized' };
-      }
-      const plaintext = await x3dhUnwrapForDevice(row.encrypted_body, userId, senderDevice.devicePublicKey, row.sender_user_id, row.sender_device_id);
-      return {
-        plaintext,
-        attemptedSupportedEnvelope: true,
-        retryable: plaintext === null,
-        reason: plaintext === null ? 'aegis_init_decrypt_returned_null' : undefined,
-      };
-    }
-
-    if (prefix === 'aegis1.ratchet') {
-      const pt = await ratchetDecryptWithSession(userId, myDeviceId, row.sender_user_id, row.sender_device_id, row.encrypted_body);
-      if (pt !== null) {
-        await acknowledgeInitiatingSessionFromRatchetPayload({
-          myUserId: userId,
-          myDeviceId,
-          peerUserId: row.sender_user_id,
-          peerDeviceId: row.sender_device_id,
-          ratchetPayload: row.encrypted_body,
-        }).catch(() => undefined);
-      }
-      return {
-        plaintext: pt ?? null,
-        attemptedSupportedEnvelope: true,
-        retryable: pt === null,
-        reason: pt === null ? `${prefix}_decrypt_returned_null` : undefined,
-      };
-    }
-
     return { plaintext: null, attemptedSupportedEnvelope: false, retryable: false, reason: 'unsupported_prefix' };
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);

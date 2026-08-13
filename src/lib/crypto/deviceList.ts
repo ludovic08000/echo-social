@@ -72,11 +72,11 @@ function isFresh(lastSeenAt: string | null | undefined): boolean {
 
 async function hasValidDevicePrekey(userId: string, deviceId: string): Promise<boolean> {
   try {
-    const { peekDeviceSignedPrekey } = await import('./x3dh');
-    const spk = await peekDeviceSignedPrekey(userId, deviceId);
-    return !!spk;
+    const { data, error } = await (supabase as any).rpc('list_active_devices_for_user', { p_user_id: userId });
+    if (error) return false;
+    return (data ?? []).some((row: { device_id?: string }) => row.device_id === deviceId);
   } catch (error) {
-    console.warn('[E2EE][DEVICE_LIST] skipping device with invalid X3DH prekey', {
+    console.warn('[E2EE][DEVICE_LIST] skipping device without Libsignal route', {
       userId,
       deviceId,
       error,

@@ -1,11 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 import { getOrCreateDeviceIdentity } from './deviceIdentity';
-import {
-  refreshDeviceSignedPrekeyIfNeeded,
-  refillDeviceOneTimePrekeysIfNeeded,
-} from './x3dh';
-import { repairCurrentDevicePrekeys } from './devicePrekeyRepair';
+import { provisionLibsignalDevice } from './libsignalProvisioning';
 
 export type PostRestoreSource = 'pin' | 'recovery_key' | 'passkey' | 'password' | 'unknown';
 
@@ -35,18 +31,8 @@ async function bumpKeysEpochBestEffort(userId: string): Promise<number | null> {
 }
 
 async function revalidateCurrentDevicePrekeys(userId: string, deviceId: string): Promise<void> {
-  const identity = await getOrCreateDeviceIdentity(userId, deviceId);
-
-  await refreshDeviceSignedPrekeyIfNeeded(userId, deviceId, identity.privateKey).catch(async (err) => {
-    console.warn('[POST_RESTORE] device SPK refresh failed; attempting repair', err);
-    await repairCurrentDevicePrekeys(userId, deviceId, identity.privateKey, 'post-restore-spk-refresh-failed').catch((repairErr) => {
-      console.warn('[POST_RESTORE] device prekey repair failed', repairErr);
-    });
-  });
-
-  await refillDeviceOneTimePrekeysIfNeeded(userId, deviceId).catch((err) => {
-    console.warn('[POST_RESTORE] OPK refill failed', err);
-  });
+  await getOrCreateDeviceIdentity(userId, deviceId);
+  await provisionLibsignalDevice(userId, deviceId);
 }
 
 export async function runPostRestoreLifecycle(

@@ -11,6 +11,14 @@ use libsignal_protocol::{
     GenericSignedPreKey, IdentityKeyPair, KeyPair, SignedPreKeyId, SignedPreKeyRecord, Timestamp,
 };
 
+mod store;
+pub use store::AegisSignalStore;
+mod engine;
+pub use engine::{
+    DevicePreKeyBundle, EncryptedMessage, create_device_bundle, decrypt_message,
+    encrypt_message, establish_outbound_session,
+};
+
 #[cfg(target_os = "android")]
 mod android;
 #[cfg(target_arch = "wasm32")]

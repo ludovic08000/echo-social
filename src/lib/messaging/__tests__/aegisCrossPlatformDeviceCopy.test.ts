@@ -8,6 +8,13 @@ const mocks = vi.hoisted(() => ({
   tableError: null as { code?: string; message?: string } | null,
   fetchVerifiedDeviceList: vi.fn(),
   invalidateDeviceSession: vi.fn(),
+  decryptFromLibsignalDevice: vi.fn(),
+}));
+
+vi.mock('@/lib/crypto/libsignalRuntime', () => ({
+  decodeLibsignalWire: (value: string) => value === 'aegis.libsignal.3.Y2lwaGVy' ? { messageType: 3, ciphertext: new Uint8Array() } : null,
+  decryptFromLibsignalDevice: mocks.decryptFromLibsignalDevice,
+  encryptForLibsignalDevice: vi.fn(),
 }));
 
 vi.mock('@/lib/crypto/deviceRatchet', () => ({
@@ -106,7 +113,7 @@ import {
 
 const SENDER = { user_id: 'user-windows', device_id: 'device-windows' };
 const ME = { userId: 'user-recipient', deviceId: 'device-ios' };
-const CAPSULE = 'valid-ratchet-capsule';
+const CAPSULE = 'aegis.libsignal.3.Y2lwaGVy';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -124,7 +131,7 @@ beforeEach(() => {
 
 describe('Aegis cross-platform device-copy routing', () => {
   it('routes an Aegis ratchet capsule to the device session exactly once', async () => {
-    mocks.ratchetDecryptWithSession.mockResolvedValue('content-key-capsule');
+    mocks.decryptFromLibsignalDevice.mockResolvedValue('content-key-capsule');
 
     const plaintext = await tryDecryptDeviceTargetedBody(
       {
@@ -137,13 +144,7 @@ describe('Aegis cross-platform device-copy routing', () => {
     );
 
     expect(plaintext).toBe('content-key-capsule');
-    expect(mocks.ratchetDecryptWithSession).toHaveBeenCalledWith(
-      ME.userId,
-      ME.deviceId,
-      SENDER.user_id,
-      SENDER.device_id,
-      CAPSULE,
-    );
+    expect(mocks.decryptFromLibsignalDevice).toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: ME.userId, ownerDeviceId: ME.deviceId, remoteUserId: SENDER.user_id, remoteDeviceId: SENDER.device_id, payload: CAPSULE }));
   });
 
   it('rejects every unknown device-copy wire before touching ratchet state', async () => {
@@ -162,7 +163,7 @@ describe('Aegis cross-platform device-copy routing', () => {
   });
 
   it('keeps a failed capsule retryable without invalidating the session', async () => {
-    mocks.ratchetDecryptWithSession.mockResolvedValue(null);
+    mocks.decryptFromLibsignalDevice.mockResolvedValue(null);
     mocks.supabaseRpc.mockImplementation((name: string) => Promise.resolve({
       data: name === 'get_device_copy_for_message'
         ? [{
@@ -190,7 +191,7 @@ describe('Aegis cross-platform device-copy routing', () => {
   });
 
   it('does not make a transient missing capsule permanent', async () => {
-    mocks.ratchetDecryptWithSession.mockResolvedValue('content-key-after-retry');
+    mocks.decryptFromLibsignalDevice.mockResolvedValue('content-key-after-retry');
     mocks.supabaseRpc
       .mockResolvedValueOnce({ data: [] })
       .mockResolvedValueOnce({

@@ -15,11 +15,8 @@
 
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
-import {
-  refreshDeviceSignedPrekeyIfNeeded,
-  refillDeviceOneTimePrekeysIfNeeded,
-} from '@/lib/crypto';
 import { getOrCreateDeviceIdentity } from '@/lib/crypto/deviceIdentity';
+import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 
 const MAINTENANCE_TTL = 6 * 60 * 60 * 1000; // 6h between auto-refills
@@ -60,17 +57,11 @@ export function useCryptoMaintenance() {
           return;
         }
 
-        // 2. Per-device SPK + OPK pool: keep peers always able
-        //    to initiate a fresh X3DH session against THIS device).
+        // Le pool PQXDH officiel est scellé localement avant publication.
         try {
           const did = await hydrateDeviceId().catch(() => getCurrentDeviceId());
           if (did) {
-            await refreshDeviceSignedPrekeyIfNeeded(user.id, did, keys.privateKey).catch((e) =>
-              console.warn('[CRYPTO-MAINT] device SPK refresh failed:', e),
-            );
-            await refillDeviceOneTimePrekeysIfNeeded(user.id, did).catch((e) =>
-              console.warn('[CRYPTO-MAINT] OPK refill failed:', e),
-            );
+            await provisionLibsignalDevice(user.id, did);
           }
         } catch (devErr) {
           console.warn('[CRYPTO-MAINT] device prekey maintenance failed:', devErr);
