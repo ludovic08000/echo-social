@@ -537,66 +537,31 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
       .filter((dev) => !rows.some((row) => row.recipient_device_id === dev.deviceId))
       .map((dev) => dev.deviceId);
 
-    // Invariant: aucun downgrade en clair. Une couverture partielle n'est
-    // acceptée que si au moins une capsule chiffrée existe; sinon la route est
-    // rafraîchie une seule fois avant échec fail-closed.
-    if (rows.length === 0) {
-      if (routeRefreshAttempt === 0) {
-        await Promise.allSettled(targets.map((dev) => rollbackFanoutSessionTarget({
-          messageId: input.messageId,
-          myUserId: input.senderUserId,
-          myDeviceId: senderDeviceId,
-          peerUserId: dev.userId,
-          peerDeviceId: dev.deviceId,
-        })));
-        invalidateFanoutRoute(input.conversationId, input.senderUserId);
-        traceE2EE({ ...baseTrace, stage: 'FANOUT_ROUTE_REFRESH', outcome: 'retry', targetCount: targets.length, copyCount: rows.length }, 'warn');
-        return buildFanoutCopies(input, 1);
-      }
-
-      traceE2EE({ ...baseTrace, stage: 'FANOUT_EXACT_COVERAGE', outcome: 'error', targetCount: targets.length, copyCount: 0, errorCode: 'AEGIS_PARTIAL_DEVICE_FANOUT' }, 'error');
-      logCryptoError({
-        severity: 'warning',
-        context: 'fanout',
-        errorCode: 'AEGIS_PARTIAL_DEVICE_FANOUT',
-        errorMessage: 'No authenticated device route was encryptable',
-        conversationId: input.conversationId,
-        myDeviceId: senderDeviceId,
-        metadata: {
-          targetCount: targets.length,
-          copyCount: 0,
-          omittedCount: omittedDeviceIds.length,
-        },
-      });
-      throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
+    await Promise.allSettled(targets.map((dev) => rollbackFanoutSessionTarget({
+      messageId: input.messageId,
+      myUserId: input.senderUserId,
+      myDeviceId: senderDeviceId,
+      peerUserId: dev.userId,
+      peerDeviceId: dev.deviceId,
+    })));
+    if (routeRefreshAttempt === 0) {
+      invalidateFanoutRoute(input.conversationId, input.senderUserId);
+      traceE2EE({ ...baseTrace, stage: 'FANOUT_ROUTE_REFRESH', outcome: 'retry', targetCount: targets.length, copyCount: rows.length }, 'warn');
+      return buildFanoutCopies(input, 1);
     }
 
-    // Couverture partielle tolérée: iOS KO ne doit pas bloquer Windows.
-    traceE2EE({
-      ...baseTrace,
-      stage: 'FANOUT_PARTIAL_COVERAGE',
-      outcome: 'ok',
-      targetCount: targets.length,
-      copyCount: rows.length,
-      blockMs: Date.now() - startedAt,
-      errorCode: 'AEGIS_PARTIAL_DEVICE_FANOUT',
-    }, 'warn');
+    traceE2EE({ ...baseTrace, stage: 'FANOUT_EXACT_COVERAGE', outcome: 'error', targetCount: targets.length, copyCount: rows.length, errorCode: 'AEGIS_PARTIAL_DEVICE_FANOUT' }, 'error');
     logCryptoError({
       severity: 'warning',
       context: 'fanout',
       errorCode: 'AEGIS_PARTIAL_DEVICE_FANOUT',
-      errorMessage: 'Some authenticated device routes were unavailable',
+      errorMessage: 'Every canonical Sesame device must have an encrypted copy',
       conversationId: input.conversationId,
       myDeviceId: senderDeviceId,
-      metadata: {
-        targetCount: targets.length,
-        copyCount: rows.length,
-        omittedCount: omittedDeviceIds.length,
-        omittedDeviceIds,
-      },
+      metadata: { targetCount: targets.length, copyCount: rows.length, omittedCount: omittedDeviceIds.length, omittedDeviceIds },
     });
     requestOmittedRouteRepair(input.conversationId, input.senderUserId, omittedDeviceIds);
-    return { rows, hasTargets: true, routeVersion: route.version, omittedDeviceIds };
+    throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
   }
   traceE2EE({ ...baseTrace, stage: 'FANOUT_EXACT_COVERAGE', outcome: 'ok', targetCount: targets.length, copyCount: rows.length, blockMs: Date.now() - startedAt });
   return { rows, hasTargets: true, routeVersion: route.version, omittedDeviceIds: [] };

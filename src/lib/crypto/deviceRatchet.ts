@@ -940,6 +940,27 @@ export async function listKnownSessionIds(
   }
 }
 
+export async function reconcileDeviceSessionsWithRoute(
+  myUserId: string,
+  myDeviceId: string,
+  managedPeerUserIds: string[],
+  targets: Array<{ userId: string; deviceId: string }>,
+): Promise<number> {
+  const managed = new Set(managedPeerUserIds);
+  const allowed = new Set(targets.map((target) => `${target.userId}::${target.deviceId}`));
+  const sessions = await listKnownSessionIds(myUserId, myDeviceId);
+  const stale = sessions.filter((session) =>
+    managed.has(session.peerUserId)
+    && !allowed.has(`${session.peerUserId}::${session.peerDeviceId}`));
+  await Promise.all(stale.map((session) => invalidateDeviceSession(
+    myUserId,
+    myDeviceId,
+    session.peerUserId,
+    session.peerDeviceId,
+  )));
+  return stale.length;
+}
+
 export async function clearAllDeviceSessions(): Promise<void> {
   try {
     await clearDeviceSessionRecords(STORE);

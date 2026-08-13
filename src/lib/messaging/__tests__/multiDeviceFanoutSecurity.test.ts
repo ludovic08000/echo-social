@@ -184,7 +184,7 @@ describe('multiDeviceFanout security gates', () => {
     ]);
   });
 
-  it('delivers to Windows when the iOS route is not encryptable (partial coverage)', async () => {
+  it('fails closed after one route refresh when any routed device is not encryptable', async () => {
     mocks.resolveFanoutRouteSnapshot.mockResolvedValue({
       version: 'route-version-1',
       targets: [
@@ -199,16 +199,14 @@ describe('multiDeviceFanout security gates', () => {
       recipientDeviceId: string,
     ) => recipientDeviceId === 'ios-device' ? null : `aegis1.ratchet.${recipientDeviceId}`);
 
-    const result = await buildFanoutCopies({
+    await expect(buildFanoutCopies({
       messageId: 'message-partial-route',
       conversationId: 'conversation-all-platforms',
       senderUserId: 'sender-user',
       plaintext: 'capsule',
-    });
-
-    expect(result.rows.map((row) => row.recipient_device_id)).toEqual(['windows-device']);
-    expect(result.omittedDeviceIds).toEqual(['ios-device']);
-    expect(result.hasTargets).toBe(true);
+    })).rejects.toThrow('E2EE_DEVICE_COPIES_UNAVAILABLE');
+    expect(mocks.resolveFanoutRouteSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.rollbackFanoutSessionTarget).toHaveBeenCalled();
   });
 
   it('fails closed when no route at all is encryptable', async () => {
