@@ -133,14 +133,14 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
             </div>
           )}
 
-          <Button
+          {actions.canStartEnrollment && <Button
             className="w-full rounded-xl"
             disabled={actions.processing || recovering}
             onClick={() => void actions.startEnrollment()}
           >
             {actions.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldQuestion className="mr-2 h-4 w-4" />}
             Enregistrer comme nouvel appareil
-          </Button>
+          </Button>}
 
           <p className="mt-3 text-center text-[11px] text-muted-foreground">
             Aucun nouvel identifiant n’est généré automatiquement.
