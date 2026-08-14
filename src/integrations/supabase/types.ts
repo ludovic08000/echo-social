@@ -2275,6 +2275,53 @@ export type Database = {
         }
         Relationships: []
       }
+      device_libsignal_prekey_bundles: {
+        Row: {
+          created_at: string
+          device_id: string
+          device_number: number
+          id: string
+          kyber_prekey_id: number
+          prekey_id: number
+          public_bundle: string
+          registration_id: number
+          signed_prekey_id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          device_number: number
+          id?: string
+          kyber_prekey_id: number
+          prekey_id: number
+          public_bundle: string
+          registration_id: number
+          signed_prekey_id: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          device_number?: number
+          id?: string
+          kyber_prekey_id?: number
+          prekey_id?: number
+          public_bundle?: string
+          registration_id?: number
+          signed_prekey_id?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_libsignal_prekey_bundles_user_id_device_id_fkey"
+            columns: ["user_id", "device_id"]
+            isOneToOne: false
+            referencedRelation: "user_devices"
+            referencedColumns: ["user_id", "device_id"]
+          },
+        ]
+      }
       device_one_time_prekeys: {
         Row: {
           created_at: string
@@ -6981,6 +7028,7 @@ export type Database = {
           id: string
           is_active: boolean
           last_seen_at: string
+          libsignal_device_number: number | null
           lifecycle_status: string
           platform: string | null
           possession_verified_at: string | null
@@ -7020,6 +7068,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           last_seen_at?: string
+          libsignal_device_number?: number | null
           lifecycle_status?: string
           platform?: string | null
           possession_verified_at?: string | null
@@ -7059,6 +7108,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           last_seen_at?: string
+          libsignal_device_number?: number | null
           lifecycle_status?: string
           platform?: string | null
           possession_verified_at?: string | null
@@ -8457,6 +8507,19 @@ export type Database = {
           public_key: string
         }[]
       }
+      claim_libsignal_prekey_bundle: {
+        Args: {
+          p_conversation_id: string
+          p_device_id: string
+          p_sender_device_id: string
+          p_user_id: string
+        }
+        Returns: {
+          device_number: number
+          public_bundle: string
+          registration_id: number
+        }[]
+      }
       claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {
@@ -8526,6 +8589,10 @@ export type Database = {
       }
       count_device_one_time_prekeys: {
         Args: { p_device_id: string; p_user_id: string }
+        Returns: number
+      }
+      count_libsignal_prekey_bundles: {
+        Args: { p_device_id: string }
         Returns: number
       }
       create_group_conversation: {
@@ -8782,6 +8849,10 @@ export type Database = {
           profile_type: string
           user_id: string
         }[]
+      }
+      get_libsignal_device_number: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: number
       }
       get_my_live_stream_key: { Args: { _stream_id: string }; Returns: string }
       get_my_seller_revenue: { Args: never; Returns: number }
@@ -9154,6 +9225,18 @@ export type Database = {
           p_public_key: string
           p_signature: string
           p_spk_id: number
+        }
+        Returns: Json
+      }
+      publish_libsignal_prekey_bundle: {
+        Args: {
+          p_device_id: string
+          p_device_number: number
+          p_kyber_prekey_id: number
+          p_prekey_id: number
+          p_public_bundle: string
+          p_registration_id: number
+          p_signed_prekey_id: number
         }
         Returns: Json
       }
