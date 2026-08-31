@@ -62,6 +62,7 @@ jobs:
         run: |
           mkdir -p artifacts
           find libsignal/java/android/build/outputs/aar -type f -name '*.aar' -exec cp {} artifacts/ \;
+          find libsignal/java/client/build/libs -type f -name '*.jar' -exec cp {} artifacts/ \;
           find libsignal/java/android/src/main/jniLibs -type f -name '*.so' -exec cp --parents {} artifacts/ \;
 
       - name: Upload libsignal Android artifacts
