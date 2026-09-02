@@ -7,6 +7,18 @@ import { installGlobalCrashHandlers } from "@/lib/crashLogger";
 // loading or crypto bootstrap) is captured with full context.
 installGlobalCrashHandlers();
 
+if (import.meta.env.DEV) {
+  void import('@/lib/libsignalNative').then(({ getLibSignalCapabilities, runLibSignalSelfTest }) => {
+    const diagnosticWindow = window as typeof window & {
+      __libsignalCapabilities?: typeof getLibSignalCapabilities;
+      __libsignalSelfTest?: typeof runLibSignalSelfTest;
+    };
+    diagnosticWindow.__libsignalCapabilities = getLibSignalCapabilities;
+    diagnosticWindow.__libsignalSelfTest = runLibSignalSelfTest;
+    console.info('[LIBSIGNAL] window.__libsignalCapabilities() and window.__libsignalSelfTest() are available');
+  });
+}
+
 // Console noise filter — keep ONLY real errors/warnings; mute verbose
 // info/log/debug from crypto, E2EE, ML, X3DH, identity bootstrap, push,
 // service worker, Vite HMR, third-party preview iframe noise, etc.

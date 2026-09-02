@@ -8520,6 +8520,10 @@ export type Database = {
           registration_id: number
         }[]
       }
+      claim_matrix_conversation_room: {
+        Args: { p_conversation_id: string; p_matrix_room_id: string }
+        Returns: string
+      }
       claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {

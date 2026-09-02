@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16.9-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: synapse
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${MATRIX_POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - matrix-postgres:/var/lib/postgresql/data
+
+  synapse:
+    image: matrixdotorg/synapse:v1.157.1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./data:/data
+
+volumes:
+  matrix-postgres:
+

@@ -15,6 +15,16 @@ export default defineConfig(({ mode }) => ({
         entryFileNames: `assets/index-aegis-v1-[hash].js`,
         chunkFileNames: `assets/[name]-aegis-v1-[hash].js`,
         assetFileNames: `assets/[name]-aegis-v1-[hash][extname]`,
+        manualChunks(id) {
+          if (
+            id.includes("/matrix-js-sdk/") ||
+            id.includes("\\matrix-js-sdk\\") ||
+            id.includes("/@matrix-org/matrix-sdk-crypto-wasm/") ||
+            id.includes("\\@matrix-org\\matrix-sdk-crypto-wasm\\")
+          ) {
+            return "matrix-runtime";
+          }
+        },
       },
     },
   },
@@ -30,6 +40,9 @@ export default defineConfig(({ mode }) => ({
         maximumFileSizeToCacheInBytes: 5242880,
         navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
+        // Matrix Rust crypto is intentionally lazy. Pre-caching its large
+        // runtime would penalise every visitor even while Matrix is disabled.
+        globIgnores: ["**/matrix-runtime-*.js"],
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,

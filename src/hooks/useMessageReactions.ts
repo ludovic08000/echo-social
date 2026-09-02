@@ -18,7 +18,11 @@ export interface MessageReaction {
 
 export type ReactionsMap = Record<string, MessageReaction[]>;
 
-export function useMessageReactions(conversationId: string | undefined, messageIds: string[]) {
+export function useMessageReactions(
+  conversationId: string | undefined,
+  messageIds: string[],
+  enabled = true,
+) {
   const { user } = useAuth();
   const [reactions, setReactions] = useState<ReactionsMap>({});
 
@@ -27,7 +31,7 @@ export function useMessageReactions(conversationId: string | undefined, messageI
 
   // Initial load
   useEffect(() => {
-    if (!conversationId || messageIds.length === 0) return;
+    if (!enabled || !conversationId || messageIds.length === 0) return;
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase
@@ -43,11 +47,11 @@ export function useMessageReactions(conversationId: string | undefined, messageI
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, idsKey]);
+  }, [conversationId, idsKey, enabled]);
 
   // Realtime subscription
   useEffect(() => {
-    if (!conversationId || messageIds.length === 0) return;
+    if (!enabled || !conversationId || messageIds.length === 0) return;
     const ids = new Set(messageIds);
     const channel = supabase
       .channel(`msg-reactions:${conversationId}`)
@@ -79,10 +83,10 @@ export function useMessageReactions(conversationId: string | undefined, messageI
       .subscribe();
     return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, idsKey]);
+  }, [conversationId, idsKey, enabled]);
 
   const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
-    if (!user) return;
+    if (!enabled || !user) return;
     const list = reactions[messageId] || [];
     const existing = list.find(r => r.user_id === user.id && r.emoji === emoji);
 
@@ -129,7 +133,7 @@ export function useMessageReactions(conversationId: string | undefined, messageI
         }));
       }
     }
-  }, [user, reactions]);
+  }, [enabled, user, reactions]);
 
   return { reactions, toggleReaction };
 }

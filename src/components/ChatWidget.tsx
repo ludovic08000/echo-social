@@ -2325,4 +2325,3 @@ export function ChatWidget() {
     </div>
   );
 }
-
