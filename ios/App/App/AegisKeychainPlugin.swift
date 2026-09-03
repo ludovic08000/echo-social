@@ -206,7 +206,9 @@ public class AegisKeychainPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Losing an anchor while any sealed payload survives must never rotate
         // device identity silently. Explicit device recovery is required.
-        if existingRecord?.starts(with: sealedPrefix) == true || (try containsAnySealedRecord()) {
+        let existingRecordIsSealed = existingRecord?.starts(with: sealedPrefix) == true
+        let anySealedRecordExists = try containsAnySealedRecord()
+        if existingRecordIsSealed || anySealedRecordExists {
             throw ACEError.code("E2EE_ENCLAVE_ANCHOR_MISSING")
         }
         return try createAnchor()
