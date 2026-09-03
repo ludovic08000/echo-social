@@ -78,7 +78,9 @@ popd >/dev/null
 rm -rf build/ios include/AegisCrypto ios/App/Frameworks/AegisCrypto.xcframework
 mkdir -p build/ios include/AegisCrypto ios/App/Frameworks
 cp native/aegis-crypto/include/aegis_crypto.h include/AegisCrypto/
-printf 'framework module AegisCrypto {\n  header "aegis_crypto.h"\n  export *\n}\n' > include/AegisCrypto/module.modulemap
+# This XCFramework wraps static libraries, not .framework bundles. Declaring a
+# plain Clang module lets Xcode resolve the sibling header after ProcessXCFramework.
+printf 'module AegisCrypto {\n  header "aegis_crypto.h"\n  export *\n}\n' > include/AegisCrypto/module.modulemap
 
 lipo -create \
   native/aegis-crypto/target/aarch64-apple-ios-sim/release/libaegis_crypto.a \
