@@ -5,7 +5,7 @@ import {
   encryptLibsignalMessage,
   establishLibsignalSession,
   type LibsignalAddress,
-} from './aegisWasmBridge';
+} from './libsignalPlatformBridge';
 
 export const LIBSIGNAL_WIRE_PREFIX = 'aegis.libsignal.';
 
