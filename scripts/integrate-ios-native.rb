@@ -82,10 +82,21 @@ abort "Missing storyboard: #{storyboard_path}" unless File.file?(storyboard_path
 storyboard = File.read(storyboard_path)
 
 if storyboard.include?('customClass="CAPBridgeViewController"')
-  storyboard = storyboard.sub(
-    'customClass="CAPBridgeViewController"',
+  # Capacitor's generated storyboard already carries customModule="Capacitor".
+  # Replace the complete class/module pair so we never create two customModule
+  # attributes, which Interface Builder rejects at compile time.
+  replaced = storyboard.sub!(
+    'customClass="CAPBridgeViewController" customModule="Capacitor"',
     'customClass="BridgeViewController" customModule="App" customModuleProvider="target"'
   )
+
+  # Be defensive in case a future Capacitor template omits the module attribute.
+  unless replaced
+    storyboard.sub!(
+      'customClass="CAPBridgeViewController"',
+      'customClass="BridgeViewController" customModule="App" customModuleProvider="target"'
+    )
+  end
 elsif !storyboard.include?('customClass="BridgeViewController"')
   abort 'CAPBridgeViewController entry point not found in Main.storyboard'
 end
