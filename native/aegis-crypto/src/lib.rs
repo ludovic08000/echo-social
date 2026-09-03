@@ -19,6 +19,8 @@ pub use engine::{
     encrypt_message, establish_outbound_session,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod native_api;
 #[cfg(target_os = "android")]
 mod android;
 #[cfg(target_arch = "wasm32")]
