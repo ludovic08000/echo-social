@@ -1,0 +1,78 @@
+name: Build Aegis libsignal Windows
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/build-libsignal-windows.yml
+      - native/aegis-crypto/**
+      - third_party/libsignal/**
+      - src/lib/crypto/libsignalPlatformBridge.ts
+      - src/lib/crypto/aegisWasmBridge.ts
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-libsignal-windows.yml
+      - native/aegis-crypto/**
+      - third_party/libsignal/**
+
+permissions:
+  contents: read
+
+jobs:
+  windows-native:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUSTUP_TOOLCHAIN: nightly-2026-07-15
+
+    steps:
+      - name: Check out Echo Social
+        uses: actions/checkout@v4
+
+      - name: Install protobuf compiler
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "29.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install pinned Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install nightly-2026-07-15 --profile minimal
+          rustup default nightly-2026-07-15
+
+      - name: Test shared libsignal engine
+        working-directory: native/aegis-crypto
+        shell: pwsh
+        run: cargo test --locked
+
+      - name: Build Windows DLL
+        working-directory: native/aegis-crypto
+        shell: pwsh
+        run: |
+          cargo build --locked --release
+          if (-not (Test-Path target/release/aegis_crypto.dll)) { throw "aegis_crypto.dll missing" }
+
+      - name: Compile C# PInvoke binding
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/windows-binding | Out-Null
+          Push-Location build/windows-binding
+          dotnet new classlib --framework net8.0 --force
+          Remove-Item Class1.cs
+          Copy-Item ../../native/aegis-crypto/bindings/windows/AegisCryptoNative.cs .
+          dotnet build -c Release
+          Pop-Location
+
+      - name: Upload Windows native artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-libsignal-windows
+          path: |
+            native/aegis-crypto/target/release/aegis_crypto.dll
+            native/aegis-crypto/bindings/windows/AegisCryptoNative.cs
+            build/windows-binding/bin/Release/net8.0/*.dll
+          if-no-files-found: error
+          retention-days: 14
