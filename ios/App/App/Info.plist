@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>My App</string>
+	<string>Forsure</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -28,8 +28,12 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
+	<key>NSContactsUsageDescription</key>
+	<string>Forsure utilise vos contacts uniquement pour retrouver vos amis deja inscrits.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Forsure utilise Face ID pour proteger vos cles de messagerie chiffree.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
