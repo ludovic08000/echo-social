@@ -18,6 +18,10 @@ abort 'App target not found' unless target
 
 app_group = project.main_group.find_subpath('App', true)
 frameworks_group = project.main_group.find_subpath('Frameworks', true)
+# find_subpath creates a visual group with no filesystem path. Give it the
+# real directory used by bootstrap-ios-native.sh so the XCFramework reference
+# resolves to ios/App/Frameworks/AegisCrypto.xcframework.
+frameworks_group.path = 'Frameworks' if frameworks_group.path.nil? || frameworks_group.path.empty?
 
 swift_files = %w[
   AegisKeychainPlugin.swift
@@ -54,6 +58,15 @@ framework_reference = project.files.find do |file|
 end
 framework_reference ||= frameworks_group.new_file('AegisCrypto.xcframework')
 
+# xcodeproj does not currently infer .xcframework in FILE_TYPES_BY_EXTENSION.
+# Xcode needs wrapper.xcframework here to emit ProcessXCFramework and expose
+# the AegisCrypto Clang module to Swift before compiling App.
+framework_reference.explicit_file_type = nil
+framework_reference.last_known_file_type = 'wrapper.xcframework'
+
+resolved_framework_path = File.expand_path(framework_reference.real_path.to_s)
+abort "AegisCrypto XCFramework reference resolves to #{resolved_framework_path}, expected #{framework_path}" unless resolved_framework_path == framework_path
+
 unless target.frameworks_build_phase.files_references.include?(framework_reference)
   target.frameworks_build_phase.add_file_reference(framework_reference, true)
 end
@@ -78,4 +91,4 @@ elsif !storyboard.include?('customClass="BridgeViewController"')
 end
 
 File.write(storyboard_path, storyboard)
-puts 'AegisCrypto XCFramework and local Capacitor plugins integrated into App target.'
+puts "AegisCrypto XCFramework integrated at #{resolved_framework_path}."
