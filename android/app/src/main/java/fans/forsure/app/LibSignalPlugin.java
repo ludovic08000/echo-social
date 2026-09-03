@@ -41,6 +41,14 @@ public final class LibSignalPlugin extends Plugin {
         return value;
     }
 
+    private static int requiredMessageType(PluginCall call) {
+        Integer value = call.getInt("messageType");
+        if (value == null || value < 0 || value > 255) {
+            throw new IllegalArgumentException("messageType invalid");
+        }
+        return value;
+    }
+
     private static void requireAbi() {
         int abi = AegisCryptoNative.abiVersion();
         if (abi != EXPECTED_ABI) throw new IllegalStateException("AEGIS_NATIVE_ABI_MISMATCH:" + abi);
@@ -152,7 +160,7 @@ public final class LibSignalPlugin extends Plugin {
                 requiredInt(call, "localDeviceNumber"),
                 requiredString(call, "remoteUserId"),
                 requiredInt(call, "remoteDeviceNumber"),
-                requiredInt(call, "messageType"),
+                requiredMessageType(call),
                 fromB64(requiredString(call, "ciphertextB64"))
             );
             if (output == null || output.length != 2) throw new IllegalStateException("AEGIS_DECRYPT_OUTPUT_INVALID");
