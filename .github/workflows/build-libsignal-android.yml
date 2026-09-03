@@ -94,7 +94,10 @@ jobs:
 
       - name: Compile Android application
         working-directory: android
-        run: ./gradlew :app:assembleDebug --no-daemon --max-workers=2 --console=plain
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --max-workers=2 --console=plain
 
       - name: Upload Android Rust diagnostics
         if: always()
