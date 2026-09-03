@@ -49,6 +49,18 @@ public final class LibSignalPlugin extends Plugin {
         return value;
     }
 
+    /**
+     * Capacitor 8 PluginCall.reject accepts Exception, not Throwable. Native
+     * linkage failures are Errors, so preserve them by wrapping them rather
+     * than letting them escape across the plugin boundary.
+     */
+    private static void reject(PluginCall call, String code, String message, Throwable error) {
+        Exception cause = error instanceof Exception
+            ? (Exception) error
+            : new RuntimeException(error);
+        call.reject(message, code, cause);
+    }
+
     private static void requireAbi() {
         int abi = AegisCryptoNative.abiVersion();
         if (abi != EXPECTED_ABI) throw new IllegalStateException("AEGIS_NATIVE_ABI_MISMATCH:" + abi);
@@ -67,7 +79,7 @@ public final class LibSignalPlugin extends Plugin {
             result.put("kyber1024", true);
             call.resolve(result);
         } catch (Throwable error) {
-            call.reject("LIBSIGNAL_NATIVE_UNAVAILABLE", error);
+            reject(call, "LIBSIGNAL_NATIVE_UNAVAILABLE", "Native libsignal unavailable", error);
         }
     }
 
@@ -80,7 +92,7 @@ public final class LibSignalPlugin extends Plugin {
             result.put("storeB64", b64(store));
             call.resolve(result);
         } catch (Throwable error) {
-            call.reject("LIBSIGNAL_STORE_CREATE_FAILED", error);
+            reject(call, "LIBSIGNAL_STORE_CREATE_FAILED", "Failed to create libsignal store", error);
         }
     }
 
@@ -101,7 +113,7 @@ public final class LibSignalPlugin extends Plugin {
             result.put("bundleB64", b64(output[1]));
             call.resolve(result);
         } catch (Throwable error) {
-            call.reject("LIBSIGNAL_BUNDLE_CREATE_FAILED", error);
+            reject(call, "LIBSIGNAL_BUNDLE_CREATE_FAILED", "Failed to create libsignal bundle", error);
         }
     }
 
@@ -121,7 +133,7 @@ public final class LibSignalPlugin extends Plugin {
             result.put("storeB64", b64(nextStore));
             call.resolve(result);
         } catch (Throwable error) {
-            call.reject("LIBSIGNAL_SESSION_ESTABLISH_FAILED", error);
+            reject(call, "LIBSIGNAL_SESSION_ESTABLISH_FAILED", "Failed to establish libsignal session", error);
         }
     }
 
@@ -146,7 +158,7 @@ public final class LibSignalPlugin extends Plugin {
             result.put("ciphertextB64", b64(output[2]));
             call.resolve(result);
         } catch (Throwable error) {
-            call.reject("LIBSIGNAL_ENCRYPT_FAILED", error);
+            reject(call, "LIBSIGNAL_ENCRYPT_FAILED", "Failed to encrypt libsignal message", error);
         }
     }
 
@@ -169,7 +181,7 @@ public final class LibSignalPlugin extends Plugin {
             result.put("plaintextB64", b64(output[1]));
             call.resolve(result);
         } catch (Throwable error) {
-            call.reject("LIBSIGNAL_DECRYPT_FAILED", error);
+            reject(call, "LIBSIGNAL_DECRYPT_FAILED", "Failed to decrypt libsignal message", error);
         }
     }
 }
