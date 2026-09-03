@@ -16,12 +16,16 @@ public class ContactsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func requestPermission(_ call: CAPPluginCall) {
         let status = CNContactStore.authorizationStatus(for: .contacts)
 
+        // .limited n'existe qu'a partir du SDK iOS 18 : la cible de deploiement
+        // etant 15.0, il faut le tester derriere #available sinon le Swift ne
+        // compile pas ("'limited' is only available in iOS 18.0 or newer").
+        if #available(iOS 18.0, *), status == .limited {
+            call.resolve(["granted": true])
+            return
+        }
+
         switch status {
         case .authorized:
-            call.resolve(["granted": true])
-
-        // iOS 18+ returns .limited for partial access
-        case .limited:
             call.resolve(["granted": true])
 
         case .notDetermined:

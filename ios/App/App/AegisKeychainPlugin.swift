@@ -206,7 +206,11 @@ public class AegisKeychainPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Losing an anchor while any sealed payload survives must never rotate
         // device identity silently. Explicit device recovery is required.
-        if existingRecord?.starts(with: sealedPrefix) == true || (try containsAnySealedRecord()) {
+        // Invariant : `try` est sorti des operateurs booleens, Swift refuse
+        // `try` a droite d'un operateur non-assignatif.
+        let recordIsSealed = existingRecord?.starts(with: sealedPrefix) == true
+        let hasSealedRecords = try containsAnySealedRecord()
+        if recordIsSealed || hasSealedRecords {
             throw ACEError.code("E2EE_ENCLAVE_ANCHOR_MISSING")
         }
         return try createAnchor()
@@ -256,10 +260,11 @@ public class AegisKeychainPlugin: CAPPlugin, CAPBridgedPlugin {
             throw ACEError.code("E2EE_ENCLAVE_SEAL_FAILED")
         }
 
+        let fingerprint = try anchorFingerprint(anchor)
         let envelope = SealedEnvelope(
             version: 1,
             algorithm: "P256-ECIES-X963-SHA256-AESGCM",
-            anchorFingerprint: try anchorFingerprint(anchor),
+            anchorFingerprint: fingerprint,
             ciphertext: ciphertext.base64EncodedString()
         )
         var stored = sealedPrefix
@@ -287,9 +292,11 @@ public class AegisKeychainPlugin: CAPPlugin, CAPBridgedPlugin {
             throw ACEError.code("E2EE_ENCLAVE_ENVELOPE_CORRUPT")
         }
 
+        // Meme invariant : l'empreinte est calculee avant la comparaison.
+        let expectedFingerprint = try anchorFingerprint(anchor)
         guard envelope.version == 1,
               envelope.algorithm == "P256-ECIES-X963-SHA256-AESGCM",
-              envelope.anchorFingerprint == (try anchorFingerprint(anchor)),
+              envelope.anchorFingerprint == expectedFingerprint,
               let ciphertext = Data(base64Encoded: envelope.ciphertext) else {
             throw ACEError.code("E2EE_ENCLAVE_ENVELOPE_INVALID")
         }
