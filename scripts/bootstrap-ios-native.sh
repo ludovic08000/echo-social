@@ -27,6 +27,19 @@ if ! command -v protoc >/dev/null; then
 fi
 
 [[ -d node_modules ]] || npm ci
+
+# The repository currently carries a mixed Capacitor plugin lock (v7/v8).
+# SwiftPM cannot resolve one app when plugins require both
+# capacitor-swift-pm 7.x and 8.x. Keep the iOS bootstrap deterministic by
+# normalizing every native plugin used by the generated iOS project to the
+# same major as @capacitor/core/@capacitor/ios (v8), without rewriting the
+# repository lockfile during CI.
+npm install --no-save --package-lock=false \
+  @capacitor-community/contacts@8.0.0 \
+  @capacitor/app@8.1.1 \
+  @capacitor/preferences@8.0.1 \
+  @capacitor/share@8.0.1
+
 npm run build
 
 # The historical repository contains app-target Swift sources but no generated
