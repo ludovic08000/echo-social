@@ -21,6 +21,8 @@ pub use engine::{
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod native_api;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod native_api_tests;
 #[cfg(target_os = "android")]
 mod android;
 #[cfg(target_arch = "wasm32")]
@@ -70,6 +72,9 @@ fn owned_buffer(bytes: impl Into<Vec<u8>>) -> AegisBuffer {
 }
 
 unsafe fn input_slice<'a>(data: *const u8, len: usize) -> Result<&'a [u8], i32> {
+    if len == 0 {
+        return Ok(&[]);
+    }
     if data.is_null() {
         set_error("pointeur d'entrée nul");
         return Err(AEGIS_ERR_NULL_POINTER);
