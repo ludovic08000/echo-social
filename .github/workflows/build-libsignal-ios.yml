@@ -22,6 +22,10 @@ jobs:
     steps:
       - name: Check out Echo Social
         uses: actions/checkout@v4
+      - name: Install protobuf compiler
+        run: |
+          brew install protobuf
+          protoc --version
       - name: Install pinned Rust and iOS targets
         run: |
           rustup toolchain install nightly-2026-07-15 --profile minimal
