@@ -22,8 +22,10 @@ fn object_array_result<'local>(
     parts: &[&[u8]],
 ) -> jni::errors::Result<jobjectArray> {
     let byte_array_class = env.find_class(jni_str!("[B"))?;
+    // JNI object-array lengths are jint/i32. This helper is only called with
+    // fixed protocol tuples (currently 2 or 3 elements), so the cast is bounded.
     let result: JObjectArray =
-        env.new_object_array(parts.len(), byte_array_class, JByteArray::default())?;
+        env.new_object_array(parts.len() as i32, byte_array_class, JByteArray::default())?;
     for (index, part) in parts.iter().enumerate() {
         let array = env.byte_array_from_slice(part)?;
         result.set_element(env, index, array)?;
