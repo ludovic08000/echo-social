@@ -1,24 +1,53 @@
-name: Build libsignal Android
+name: Build Aegis libsignal Android
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
+  pull_request:
     paths:
       - .github/workflows/build-libsignal-android.yml
+      - native/aegis-crypto/**
+      - third_party/libsignal/**
+      - android/**
+      - src/lib/crypto/libsignalPlatformBridge.ts
+      - src/lib/crypto/libsignalRuntime.ts
+      - src/lib/crypto/libsignalProvisioning.ts
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-libsignal-android.yml
+      - native/aegis-crypto/**
+      - third_party/libsignal/**
+      - android/**
+      - src/lib/crypto/libsignalPlatformBridge.ts
+      - src/lib/crypto/libsignalRuntime.ts
+      - src/lib/crypto/libsignalProvisioning.ts
 
 permissions:
   contents: read
 
 jobs:
-  build-aarch64:
+  android-native:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUSTUP_TOOLCHAIN: nightly-2026-07-15
 
     steps:
       - name: Check out Echo Social
         uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install JavaScript dependencies and sync Capacitor
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -29,46 +58,67 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: Install Android platform and NDK
+      - name: Install protobuf compiler and Android NDK
         shell: bash
         run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-34" "ndk;28.0.13004108"
+          sdkmanager "platforms;android-35" "ndk;28.0.13004108"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/28.0.13004108" >> "$GITHUB_ENV"
 
-      - name: Install Rust toolchain
+      - name: Install pinned Rust and Android targets
         shell: bash
         run: |
           rustup toolchain install nightly-2026-07-15 --profile minimal
-          rustup target add aarch64-linux-android --toolchain nightly-2026-07-15
+          rustup target add --toolchain nightly-2026-07-15 aarch64-linux-android x86_64-linux-android
+          cargo +nightly-2026-07-15 install cargo-ndk --locked
 
-      - name: Check out pinned libsignal
+      - name: Test native Aegis engine
+        working-directory: native/aegis-crypto
+        run: cargo +nightly-2026-07-15 test --locked
+
+      - name: Build Android shared libraries
+        working-directory: native/aegis-crypto
         shell: bash
         run: |
-          git clone https://github.com/signalapp/libsignal.git libsignal
-          git -C libsignal checkout 857c4dca03537dc5e395a5e1eda6bf18f59c3601
+          set -o pipefail
+          rm -rf ../../android/app/src/main/jniLibs/arm64-v8a ../../android/app/src/main/jniLibs/x86_64
+          cargo +nightly-2026-07-15 ndk \
+            -t arm64-v8a \
+            -t x86_64 \
+            -o ../../android/app/src/main/jniLibs \
+            build --release --locked 2>&1 | tee ../../android-rust-build.log
+          test -s ../../android/app/src/main/jniLibs/arm64-v8a/libaegis_crypto.so
+          test -s ../../android/app/src/main/jniLibs/x86_64/libaegis_crypto.so
 
-      - name: Build Android AAR
-        working-directory: libsignal/java
-        env:
-          CARGO_BUILD_JOBS: "2"
-          RUSTUP_TOOLCHAIN: nightly-2026-07-15
-        run: ./gradlew :android:assembleRelease -PandroidArchs=aarch64 --no-daemon --max-workers=2 --console=plain
-
-      - name: Collect artifacts
+      - name: Compile Android application
+        working-directory: android
         shell: bash
         run: |
-          mkdir -p artifacts
-          find libsignal/java/android/build/outputs/aar -type f -name '*.aar' -exec cp {} artifacts/ \;
-          find libsignal/java/client/build/libs -type f -name '*.jar' -exec cp {} artifacts/ \;
-          find libsignal/java/android/src/main/jniLibs -type f -name '*.so' -exec cp --parents {} artifacts/ \;
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --max-workers=2 --console=plain 2>&1 | tee ../android-gradle-build.log
 
-      - name: Upload libsignal Android artifacts
+      - name: Upload Android build diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: libsignal-android-aarch64-857c4dca
-          path: artifacts/
+          name: android-build-logs
+          path: |
+            android-rust-build.log
+            android-gradle-build.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Android native artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-libsignal-android
+          path: |
+            android/app/src/main/jniLibs/arm64-v8a/libaegis_crypto.so
+            android/app/src/main/jniLibs/x86_64/libaegis_crypto.so
+            android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14

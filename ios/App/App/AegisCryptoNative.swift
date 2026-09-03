@@ -7,11 +7,6 @@ import AegisCrypto
 enum AegisCryptoNative {
     static let expectedAbi: UInt32 = 1
 
-    struct Identity {
-        let secretRecord: Data
-        let publicKey: Data
-    }
-
     struct BundleResult {
         let store: Data
         let publicBundle: Data
@@ -37,15 +32,6 @@ enum AegisCryptoNative {
                 userInfo: [NSLocalizedDescriptionKey: "AEGIS_NATIVE_ABI_MISMATCH:\(actual)"]
             )
         }
-    }
-
-    static func generateIdentity() throws -> Identity {
-        try requireAbi()
-        var secret = AegisBuffer(data: nil, len: 0)
-        var publicKey = AegisBuffer(data: nil, len: 0)
-        let status = aegis_crypto_identity_generate(&secret, &publicKey)
-        guard status == 0 else { throw nativeError(status) }
-        return Identity(secretRecord: take(secret), publicKey: take(publicKey))
     }
 
     static func createStore(registrationId: UInt32) throws -> Data {
