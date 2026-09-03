@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 export interface LibSignalCapabilities {
   available: boolean;
   engine: string;
-  platform: 'android' | 'web';
+  platform: 'android' | 'ios' | 'web';
   pqxdh: boolean;
   kyber1024: boolean;
   nativeSelfTest: boolean;
@@ -43,14 +43,14 @@ interface LibSignalNativePlugin {
 const nativePlugin = registerPlugin<LibSignalNativePlugin>('LibSignal');
 
 export async function getLibSignalCapabilities(): Promise<LibSignalCapabilities> {
-  if (Capacitor.getPlatform() !== 'android') {
+  if (!Capacitor.isNativePlatform()) {
     return { available: false, engine: 'aegis-webcrypto', platform: 'web', pqxdh: false, kyber1024: false, nativeSelfTest: false };
   }
   return nativePlugin.getCapabilities();
 }
 
 export async function runLibSignalSelfTest(): Promise<LibSignalSelfTestResult> {
-  if (Capacitor.getPlatform() !== 'android') throw new Error('LIBSIGNAL_NATIVE_ANDROID_ONLY');
+  if (!Capacitor.isNativePlatform()) throw new Error('LIBSIGNAL_NATIVE_PLATFORM_REQUIRED');
   return nativePlugin.runSelfTest();
 }
 

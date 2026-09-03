@@ -7,7 +7,7 @@ export function isAegisLibSignalCopy(value: string | null | undefined): boolean 
   return typeof value === 'string' && value.startsWith(AEGIS_LIBSIGNAL_COPY_PREFIX);
 }
 export async function assertAegisLibSignalEngine(): Promise<void> {
-  if (Capacitor.getPlatform() !== 'android') throw new Error('AEGIS_LIBSIGNAL_ANDROID_REQUIRED');
+  if (!Capacitor.isNativePlatform()) throw new Error('AEGIS_LIBSIGNAL_NATIVE_REQUIRED');
   const capabilities = await getLibSignalCapabilities();
   if (!capabilities.available || !capabilities.pqxdh || !capabilities.kyber1024) throw new Error('AEGIS_LIBSIGNAL_ENGINE_UNAVAILABLE');
 }
