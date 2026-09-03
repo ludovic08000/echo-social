@@ -71,6 +71,40 @@ unless target.frameworks_build_phase.files_references.include?(framework_referen
   target.frameworks_build_phase.add_file_reference(framework_reference, true)
 end
 
+# Xcode 26 can process a static-library XCFramework and copy module.modulemap
+# into BUILT_PRODUCTS_DIR/include without copying the sibling C header. Swift's
+# explicit module scanner then finds AegisCrypto but fails with
+# "header 'aegis_crypto.h' not found". Stage the public header (and matching
+# module map) into that exact product include directory before Compile Sources.
+header_phase = target.shell_script_build_phases.find { |phase| phase.name == 'Prepare AegisCrypto Headers' }
+header_phase ||= target.new_shell_script_build_phase('Prepare AegisCrypto Headers')
+header_phase.shell_path = '/bin/bash'
+header_phase.input_paths = [
+  '$(SRCROOT)/../../include/AegisCrypto/aegis_crypto.h',
+  '$(SRCROOT)/../../include/AegisCrypto/module.modulemap'
+]
+header_phase.output_paths = [
+  '$(BUILT_PRODUCTS_DIR)/include/aegis_crypto.h',
+  '$(BUILT_PRODUCTS_DIR)/include/module.modulemap'
+]
+header_phase.shell_script = <<~'SCRIPT'
+  set -euo pipefail
+  source_dir="${SRCROOT}/../../include/AegisCrypto"
+  destination_dir="${BUILT_PRODUCTS_DIR}/include"
+  mkdir -p "${destination_dir}"
+  cp "${source_dir}/aegis_crypto.h" "${destination_dir}/aegis_crypto.h"
+  cp "${source_dir}/module.modulemap" "${destination_dir}/module.modulemap"
+  test -s "${destination_dir}/aegis_crypto.h"
+  test -s "${destination_dir}/module.modulemap"
+SCRIPT
+
+# Build-phase ordering matters with Xcode 26 explicit module dependency scans.
+# Ensure the header staging task is ordered before the Swift Compile Sources
+# phase rather than leaving a newly-created shell phase at the end of the target.
+target.build_phases.delete(header_phase)
+source_phase_index = target.build_phases.index(target.source_build_phase) || 0
+target.build_phases.insert(source_phase_index, header_phase)
+
 # AegisCrypto is a static XCFramework. It must be linked, never embedded.
 target.build_configurations.each do |config|
   config.build_settings['SWIFT_VERSION'] = '5.0'
