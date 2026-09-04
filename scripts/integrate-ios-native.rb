@@ -23,11 +23,20 @@ frameworks_group = project.main_group.find_subpath('Frameworks', true)
 # resolves to ios/App/Frameworks/AegisCrypto.xcframework.
 frameworks_group.path = 'Frameworks' if frameworks_group.path.nil? || frameworks_group.path.empty?
 
+# @capacitor-community/contacts already contributes its native ContactsPlugin
+# through Capacitor's SwiftPM package graph. The historical app also carries a
+# local ContactsPlugin.swift with the same Objective-C class name. Compiling
+# both produces duplicate _OBJC_CLASS_$_ContactsPlugin linker symbols.
+# Keep the historical source in the repository, but make sure it is not part of
+# the App target when the community plugin is installed.
+target.source_build_phase.files
+      .select { |build_file| build_file.file_ref&.path == 'ContactsPlugin.swift' }
+      .each(&:remove_from_project)
+
 swift_files = %w[
   AegisKeychainPlugin.swift
   AegisCryptoNative.swift
   LibSignalPlugin.swift
-  ContactsPlugin.swift
   BridgeViewController.swift
 ]
 
