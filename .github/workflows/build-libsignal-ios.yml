@@ -1,57 +1,92 @@
+# CI: build the fully integrated native iOS application with libsignal
 name: Build Aegis libsignal iOS
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/build-libsignal-ios.yml
+      - scripts/bootstrap-ios-native.sh
+      - scripts/integrate-ios-native.rb
+      - native/aegis-crypto/**
+      - third_party/libsignal/**
+      - ios/**
+      - src/lib/crypto/libsignalPlatformBridge.ts
+      - src/lib/crypto/libsignalRuntime.ts
+      - src/lib/crypto/libsignalProvisioning.ts
   push:
     branches: [main]
     paths:
       - .github/workflows/build-libsignal-ios.yml
+      - scripts/bootstrap-ios-native.sh
+      - scripts/integrate-ios-native.rb
       - native/aegis-crypto/**
       - third_party/libsignal/**
+      - ios/**
+      - src/lib/crypto/libsignalPlatformBridge.ts
+      - src/lib/crypto/libsignalRuntime.ts
+      - src/lib/crypto/libsignalProvisioning.ts
 
 permissions:
   contents: read
 
 jobs:
-  xcframework:
-    runs-on: macos-14
+  ios-native:
+    runs-on: macos-26
     timeout-minutes: 120
     env:
       CARGO_BUILD_JOBS: "2"
       RUSTUP_TOOLCHAIN: nightly-2026-07-15
+
     steps:
       - name: Check out Echo Social
         uses: actions/checkout@v4
-      - name: Install protobuf compiler
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Show Apple toolchain
         run: |
-          brew install protobuf
-          protoc --version
-      - name: Install pinned Rust and iOS targets
+          xcodebuild -version
+          swift --version
+
+      - name: Bootstrap, link and compile native iOS application
+        shell: bash
         run: |
-          rustup toolchain install nightly-2026-07-15 --profile minimal
-          rustup target add --toolchain nightly-2026-07-15 aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
-      - name: Build Aegis libsignal libraries
-        working-directory: native/aegis-crypto
-        run: |
-          cargo build --locked --release --target aarch64-apple-ios
-          cargo build --locked --release --target aarch64-apple-ios-sim
-          cargo build --locked --release --target x86_64-apple-ios
-      - name: Package AegisCrypto XCFramework
-        run: |
-          mkdir -p build/ios include/AegisCrypto
-          cp native/aegis-crypto/include/aegis_crypto.h include/AegisCrypto/
-          printf 'framework module AegisCrypto {\n  header "aegis_crypto.h"\n  export *\n}\n' > include/AegisCrypto/module.modulemap
-          lipo -create native/aegis-crypto/target/aarch64-apple-ios-sim/release/libaegis_crypto.a native/aegis-crypto/target/x86_64-apple-ios/release/libaegis_crypto.a -output build/ios/libaegis_crypto-simulator.a
-          xcodebuild -create-xcframework -library native/aegis-crypto/target/aarch64-apple-ios/release/libaegis_crypto.a -headers include/AegisCrypto -library build/ios/libaegis_crypto-simulator.a -headers include/AegisCrypto -output build/ios/AegisCrypto.xcframework
-          ditto -c -k --sequesterRsrc --keepParent build/ios/AegisCrypto.xcframework build/ios/AegisCrypto.xcframework.zip
-          shasum -a 256 build/ios/AegisCrypto.xcframework.zip > build/ios/AegisCrypto.xcframework.zip.sha256
-      - name: Upload iOS framework
+          set -o pipefail
+          bash scripts/bootstrap-ios-native.sh 2>&1 | tee ios-native-build.log
+
+      - name: Upload iOS build diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-libsignal-ios-xcframework
+          name: ios-native-build-log
+          path: ios-native-build.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Package iOS framework
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent build/ios/AegisCrypto.xcframework build/ios/AegisCrypto.xcframework.zip
+          shasum -a 256 build/ios/AegisCrypto.xcframework.zip > build/ios/AegisCrypto.xcframework.zip.sha256
+
+      - name: Upload integrated iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-libsignal-ios-integrated
           path: |
             build/ios/AegisCrypto.xcframework.zip
             build/ios/AegisCrypto.xcframework.zip.sha256
             native/aegis-crypto/bindings/ios/AegisCryptoNative.swift
+            ios/App/App.xcodeproj/project.pbxproj
+            ios/App/App/AegisCryptoNative.swift
+            ios/App/App/LibSignalPlugin.swift
+            ios/App/App/BridgeViewController.swift
           if-no-files-found: error
           retention-days: 14
