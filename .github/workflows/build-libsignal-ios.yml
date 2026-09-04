@@ -15,7 +15,7 @@ on:
       - src/lib/crypto/libsignalRuntime.ts
       - src/lib/crypto/libsignalProvisioning.ts
   push:
-    branches: [main]
+    branches: [main, integrate-libsignal-native]
     paths:
       - .github/workflows/build-libsignal-ios.yml
       - scripts/bootstrap-ios-native.sh
