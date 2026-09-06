@@ -99,8 +99,18 @@ cp -R build/ios/AegisCrypto.xcframework ios/App/Frameworks/
 ruby -e 'require "xcodeproj"' 2>/dev/null || gem install xcodeproj --no-document
 ruby scripts/integrate-ios-native.rb
 
+# Build the CocoaPods workspace so Capacitor dependencies are built too.
+XCODE_CONTAINER=(-project ios/App/App.xcodeproj)
+if [[ -f ios/App/Podfile ]]; then
+  if [[ ! -f ios/App/App.xcworkspace/contents.xcworkspacedata ]]; then
+    echo "CocoaPods workspace missing after cap sync ios" >&2
+    exit 1
+  fi
+  XCODE_CONTAINER=(-workspace ios/App/App.xcworkspace)
+fi
+
 xcodebuild \
-  -project ios/App/App.xcodeproj \
+  "${XCODE_CONTAINER[@]}" \
   -scheme App \
   -configuration Debug \
   -sdk iphonesimulator \
