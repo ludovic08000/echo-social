@@ -9,6 +9,7 @@ final class BridgeViewController: CAPBridgeViewController {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(AegisKeychainPlugin())
         bridge?.registerPluginInstance(LibSignalPlugin())
-        bridge?.registerPluginInstance(ContactsPlugin())
+        // Contacts is supplied by @capacitor-community/contacts via cap sync.
+        // The duplicate app-local ContactsPlugin is excluded from the App target.
     }
 }
