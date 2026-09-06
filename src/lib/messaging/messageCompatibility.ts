@@ -4,7 +4,7 @@ import {
   parseAegisMessageEnvelope,
   type AegisMessageEnvelope,
 } from '@/lib/messaging/aegisEnvelope';
-import { isAegisLibSignalCopy } from '@/lib/messaging/aegisCryptoEngine';
+import { decodeLibsignalWire } from '@/lib/crypto/libsignalWire';
 
 export const AEGIS_PROTOCOL = AEGIS_MESSAGE_PROTOCOL;
 export const AEGIS_VERSION = AEGIS_WIRE_VERSION;
@@ -33,7 +33,7 @@ export function isAegisDeviceCopyWire(body: string | null | undefined): body is 
   return typeof body === 'string' && (
     body.startsWith(AEGIS_DEVICE_COPY_RATCHET_PREFIX) ||
     body.startsWith(AEGIS_DEVICE_COPY_INIT_PREFIX) ||
-    isAegisLibSignalCopy(body)
+    decodeLibsignalWire(body) !== null
   );
 }
 

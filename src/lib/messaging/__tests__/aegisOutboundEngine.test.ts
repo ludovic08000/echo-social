@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   ensureDeviceReady: vi.fn(),
+  provision: vi.fn(),
   savePlaintext: vi.fn(),
   savePlaintextForCiphertext: vi.fn(),
   rollback: vi.fn(),
@@ -15,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   archiveBubbleForUser: vi.fn(),
   archiveEnabled: vi.fn(),
 }));
+
+vi.mock('@/lib/crypto/libsignalProvisioning', () => ({ provisionLibsignalDevice: mocks.provision }));
 
 vi.mock('@/e2ee-session', () => ({ safeUUID: vi.fn(() => crypto.randomUUID()) }));
 vi.mock('@/lib/messaging/aegisDeviceRuntime', () => ({
@@ -71,7 +74,7 @@ const COPY = {
   recipient_device_id: 'recipient-device',
   sender_user_id: '33333333-3333-4333-8333-333333333333',
   sender_device_id: 'sender-device',
-  encrypted_body: VALID_RATCHET_COPY,
+  encrypted_body: 'aegis.libsignal.3.AQID',
 };
 
 beforeEach(() => {
@@ -115,6 +118,7 @@ describe('canonical Aegis outbound transaction engine', () => {
       messageId: COPY.message_id,
     });
 
+    expect(mocks.provision).toHaveBeenCalledWith(COPY.sender_user_id, 'sender-device');
     expect(isMultiDeviceEnvelopeBody(result.parentBody)).toBe(true);
     expect(JSON.parse(result.parentBody).protocol).toBe(AEGIS_MESSAGE_PROTOCOL);
     expect(mocks.putOutbox).toHaveBeenCalledTimes(3);
@@ -142,6 +146,17 @@ describe('canonical Aegis outbound transaction engine', () => {
     }));
     expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-one');
     expect(mocks.archiveBubbleForUser).not.toHaveBeenCalled();
+  });
+
+  it('stops before fanout when libsignal provisioning fails', async () => {
+    mocks.provision.mockRejectedValueOnce(new Error('AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED'));
+    await expect(sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'secret',
+    })).rejects.toThrow('AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED');
+    expect(mocks.buildCopies).not.toHaveBeenCalled();
+    expect(mocks.sendRpc).not.toHaveBeenCalled();
   });
 
   it('never calls the server without a recipient-device copy', async () => {

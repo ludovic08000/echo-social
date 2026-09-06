@@ -28,7 +28,7 @@ import {
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
 import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
-import { publishCurrentLibSignalBundle } from '@/lib/messaging/libsignalBundleRegistry';
+import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 
 export interface AegisOutboundInput {
   conversationId: string;
@@ -139,7 +139,8 @@ export async function sendAegisOutboundMessage(
   }, level);
   trace(resumed ? 'SEND_RESUME' : 'SEND_CREATED');
   const readyDevice = await ensureAegisDeviceReady(input.senderUserId);
-  await publishCurrentLibSignalBundle(input.senderUserId);
+  // Invariant : publier les préclés du même moteur et du même appareil que le fanout.
+  await provisionLibsignalDevice(input.senderUserId, readyDevice.deviceId);
   trace('DEVICE_READY', { deviceId: readyDevice.deviceId });
   let transportPlaintext = resumed?.transportPlaintext ?? input.plaintext;
   let parentBody = isMultiDeviceEnvelopeBody(resumed?.encryptedBody) && resumed?.keyCapsule
@@ -218,7 +219,8 @@ export async function sendAegisOutboundMessage(
       input.senderUserId,
       messageId,
     );
-    if (!archiveBody) throw new Error('AEGIS_ARCHIVE_PREPARE_FAILED');
+    // L'archive est optionnelle : son absence ne désactive jamais le chiffrement des copies.
+    if (!archiveBody) trace('ARCHIVE_UNAVAILABLE', {}, 'warn');
     await persist({ archiveBody });
   }
 
