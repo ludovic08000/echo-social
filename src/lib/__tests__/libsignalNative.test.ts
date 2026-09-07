@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@capacitor/core', () => ({
-  Capacitor: { getPlatform: mocks.getPlatform },
+  Capacitor: { getPlatform: mocks.getPlatform, isNativePlatform: () => mocks.getPlatform() !== 'web' },
   registerPlugin: () => ({ getCapabilities: mocks.getCapabilities, runSelfTest: mocks.runSelfTest }),
 }));
 

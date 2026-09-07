@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('../aegisRecoveryVault', () => ({ restoreAegisRecoveryVault: vi.fn().mockRejectedValue(new Error('recovery-test-failure')) }));
+vi.mock('../postRestoreLifecycle', () => ({ runPostRestoreLifecycle: vi.fn() }));
 import { attemptRecovery } from '../recoveryManager';
 
 describe('recoveryManager', () => {
@@ -20,6 +22,9 @@ describe('recoveryManager', () => {
   it('catches thrown errors and returns them tagged', async () => {
     const res = await attemptRecovery('user-1', { source: 'recovery_key', key: 'invalid' });
     expect(res.ok).toBe(false);
-    if (res.ok === false) expect(res.source).toBe('recovery_key');
+    if (res.ok === false) {
+      expect(res.source).toBe('recovery_key');
+      expect(res.reason).toBe('recovery-test-failure');
+    }
   });
 });
