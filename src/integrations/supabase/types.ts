@@ -5806,72 +5806,6 @@ export type Database = {
         }
         Relationships: []
       }
-      sealed_sender_events: {
-        Row: {
-          anonymous_sender_tag: string
-          conversation_id: string
-          created_at: string
-          id: number
-          recipient_user_id: string | null
-          sender_hint_hash: string | null
-        }
-        Insert: {
-          anonymous_sender_tag: string
-          conversation_id: string
-          created_at?: string
-          id?: number
-          recipient_user_id?: string | null
-          sender_hint_hash?: string | null
-        }
-        Update: {
-          anonymous_sender_tag?: string
-          conversation_id?: string
-          created_at?: string
-          id?: number
-          recipient_user_id?: string | null
-          sender_hint_hash?: string | null
-        }
-        Relationships: []
-      }
-      sealed_sender_messages: {
-        Row: {
-          anonymous_sender_tag: string
-          conversation_id: string
-          created_at: string
-          delivered_at: string | null
-          delivery_state: string
-          id: string
-          read_at: string | null
-          recipient_user_id: string
-          sealed_header: Json
-          sealed_payload: string
-        }
-        Insert: {
-          anonymous_sender_tag: string
-          conversation_id: string
-          created_at?: string
-          delivered_at?: string | null
-          delivery_state?: string
-          id?: string
-          read_at?: string | null
-          recipient_user_id: string
-          sealed_header?: Json
-          sealed_payload: string
-        }
-        Update: {
-          anonymous_sender_tag?: string
-          conversation_id?: string
-          created_at?: string
-          delivered_at?: string | null
-          delivery_state?: string
-          id?: string
-          read_at?: string | null
-          recipient_user_id?: string
-          sealed_header?: Json
-          sealed_payload?: string
-        }
-        Relationships: []
-      }
       security_ai_patterns: {
         Row: {
           autonomy_level: number | null
@@ -6303,9 +6237,9 @@ export type Database = {
       }
       sender_key_distribution: {
         Row: {
+          consumed_at: string | null
           conversation_id: string
           created_at: string
-          delivered: boolean
           encrypted_skdm: string
           id: string
           recipient_device_id: string
@@ -6314,9 +6248,9 @@ export type Database = {
           sender_user_id: string
         }
         Insert: {
+          consumed_at?: string | null
           conversation_id: string
           created_at?: string
-          delivered?: boolean
           encrypted_skdm: string
           id?: string
           recipient_device_id: string
@@ -6325,9 +6259,9 @@ export type Database = {
           sender_user_id: string
         }
         Update: {
+          consumed_at?: string | null
           conversation_id?: string
           created_at?: string
-          delivered?: boolean
           encrypted_skdm?: string
           id?: string
           recipient_device_id?: string
@@ -6338,56 +6272,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "sender_key_distribution_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sender_key_state: {
-        Row: {
-          chain_key_b64: string | null
-          conversation_id: string
-          created_at: string
-          id: string
-          is_owner: boolean
-          iteration: number
-          sender_device_id: string
-          sender_user_id: string
-          signing_priv_jwk: Json | null
-          signing_pub_b64: string
-          updated_at: string
-        }
-        Insert: {
-          chain_key_b64?: string | null
-          conversation_id: string
-          created_at?: string
-          id?: string
-          is_owner?: boolean
-          iteration?: number
-          sender_device_id: string
-          sender_user_id: string
-          signing_priv_jwk?: Json | null
-          signing_pub_b64: string
-          updated_at?: string
-        }
-        Update: {
-          chain_key_b64?: string | null
-          conversation_id?: string
-          created_at?: string
-          id?: string
-          is_owner?: boolean
-          iteration?: number
-          sender_device_id?: string
-          sender_user_id?: string
-          signing_priv_jwk?: Json | null
-          signing_pub_b64?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sender_key_state_conversation_id_fkey"
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
@@ -7451,39 +7335,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_sender_certificates: {
-        Row: {
-          device_id: string
-          expires_at: string
-          fingerprint: string
-          identity_epoch: number
-          issued_at: string
-          payload: string
-          signature: string
-          user_id: string
-        }
-        Insert: {
-          device_id: string
-          expires_at: string
-          fingerprint: string
-          identity_epoch: number
-          issued_at?: string
-          payload: string
-          signature: string
-          user_id: string
-        }
-        Update: {
-          device_id?: string
-          expires_at?: string
-          fingerprint?: string
-          identity_epoch?: number
-          issued_at?: string
-          payload?: string
-          signature?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       user_signed_prekeys: {
         Row: {
           created_at: string
@@ -8303,6 +8154,14 @@ export type Database = {
         }
         Returns: string
       }
+      aegis_issue_sealed_sender_certificate: {
+        Args: never
+        Returns: {
+          device_number: number
+          public_bundle: string
+          user_id: string
+        }[]
+      }
       aegis_pin_continuity_delete: { Args: never; Returns: boolean }
       aegis_pin_continuity_get: {
         Args: never
@@ -8519,10 +8378,6 @@ export type Database = {
           public_bundle: string
           registration_id: number
         }[]
-      }
-      claim_matrix_conversation_room: {
-        Args: { p_conversation_id: string; p_matrix_room_id: string }
-        Returns: string
       }
       claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
@@ -9000,6 +8855,16 @@ export type Database = {
         Returns: boolean
       }
       is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
+      kt_get_signing_key: {
+        Args: { p_key_id: string }
+        Returns: {
+          algorithm: string
+          created_at: string
+          id: string
+          public_key_jwk: Json
+          retired_at: string
+        }[]
+      }
       list_active_devices_for_user: {
         Args: { p_user_id: string }
         Returns: {
@@ -9554,12 +9419,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -9583,11 +9448,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -9608,11 +9473,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -9633,11 +9498,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -9650,11 +9515,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
