@@ -50,7 +50,7 @@ as $$
     and caller.user_id = auth.uid();
 $$;
 
-revoke all on function public.get_matrix_conversation_route(uuid) from public;
+revoke all on function public.get_matrix_conversation_route(uuid) from public, anon, authenticated;
 grant execute on function public.get_matrix_conversation_route(uuid) to authenticated;
 
 create or replace function public.claim_matrix_conversation_room(
@@ -97,7 +97,7 @@ begin
 end;
 $$;
 
-revoke all on function public.claim_matrix_conversation_room(uuid, text) from public;
+revoke all on function public.claim_matrix_conversation_room(uuid, text) from public, anon, authenticated;
 grant execute on function public.claim_matrix_conversation_room(uuid, text) to authenticated;
 
 comment on table public.matrix_user_mappings is
