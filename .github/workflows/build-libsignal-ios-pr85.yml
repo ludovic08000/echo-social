@@ -1,0 +1,70 @@
+name: Build PR85 integrated libsignal iOS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-native:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUSTUP_TOOLCHAIN: nightly-2026-07-15
+
+    steps:
+      - name: Check out PR85 integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: integrate-libsignal-native
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Show Apple toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Bootstrap, link and compile native iOS application
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/bootstrap-ios-native.sh 2>&1 | tee ios-native-build.log
+
+      - name: Upload iOS build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-build-log
+          path: ios-native-build.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Package iOS framework
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent build/ios/AegisCrypto.xcframework build/ios/AegisCrypto.xcframework.zip
+          shasum -a 256 build/ios/AegisCrypto.xcframework.zip > build/ios/AegisCrypto.xcframework.zip.sha256
+
+      - name: Upload integrated iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-libsignal-ios-integrated
+          path: |
+            build/ios/AegisCrypto.xcframework.zip
+            build/ios/AegisCrypto.xcframework.zip.sha256
+            native/aegis-crypto/bindings/ios/AegisCryptoNative.swift
+            ios/App/App.xcodeproj/project.pbxproj
+            ios/App/App/AegisCryptoNative.swift
+            ios/App/App/LibSignalPlugin.swift
+            ios/App/App/BridgeViewController.swift
+          if-no-files-found: error
+          retention-days: 14
