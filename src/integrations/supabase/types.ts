@@ -3680,6 +3680,56 @@ export type Database = {
         }
         Relationships: []
       }
+      matrix_room_mappings: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          created_by: string
+          matrix_room_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          created_by: string
+          matrix_room_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          created_by?: string
+          matrix_room_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matrix_room_mappings_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matrix_user_mappings: {
+        Row: {
+          created_at: string
+          matrix_user_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          matrix_user_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          matrix_user_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       message_archives: {
         Row: {
           archive_body: string
@@ -8379,6 +8429,10 @@ export type Database = {
           registration_id: number
         }[]
       }
+      claim_matrix_conversation_room: {
+        Args: { p_conversation_id: string; p_matrix_room_id: string }
+        Returns: string
+      }
       claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {
@@ -8712,6 +8766,14 @@ export type Database = {
       get_libsignal_device_number: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
+      }
+      get_matrix_conversation_route: {
+        Args: { p_conversation_id: string }
+        Returns: {
+          matrix_room_id: string
+          participant_matrix_user_id: string
+          participant_user_id: string
+        }[]
       }
       get_my_live_stream_key: { Args: { _stream_id: string }; Returns: string }
       get_my_seller_revenue: { Args: never; Returns: number }
