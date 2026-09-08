@@ -1,0 +1,42 @@
+name: Libsignal Rust tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/libsignal-tests.yml
+      - native/aegis-crypto/**
+      - third_party/libsignal/**
+permissions:
+  contents: read
+jobs:
+  rust-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-07-15
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler clang libclang-dev cmake ninja-build pkg-config libssl-dev
+      - name: Install pinned Rust
+        run: rustup toolchain install nightly-2026-07-15 --profile minimal
+      - name: Test Aegis native bridge
+        run: |
+          set -o pipefail
+          cargo test --manifest-path native/aegis-crypto/Cargo.toml --locked -- --test-threads=2 2>&1 | tee aegis-tests.log
+      - name: Test vendored libsignal workspace
+        working-directory: third_party/libsignal
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked --no-fail-fast -- --test-threads=2 2>&1 | tee ../../libsignal-tests.log
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libsignal-test-results
+          path: |
+            aegis-tests.log
+            libsignal-tests.log
+          if-no-files-found: error
