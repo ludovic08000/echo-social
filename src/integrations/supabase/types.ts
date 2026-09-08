@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -8378,10 +8378,6 @@ export type Database = {
           public_bundle: string
           registration_id: number
         }[]
-      }
-      claim_matrix_conversation_room: {
-        Args: { p_conversation_id: string; p_matrix_room_id: string }
-        Returns: string
       }
       claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
