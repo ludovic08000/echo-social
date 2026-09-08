@@ -30,8 +30,35 @@ AEGIS_API int32_t aegis_crypto_signed_prekey_generate(
     uint32_t key_id, uint64_t timestamp_ms,
     AegisBuffer *record, AegisBuffer *public_key, AegisBuffer *signature);
 
+/* Serialized-store API shared by Android, iOS and Windows native bindings. */
+AEGIS_API int32_t aegis_crypto_store_create(
+    uint32_t registration_id, AegisBuffer *store);
+AEGIS_API int32_t aegis_crypto_bundle_create(
+    const uint8_t *store, size_t store_len,
+    uint32_t device_id, uint32_t pre_key_id, uint32_t signed_pre_key_id,
+    uint32_t kyber_pre_key_id,
+    AegisBuffer *next_store, AegisBuffer *public_bundle);
+AEGIS_API int32_t aegis_crypto_session_establish(
+    const uint8_t *store, size_t store_len,
+    const uint8_t *local_name, size_t local_name_len, uint32_t local_device,
+    const uint8_t *remote_name, size_t remote_name_len, uint32_t remote_device,
+    const uint8_t *bundle, size_t bundle_len,
+    AegisBuffer *next_store);
+AEGIS_API int32_t aegis_crypto_message_encrypt(
+    const uint8_t *store, size_t store_len,
+    const uint8_t *local_name, size_t local_name_len, uint32_t local_device,
+    const uint8_t *remote_name, size_t remote_name_len, uint32_t remote_device,
+    const uint8_t *plaintext, size_t plaintext_len,
+    AegisBuffer *next_store, uint8_t *message_type, AegisBuffer *ciphertext);
+AEGIS_API int32_t aegis_crypto_message_decrypt(
+    const uint8_t *store, size_t store_len,
+    const uint8_t *local_name, size_t local_name_len, uint32_t local_device,
+    const uint8_t *remote_name, size_t remote_name_len, uint32_t remote_device,
+    uint8_t message_type,
+    const uint8_t *ciphertext, size_t ciphertext_len,
+    AegisBuffer *next_store, AegisBuffer *plaintext);
+
 #ifdef __cplusplus
 }
 #endif
 #endif
-

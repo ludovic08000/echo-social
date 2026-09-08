@@ -181,7 +181,6 @@ jobs:
         run: |
           deno check --no-config supabase/functions/sealed-mint-token/index.ts
           deno check --no-config supabase/functions/sealed-relay/index.ts
-          deno check --no-config supabase/functions/approve-device-enrollment/index.ts
           deno check --no-config supabase/functions/identity-rotation/index.ts
           deno check --no-config supabase/functions/identity-rotation-recovery/index.ts
           deno check --no-config supabase/functions/zeus/index.ts

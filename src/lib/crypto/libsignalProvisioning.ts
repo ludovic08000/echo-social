@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { createLibsignalBundle, createLibsignalStore } from './aegisWasmBridge';
+import { createLibsignalBundle, createLibsignalStore } from './libsignalPlatformBridge';
 import { bufferToBase64 } from './utils';
 
 const BUNDLE_BATCH = 20;

@@ -1,4 +1,4 @@
-# CI: build the fully integrated native iOS application with libsignal
+# CI retrigger: validate native iOS build after storyboard integration fix
 name: Build Aegis libsignal iOS
 
 on:
@@ -15,7 +15,7 @@ on:
       - src/lib/crypto/libsignalRuntime.ts
       - src/lib/crypto/libsignalProvisioning.ts
   push:
-    branches: [main]
+    branches: [main, integrate-libsignal-native]
     paths:
       - .github/workflows/build-libsignal-ios.yml
       - scripts/bootstrap-ios-native.sh
