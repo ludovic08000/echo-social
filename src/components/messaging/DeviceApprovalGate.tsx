@@ -190,6 +190,14 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
           <p className="text-sm font-medium">Finalisation de cet appareil…</p>
           <p className="text-xs text-muted-foreground">Publication des clés de session sécurisée en cours.</p>
+          {lifecycle.transitionError && (
+            <div className="space-y-2 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <p>{lifecycle.transitionError}</p>
+              <Button size="sm" variant="outline" onClick={lifecycle.refresh}>
+                Réessayer
+              </Button>
+            </div>
+          )}
         </div>
       </Shell>
     );

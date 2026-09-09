@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
 import { bufferToBase64, encodeString } from '@/lib/crypto/utils';
+import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -68,15 +69,18 @@ export async function submitAutomaticDeviceApproval(args: {
     })),
   ) as ArrayBuffer);
 
-  const { data, error } = await supabase.rpc('approve_device_enrollment_decision' as never, {
-    p_decision: 'approve',
-    p_bootstrap_primary: true,
-    p_approver_device_id: args.target.deviceId,
-    p_device_id: args.target.deviceId,
-    p_challenge_id: args.target.challengeId,
-    p_signature: signature,
-    p_device_authorization_signature: null,
-  } as never);
+  const { data, error } = await runDeviceRpcWithTimeout(
+    'DEVICE_APPROVAL_RPC_FAILED',
+    (signal) => supabase.rpc('approve_device_enrollment_decision' as never, {
+      p_decision: 'approve',
+      p_bootstrap_primary: true,
+      p_approver_device_id: args.target.deviceId,
+      p_device_id: args.target.deviceId,
+      p_challenge_id: args.target.challengeId,
+      p_signature: signature,
+      p_device_authorization_signature: null,
+    } as never).abortSignal(signal),
+  );
 
   if (error) throw new Error(`DEVICE_APPROVAL_RPC_FAILED:${error.message}`);
   const result = data as Record<string, unknown> | null;

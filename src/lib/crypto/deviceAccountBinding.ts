@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { prepareDeviceAuthorization, loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
 import { loadDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 
 type DeviceBindingRow = {
   device_id: string;
@@ -50,12 +51,15 @@ export async function bindApprovedDeviceToAccount(
     throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
   }
 
-  const { data: resultData, error: rpcError } = await supabase.rpc(
-    'bind_device_account' as never,
-    {
-      p_device_id: deviceId,
-      p_device_authorization_signature: authorization.authorizationSignature,
-    } as never,
+  const { data: resultData, error: rpcError } = await runDeviceRpcWithTimeout(
+    'DEVICE_ACCOUNT_BIND_FAILED',
+    (signal) => supabase.rpc(
+      'bind_device_account' as never,
+      {
+        p_device_id: deviceId,
+        p_device_authorization_signature: authorization.authorizationSignature,
+      } as never,
+    ).abortSignal(signal),
   );
   if (rpcError) throw new Error(`DEVICE_ACCOUNT_BIND_FAILED:${rpcError.message}`);
 

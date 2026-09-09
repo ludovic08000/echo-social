@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const rpc = vi.fn();
 const loadDeviceIdentity = vi.fn();
 
-vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc: (...args: unknown[]) => rpc(...args) } }));
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    rpc: (...args: unknown[]) => ({
+      abortSignal: () => rpc(...args),
+    }),
+  },
+}));
 vi.mock('@/lib/crypto/deviceIdentity', () => ({ loadDeviceIdentity: (...a: unknown[]) => loadDeviceIdentity(...a) }));
 vi.mock('@/lib/crypto/cryptoIntegrity', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
