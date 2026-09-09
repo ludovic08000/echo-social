@@ -80,8 +80,22 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
   }
 
   if (lifecycle.state === 'DEVICE_CREDENTIAL_CHECK' || lifecycle.state === 'LINK_REQUIRED') {
+    // Hors Windows Web (récupération Windows Hello prioritaire), l'appareil
+    // s'enrôle et se fait approuver automatiquement : aucun écran d'attente.
+    if (!isWindowsWeb() && !actions.error) {
+      return (
+        <Shell compact={compact}>
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <p className="text-sm font-medium">Enregistrement de cet appareil…</p>
+            <p className="text-xs text-muted-foreground">Vérification cryptographique automatique en cours.</p>
+          </div>
+        </Shell>
+      );
+    }
     return (
       <Shell compact={compact}>
+
         <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-start gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
