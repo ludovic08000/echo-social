@@ -34,6 +34,7 @@ const REFRESH_EVENTS = [
 ];
 
 const POLL_MS = 15_000;
+const PIN_PROTECTION_ENABLED = false;
 
 function logDeviceLifecycle(stage: string, details: Record<string, unknown> = {}, level: 'info' | 'warn' | 'error' = 'info') {
   const payload = { ts: new Date().toISOString(), stage, ...details };
@@ -54,6 +55,7 @@ export interface DeviceLifecycleSnapshot {
   canRunDeviceKeySetup: boolean;
   canRunCryptoRuntime: boolean;
   needsApprovalUi: boolean;
+  transitionError: string | null;
   refresh: () => void;
 }
 
@@ -64,6 +66,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const [deviceIdStatus, setDeviceIdStatus] = useState<CurrentDeviceIdStatus>('uninitialized');
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [pinUnlocked, setPinUnlocked] = useState(false);
+  const [transitionError, setTransitionError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const refreshGenerationRef = useRef(0);
   const bindingInFlightRef = useRef<string | null>(null);
@@ -208,6 +211,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     }
 
     bindingInFlightRef.current = deviceId;
+    setTransitionError(null);
     const startedAt = Date.now();
     logDeviceLifecycle('bind-account-start', {
       deviceId,
@@ -231,6 +235,9 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
         if (mountedRef.current) refresh();
       })
       .catch((error) => {
+        if (mountedRef.current) {
+          setTransitionError(error instanceof Error ? error.message : String(error));
+        }
         logDeviceLifecycle('bind-account-failed', {
           deviceId,
           elapsedMs: Date.now() - startedAt,
@@ -263,6 +270,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     }
 
     keySetupInFlightRef.current = deviceId;
+    setTransitionError(null);
     const startedAt = Date.now();
     logDeviceLifecycle('prepare-keys-start', {
       deviceId,
@@ -282,6 +290,9 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
         if (mountedRef.current) refresh();
       })
       .catch((error) => {
+        if (mountedRef.current) {
+          setTransitionError(error instanceof Error ? error.message : String(error));
+        }
         logDeviceLifecycle('prepare-keys-failed', {
           deviceId,
           elapsedMs: Date.now() - startedAt,
@@ -304,6 +315,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       deviceRecord: record,
       deviceIdStatus,
       pinUnlocked,
+      pinRequired: PIN_PROTECTION_ENABLED,
       accountSyncPhase: 'idle',
     });
 
@@ -314,12 +326,13 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       deviceIdStatus,
       record: record === 'unknown' ? null : record,
       loading: record === 'unknown',
-      pinUnlocked,
+      pinUnlocked: PIN_PROTECTION_ENABLED ? pinUnlocked : true,
       canPromptForPin: canPromptForPin(state),
       canRunDeviceKeySetup: canRunDeviceKeySetup(state),
       canRunCryptoRuntime: canRunCryptoRuntime(state),
       needsApprovalUi: requiresDeviceApprovalUi(state),
+      transitionError,
       refresh,
     };
-  }, [userId, record, deviceIdStatus, deviceId, pinUnlocked, refresh]);
+  }, [userId, record, deviceIdStatus, deviceId, pinUnlocked, transitionError, refresh]);
 }

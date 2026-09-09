@@ -42,6 +42,7 @@ import {
   resolveExistingIosDevice,
 } from '@/platforms/ios/iosDeviceReuse';
 import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
+import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 import { adoptReusableAndroidDevice, resolveExistingAndroidDevice } from '@/platforms/android/androidDeviceReuse';
 import { backupAndroidDeviceVault, restoreAndroidDeviceVault } from '@/platforms/android/androidDeviceVault';
 
@@ -367,12 +368,20 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   if (isAndroidRuntime() && !await backupAndroidDeviceVault(userId)) {
     throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
   }
-  const { data, error } = await supabase.rpc('mark_current_device_route_ready' as never, { p_device_id: record.deviceId } as never);
+  const { data, error } = await runDeviceRpcWithTimeout(
+    'DEVICE_ROUTE_NOT_READY',
+    (signal) => supabase
+      .rpc('mark_current_device_route_ready' as never, { p_device_id: record.deviceId } as never)
+      .abortSignal(signal),
+  );
   const route = data as { ok?: boolean; code?: string } | null;
   if (error || route?.ok !== true) throw new Error(`DEVICE_ROUTE_NOT_READY:${route?.code ?? error?.message ?? 'UNKNOWN'}`);
-  const { data: syncData, error: syncError } = await supabase.rpc('complete_current_device_synchronization' as never, {
-    p_device_id: record.deviceId,
-  } as never);
+  const { data: syncData, error: syncError } = await runDeviceRpcWithTimeout(
+    'DEVICE_SYNCHRONIZATION_INCOMPLETE',
+    (signal) => supabase.rpc('complete_current_device_synchronization' as never, {
+      p_device_id: record.deviceId,
+    } as never).abortSignal(signal),
+  );
   const syncResult = syncData as { ok?: boolean; code?: string } | null;
   if (syncError || syncResult?.ok !== true) {
     throw new Error(`DEVICE_SYNCHRONIZATION_INCOMPLETE:${syncResult?.code ?? syncError?.message ?? 'UNKNOWN'}`);
@@ -426,4 +435,3 @@ export const deviceApi = {
   prepareKeys: (userId: string) => withIosDiagnostics('deviceApi.prepareKeys', () => prepareKeys(userId)),
   revokeDevice,
 } as const;
-

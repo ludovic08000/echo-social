@@ -41,6 +41,7 @@ export interface DeviceLifecycleInput {
   deviceRecord: DeviceLifecycleRecord | null | 'unknown';
   deviceIdStatus: DeviceIdStatus;
   pinUnlocked: boolean;
+  pinRequired?: boolean;
   accountSyncPhase: AccountSyncPhaseInput;
 }
 
@@ -82,7 +83,9 @@ export function resolveDeviceLifecycleState(input: DeviceLifecycleInput): Device
   if (record.revokedAt || record.bindingStatus === 'revoked') return { state: 'LINK_REQUIRED', reason: 'device_revoked' };
   if (record.approvalStatus !== 'approved') return { state: 'PENDING_APPROVAL', reason: 'awaiting_approval' };
   if (record.isActive !== true) return { state: 'LINK_REQUIRED', reason: 'device_inactive' };
-  if (!input.pinUnlocked) return { state: 'APPROVED_LOCKED', reason: 'awaiting_pin_unlock' };
+  if (input.pinRequired !== false && !input.pinUnlocked) {
+    return { state: 'APPROVED_LOCKED', reason: 'awaiting_pin_unlock' };
+  }
   if (record.bindingStatus !== 'bound') return { state: 'ACCOUNT_BINDING', reason: 'account_binding_pending' };
   if (record.routingStatus !== 'ready') return { state: 'DEVICE_KEY_SETUP', reason: 'device_key_setup_pending' };
   if (input.accountSyncPhase === 'syncing') return { state: 'ACCOUNT_KEY_SYNC', reason: 'account_sync_running' };
