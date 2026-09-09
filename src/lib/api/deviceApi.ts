@@ -29,11 +29,7 @@ import {
   getOrCreateDeviceKxKey,
   loadDeviceKxKey,
 } from '@/lib/crypto/deviceKx';
-import {
-  submitTrustedDeviceApprovalDecision,
-  submitPrimaryBootstrapDecision,
-  type DeviceApprovalDecision,
-} from '@/lib/crypto/deviceApprovalDecision';
+import { submitAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecision';
 import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
@@ -282,51 +278,24 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
   }
 }
 
-async function decide(userId: string, targetDeviceId: string, decision: DeviceApprovalDecision): Promise<DeviceApiRecord> {
-  const approverDeviceId = getCurrentId(userId);
-  if (!approverDeviceId) throw new Error('DEVICE_APPROVER_REQUIRED');
-  if (approverDeviceId === targetDeviceId) throw new Error('DEVICE_SELF_APPROVAL_FORBIDDEN');
-  const approver = await readDeviceRecord(userId, approverDeviceId);
-  if (!approver || approver.lifecycleStatus !== 'ready' || approver.approvalStatus !== 'approved' || !approver.isActive || approver.revokedAt) {
-    throw new Error('APPROVER_DEVICE_NOT_READY');
-  }
-  const record = await readDeviceRecord(userId, targetDeviceId);
-  if (!record || record.approvalStatus !== 'pending' || !record.approvalChallengeId) throw new Error('DEVICE_APPROVAL_NOT_PENDING');
-  if (!record.devicePublicKey || !record.deviceSigningKey) throw new Error('DEVICE_PUBLIC_KEYS_MISSING');
-  await submitTrustedDeviceApprovalDecision({
-    userId,
-    approverDeviceId,
-    target: {
-      deviceId: record.deviceId,
-      challengeId: record.approvalChallengeId,
-      devicePublicKey: record.devicePublicKey,
-      deviceSigningKey: record.deviceSigningKey,
-    },
-    decision,
-  });
-  const updated = await readDeviceRecord(userId, record.deviceId);
-  if (!updated) throw new Error('DEVICE_APPROVAL_RESULT_MISSING');
-  return updated;
-}
-
-async function bootstrapPrimary(userId: string): Promise<DeviceApiRecord> {
+/**
+ * Invariant cryptographique modifié : plus aucune approbation manuelle par un
+ * autre appareil. L'appareil courant demande son approbation au serveur, qui
+ * vérifie l'utilisateur authentifié, la propriété du device et les signatures
+ * avant de persister `approved`. Fail-closed sur toute erreur serveur.
+ */
+async function autoApprove(userId: string): Promise<DeviceApiRecord> {
   const snapshot = await getState(userId);
   const record = snapshot.record;
-  if (!record || record.approvalStatus !== 'pending' || !record.approvalChallengeId
+  if (!record) throw new Error('DEVICE_NOT_FOUND');
+  if (record.revokedAt || record.approvalStatus === 'rejected') throw new Error('DEVICE_REVOKED');
+  if (record.approvalStatus === 'approved') return record;
+  if (record.approvalStatus !== 'pending' || !record.approvalChallengeId
       || !record.devicePublicKey || !record.deviceSigningKey) {
-    throw new Error('DEVICE_BOOTSTRAP_NOT_PENDING');
+    throw new Error('DEVICE_AUTO_APPROVAL_NOT_PENDING');
   }
 
-  const { data: modeData, error: modeError } = await supabase.rpc(
-    'get_device_enrollment_approval_mode' as never,
-    { p_device_id: record.deviceId } as never,
-  );
-  const mode = modeData as { ok?: boolean; bootstrap_primary?: boolean; code?: string } | null;
-  if (modeError) throw new Error(`DEVICE_BOOTSTRAP_MODE_FAILED:${modeError.message}`);
-  if (mode?.ok === false) throw new Error(`DEVICE_BOOTSTRAP_MODE_REJECTED:${mode.code ?? 'UNKNOWN'}`);
-  if (mode?.bootstrap_primary !== true) throw new Error('DEVICE_BOOTSTRAP_FORBIDDEN_TRUSTED_APPROVER_REQUIRED');
-
-  await submitPrimaryBootstrapDecision({
+  await submitAutomaticDeviceApproval({
     userId,
     target: {
       deviceId: record.deviceId,
@@ -335,8 +304,11 @@ async function bootstrapPrimary(userId: string): Promise<DeviceApiRecord> {
       deviceSigningKey: record.deviceSigningKey,
     },
   });
+
   const updated = await readDeviceRecord(userId, record.deviceId);
-  if (!updated || updated.deviceRole !== 'primary') throw new Error('DEVICE_BOOTSTRAP_RESULT_INVALID');
+  if (!updated || updated.approvalStatus !== 'approved' || !updated.isActive) {
+    throw new Error('DEVICE_AUTO_APPROVAL_RESULT_INVALID');
+  }
   return updated;
 }
 
@@ -449,9 +421,7 @@ export const deviceApi = {
   getCurrentId,
   listDevices,
   enroll: (userId: string) => withIosDiagnostics('deviceApi.enroll', () => enroll(userId)),
-  bootstrapPrimary,
-  approve: (userId: string, targetDeviceId: string) => decide(userId, targetDeviceId, 'approve'),
-  reject: (userId: string, targetDeviceId: string) => decide(userId, targetDeviceId, 'reject'),
+  autoApprove: (userId: string) => withIosDiagnostics('deviceApi.autoApprove', () => autoApprove(userId)),
   bind: (userId: string) => withIosDiagnostics('deviceApi.bind', () => bind(userId)),
   prepareKeys: (userId: string) => withIosDiagnostics('deviceApi.prepareKeys', () => prepareKeys(userId)),
   revokeDevice,

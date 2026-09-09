@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Monitor, Smartphone, Tablet, Loader2, ShieldCheck, Trash2, X, ChevronDown, ChevronUp, Copy, RefreshCw } from 'lucide-react';
+import { Monitor, Smartphone, Tablet, Loader2, ShieldCheck, Trash2, ChevronDown, ChevronUp, Copy, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -67,7 +67,6 @@ export function DevicesPanel() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
-  const [deciding, setDeciding] = useState<string | null>(null);
 
   const currentDeviceId = lifecycle.deviceId;
 
@@ -181,21 +180,6 @@ export function DevicesPanel() {
     }
   };
 
-  const handleDecision = async (device: DeviceApiListRecord, decision: 'approve' | 'reject') => {
-    if (!user?.id) return;
-    setDeciding(device.deviceId);
-    try {
-      if (decision === 'approve') await deviceApi.approve(user.id, device.deviceId);
-      else await deviceApi.reject(user.id, device.deviceId);
-      await load(true);
-      toast.success(decision === 'approve' ? 'Appareil approuvé' : 'Appareil refusé');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Décision impossible');
-    } finally {
-      setDeciding(null);
-    }
-  };
-
   const copyDiagnostic = async (device: DeviceApiListRecord) => {
     const diag = diagnostics[device.deviceId];
     const report = {
@@ -244,7 +228,7 @@ export function DevicesPanel() {
               {refreshing && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Les nouveaux appareils secondaires apparaissent ici. Vous décidez explicitement de les approuver ou de les refuser depuis cet appareil reconnu.
+              Les nouveaux appareils sont approuvés automatiquement par le serveur après vérification cryptographique. Vous pouvez révoquer ici tout appareil que vous ne reconnaissez pas.
             </p>
           </div>
           <Button size="icon" variant="ghost" onClick={() => void load(true)} disabled={refreshing} aria-label="Actualiser les diagnostics">
@@ -298,18 +282,7 @@ export function DevicesPanel() {
                     </p>
                   </div>
 
-                  {!isCurrent && device.approvalStatus === 'pending' && (
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" disabled={deciding !== null} onClick={() => void handleDecision(device, 'approve')} aria-label="Approuver cet appareil">
-                        {deciding === device.deviceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                      </Button>
-                      <Button size="icon" variant="ghost" disabled={deciding !== null} onClick={() => void handleDecision(device, 'reject')} aria-label="Refuser cet appareil">
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-
-                  {!isCurrent && device.approvalStatus !== 'pending' && (
+                  {!isCurrent && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button size="icon" variant="ghost" disabled={revoking !== null} aria-label="Révoquer cet appareil">

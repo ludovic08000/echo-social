@@ -89,13 +89,10 @@ describe('Signal-style server route trust validation', () => {
     expect(approvalBridge).toContain('DEVICE_POSSESSION_SIGNATURE_INVALID');
   });
 
-  it('forces account authorization into the trusted-device approval transaction', () => {
-    expect(approvalClient).toContain('signDeviceAuthorization');
-    expect(approvalClient).toContain('loadIdentityKeys');
+  it('keeps the approval transaction server-side after automatic approval', () => {
     expect(approvalClient).toContain('p_device_authorization_signature');
-    expect(approvalClient).toContain('DEVICE_APPROVAL_ACCOUNT_PRIVATE_KEY_MISSING');
-    expect(approvalClient).toContain("result.binding_status !== 'bound'");
-    expect(approvalClient).toContain('result.account_authorized !== true');
+    expect(approvalClient).toContain('submitAutomaticDeviceApproval');
+    expect(approvalClient).toContain("result.code !== 'DEVICE_APPROVED'");
 
     expect(atomicApprovalMigration).toContain(
       'rename to approve_device_enrollment_decision_pre_account_authorization',
