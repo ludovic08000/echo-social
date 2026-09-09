@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { deviceApi, type DeviceApiRecord } from '@/lib/api/deviceApi';
+import { isWindowsWeb } from '@/lib/crypto/windowsHelloDeviceRecovery';
 
 export interface PendingDeviceApproval {
   deviceId: string;
@@ -40,6 +41,7 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
   const [error, setError] = useState<string | null>(null);
   const enrollmentInFlightRef = useRef(false);
   const approvalInFlightRef = useRef<string | null>(null);
+  const autoEnrollAttemptedRef = useRef(false);
 
   const reloadPending = useCallback(async () => {
     if (!user?.id) {
@@ -99,6 +101,17 @@ export function usePrePinDeviceEnrollment(deviceId: string | null, onChanged: ()
       setProcessing(false);
     }
   }, [deviceId, onChanged, pending, processing, user?.id]);
+
+  // Invariant : l'enrôlement devient automatique pour l'appareil authentifié
+  // courant. Sur Windows Web la récupération Windows Hello reste prioritaire
+  // afin de ne jamais fabriquer un DeviceID à la place d'un device existant.
+  useEffect(() => {
+    if (!user?.id || deviceId || pending || processing) return;
+    if (enrollmentInFlightRef.current || autoEnrollAttemptedRef.current) return;
+    if (isWindowsWeb()) return;
+    autoEnrollAttemptedRef.current = true;
+    void startEnrollment();
+  }, [deviceId, pending, processing, startEnrollment, user?.id]);
 
   return {
     pending,
