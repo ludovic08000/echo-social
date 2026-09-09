@@ -2,13 +2,17 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const approval = readFileSync('src/lib/crypto/deviceApprovalDecision.ts', 'utf8');
+const gate = readFileSync('src/components/messaging/DeviceApprovalGate.tsx', 'utf8');
 
-describe('device approval Windows Hello recovery', () => {
-  it('restores the account private key before authorizing a pending device', () => {
-    expect(approval).toMatch(/import\(\s*['"]@\/lib\/crypto\/windowsHelloDeviceRecovery['"]\s*\)/);
-    expect(approval).toContain('recoverCurrentWindowsHelloDevice(args.userId)');
-    expect(approval).toContain('recoveredDeviceId !== args.approverDeviceId');
-    expect(approval).toContain("throw new Error('DEVICE_APPROVAL_WINDOWS_HELLO_DEVICE_MISMATCH')");
-    expect(approval).toMatch(/recoverCurrentWindowsHelloDevice[\s\S]*loadIdentityKeys\(args\.userId\)/);
+describe('device approval after automatic approval rollout', () => {
+  it('drops the account-key ceremony from the approval path', () => {
+    expect(approval).not.toContain('recoverCurrentWindowsHelloDevice');
+    expect(approval).not.toContain('loadIdentityKeys');
+    expect(approval).toContain('submitAutomaticDeviceApproval');
+  });
+
+  it('keeps the Windows Hello recovery screen untouched', () => {
+    expect(gate).toContain('recoverCurrentWindowsHelloDevice(user.id)');
+    expect(gate).toContain('isWindowsWeb()');
   });
 });

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Check, Fingerprint, Loader2, ShieldCheck, ShieldQuestion, Smartphone } from 'lucide-react';
+import { Fingerprint, Loader2, ShieldQuestion, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -150,67 +150,20 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
     );
   }
 
+  // Invariant cryptographique modifié : plus d'écran d'attente d'approbation.
+  // L'appareil demande son approbation au serveur, qui seul décide.
   if (lifecycle.state === 'PENDING_APPROVAL') {
-    const pending = actions.pending;
     return (
       <Shell compact={compact}>
-        <div className="rounded-2xl border border-amber-500/40 bg-card p-5 shadow-sm">
-          <div className="mb-4 flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
-              <ShieldQuestion className="h-5 w-5 text-amber-700" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold">{actions.canBootstrapPrimary ? 'Confirmer le premier appareil ?' : 'En attente d’approbation sur un appareil déjà approuvé'}</h2>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {actions.canBootstrapPrimary
-                  ? 'Aucun appareil n’existe encore. Votre confirmation créera l’unique appareil principal du compte.'
-                  : 'Ouvrez Echo Social sur un appareil déjà reconnu : une demande d’approbation y apparaîtra automatiquement. Comparez l’empreinte ci-dessous avant d’approuver. Cet appareil ne peut pas s’approuver lui-même.'}
-              </p>
-            </div>
-          </div>
-
-          {!pending ? (
-            <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Chargement de la demande…
-            </div>
-          ) : (
-            <>
-              <div className="mb-3 rounded-xl bg-muted/50 px-3 py-2.5">
-                <p className="text-sm font-semibold">{pending.deviceName}</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {pending.platform ?? 'web'} · {pending.deviceId.slice(0, 16)}…
-                </p>
-              </div>
-
-              {pending.fingerprintLines.length > 0 && (
-                <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Empreinte cryptographique</p>
-                  <div className="mt-1 font-mono text-xs leading-relaxed tracking-wider">
-                    {pending.fingerprintLines.map((line) => <span key={line} className="block">{line}</span>)}
-                  </div>
-                </div>
-              )}
-
-              {actions.error && (
-                <p className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{actions.error}</p>
-              )}
-
-              {actions.canBootstrapPrimary && <div className="grid grid-cols-1 gap-2">
-                <Button
-                  className="rounded-xl"
-                  disabled={actions.processing}
-                  onClick={() => void actions.decide('approve')}
-                >
-                  {actions.processing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 h-4 w-4" />}
-                  Approuver
-                </Button>
-              </div>}
-            </>
-          )}
-
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            La finalisation cryptographique démarre automatiquement après l’approbation.
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <p className="text-sm font-medium">Activation de cet appareil…</p>
+          <p className="text-xs text-muted-foreground">
+            Vérification cryptographique et activation automatique en cours.
           </p>
+          {actions.error && (
+            <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{actions.error}</p>
+          )}
         </div>
       </Shell>
     );
