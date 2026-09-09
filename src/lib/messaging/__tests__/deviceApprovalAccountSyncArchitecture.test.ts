@@ -48,3 +48,21 @@ describe('canonical automatic device approval', () => {
     expect(api).toContain("updated.lifecycleStatus !== 'ready'");
   });
 });
+
+describe('automatic device enrollment', () => {
+  const hook = readFileSync('src/hooks/usePrePinDeviceEnrollment.ts', 'utf8');
+  const gate = readFileSync('src/components/messaging/DeviceApprovalGate.tsx', 'utf8');
+
+  it('auto-enrolls the current device outside Windows Hello recovery', () => {
+    expect(hook).toContain('autoEnrollAttemptedRef');
+    expect(hook).toContain('if (isWindowsWeb()) return;');
+    expect(hook).toContain('void startEnrollment();');
+  });
+
+  it('removes the manual waiting screens but keeps Windows Hello recovery', () => {
+    expect(gate).toContain('Enregistrement de cet appareil…');
+    expect(gate).toContain('Activation de cet appareil…');
+    expect(gate).toContain('recoverCurrentWindowsHelloDevice(user.id)');
+    expect(gate).not.toContain('Approuver');
+  });
+});
