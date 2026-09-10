@@ -76,11 +76,59 @@ describe('single canonical device lifecycle authority', () => {
     expect(gate).not.toContain('Approuver');
   });
 
-  it('keeps verification and key finalization fail-closed without the duplicate binding gate', () => {
+  it('keeps verification fail-closed and stops the approval gate at the PIN step', () => {
     expect(gate).toContain('Vérification de cet appareil…');
-    expect(gate).toContain('Finalisation de cet appareil…');
-    expect(gate).toContain('lifecycle.transitionError');
+    expect(gate).toContain('if (!lifecycle.canPromptForPin)');
+    expect(gate).not.toContain('canRunCryptoRuntime');
     expect(messagingGate).not.toContain('DeviceAccountBindingGate');
+  });
+
+  it('mounts the mandatory PIN gate in the canonical order', () => {
+    expect(messagingGate).toContain('DeviceApprovalGate');
+    expect(messagingGate).toContain('PinUnlockGate');
+    expect(messagingGate.indexOf('<DeviceApprovalGate'))
+      .toBeLessThan(messagingGate.indexOf('<PinUnlockGate'));
+    expect(readFileSync('src/lib/device-manager/pinUnlockSignal.ts', 'utf8'))
+      .toContain('const PIN_PROTECTION_ENABLED = true;');
+    expect(lifecycle).toContain('const PIN_PROTECTION_ENABLED = true;');
+  });
+
+  it('requires a proven account synchronization before messaging', () => {
+    const finalGate = readFileSync('src/components/PinValidatedMessaging.tsx', 'utf8');
+    expect(controller).toContain("accountSyncPhase: this.accountSyncPhase");
+    expect(controller).toContain("if (this.accountSyncPhase !== 'ready') return 'syncing_account';");
+    expect(lifecycle).toContain('beginAccountSynchronization');
+    expect(finalGate).toContain('if (!lifecycle.canRunCryptoRuntime)');
+    expect(finalGate).toContain('Réessayer');
+  });
+
+  it('resumes finalisation when routing is ready but lifecycle_status is not', () => {
+    const machine = readFileSync('src/lib/device-manager/deviceLifecycleMachine.ts', 'utf8');
+    expect(machine).toContain("if (record.lifecycleStatus !== 'ready')");
+    expect(controller).toContain("if (record.lifecycleStatus !== 'ready') return 'preparing_keys';");
+    expect(controller).toContain('DEVICE_LIFECYCLE_STALLED');
+  });
+
+  it('removes the legacy manual approve/reject surface entirely', () => {
+    const app = readFileSync('src/App.tsx', 'utf8');
+    expect(existsSync('src/pages/SecurityDeviceVerify.tsx')).toBe(false);
+    expect(existsSync('src/hooks/useDeviceSecurity.ts')).toBe(false);
+    expect(existsSync('supabase/functions/device-security/index.ts')).toBe(false);
+    expect(existsSync('supabase/functions/_shared/transactional-email-templates/new-device-login.tsx')).toBe(false);
+    expect(app).not.toContain('/security/device');
+    expect(app).not.toContain('SecurityDeviceVerify');
+    expect(readFileSync('supabase/config.toml', 'utf8')).not.toContain('device-security');
+  });
+
+  it('keeps maintenance out of the initial device preparation', () => {
+    const maintenance = readFileSync('src/hooks/useCryptoMaintenance.ts', 'utf8');
+    expect(maintenance).not.toContain('provisionLibsignalDevice');
+    expect(maintenance).toContain('deviceApi.runKeyMaintenance');
+    expect(maintenance).toContain('lifecycle.canRunCryptoRuntime');
+    expect(maintenance).toContain("lifecycle.accountSyncPhase === 'ready'");
+    expect(api).toContain('DEVICE_MAINTENANCE_NOT_READY');
+    // Même verrou que prepareKeys : aucune concurrence possible.
+    expect(api).toContain("() => withIosDiagnostics('deviceApi.runKeyMaintenance'");
   });
 
   it('never leaves a gate spinning on a failed server read', () => {

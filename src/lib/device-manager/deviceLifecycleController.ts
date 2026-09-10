@@ -34,7 +34,10 @@ export type DeviceLifecycleStage =
   | 'enrolling'
   | 'approving'
   | 'binding'
-  | 'preparing_keys';
+  | 'preparing_keys'
+  | 'syncing_account';
+
+export type AccountSyncPhase = 'idle' | 'syncing' | 'ready' | 'failed';
 
 export interface DeviceLifecycleSnapshot {
   state: AegisDeviceLifecycleState;
@@ -46,6 +49,7 @@ export interface DeviceLifecycleSnapshot {
   stage: DeviceLifecycleStage;
   error: string | null;
   pinUnlocked: boolean;
+  accountSyncPhase: AccountSyncPhase;
   canPromptForPin: boolean;
   canRunDeviceKeySetup: boolean;
   canRunCryptoRuntime: boolean;
@@ -69,6 +73,20 @@ export interface DeviceLifecycleApi {
   autoApprove(userId: string): Promise<unknown>;
   bind(userId: string): Promise<unknown>;
   prepareKeys(userId: string): Promise<unknown>;
+  /**
+   * Synchronisation de compte réellement exécutée et prouvée : sans elle la
+   * messagerie ne s'ouvre jamais (aucun MESSAGING_READY simulé).
+   */
+  syncAccount(userId: string): Promise<unknown>;
+}
+
+const LIFECYCLE_STATUSES = ['pending', 'approved', 'syncing', 'ready', 'revoked'] as const;
+
+function normalizeLifecycleStatus(raw: string | null | undefined): DeviceLifecycleRecord['lifecycleStatus'] {
+  if (!raw) return null;
+  return (LIFECYCLE_STATUSES as readonly string[]).includes(raw)
+    ? (raw as DeviceLifecycleRecord['lifecycleStatus'])
+    : null;
 }
 
 export interface DeviceLifecycleDeps {
@@ -115,6 +133,7 @@ function recordKey(record: DeviceLifecycleRecord | null): string {
     record.approvalStatus,
     record.bindingStatus,
     record.routingStatus,
+    record.lifecycleStatus,
     record.isActive,
     record.revokedAt,
   ].join('|');
@@ -130,6 +149,7 @@ export class DeviceLifecycleController {
   private deviceId: string | null = null;
   private deviceIdStatus: DeviceIdStatus = 'uninitialized';
   private pinUnlocked = false;
+  private accountSyncPhase: AccountSyncPhase = 'idle';
   private stage: DeviceLifecycleStage = 'idle';
   private error: string | null = null;
   private manualEnrollmentRequested = false;
@@ -178,6 +198,7 @@ export class DeviceLifecycleController {
   /** Sortie explicite d'un état d'erreur : réarme le flux canonique. */
   retry(): Promise<void> {
     this.error = null;
+    if (this.accountSyncPhase === 'failed') this.accountSyncPhase = 'idle';
     this.blockedUntilRetry = false;
     this.publish();
     return this.advance();
@@ -213,10 +234,24 @@ export class DeviceLifecycleController {
   private async runPipeline(): Promise<void> {
     if (!(await this.readServerState())) return;
 
+    let previousAction: DeviceLifecycleStage | null = null;
+    let repeats = 0;
     for (let step = 0; step < MAX_PIPELINE_STEPS; step += 1) {
       if (this.disposed || this.blockedUntilRetry) return;
       const action = this.nextAction();
       if (!action) return;
+      repeats = action === previousAction ? repeats + 1 : 0;
+      previousAction = action;
+      if (repeats >= 2) {
+        // Une étape qui réussit sans faire progresser l'état serveur est une
+        // anomalie : erreur explicite + retry, jamais un spinner infini.
+        this.error = `DEVICE_LIFECYCLE_STALLED:${action}`;
+        this.blockedUntilRetry = true;
+        this.stage = 'idle';
+        this.publish();
+        this.deps.log?.('pipeline-stalled', { userId: this.userId, action }, 'error');
+        return;
+      }
       if (!(await this.runStep(action))) return;
       if (!(await this.readServerState())) return;
     }
@@ -241,9 +276,15 @@ export class DeviceLifecycleController {
     if (record.approvalStatus === 'pending') return 'approving';
     if (record.approvalStatus !== 'approved') return null;
     if (record.isActive !== true) return null;
+    if (record.lifecycleStatus === 'revoked') return null;
+    // Ordre canonique strict : le PIN précède binding et préparation des clés.
     if (this.deps.pinRequired && !this.pinUnlocked) return null;
     if (record.bindingStatus !== 'bound') return 'binding';
     if (record.routingStatus !== 'ready') return 'preparing_keys';
+    // Invariant : `routing_status='ready'` sans `lifecycle_status='ready'` est
+    // un état incomplet, repris de façon idempotente, jamais considéré prêt.
+    if (record.lifecycleStatus !== 'ready') return 'preparing_keys';
+    if (this.accountSyncPhase !== 'ready') return 'syncing_account';
     return null;
   }
 
@@ -256,16 +297,23 @@ export class DeviceLifecycleController {
 
     try {
       const api = this.deps.api;
+      if (action === 'syncing_account') {
+        this.accountSyncPhase = 'syncing';
+        this.publish();
+      }
       const call = action === 'enrolling' ? api.enroll(this.userId)
         : action === 'approving' ? api.autoApprove(this.userId)
         : action === 'binding' ? api.bind(this.userId)
+        : action === 'syncing_account' ? api.syncAccount(this.userId)
         : api.prepareKeys(this.userId);
       await withStepTimeout(action, Promise.resolve(call), this.deps.stepTimeoutMs);
       if (action === 'enrolling') this.manualEnrollmentRequested = false;
+      if (action === 'syncing_account') this.accountSyncPhase = 'ready';
       this.deps.log?.('step-success', { userId: this.userId, action, elapsedMs: Date.now() - startedAt });
       return true;
     } catch (cause) {
       // Aucune simulation de succès : l'UI doit afficher l'erreur et un retry.
+      if (action === 'syncing_account') this.accountSyncPhase = 'failed';
       this.error = messageOf(cause);
       this.blockedUntilRetry = true;
       this.stage = 'idle';
@@ -322,6 +370,7 @@ export class DeviceLifecycleController {
         approvalStatus: row.approvalStatus,
         bindingStatus: row.bindingStatus,
         routingStatus: row.routingStatus,
+        lifecycleStatus: normalizeLifecycleStatus(row.lifecycleStatus),
         isActive: row.isActive,
         revokedAt: row.revokedAt,
       } : null);
@@ -354,7 +403,7 @@ export class DeviceLifecycleController {
       deviceIdStatus: this.deviceIdStatus,
       pinUnlocked: this.pinUnlocked,
       pinRequired: this.deps.pinRequired,
-      accountSyncPhase: 'idle',
+      accountSyncPhase: this.accountSyncPhase,
     });
 
     return {
@@ -367,6 +416,7 @@ export class DeviceLifecycleController {
       stage: this.stage,
       error: this.error,
       pinUnlocked: this.deps.pinRequired ? this.pinUnlocked : true,
+      accountSyncPhase: this.accountSyncPhase,
       canPromptForPin: canPromptForPin(state),
       canRunDeviceKeySetup: canRunDeviceKeySetup(state),
       canRunCryptoRuntime: canRunCryptoRuntime(state),

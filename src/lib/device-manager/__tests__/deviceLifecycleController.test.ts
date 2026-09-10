@@ -12,6 +12,7 @@ type Row = {
   approvalStatus: 'pending' | 'approved' | 'rejected' | null;
   bindingStatus: 'pending' | 'bound' | 'revoked' | null;
   routingStatus: 'repairing' | 'ready' | 'unavailable' | null;
+  lifecycleStatus: 'pending' | 'approved' | 'syncing' | 'ready' | 'revoked' | null;
   isActive: boolean | null;
   revokedAt: string | null;
 };
@@ -22,6 +23,7 @@ function row(overrides: Partial<Row> = {}): Row {
     approvalStatus: 'pending',
     bindingStatus: 'pending',
     routingStatus: 'unavailable',
+    lifecycleStatus: 'pending',
     isActive: true,
     revokedAt: null,
     ...overrides,
@@ -31,7 +33,7 @@ function row(overrides: Partial<Row> = {}): Row {
 /** Serveur factice : seules les RPC réussies font avancer l'état. */
 function fakeServer(initial: Row | null) {
   const state: { record: Row | null } = { record: initial };
-  const calls = { getState: 0, enroll: 0, autoApprove: 0, bind: 0, prepareKeys: 0 };
+  const calls = { getState: 0, enroll: 0, autoApprove: 0, bind: 0, prepareKeys: 0, syncAccount: 0 };
   const api: DeviceLifecycleApi = {
     getState: async () => { calls.getState += 1; return { record: state.record }; },
     enroll: async () => {
@@ -41,7 +43,7 @@ function fakeServer(initial: Row | null) {
     autoApprove: async () => {
       calls.autoApprove += 1;
       if (state.record?.approvalStatus !== 'pending') throw new Error('DEVICE_AUTO_APPROVAL_NOT_PENDING');
-      state.record = { ...state.record, approvalStatus: 'approved' };
+      state.record = { ...state.record, approvalStatus: 'approved', lifecycleStatus: 'approved' };
     },
     bind: async () => {
       calls.bind += 1;
@@ -51,8 +53,10 @@ function fakeServer(initial: Row | null) {
     prepareKeys: async () => {
       calls.prepareKeys += 1;
       if (state.record?.bindingStatus !== 'bound') throw new Error('DEVICE_NOT_READY_FOR_KEYS');
-      state.record = { ...state.record, routingStatus: 'ready' };
+      // Reproduit le serveur : mark_route_ready PUIS complete_synchronization.
+      state.record = { ...state.record, routingStatus: 'ready', lifecycleStatus: 'ready' };
     },
+    syncAccount: async () => { calls.syncAccount += 1; },
   };
   return { api, calls, state };
 }
@@ -67,7 +71,7 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     });
     await controller.refresh();
 
-    expect(order).toEqual(['enrolling', 'approving', 'binding', 'preparing_keys']);
+    expect(order).toEqual(['enrolling', 'approving', 'binding', 'preparing_keys', 'syncing_account']);
     expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
     expect(controller.getSnapshot().error).toBeNull();
     controller.dispose();
@@ -207,14 +211,61 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     openController.dispose();
   });
 
-  it('est idempotent quand le provisioning est déjà valide', async () => {
-    const server = fakeServer(row({ approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready' }));
+  it('est idempotent quand le provisioning et la synchronisation sont valides', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'ready',
+    }));
     const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
     await controller.refresh();
     await controller.refresh();
 
     expect(server.calls.prepareKeys).toBe(0);
+    expect(server.calls.syncAccount).toBe(1);
     expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('reprend la finalisation quand la route est prête mais lifecycle_status ne l’est pas', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'syncing',
+    }));
+    const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
+    await controller.refresh();
+
+    expect(server.calls.prepareKeys).toBe(1);
+    expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('n’ouvre jamais la messagerie si la synchronisation de compte échoue', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'ready',
+    }));
+    server.api.syncAccount = async () => { throw new Error('ACCOUNT_SYNC_FAILED'); };
+    const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
+    await controller.refresh();
+
+    const snapshot = controller.getSnapshot();
+    expect(snapshot.canRunCryptoRuntime).toBe(false);
+    expect(snapshot.accountSyncPhase).toBe('failed');
+    expect(snapshot.error).toBe('ACCOUNT_SYNC_FAILED');
+    controller.dispose();
+  });
+
+  it('n’ouvre jamais la messagerie sans PIN déverrouillé', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'ready',
+    }));
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => false,
+    });
+    await controller.refresh();
+
+    expect(controller.getSnapshot().state).toBe('APPROVED_LOCKED');
+    expect(controller.getSnapshot().canRunCryptoRuntime).toBe(false);
+    expect(server.calls.syncAccount).toBe(0);
     controller.dispose();
   });
 

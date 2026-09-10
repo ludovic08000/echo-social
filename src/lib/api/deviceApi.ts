@@ -428,6 +428,27 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   return updated;
 }
 
+/**
+ * Invariant cryptographique : la maintenance périodique ne PRÉPARE jamais un
+ * appareil. Elle exige un état serveur complet (approuvé, actif, lié, route
+ * prête, `lifecycle_status='ready'`), ne provisionne pas libsignal et ne touche
+ * ni `routing_status` ni `lifecycle_status`. Elle renouvelle uniquement la
+ * préclé signée expirante et recharge le pool de préclés à usage unique.
+ */
+async function runKeyMaintenance(userId: string): Promise<DeviceApiRecord> {
+  const snapshot = await getState(userId);
+  const record = snapshot.record;
+  if (!record || snapshot.state !== 'ready') throw new Error('DEVICE_MAINTENANCE_NOT_READY');
+  if (record.routingStatus !== 'ready' || record.lifecycleStatus !== 'ready') {
+    throw new Error('DEVICE_MAINTENANCE_NOT_READY');
+  }
+  const identity = await loadDeviceIdentity(userId, record.deviceId);
+  if (!identity) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
+  await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
+  await refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId);
+  return record;
+}
+
 async function revokeDevice(userId: string, targetDeviceId: string): Promise<void> {
   if (!DEVICE_ID_RE.test(targetDeviceId)) throw new Error('DEVICE_INVALID_ID');
   const currentDeviceId = getCurrentId(userId);
@@ -475,5 +496,13 @@ export const deviceApi = {
     userId,
     () => withIosDiagnostics('deviceApi.prepareKeys', () => prepareKeys(userId)),
   ),
+  // Même verrou que `prepareKeys` : aucune exécution concurrente possible.
+  runKeyMaintenance: async (userId: string): Promise<void> => {
+    await runDeviceTransitionOnce(
+      keySetupInFlight,
+      userId,
+      () => withIosDiagnostics('deviceApi.runKeyMaintenance', () => runKeyMaintenance(userId)),
+    );
+  },
   revokeDevice,
 } as const;

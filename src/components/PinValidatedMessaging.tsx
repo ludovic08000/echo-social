@@ -1,7 +1,7 @@
-import { useEffect, type ReactNode } from 'react';
-import { useAuth } from '@/lib/auth';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
-import { cryptoApi } from '@/lib/api/cryptoApi';
 import { flushCryptoErrors, logCryptoError } from '@/lib/crypto/errorLogger';
 
 interface PinValidatedMessagingProps {
@@ -20,42 +20,60 @@ function wakeMessageDecryptors(deviceId: string | null, reason: string): void {
   }
 }
 
+/**
+ * Invariant cryptographique : dernière garde du flux canonique. La messagerie
+ * n'est rendue qu'après binding + clés + `lifecycle_status='ready'` serveur ET
+ * synchronisation de compte réellement réussie. Aucune transition n'est
+ * déclenchée ici : l'autorité unique reste `deviceLifecycleController`.
+ */
 export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) {
-  const { user } = useAuth();
   const lifecycle = useDeviceLifecycle();
-  const deviceId = lifecycle.deviceId;
+  const wokenFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!user?.id || !deviceId || !lifecycle.pinUnlocked) return;
-    if (lifecycle.record?.approvalStatus !== 'approved' || lifecycle.record?.isActive !== true || lifecycle.record?.revokedAt) return;
+    if (!lifecycle.canRunCryptoRuntime || !lifecycle.deviceId) return;
+    if (wokenFor.current === lifecycle.deviceId) return;
+    wokenFor.current = lifecycle.deviceId;
+    wakeMessageDecryptors(lifecycle.deviceId, 'lifecycle.messaging_ready');
+    void flushCryptoErrors().catch(() => undefined);
+  }, [lifecycle.canRunCryptoRuntime, lifecycle.deviceId]);
 
-    let cancelled = false;
-    const userId = user.id;
+  useEffect(() => {
+    if (!lifecycle.error) return;
+    logCryptoError({
+      severity: 'warning',
+      context: 'restore',
+      errorCode: 'E2EE_CRYPTO_API_NOT_READY',
+      errorMessage: lifecycle.error,
+      metadata: { stage: lifecycle.stage, device_id: lifecycle.deviceId },
+    });
+    void flushCryptoErrors().catch(() => undefined);
+  }, [lifecycle.error, lifecycle.stage, lifecycle.deviceId]);
 
-    void cryptoApi.ensureReady(userId)
-      .then(async (snapshot) => {
-        if (cancelled) return;
-        const readyDeviceId = snapshot.device.record?.deviceId ?? deviceId;
-        wakeMessageDecryptors(readyDeviceId, 'cryptoApi.ready');
-        await flushCryptoErrors().catch(() => undefined);
-      })
-      .catch(async (error) => {
-        const errorCode = error instanceof Error ? error.message : String(error ?? 'CRYPTO_READY_FAILED');
-        logCryptoError({
-          severity: 'warning',
-          context: 'restore',
-          errorCode: 'E2EE_CRYPTO_API_NOT_READY',
-          errorMessage: errorCode,
-          metadata: { stage: 'post_pin', device_id: deviceId },
-        });
-        await flushCryptoErrors().catch(() => undefined);
-        console.warn('[cryptoApi] post-PIN readiness deferred', errorCode);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [deviceId, lifecycle.pinUnlocked, lifecycle.record?.approvalStatus, lifecycle.record?.isActive, lifecycle.record?.revokedAt, user?.id]);
+  if (!lifecycle.canRunCryptoRuntime) {
+    const syncing = lifecycle.state === 'ACCOUNT_KEY_SYNC';
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center px-4 py-8">
+        <div className="flex w-full max-w-sm flex-col items-center gap-3 text-center">
+          {!lifecycle.error && <Loader2 className="h-6 w-6 animate-spin text-primary" />}
+          <p className="text-sm font-medium">
+            {syncing ? 'Synchronisation de votre compte…' : 'Finalisation de cet appareil…'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {syncing
+              ? 'Vérification des clés de compte avant ouverture de la messagerie.'
+              : 'Publication des clés de session sécurisée en cours.'}
+          </p>
+          {lifecycle.error && (
+            <div className="w-full space-y-2 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <p>{lifecycle.error}</p>
+              <Button size="sm" variant="outline" onClick={lifecycle.retry}>Réessayer</Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return <>{children}</>;
 }

@@ -17,6 +17,8 @@ import {
   setCurrentDeviceUserScope,
 } from '@/lib/messaging/currentDevice';
 import { deviceApi } from '@/lib/api/deviceApi';
+import { cryptoApi } from '@/lib/api/cryptoApi';
+import { beginAccountSynchronization, type AccountSyncPhase } from '@/lib/messaging/accountSyncBarrier';
 import {
   configureDeviceLifecycleDeps,
   getDeviceLifecycleController,
@@ -46,7 +48,11 @@ const REFRESH_EVENTS = [
 ];
 
 const POLL_MS = 15_000;
-const PIN_PROTECTION_ENABLED = false;
+/**
+ * Invariant restauré : le PIN fait partie de l'ordre canonique obligatoire
+ * (approbation serveur -> PIN -> binding -> clés -> sync -> messagerie).
+ */
+const PIN_PROTECTION_ENABLED = true;
 
 function logDeviceLifecycle(stage: string, details: Record<string, unknown> = {}, level: 'info' | 'warn' | 'error' = 'info') {
   const payload = { ts: new Date().toISOString(), stage, ...details };
@@ -62,6 +68,11 @@ configureDeviceLifecycleDeps((userId) => ({
     autoApprove: (id) => deviceApi.autoApprove(id),
     bind: (id) => deviceApi.bind(id),
     prepareKeys: (id) => deviceApi.prepareKeys(id),
+    // Preuve réelle de synchronisation de compte : la barrière partagée est la
+    // même que celle attendue par le runtime de messagerie.
+    syncAccount: (id) => beginAccountSynchronization(id, async () => {
+      await cryptoApi.ensureReady(id);
+    }),
   },
   hydrateDeviceId: () => hydrateDeviceId(),
   getDeviceIdStatus: () => getDeviceIdStatus() as DeviceIdStatus,
@@ -103,6 +114,7 @@ const IDLE_SNAPSHOT: ControllerSnapshot = {
   stage: 'idle',
   error: null,
   pinUnlocked: false,
+  accountSyncPhase: 'idle',
   canPromptForPin: false,
   canRunDeviceKeySetup: false,
   canRunCryptoRuntime: false,
@@ -119,6 +131,7 @@ export interface DeviceLifecycleSnapshot {
   loading: boolean;
   stage: DeviceLifecycleStage;
   pinUnlocked: boolean;
+  accountSyncPhase: AccountSyncPhase;
   canPromptForPin: boolean;
   canRunDeviceKeySetup: boolean;
   canRunCryptoRuntime: boolean;
