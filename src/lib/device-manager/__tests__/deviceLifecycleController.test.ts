@@ -211,14 +211,61 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     openController.dispose();
   });
 
-  it('est idempotent quand le provisioning est déjà valide', async () => {
-    const server = fakeServer(row({ approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready' }));
+  it('est idempotent quand le provisioning et la synchronisation sont valides', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'ready',
+    }));
     const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
     await controller.refresh();
     await controller.refresh();
 
     expect(server.calls.prepareKeys).toBe(0);
+    expect(server.calls.syncAccount).toBe(1);
     expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('reprend la finalisation quand la route est prête mais lifecycle_status ne l’est pas', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'syncing',
+    }));
+    const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
+    await controller.refresh();
+
+    expect(server.calls.prepareKeys).toBe(1);
+    expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('n’ouvre jamais la messagerie si la synchronisation de compte échoue', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'ready',
+    }));
+    server.api.syncAccount = async () => { throw new Error('ACCOUNT_SYNC_FAILED'); };
+    const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
+    await controller.refresh();
+
+    const snapshot = controller.getSnapshot();
+    expect(snapshot.canRunCryptoRuntime).toBe(false);
+    expect(snapshot.accountSyncPhase).toBe('failed');
+    expect(snapshot.error).toBe('ACCOUNT_SYNC_FAILED');
+    controller.dispose();
+  });
+
+  it('n’ouvre jamais la messagerie sans PIN déverrouillé', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'ready',
+    }));
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => false,
+    });
+    await controller.refresh();
+
+    expect(controller.getSnapshot().state).toBe('APPROVED_LOCKED');
+    expect(controller.getSnapshot().canRunCryptoRuntime).toBe(false);
+    expect(server.calls.syncAccount).toBe(0);
     controller.dispose();
   });
 
