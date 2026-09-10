@@ -242,7 +242,8 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
     await controller.refresh();
 
-    expect(server.calls.prepareKeys).toBe(1);
+    expect(server.calls.prepareKeys).toBe(0);
+    expect(server.calls.finalize).toBe(1);
     expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
     controller.dispose();
   });
