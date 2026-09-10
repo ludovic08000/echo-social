@@ -378,6 +378,12 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   void backupAndroidDeviceVault(userId);
 
   await provisionLibsignalDevice(userId, record.deviceId);
+  // Invariant corrigé : `mark_current_device_route_ready` exige côté serveur une
+  // `device_signed_prekeys` active, non expirée et vérifiable. Personne ne la
+  // publiait, donc la route restait DEVICE_ROUTE_INCOMPLETE et l'écran
+  // « Finalisation de cet appareil » tournait sans fin. Elle est désormais
+  // publiée ici, avant la validation serveur.
+  await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
   // iOS becomes routable only after the exact private X3DH material has been
   // sealed, uploaded and read back successfully for this DeviceID.
   const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');
