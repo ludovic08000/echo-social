@@ -68,11 +68,12 @@ describe('automatic device enrollment', () => {
     expect(gate).not.toContain('Approuver');
   });
 
-  it('keeps verification and key finalization fail-closed without the duplicate binding gate', () => {
+  it('keeps verification and both key-finalization interfaces fail-closed', () => {
     expect(gate).toContain('Vérification de cet appareil…');
     expect(gate).toContain('Finalisation de cet appareil…');
     expect(gate).toContain('lifecycle.transitionError');
-    expect(messagingGate).not.toContain('DeviceAccountBindingGate');
+    expect(messagingGate).toContain("import { DeviceAccountBindingGate }");
+    expect(messagingGate).toContain('<DeviceAccountBindingGate compact={compact}>');
   });
 
   it('deduplicates every binding and key setup caller in the central API', () => {
