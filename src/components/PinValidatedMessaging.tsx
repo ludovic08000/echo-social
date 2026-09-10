@@ -54,6 +54,9 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
     void flushCryptoErrors().catch(() => undefined);
   }, [lifecycle.error, lifecycle.stage, lifecycle.deviceId]);
 
+  // Diagnostic visible seulement si erreur ou finalisation anormalement longue.
+  const stalled = useFinalizationStall(!lifecycle.error && !lifecycle.canRunCryptoRuntime);
+
   if (!lifecycle.canRunCryptoRuntime) {
     const syncing = lifecycle.state === 'ACCOUNT_KEY_SYNC';
     return (
@@ -68,6 +71,7 @@ export function PinValidatedMessaging({ children }: PinValidatedMessagingProps) 
               ? 'Vérification des clés de compte avant ouverture de la messagerie.'
               : 'Publication des clés de session sécurisée en cours.'}
           </p>
+          {(lifecycle.error || stalled) && <DeviceFinalizationDiagnostics open={Boolean(lifecycle.error)} />}
           {lifecycle.error && (
             <div className="w-full space-y-2 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
               <p>{lifecycle.error}</p>
