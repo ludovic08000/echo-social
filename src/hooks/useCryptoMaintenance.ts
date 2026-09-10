@@ -17,6 +17,10 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { getOrCreateDeviceIdentity } from '@/lib/crypto/deviceIdentity';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
+import {
+  refillDeviceOneTimePrekeysIfNeeded,
+  refreshDeviceSignedPrekeyIfNeeded,
+} from '@/lib/crypto/x3dh';
 import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 
 const MAINTENANCE_TTL = 6 * 60 * 60 * 1000; // 6h between auto-refills
