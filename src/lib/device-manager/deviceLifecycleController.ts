@@ -166,6 +166,10 @@ export class DeviceLifecycleController {
   private manualEnrollmentRequested = false;
   private blockedUntilRetry = false;
   private disposed = false;
+  /** Corrélation d'une tentative complète de pipeline (diagnostic seulement). */
+  private traceId = newDeviceFinalizationTraceId();
+  private readonly stepAttempts = new Map<string, number>();
+
 
   private snapshot!: DeviceLifecycleSnapshot;
   private readPromise: Promise<void> | null = null;
