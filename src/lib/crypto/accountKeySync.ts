@@ -72,6 +72,8 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
   if (!userId) throw new Error('ACCOUNT_SYNC_USER_REQUIRED');
 
   let outcome: AccountKeySyncOutcome = 'no_backup_new_account';
+  const elapsed = startFinalizationTimer();
+  traceCurrentDeviceFinalization({ step: 'account_key_sync', outcome: 'start', userId });
   const run = async (): Promise<void> => {
     try {
       transition(userId, 'storage_checking', 'accountKeySync.beforeRuntime');
