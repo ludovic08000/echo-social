@@ -21,6 +21,10 @@ import { cryptoApi } from '@/lib/api/cryptoApi';
 import { synchronizeAccountKeysBeforeRuntime } from '@/lib/crypto/accountKeySync';
 import { beginAccountSynchronization, type AccountSyncPhase } from '@/lib/messaging/accountSyncBarrier';
 import {
+  startFinalizationTimer,
+  traceCurrentDeviceFinalization,
+} from '@/lib/device-manager/deviceFinalizationTrace';
+import {
   configureDeviceLifecycleDeps,
   getDeviceLifecycleController,
   resetDeviceLifecycleControllers,
