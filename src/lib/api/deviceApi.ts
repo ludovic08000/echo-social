@@ -47,6 +47,10 @@ import {
 } from '@/platforms/ios/iosDeviceReuse';
 import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
+import {
+  startFinalizationTimer,
+  traceCurrentDeviceFinalization,
+} from '@/lib/device-manager/deviceFinalizationTrace';
 import { adoptReusableAndroidDevice, resolveExistingAndroidDevice } from '@/platforms/android/androidDeviceReuse';
 import { backupAndroidDeviceVault, restoreAndroidDeviceVault } from '@/platforms/android/androidDeviceVault';
 
