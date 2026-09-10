@@ -8,6 +8,23 @@ import {
 } from '@/lib/device-manager/deviceFinalizationTrace';
 
 const VISIBLE_EVENTS = 20;
+const DEFAULT_STALL_MS = 15_000;
+
+/** Vrai quand une étape dépasse le seuil raisonnable, sans erreur explicite. */
+export function useFinalizationStall(active: boolean, thresholdMs = DEFAULT_STALL_MS): boolean {
+  const [stalled, setStalled] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setStalled(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setStalled(true), thresholdMs);
+    return () => window.clearTimeout(timer);
+  }, [active, thresholdMs]);
+
+  return stalled;
+}
 
 /**
  * Diagnostic de finalisation appareil.
