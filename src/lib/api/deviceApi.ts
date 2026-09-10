@@ -32,6 +32,10 @@ import {
 import { submitAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecision';
 import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
+import {
+  refillDeviceOneTimePrekeysIfNeeded,
+  refreshDeviceSignedPrekeyIfNeeded,
+} from '@/lib/crypto/x3dh';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
