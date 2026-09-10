@@ -401,6 +401,11 @@ export class DeviceLifecycleController {
       this.deps.log?.('step-failed', {
         userId: this.userId, action, elapsedMs: Date.now() - startedAt, message: this.error,
       }, 'error');
+      this.trace(`step.${action}`, /_TIMEOUT$/.test(this.error ?? '') ? 'timeout' : 'failure', {
+        attempt,
+        elapsedMs: Date.now() - startedAt,
+        errorCode: cause,
+      });
       return false;
     }
   }
