@@ -17,6 +17,12 @@
  * n'est jamais masquée par un spinner permanent.
  */
 import {
+  newDeviceFinalizationTraceId,
+  setCurrentDeviceFinalizationTraceId,
+  startFinalizationTimer,
+  traceDeviceFinalization,
+} from './deviceFinalizationTrace';
+import {
   canPromptForPin,
   canRunCryptoRuntime,
   canRunDeviceKeySetup,
