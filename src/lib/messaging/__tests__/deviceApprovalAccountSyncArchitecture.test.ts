@@ -52,6 +52,8 @@ describe('canonical automatic device approval', () => {
 describe('automatic device enrollment', () => {
   const hook = readFileSync('src/hooks/usePrePinDeviceEnrollment.ts', 'utf8');
   const gate = readFileSync('src/components/messaging/DeviceApprovalGate.tsx', 'utf8');
+  const lifecycle = readFileSync('src/hooks/useDeviceLifecycle.ts', 'utf8');
+  const messagingGate = readFileSync('src/components/MessagingPinGate.tsx', 'utf8');
 
   it('auto-enrolls the current device outside Windows Hello recovery', () => {
     expect(hook).toContain('autoEnrollAttemptedRef');
@@ -64,5 +66,18 @@ describe('automatic device enrollment', () => {
     expect(gate).toContain('Activation de cet appareil…');
     expect(gate).toContain('recoverCurrentWindowsHelloDevice(user.id)');
     expect(gate).not.toContain('Approuver');
+  });
+
+  it('does not block messaging on legacy verification or key-finalization screens', () => {
+    expect(gate).not.toContain('Vérification de cet appareil…');
+    expect(gate).not.toContain('Finalisation de cet appareil…');
+    expect(messagingGate).not.toContain('DeviceAccountBindingGate');
+  });
+
+  it('deduplicates binding and key setup across every mounted lifecycle observer', () => {
+    expect(lifecycle).toContain('const bindingTransitions = new Set<string>();');
+    expect(lifecycle).toContain('const keySetupTransitions = new Set<string>();');
+    expect(lifecycle).toContain('bindingTransitions.has(transitionKey)');
+    expect(lifecycle).toContain('keySetupTransitions.has(transitionKey)');
   });
 });
