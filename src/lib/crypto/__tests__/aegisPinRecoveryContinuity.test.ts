@@ -106,12 +106,12 @@ describe('Aegis PIN recovery and identity continuity', () => {
     const identityProbeStart = accountBackup.indexOf('export async function hasLocalKeys');
     const digestStart = accountBackup.indexOf('export async function computeLocalCryptoDigest');
     const identityProbe = accountBackup.slice(identityProbeStart, digestStart);
-    const sync = source('src/hooks/useAccountKeySync.ts');
+    const sync = source('src/lib/crypto/accountKeySync.ts');
 
     expect(identityProbe).toContain('loadIdentityKeys(userId)');
     expect(identityProbe).toContain('hasWrappedKeys(userId)');
     expect(identityProbe).not.toContain("countSideDB('forsure-ratchet'");
-    expect(sync).toContain('hasLocalKeys(user.id)');
+    expect(sync).toContain('hasLocalKeys(userId)');
   });
 
   it('always scopes restored-session checks to the signed-in account and catches bootstrap pauses', () => {

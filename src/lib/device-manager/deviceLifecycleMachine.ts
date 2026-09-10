@@ -98,13 +98,13 @@ export function resolveDeviceLifecycleState(input: DeviceLifecycleInput): Device
   }
   if (record.bindingStatus !== 'bound') return { state: 'ACCOUNT_BINDING', reason: 'account_binding_pending' };
   if (record.routingStatus !== 'ready') return { state: 'DEVICE_KEY_SETUP', reason: 'device_key_setup_pending' };
-  // Route prête mais synchronisation serveur non confirmée : on reprend la
-  // finalisation, on n'ouvre jamais la messagerie.
-  if (record.lifecycleStatus !== 'ready') {
-    return { state: 'DEVICE_KEY_SETUP', reason: 'device_synchronization_pending' };
-  }
+  // Route prête : la vraie synchronisation des clés de compte puis la
+  // finalisation serveur restent obligatoires avant d'ouvrir la messagerie.
   if (input.accountSyncPhase === 'failed') return { state: 'ACCOUNT_KEY_SYNC', reason: 'account_sync_failed' };
   if (input.accountSyncPhase !== 'ready') return { state: 'ACCOUNT_KEY_SYNC', reason: 'account_sync_running' };
+  if (record.lifecycleStatus !== 'ready') {
+    return { state: 'ACCOUNT_KEY_SYNC', reason: 'device_synchronization_pending' };
+  }
   return { state: 'MESSAGING_READY', reason: 'ready' };
 }
 

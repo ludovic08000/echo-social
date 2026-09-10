@@ -406,16 +406,6 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   );
   const route = data as { ok?: boolean; code?: string } | null;
   if (error || route?.ok !== true) throw new Error(`DEVICE_ROUTE_NOT_READY:${route?.code ?? error?.message ?? 'UNKNOWN'}`);
-  const { data: syncData, error: syncError } = await runDeviceRpcWithTimeout(
-    'DEVICE_SYNCHRONIZATION_INCOMPLETE',
-    (signal) => supabase.rpc('complete_current_device_synchronization' as never, {
-      p_device_id: record.deviceId,
-    } as never).abortSignal(signal),
-  );
-  const syncResult = syncData as { ok?: boolean; code?: string } | null;
-  if (syncError || syncResult?.ok !== true) {
-    throw new Error(`DEVICE_SYNCHRONIZATION_INCOMPLETE:${syncResult?.code ?? syncError?.message ?? 'UNKNOWN'}`);
-  }
   invalidateAllFanoutRoutes();
   invalidateAegisDeviceRuntime(userId);
   // Maintenance non bloquante : le pool de préclés à usage unique se remplit en
@@ -423,8 +413,43 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   void refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId)
     .catch((error) => console.warn('[DEVICE] OPK refill deferred:', error));
   await ensureApprovedDeviceTrust(userId, record.deviceId);
+  // Invariant corrigé : la préparation des clés s'arrête à la route prête. La
+  // finalisation serveur (`complete_current_device_synchronization`) n'a lieu
+  // qu'APRÈS la vraie synchronisation des clés de compte.
   const updated = await readDeviceRecord(userId, record.deviceId);
-  if (!updated || updated.routingStatus !== 'ready' || updated.lifecycleStatus !== 'ready') throw new Error('DEVICE_KEY_SETUP_INCOMPLETE');
+  if (!updated || updated.routingStatus !== 'ready') throw new Error('DEVICE_KEY_SETUP_INCOMPLETE');
+  return updated;
+}
+
+/**
+ * Finalisation serveur du cycle de vie appareil.
+ *
+ * Invariant cryptographique : appelée uniquement après une synchronisation des
+ * clés de compte réellement réussie. Elle est la SEULE transition vers
+ * `lifecycle_status='ready'` et vérifie ce statut après exécution.
+ */
+async function finalizeSynchronization(userId: string): Promise<DeviceApiRecord> {
+  const snapshot = await getState(userId);
+  const record = snapshot.record;
+  if (!record) throw new Error('DEVICE_NOT_FOUND');
+  if (record.revokedAt || record.approvalStatus !== 'approved' || !record.isActive) throw new Error('DEVICE_NOT_APPROVED');
+  if (record.bindingStatus !== 'bound' || record.routingStatus !== 'ready') {
+    throw new Error('DEVICE_ROUTE_NOT_READY');
+  }
+  if (record.lifecycleStatus === 'ready') return record;
+
+  const { data, error } = await runDeviceRpcWithTimeout(
+    'DEVICE_SYNCHRONIZATION_INCOMPLETE',
+    (signal) => supabase.rpc('complete_current_device_synchronization' as never, {
+      p_device_id: record.deviceId,
+    } as never).abortSignal(signal),
+  );
+  const result = data as { ok?: boolean; code?: string } | null;
+  if (error || result?.ok !== true) {
+    throw new Error(`DEVICE_SYNCHRONIZATION_INCOMPLETE:${result?.code ?? error?.message ?? 'UNKNOWN'}`);
+  }
+  const updated = await readDeviceRecord(userId, record.deviceId);
+  if (!updated || updated.lifecycleStatus !== 'ready') throw new Error('DEVICE_SYNCHRONIZATION_INCOMPLETE');
   return updated;
 }
 
@@ -495,6 +520,11 @@ export const deviceApi = {
     keySetupInFlight,
     userId,
     () => withIosDiagnostics('deviceApi.prepareKeys', () => prepareKeys(userId)),
+  ),
+  finalizeSynchronization: (userId: string) => runDeviceTransitionOnce(
+    keySetupInFlight,
+    userId,
+    () => withIosDiagnostics('deviceApi.finalizeSynchronization', () => finalizeSynchronization(userId)),
   ),
   // Même verrou que `prepareKeys` : aucune exécution concurrente possible.
   runKeyMaintenance: async (userId: string): Promise<void> => {

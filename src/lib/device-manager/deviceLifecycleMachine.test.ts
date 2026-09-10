@@ -64,7 +64,7 @@ describe('canonical device lifecycle order', () => {
       pinUnlocked: true,
       pinRequired: true,
       accountSyncPhase: 'ready',
-    })).toEqual({ state: 'DEVICE_KEY_SETUP', reason: 'device_synchronization_pending' });
+    })).toEqual({ state: 'ACCOUNT_KEY_SYNC', reason: 'device_synchronization_pending' });
   });
 
   it('fails closed on a revoked lifecycle status', () => {

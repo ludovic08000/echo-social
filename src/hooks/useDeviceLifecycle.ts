@@ -18,6 +18,7 @@ import {
 } from '@/lib/messaging/currentDevice';
 import { deviceApi } from '@/lib/api/deviceApi';
 import { cryptoApi } from '@/lib/api/cryptoApi';
+import { synchronizeAccountKeysBeforeRuntime } from '@/lib/crypto/accountKeySync';
 import { beginAccountSynchronization, type AccountSyncPhase } from '@/lib/messaging/accountSyncBarrier';
 import {
   configureDeviceLifecycleDeps,
@@ -70,9 +71,13 @@ configureDeviceLifecycleDeps((userId) => ({
     prepareKeys: (id) => deviceApi.prepareKeys(id),
     // Preuve réelle de synchronisation de compte : la barrière partagée est la
     // même que celle attendue par le runtime de messagerie.
+    // Vraie synchronisation : contrôle/restauration des clés de compte, puis
+    // seulement mise en route du runtime crypto. Jamais un ready simulé.
     syncAccount: (id) => beginAccountSynchronization(id, async () => {
+      await synchronizeAccountKeysBeforeRuntime(id);
       await cryptoApi.ensureReady(id);
     }),
+    finalizeSynchronization: (id) => deviceApi.finalizeSynchronization(id),
   },
   hydrateDeviceId: () => hydrateDeviceId(),
   getDeviceIdStatus: () => getDeviceIdStatus() as DeviceIdStatus,

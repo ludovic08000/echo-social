@@ -1,7 +1,7 @@
 /**
  * useAutoBackup — Legacy compatibility wrapper
  * 
- * Now delegates to the Master Key auto-sync system (useAccountKeySync).
+ * Now delegates to the Master Key auto-sync system (synchronizeAccountKeysBeforeRuntime).
  * Kept for backward compatibility with components that reference it.
  */
 
