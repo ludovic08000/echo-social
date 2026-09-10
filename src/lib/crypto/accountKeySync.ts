@@ -146,12 +146,23 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       console.warn('[messaging] key sentinel read failed:', error);
     }
 
+    const probeElapsed = startFinalizationTimer();
+    traceCurrentDeviceFinalization({ step: 'account_key_sync.backup_probe', outcome: 'start', userId });
     const backupProbe = await supabase
       .from('user_backups')
       .select('id')
       .eq('user_id', userId)
       .eq('backup_type', 'account')
       .limit(1);
+    traceCurrentDeviceFinalization({
+      step: 'account_key_sync.backup_probe',
+      outcome: backupProbe.error ? 'failure' : 'success',
+      elapsedMs: probeElapsed(),
+      userId,
+      // Uniquement l'existence, jamais le contenu d'une sauvegarde.
+      detail: backupProbe.error ? 'probe_error' : ((backupProbe.data ?? []).length > 0 ? 'backup_found' : 'no_backup'),
+      errorCode: backupProbe.error ? 'ACCOUNT_KEY_RESTORE_REQUIRED' : undefined,
+    });
 
     if (backupProbe.error) {
       // Fail-closed : impossible de prouver l'absence de sauvegarde.
