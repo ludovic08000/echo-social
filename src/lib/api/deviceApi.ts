@@ -418,6 +418,10 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   }
   invalidateAllFanoutRoutes();
   invalidateAegisDeviceRuntime(userId);
+  // Maintenance non bloquante : le pool de préclés à usage unique se remplit en
+  // arrière-plan, l'interface ne doit jamais l'attendre pour devenir prête.
+  void refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId)
+    .catch((error) => console.warn('[DEVICE] OPK refill deferred:', error));
   await ensureApprovedDeviceTrust(userId, record.deviceId);
   const updated = await readDeviceRecord(userId, record.deviceId);
   if (!updated || updated.routingStatus !== 'ready' || updated.lifecycleStatus !== 'ready') throw new Error('DEVICE_KEY_SETUP_INCOMPLETE');
