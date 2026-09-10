@@ -5,6 +5,10 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
+import {
+  DeviceFinalizationDiagnostics,
+  useFinalizationStall,
+} from '@/components/messaging/DeviceFinalizationDiagnostics';
 import { getSessionMasterKey, initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
 import {
   isWindowsWeb,
