@@ -353,8 +353,24 @@ async function bind(userId: string): Promise<DeviceApiRecord> {
 }
 
 async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
+  const elapsed = startFinalizationTimer();
   const snapshot = await getState(userId);
   const record = snapshot.record;
+  traceCurrentDeviceFinalization({
+    step: 'device_api.prepare_keys.route_state_before',
+    outcome: 'info',
+    elapsedMs: elapsed(),
+    userId,
+    deviceId: record?.deviceId ?? null,
+    state: record ? {
+      approvalStatus: record.approvalStatus,
+      bindingStatus: record.bindingStatus,
+      routingStatus: record.routingStatus,
+      lifecycleStatus: record.lifecycleStatus,
+      isActive: record.isActive,
+      revoked: Boolean(record.revokedAt),
+    } : null,
+  });
   if (!record) throw new Error('DEVICE_NOT_FOUND');
   if (record.approvalStatus !== 'approved' || !record.isActive || record.bindingStatus !== 'bound' || record.revokedAt) {
     throw new Error('DEVICE_NOT_READY_FOR_KEYS');
