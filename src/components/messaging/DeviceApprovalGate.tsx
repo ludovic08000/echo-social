@@ -79,6 +79,12 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
     <ErrorBlock error={lifecycle.error} onRetry={lifecycle.retry} />
   );
 
+  // Diagnostic visible uniquement en cas d'erreur ou d'étape anormalement longue.
+  const stalled = useFinalizationStall(!lifecycle.error && !lifecycle.canRunCryptoRuntime);
+  const diagnostics = (lifecycle.error || stalled)
+    ? <DeviceFinalizationDiagnostics open={Boolean(lifecycle.error)} />
+    : null;
+
   if (lifecycle.loading) {
     return (
       <Shell compact={compact}>
