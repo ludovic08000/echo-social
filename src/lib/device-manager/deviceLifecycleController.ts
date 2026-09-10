@@ -469,6 +469,7 @@ export class DeviceLifecycleController {
       } : null);
       this.stage = 'idle';
       this.error = null;
+      this.trace('state_lookup', 'success', { elapsedMs: readElapsed() });
       this.publish();
     } catch (cause) {
       // Sans cette branche l'écran « Vérification de cet appareil » tournait
@@ -477,6 +478,10 @@ export class DeviceLifecycleController {
       this.blockedUntilRetry = true;
       this.stage = 'idle';
       if (this.record === 'unknown') this.setRecord(null);
+      this.trace('state_lookup', 'failure', {
+        elapsedMs: readElapsed(),
+        errorCode: 'DEVICE_STATE_LOOKUP_FAILED',
+      });
       this.publish();
       this.deps.log?.('server-device-state-failed', { message: this.error }, 'error');
     }
