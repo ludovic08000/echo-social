@@ -93,13 +93,15 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       if (refreshed === 'restored') {
         announce('forsure-keys-restored', { status: 'refreshed_from_keychain_snapshot' });
       }
-      return 'local_keys_present';
+      outcome = 'local_keys_present';
+      return;
     }
 
     const keychainStatus = await restoreKeysFromKeychainSnapshot(userId);
     if (keychainStatus === 'restored') {
       announce('forsure-keys-restored', { status: 'restored_from_keychain_snapshot' });
-      return 'restored_from_keychain_snapshot';
+      outcome = 'restored_from_keychain_snapshot';
+      return;
     }
 
     if (wrappedKeysPresent) {
