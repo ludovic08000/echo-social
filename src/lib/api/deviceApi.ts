@@ -453,6 +453,22 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   // finalisation serveur (`complete_current_device_synchronization`) n'a lieu
   // qu'APRÈS la vraie synchronisation des clés de compte.
   const updated = await readDeviceRecord(userId, record.deviceId);
+  traceCurrentDeviceFinalization({
+    step: 'device_api.prepare_keys.route_state_after',
+    outcome: updated?.routingStatus === 'ready' ? 'success' : 'failure',
+    elapsedMs: elapsed(),
+    userId,
+    deviceId: record.deviceId,
+    state: updated ? {
+      approvalStatus: updated.approvalStatus,
+      bindingStatus: updated.bindingStatus,
+      routingStatus: updated.routingStatus,
+      lifecycleStatus: updated.lifecycleStatus,
+      isActive: updated.isActive,
+      revoked: Boolean(updated.revokedAt),
+    } : null,
+    errorCode: updated?.routingStatus === 'ready' ? undefined : 'DEVICE_KEY_SETUP_INCOMPLETE',
+  });
   if (!updated || updated.routingStatus !== 'ready') throw new Error('DEVICE_KEY_SETUP_INCOMPLETE');
   return updated;
 }
