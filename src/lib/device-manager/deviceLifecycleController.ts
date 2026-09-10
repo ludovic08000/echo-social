@@ -78,6 +78,11 @@ export interface DeviceLifecycleApi {
    * messagerie ne s'ouvre jamais (aucun MESSAGING_READY simulé).
    */
   syncAccount(userId: string): Promise<unknown>;
+  /**
+   * Finalisation serveur (`complete_current_device_synchronization`) appelée
+   * uniquement après une synchronisation de compte réellement réussie.
+   */
+  finalizeSynchronization(userId: string): Promise<unknown>;
 }
 
 const LIFECYCLE_STATUSES = ['pending', 'approved', 'syncing', 'ready', 'revoked'] as const;
@@ -281,10 +286,10 @@ export class DeviceLifecycleController {
     if (this.deps.pinRequired && !this.pinUnlocked) return null;
     if (record.bindingStatus !== 'bound') return 'binding';
     if (record.routingStatus !== 'ready') return 'preparing_keys';
-    // Invariant : `routing_status='ready'` sans `lifecycle_status='ready'` est
-    // un état incomplet, repris de façon idempotente, jamais considéré prêt.
-    if (record.lifecycleStatus !== 'ready') return 'preparing_keys';
-    if (this.accountSyncPhase !== 'ready') return 'syncing_account';
+    // Invariant : route prête ne vaut pas messagerie prête. La vraie sync des
+    // clés de compte puis la finalisation serveur restent obligatoires, et le
+    // drift `routing ready` / `lifecycle non ready` est repris ici même.
+    if (this.accountSyncPhase !== 'ready' || record.lifecycleStatus !== 'ready') return 'syncing_account';
     return null;
   }
 
@@ -301,12 +306,22 @@ export class DeviceLifecycleController {
         this.accountSyncPhase = 'syncing';
         this.publish();
       }
-      const call = action === 'enrolling' ? api.enroll(this.userId)
-        : action === 'approving' ? api.autoApprove(this.userId)
-        : action === 'binding' ? api.bind(this.userId)
-        : action === 'syncing_account' ? api.syncAccount(this.userId)
-        : api.prepareKeys(this.userId);
-      await withStepTimeout(action, Promise.resolve(call), this.deps.stepTimeoutMs);
+      if (action === 'syncing_account') {
+        // Ordre canonique : vraie restauration/synchronisation des clés de
+        // compte, PUIS seulement finalisation serveur du cycle de vie.
+        await withStepTimeout(action, Promise.resolve(api.syncAccount(this.userId)), this.deps.stepTimeoutMs);
+        await withStepTimeout(
+          'finalizing',
+          Promise.resolve(api.finalizeSynchronization(this.userId)),
+          this.deps.stepTimeoutMs,
+        );
+      } else {
+        const call = action === 'enrolling' ? api.enroll(this.userId)
+          : action === 'approving' ? api.autoApprove(this.userId)
+          : action === 'binding' ? api.bind(this.userId)
+          : api.prepareKeys(this.userId);
+        await withStepTimeout(action, Promise.resolve(call), this.deps.stepTimeoutMs);
+      }
       if (action === 'enrolling') this.manualEnrollmentRequested = false;
       if (action === 'syncing_account') this.accountSyncPhase = 'ready';
       this.deps.log?.('step-success', { userId: this.userId, action, elapsedMs: Date.now() - startedAt });

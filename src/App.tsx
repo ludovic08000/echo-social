@@ -18,7 +18,7 @@ import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
-import { useAccountKeySync } from "@/hooks/useAccountKeySync";
+import { useAccountKeyWatchdog } from "@/hooks/useAccountKeyWatchdog";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceLifecycle } from "@/hooks/useDeviceLifecycle";
 import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
@@ -188,7 +188,9 @@ function IncomingCallHandler() {
 /** Runtime E2EE: mounted only when the canonical lifecycle authorizes it. */
 function MessagingRuntimeRunner() {
   const { user } = useAuth();
-  useAccountKeySync();
+  // Post-runtime uniquement : surveillance/restauration silencieuse, jamais la
+  // séquence boot (elle appartient au contrôleur de cycle de vie).
+  useAccountKeyWatchdog();
   useCryptoMaintenance();
   useDeviceCopyRetryWorker();
 
