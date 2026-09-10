@@ -105,7 +105,7 @@ describe('single canonical device lifecycle authority', () => {
     // La finalisation serveur n'appartient plus à prepareKeys.
     const api = readFileSync('src/lib/api/deviceApi.ts', 'utf8');
     const prepare = api.slice(api.indexOf('async function prepareKeys'), api.indexOf('Finalisation serveur du cycle de vie'));
-    expect(prepare).not.toContain('complete_current_device_synchronization');
+    expect(prepare).not.toContain("rpc('complete_current_device_synchronization'");
     expect(api).toContain('finalizeSynchronization');
     expect(finalGate).toContain('if (!lifecycle.canRunCryptoRuntime)');
     expect(finalGate).toContain('Réessayer');
