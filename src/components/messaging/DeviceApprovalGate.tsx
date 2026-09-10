@@ -80,7 +80,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
   );
 
   // Diagnostic visible uniquement en cas d'erreur ou d'étape anormalement longue.
-  const stalled = useFinalizationStall(!lifecycle.error && !lifecycle.canRunCryptoRuntime);
+  const stalled = useFinalizationStall(!lifecycle.error && !lifecycle.canPromptForPin);
   const diagnostics = (lifecycle.error || stalled)
     ? <DeviceFinalizationDiagnostics open={Boolean(lifecycle.error)} />
     : null;
