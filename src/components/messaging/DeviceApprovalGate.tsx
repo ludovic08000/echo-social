@@ -5,6 +5,10 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
+import {
+  DeviceFinalizationDiagnostics,
+  useFinalizationStall,
+} from '@/components/messaging/DeviceFinalizationDiagnostics';
 import { getSessionMasterKey, initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
 import {
   isWindowsWeb,
@@ -75,6 +79,12 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
     <ErrorBlock error={lifecycle.error} onRetry={lifecycle.retry} />
   );
 
+  // Diagnostic visible uniquement en cas d'erreur ou d'étape anormalement longue.
+  const stalled = useFinalizationStall(!lifecycle.error && !lifecycle.canPromptForPin);
+  const diagnostics = (lifecycle.error || stalled)
+    ? <DeviceFinalizationDiagnostics open={Boolean(lifecycle.error)} />
+    : null;
+
   if (lifecycle.loading) {
     return (
       <Shell compact={compact}>
@@ -82,6 +92,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
           <p className="text-sm font-medium">Vérification de cet appareil…</p>
           <p className="text-xs text-muted-foreground">Vérification de l’état cryptographique en cours.</p>
+          {diagnostics}
         </div>
       </Shell>
     );
@@ -97,6 +108,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
             <p className="text-sm font-medium">Enregistrement de cet appareil…</p>
             <p className="text-xs text-muted-foreground">Vérification cryptographique automatique en cours.</p>
+          {diagnostics}
           </div>
         </Shell>
       );
@@ -185,6 +197,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
             Vérification cryptographique et activation automatique en cours.
           </p>
           {failure}
+          {diagnostics}
         </div>
       </Shell>
     );
@@ -201,6 +214,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           <p className="text-sm font-medium">Vérification de cet appareil…</p>
           <p className="text-xs text-muted-foreground">Contrôle de l’état serveur en cours.</p>
           {failure}
+          {diagnostics}
         </div>
       </Shell>
     );

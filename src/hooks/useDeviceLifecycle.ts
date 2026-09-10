@@ -21,6 +21,10 @@ import { cryptoApi } from '@/lib/api/cryptoApi';
 import { synchronizeAccountKeysBeforeRuntime } from '@/lib/crypto/accountKeySync';
 import { beginAccountSynchronization, type AccountSyncPhase } from '@/lib/messaging/accountSyncBarrier';
 import {
+  startFinalizationTimer,
+  traceCurrentDeviceFinalization,
+} from '@/lib/device-manager/deviceFinalizationTrace';
+import {
   configureDeviceLifecycleDeps,
   getDeviceLifecycleController,
   resetDeviceLifecycleControllers,
@@ -75,7 +79,27 @@ configureDeviceLifecycleDeps((userId) => ({
     // seulement mise en route du runtime crypto. Jamais un ready simulé.
     syncAccount: (id) => beginAccountSynchronization(id, async () => {
       await synchronizeAccountKeysBeforeRuntime(id);
-      await cryptoApi.ensureReady(id);
+      // Diagnostic uniquement : mesure du démarrage du runtime crypto.
+      const ensureElapsed = startFinalizationTimer();
+      traceCurrentDeviceFinalization({ step: 'crypto_api.ensure_ready', outcome: 'start', userId: id });
+      try {
+        await cryptoApi.ensureReady(id);
+      } catch (error) {
+        traceCurrentDeviceFinalization({
+          step: 'crypto_api.ensure_ready',
+          outcome: 'failure',
+          elapsedMs: ensureElapsed(),
+          userId: id,
+          errorCode: error,
+        });
+        throw error;
+      }
+      traceCurrentDeviceFinalization({
+        step: 'crypto_api.ensure_ready',
+        outcome: 'success',
+        elapsedMs: ensureElapsed(),
+        userId: id,
+      });
     }),
     finalizeSynchronization: (id) => deviceApi.finalizeSynchronization(id),
   },

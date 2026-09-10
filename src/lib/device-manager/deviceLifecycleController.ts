@@ -17,6 +17,12 @@
  * n'est jamais masquée par un spinner permanent.
  */
 import {
+  newDeviceFinalizationTraceId,
+  setCurrentDeviceFinalizationTraceId,
+  startFinalizationTimer,
+  traceDeviceFinalization,
+} from './deviceFinalizationTrace';
+import {
   canPromptForPin,
   canRunCryptoRuntime,
   canRunDeviceKeySetup,
@@ -160,6 +166,10 @@ export class DeviceLifecycleController {
   private manualEnrollmentRequested = false;
   private blockedUntilRetry = false;
   private disposed = false;
+  /** Corrélation d'une tentative complète de pipeline (diagnostic seulement). */
+  private traceId = newDeviceFinalizationTraceId();
+  private readonly stepAttempts = new Map<string, number>();
+
 
   private snapshot!: DeviceLifecycleSnapshot;
   private readPromise: Promise<void> | null = null;
@@ -176,6 +186,7 @@ export class DeviceLifecycleController {
     this.teardown.push(deps.subscribePinUnlocked(userId, (unlocked) => {
       if (this.disposed || this.pinUnlocked === unlocked) return;
       this.pinUnlocked = unlocked;
+      this.trace(unlocked ? 'pin_unlocked' : 'pin_locked', 'info');
       this.publish();
       void this.advance();
     }));
@@ -195,6 +206,31 @@ export class DeviceLifecycleController {
     return () => { this.listeners.delete(listener); };
   }
 
+  /** Trace diagnostique : observation seule, sans effet sur les transitions. */
+  private trace(
+    step: string,
+    outcome: Parameters<typeof traceDeviceFinalization>[0]['outcome'],
+    extra: { elapsedMs?: number; attempt?: number; errorCode?: unknown; detail?: string } = {},
+  ): void {
+    const record = this.record === 'unknown' ? null : this.record;
+    traceDeviceFinalization({
+      traceId: this.traceId,
+      step,
+      outcome,
+      userId: this.userId,
+      deviceId: this.deviceId,
+      state: record ? {
+        approvalStatus: record.approvalStatus,
+        bindingStatus: record.bindingStatus,
+        routingStatus: record.routingStatus,
+        lifecycleStatus: record.lifecycleStatus,
+        isActive: record.isActive,
+        revoked: Boolean(record.revokedAt),
+      } : null,
+      ...extra,
+    });
+  }
+
   /** Relit l'état serveur puis poursuit le flux canonique si nécessaire. */
   refresh(): Promise<void> {
     return this.advance();
@@ -205,6 +241,9 @@ export class DeviceLifecycleController {
     this.error = null;
     if (this.accountSyncPhase === 'failed') this.accountSyncPhase = 'idle';
     this.blockedUntilRetry = false;
+    this.traceId = newDeviceFinalizationTraceId();
+    this.stepAttempts.clear();
+    this.trace('pipeline_retry_requested', 'retry');
     this.publish();
     return this.advance();
   }
@@ -237,6 +276,9 @@ export class DeviceLifecycleController {
   }
 
   private async runPipeline(): Promise<void> {
+    const pipelineElapsed = startFinalizationTimer();
+    setCurrentDeviceFinalizationTraceId(this.traceId);
+    this.trace('pipeline', 'start');
     if (!(await this.readServerState())) return;
 
     let previousAction: DeviceLifecycleStage | null = null;
@@ -244,7 +286,14 @@ export class DeviceLifecycleController {
     for (let step = 0; step < MAX_PIPELINE_STEPS; step += 1) {
       if (this.disposed || this.blockedUntilRetry) return;
       const action = this.nextAction();
-      if (!action) return;
+      if (!action) {
+        this.trace('pipeline', this.snapshot.canRunCryptoRuntime ? 'success' : 'info', {
+          elapsedMs: pipelineElapsed(),
+          detail: this.snapshot.canRunCryptoRuntime ? 'messaging_ready' : 'no_next_action',
+        });
+        return;
+      }
+      this.trace('next_action', 'info', { detail: action, elapsedMs: pipelineElapsed() });
       repeats = action === previousAction ? repeats + 1 : 0;
       previousAction = action;
       if (repeats >= 2) {
@@ -255,6 +304,11 @@ export class DeviceLifecycleController {
         this.stage = 'idle';
         this.publish();
         this.deps.log?.('pipeline-stalled', { userId: this.userId, action }, 'error');
+        this.trace('pipeline', 'stalled', {
+          elapsedMs: pipelineElapsed(),
+          detail: action,
+          errorCode: 'DEVICE_LIFECYCLE_STALLED',
+        });
         return;
       }
       if (!(await this.runStep(action))) return;
@@ -298,7 +352,11 @@ export class DeviceLifecycleController {
     this.error = null;
     this.publish();
     const startedAt = Date.now();
+    const attempt = (this.stepAttempts.get(action) ?? 0) + 1;
+    this.stepAttempts.set(action, attempt);
     this.deps.log?.('step-start', { userId: this.userId, action, deviceId: this.deviceId });
+    setCurrentDeviceFinalizationTraceId(this.traceId);
+    this.trace(`step.${action}`, 'start', { attempt });
 
     try {
       const api = this.deps.api;
@@ -309,12 +367,18 @@ export class DeviceLifecycleController {
       if (action === 'syncing_account') {
         // Ordre canonique : vraie restauration/synchronisation des clés de
         // compte, PUIS seulement finalisation serveur du cycle de vie.
+        const syncElapsed = startFinalizationTimer();
+        this.trace('account_key_sync', 'start', { attempt });
         await withStepTimeout(action, Promise.resolve(api.syncAccount(this.userId)), this.deps.stepTimeoutMs);
+        this.trace('account_key_sync', 'success', { attempt, elapsedMs: syncElapsed() });
+        const finalizeElapsed = startFinalizationTimer();
+        this.trace('finalize_synchronization', 'start', { attempt });
         await withStepTimeout(
           'finalizing',
           Promise.resolve(api.finalizeSynchronization(this.userId)),
           this.deps.stepTimeoutMs,
         );
+        this.trace('finalize_synchronization', 'success', { attempt, elapsedMs: finalizeElapsed() });
       } else {
         const call = action === 'enrolling' ? api.enroll(this.userId)
           : action === 'approving' ? api.autoApprove(this.userId)
@@ -325,6 +389,7 @@ export class DeviceLifecycleController {
       if (action === 'enrolling') this.manualEnrollmentRequested = false;
       if (action === 'syncing_account') this.accountSyncPhase = 'ready';
       this.deps.log?.('step-success', { userId: this.userId, action, elapsedMs: Date.now() - startedAt });
+      this.trace(`step.${action}`, 'success', { attempt, elapsedMs: Date.now() - startedAt });
       return true;
     } catch (cause) {
       // Aucune simulation de succès : l'UI doit afficher l'erreur et un retry.
@@ -336,6 +401,11 @@ export class DeviceLifecycleController {
       this.deps.log?.('step-failed', {
         userId: this.userId, action, elapsedMs: Date.now() - startedAt, message: this.error,
       }, 'error');
+      this.trace(`step.${action}`, /_TIMEOUT$/.test(this.error ?? '') ? 'timeout' : 'failure', {
+        attempt,
+        elapsedMs: Date.now() - startedAt,
+        errorCode: cause,
+      });
       return false;
     }
   }
@@ -353,12 +423,15 @@ export class DeviceLifecycleController {
   private async doReadServerState(): Promise<void> {
     const previousStage = this.stage;
     this.stage = this.record === 'unknown' ? 'reading' : previousStage;
+    const readElapsed = startFinalizationTimer();
+    this.trace('state_hydration', 'start');
 
     try {
       await withStepTimeout('state_hydration', Promise.resolve(this.deps.hydrateDeviceId()), this.deps.stepTimeoutMs);
     } catch (cause) {
       // Un DeviceID absent est un état normal (nouvel appareil), pas une erreur.
       this.deps.log?.('hydrate-device-id-failed', { message: messageOf(cause) }, 'warn');
+      this.trace('state_hydration', 'failure', { elapsedMs: readElapsed(), errorCode: cause });
     }
     if (this.disposed) return;
 
@@ -368,10 +441,15 @@ export class DeviceLifecycleController {
     if (!this.deviceId || this.deviceIdStatus !== 'ok') {
       this.setRecord(null);
       this.stage = 'idle';
+      this.trace('state_hydration', 'skipped', {
+        elapsedMs: readElapsed(),
+        detail: `device_id_${this.deviceIdStatus}`,
+      });
       this.publish();
       return;
     }
 
+    this.trace('state_lookup', 'start', { elapsedMs: readElapsed() });
     try {
       const snapshot = await withStepTimeout(
         'state_lookup',
@@ -391,6 +469,7 @@ export class DeviceLifecycleController {
       } : null);
       this.stage = 'idle';
       this.error = null;
+      this.trace('state_lookup', 'success', { elapsedMs: readElapsed() });
       this.publish();
     } catch (cause) {
       // Sans cette branche l'écran « Vérification de cet appareil » tournait
@@ -399,6 +478,10 @@ export class DeviceLifecycleController {
       this.blockedUntilRetry = true;
       this.stage = 'idle';
       if (this.record === 'unknown') this.setRecord(null);
+      this.trace('state_lookup', 'failure', {
+        elapsedMs: readElapsed(),
+        errorCode: 'DEVICE_STATE_LOOKUP_FAILED',
+      });
       this.publish();
       this.deps.log?.('server-device-state-failed', { message: this.error }, 'error');
     }

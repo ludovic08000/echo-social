@@ -47,6 +47,10 @@ import {
 } from '@/platforms/ios/iosDeviceReuse';
 import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
+import {
+  startFinalizationTimer,
+  traceCurrentDeviceFinalization,
+} from '@/lib/device-manager/deviceFinalizationTrace';
 import { adoptReusableAndroidDevice, resolveExistingAndroidDevice } from '@/platforms/android/androidDeviceReuse';
 import { backupAndroidDeviceVault, restoreAndroidDeviceVault } from '@/platforms/android/androidDeviceVault';
 
@@ -349,8 +353,24 @@ async function bind(userId: string): Promise<DeviceApiRecord> {
 }
 
 async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
+  const elapsed = startFinalizationTimer();
   const snapshot = await getState(userId);
   const record = snapshot.record;
+  traceCurrentDeviceFinalization({
+    step: 'device_api.prepare_keys.route_state_before',
+    outcome: 'info',
+    elapsedMs: elapsed(),
+    userId,
+    deviceId: record?.deviceId ?? null,
+    state: record ? {
+      approvalStatus: record.approvalStatus,
+      bindingStatus: record.bindingStatus,
+      routingStatus: record.routingStatus,
+      lifecycleStatus: record.lifecycleStatus,
+      isActive: record.isActive,
+      revoked: Boolean(record.revokedAt),
+    } : null,
+  });
   if (!record) throw new Error('DEVICE_NOT_FOUND');
   if (record.approvalStatus !== 'approved' || !record.isActive || record.bindingStatus !== 'bound' || record.revokedAt) {
     throw new Error('DEVICE_NOT_READY_FOR_KEYS');
@@ -398,6 +418,13 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   if (isAndroidRuntime() && !await backupAndroidDeviceVault(userId)) {
     throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
   }
+  const rpcElapsed = startFinalizationTimer();
+  traceCurrentDeviceFinalization({
+    step: 'rpc.mark_current_device_route_ready',
+    outcome: 'start',
+    userId,
+    deviceId: record.deviceId,
+  });
   const { data, error } = await runDeviceRpcWithTimeout(
     'DEVICE_ROUTE_NOT_READY',
     (signal) => supabase
@@ -405,6 +432,15 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
       .abortSignal(signal),
   );
   const route = data as { ok?: boolean; code?: string } | null;
+  traceCurrentDeviceFinalization({
+    step: 'rpc.mark_current_device_route_ready',
+    outcome: !error && route?.ok === true ? 'success' : 'failure',
+    elapsedMs: rpcElapsed(),
+    userId,
+    deviceId: record.deviceId,
+    detail: route?.code ?? (error ? 'rpc_error' : 'no_code'),
+    errorCode: !error && route?.ok === true ? undefined : 'DEVICE_ROUTE_NOT_READY',
+  });
   if (error || route?.ok !== true) throw new Error(`DEVICE_ROUTE_NOT_READY:${route?.code ?? error?.message ?? 'UNKNOWN'}`);
   invalidateAllFanoutRoutes();
   invalidateAegisDeviceRuntime(userId);
@@ -417,6 +453,22 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   // finalisation serveur (`complete_current_device_synchronization`) n'a lieu
   // qu'APRÈS la vraie synchronisation des clés de compte.
   const updated = await readDeviceRecord(userId, record.deviceId);
+  traceCurrentDeviceFinalization({
+    step: 'device_api.prepare_keys.route_state_after',
+    outcome: updated?.routingStatus === 'ready' ? 'success' : 'failure',
+    elapsedMs: elapsed(),
+    userId,
+    deviceId: record.deviceId,
+    state: updated ? {
+      approvalStatus: updated.approvalStatus,
+      bindingStatus: updated.bindingStatus,
+      routingStatus: updated.routingStatus,
+      lifecycleStatus: updated.lifecycleStatus,
+      isActive: updated.isActive,
+      revoked: Boolean(updated.revokedAt),
+    } : null,
+    errorCode: updated?.routingStatus === 'ready' ? undefined : 'DEVICE_KEY_SETUP_INCOMPLETE',
+  });
   if (!updated || updated.routingStatus !== 'ready') throw new Error('DEVICE_KEY_SETUP_INCOMPLETE');
   return updated;
 }
@@ -429,15 +481,48 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
  * `lifecycle_status='ready'` et vérifie ce statut après exécution.
  */
 async function finalizeSynchronization(userId: string): Promise<DeviceApiRecord> {
+  const elapsed = startFinalizationTimer();
   const snapshot = await getState(userId);
   const record = snapshot.record;
+  traceCurrentDeviceFinalization({
+    step: 'device_api.finalize.state_before',
+    outcome: 'info',
+    elapsedMs: elapsed(),
+    userId,
+    deviceId: record?.deviceId ?? null,
+    state: record ? {
+      approvalStatus: record.approvalStatus,
+      bindingStatus: record.bindingStatus,
+      routingStatus: record.routingStatus,
+      lifecycleStatus: record.lifecycleStatus,
+      isActive: record.isActive,
+      revoked: Boolean(record.revokedAt),
+    } : null,
+  });
   if (!record) throw new Error('DEVICE_NOT_FOUND');
   if (record.revokedAt || record.approvalStatus !== 'approved' || !record.isActive) throw new Error('DEVICE_NOT_APPROVED');
   if (record.bindingStatus !== 'bound' || record.routingStatus !== 'ready') {
     throw new Error('DEVICE_ROUTE_NOT_READY');
   }
-  if (record.lifecycleStatus === 'ready') return record;
+  if (record.lifecycleStatus === 'ready') {
+    traceCurrentDeviceFinalization({
+      step: 'device_api.finalize',
+      outcome: 'skipped',
+      elapsedMs: elapsed(),
+      userId,
+      deviceId: record.deviceId,
+      detail: 'already_ready',
+    });
+    return record;
+  }
 
+  const rpcElapsed = startFinalizationTimer();
+  traceCurrentDeviceFinalization({
+    step: 'rpc.complete_current_device_synchronization',
+    outcome: 'start',
+    userId,
+    deviceId: record.deviceId,
+  });
   const { data, error } = await runDeviceRpcWithTimeout(
     'DEVICE_SYNCHRONIZATION_INCOMPLETE',
     (signal) => supabase.rpc('complete_current_device_synchronization' as never, {
@@ -445,10 +530,35 @@ async function finalizeSynchronization(userId: string): Promise<DeviceApiRecord>
     } as never).abortSignal(signal),
   );
   const result = data as { ok?: boolean; code?: string } | null;
+  traceCurrentDeviceFinalization({
+    step: 'rpc.complete_current_device_synchronization',
+    outcome: !error && result?.ok === true ? 'success' : 'failure',
+    elapsedMs: rpcElapsed(),
+    userId,
+    deviceId: record.deviceId,
+    detail: result?.code ?? (error ? 'rpc_error' : 'no_code'),
+    errorCode: !error && result?.ok === true ? undefined : 'DEVICE_SYNCHRONIZATION_INCOMPLETE',
+  });
   if (error || result?.ok !== true) {
     throw new Error(`DEVICE_SYNCHRONIZATION_INCOMPLETE:${result?.code ?? error?.message ?? 'UNKNOWN'}`);
   }
   const updated = await readDeviceRecord(userId, record.deviceId);
+  traceCurrentDeviceFinalization({
+    step: 'device_api.finalize.lifecycle_verification',
+    outcome: updated?.lifecycleStatus === 'ready' ? 'success' : 'failure',
+    elapsedMs: elapsed(),
+    userId,
+    deviceId: record.deviceId,
+    state: updated ? {
+      approvalStatus: updated.approvalStatus,
+      bindingStatus: updated.bindingStatus,
+      routingStatus: updated.routingStatus,
+      lifecycleStatus: updated.lifecycleStatus,
+      isActive: updated.isActive,
+      revoked: Boolean(updated.revokedAt),
+    } : null,
+    errorCode: updated?.lifecycleStatus === 'ready' ? undefined : 'DEVICE_SYNCHRONIZATION_INCOMPLETE',
+  });
   if (!updated || updated.lifecycleStatus !== 'ready') throw new Error('DEVICE_SYNCHRONIZATION_INCOMPLETE');
   return updated;
 }

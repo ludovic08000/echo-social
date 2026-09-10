@@ -17,6 +17,10 @@ import {
 } from '@/lib/crypto/accountKeyBackup';
 import { isNativePlatform } from '@/lib/nativeStore';
 import { transition, withEnsureLock, getSnapshot } from '@/lib/crypto/CryptoStateMachine';
+import {
+  startFinalizationTimer,
+  traceCurrentDeviceFinalization,
+} from '@/lib/device-manager/deviceFinalizationTrace';
 
 export type AccountKeySyncOutcome =
   | 'local_keys_present'
@@ -44,6 +48,13 @@ function announce(event: string, detail: Record<string, unknown>): void {
 }
 
 function requireRestore(userId: string, reason: string, extra: Record<string, unknown> = {}): never {
+  traceCurrentDeviceFinalization({
+    step: 'account_key_sync.restore_required',
+    outcome: 'failure',
+    userId,
+    detail: reason,
+    errorCode: 'ACCOUNT_KEY_RESTORE_REQUIRED',
+  });
   announce('forsure:e2ee-restore-needed', {
     userId,
     reason,
@@ -61,6 +72,8 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
   if (!userId) throw new Error('ACCOUNT_SYNC_USER_REQUIRED');
 
   let outcome: AccountKeySyncOutcome = 'no_backup_new_account';
+  const elapsed = startFinalizationTimer();
+  traceCurrentDeviceFinalization({ step: 'account_key_sync', outcome: 'start', userId });
   const run = async (): Promise<void> => {
     try {
       transition(userId, 'storage_checking', 'accountKeySync.beforeRuntime');
@@ -133,12 +146,23 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       console.warn('[messaging] key sentinel read failed:', error);
     }
 
+    const probeElapsed = startFinalizationTimer();
+    traceCurrentDeviceFinalization({ step: 'account_key_sync.backup_probe', outcome: 'start', userId });
     const backupProbe = await supabase
       .from('user_backups')
       .select('id')
       .eq('user_id', userId)
       .eq('backup_type', 'account')
       .limit(1);
+    traceCurrentDeviceFinalization({
+      step: 'account_key_sync.backup_probe',
+      outcome: backupProbe.error ? 'failure' : 'success',
+      elapsedMs: probeElapsed(),
+      userId,
+      // Uniquement l'existence, jamais le contenu d'une sauvegarde.
+      detail: backupProbe.error ? 'probe_error' : ((backupProbe.data ?? []).length > 0 ? 'backup_found' : 'no_backup'),
+      errorCode: backupProbe.error ? 'ACCOUNT_KEY_RESTORE_REQUIRED' : undefined,
+    });
 
     if (backupProbe.error) {
       // Fail-closed : impossible de prouver l'absence de sauvegarde.
@@ -177,6 +201,25 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
     outcome = 'no_backup_new_account';
   };
 
-  await withEnsureLock(userId, run);
+  try {
+    await withEnsureLock(userId, run);
+  } catch (error) {
+    traceCurrentDeviceFinalization({
+      step: 'account_key_sync',
+      outcome: 'failure',
+      elapsedMs: elapsed(),
+      userId,
+      errorCode: error,
+    });
+    throw error;
+  }
+  // `detail` expose seulement la SOURCE de restauration, jamais de matériel clé.
+  traceCurrentDeviceFinalization({
+    step: 'account_key_sync',
+    outcome: 'success',
+    elapsedMs: elapsed(),
+    userId,
+    detail: outcome,
+  });
   return outcome;
 }
