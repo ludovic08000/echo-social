@@ -367,12 +367,18 @@ export class DeviceLifecycleController {
       if (action === 'syncing_account') {
         // Ordre canonique : vraie restauration/synchronisation des clés de
         // compte, PUIS seulement finalisation serveur du cycle de vie.
+        const syncElapsed = startFinalizationTimer();
+        this.trace('account_key_sync', 'start', { attempt });
         await withStepTimeout(action, Promise.resolve(api.syncAccount(this.userId)), this.deps.stepTimeoutMs);
+        this.trace('account_key_sync', 'success', { attempt, elapsedMs: syncElapsed() });
+        const finalizeElapsed = startFinalizationTimer();
+        this.trace('finalize_synchronization', 'start', { attempt });
         await withStepTimeout(
           'finalizing',
           Promise.resolve(api.finalizeSynchronization(this.userId)),
           this.deps.stepTimeoutMs,
         );
+        this.trace('finalize_synchronization', 'success', { attempt, elapsedMs: finalizeElapsed() });
       } else {
         const call = action === 'enrolling' ? api.enroll(this.userId)
           : action === 'approving' ? api.autoApprove(this.userId)
