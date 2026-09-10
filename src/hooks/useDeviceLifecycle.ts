@@ -36,6 +36,11 @@ const REFRESH_EVENTS = [
 const POLL_MS = 15_000;
 const PIN_PROTECTION_ENABLED = false;
 
+// Invariant cryptographique : plusieurs vues peuvent observer le même appareil,
+// mais une seule transition serveur est autorisée à la fois pour ce DeviceID.
+const bindingTransitions = new Set<string>();
+const keySetupTransitions = new Set<string>();
+
 function logDeviceLifecycle(stage: string, details: Record<string, unknown> = {}, level: 'info' | 'warn' | 'error' = 'info') {
   const payload = { ts: new Date().toISOString(), stage, ...details };
   if (level === 'error') console.error('[E2EE][DEVICE_LIFECYCLE]', payload);
@@ -69,8 +74,6 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const refreshGenerationRef = useRef(0);
-  const bindingInFlightRef = useRef<string | null>(null);
-  const keySetupInFlightRef = useRef<string | null>(null);
 
   const refresh = useCallback(() => {
     const generation = ++refreshGenerationRef.current;
@@ -158,8 +161,6 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       setPinUnlocked(false);
       setDeviceId(null);
       setDeviceIdStatus('uninitialized');
-      bindingInFlightRef.current = null;
-      keySetupInFlightRef.current = null;
       return;
     }
 
@@ -205,12 +206,13 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     if (!record.isActive || record.revokedAt) return;
     if (record.bindingStatus === 'bound') return;
     if (record.bindingStatus !== 'pending') return;
-    if (bindingInFlightRef.current === deviceId) {
+    const transitionKey = `${userId}:${deviceId}`;
+    if (bindingTransitions.has(transitionKey)) {
       logDeviceLifecycle('bind-account-skip-inflight', { deviceId });
       return;
     }
 
-    bindingInFlightRef.current = deviceId;
+    bindingTransitions.add(transitionKey);
     setTransitionError(null);
     const startedAt = Date.now();
     logDeviceLifecycle('bind-account-start', {
@@ -250,7 +252,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           deviceId,
           elapsedMs: Date.now() - startedAt,
         });
-        if (bindingInFlightRef.current === deviceId) bindingInFlightRef.current = null;
+        bindingTransitions.delete(transitionKey);
       });
   }, [userId, deviceId, deviceIdStatus, record, refresh]);
 
@@ -264,12 +266,13 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       logDeviceLifecycle('prepare-keys-skip-ready', { deviceId });
       return;
     }
-    if (keySetupInFlightRef.current === deviceId) {
+    const transitionKey = `${userId}:${deviceId}`;
+    if (keySetupTransitions.has(transitionKey)) {
       logDeviceLifecycle('prepare-keys-skip-inflight', { deviceId });
       return;
     }
 
-    keySetupInFlightRef.current = deviceId;
+    keySetupTransitions.add(transitionKey);
     setTransitionError(null);
     const startedAt = Date.now();
     logDeviceLifecycle('prepare-keys-start', {
@@ -287,6 +290,9 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           routingStatus: updated.routingStatus,
           lifecycleStatus: updated.lifecycleStatus,
         });
+        window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
+          detail: { userId, deviceId, source: 'deviceApi.prepareKeys' },
+        }));
         if (mountedRef.current) refresh();
       })
       .catch((error) => {
@@ -305,7 +311,7 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           deviceId,
           elapsedMs: Date.now() - startedAt,
         });
-        if (keySetupInFlightRef.current === deviceId) keySetupInFlightRef.current = null;
+        keySetupTransitions.delete(transitionKey);
       });
   }, [userId, deviceId, deviceIdStatus, record, refresh]);
 
