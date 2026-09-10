@@ -116,38 +116,52 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       return;
     }
 
-    // Démarrage à froid : une sentinelle sécurisée + une sauvegarde de compte
-    // prouvent qu'une identité existe déjà. On exige sa restauration explicite.
-    try {
-      const { readKeySentinel } = await import('@/lib/crypto/keySentinel');
-      const sentinel = await readKeySentinel();
-      if (sentinel && sentinel.userId === userId) {
-        const { data: backupRow } = await supabase
-          .from('user_backups')
-          .select('id, backup_type, created_at')
-          .eq('user_id', userId)
-          .eq('backup_type', 'account')
-          .maybeSingle();
-        if (backupRow) {
-          requireRestore(userId, 'cold_start_sentinel', {
-            lastSyncAt: sentinel.lastSyncAt,
-            native: isNativePlatform(),
-          });
-        }
-        console.warn('[messaging] stale key sentinel: no account backup row');
-      } else if (sentinel && sentinel.userId !== userId) {
-        console.warn('[messaging] key sentinel belongs to another account — ignored');
-      }
-    } catch (error) {
-      if (error instanceof AccountKeyRestoreRequiredError) throw error;
-      console.warn('[messaging] sentinel cold-start check failed:', error);
-    }
-
     if (await hasLocalKeys(userId)) {
       outcome = 'local_keys_present';
       return;
     }
 
+    // Invariant corrigé : la preuve d'existence d'une identité sauvegardée est
+    // SERVEUR, jamais la sentinelle locale (purgeable). Sans cette lecture, un
+    // stockage purgé conduirait à créer une seconde identité (fork).
+    let sentinelPresent = false;
+    try {
+      const { readKeySentinel } = await import('@/lib/crypto/keySentinel');
+      const sentinel = await readKeySentinel();
+      sentinelPresent = Boolean(sentinel && sentinel.userId === userId);
+    } catch (error) {
+      console.warn('[messaging] key sentinel read failed:', error);
+    }
+
+    const backupProbe = await supabase
+      .from('user_backups')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('backup_type', 'account')
+      .limit(1);
+
+    if (backupProbe.error) {
+      // Fail-closed : impossible de prouver l'absence de sauvegarde.
+      try {
+        const snap = getSnapshot(userId);
+        if (snap.state === 'storage_checking') {
+          transition(userId, 'backup_restore_required', 'accountKeySync.probeFailed');
+        }
+      } catch {
+        // State-machine fallback is best-effort.
+      }
+      requireRestore(userId, 'account_backup_probe_failed', {
+        sentinelPresent,
+        native: isNativePlatform(),
+      });
+    }
+
+    if ((backupProbe.data ?? []).length > 0) {
+      requireRestore(userId, sentinelPresent ? 'cold_start_sentinel' : 'server_backup_without_sentinel', {
+        sentinelPresent,
+        native: isNativePlatform(),
+      });
+    }
 
     try {
       const snap = getSnapshot(userId);
@@ -158,8 +172,8 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       // State-machine fallback is best-effort.
     }
 
-    // Aucun matériel restaurable : compte neuf, l'identité sera créée par le
-    // runtime crypto canonique (jamais ici) — on n'invente aucun état prêt.
+    // Preuve serveur qu'aucune sauvegarde n'existe et aucune clé locale : compte
+    // neuf, l'identité sera créée par le runtime crypto canonique (jamais ici).
     outcome = 'no_backup_new_account';
   };
 
