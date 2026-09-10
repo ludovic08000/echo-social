@@ -92,6 +92,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
           <p className="text-sm font-medium">Vérification de cet appareil…</p>
           <p className="text-xs text-muted-foreground">Vérification de l’état cryptographique en cours.</p>
+          {diagnostics}
         </div>
       </Shell>
     );
@@ -107,6 +108,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
             <p className="text-sm font-medium">Enregistrement de cet appareil…</p>
             <p className="text-xs text-muted-foreground">Vérification cryptographique automatique en cours.</p>
+          {diagnostics}
           </div>
         </Shell>
       );
@@ -195,6 +197,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
             Vérification cryptographique et activation automatique en cours.
           </p>
           {failure}
+          {diagnostics}
         </div>
       </Shell>
     );
@@ -211,6 +214,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           <p className="text-sm font-medium">Vérification de cet appareil…</p>
           <p className="text-xs text-muted-foreground">Contrôle de l’état serveur en cours.</p>
           {failure}
+          {diagnostics}
         </div>
       </Shell>
     );
