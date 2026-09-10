@@ -60,7 +60,8 @@ function requireRestore(userId: string, reason: string, extra: Record<string, un
 export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promise<AccountKeySyncOutcome> {
   if (!userId) throw new Error('ACCOUNT_SYNC_USER_REQUIRED');
 
-  return withEnsureLock(userId, async (): Promise<AccountKeySyncOutcome> => {
+  let outcome: AccountKeySyncOutcome = 'no_backup_new_account';
+  const run = async (): Promise<void> => {
     try {
       transition(userId, 'storage_checking', 'accountKeySync.beforeRuntime');
     } catch {
