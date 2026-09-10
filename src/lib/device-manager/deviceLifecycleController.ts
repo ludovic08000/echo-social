@@ -389,6 +389,7 @@ export class DeviceLifecycleController {
       if (action === 'enrolling') this.manualEnrollmentRequested = false;
       if (action === 'syncing_account') this.accountSyncPhase = 'ready';
       this.deps.log?.('step-success', { userId: this.userId, action, elapsedMs: Date.now() - startedAt });
+      this.trace(`step.${action}`, 'success', { attempt, elapsedMs: Date.now() - startedAt });
       return true;
     } catch (cause) {
       // Aucune simulation de succès : l'UI doit afficher l'erreur et un retry.
