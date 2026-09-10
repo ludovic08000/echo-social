@@ -276,6 +276,9 @@ export class DeviceLifecycleController {
   }
 
   private async runPipeline(): Promise<void> {
+    const pipelineElapsed = startFinalizationTimer();
+    setCurrentDeviceFinalizationTraceId(this.traceId);
+    this.trace('pipeline', 'start');
     if (!(await this.readServerState())) return;
 
     let previousAction: DeviceLifecycleStage | null = null;
@@ -283,7 +286,14 @@ export class DeviceLifecycleController {
     for (let step = 0; step < MAX_PIPELINE_STEPS; step += 1) {
       if (this.disposed || this.blockedUntilRetry) return;
       const action = this.nextAction();
-      if (!action) return;
+      if (!action) {
+        this.trace('pipeline', this.snapshot.canRunCryptoRuntime ? 'success' : 'info', {
+          elapsedMs: pipelineElapsed(),
+          detail: this.snapshot.canRunCryptoRuntime ? 'messaging_ready' : 'no_next_action',
+        });
+        return;
+      }
+      this.trace('next_action', 'info', { detail: action, elapsedMs: pipelineElapsed() });
       repeats = action === previousAction ? repeats + 1 : 0;
       previousAction = action;
       if (repeats >= 2) {
@@ -294,6 +304,11 @@ export class DeviceLifecycleController {
         this.stage = 'idle';
         this.publish();
         this.deps.log?.('pipeline-stalled', { userId: this.userId, action }, 'error');
+        this.trace('pipeline', 'stalled', {
+          elapsedMs: pipelineElapsed(),
+          detail: action,
+          errorCode: 'DEVICE_LIFECYCLE_STALLED',
+        });
         return;
       }
       if (!(await this.runStep(action))) return;
