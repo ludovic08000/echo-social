@@ -36,11 +36,6 @@ const REFRESH_EVENTS = [
 const POLL_MS = 15_000;
 const PIN_PROTECTION_ENABLED = false;
 
-// Invariant cryptographique : plusieurs vues peuvent observer le même appareil,
-// mais une seule transition serveur est autorisée à la fois pour ce DeviceID.
-const bindingTransitions = new Set<string>();
-const keySetupTransitions = new Set<string>();
-
 function logDeviceLifecycle(stage: string, details: Record<string, unknown> = {}, level: 'info' | 'warn' | 'error' = 'info') {
   const payload = { ts: new Date().toISOString(), stage, ...details };
   if (level === 'error') console.error('[E2EE][DEVICE_LIFECYCLE]', payload);
@@ -206,13 +201,6 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     if (!record.isActive || record.revokedAt) return;
     if (record.bindingStatus === 'bound') return;
     if (record.bindingStatus !== 'pending') return;
-    const transitionKey = `${userId}:${deviceId}`;
-    if (bindingTransitions.has(transitionKey)) {
-      logDeviceLifecycle('bind-account-skip-inflight', { deviceId });
-      return;
-    }
-
-    bindingTransitions.add(transitionKey);
     setTransitionError(null);
     const startedAt = Date.now();
     logDeviceLifecycle('bind-account-start', {
@@ -252,7 +240,6 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           deviceId,
           elapsedMs: Date.now() - startedAt,
         });
-        bindingTransitions.delete(transitionKey);
       });
   }, [userId, deviceId, deviceIdStatus, record, refresh]);
 
@@ -266,13 +253,6 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
       logDeviceLifecycle('prepare-keys-skip-ready', { deviceId });
       return;
     }
-    const transitionKey = `${userId}:${deviceId}`;
-    if (keySetupTransitions.has(transitionKey)) {
-      logDeviceLifecycle('prepare-keys-skip-inflight', { deviceId });
-      return;
-    }
-
-    keySetupTransitions.add(transitionKey);
     setTransitionError(null);
     const startedAt = Date.now();
     logDeviceLifecycle('prepare-keys-start', {
@@ -311,7 +291,6 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
           deviceId,
           elapsedMs: Date.now() - startedAt,
         });
-        keySetupTransitions.delete(transitionKey);
       });
   }, [userId, deviceId, deviceIdStatus, record, refresh]);
 
