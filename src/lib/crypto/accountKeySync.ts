@@ -143,7 +143,11 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       console.warn('[messaging] sentinel cold-start check failed:', error);
     }
 
-    if (await hasLocalKeys(userId)) return 'local_keys_present';
+    if (await hasLocalKeys(userId)) {
+      outcome = 'local_keys_present';
+      return;
+    }
+
 
     try {
       const snap = getSnapshot(userId);
