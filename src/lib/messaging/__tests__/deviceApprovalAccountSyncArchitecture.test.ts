@@ -68,16 +68,18 @@ describe('automatic device enrollment', () => {
     expect(gate).not.toContain('Approuver');
   });
 
-  it('does not block messaging on legacy verification or key-finalization screens', () => {
-    expect(gate).not.toContain('Vérification de cet appareil…');
-    expect(gate).not.toContain('Finalisation de cet appareil…');
+  it('keeps verification and key finalization fail-closed without the duplicate binding gate', () => {
+    expect(gate).toContain('Vérification de cet appareil…');
+    expect(gate).toContain('Finalisation de cet appareil…');
+    expect(gate).toContain('lifecycle.transitionError');
     expect(messagingGate).not.toContain('DeviceAccountBindingGate');
   });
 
-  it('deduplicates binding and key setup across every mounted lifecycle observer', () => {
-    expect(lifecycle).toContain('const bindingTransitions = new Set<string>();');
-    expect(lifecycle).toContain('const keySetupTransitions = new Set<string>();');
-    expect(lifecycle).toContain('bindingTransitions.has(transitionKey)');
-    expect(lifecycle).toContain('keySetupTransitions.has(transitionKey)');
+  it('deduplicates every binding and key setup caller in the central API', () => {
+    expect(api).toContain('const bindInFlight = new Map<string, Promise<DeviceApiRecord>>();');
+    expect(api).toContain('const keySetupInFlight = new Map<string, Promise<DeviceApiRecord>>();');
+    expect(api).toContain('runDeviceTransitionOnce');
+    expect(lifecycle).not.toContain('bindingTransitions');
+    expect(lifecycle).not.toContain('keySetupTransitions');
   });
 });

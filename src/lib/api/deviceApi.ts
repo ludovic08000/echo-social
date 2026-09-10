@@ -48,6 +48,26 @@ import { backupAndroidDeviceVault, restoreAndroidDeviceVault } from '@/platforms
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
+// Invariant cryptographique : toutes les vues partagent la même transition
+// active par compte. Aucun binding ni lot de préclés ne peut être publié deux fois.
+const bindInFlight = new Map<string, Promise<DeviceApiRecord>>();
+const keySetupInFlight = new Map<string, Promise<DeviceApiRecord>>();
+
+function runDeviceTransitionOnce(
+  transitions: Map<string, Promise<DeviceApiRecord>>,
+  userId: string,
+  run: () => Promise<DeviceApiRecord>,
+): Promise<DeviceApiRecord> {
+  const active = transitions.get(userId);
+  if (active) return active;
+
+  const transition = run().finally(() => {
+    if (transitions.get(userId) === transition) transitions.delete(userId);
+  });
+  transitions.set(userId, transition);
+  return transition;
+}
+
 export type DeviceApiState =
   | 'unregistered'
   | 'pending_approval'
@@ -431,7 +451,15 @@ export const deviceApi = {
   listDevices,
   enroll: (userId: string) => withIosDiagnostics('deviceApi.enroll', () => enroll(userId)),
   autoApprove: (userId: string) => withIosDiagnostics('deviceApi.autoApprove', () => autoApprove(userId)),
-  bind: (userId: string) => withIosDiagnostics('deviceApi.bind', () => bind(userId)),
-  prepareKeys: (userId: string) => withIosDiagnostics('deviceApi.prepareKeys', () => prepareKeys(userId)),
+  bind: (userId: string) => runDeviceTransitionOnce(
+    bindInFlight,
+    userId,
+    () => withIosDiagnostics('deviceApi.bind', () => bind(userId)),
+  ),
+  prepareKeys: (userId: string) => runDeviceTransitionOnce(
+    keySetupInFlight,
+    userId,
+    () => withIosDiagnostics('deviceApi.prepareKeys', () => prepareKeys(userId)),
+  ),
   revokeDevice,
 } as const;

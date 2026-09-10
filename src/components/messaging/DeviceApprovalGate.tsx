@@ -68,7 +68,15 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
   };
 
   if (lifecycle.loading) {
-    return <>{children}</>;
+    return (
+      <Shell compact={compact}>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <p className="text-sm font-medium">Vérification de cet appareil…</p>
+          <p className="text-xs text-muted-foreground">Vérification de l’état cryptographique en cours.</p>
+        </div>
+      </Shell>
+    );
   }
 
   if (lifecycle.state === 'DEVICE_CREDENTIAL_CHECK' || lifecycle.state === 'LINK_REQUIRED') {
@@ -176,9 +184,25 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
   }
 
   if (!lifecycle.canRunCryptoRuntime) {
-    // L'approbation et les clés restent obligatoires dans le moteur E2EE, mais
-    // leur préparation en arrière-plan ne doit plus remplacer toute la messagerie.
-    return <>{children}</>;
+    // Invariant cryptographique : la messagerie reste fermée tant que le device
+    // approuvé n'est pas lié au compte et que sa route Libsignal n'est pas prête.
+    return (
+      <Shell compact={compact}>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <p className="text-sm font-medium">Finalisation de cet appareil…</p>
+          <p className="text-xs text-muted-foreground">Publication des clés de session sécurisée en cours.</p>
+          {lifecycle.transitionError && (
+            <div className="space-y-2 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <p>{lifecycle.transitionError}</p>
+              <Button size="sm" variant="outline" onClick={lifecycle.refresh}>
+                Réessayer
+              </Button>
+            </div>
+          )}
+        </div>
+      </Shell>
+    );
   }
 
   return <>{children}</>;
