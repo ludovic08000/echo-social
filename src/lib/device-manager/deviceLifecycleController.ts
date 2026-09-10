@@ -423,12 +423,15 @@ export class DeviceLifecycleController {
   private async doReadServerState(): Promise<void> {
     const previousStage = this.stage;
     this.stage = this.record === 'unknown' ? 'reading' : previousStage;
+    const readElapsed = startFinalizationTimer();
+    this.trace('state_hydration', 'start');
 
     try {
       await withStepTimeout('state_hydration', Promise.resolve(this.deps.hydrateDeviceId()), this.deps.stepTimeoutMs);
     } catch (cause) {
       // Un DeviceID absent est un état normal (nouvel appareil), pas une erreur.
       this.deps.log?.('hydrate-device-id-failed', { message: messageOf(cause) }, 'warn');
+      this.trace('state_hydration', 'failure', { elapsedMs: readElapsed(), errorCode: cause });
     }
     if (this.disposed) return;
 
@@ -438,10 +441,15 @@ export class DeviceLifecycleController {
     if (!this.deviceId || this.deviceIdStatus !== 'ok') {
       this.setRecord(null);
       this.stage = 'idle';
+      this.trace('state_hydration', 'skipped', {
+        elapsedMs: readElapsed(),
+        detail: `device_id_${this.deviceIdStatus}`,
+      });
       this.publish();
       return;
     }
 
+    this.trace('state_lookup', 'start', { elapsedMs: readElapsed() });
     try {
       const snapshot = await withStepTimeout(
         'state_lookup',
