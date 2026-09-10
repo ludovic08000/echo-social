@@ -48,6 +48,13 @@ function announce(event: string, detail: Record<string, unknown>): void {
 }
 
 function requireRestore(userId: string, reason: string, extra: Record<string, unknown> = {}): never {
+  traceCurrentDeviceFinalization({
+    step: 'account_key_sync.restore_required',
+    outcome: 'failure',
+    userId,
+    detail: reason,
+    errorCode: 'ACCOUNT_KEY_RESTORE_REQUIRED',
+  });
   announce('forsure:e2ee-restore-needed', {
     userId,
     reason,
