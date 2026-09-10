@@ -17,6 +17,10 @@ import {
 } from '@/lib/crypto/accountKeyBackup';
 import { isNativePlatform } from '@/lib/nativeStore';
 import { transition, withEnsureLock, getSnapshot } from '@/lib/crypto/CryptoStateMachine';
+import {
+  startFinalizationTimer,
+  traceCurrentDeviceFinalization,
+} from '@/lib/device-manager/deviceFinalizationTrace';
 
 export type AccountKeySyncOutcome =
   | 'local_keys_present'
