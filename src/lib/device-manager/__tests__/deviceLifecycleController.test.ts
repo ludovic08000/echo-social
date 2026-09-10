@@ -33,7 +33,11 @@ function row(overrides: Partial<Row> = {}): Row {
 /** Serveur factice : seules les RPC réussies font avancer l'état. */
 function fakeServer(initial: Row | null) {
   const state: { record: Row | null } = { record: initial };
-  const calls = { getState: 0, enroll: 0, autoApprove: 0, bind: 0, prepareKeys: 0, syncAccount: 0 };
+  const calls = {
+    getState: 0, enroll: 0, autoApprove: 0, bind: 0,
+    prepareKeys: 0, syncAccount: 0, finalize: 0,
+  };
+  let accountSynced = false;
   const api: DeviceLifecycleApi = {
     getState: async () => { calls.getState += 1; return { record: state.record }; },
     enroll: async () => {
@@ -53,12 +57,18 @@ function fakeServer(initial: Row | null) {
     prepareKeys: async () => {
       calls.prepareKeys += 1;
       if (state.record?.bindingStatus !== 'bound') throw new Error('DEVICE_NOT_READY_FOR_KEYS');
-      // Reproduit le serveur : mark_route_ready PUIS complete_synchronization.
-      state.record = { ...state.record, routingStatus: 'ready', lifecycleStatus: 'ready' };
+      // Reproduit le serveur : mark_current_device_route_ready uniquement.
+      state.record = { ...state.record, routingStatus: 'ready' };
     },
-    syncAccount: async () => { calls.syncAccount += 1; },
+    syncAccount: async () => { calls.syncAccount += 1; accountSynced = true; },
+    finalizeSynchronization: async () => {
+      calls.finalize += 1;
+      if (!accountSynced) throw new Error('ACCOUNT_SYNC_REQUIRED_BEFORE_FINALIZATION');
+      if (state.record?.routingStatus !== 'ready') throw new Error('DEVICE_ROUTE_NOT_READY');
+      state.record = { ...state.record, lifecycleStatus: 'ready' };
+    },
   };
-  return { api, calls, state };
+  return { api, calls, state, markAccountSynced: () => { accountSynced = true; } };
 }
 
 describe('deviceLifecycleController — flux canonique unique', () => {
@@ -325,6 +335,87 @@ describe('deviceLifecycleController — flux canonique unique', () => {
 
     expect(listener).toHaveBeenCalled();
     expect(listener.mock.calls.at(-1)?.[0].state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+});
+
+
+describe('barrière de synchronisation des clés de compte', () => {
+  it('ne finalise jamais le serveur avant la vraie synchronisation', async () => {
+    const server = fakeServer(null);
+    const order: string[] = [];
+    const controller = __deviceLifecycleTestUtils.create('user-sync', {
+      api: {
+        ...server.api,
+        syncAccount: async (id) => { order.push('sync'); await server.api.syncAccount(id); },
+        finalizeSynchronization: async (id) => {
+          order.push('finalize');
+          await server.api.finalizeSynchronization(id);
+        },
+      },
+    });
+    await controller.refresh();
+
+    expect(order).toEqual(['sync', 'finalize']);
+    expect(server.state.record?.lifecycleStatus).toBe('ready');
+    expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('bloque la messagerie et expose un retry si la restauration est requise', async () => {
+    const server = fakeServer(null);
+    let failing = true;
+    const controller = __deviceLifecycleTestUtils.create('user-restore', {
+      api: {
+        ...server.api,
+        syncAccount: async (id) => {
+          if (failing) throw new Error('ACCOUNT_KEY_RESTORE_REQUIRED:cold_start_sentinel');
+          await server.api.syncAccount(id);
+        },
+      },
+    });
+    await controller.refresh();
+
+    let snapshot = controller.getSnapshot();
+    expect(snapshot.accountSyncPhase).toBe('failed');
+    expect(snapshot.canRunCryptoRuntime).toBe(false);
+    expect(snapshot.state).toBe('ACCOUNT_KEY_SYNC');
+    expect(snapshot.error).toContain('ACCOUNT_KEY_RESTORE_REQUIRED');
+    expect(server.calls.finalize).toBe(0);
+
+    failing = false;
+    await controller.retry();
+    snapshot = controller.getSnapshot();
+    expect(snapshot.state).toBe('MESSAGING_READY');
+    expect(snapshot.canRunCryptoRuntime).toBe(true);
+    controller.dispose();
+  });
+
+  it('reprend le drift route prête / lifecycle non prêt', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved',
+      bindingStatus: 'bound',
+      routingStatus: 'ready',
+      lifecycleStatus: 'syncing',
+    }));
+    const controller = __deviceLifecycleTestUtils.create('user-drift', { api: server.api });
+    await controller.refresh();
+
+    expect(server.calls.prepareKeys).toBe(0);
+    expect(server.calls.syncAccount).toBe(1);
+    expect(server.calls.finalize).toBe(1);
+    expect(server.state.record?.lifecycleStatus).toBe('ready');
+    expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('déduplique les appels concurrents à la synchronisation', async () => {
+    const server = fakeServer(null);
+    const controller = __deviceLifecycleTestUtils.create('user-concurrent', { api: server.api });
+    await Promise.all([controller.refresh(), controller.refresh(), controller.refresh()]);
+
+    expect(server.calls.syncAccount).toBe(1);
+    expect(server.calls.finalize).toBe(1);
     controller.dispose();
   });
 });
