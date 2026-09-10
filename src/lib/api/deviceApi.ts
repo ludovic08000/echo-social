@@ -481,15 +481,48 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
  * `lifecycle_status='ready'` et vérifie ce statut après exécution.
  */
 async function finalizeSynchronization(userId: string): Promise<DeviceApiRecord> {
+  const elapsed = startFinalizationTimer();
   const snapshot = await getState(userId);
   const record = snapshot.record;
+  traceCurrentDeviceFinalization({
+    step: 'device_api.finalize.state_before',
+    outcome: 'info',
+    elapsedMs: elapsed(),
+    userId,
+    deviceId: record?.deviceId ?? null,
+    state: record ? {
+      approvalStatus: record.approvalStatus,
+      bindingStatus: record.bindingStatus,
+      routingStatus: record.routingStatus,
+      lifecycleStatus: record.lifecycleStatus,
+      isActive: record.isActive,
+      revoked: Boolean(record.revokedAt),
+    } : null,
+  });
   if (!record) throw new Error('DEVICE_NOT_FOUND');
   if (record.revokedAt || record.approvalStatus !== 'approved' || !record.isActive) throw new Error('DEVICE_NOT_APPROVED');
   if (record.bindingStatus !== 'bound' || record.routingStatus !== 'ready') {
     throw new Error('DEVICE_ROUTE_NOT_READY');
   }
-  if (record.lifecycleStatus === 'ready') return record;
+  if (record.lifecycleStatus === 'ready') {
+    traceCurrentDeviceFinalization({
+      step: 'device_api.finalize',
+      outcome: 'skipped',
+      elapsedMs: elapsed(),
+      userId,
+      deviceId: record.deviceId,
+      detail: 'already_ready',
+    });
+    return record;
+  }
 
+  const rpcElapsed = startFinalizationTimer();
+  traceCurrentDeviceFinalization({
+    step: 'rpc.complete_current_device_synchronization',
+    outcome: 'start',
+    userId,
+    deviceId: record.deviceId,
+  });
   const { data, error } = await runDeviceRpcWithTimeout(
     'DEVICE_SYNCHRONIZATION_INCOMPLETE',
     (signal) => supabase.rpc('complete_current_device_synchronization' as never, {
@@ -497,10 +530,35 @@ async function finalizeSynchronization(userId: string): Promise<DeviceApiRecord>
     } as never).abortSignal(signal),
   );
   const result = data as { ok?: boolean; code?: string } | null;
+  traceCurrentDeviceFinalization({
+    step: 'rpc.complete_current_device_synchronization',
+    outcome: !error && result?.ok === true ? 'success' : 'failure',
+    elapsedMs: rpcElapsed(),
+    userId,
+    deviceId: record.deviceId,
+    detail: result?.code ?? (error ? 'rpc_error' : 'no_code'),
+    errorCode: !error && result?.ok === true ? undefined : 'DEVICE_SYNCHRONIZATION_INCOMPLETE',
+  });
   if (error || result?.ok !== true) {
     throw new Error(`DEVICE_SYNCHRONIZATION_INCOMPLETE:${result?.code ?? error?.message ?? 'UNKNOWN'}`);
   }
   const updated = await readDeviceRecord(userId, record.deviceId);
+  traceCurrentDeviceFinalization({
+    step: 'device_api.finalize.lifecycle_verification',
+    outcome: updated?.lifecycleStatus === 'ready' ? 'success' : 'failure',
+    elapsedMs: elapsed(),
+    userId,
+    deviceId: record.deviceId,
+    state: updated ? {
+      approvalStatus: updated.approvalStatus,
+      bindingStatus: updated.bindingStatus,
+      routingStatus: updated.routingStatus,
+      lifecycleStatus: updated.lifecycleStatus,
+      isActive: updated.isActive,
+      revoked: Boolean(updated.revokedAt),
+    } : null,
+    errorCode: updated?.lifecycleStatus === 'ready' ? undefined : 'DEVICE_SYNCHRONIZATION_INCOMPLETE',
+  });
   if (!updated || updated.lifecycleStatus !== 'ready') throw new Error('DEVICE_SYNCHRONIZATION_INCOMPLETE');
   return updated;
 }
