@@ -160,6 +160,9 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
 
     // Aucun matériel restaurable : compte neuf, l'identité sera créée par le
     // runtime crypto canonique (jamais ici) — on n'invente aucun état prêt.
-    return 'no_backup_new_account';
-  });
+    outcome = 'no_backup_new_account';
+  };
+
+  await withEnsureLock(userId, run);
+  return outcome;
 }
