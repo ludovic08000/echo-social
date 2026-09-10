@@ -112,7 +112,8 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
     const restoreStatus = await restoreAccountKeysFromActiveSession(userId);
     if (restoreStatus === 'restored' || restoreStatus === 'local_ok') {
       announce('forsure-keys-restored', { status: 'restored_active_session' });
-      return 'restored_active_session';
+      outcome = 'restored_active_session';
+      return;
     }
 
     // Démarrage à froid : une sentinelle sécurisée + une sauvegarde de compte
