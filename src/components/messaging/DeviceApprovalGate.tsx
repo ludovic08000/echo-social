@@ -190,16 +190,17 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
     );
   }
 
-  if (!lifecycle.canRunCryptoRuntime) {
-    // Invariant cryptographique : la messagerie reste fermée tant que le device
-    // approuvé n'est pas lié au compte et que sa route Libsignal n'est pas prête.
+  if (!lifecycle.canPromptForPin) {
+    // Invariant cryptographique : cette garde s'arrête exactement à l'étape
+    // APPROVED_LOCKED. Le PIN, le binding, la préparation des clés puis la
+    // synchronisation de compte sont validés en aval, dans l'ordre canonique.
     return (
       <Shell compact={compact}>
         <div className="flex flex-col items-center gap-3 text-center">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          <p className="text-sm font-medium">Finalisation de cet appareil…</p>
-          <p className="text-xs text-muted-foreground">Publication des clés de session sécurisée en cours.</p>
-          {lifecycle.transitionError && failure}
+          <p className="text-sm font-medium">Vérification de cet appareil…</p>
+          <p className="text-xs text-muted-foreground">Contrôle de l’état serveur en cours.</p>
+          {failure}
         </div>
       </Shell>
     );

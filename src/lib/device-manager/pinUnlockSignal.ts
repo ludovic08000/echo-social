@@ -1,14 +1,13 @@
 /**
- * Messaging PIN protection is currently disabled.
- *
- * Device approval, account binding and E2EE key checks remain authoritative.
- * The lifecycle must not wait for a PIN-unlock signal while the PIN gate is
- * disabled, otherwise approved devices can become stuck before binding/ready.
+ * Invariant cryptographique : le déverrouillage PIN est une étape obligatoire
+ * du cycle de vie, placée après l'approbation serveur et avant le binding, la
+ * préparation des clés et la synchronisation de compte. Aucun chemin PIN-first
+ * ni contournement n'est autorisé.
  */
 
 const PIN_STATE_CHANGED_EVENT = 'forsure:chat-pin-state-changed';
 const SESSION_KEY = 'forsure-pin-unlocked';
-const PIN_PROTECTION_ENABLED = false;
+const PIN_PROTECTION_ENABLED = true;
 
 export function readPinUnlocked(userId: string | null | undefined): boolean {
   if (!userId) return false;

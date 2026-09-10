@@ -24,12 +24,18 @@ export type DeviceIdStatus = 'ok' | 'uninitialized' | 'mismatch' | 'storage_unav
 export type DeviceApprovalStatus = 'pending' | 'approved' | 'rejected' | null;
 export type DeviceBindingStatus = 'pending' | 'bound' | 'revoked' | null;
 export type DeviceRoutingStatus = 'repairing' | 'ready' | 'unavailable' | null;
+export type DeviceLifecycleStatus = 'pending' | 'approved' | 'syncing' | 'ready' | 'revoked' | null;
 
 export interface DeviceLifecycleRecord {
   deviceId: string;
   approvalStatus: DeviceApprovalStatus;
   bindingStatus: DeviceBindingStatus;
   routingStatus: DeviceRoutingStatus;
+  /**
+   * Invariant cryptographique : `routing_status` seul ne prouve rien. Seule la
+   * RPC `complete_current_device_synchronization` écrit `lifecycle_status`.
+   */
+  lifecycleStatus: DeviceLifecycleStatus;
   isActive: boolean | null;
   revokedAt: string | null;
 }
@@ -57,7 +63,9 @@ export type DeviceLifecycleReason =
   | 'awaiting_pin_unlock'
   | 'account_binding_pending'
   | 'device_key_setup_pending'
+  | 'device_synchronization_pending'
   | 'account_sync_running'
+  | 'account_sync_failed'
   | 'ready';
 
 export interface DeviceLifecycleResolution {
@@ -80,7 +88,9 @@ export function resolveDeviceLifecycleState(input: DeviceLifecycleInput): Device
 
   const record = input.deviceRecord;
   if (record.approvalStatus === 'rejected') return { state: 'LINK_REQUIRED', reason: 'device_rejected' };
-  if (record.revokedAt || record.bindingStatus === 'revoked') return { state: 'LINK_REQUIRED', reason: 'device_revoked' };
+  if (record.revokedAt || record.bindingStatus === 'revoked' || record.lifecycleStatus === 'revoked') {
+    return { state: 'LINK_REQUIRED', reason: 'device_revoked' };
+  }
   if (record.approvalStatus !== 'approved') return { state: 'PENDING_APPROVAL', reason: 'awaiting_approval' };
   if (record.isActive !== true) return { state: 'LINK_REQUIRED', reason: 'device_inactive' };
   if (input.pinRequired !== false && !input.pinUnlocked) {
@@ -88,7 +98,13 @@ export function resolveDeviceLifecycleState(input: DeviceLifecycleInput): Device
   }
   if (record.bindingStatus !== 'bound') return { state: 'ACCOUNT_BINDING', reason: 'account_binding_pending' };
   if (record.routingStatus !== 'ready') return { state: 'DEVICE_KEY_SETUP', reason: 'device_key_setup_pending' };
-  if (input.accountSyncPhase === 'syncing') return { state: 'ACCOUNT_KEY_SYNC', reason: 'account_sync_running' };
+  // Route prête mais synchronisation serveur non confirmée : on reprend la
+  // finalisation, on n'ouvre jamais la messagerie.
+  if (record.lifecycleStatus !== 'ready') {
+    return { state: 'DEVICE_KEY_SETUP', reason: 'device_synchronization_pending' };
+  }
+  if (input.accountSyncPhase === 'failed') return { state: 'ACCOUNT_KEY_SYNC', reason: 'account_sync_failed' };
+  if (input.accountSyncPhase !== 'ready') return { state: 'ACCOUNT_KEY_SYNC', reason: 'account_sync_running' };
   return { state: 'MESSAGING_READY', reason: 'ready' };
 }
 

@@ -8542,6 +8542,15 @@ export type Database = {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
       }
+      diagnose_device_lifecycle_drift: {
+        Args: never
+        Returns: {
+          device_id: string
+          lifecycle_status: string
+          routing_status: string
+          updated_at: string
+        }[]
+      }
       email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
