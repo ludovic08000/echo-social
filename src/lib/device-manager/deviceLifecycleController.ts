@@ -206,6 +206,31 @@ export class DeviceLifecycleController {
     return () => { this.listeners.delete(listener); };
   }
 
+  /** Trace diagnostique : observation seule, sans effet sur les transitions. */
+  private trace(
+    step: string,
+    outcome: Parameters<typeof traceDeviceFinalization>[0]['outcome'],
+    extra: { elapsedMs?: number; attempt?: number; errorCode?: unknown; detail?: string } = {},
+  ): void {
+    const record = this.record === 'unknown' ? null : this.record;
+    traceDeviceFinalization({
+      traceId: this.traceId,
+      step,
+      outcome,
+      userId: this.userId,
+      deviceId: this.deviceId,
+      state: record ? {
+        approvalStatus: record.approvalStatus,
+        bindingStatus: record.bindingStatus,
+        routingStatus: record.routingStatus,
+        lifecycleStatus: record.lifecycleStatus,
+        isActive: record.isActive,
+        revoked: Boolean(record.revokedAt),
+      } : null,
+      ...extra,
+    });
+  }
+
   /** Relit l'état serveur puis poursuit le flux canonique si nécessaire. */
   refresh(): Promise<void> {
     return this.advance();
@@ -216,6 +241,9 @@ export class DeviceLifecycleController {
     this.error = null;
     if (this.accountSyncPhase === 'failed') this.accountSyncPhase = 'idle';
     this.blockedUntilRetry = false;
+    this.traceId = newDeviceFinalizationTraceId();
+    this.stepAttempts.clear();
+    this.trace('pipeline_retry_requested', 'retry');
     this.publish();
     return this.advance();
   }
