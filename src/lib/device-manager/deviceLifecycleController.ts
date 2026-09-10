@@ -352,7 +352,11 @@ export class DeviceLifecycleController {
     this.error = null;
     this.publish();
     const startedAt = Date.now();
+    const attempt = (this.stepAttempts.get(action) ?? 0) + 1;
+    this.stepAttempts.set(action, attempt);
     this.deps.log?.('step-start', { userId: this.userId, action, deviceId: this.deviceId });
+    setCurrentDeviceFinalizationTraceId(this.traceId);
+    this.trace(`step.${action}`, 'start', { attempt });
 
     try {
       const api = this.deps.api;
