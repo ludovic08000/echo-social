@@ -201,6 +201,25 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
     outcome = 'no_backup_new_account';
   };
 
-  await withEnsureLock(userId, run);
+  try {
+    await withEnsureLock(userId, run);
+  } catch (error) {
+    traceCurrentDeviceFinalization({
+      step: 'account_key_sync',
+      outcome: 'failure',
+      elapsedMs: elapsed(),
+      userId,
+      errorCode: error,
+    });
+    throw error;
+  }
+  // `detail` expose seulement la SOURCE de restauration, jamais de matériel clé.
+  traceCurrentDeviceFinalization({
+    step: 'account_key_sync',
+    outcome: 'success',
+    elapsedMs: elapsed(),
+    userId,
+    detail: outcome,
+  });
   return outcome;
 }
