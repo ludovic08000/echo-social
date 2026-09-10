@@ -418,6 +418,13 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   if (isAndroidRuntime() && !await backupAndroidDeviceVault(userId)) {
     throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
   }
+  const rpcElapsed = startFinalizationTimer();
+  traceCurrentDeviceFinalization({
+    step: 'rpc.mark_current_device_route_ready',
+    outcome: 'start',
+    userId,
+    deviceId: record.deviceId,
+  });
   const { data, error } = await runDeviceRpcWithTimeout(
     'DEVICE_ROUTE_NOT_READY',
     (signal) => supabase
@@ -425,6 +432,15 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
       .abortSignal(signal),
   );
   const route = data as { ok?: boolean; code?: string } | null;
+  traceCurrentDeviceFinalization({
+    step: 'rpc.mark_current_device_route_ready',
+    outcome: !error && route?.ok === true ? 'success' : 'failure',
+    elapsedMs: rpcElapsed(),
+    userId,
+    deviceId: record.deviceId,
+    detail: route?.code ?? (error ? 'rpc_error' : 'no_code'),
+    errorCode: !error && route?.ok === true ? undefined : 'DEVICE_ROUTE_NOT_READY',
+  });
   if (error || route?.ok !== true) throw new Error(`DEVICE_ROUTE_NOT_READY:${route?.code ?? error?.message ?? 'UNKNOWN'}`);
   invalidateAllFanoutRoutes();
   invalidateAegisDeviceRuntime(userId);
