@@ -96,8 +96,17 @@ describe('single canonical device lifecycle authority', () => {
   it('requires a proven account synchronization before messaging', () => {
     const finalGate = readFileSync('src/components/PinValidatedMessaging.tsx', 'utf8');
     expect(controller).toContain("accountSyncPhase: this.accountSyncPhase");
-    expect(controller).toContain("if (this.accountSyncPhase !== 'ready') return 'syncing_account';");
+    expect(controller).toContain("if (this.accountSyncPhase !== 'ready' || record.lifecycleStatus !== 'ready') return 'syncing_account';");
     expect(lifecycle).toContain('beginAccountSynchronization');
+    // La barrière entoure la VRAIE synchronisation des clés de compte.
+    expect(lifecycle).toContain('synchronizeAccountKeysBeforeRuntime');
+    expect(existsSync('src/lib/crypto/accountKeySync.ts')).toBe(true);
+    expect(existsSync('src/hooks/useAccountKeySync.ts')).toBe(false);
+    // La finalisation serveur n'appartient plus à prepareKeys.
+    const api = readFileSync('src/lib/api/deviceApi.ts', 'utf8');
+    const prepare = api.slice(api.indexOf('async function prepareKeys'), api.indexOf('async function finalizeSynchronization'));
+    expect(prepare).not.toContain('complete_current_device_synchronization');
+    expect(api).toContain('finalizeSynchronization');
     expect(finalGate).toContain('if (!lifecycle.canRunCryptoRuntime)');
     expect(finalGate).toContain('Réessayer');
   });
@@ -105,7 +114,7 @@ describe('single canonical device lifecycle authority', () => {
   it('resumes finalisation when routing is ready but lifecycle_status is not', () => {
     const machine = readFileSync('src/lib/device-manager/deviceLifecycleMachine.ts', 'utf8');
     expect(machine).toContain("if (record.lifecycleStatus !== 'ready')");
-    expect(controller).toContain("if (record.lifecycleStatus !== 'ready') return 'preparing_keys';");
+    expect(controller).toContain("record.lifecycleStatus !== 'ready') return 'syncing_account';");
     expect(controller).toContain('DEVICE_LIFECYCLE_STALLED');
   });
 
