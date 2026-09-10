@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const api = readFileSync('src/lib/api/deviceApi.ts', 'utf8');
@@ -49,16 +49,24 @@ describe('canonical automatic device approval', () => {
   });
 });
 
-describe('automatic device enrollment', () => {
-  const hook = readFileSync('src/hooks/usePrePinDeviceEnrollment.ts', 'utf8');
+describe('single canonical device lifecycle authority', () => {
+  const controller = readFileSync('src/lib/device-manager/deviceLifecycleController.ts', 'utf8');
   const gate = readFileSync('src/components/messaging/DeviceApprovalGate.tsx', 'utf8');
   const lifecycle = readFileSync('src/hooks/useDeviceLifecycle.ts', 'utf8');
   const messagingGate = readFileSync('src/components/MessagingPinGate.tsx', 'utf8');
 
   it('auto-enrolls the current device outside Windows Hello recovery', () => {
-    expect(hook).toContain('autoEnrollAttemptedRef');
-    expect(hook).toContain('if (isWindowsWeb()) return;');
-    expect(hook).toContain('void startEnrollment();');
+    expect(controller).toContain("if (this.deps.isWindowsWeb() && !this.manualEnrollmentRequested) return null;");
+    expect(controller).toContain("return 'enrolling';");
+  });
+
+  it('keeps a single authority: no view drives a transition itself', () => {
+    expect(lifecycle).toContain('getDeviceLifecycleController');
+    expect(lifecycle).not.toContain('deviceApi.bind(userId)');
+    expect(lifecycle).not.toContain('deviceApi.prepareKeys(userId)');
+    expect(gate).not.toContain('usePrePinDeviceEnrollment');
+    expect(existsSync('src/hooks/usePrePinDeviceEnrollment.ts')).toBe(false);
+    expect(existsSync('src/components/messaging/DeviceAccountBindingGate.tsx')).toBe(false);
   });
 
   it('removes the manual waiting screens but keeps Windows Hello recovery', () => {
@@ -75,11 +83,45 @@ describe('automatic device enrollment', () => {
     expect(messagingGate).not.toContain('DeviceAccountBindingGate');
   });
 
+  it('never leaves a gate spinning on a failed server read', () => {
+    expect(controller).toContain('DEVICE_STATE_LOOKUP_FAILED');
+    expect(controller).toContain('withStepTimeout');
+    expect(controller).toContain('this.blockedUntilRetry = true;');
+    expect(gate).toContain('Réessayer');
+  });
+
   it('deduplicates every binding and key setup caller in the central API', () => {
     expect(api).toContain('const bindInFlight = new Map<string, Promise<DeviceApiRecord>>();');
     expect(api).toContain('const keySetupInFlight = new Map<string, Promise<DeviceApiRecord>>();');
     expect(api).toContain('runDeviceTransitionOnce');
     expect(lifecycle).not.toContain('bindingTransitions');
     expect(lifecycle).not.toContain('keySetupTransitions');
+  });
+
+  it('publishes the signed prekey the server route readiness check requires', () => {
+    expect(api).toContain('refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey)');
+    expect(api.indexOf('refreshDeviceSignedPrekeyIfNeeded'))
+      .toBeLessThan(api.indexOf('mark_current_device_route_ready'));
+    expect(api).toContain('void refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId)');
+  });
+
+  it('never derives trust from a device fingerprint', () => {
+    expect(controller).not.toContain('fingerprint');
+    expect(lifecycle).not.toContain('fingerprint');
+  });
+
+  it('enforces the exact canonical order', () => {
+    const machine = readFileSync('src/lib/device-manager/deviceLifecycleMachine.ts', 'utf8');
+    const order = [
+      'AUTHENTICATED', 'DEVICE_CREDENTIAL_CHECK', 'LINK_REQUIRED', 'PENDING_APPROVAL',
+      'APPROVED_LOCKED', 'PIN_UNLOCK', 'ACCOUNT_BINDING', 'DEVICE_KEY_SETUP',
+      'ACCOUNT_KEY_SYNC', 'MESSAGING_READY',
+    ];
+    let cursor = -1;
+    for (const state of order) {
+      const next = machine.indexOf(`'${state}'`);
+      expect(next).toBeGreaterThan(cursor);
+      cursor = next;
+    }
   });
 });

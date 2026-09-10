@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
-import { usePrePinDeviceEnrollment } from '@/hooks/usePrePinDeviceEnrollment';
 import { getSessionMasterKey, initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
 import {
   isWindowsWeb,
@@ -30,10 +29,15 @@ function Shell({ children, compact }: { children: ReactNode; compact: boolean })
   );
 }
 
+/**
+ * Invariant cryptographique : cet écran n'exécute plus aucune transition. Il
+ * reflète l'état serveur exposé par l'autorité unique du cycle de vie et sort
+ * dès que l'étape est réellement terminée. Une erreur serveur est toujours
+ * affichée avec un bouton Réessayer, jamais remplacée par une attente infinie.
+ */
 export function DeviceApprovalGate({ children, compact = false }: DeviceApprovalGateProps) {
   const { user } = useAuth();
   const lifecycle = useDeviceLifecycle();
-  const actions = usePrePinDeviceEnrollment(lifecycle.deviceId, lifecycle.refresh);
   const [recovering, setRecovering] = useState(false);
   const [recoveryPassword, setRecoveryPassword] = useState('');
   const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
@@ -67,6 +71,10 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
     }
   };
 
+  const failure = (
+    <ErrorBlock error={lifecycle.error} onRetry={lifecycle.retry} />
+  );
+
   if (lifecycle.loading) {
     return (
       <Shell compact={compact}>
@@ -82,7 +90,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
   if (lifecycle.state === 'DEVICE_CREDENTIAL_CHECK' || lifecycle.state === 'LINK_REQUIRED') {
     // Hors Windows Web (récupération Windows Hello prioritaire), l'appareil
     // s'enrôle et se fait approuver automatiquement : aucun écran d'attente.
-    if (!isWindowsWeb() && !actions.error) {
+    if (!isWindowsWeb() && !lifecycle.error) {
       return (
         <Shell compact={compact}>
           <div className="flex flex-col items-center gap-3 text-center">
@@ -116,11 +124,12 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
             </p>
           </div>
 
-          {(actions.error || recoveryError) && (
+          {recoveryError && (
             <p className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {recoveryError ?? actions.error}
+              {recoveryError}
             </p>
           )}
+          {!recoveryError && <div className="mb-3">{failure}</div>}
 
           {isWindowsWeb() && (
             <div className="mb-3 space-y-2">
@@ -137,7 +146,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
               <Button
                 variant="outline"
                 className="w-full rounded-xl"
-                disabled={recovering || actions.processing}
+                disabled={recovering || lifecycle.stage !== 'idle'}
                 onClick={() => void recoverWithWindowsHello()}
               >
                 {recovering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Fingerprint className="mr-2 h-4 w-4" />}
@@ -147,12 +156,12 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
             </div>
           )}
 
-          {actions.canStartEnrollment && <Button
+          {lifecycle.canStartEnrollment && <Button
             className="w-full rounded-xl"
-            disabled={actions.processing || recovering}
-            onClick={() => void actions.startEnrollment()}
+            disabled={recovering || lifecycle.stage !== 'idle'}
+            onClick={lifecycle.startEnrollment}
           >
-            {actions.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldQuestion className="mr-2 h-4 w-4" />}
+            {lifecycle.stage === 'enrolling' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldQuestion className="mr-2 h-4 w-4" />}
             Enregistrer comme nouvel appareil
           </Button>}
 
@@ -175,9 +184,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           <p className="text-xs text-muted-foreground">
             Vérification cryptographique et activation automatique en cours.
           </p>
-          {actions.error && (
-            <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{actions.error}</p>
-          )}
+          {failure}
         </div>
       </Shell>
     );
@@ -192,18 +199,23 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
           <p className="text-sm font-medium">Finalisation de cet appareil…</p>
           <p className="text-xs text-muted-foreground">Publication des clés de session sécurisée en cours.</p>
-          {lifecycle.transitionError && (
-            <div className="space-y-2 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <p>{lifecycle.transitionError}</p>
-              <Button size="sm" variant="outline" onClick={lifecycle.refresh}>
-                Réessayer
-              </Button>
-            </div>
-          )}
+          {lifecycle.transitionError && failure}
         </div>
       </Shell>
     );
   }
 
   return <>{children}</>;
+}
+
+function ErrorBlock({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+  if (!error) return null;
+  return (
+    <div className="space-y-2 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      <p>{error}</p>
+      <Button size="sm" variant="outline" onClick={onRetry}>
+        Réessayer
+      </Button>
+    </div>
+  );
 }

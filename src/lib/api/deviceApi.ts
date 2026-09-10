@@ -32,6 +32,10 @@ import {
 import { submitAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecision';
 import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
+import {
+  refillDeviceOneTimePrekeysIfNeeded,
+  refreshDeviceSignedPrekeyIfNeeded,
+} from '@/lib/crypto/x3dh';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
@@ -378,6 +382,12 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   void backupAndroidDeviceVault(userId);
 
   await provisionLibsignalDevice(userId, record.deviceId);
+  // Invariant corrigé : `mark_current_device_route_ready` exige côté serveur une
+  // `device_signed_prekeys` active, non expirée et vérifiable. Personne ne la
+  // publiait, donc la route restait DEVICE_ROUTE_INCOMPLETE et l'écran
+  // « Finalisation de cet appareil » tournait sans fin. Elle est désormais
+  // publiée ici, avant la validation serveur.
+  await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
   // iOS becomes routable only after the exact private X3DH material has been
   // sealed, uploaded and read back successfully for this DeviceID.
   const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');
@@ -408,6 +418,10 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   }
   invalidateAllFanoutRoutes();
   invalidateAegisDeviceRuntime(userId);
+  // Maintenance non bloquante : le pool de préclés à usage unique se remplit en
+  // arrière-plan, l'interface ne doit jamais l'attendre pour devenir prête.
+  void refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId)
+    .catch((error) => console.warn('[DEVICE] OPK refill deferred:', error));
   await ensureApprovedDeviceTrust(userId, record.deviceId);
   const updated = await readDeviceRecord(userId, record.deviceId);
   if (!updated || updated.routingStatus !== 'ready' || updated.lifecycleStatus !== 'ready') throw new Error('DEVICE_KEY_SETUP_INCOMPLETE');

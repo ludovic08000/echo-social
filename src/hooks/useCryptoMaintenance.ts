@@ -17,6 +17,10 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { getOrCreateDeviceIdentity } from '@/lib/crypto/deviceIdentity';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
+import {
+  refillDeviceOneTimePrekeysIfNeeded,
+  refreshDeviceSignedPrekeyIfNeeded,
+} from '@/lib/crypto/x3dh';
 import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevice';
 
 const MAINTENANCE_TTL = 6 * 60 * 60 * 1000; // 6h between auto-refills
@@ -62,6 +66,10 @@ export function useCryptoMaintenance() {
           const did = await hydrateDeviceId().catch(() => getCurrentDeviceId());
           if (did) {
             await provisionLibsignalDevice(user.id, did);
+            // Invariant corrigé : la préclé signée X3DH conditionne la route
+            // serveur du device et doit être renouvelée avant expiration.
+            await refreshDeviceSignedPrekeyIfNeeded(user.id, did, keys.privateKey);
+            await refillDeviceOneTimePrekeysIfNeeded(user.id, did);
           }
         } catch (devErr) {
           console.warn('[CRYPTO-MAINT] device prekey maintenance failed:', devErr);

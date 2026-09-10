@@ -1,3 +1,12 @@
+/**
+ * Vue React de l'autorité unique du cycle de vie appareil.
+ *
+ * Invariant cryptographique : ce hook n'exécute plus aucune transition. Il
+ * s'abonne au contrôleur unique par compte (`deviceLifecycleController`), de
+ * sorte que dix montages simultanés (App, gates, réglages, StrictMode) ne
+ * produisent qu'un seul enrôlement, une seule approbation, un seul binding et
+ * une seule préparation de clés.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -6,20 +15,23 @@ import {
   hydrateDeviceId,
   peekCurrentDeviceId,
   setCurrentDeviceUserScope,
-  type CurrentDeviceIdStatus,
 } from '@/lib/messaging/currentDevice';
 import { deviceApi } from '@/lib/api/deviceApi';
 import {
-  canPromptForPin,
-  canRunCryptoRuntime,
-  canRunDeviceKeySetup,
-  requiresDeviceApprovalUi,
-  resolveDeviceLifecycleState,
-  type AegisDeviceLifecycleState,
-  type DeviceLifecycleRecord,
-  type DeviceLifecycleReason,
+  configureDeviceLifecycleDeps,
+  getDeviceLifecycleController,
+  resetDeviceLifecycleControllers,
+  type DeviceLifecycleSnapshot as ControllerSnapshot,
+  type DeviceLifecycleStage,
+} from '@/lib/device-manager/deviceLifecycleController';
+import type {
+  AegisDeviceLifecycleState,
+  DeviceIdStatus,
+  DeviceLifecycleReason,
+  DeviceLifecycleRecord,
 } from '@/lib/device-manager/deviceLifecycleMachine';
 import { readPinUnlocked, subscribePinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
+import { isWindowsWeb } from '@/lib/crypto/windowsHelloDeviceRecovery';
 import { syncIosDeviceAdapter } from '@/platforms/ios/iosLifecycleAdapter';
 import { syncAndroidDeviceAdapter } from '@/platforms/android/androidLifecycleAdapter';
 
@@ -43,281 +55,120 @@ function logDeviceLifecycle(stage: string, details: Record<string, unknown> = {}
   else console.info('[E2EE][DEVICE_LIFECYCLE]', payload);
 }
 
+configureDeviceLifecycleDeps((userId) => ({
+  api: {
+    getState: (id) => deviceApi.getState(id),
+    enroll: (id) => deviceApi.enroll(id),
+    autoApprove: (id) => deviceApi.autoApprove(id),
+    bind: (id) => deviceApi.bind(id),
+    prepareKeys: (id) => deviceApi.prepareKeys(id),
+  },
+  hydrateDeviceId: () => hydrateDeviceId(),
+  getDeviceIdStatus: () => getDeviceIdStatus() as DeviceIdStatus,
+  peekDeviceId: () => peekCurrentDeviceId(),
+  setUserScope: (id) => setCurrentDeviceUserScope(id),
+  isWindowsWeb: () => isWindowsWeb(),
+  readPinUnlocked: (id) => readPinUnlocked(id),
+  subscribePinUnlocked: (id, listener) => subscribePinUnlocked(id, listener),
+  onDeviceRecordChanged: (id, listener) => {
+    const onEvent = () => listener();
+    REFRESH_EVENTS.forEach((name) => window.addEventListener(name, onEvent));
+    const poll = window.setInterval(onEvent, POLL_MS);
+    const channel = supabase
+      .channel(`device-lifecycle-${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_devices', filter: `user_id=eq.${id}` },
+        onEvent,
+      )
+      .subscribe();
+    return () => {
+      REFRESH_EVENTS.forEach((name) => window.removeEventListener(name, onEvent));
+      window.clearInterval(poll);
+      void supabase.removeChannel(channel);
+    };
+  },
+  pinRequired: PIN_PROTECTION_ENABLED,
+  stepTimeoutMs: 90_000,
+  log: (stage, details, level) => logDeviceLifecycle(stage, { userId, ...details }, level),
+}));
+
+const IDLE_SNAPSHOT: ControllerSnapshot = {
+  state: 'AUTHENTICATED',
+  reason: 'not_authenticated',
+  deviceId: null,
+  deviceIdStatus: 'uninitialized',
+  record: null,
+  loading: false,
+  stage: 'idle',
+  error: null,
+  pinUnlocked: false,
+  canPromptForPin: false,
+  canRunDeviceKeySetup: false,
+  canRunCryptoRuntime: false,
+  needsApprovalUi: false,
+  canStartEnrollment: false,
+};
+
 export interface DeviceLifecycleSnapshot {
   state: AegisDeviceLifecycleState;
   reason: DeviceLifecycleReason;
   deviceId: string | null;
-  deviceIdStatus: CurrentDeviceIdStatus;
+  deviceIdStatus: DeviceIdStatus;
   record: DeviceLifecycleRecord | null;
   loading: boolean;
+  stage: DeviceLifecycleStage;
   pinUnlocked: boolean;
   canPromptForPin: boolean;
   canRunDeviceKeySetup: boolean;
   canRunCryptoRuntime: boolean;
   needsApprovalUi: boolean;
+  canStartEnrollment: boolean;
+  /** Erreur serveur réelle : jamais masquée par un spinner permanent. */
+  error: string | null;
+  /** Alias historique conservé pour les écrans existants. */
   transitionError: string | null;
   refresh: () => void;
+  retry: () => void;
+  startEnrollment: () => void;
 }
 
 export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
   const { user } = useAuth();
   const userId = user?.id ?? null;
-  const [record, setRecord] = useState<DeviceLifecycleRecord | null | 'unknown'>('unknown');
-  const [deviceIdStatus, setDeviceIdStatus] = useState<CurrentDeviceIdStatus>('uninitialized');
-  const [deviceId, setDeviceId] = useState<string | null>(null);
-  const [pinUnlocked, setPinUnlocked] = useState(false);
-  const [transitionError, setTransitionError] = useState<string | null>(null);
-  const mountedRef = useRef(true);
-  const refreshGenerationRef = useRef(0);
+  const [snapshot, setSnapshot] = useState<ControllerSnapshot>(IDLE_SNAPSHOT);
+  const controllerRef = useRef<ReturnType<typeof getDeviceLifecycleController> | null>(null);
 
-  const refresh = useCallback(() => {
-    const generation = ++refreshGenerationRef.current;
-
+  useEffect(() => {
     if (!userId) {
+      controllerRef.current = null;
+      resetDeviceLifecycleControllers();
       setCurrentDeviceUserScope(null);
-      setDeviceIdStatus('uninitialized');
-      setDeviceId(null);
-      setRecord(null);
+      setSnapshot(IDLE_SNAPSHOT);
       return;
     }
-
-    setCurrentDeviceUserScope(userId);
-
-    void (async () => {
-      try {
-        await hydrateDeviceId();
-      } catch (error) {
-        logDeviceLifecycle('hydrate-device-id-failed', {
-          message: error instanceof Error ? error.message : String(error),
-        }, 'warn');
-      }
-
-      if (!mountedRef.current || generation !== refreshGenerationRef.current) return;
-
-      const status = getDeviceIdStatus();
-      const currentId = peekCurrentDeviceId();
-      setDeviceIdStatus(status);
-      setDeviceId(currentId);
-
-      logDeviceLifecycle('device-id-state', {
-        deviceId: currentId,
-        deviceIdStatus: status,
-      });
-
-      if (!currentId || status !== 'ok') {
-        setRecord(null);
-        return;
-      }
-
-      try {
-        const snapshot = await deviceApi.getState(userId);
-        if (!mountedRef.current || generation !== refreshGenerationRef.current) return;
-        const row = snapshot.record;
-        logDeviceLifecycle('server-device-state', {
-          deviceId: row?.deviceId ?? currentId,
-          state: snapshot.state,
-          approvalStatus: row?.approvalStatus ?? null,
-          bindingStatus: row?.bindingStatus ?? null,
-          routingStatus: row?.routingStatus ?? null,
-          lifecycleStatus: row?.lifecycleStatus ?? null,
-          isActive: row?.isActive ?? null,
-          revoked: Boolean(row?.revokedAt),
-        });
-        setRecord(row ? {
-          deviceId: row.deviceId,
-          approvalStatus: row.approvalStatus,
-          bindingStatus: row.bindingStatus,
-          routingStatus: row.routingStatus,
-          isActive: row.isActive,
-          revokedAt: row.revokedAt,
-        } : null);
-        // Adaptateur iOS isolé : no-op complet hors runtime iOS.
-        if (row) void syncIosDeviceAdapter(userId, row.deviceId);
-        if (row) void syncAndroidDeviceAdapter(userId, row.deviceId);
-
-      } catch (error) {
-        logDeviceLifecycle('server-device-state-failed', {
-          deviceId: currentId,
-          message: error instanceof Error ? error.message : String(error),
-        }, 'error');
-      }
-    })();
+    const controller = getDeviceLifecycleController(userId);
+    controllerRef.current = controller;
+    setSnapshot(controller.getSnapshot());
+    return controller.subscribe(setSnapshot);
   }, [userId]);
 
+  // Adaptateurs plateforme : strictement no-op hors iOS/Android.
   useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
+    if (!userId || !snapshot.record) return;
+    void syncIosDeviceAdapter(userId, snapshot.record.deviceId);
+    void syncAndroidDeviceAdapter(userId, snapshot.record.deviceId);
+  }, [userId, snapshot.record]);
 
-  useEffect(() => {
-    if (!userId) {
-      setCurrentDeviceUserScope(null);
-      setRecord(null);
-      setPinUnlocked(false);
-      setDeviceId(null);
-      setDeviceIdStatus('uninitialized');
-      return;
-    }
+  const refresh = useCallback(() => { void controllerRef.current?.refresh(); }, []);
+  const retry = useCallback(() => { void controllerRef.current?.retry(); }, []);
+  const startEnrollment = useCallback(() => { void controllerRef.current?.startEnrollment(); }, []);
 
-    setCurrentDeviceUserScope(userId);
-    setRecord('unknown');
-    setPinUnlocked(readPinUnlocked(userId));
-    refresh();
-
-    const unsubscribePin = subscribePinUnlocked(userId, (unlocked) => {
-      if (mountedRef.current) setPinUnlocked(unlocked);
-    });
-
-    const onEvent = () => refresh();
-    REFRESH_EVENTS.forEach((name) => window.addEventListener(name, onEvent));
-    const poll = window.setInterval(onEvent, POLL_MS);
-
-    const channel = supabase
-      .channel(`device-lifecycle-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_devices', filter: `user_id=eq.${userId}` },
-        onEvent,
-      )
-      .subscribe();
-
-    return () => {
-      unsubscribePin();
-      REFRESH_EVENTS.forEach((name) => window.removeEventListener(name, onEvent));
-      window.clearInterval(poll);
-      void supabase.removeChannel(channel);
-    };
-  }, [userId, refresh]);
-
-  // Canonical transition: approved -> bound. The previous lifecycle waited for
-  // bindingStatus='bound' but never actually triggered deviceApi.bind(), which
-  // could leave a freshly bootstrapped primary device stuck forever in
-  // "Finalisation de l'appareil..." with DEVICE_SYNC_REQUIRED.
-  useEffect(() => {
-    if (!userId || !deviceId || record === 'unknown' || !record) return;
-    if (deviceIdStatus !== 'ok') return;
-    if (record.deviceId !== deviceId) return;
-    if (record.approvalStatus !== 'approved') return;
-    if (!record.isActive || record.revokedAt) return;
-    if (record.bindingStatus === 'bound') return;
-    if (record.bindingStatus !== 'pending') return;
-    setTransitionError(null);
-    const startedAt = Date.now();
-    logDeviceLifecycle('bind-account-start', {
-      deviceId,
-      approvalStatus: record.approvalStatus,
-      bindingStatus: record.bindingStatus,
-      routingStatus: record.routingStatus,
-    });
-
-    void deviceApi.bind(userId)
-      .then((updated) => {
-        logDeviceLifecycle('bind-account-success', {
-          deviceId,
-          elapsedMs: Date.now() - startedAt,
-          bindingStatus: updated.bindingStatus,
-          routingStatus: updated.routingStatus,
-          lifecycleStatus: updated.lifecycleStatus,
-        });
-        window.dispatchEvent(new CustomEvent('forsure:device-account-bound', {
-          detail: { userId, deviceId },
-        }));
-        if (mountedRef.current) refresh();
-      })
-      .catch((error) => {
-        if (mountedRef.current) {
-          setTransitionError(error instanceof Error ? error.message : String(error));
-        }
-        logDeviceLifecycle('bind-account-failed', {
-          deviceId,
-          elapsedMs: Date.now() - startedAt,
-          name: error instanceof Error ? error.name : undefined,
-          message: error instanceof Error ? error.message : String(error),
-        }, 'error');
-      })
-      .finally(() => {
-        logDeviceLifecycle('bind-account-finished', {
-          deviceId,
-          elapsedMs: Date.now() - startedAt,
-        });
-      });
-  }, [userId, deviceId, deviceIdStatus, record, refresh]);
-
-  useEffect(() => {
-    if (!userId || !deviceId || record === 'unknown' || !record) return;
-    if (deviceIdStatus !== 'ok') return;
-    if (record.deviceId !== deviceId) return;
-    if (record.approvalStatus !== 'approved' || record.bindingStatus !== 'bound') return;
-    if (!record.isActive || record.revokedAt) return;
-    if (record.routingStatus === 'ready') {
-      logDeviceLifecycle('prepare-keys-skip-ready', { deviceId });
-      return;
-    }
-    setTransitionError(null);
-    const startedAt = Date.now();
-    logDeviceLifecycle('prepare-keys-start', {
-      deviceId,
-      approvalStatus: record.approvalStatus,
-      bindingStatus: record.bindingStatus,
-      routingStatus: record.routingStatus,
-    });
-
-    void deviceApi.prepareKeys(userId)
-      .then((updated) => {
-        logDeviceLifecycle('prepare-keys-success', {
-          deviceId,
-          elapsedMs: Date.now() - startedAt,
-          routingStatus: updated.routingStatus,
-          lifecycleStatus: updated.lifecycleStatus,
-        });
-        window.dispatchEvent(new CustomEvent('forsure:aegis-route-ready', {
-          detail: { userId, deviceId, source: 'deviceApi.prepareKeys' },
-        }));
-        if (mountedRef.current) refresh();
-      })
-      .catch((error) => {
-        if (mountedRef.current) {
-          setTransitionError(error instanceof Error ? error.message : String(error));
-        }
-        logDeviceLifecycle('prepare-keys-failed', {
-          deviceId,
-          elapsedMs: Date.now() - startedAt,
-          name: error instanceof Error ? error.name : undefined,
-          message: error instanceof Error ? error.message : String(error),
-        }, 'error');
-      })
-      .finally(() => {
-        logDeviceLifecycle('prepare-keys-finished', {
-          deviceId,
-          elapsedMs: Date.now() - startedAt,
-        });
-      });
-  }, [userId, deviceId, deviceIdStatus, record, refresh]);
-
-  return useMemo(() => {
-    const { state, reason } = resolveDeviceLifecycleState({
-      authenticated: !!userId,
-      deviceRecord: record,
-      deviceIdStatus,
-      pinUnlocked,
-      pinRequired: PIN_PROTECTION_ENABLED,
-      accountSyncPhase: 'idle',
-    });
-
-    return {
-      state,
-      reason,
-      deviceId,
-      deviceIdStatus,
-      record: record === 'unknown' ? null : record,
-      loading: record === 'unknown',
-      pinUnlocked: PIN_PROTECTION_ENABLED ? pinUnlocked : true,
-      canPromptForPin: canPromptForPin(state),
-      canRunDeviceKeySetup: canRunDeviceKeySetup(state),
-      canRunCryptoRuntime: canRunCryptoRuntime(state),
-      needsApprovalUi: requiresDeviceApprovalUi(state),
-      transitionError,
-      refresh,
-    };
-  }, [userId, record, deviceIdStatus, deviceId, pinUnlocked, transitionError, refresh]);
+  return useMemo(() => ({
+    ...snapshot,
+    transitionError: snapshot.error,
+    refresh,
+    retry,
+    startEnrollment,
+  }), [snapshot, refresh, retry, startEnrollment]);
 }
