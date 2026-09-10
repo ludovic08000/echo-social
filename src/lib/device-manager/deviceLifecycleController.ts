@@ -186,6 +186,7 @@ export class DeviceLifecycleController {
     this.teardown.push(deps.subscribePinUnlocked(userId, (unlocked) => {
       if (this.disposed || this.pinUnlocked === unlocked) return;
       this.pinUnlocked = unlocked;
+      this.trace(unlocked ? 'pin_unlocked' : 'pin_locked', 'info');
       this.publish();
       void this.advance();
     }));
