@@ -72,11 +72,9 @@ export async function provisionLibsignalDevice(userId: string, deviceId: string)
   const existing = Number(countData ?? 0);
   if (existing >= BUNDLE_BATCH / 2) return;
   const requestedRegistrationId = randomId();
-  try {
-    await createLibsignalStore({ userId, deviceId, registrationId: requestedRegistrationId });
-  } catch (error) {
-    if (!String(error).includes('STORE')) throw error;
-  }
+  // La création est déjà idempotente : toute erreur de lecture/scellement doit
+  // arrêter la publication, jamais être masquée par le mot « STORE ».
+  await createLibsignalStore({ userId, deviceId, registrationId: requestedRegistrationId });
   const missing = BUNDLE_BATCH - existing;
   let nextBundle = 0;
   // Invariant cryptographique : chaque privé reste scellé avant publication,
