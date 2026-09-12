@@ -71,4 +71,14 @@ describe('libsignal device provisioning', () => {
     expect(mocks.createStore).not.toHaveBeenCalled();
     expect(mocks.createBundle).not.toHaveBeenCalled();
   });
+
+  it('stops before publishing if private store persistence fails', async () => {
+    mocks.rpc.mockImplementation((name: string) => ({
+      abortSignal: async () => ({ data: name === 'get_libsignal_device_number' ? 1 : 0, error: null }),
+    }));
+    mocks.createStore.mockRejectedValue(new Error('AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED'));
+    await expect(provisionLibsignalDevice('user-id', 'device-id')).rejects.toThrow('STORE_COMMIT_FAILED');
+    expect(mocks.createBundle).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
 });

@@ -29,7 +29,10 @@ export async function encryptForLibsignalDevice(args: { conversationId: string; 
     const encrypted = await attempt();
     return encodeLibsignalWire(encrypted.messageType, encrypted.ciphertext);
   } catch (error) {
-    if (!String(error).includes('SessionNotFound') && !String(error).includes('session not found')) throw error;
+    // Libsignal inclut l'adresse dans « session with … not found: … ».
+    // Seule l'absence de session autorise un bootstrap, jamais une autre erreur.
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/\bSessionNotFound\b|\bsession(?: with [^\r\n]+)? not found(?:\b|:)/.test(message)) throw error;
   }
   const { data, error } = await (supabase as any).rpc('claim_libsignal_prekey_bundle', {
     p_user_id: args.remoteUserId,
