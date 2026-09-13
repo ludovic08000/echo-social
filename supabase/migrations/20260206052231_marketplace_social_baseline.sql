@@ -2,12 +2,8 @@
 -- Invariant corrigé : ces tables existent en production mais n'étaient créées
 -- par aucune migration, ce qui cassait tout reset à neuf (supabase db reset).
 
-DO $$ BEGIN CREATE TYPE public.app_role AS ENUM ('admin','moderator','user'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE TYPE public.friendship_status AS ENUM ('pending','accepted','rejected'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE TYPE public.notification_type AS ENUM ('like','comment','reaction','friend_request','friend_accepted','message','story_view','sale','new_device'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE public.order_status AS ENUM ('pending','paid','processing','shipped','delivered','cancelled','refunded'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE public.product_type AS ENUM ('physical','digital','service'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE TYPE public.reaction_type AS ENUM ('like','love','haha','wow','sad','angry'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE TABLE IF NOT EXISTS public.account_deletion_requests (
   id uuid DEFAULT gen_random_uuid() NOT NULL,
