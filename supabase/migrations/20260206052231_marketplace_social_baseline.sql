@@ -252,3 +252,5 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS city text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS website_url text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS profile_type text DEFAULT 'user'::text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS cover_position_y integer DEFAULT 50;
+ALTER TABLE public.user_devices ADD COLUMN IF NOT EXISTS platform text;
+ALTER TABLE public.user_devices ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT false;
