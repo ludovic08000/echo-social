@@ -54,6 +54,7 @@ on public.device_copy_retry_requests (message_id);
 
 -- Receiver calls this when it cannot decrypt an existing copy. It verifies the
 -- parent message sender, then creates/refreshes a pending request.
+drop function if exists public.request_device_copy_retry(uuid, uuid, text);
 create or replace function public.request_device_copy_retry(
   p_message_id uuid,
   p_sender_user_id uuid,

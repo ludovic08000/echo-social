@@ -10,6 +10,7 @@
 -- 3-DH X3DH path with IK + EK + SPK only. This is preferable to advertising
 -- unusable OPKs.
 
+drop function if exists public.claim_device_one_time_prekey(uuid, text);
 create or replace function public.claim_device_one_time_prekey(
   p_user_id uuid,
   p_device_id text

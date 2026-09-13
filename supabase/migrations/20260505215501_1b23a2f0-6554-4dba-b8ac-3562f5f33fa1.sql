@@ -145,6 +145,7 @@ END;
 $$;
 
 -- Existing device fetches a request to display for approval
+DROP FUNCTION IF EXISTS public.get_device_link_request_for_approval(text);
 CREATE OR REPLACE FUNCTION public.get_device_link_request_for_approval(
   p_token_hash text
 ) RETURNS TABLE(
