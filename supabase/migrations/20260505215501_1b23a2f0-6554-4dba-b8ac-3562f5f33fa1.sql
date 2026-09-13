@@ -75,6 +75,9 @@ CREATE POLICY "deny_all_device_link_requests"
   USING (false) WITH CHECK (false);
 
 -- Cleanup helper
+-- Le type de retour passe d'integer à void : PostgreSQL impose de recréer la fonction.
+-- Sans CASCADE : toute dépendance inattendue doit bloquer le rejeu, pas être supprimée.
+DROP FUNCTION IF EXISTS public.cleanup_expired_device_link_requests();
 CREATE OR REPLACE FUNCTION public.cleanup_expired_device_link_requests()
 RETURNS void
 LANGUAGE plpgsql
