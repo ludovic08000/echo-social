@@ -74,6 +74,7 @@ CREATE POLICY "deny_all_device_link_requests"
   ON public.device_link_requests FOR ALL
   USING (false) WITH CHECK (false);
 
+DROP FUNCTION IF EXISTS public.cleanup_expired_device_link_requests();
 -- Cleanup helper
 CREATE OR REPLACE FUNCTION public.cleanup_expired_device_link_requests()
 RETURNS void
