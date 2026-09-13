@@ -17,15 +17,6 @@ CREATE TABLE IF NOT EXISTS public.account_deletion_requests (
   completed_at timestamp with time zone
 );
 
-CREATE TABLE IF NOT EXISTS public.anonymous_wall_messages (
-  id uuid DEFAULT gen_random_uuid() NOT NULL,
-  target_user_id uuid NOT NULL,
-  author_id uuid NOT NULL,
-  message text NOT NULL,
-  is_approved boolean DEFAULT false NOT NULL,
-  created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS public.cart_items (
   id uuid DEFAULT gen_random_uuid() NOT NULL,
   user_id uuid NOT NULL,
@@ -190,7 +181,6 @@ CREATE TABLE IF NOT EXISTS public.tips (
 );
 
 DO $$ BEGIN ALTER TABLE public.account_deletion_requests ADD CONSTRAINT account_deletion_requests_pkey PRIMARY KEY (id); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.anonymous_wall_messages ADD CONSTRAINT anonymous_wall_messages_pkey PRIMARY KEY (id); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.cart_items ADD CONSTRAINT cart_items_pkey PRIMARY KEY (id); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.group_members ADD CONSTRAINT group_members_pkey PRIMARY KEY (id); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.groups ADD CONSTRAINT groups_pkey PRIMARY KEY (id); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
@@ -211,8 +201,8 @@ DO $$ BEGIN ALTER TABLE public.cart_items ADD CONSTRAINT cart_items_quantity_che
 DO $$ BEGIN ALTER TABLE public.group_members ADD CONSTRAINT group_members_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'moderator'::text, 'member'::text]))); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.groups ADD CONSTRAINT groups_privacy_check CHECK ((privacy = ANY (ARRAY['public'::text, 'private'::text, 'secret'::text]))); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.page_admins ADD CONSTRAINT page_admins_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'editor'::text, 'moderator'::text]))); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.products ADD CONSTRAINT products_compare_at_price_check CHECK ((compare_at_price >= (0)::numeric)); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.products ADD CONSTRAINT products_price_check CHECK ((price >= (0)::numeric)); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.products ADD CONSTRAINT products_compare_at_price_check CHECK ((compare_at_price >= (0)::numeric)); EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.cart_items ADD CONSTRAINT cart_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE; EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.group_members ADD CONSTRAINT group_members_group_id_fkey FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE; EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.order_items ADD CONSTRAINT order_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
@@ -224,9 +214,6 @@ DO $$ BEGIN ALTER TABLE public.products ADD CONSTRAINT products_seller_id_fkey F
 ALTER TABLE public.account_deletion_requests ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.account_deletion_requests TO authenticated;
 GRANT ALL ON public.account_deletion_requests TO service_role;
-ALTER TABLE public.anonymous_wall_messages ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.anonymous_wall_messages TO authenticated;
-GRANT ALL ON public.anonymous_wall_messages TO service_role;
 ALTER TABLE public.cart_items ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cart_items TO authenticated;
 GRANT ALL ON public.cart_items TO service_role;
@@ -259,5 +246,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.tips TO authenticated;
 GRANT ALL ON public.tips TO service_role;
 
 -- Colonnes présentes en production mais absentes de l historique de migrations.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS cover_url text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS date_of_birth date;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS city text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS website_url text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS profile_type text DEFAULT 'user'::text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS cover_position_y integer DEFAULT 50;
