@@ -2,6 +2,9 @@
 -- Ces tables existent en production mais aucune migration ne les créait :
 -- le reset à neuf (supabase db reset) échouait sur les ALTER TABLE suivants.
 
+DO $$ BEGIN CREATE TYPE public.order_status AS ENUM ('pending','paid','processing','shipped','delivered','cancelled','refunded'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE public.product_type AS ENUM ('physical','digital','service'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 CREATE TABLE IF NOT EXISTS public.account_deletion_requests (
   id uuid DEFAULT gen_random_uuid() NOT NULL,
   user_id uuid NOT NULL,
