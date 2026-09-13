@@ -74,6 +74,7 @@ CREATE POLICY "deny_all_device_link_requests"
   ON public.device_link_requests FOR ALL
   USING (false) WITH CHECK (false);
 
+DROP FUNCTION IF EXISTS public.cleanup_expired_device_link_requests();
 -- Cleanup helper
 CREATE OR REPLACE FUNCTION public.cleanup_expired_device_link_requests()
 RETURNS void
@@ -144,6 +145,7 @@ END;
 $$;
 
 -- Existing device fetches a request to display for approval
+DROP FUNCTION IF EXISTS public.get_device_link_request_for_approval(text);
 CREATE OR REPLACE FUNCTION public.get_device_link_request_for_approval(
   p_token_hash text
 ) RETURNS TABLE(

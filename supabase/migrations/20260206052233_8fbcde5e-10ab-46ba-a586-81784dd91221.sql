@@ -14,9 +14,9 @@ ALTER TABLE public.profiles ADD COLUMN profile_music_url text DEFAULT NULL;
 -- =============================================
 -- PHASE 3: Mode Fantôme + Détox digitale
 -- =============================================
-ALTER TABLE public.privacy_settings ADD COLUMN ghost_mode boolean NOT NULL DEFAULT false;
-ALTER TABLE public.privacy_settings ADD COLUMN detox_schedule jsonb DEFAULT NULL;
-ALTER TABLE public.privacy_settings ADD COLUMN daily_limit_minutes integer DEFAULT NULL;
+ALTER TABLE public.privacy_settings ADD COLUMN IF NOT EXISTS ghost_mode boolean NOT NULL DEFAULT false;
+ALTER TABLE public.privacy_settings ADD COLUMN IF NOT EXISTS detox_schedule jsonb DEFAULT NULL;
+ALTER TABLE public.privacy_settings ADD COLUMN IF NOT EXISTS daily_limit_minutes integer DEFAULT NULL;
 
 -- =============================================
 -- PHASE 4: Posts éphémères + Capsule temporelle
