@@ -147,6 +147,8 @@ END;
 $$;
 
 -- Existing device fetches a request to display for approval
+-- Les colonnes OUT changent également : recréer la signature sans CASCADE.
+DROP FUNCTION IF EXISTS public.get_device_link_request_for_approval(text);
 CREATE OR REPLACE FUNCTION public.get_device_link_request_for_approval(
   p_token_hash text
 ) RETURNS TABLE(
@@ -221,6 +223,8 @@ END;
 $$;
 
 -- New device pulls approved payload
+-- La colonne OUT approved_at disparaît dans cette révision historique.
+DROP FUNCTION IF EXISTS public.get_approved_device_link_payload(text, text);
 CREATE OR REPLACE FUNCTION public.get_approved_device_link_payload(
   p_token_hash text,
   p_requester_device_id text
