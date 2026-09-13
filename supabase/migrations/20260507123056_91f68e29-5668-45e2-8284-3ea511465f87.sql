@@ -65,6 +65,8 @@ $$;
 GRANT EXECUTE ON FUNCTION public.ensure_user_crypto_state() TO authenticated;
 
 -- ── RPC: mark_user_crypto_ready ────────────────────────────────────────────
+-- Le DEFAULT NULL de la définition initiale est retiré : recréer sans CASCADE.
+DROP FUNCTION IF EXISTS public.mark_user_crypto_ready(text);
 CREATE OR REPLACE FUNCTION public.mark_user_crypto_ready(p_fingerprint text)
 RETURNS public.user_crypto_state
 LANGUAGE plpgsql
