@@ -1,6 +1,9 @@
 begin;
 
-select plan(9);
+select plan(10);
+
+select has_column('public', 'user_crypto_state', 'fingerprint',
+  'derived crypto state can persist the active fingerprint');
 
 select ok(
   to_regprocedure('public.sync_active_account_identity_v1()') is not null,

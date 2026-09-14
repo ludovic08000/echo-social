@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS public.user_crypto_state (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- CREATE IF NOT EXISTS ne complète pas la table créée en février.
+ALTER TABLE public.user_crypto_state ADD COLUMN IF NOT EXISTS fingerprint text;
 ALTER TABLE public.user_crypto_state ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "user_crypto_state_select_own" ON public.user_crypto_state;

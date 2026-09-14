@@ -357,12 +357,12 @@ export function aegis_wasm_ratchet_decrypt(chain_key, aad, iv, ciphertext) {
     return v5;
 }
 
-function __wbg_adapter_6(arg0, arg1, arg2) {
-    wasm.closure109_externref_shim(arg0, arg1, arg2);
+function __wbg_adapter_8(arg0, arg1, arg2) {
+    wasm.closure113_externref_shim(arg0, arg1, arg2);
 }
 
 function __wbg_adapter_34(arg0, arg1, arg2, arg3) {
-    wasm.closure172_externref_shim(arg0, arg1, arg2, arg3);
+    wasm.closure176_externref_shim(arg0, arg1, arg2, arg3);
 }
 
 const EXPECTED_RESPONSE_TYPES = new Set(['basic', 'cors', 'default']);
@@ -495,9 +495,9 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_cast_344fafcc5114bf2d = function(arg0, arg1) {
-        // Cast intrinsic for `Closure(Closure { dtor_idx: 108, function: Function { arguments: [Externref], shim_idx: 109, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-        const ret = makeMutClosure(arg0, arg1, 108, __wbg_adapter_6);
+    imports.wbg.__wbindgen_cast_5f9a13552260be22 = function(arg0, arg1) {
+        // Cast intrinsic for `Closure(Closure { dtor_idx: 112, function: Function { arguments: [Externref], shim_idx: 113, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+        const ret = makeMutClosure(arg0, arg1, 112, __wbg_adapter_8);
         return ret;
     };
     imports.wbg.__wbindgen_cast_77bc3e92745e9a35 = function(arg0, arg1) {

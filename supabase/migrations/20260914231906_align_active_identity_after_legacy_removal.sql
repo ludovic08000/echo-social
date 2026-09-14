@@ -1,5 +1,7 @@
 begin;
 
+alter table public.user_crypto_state add column if not exists fingerprint text;
+
 -- Réparer aussi les bases ayant déjà appliqué les migrations historiques.
 drop trigger if exists sync_identity_root_primary_device_v1 on public.user_devices;
 drop function if exists public.sync_identity_root_primary_device_v1();
