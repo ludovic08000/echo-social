@@ -60,6 +60,8 @@ where exists (
 );
 
 -- Sender-side device listing. Never advertise quarantined devices as targets.
+-- Le résultat change de structure : recréer la signature sans CASCADE.
+drop function if exists public.list_active_devices_for_user(uuid);
 create or replace function public.list_active_devices_for_user(p_user_id uuid)
 returns table (
   device_id text,
@@ -92,6 +94,8 @@ $$;
 grant execute on function public.list_active_devices_for_user(uuid) to authenticated;
 
 -- X3DH bundle resolver. Never return a SPK for a quarantined device.
+-- Le résultat change de structure : recréer la signature sans CASCADE.
+drop function if exists public.get_device_prekey_bundle(uuid, text);
 create or replace function public.get_device_prekey_bundle(
   p_user_id uuid,
   p_device_id text

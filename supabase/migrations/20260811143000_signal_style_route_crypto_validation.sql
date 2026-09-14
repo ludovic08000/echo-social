@@ -531,6 +531,8 @@ grant execute on function public.publish_device_signed_prekey(text,integer,text,
 
 -- Route resolution is fail-closed on the actual cryptographic trust chain, not
 -- merely on the presence of signature columns/status flags.
+-- Le résultat change de structure : recréer la signature sans CASCADE.
+drop function if exists public.get_sesame_device_list(uuid);
 create or replace function public.get_sesame_device_list(p_user_id uuid)
 returns table(
   device_id text,

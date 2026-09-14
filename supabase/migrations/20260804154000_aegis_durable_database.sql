@@ -143,6 +143,8 @@ from public.message_device_copies copy
 join public.messages message on message.id = copy.message_id
 on conflict (copy_id) do nothing;
 
+-- Le résultat change de structure : recréer la signature sans CASCADE.
+drop function if exists public.aegis_sync_device(text, integer);
 create or replace function public.aegis_sync_device(
   p_device_id text,
   p_limit integer default 100
@@ -318,6 +320,8 @@ grant execute on function public.aegis_ack_device_messages(
   text, uuid[], boolean
 ) to authenticated;
 
+-- Le résultat change de structure : recréer la signature sans CASCADE.
+drop function if exists public.aegis_prune_device_inbox();
 create or replace function public.aegis_prune_device_inbox()
 returns jsonb
 language plpgsql

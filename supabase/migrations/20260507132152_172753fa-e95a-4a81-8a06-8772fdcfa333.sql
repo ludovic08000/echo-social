@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS public.e2ee_transparency_log (
   included_in_epoch BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- CREATE TABLE IF NOT EXISTS ne complète pas une table déjà créée.
+ALTER TABLE public.e2ee_transparency_log
+  ADD COLUMN IF NOT EXISTS leaf_hash text,
+  ADD COLUMN IF NOT EXISTS included_in_epoch bigint;
 CREATE INDEX IF NOT EXISTS idx_kt_log_user ON public.e2ee_transparency_log(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_kt_log_pending ON public.e2ee_transparency_log(included_in_epoch) WHERE included_in_epoch IS NULL;
 
