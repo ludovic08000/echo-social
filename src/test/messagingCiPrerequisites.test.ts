@@ -2,6 +2,18 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('messaging CI prerequisites', () => {
+  it('creates WebAuthn tables and locks down access before the first recovery RPC', () => {
+    const sql = readFileSync('supabase/migrations/20260810053000_webauthn_device_rpc_recovery.sql', 'utf8');
+    const firstRpc = sql.indexOf('create or replace function public.webauthn_begin_device_registration');
+    expect(firstRpc).toBeGreaterThan(0);
+    const schema = sql.slice(0, firstRpc);
+    for (const name of ['webauthn_device_challenges', 'webauthn_device_credentials', 'webauthn_device_vaults']) {
+      expect(schema).toContain(`create table if not exists public.${name}`);
+      expect(schema).toContain(`alter table public.${name} enable row level security`);
+      expect(schema).toContain(`revoke all on public.${name} from anon, authenticated`);
+    }
+  });
+
   it.each([
     '20260805131000_revoke_ios_device_id_collision.sql',
     '20260805133346_f6723fd3-78ae-4981-a796-398123c36a0b.sql',
