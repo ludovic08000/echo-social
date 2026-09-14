@@ -51,15 +51,15 @@ select ok(
 
 select ok(
   position(
-    'insert into public.user_identity_roots'
+    'public.user_identity_roots'
     in lower(pg_get_functiondef(to_regprocedure('public.sync_active_account_identity_v1()')))
-  ) > 0,
-  'active root aligns the legacy identity-root registry'
+  ) = 0,
+  'active identity never accesses the retired root registry'
 );
 
 select ok(
-  to_regprocedure('public.sync_identity_root_primary_device_v1()') is not null
-  and exists (
+  to_regprocedure('public.sync_identity_root_primary_device_v1()') is null
+  and not exists (
     select 1
       from pg_trigger trigger
       join pg_class relation on relation.oid = trigger.tgrelid
@@ -69,23 +69,19 @@ select ok(
        and trigger.tgname = 'sync_identity_root_primary_device_v1'
        and not trigger.tgisinternal
   ),
-  'surviving device refreshes the legacy primary-device pointer'
+  'retired primary-device alignment is no longer executable'
 );
 
 select ok(
-  position(
-    'generation = greatest(generation, new.identity_epoch)'
-    in lower(pg_get_functiondef(to_regprocedure('public.sync_identity_root_primary_device_v1()')))
-  ) > 0,
-  'device alignment never lowers the legacy identity generation'
+  to_regclass('public.user_identity_roots') is null
+  and to_regclass('public.user_device_signatures') is null,
+  'retired identity registries stay absent'
 );
 
 select ok(
-  position(
-    'set is_primary = (device.device_id = new.device_id)'
-    in lower(pg_get_functiondef(to_regprocedure('public.sync_identity_root_primary_device_v1()')))
-  ) > 0,
-  'rotated account keeps exactly one primary device marker'
+  not has_function_privilege('anon', 'public.sync_active_account_identity_v1()', 'execute')
+  and not has_function_privilege('authenticated', 'public.sync_active_account_identity_v1()', 'execute'),
+  'identity alignment is internal, never a client RPC'
 );
 
 select * from finish();

@@ -281,6 +281,18 @@ export async function captureLibsignalStore(userId: string, deviceId: string): P
   return withNativeStoreLock(userId, deviceId, () => loadNativeStore(userId, deviceId));
 }
 
+/** Une clé de signature présente ne prouve pas la présence du store Libsignal. */
+export async function hasLibsignalStore(userId: string, deviceId: string): Promise<boolean> {
+  try {
+    await captureLibsignalStore(userId, deviceId);
+    return true;
+  } catch (error) {
+    // Seule l'absence explicite autorise la récupération ; jamais une erreur du coffre.
+    if (error instanceof Error && error.message === 'AEGIS_LIBSIGNAL_STORE_MISSING') return false;
+    throw error;
+  }
+}
+
 export async function restoreLibsignalStore(userId: string, deviceId: string, bytes: string): Promise<void> {
   if (!nativePlatform()) return restoreWasmStore(userId, deviceId, bytes);
   if (!bytes) throw new Error('AEGIS_LIBSIGNAL_STORE_INVALID');

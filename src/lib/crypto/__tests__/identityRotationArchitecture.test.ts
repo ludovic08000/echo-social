@@ -158,12 +158,12 @@ describe('account identity rotation v1 architecture', () => {
     expect(client).toContain('IDENTITY_ROTATION_BACKUP_SYNC_REQUIRED');
   });
 
-  it('aligns every derived account-identity registry', () => {
+  it('aligns active account state without reviving retired identity registries', () => {
     expect(alignmentMigration).toContain('insert into public.user_crypto_state');
-    expect(alignmentMigration).toContain('insert into public.user_identity_roots');
+    expect(alignmentMigration).not.toContain('public.user_identity_roots');
     expect(alignmentMigration).toContain('create trigger sync_active_account_identity_v1');
-    expect(alignmentMigration).toContain('create trigger sync_identity_root_primary_device_v1');
-    expect(alignmentMigration).toContain('greatest(generation, new.identity_epoch)');
+    expect(alignmentMigration).toContain('drop trigger if exists sync_identity_root_primary_device_v1');
+    expect(alignmentMigration).not.toContain('is_primary');
   });
 
   it('exposes only an explicit PIN-gated destructive UI action', () => {

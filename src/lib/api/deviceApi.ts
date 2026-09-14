@@ -32,6 +32,7 @@ import {
 import { submitAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecision';
 import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
+import { hasLibsignalStore } from '@/lib/crypto/libsignalPlatformBridge';
 import {
   refillDeviceOneTimePrekeysIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
@@ -384,7 +385,7 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
     traced('load_identity', () => loadDeviceIdentity(userId, record.deviceId)),
     traced('load_kx', () => loadDeviceKxKey(record.deviceId, userId)),
   ]);
-  if (!identity || !kx) {
+  if (!identity || !kx || !await traced('check_libsignal_store', () => hasLibsignalStore(userId, record.deviceId))) {
     // iOS Web : Safari peut purger l'IndexedDB. On restaure le coffre scellé
     // du MÊME DeviceID déjà approuvé, sans jamais en créer un nouveau.
     const restored = await traced('restore_ios_vault', () => ensureIosDeviceVaultRestored(userId));
@@ -394,7 +395,8 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
         traced('reload_ios_kx', () => loadDeviceKxKey(record.deviceId, userId)),
       ]);
     }
-    if ((!identity || !kx) && await traced('restore_android_vault', () => restoreAndroidDeviceVault(userId))) {
+    if ((!identity || !kx || !await hasLibsignalStore(userId, record.deviceId))
+      && await traced('restore_android_vault', () => restoreAndroidDeviceVault(userId))) {
       [identity, kx] = await Promise.all([
         traced('reload_android_identity', () => loadDeviceIdentity(userId, record.deviceId)),
         traced('reload_android_kx', () => loadDeviceKxKey(record.deviceId, userId)),

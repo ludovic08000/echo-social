@@ -38,10 +38,6 @@ begin
   where user_id = v_user_id
     and device_id = v_device_id;
 
-  delete from public.user_device_signatures
-  where user_id = v_user_id
-    and (device_id = v_device_id or primary_device_id = v_device_id);
-
   update public.device_enrollment_challenges
   set cancelled_at = coalesce(cancelled_at, now()),
       cancel_reason = coalesce(cancel_reason, 'cross_platform_device_id_collision')

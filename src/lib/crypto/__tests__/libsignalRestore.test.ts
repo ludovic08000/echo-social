@@ -14,7 +14,7 @@ vi.mock('../libsignalStoreLock', () => ({ withLibsignalStoreLock: mocks.lock }))
 vi.mock('@/lib/device-manager/deviceFinalizationTrace', () => ({
   traceFinalizationOperation: (_name: string, work: () => unknown) => work(),
 }));
-import { restoreLibsignalStore } from '../libsignalPlatformBridge';
+import { hasLibsignalStore, restoreLibsignalStore } from '../libsignalPlatformBridge';
 
 describe.each([false, true])('Libsignal restoration (native=%s)', native => {
   const id = 'aegis.libsignal.store:alice:phone';
@@ -31,6 +31,13 @@ describe.each([false, true])('Libsignal restoration (native=%s)', native => {
     expect(mocks.records.get(id)).toEqual({ bytes: 'AQID' });
     expect(mocks.read).toHaveBeenCalledTimes(2);
     expect(mocks.lock).toHaveBeenCalledWith('alice', 'phone', expect.any(Function));
+  });
+  it('distinguishes an absent store from an unreadable vault', async () => {
+    await expect(hasLibsignalStore('alice', 'phone')).resolves.toBe(false);
+    mocks.read.mockRejectedValueOnce(new Error('vault locked'));
+    await expect(hasLibsignalStore('alice', 'phone')).rejects.toThrow('vault locked');
+    mocks.records.set(id, { bytes: 'AQID' });
+    await expect(hasLibsignalStore('alice', 'phone')).resolves.toBe(true);
   });
   it('is idempotent without writing an identical store again', async () => {
     mocks.records.set(id, { bytes: 'AQID' });

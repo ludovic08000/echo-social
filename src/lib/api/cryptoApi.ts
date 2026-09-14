@@ -1,5 +1,6 @@
 import { deviceApi, type DeviceApiSnapshot } from '@/lib/api/deviceApi';
 import { readPinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
+import { hasLibsignalStore } from '@/lib/crypto/libsignalPlatformBridge';
 
 export type CryptoApiState =
   | 'locked'
@@ -45,13 +46,20 @@ async function ensureReady(userId: string): Promise<CryptoApiSnapshot> {
     snapshot = await deviceApi.getState(userId);
   }
 
-  if (snapshot.state === 'key_setup_required') {
+  // Le serveur peut encore annoncer READY après une perte locale du store.
+  if (snapshot.state === 'key_setup_required'
+    || (snapshot.state === 'ready' && snapshot.record
+      && !await hasLibsignalStore(userId, snapshot.record.deviceId))) {
     await deviceApi.prepareKeys(userId);
     snapshot = await deviceApi.getState(userId);
   }
 
   if (snapshot.state !== 'ready') {
     throw new Error(`CRYPTO_NOT_READY:${snapshot.state}`);
+  }
+
+  if (!snapshot.record || !await hasLibsignalStore(userId, snapshot.record.deviceId)) {
+    throw new Error('AEGIS_LIBSIGNAL_STORE_MISSING');
   }
 
   return { state: 'ready', device: snapshot };

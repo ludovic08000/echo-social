@@ -41,7 +41,7 @@ interface PlainDeviceVault {
   kx: StoredDeviceKxRecovery;
   x3dh: X3dhPrivatePrekeySnapshot;
   sessions: DeviceSessionSnapshot;
-  libsignalStore?: string;
+  libsignalStore: string;
   createdAt: number;
 }
 
@@ -239,9 +239,7 @@ export async function restoreEncryptedWebDeviceVault(args: {
     || !validateSigningRecord(plain.signing, userId, deviceId)
     || !validateKxRecord(plain.kx, userId, deviceId)
     || !Array.isArray(plain.x3dh?.records)
-    || (plain.libsignalStore !== undefined && (
-      typeof plain.libsignalStore !== 'string' || plain.libsignalStore.length < 32
-    ))
+    || typeof plain.libsignalStore !== 'string' || plain.libsignalStore.length < 32
     || (plain.sessions !== undefined && (
       !Array.isArray(plain.sessions?.sessions)
       || !Array.isArray(plain.sessions?.initiating)
@@ -253,10 +251,8 @@ export async function restoreEncryptedWebDeviceVault(args: {
     throw new Error('WEBAUTHN_DEVICE_VAULT_KEY_MISMATCH');
   }
   // Refuser un recul Libsignal avant de modifier les autres clés du coffre.
-  if (plain.libsignalStore) {
-    const { restoreLibsignalStore } = await import('@/lib/crypto/libsignalPlatformBridge');
-    await restoreLibsignalStore(userId, deviceId, plain.libsignalStore);
-  }
+  const { restoreLibsignalStore } = await import('@/lib/crypto/libsignalPlatformBridge');
+  await restoreLibsignalStore(userId, deviceId, plain.libsignalStore);
   // Restauration : les clés reviennent dans le coffre scellé, jamais en clair sur web.
   await writeDeviceVaultRecord(plain.signing.id, plain.signing);
   await writeDeviceVaultRecord(plain.kx.id, plain.kx);

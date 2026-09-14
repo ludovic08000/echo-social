@@ -32,6 +32,8 @@ vi.mock('@/lib/crypto/deviceKx', () => ({
   loadDeviceKxKey: async () => state.localKeys ? ({ publicB64: 'kx' }) : null,
 }));
 
+vi.mock('@/lib/crypto/libsignalPlatformBridge', () => ({ hasLibsignalStore: async () => true }));
+
 vi.mock('@/lib/crypto/canonicalDeviceRegistry', () => ({
   fetchVerifiedDeviceIdentity: async () => null,
 }));

@@ -1,4 +1,5 @@
 BEGIN;
+SELECT plan(1);
 DO $test$
 DECLARE sample text;
 BEGIN
@@ -21,4 +22,6 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 END $test$;
+SELECT pass('Libsignal wire validation, table constraint and send privileges');
+SELECT * FROM finish();
 ROLLBACK;
