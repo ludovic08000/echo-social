@@ -19,6 +19,7 @@ import initWasm, {
 } from './wasm/generated/aegis_crypto.js';
 import { readDeviceVaultRecord, writeDeviceVaultRecord } from './deviceVault';
 import { base64ToBuffer, bufferToBase64 } from './utils';
+import { traceFinalizationOperation } from '@/lib/device-manager/deviceFinalizationTrace';
 
 const EXPECTED_ABI = 1;
 const LIBSIGNAL_STORE_PREFIX = 'aegis.libsignal.store:';
@@ -90,7 +91,7 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 async function loadStore(userId: string, deviceId: string): Promise<Uint8Array> {
-  const record = await readDeviceVaultRecord(vaultId(userId, deviceId), validStore);
+  const record = await traceFinalizationOperation('wasm.vault_read', () => readDeviceVaultRecord(vaultId(userId, deviceId), validStore), { userId, deviceId });
   if (!record) throw new Error('AEGIS_LIBSIGNAL_STORE_MISSING');
   return new Uint8Array(base64ToBuffer(record.bytes));
 }
@@ -98,15 +99,15 @@ async function loadStore(userId: string, deviceId: string): Promise<Uint8Array> 
 async function commitStore(userId: string, deviceId: string, bytes: Uint8Array): Promise<void> {
   const id = vaultId(userId, deviceId);
   const record = { bytes: toBase64(bytes) } satisfies SealedLibsignalStore;
-  await writeDeviceVaultRecord(id, record);
-  const readback = await readDeviceVaultRecord(id, validStore);
+  await traceFinalizationOperation('wasm.vault_write', () => writeDeviceVaultRecord(id, record), { userId, deviceId });
+  const readback = await traceFinalizationOperation('wasm.vault_readback', () => readDeviceVaultRecord(id, validStore), { userId, deviceId });
   if (!readback || readback.bytes !== record.bytes) throw new Error('AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED');
 }
 
 export async function initializeAegisWasm(): Promise<void> {
   ensureWebAssemblyRuntime();
   initPromise ??= (async () => {
-    await initWasm();
+    await traceFinalizationOperation('wasm.initialize', () => initWasm());
     if (aegis_wasm_abi_version() !== EXPECTED_ABI) {
       throw new Error('AEGIS_WASM_ABI_MISMATCH');
     }
@@ -132,9 +133,11 @@ export async function createLibsignalBundle(args: { userId: string; deviceId: st
   await initializeAegisWasm();
   return withStoreLock(args.userId, args.deviceId, async () => {
     const store = await loadStore(args.userId, args.deviceId);
-    const [nextStore, publicBundle] = unpackParts(await aegis_wasm_bundle_create(store, args.deviceNumber, args.preKeyId, args.signedPreKeyId, args.kyberPreKeyId), 2);
-  // Publication interdite tant que le store contenant les privés n'est pas durable.
-  await commitStore(args.userId, args.deviceId, nextStore);
+    const [nextStore, publicBundle] = unpackParts(await traceFinalizationOperation('wasm.bundle_crypto',
+      () => aegis_wasm_bundle_create(store, args.deviceNumber, args.preKeyId, args.signedPreKeyId, args.kyberPreKeyId),
+      { userId: args.userId, deviceId: args.deviceId }), 2);
+    // Publication interdite tant que le store contenant les privés n'est pas durable.
+    await commitStore(args.userId, args.deviceId, nextStore);
     return publicBundle;
   });
 }
