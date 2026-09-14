@@ -1,5 +1,49 @@
 # Audit des anciens systèmes de messagerie — 14 septembre 2026
 
+## Retrait autorisé des modules restants — 15 septembre
+
+Après autorisation explicite, suppression de deviceRatchet.ts,
+x3dhRatchetBootstrap.ts, repeatablePreKeyEnvelope.ts et de leurs sept tests
+dédiés. Le réexport inutilisé et les mocks obsolètes ont été retirés ; un
+contrôle libsignalOnly interdit leur réintroduction. Les tests du vrai WASM
+couvrent les ratchets, le renouvellement, les messages retardés et les rejets.
+Les fichiers supprimés restent récupérables dans l'historique Git.
+
+Sauvegardes cloud : capture, upload et relecture sont sérialisés par appareil.
+La finalisation iOS demande une capture fraîche après provisionnement, sans
+réutiliser une sauvegarde antérieure en vol. Les backups prématurés de
+prepareKeys sont retirés. Trois tests vérifient ordre, relecture et reprise.
+
+Validation locale du lot : 151 fichiers, 763 tests réussis et 3 ignorés,
+TypeScript app/node, build, lint ciblé et vrai WASM réussis. Cette validation
+ne prouve pas la récupération après perte complète du coffre, ni le succès
+du rejeu SQL et des parcours sur appareils réels. Aucune fusion autorisée.
+
+## Complément du 15 septembre : renouvellement des sessions Libsignal
+
+Les événements de sécurité, la rotation d'identité, la révocation depuis
+deviceApi et realtimeKeySync ciblent désormais libsignalSessionFreshness.
+Un marqueur scellé par compte ou paire d'appareils impose un nouveau handshake
+avant le prochain chiffrement. Il est acquitté seulement après établissement
+durable de la session. Les échecs de stockage bloquent le chiffrement ; une
+invalidation non persistée reste en attente dans l'instance courante.
+Le verrou inter-onglets par compte sérialise invalidation et envoi, puis le
+verrou du bridge protège le store partagé. Ce verrou plus large est un choix
+conservateur qui peut réduire le parallélisme des envois.
+
+Le test du vrai WASM valide six directions : renouvellement avec le même
+correspondant, réception retardée sur l'ancienne session, rejet d'un doublon
+après renouvellement et rejet d'une identité substituée. Aucun effacement des
+identités connues, préclés ou marqueurs anti-rejeu n'est effectué. Les copies
+déjà chiffrées et persistées restent des retries immuables ; l'invalidation
+s'applique aux nouveaux chiffrements et ne contourne pas le contrôle serveur
+des appareils révoqués.
+
+Limites : le renouvellement ne constitue pas une approbation automatique d'une
+nouvelle identité. Le chemin historique repeatablePreKeyEnvelope/deviceRatchet
+reste à auditer, ainsi que la récupération après perte complète du coffre et
+de ses marqueurs. Validation SQL et tests sur appareils toujours nécessaires.
+
 Base : PR #92, branche `fix/libsignal-runtime-messaging`, commit `db7502a0`.
 
 ## Périmètre et limites
@@ -209,3 +253,36 @@ puis scénarios de refus/réessai, changement de clé et restauration.
 - Vite production et génération PWA : succès ; avertissements préexistants
   Tailwind/PostCSS et taille/découpage des chunks toujours présents.
 - Pas de validation native sur appareil ni d'exécution distante d'agent-chat.
+
+## Remplacement du rollback confirmé le 15 septembre 2026
+
+- Retrait de fanoutSessionTransaction.ts et de son test lié aux anciens stores.
+  Les refus serveur ne restaurent plus de snapshots de sessions.
+- Le fanout conserve chaque copie scellée avant de la transmettre. Un retry
+  réutilise cette copie pour le même message/appareil/clé publique. Un contenu
+  différent sous le même identifiant est refusé. Une nouvelle clé destinataire
+  ne réutilise pas la copie de l'ancienne clé.
+- Tests d'intégration : fanout partiel puis reprise, route périmée suivie d'une
+  réponse ambiguë, confirmation avec les mêmes copies, absence de restauration
+  de session dans le transport. Les tests du vrai WASM couvrent aussi trous,
+  réception désordonnée, doublons, altération et reprise après rejet.
+- Verrou du store Libsignal partagé entre onglets et entre conversations.
+- Le correctif de provisionnement refuse un coffre privé absent lorsque des
+  bundles publics existent ; cela ne remplace pas un parcours de récupération.
+- Restent à terminer : invalidation des sessions courantes, récupération complète,
+  validation SQL sur une base isolée et validation fonctionnelle sur appareils.
+  Ces changements locaux ne constituent ni une fusion ni un déploiement.
+# Restauration Libsignal — contrôle complémentaire
+
+Le 15 septembre 2026, les bridges web et natif refusent désormais de remplacer
+un store présent par un snapshot différent (`AEGIS_LIBSIGNAL_RESTORE_CONFLICT`).
+Une restauration identique est sans écriture ; un store absent est restauré
+sous le verrou de l'appareil, avec relecture du coffre avant succès.
+La restauration du coffre vérifie ce conflit avant d'écrire les autres clés,
+et passe par le bridge de plateforme pour la capture et la restauration.
+
+Dix tests couvrent les deux chemins : absence, identité du snapshot, conflit,
+échec de lecture et échec de relecture. Cette protection ne démontre pas la
+fraîcheur d'une sauvegarde lorsque le store local a entièrement disparu : la
+récupération complète et l'invalidation des sessions restent à terminer.
+La validation SQL locale reste indisponible : le moteur Docker ne répond pas.

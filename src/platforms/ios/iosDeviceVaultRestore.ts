@@ -136,13 +136,17 @@ export async function ensureIosDeviceVaultRestored(userId: string): Promise<IosV
  * serveur réellement READY. Si le lifecycle ou la Master Key arrivent quelques
  * secondes plus tard, un retry borné reprend le même DeviceID sans rotation.
  */
-export async function backupIosDeviceVaultIfReady(userId: string): Promise<boolean> {
+export async function backupIosDeviceVaultIfReady(userId: string, options: { fresh?: boolean } = {}): Promise<boolean> {
   if (!isIosWebRuntime()) return false;
   const deviceId = peekCurrentDeviceId();
   if (!userId || !deviceId) return false;
   const cacheKey = `${userId}:${deviceId}`;
   const existing = backupInFlight.get(cacheKey);
-  if (existing) return existing;
+  if (existing) {
+    if (!options.fresh) return existing;
+    // La finalisation exige une capture APRÈS le provisionnement en cours.
+    await existing.catch(() => false);
+  }
 
   const run = (async (): Promise<boolean> => {
     if (!(await isServerDeviceBound(userId, deviceId))) {

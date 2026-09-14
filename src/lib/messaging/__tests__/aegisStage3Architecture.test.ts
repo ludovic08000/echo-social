@@ -11,7 +11,7 @@ const identity = source('src/lib/crypto/deviceIdentity.ts');
 const deviceTrust = source('src/lib/crypto/deviceLinkTrust.ts');
 const fanout = source('src/lib/messaging/multiDeviceFanout.ts');
 const registry = source('src/e2ee-session/deviceRegistry.ts');
-const ratchet = source('src/lib/crypto/deviceRatchet.ts');
+const ratchet = source('src/lib/crypto/libsignalRuntime.ts');
 
 // These are architecture tests: they prevent a later refactor from silently
 // reintroducing the exact self-signing, route omission and unbound-header bugs.
@@ -64,8 +64,8 @@ describe('Aegis stage 3 architecture', () => {
   });
 
   it('authenticates every Ratchet header and rejects compatibility branches', () => {
-    expect(ratchet).toContain('createAegisSessionId');
-    expect(ratchet).toContain('parseAegisRatchetPayload');
+    expect(ratchet).toContain('encryptLibsignalMessage');
+    expect(ratchet).toContain('decryptLibsignalMessage');
     expect(ratchet).not.toContain('isHeaderBoundSession');
     expect(ratchet).not.toContain('HEADER_BOUND_SESSION_PREFIX');
   });

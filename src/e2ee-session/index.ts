@@ -9,4 +9,3 @@ export {
   listDevicesForUser,
   listFanoutTargets,
 } from './deviceRegistry';
-export { listKnownSessionIds } from '@/lib/crypto/deviceRatchet';

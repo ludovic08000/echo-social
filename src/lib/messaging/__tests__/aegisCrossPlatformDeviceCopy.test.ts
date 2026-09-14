@@ -17,14 +17,6 @@ vi.mock('@/lib/crypto/libsignalRuntime', () => ({
   encryptForLibsignalDevice: vi.fn(),
 }));
 
-vi.mock('@/lib/crypto/deviceRatchet', () => ({
-  ratchetEncrypt: vi.fn(),
-  ratchetDecryptWithSession: mocks.ratchetDecryptWithSession,
-  establishDeviceSession: vi.fn(),
-  getSessionPeerSpkId: vi.fn(),
-  invalidateDeviceSession: mocks.invalidateDeviceSession,
-  AEGIS_RATCHET_PREFIX: 'aegis1.ratchet.',
-}));
 
 
 vi.mock('@/lib/crypto/aegisDeviceWire', () => ({

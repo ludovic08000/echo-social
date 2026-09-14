@@ -39,7 +39,7 @@ import {
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
-import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { invalidateLibsignalDeviceSession as invalidateDeviceSession } from '@/lib/crypto/libsignalSessionFreshness';
 import {
   adoptExistingIosDevice,
   adoptReusableIosDevice,
@@ -403,8 +403,6 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   }
   if (!identity || !kx) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
   if (identity.publicB64 !== record.deviceSigningKey || kx.publicB64 !== record.devicePublicKey) throw new Error('DEVICE_LOCAL_KEY_MISMATCH');
-  void traced('background_ios_backup', () => backupIosDeviceVaultIfReady(userId)).catch(() => undefined);
-  void traced('background_android_backup', () => backupAndroidDeviceVault(userId)).catch(() => undefined);
 
   await traced('libsignal_provision', () => provisionLibsignalDevice(userId, record.deviceId));
   // Invariant corrigé : `mark_current_device_route_ready` exige côté serveur une
@@ -417,7 +415,7 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   // iOS becomes routable only after the exact private X3DH material has been
   // sealed, uploaded and read back successfully for this DeviceID.
   const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');
-  if (isIosWebRuntime() && !await traced('required_ios_backup', () => backupIosDeviceVaultIfReady(userId))) {
+  if (isIosWebRuntime() && !await traced('required_ios_backup', () => backupIosDeviceVaultIfReady(userId, { fresh: true }))) {
     throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
   }
   const { isAndroidRuntime } = await import('@/platforms/android/androidRuntime');

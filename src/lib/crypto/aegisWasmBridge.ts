@@ -1,8 +1,6 @@
 /**
- * Chargeur libsignal WebAssembly pour Windows Web.
- *
- * Le bridge ne persiste rien : tout record privé doit être remis au vault
- * Windows Hello avant que l'appelant publie la partie publique correspondante.
+ * Bridge libsignal WebAssembly : chaque mutation du store est scellée et
+ * relue dans le coffre de l'appareil avant de rendre le résultat à l'appelant.
  */
 import initWasm, {
   aegis_wasm_abi_version,
@@ -19,12 +17,12 @@ import initWasm, {
 } from './wasm/generated/aegis_crypto.js';
 import { readDeviceVaultRecord, writeDeviceVaultRecord } from './deviceVault';
 import { base64ToBuffer, bufferToBase64 } from './utils';
+import { withLibsignalStoreLock as withStoreLock } from './libsignalStoreLock';
 import { traceFinalizationOperation } from '@/lib/device-manager/deviceFinalizationTrace';
 
 const EXPECTED_ABI = 1;
 const LIBSIGNAL_STORE_PREFIX = 'aegis.libsignal.store:';
 let initPromise: Promise<void> | null = null;
-const storeQueues = new Map<string, Promise<void>>();
 
 export type WasmSignedPrekey = {
   privateRecord: Uint8Array;
@@ -69,21 +67,6 @@ const validStore = (value: unknown): value is SealedLibsignalStore =>
 
 function vaultId(userId: string, deviceId: string): string {
   return `${LIBSIGNAL_STORE_PREFIX}${userId}:${deviceId}`;
-}
-
-async function withStoreLock<T>(userId: string, deviceId: string, work: () => Promise<T>): Promise<T> {
-  const key = vaultId(userId, deviceId);
-  const previous = storeQueues.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => { release = resolve; });
-  const queued = previous.then(() => current);
-  storeQueues.set(key, queued);
-  await previous;
-  try { return await work(); }
-  finally {
-    release();
-    if (storeQueues.get(key) === queued) storeQueues.delete(key);
-  }
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -179,7 +162,15 @@ export async function captureLibsignalStore(userId: string, deviceId: string): P
 
 export async function restoreLibsignalStore(userId: string, deviceId: string, bytes: string): Promise<void> {
   if (!bytes) throw new Error('AEGIS_LIBSIGNAL_STORE_INVALID');
-  await withStoreLock(userId, deviceId, () => commitStore(userId, deviceId, new Uint8Array(base64ToBuffer(bytes))));
+  await withStoreLock(userId, deviceId, async () => {
+    const existing = await readDeviceVaultRecord(vaultId(userId, deviceId), validStore);
+    // Une sauvegarde ne doit jamais faire reculer un ratchet déjà présent.
+    if (existing) {
+      if (existing.bytes !== bytes) throw new Error('AEGIS_LIBSIGNAL_RESTORE_CONFLICT');
+      return;
+    }
+    await commitStore(userId, deviceId, new Uint8Array(base64ToBuffer(bytes)));
+  });
 }
 
 export function unpackWasmSignedPrekey(packed: Uint8Array): WasmSignedPrekey {

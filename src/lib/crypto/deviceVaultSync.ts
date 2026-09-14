@@ -14,6 +14,7 @@ import {
   type EncryptedWebDeviceVault,
 } from './webDeviceKeyVault';
 import { logDeviceVaultEvent } from './deviceVault';
+import { runCrossTabExclusive } from './crossTabLock';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
@@ -39,7 +40,7 @@ function sameEncryptedVault(left: unknown, right: EncryptedWebDeviceVault): bool
  * n'est retourné qu'après relecture du même user/device et comparaison exacte
  * du vault ; un upsert sans readback n'est jamais considéré durable.
  */
-export async function backupDeviceVaultToCloud(args: {
+async function backupDeviceVaultToCloudUnlocked(args: {
   userId: string;
   deviceId: string;
   platform?: string;
@@ -85,6 +86,22 @@ export async function backupDeviceVaultToCloud(args: {
     return true;
   } catch {
     logDeviceVaultEvent('cloud_backup', 'failed', { reason: 'seal_failed' });
+    return false;
+  }
+}
+
+export async function backupDeviceVaultToCloud(args: {
+  userId: string; deviceId: string; platform?: string;
+}): Promise<boolean> {
+  try {
+    // Capturer sous le même verrou que l'upload : une ancienne capture ne peut
+    // pas arriver après la sauvegarde plus récente du même appareil.
+    return await runCrossTabExclusive(
+      `aegis:device-cloud-backup:${JSON.stringify([args.userId, args.deviceId])}`,
+      () => backupDeviceVaultToCloudUnlocked(args),
+    );
+  } catch {
+    logDeviceVaultEvent('cloud_backup', 'failed', { reason: 'backup_lock_failed' });
     return false;
   }
 }

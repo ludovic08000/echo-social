@@ -10,10 +10,7 @@ import {
   invalidateFanoutRoute,
   resolveFanoutRouteSnapshot,
 } from '@/lib/messaging/fanoutRouteCache';
-import {
-  captureFanoutSessionBeforeMutation,
-  rollbackFanoutSessionTarget,
-} from '@/lib/messaging/fanoutSessionTransaction';
+import { getOrCreateFanoutCopy } from './fanoutCopyCache';
 import { runDeviceSessionJob } from '@/lib/crypto/deviceSessionQueue';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 import { decodeLibsignalWire, decryptFromLibsignalDevice, encryptForLibsignalDevice } from '@/lib/crypto/libsignalRuntime';
@@ -223,15 +220,6 @@ export async function encryptPlaintextForDeviceTarget(
   const senderDeviceId = input.senderDeviceId ?? getCurrentDeviceId();
   const key = `${input.senderUserId}::${senderDeviceId}::${input.recipientUserId}::${input.recipientDeviceId}`;
   return runDeviceSessionJob('route', key, async () => {
-    if (input.messageId) {
-      await captureFanoutSessionBeforeMutation({
-        messageId: input.messageId,
-        myUserId: input.senderUserId,
-        myDeviceId: senderDeviceId,
-        peerUserId: input.recipientUserId,
-        peerDeviceId: input.recipientDeviceId,
-      });
-    }
     return encryptPlaintextForDeviceTargetUnlocked({
       ...input,
       senderDeviceId,
@@ -250,7 +238,7 @@ async function encryptPlaintextForDeviceTargetUnlocked(
 
   if (!input.conversationId) throw new Error('AEGIS_LIBSIGNAL_CONVERSATION_REQUIRED');
   try {
-    const encryptedBody = await encryptForLibsignalDevice({
+    const encrypt = () => encryptForLibsignalDevice({
       conversationId: input.conversationId,
       ownerUserId: input.senderUserId,
       ownerDeviceId: senderDeviceId,
@@ -258,6 +246,18 @@ async function encryptPlaintextForDeviceTargetUnlocked(
       remoteDeviceId: input.recipientDeviceId,
       plaintext: input.plaintext,
     });
+    const encryptedBody = input.messageId
+      ? await getOrCreateFanoutCopy({
+        messageId: input.messageId,
+        conversationId: input.conversationId,
+        senderUserId: input.senderUserId,
+        senderDeviceId,
+        recipientUserId: input.recipientUserId,
+        recipientDeviceId: input.recipientDeviceId,
+        recipientDevicePublicKey: input.recipientDevicePublicKey,
+        plaintext: input.plaintext,
+      }, encrypt)
+      : await encrypt();
     return { encryptedBody, senderDeviceId };
   } catch (error) {
     logCryptoException('fanout', error, { severity: 'error', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: input.recipientUserId, peerDeviceId: input.recipientDeviceId, metadata: { stage: 'libsignal_encrypt' } });
@@ -344,13 +344,6 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
         plaintext: input.plaintext,
       });
       if (!encrypted) {
-        await rollbackFanoutSessionTarget({
-          messageId: input.messageId,
-          myUserId: input.senderUserId,
-          myDeviceId: senderDeviceId,
-          peerUserId: dev.userId,
-          peerDeviceId: dev.deviceId,
-        }).catch(() => false);
         traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_ENCRYPT', outcome: 'error', peerDeviceId: dev.deviceId, blockMs: Date.now() - targetStartedAt, errorCode: 'AEGIS_DEVICE_ROUTE_UNAVAILABLE' }, 'warn');
         return null;
       }
@@ -364,13 +357,6 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
         encrypted_body: encrypted.encryptedBody,
       } as FanoutCopyRow;
     } catch (e) {
-      await rollbackFanoutSessionTarget({
-        messageId: input.messageId,
-        myUserId: input.senderUserId,
-        myDeviceId: senderDeviceId,
-        peerUserId: dev.userId,
-        peerDeviceId: dev.deviceId,
-      }).catch(() => false);
       logCryptoException('fanout', e, {
         severity: 'warning',
         conversationId: input.conversationId,
@@ -390,13 +376,8 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
       .filter((dev) => !rows.some((row) => row.recipient_device_id === dev.deviceId))
       .map((dev) => dev.deviceId);
 
-    await Promise.allSettled(targets.map((dev) => rollbackFanoutSessionTarget({
-      messageId: input.messageId,
-      myUserId: input.senderUserId,
-      myDeviceId: senderDeviceId,
-      peerUserId: dev.userId,
-      peerDeviceId: dev.deviceId,
-    })));
+    // Les copies réussies restent scellées pour la route suivante ; aucun
+    // ratchet ne revient en arrière après production d'un ciphertext.
     if (routeRefreshAttempt === 0) {
       invalidateFanoutRoute(input.conversationId, input.senderUserId);
       traceE2EE({ ...baseTrace, stage: 'FANOUT_ROUTE_REFRESH', outcome: 'retry', targetCount: targets.length, copyCount: rows.length }, 'warn');

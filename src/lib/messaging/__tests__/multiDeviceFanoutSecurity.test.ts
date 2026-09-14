@@ -1,3 +1,6 @@
+vi.mock('@/lib/messaging/fanoutCopyCache', () => ({
+  getOrCreateFanoutCopy: async (_args: unknown, encrypt: () => Promise<string>) => encrypt(),
+}));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -16,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   logCryptoError: vi.fn(),
   logCryptoException: vi.fn(),
   resolveFanoutRouteSnapshot: vi.fn(),
-  rollbackFanoutSessionTarget: vi.fn(),
   encryptForLibsignalDevice: vi.fn(),
 }));
 
@@ -49,20 +51,7 @@ vi.mock('@/lib/messaging/fanoutRouteCache', () => ({
   invalidateFanoutRoute: vi.fn(),
 }));
 
-vi.mock('@/lib/messaging/fanoutSessionTransaction', () => ({
-  captureFanoutSessionBeforeMutation: vi.fn().mockResolvedValue(undefined),
-  rollbackFanoutSessionTarget: mocks.rollbackFanoutSessionTarget,
-}));
 
-vi.mock('@/lib/messaging/repeatablePreKeyEnvelope', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/messaging/repeatablePreKeyEnvelope')>();
-  return {
-    ...actual,
-    prepareInitiatingSessionForSend: vi.fn().mockResolvedValue('ready'),
-    restartExpiredInitiatingSession: vi.fn(),
-    wrapRatchetForInitiatingSession: vi.fn(async ({ ratchetPayload }) => ratchetPayload),
-  };
-});
 
 vi.mock('@/lib/crypto/x3dh', () => ({
   fetchPrekeyBundleForDevice: mocks.fetchPrekeyBundleForDevice,
@@ -77,14 +66,6 @@ vi.mock('@/lib/crypto/keyManager', () => ({
   PinUnlockRequiredError: class PinUnlockRequiredError extends Error {},
 }));
 
-vi.mock('@/lib/crypto/deviceRatchet', () => ({
-  ratchetEncrypt: mocks.ratchetEncrypt,
-  ratchetDecryptWithSession: vi.fn(),
-  establishDeviceSession: vi.fn(),
-  getSessionPeerSpkId: mocks.getSessionPeerSpkId,
-  invalidateDeviceSession: mocks.invalidateDeviceSession,
-  AEGIS_RATCHET_PREFIX: 'aegis1.ratchet.',
-}));
 
 vi.mock('@/lib/crypto/errorLogger', () => ({
   logCryptoError: mocks.logCryptoError,
@@ -121,7 +102,6 @@ describe('multiDeviceFanout security gates', () => {
       version: 'route-version-empty',
       targets: [],
     });
-    mocks.rollbackFanoutSessionTarget.mockResolvedValue(false);
     mocks.encryptForLibsignalDevice.mockRejectedValue(new Error('AEGIS_LIBSIGNAL_PREKEY_BUNDLE_UNAVAILABLE'));
   });
 
@@ -207,7 +187,6 @@ describe('multiDeviceFanout security gates', () => {
       plaintext: 'capsule',
     })).rejects.toThrow('E2EE_DEVICE_COPIES_UNAVAILABLE');
     expect(mocks.resolveFanoutRouteSnapshot).toHaveBeenCalledTimes(2);
-    expect(mocks.rollbackFanoutSessionTarget).toHaveBeenCalled();
   });
 
   it('fails closed when no route at all is encryptable', async () => {

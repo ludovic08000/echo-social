@@ -1,18 +1,19 @@
-import { clearAllDeviceSessions } from './deviceRatchet';
+import { invalidateLibsignalSessions } from './libsignalSessionFreshness';
 
 let watcherStarted = false;
 
 /**
- * Security-epoch changes invalidate only Aegis device-pair sessions.
- * The next send establishes fresh X3DH v3 sessions for every target device.
+ * Security-epoch changes require a fresh Libsignal handshake on the next send.
+ * Existing receive state and trusted identities remain in the sealed store.
  */
 export function startSessionInvalidationWatcher(): void {
   if (watcherStarted) return;
   watcherStarted = true;
 
   const invalidate = (event: Event) => {
-    const detail = (event as CustomEvent<{ reason?: string }>).detail;
-    void clearAllDeviceSessions().catch(error => {
+    const detail = (event as CustomEvent<{ userId?: string; reason?: string }>).detail;
+    if (!detail?.userId) return;
+    void invalidateLibsignalSessions(detail.userId).catch(error => {
       console.warn('[AEGIS] device-session invalidation failed', {
         reason: detail?.reason ?? 'security_state_changed',
         error,

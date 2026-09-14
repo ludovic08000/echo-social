@@ -40,7 +40,52 @@ try {
       const [replyA, replyClear] = unpack(await wasm.aegis_wasm_message_decrypt(a, sender, 1, recipient, 1, replyType[0], replyCipher), 2);
       a = replyA; assert.deepEqual(replyClear, text);
     }
-    console.log(`PASS ${sender} ↔ ${recipient}: bundle, session, 3 round trips, serialized stores`);
+    // Un refus réseau ne rembobine pas le ratchet : une copie abandonnée laisse
+    // un trou que le destinataire doit tolérer, sans accepter les doublons.
+    const pending = [];
+    for (let i = 0; i < 3; i++) {
+      const text = new TextEncoder().encode(`retry-${sender}-${i}`);
+      const [nextA, type, ciphertext] = unpack(await wasm.aegis_wasm_message_encrypt(a, sender, 1, recipient, 1, text), 3);
+      a = nextA;
+      pending.push({ type: type[0], ciphertext, text });
+    }
+    // pending[0] n'a jamais été envoyé ; les deux suivants arrivent à l'envers.
+    for (const index of [2, 1]) {
+      const copy = pending[index];
+      const [nextB, clear] = unpack(await wasm.aegis_wasm_message_decrypt(b.slice(), recipient, 1, sender, 1, copy.type, copy.ciphertext), 2);
+      b = nextB;
+      assert.deepEqual(clear, copy.text);
+    }
+    await assert.rejects(wasm.aegis_wasm_message_decrypt(
+      b.slice(), recipient, 1, sender, 1, pending[2].type, pending[2].ciphertext,
+    ));
+    const recoveryText = new TextEncoder().encode('valid after rejected duplicate and tampering');
+    const [nextA, type, ciphertext] = unpack(await wasm.aegis_wasm_message_encrypt(a, sender, 1, recipient, 1, recoveryText), 3);
+    a = nextA;
+    const altered = ciphertext.slice();
+    altered[altered.length - 1] ^= 1;
+    await assert.rejects(wasm.aegis_wasm_message_decrypt(b.slice(), recipient, 1, sender, 1, type[0], altered));
+    const [nextB, clear] = unpack(await wasm.aegis_wasm_message_decrypt(b.slice(), recipient, 1, sender, 1, type[0], ciphertext), 2);
+    b = nextB;
+    assert.deepEqual(clear, recoveryText);
+    // Renouveler la session conserve les clés et les protections anti-rejeu.
+    const [renewedB, freshBundle] = unpack(await wasm.aegis_wasm_bundle_create(b, 1, 21, 22, 23), 2);
+    b = renewedB;
+    a = await wasm.aegis_wasm_session_establish(a, sender, 1, recipient, 1, freshBundle);
+    const renewedText = new TextEncoder().encode('fresh session after invalidation');
+    const [renewedA, renewedType, renewedCipher] = unpack(await wasm.aegis_wasm_message_encrypt(a, sender, 1, recipient, 1, renewedText), 3);
+    a = renewedA;
+    const [receivedB, renewedClear] = unpack(await wasm.aegis_wasm_message_decrypt(b, recipient, 1, sender, 1, renewedType[0], renewedCipher), 2);
+    b = receivedB;
+    assert.deepEqual(renewedClear, renewedText);
+    await assert.rejects(wasm.aegis_wasm_message_decrypt(b.slice(), recipient, 1, sender, 1, pending[2].type, pending[2].ciphertext));
+    const [lateB, lateClear] = unpack(await wasm.aegis_wasm_message_decrypt(b, recipient, 1, sender, 1, pending[0].type, pending[0].ciphertext), 2);
+    b = lateB;
+    assert.deepEqual(lateClear, pending[0].text);
+    const replacement = wasm.aegis_wasm_store_create(303);
+    const [, replacementBundle] = unpack(await wasm.aegis_wasm_bundle_create(replacement, 1, 31, 32, 33), 2);
+    await assert.rejects(wasm.aegis_wasm_session_establish(a.slice(), sender, 1, recipient, 1, replacementBundle));
+    console.log(`PASS ${sender} ↔ ${recipient}: round trips, retries, replay protection, session renewal, delayed delivery, identity substitution rejected`);
   }
   console.log('Real WASM checks passed; native devices and production delivery are separate gates.');
 } finally { clearTimeout(watchdog); }

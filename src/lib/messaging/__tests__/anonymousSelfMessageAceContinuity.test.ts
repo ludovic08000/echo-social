@@ -1,3 +1,6 @@
+vi.mock('@/lib/messaging/fanoutCopyCache', () => ({
+  getOrCreateFanoutCopy: async (_args: unknown, encrypt: () => Promise<string>) => encrypt(),
+}));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type DeviceState = {
@@ -45,19 +48,6 @@ vi.mock('@/lib/crypto/keyManager', () => ({
   PinUnlockRequiredError: class PinUnlockRequiredError extends Error {},
 }));
 
-vi.mock('@/lib/crypto/deviceRatchet', () => ({
-  AEGIS_RATCHET_PREFIX: 'aegis1.ratchet',
-  ratchetEncrypt: async (
-    _senderUserId: string,
-    _senderDeviceId: string,
-    _recipientUserId: string,
-    recipientDeviceId: string,
-  ) => {
-    runtime.encryptionCount += 1;
-    return `aegis1.ratchet:cipher-${runtime.encryptionCount}-${recipientDeviceId}`;
-  },
-  ratchetDecryptWithSession: vi.fn(),
-}));
 
 vi.mock('@/lib/crypto/libsignalRuntime', () => ({
   decodeLibsignalWire: () => null,
@@ -91,21 +81,7 @@ vi.mock('@/lib/messaging/fanoutRouteCache', () => ({
   },
 }));
 
-vi.mock('@/lib/messaging/fanoutSessionTransaction', () => ({
-  captureFanoutSessionBeforeMutation: async () => undefined,
-  rollbackFanoutSessionTarget: async () => true,
-}));
 
-vi.mock('@/lib/messaging/repeatablePreKeyEnvelope', () => ({
-  acknowledgeInitiatingSessionFromRatchetPayload: vi.fn(),
-  createRepeatablePreKeyEnvelope: vi.fn(),
-  isRepeatablePreKeyEnvelope: () => false,
-  prepareInitiatingSessionForSend: async () => 'ready',
-  restartExpiredInitiatingSession: async () => undefined,
-  unwrapRepeatablePreKeyEnvelope: vi.fn(),
-  wrapRatchetForInitiatingSession: async ({ ratchetPayload }: { ratchetPayload: string }) =>
-    `aegis1.init.v1:${ratchetPayload}`,
-}));
 
 vi.mock('@/lib/crypto/deviceSessionQueue', () => ({
   runDeviceSessionJob: async (

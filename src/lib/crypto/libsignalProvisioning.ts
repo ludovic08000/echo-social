@@ -1,11 +1,12 @@
 import { supabase } from '@/integrations/supabase/client';
 import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
-import { createLibsignalBundle, createLibsignalStore } from './libsignalPlatformBridge';
+import { captureLibsignalStore, createLibsignalBundle, createLibsignalStore } from './libsignalPlatformBridge';
 import { bufferToBase64 } from './utils';
 import { getCurrentDeviceFinalizationTraceId, traceFinalizationOperation } from '@/lib/device-manager/deviceFinalizationTrace';
 
 const BUNDLE_BATCH = 20;
 const BUNDLE_PUBLISH_CONCURRENCY = 4;
+const provisioning = new Map<string, Promise<void>>();
 
 type RpcResult<T> = {
   data: T;
@@ -67,7 +68,7 @@ async function publishBundle(args: {
 }
 
 /** Crée puis publie un lot complet seulement après scellement de chaque privé. */
-export async function provisionLibsignalDevice(userId: string, deviceId: string): Promise<void> {
+async function provisionDevice(userId: string, deviceId: string): Promise<void> {
   const context = { userId, deviceId, traceId: getCurrentDeviceFinalizationTraceId() };
   const deviceNumber = await traceFinalizationOperation('libsignal.device_number', () => resolveDeviceNumber(userId, deviceId), context);
   const { data: countData } = await traceFinalizationOperation('libsignal.bundle_count', async () => {
@@ -81,6 +82,13 @@ export async function provisionLibsignalDevice(userId: string, deviceId: string)
     return result;
   }, context);
   const existing = Number(countData ?? 0);
+  if (!Number.isSafeInteger(existing) || existing < 0) throw new Error('AEGIS_LIBSIGNAL_BUNDLE_COUNT_INVALID');
+  // Des publics déjà publiés imposent de conserver leurs privés : ne jamais
+  // recréer silencieusement une identité sous le même identifiant d'appareil.
+  if (existing > 0) {
+    await traceFinalizationOperation('libsignal.store_verify',
+      () => captureLibsignalStore(userId, deviceId).then(() => undefined), context);
+  }
   if (existing >= BUNDLE_BATCH / 2) return;
   const requestedRegistrationId = randomId();
   // La création est déjà idempotente : toute erreur de lecture/scellement doit
@@ -103,4 +111,16 @@ export async function provisionLibsignalDevice(userId: string, deviceId: string)
   const results = await Promise.allSettled(workers);
   const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
   if (failed) throw failed.reason;
+}
+
+/** Les déclencheurs concurrents partagent un seul provisionnement par appareil. */
+export function provisionLibsignalDevice(userId: string, deviceId: string): Promise<void> {
+  const key = JSON.stringify([userId, deviceId]);
+  const active = provisioning.get(key);
+  if (active) return active;
+  const work = provisionDevice(userId, deviceId).finally(() => {
+    if (provisioning.get(key) === work) provisioning.delete(key);
+  });
+  provisioning.set(key, work);
+  return work;
 }

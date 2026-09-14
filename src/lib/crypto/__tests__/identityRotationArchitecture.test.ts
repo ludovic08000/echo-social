@@ -148,7 +148,7 @@ describe('account identity rotation v1 architecture', () => {
     const saveIndex = client.indexOf('await saveIdentityKeys(userId, staged.keys);');
     const backupIndex = client.indexOf('await syncBackupToServer();');
     const spkIndex = client.indexOf('await provisionLibsignalDevice(userId, deviceId);');
-    const ratchetIndex = client.indexOf('await clearAllDeviceSessions();');
+      const ratchetIndex = client.indexOf('await invalidateLibsignalSessions(userId);');
     const finalizeIndex = client.indexOf('await finalizeIdentityRotationRecovery');
     expect(saveIndex).toBeGreaterThan(-1);
     expect(backupIndex).toBeGreaterThan(saveIndex);

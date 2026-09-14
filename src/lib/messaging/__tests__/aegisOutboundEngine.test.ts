@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   provision: vi.fn(),
   savePlaintext: vi.fn(),
   savePlaintextForCiphertext: vi.fn(),
-  rollback: vi.fn(),
   buildCopies: vi.fn(),
   putOutbox: vi.fn(),
   deleteOutbox: vi.fn(),
@@ -29,9 +28,6 @@ vi.mock('@/lib/crypto/fingerprintTracker', () => ({
 vi.mock('@/lib/crypto/plaintextStore', () => ({
   savePlaintext: mocks.savePlaintext,
   savePlaintextForCiphertext: mocks.savePlaintextForCiphertext,
-}));
-vi.mock('@/lib/messaging/fanoutSessionTransaction', () => ({
-  rollbackFanoutSessionTransaction: mocks.rollback,
 }));
 vi.mock('@/lib/messaging/longMessageAttachment', () => ({
   MAX_INLINE_MESSAGE_BODY_BYTES: 2048,
@@ -85,7 +81,6 @@ beforeEach(() => {
   });
   mocks.savePlaintext.mockResolvedValue(undefined);
   mocks.savePlaintextForCiphertext.mockResolvedValue(undefined);
-  mocks.rollback.mockResolvedValue(1);
   mocks.putOutbox.mockResolvedValue(undefined);
   mocks.deleteOutbox.mockResolvedValue(undefined);
   mocks.buildCopies.mockResolvedValue({
@@ -172,7 +167,6 @@ describe('canonical Aegis outbound transaction engine', () => {
     })).rejects.toThrow('E2EE_DEVICE_COPIES_UNAVAILABLE');
 
     expect(mocks.sendRpc).not.toHaveBeenCalled();
-    expect(mocks.rollback).toHaveBeenCalledWith(COPY.message_id);
     expect(mocks.putOutbox).toHaveBeenLastCalledWith(
       COPY.sender_user_id,
       expect.objectContaining({
@@ -225,7 +219,6 @@ describe('canonical Aegis outbound transaction engine', () => {
       messageId: COPY.message_id,
     })).rejects.toThrow('E2EE_DEVICE_COPIES_UNAVAILABLE');
 
-    expect(mocks.rollback).toHaveBeenCalledWith(COPY.message_id);
     expect(mocks.putOutbox).toHaveBeenLastCalledWith(
       COPY.sender_user_id,
       expect.objectContaining({
