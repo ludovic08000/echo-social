@@ -126,6 +126,7 @@ pub async fn create_device_bundle(
     })
 }
 
+#[forbid(unsafe_code)]
 pub async fn establish_outbound_session(
     store: &mut AegisSignalStore,
     local: &ProtocolAddress,
@@ -133,10 +134,11 @@ pub async fn establish_outbound_session(
     bundle: &DevicePreKeyBundle,
 ) -> Result<()> {
     let mut rng = rand::rng();
-    let ptr: *mut AegisSignalStore = store;
-    unsafe { process_prekey_bundle(remote, local, &mut *ptr, &mut *ptr, &bundle.to_libsignal()?, protocol_now(), &mut rng).await }
+    let mut stores = store.protocol_stores();
+    process_prekey_bundle(remote, local, &mut stores.sessions, &mut stores.identity, &bundle.to_libsignal()?, protocol_now(), &mut rng).await
 }
 
+#[forbid(unsafe_code)]
 pub async fn encrypt_message(
     store: &mut AegisSignalStore,
     local: &ProtocolAddress,
@@ -144,15 +146,12 @@ pub async fn encrypt_message(
     plaintext: &[u8],
 ) -> Result<EncryptedMessage> {
     let mut rng = rand::rng();
-    // Les deux traits partagent le store ; les pointeurs sont séparés uniquement
-    // pendant l'appel et libsignal ne les conserve jamais.
-    let store_ptr: *mut AegisSignalStore = store;
-    let message = unsafe {
-        message_encrypt(plaintext, remote, local, &mut *store_ptr, &mut *store_ptr, protocol_now(), &mut rng).await?
-    };
+    let mut stores = store.protocol_stores();
+    let message = message_encrypt(plaintext, remote, local, &mut stores.sessions, &mut stores.identity, protocol_now(), &mut rng).await?;
     Ok(EncryptedMessage { message_type: message.message_type() as u8, ciphertext: message.serialize().to_vec() })
 }
 
+#[forbid(unsafe_code)]
 pub async fn decrypt_message(
     store: &mut AegisSignalStore,
     local: &ProtocolAddress,
@@ -167,8 +166,8 @@ pub async fn decrypt_message(
         other => return Err(SignalProtocolError::InvalidArgument(format!("unsupported message type {other:?}"))),
     };
     let mut rng = rand::rng();
-    let ptr: *mut AegisSignalStore = store;
-    unsafe { message_decrypt(&message, remote, local, &mut *ptr, &mut *ptr, &mut *ptr, &*ptr, &mut *ptr, &mut rng).await }
+    let mut stores = store.protocol_stores();
+    message_decrypt(&message, remote, local, &mut stores.sessions, &mut stores.identity, &mut stores.prekeys, &stores.signed_prekeys, &mut stores.kyber, &mut rng).await
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 begin;
 
-select plan(9);
+select plan(12);
 
 select ok(
   to_regclass('public.sealed_sender_tokens') is not null,
@@ -80,6 +80,24 @@ select ok(
         'consumed_at'
       )),
   'token context and consumption columns exist'
+);
+
+select ok(
+  (select relrowsecurity from pg_class where oid = 'public.sealed_sender_messages'::regclass)
+  and (select relrowsecurity from pg_class where oid = 'public.sealed_sender_events'::regclass),
+  'opaque relay storage enforces RLS'
+);
+
+select ok(
+  not has_table_privilege('anon', 'public.sealed_sender_messages', 'SELECT')
+  and not has_table_privilege('authenticated', 'public.sealed_sender_events', 'INSERT')
+  and not has_table_privilege('authenticated', 'public.sealed_sender_messages', 'UPDATE'),
+  'clients cannot bypass the atomic relay or mutate envelopes'
+);
+
+select ok(
+  to_regprocedure('public.send_sealed_sender_message(uuid,uuid,text,text,jsonb)') is null,
+  'retired direct-send RPC remains absent'
 );
 
 select * from finish();
