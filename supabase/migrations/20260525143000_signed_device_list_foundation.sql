@@ -103,7 +103,8 @@ as $$
     )
     and (
       not exists (select 1 from sdl)
-      or ud.device_id = any((select device_ids from sdl))
+      -- Comparer à chaque élément du tableau, pas au tableau renvoyé par une sous-requête.
+      or exists (select 1 from sdl where ud.device_id = any(sdl.device_ids))
     )
   order by ud.last_seen_at desc nulls last;
 $$;
