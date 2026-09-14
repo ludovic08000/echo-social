@@ -256,14 +256,9 @@ revoke all on function public.aegis_device_authorization_payload(uuid,text,text,
 revoke all on function public.aegis_verify_device_authorization(uuid,text,text,text,text,text,text) from public, anon, authenticated;
 revoke all on function public.aegis_verify_signed_prekey(text,text,text) from public, anon, authenticated;
 
--- Keep the already-tested state transitions, but put a cryptographic guard in
--- front of the service-role finalizer.
-alter function public.finalize_device_account_binding(uuid,text,text)
-  rename to finalize_device_account_binding_pre_signal_validation;
-revoke all on function public.finalize_device_account_binding_pre_signal_validation(uuid,text,text)
-  from public, anon, authenticated, service_role;
-
-create function public.finalize_device_account_binding(
+-- La transition appartient au finaliseur vérifié : aucun helper Cloud implicite
+-- ni chemin non vérifié ne peut rendre un appareil routable.
+create or replace function public.finalize_device_account_binding(
   p_user_id uuid,
   p_device_id text,
   p_device_authorization_signature text
@@ -278,7 +273,6 @@ declare
   v_device public.user_devices%rowtype;
   v_account public.user_public_keys%rowtype;
   v_existing_valid_binding boolean := false;
-  v_result jsonb;
 begin
   if p_user_id is null
      or trim(coalesce(p_device_id,'')) !~ '^dev_[a-f0-9]{32}$'
@@ -371,20 +365,21 @@ begin
     );
   end if;
 
-  v_result := public.finalize_device_account_binding_pre_signal_validation(
-    p_user_id,
-    trim(p_device_id),
-    trim(p_device_authorization_signature)
-  );
-
-  if coalesce((v_result ->> 'ok')::boolean, false) then
-    update public.user_devices
-    set crypto_invalid_at = null,
-        crypto_invalid_reason = null,
-        updated_at = v_now
-    where id = v_device.id;
-  end if;
-  return v_result;
+  -- La liaison valide autorise la synchronisation, jamais READY sans préclés.
+  update public.user_devices
+  set binding_status = 'bound',
+      account_bound_at = v_now,
+      device_authorization_signature = trim(p_device_authorization_signature),
+      lifecycle_status = 'syncing',
+      routing_status = 'repairing',
+      routing_error = 'DEVICE_SYNC_REQUIRED',
+      routing_checked_at = v_now,
+      crypto_invalid_at = null,
+      crypto_invalid_reason = null,
+      updated_at = v_now
+  where id = v_device.id;
+  return jsonb_build_object('ok',true,'code','DEVICE_ACCOUNT_BOUND',
+    'device_id',trim(p_device_id),'existing',false);
 end;
 $$;
 
@@ -392,6 +387,8 @@ revoke all on function public.finalize_device_account_binding(uuid,text,text)
   from public, anon, authenticated;
 grant execute on function public.finalize_device_account_binding(uuid,text,text)
   to service_role;
+
+drop function if exists public.finalize_device_account_binding_pre_signal_validation(uuid,text,text);
 
 -- Signal validates a signed prekey before accepting it. Preserve the existing
 -- publish transaction behind a guard that verifies account trust, device

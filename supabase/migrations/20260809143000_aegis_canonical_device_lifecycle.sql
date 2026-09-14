@@ -57,6 +57,22 @@ ALTER TABLE public.user_devices
   DROP COLUMN IF EXISTS is_primary,
   DROP COLUMN IF EXISTS credential_version;
 
+-- Un appareil reste non lié tant que ses preuves n'ont pas été vérifiées.
+-- Ces champs existaient sur Cloud mais manquaient dans l'historique rejouable.
+ALTER TABLE public.user_devices
+  ADD COLUMN IF NOT EXISTS binding_status text NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS account_bound_at timestamptz,
+  ADD COLUMN IF NOT EXISTS possession_verified_at timestamptz;
+
+-- L'ancien fingerprint n'est plus fourni par l'inscription canonique.
+-- Conserver les valeurs historiques sans bloquer les nouveaux appareils.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+      AND table_name='user_devices' AND column_name='fingerprint') THEN
+    ALTER TABLE public.user_devices ALTER COLUMN fingerprint DROP NOT NULL;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.guard_user_device_lifecycle()
 RETURNS trigger
 LANGUAGE plpgsql
