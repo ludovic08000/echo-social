@@ -30,10 +30,6 @@ begin
   where user_id = v_user_id
     and device_id = v_device_id;
 
-  delete from public.e2ee_session_sync
-  where user_id = v_user_id
-    and device_id = v_device_id;
-
   delete from public.user_sender_certificates
   where user_id = v_user_id
     and device_id = v_device_id;

@@ -57,6 +57,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Le paquet historique tools n'existe plus dans le catalogue SDK.
+          packages: platform-tools
 
       - name: Install protobuf compiler and Android NDK
         shell: bash
@@ -64,7 +67,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "ndk;28.0.13004108"
+          sdkmanager "platforms;android-36" "ndk;28.0.13004108"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/28.0.13004108" >> "$GITHUB_ENV"
 
       - name: Install pinned Rust and Android targets
