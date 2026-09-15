@@ -7,8 +7,6 @@ import {
   readDeviceVaultRecord,
   writeDeviceVaultRecord,
 } from '@/lib/crypto/deviceVault';
-import type { X3dhPrivatePrekeySnapshot } from '@/lib/crypto/x3dh';
-import type { DeviceSessionSnapshot } from '@/lib/crypto/deviceSessionStore';
 
 
 const VAULT_VERSION = 1 as const;
@@ -39,8 +37,6 @@ interface PlainDeviceVault {
   deviceId: string;
   signing: StoredDeviceIdentityRecovery;
   kx: StoredDeviceKxRecovery;
-  x3dh: X3dhPrivatePrekeySnapshot;
-  sessions: DeviceSessionSnapshot;
   libsignalStore: string;
   createdAt: number;
 }
@@ -61,7 +57,7 @@ function kxStorageKey(userId: string, deviceId: string): string {
 
 function aad(userId: string, deviceId: string): Uint8Array {
   return new hardGlobals.TextEncoder().encode(
-    `FORSURE-WEBAUTHN-DEVICE-VAULT-v1|${userId}|${deviceId}`,
+    `FORSURE-DEVICE-VAULT-v1|${userId}|${deviceId}`,
   );
 }
 
@@ -167,14 +163,8 @@ export async function captureEncryptedWebDeviceVault(
   const masterKey = getSessionMasterKey();
   if (!masterKey) throw new Error('ACCOUNT_MASTER_KEY_REQUIRED');
   const { signing, kx } = await readDeviceRecords(userId, deviceId);
-  const {
-    assertDeviceX3dhSnapshotMatchesPublishedKeys,
-    captureDeviceX3dhPrivatePrekeys,
-  } = await import('@/lib/crypto/x3dh');
-  const x3dh = await captureDeviceX3dhPrivatePrekeys(userId, deviceId);
-  await assertDeviceX3dhSnapshotMatchesPublishedKeys(userId, deviceId, x3dh);
-  const { captureDeviceSessionSnapshot } = await import('@/lib/crypto/deviceSessionStore');
-  const sessions = await captureDeviceSessionSnapshot(userId, deviceId);
+  // Invariant cryptographique : le coffre ne transporte plus que les clés
+  // d'appareil et le store libsignal scellé. Aucune session maison n'existe.
   const { captureLibsignalStore } = await import('@/lib/crypto/libsignalPlatformBridge');
   const libsignalStore = await captureLibsignalStore(userId, deviceId);
   const plain: PlainDeviceVault = {
@@ -183,8 +173,6 @@ export async function captureEncryptedWebDeviceVault(
     deviceId,
     signing,
     kx,
-    x3dh,
-    sessions,
     libsignalStore,
     createdAt: Date.now(),
   };
@@ -238,12 +226,7 @@ export async function restoreEncryptedWebDeviceVault(args: {
     || plain.deviceId !== deviceId
     || !validateSigningRecord(plain.signing, userId, deviceId)
     || !validateKxRecord(plain.kx, userId, deviceId)
-    || !Array.isArray(plain.x3dh?.records)
-    || typeof plain.libsignalStore !== 'string' || plain.libsignalStore.length < 32
-    || (plain.sessions !== undefined && (
-      !Array.isArray(plain.sessions?.sessions)
-      || !Array.isArray(plain.sessions?.initiating)
-    ))) {
+    || typeof plain.libsignalStore !== 'string' || plain.libsignalStore.length < 32) {
     throw new Error('WEBAUTHN_DEVICE_VAULT_INVALID');
   }
   if (jwkXToStandardBase64(plain.signing.publicKeyJWK.x!) !== args.expectedDeviceSigningKey
@@ -256,10 +239,6 @@ export async function restoreEncryptedWebDeviceVault(args: {
   // Restauration : les clés reviennent dans le coffre scellé, jamais en clair sur web.
   await writeDeviceVaultRecord(plain.signing.id, plain.signing);
   await writeDeviceVaultRecord(plain.kx.id, plain.kx);
-  const { restoreDeviceX3dhPrivatePrekeys } = await import('@/lib/crypto/x3dh');
-  await restoreDeviceX3dhPrivatePrekeys(userId, deviceId, plain.x3dh!);
-  const { restoreDeviceSessionSnapshot } = await import('@/lib/crypto/deviceSessionStore');
-  await restoreDeviceSessionSnapshot(userId, deviceId, plain.sessions ?? { sessions: [], initiating: [] });
   if (deviceVaultMirrorsPlaintext()) {
     await runTx([STORE_KEYS], 'readwrite', (tx) => {
       const store = tx.objectStore(STORE_KEYS);
