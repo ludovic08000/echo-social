@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { clearDeviceFinalizationTrace, getDeviceFinalizationTrace, traceDeviceKeyChecks, traceDeviceFinalization } from '../deviceFinalizationTrace';
 import { getAegisDiagnosticReport } from '@/lib/messaging/aegisDiagnosticReport';
-import { isE2EEDebugEnabled, setE2EEDebugEnabled } from '@/lib/consoleGuard';
+import { installE2EEDebugHelper, isE2EEDebugEnabled, setE2EEDebugEnabled } from '@/lib/consoleGuard';
 import { clearE2EETrace, traceE2EE } from '@/lib/messaging/e2eeTrace';
 
 beforeEach(() => { clearDeviceFinalizationTrace(); clearE2EETrace(); sessionStorage.clear(); setE2EEDebugEnabled(false); });
@@ -44,4 +45,44 @@ it('is opt-in, can be stopped, and expires after ten minutes without reactivatio
   expect(isE2EEDebugEnabled()).toBe(false);
   setE2EEDebugEnabled(true); setE2EEDebugEnabled(false);
   expect(isE2EEDebugEnabled()).toBe(false);
+});
+
+it('installs the console helper without locking the console or activating debug', async () => {
+  const diagnosticWindow = window as typeof window & {
+    forsureDebug?: {
+      enabled: () => boolean; enable: () => void; disable: () => void;
+      report: () => Promise<ReturnType<typeof getAegisDiagnosticReport>>;
+    };
+  };
+  const previous = diagnosticWindow.forsureDebug;
+  const originalLog = console.log;
+  const originalFetch = window.fetch;
+  try {
+    installE2EEDebugHelper();
+    const helper = diagnosticWindow.forsureDebug!;
+    expect(helper).toBeDefined();
+    expect(helper.enabled()).toBe(false);
+    expect(console.log).toBe(originalLog);
+    expect(window.fetch).toBe(originalFetch);
+    expect(Object.isFrozen(console)).toBe(false);
+    traceDeviceKeyChecks({ userId: 'USER_SECRET', deviceId: 'DEVICE_SECRET' }, {
+      signingPresent: true, exchangePresent: true, signingMatches: true, exchangeMatches: true,
+    });
+    const report = await helper.report();
+    expect(report.deviceFinalization).toHaveLength(4);
+    expect(JSON.stringify(report)).not.toContain('SECRET');
+    helper.enable();
+    expect(helper.enabled()).toBe(true);
+    helper.disable();
+    expect(helper.enabled()).toBe(false);
+  } finally {
+    diagnosticWindow.forsureDebug = previous;
+  }
+});
+
+it('initializes the diagnostic helper in the real application entrypoint', () => {
+  const entrypoint = readFileSync('src/main.tsx', 'utf8');
+  expect(entrypoint).toMatch(/import\s*\{\s*installE2EEDebugHelper\s*\}\s*from\s*["']@\/lib\/consoleGuard["']/);
+  expect(entrypoint).toContain('installE2EEDebugHelper();');
+  expect(entrypoint).not.toContain('lockdownConsole(');
 });

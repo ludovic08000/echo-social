@@ -2,10 +2,12 @@ import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import "./index.css";
 import { installGlobalCrashHandlers } from "@/lib/crashLogger";
+import { installE2EEDebugHelper } from "@/lib/consoleGuard";
 
 // Install BEFORE anything else so the very first error (incl. during chunk
 // loading or crypto bootstrap) is captured with full context.
 installGlobalCrashHandlers();
+installE2EEDebugHelper();
 
 if (import.meta.env.DEV) {
   void import('@/lib/crypto/libsignalPlatformBridge').then(({ getLibsignalBackendInfo }) => {

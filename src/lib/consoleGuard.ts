@@ -48,8 +48,8 @@ export function isE2EEDebugEnabled(): boolean {
   return remaining > 0 && remaining <= 10 * 60_000;
 }
 
-export function lockdownConsole(): void {
-  // Expose l'interrupteur de diagnostic avant toute neutralisation.
+/** Installe l'aide seule : ne bloque pas la console et n'active jamais le debug. */
+export function installE2EEDebugHelper(): void {
   if (typeof window !== 'undefined') {
     (window as any).forsureDebug = {
       enable: () => { setE2EEDebugEnabled(true); rawConsoleWrite('log', '[AEGIS] traçage activé pour 10 minutes'); },
@@ -62,6 +62,10 @@ export function lockdownConsole(): void {
     };
     rawConsoleWrite('log', '[AEGIS] diagnostic disponible (métadonnées uniquement). Tapez forsureDebug.help()');
   }
+}
+
+export function lockdownConsole(): void {
+  installE2EEDebugHelper();
   if (IS_DEV) return; // Keep logs in dev mode
 
 
