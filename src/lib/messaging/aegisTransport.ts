@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { traceE2EE } from './e2eeTrace';
 
 export type AegisRpcError = {
   code?: string | null;
@@ -74,9 +75,16 @@ async function callGateway<T>(
 ): Promise<AegisRpcResponse<T>> {
   const baseUrl = gatewayUrl();
   const { data: { session } } = await supabase.auth.getSession();
+  traceE2EE({ direction: 'send', component: 'aegis_transport', stage: 'AUTH_TOKEN_PRESENT',
+    transport: 'aegis_server', outcome: session?.access_token ? 'ok' : 'error',
+    errorCode: session?.access_token ? undefined : 'NOT_AUTHENTICATED' });
   if (!session?.access_token) {
     return { data: null, error: { code: 'NOT_AUTHENTICATED', message: 'Missing session.' } };
   }
+  // La date locale est indicative. Seul le serveur vérifie le JWT ; aucune donnée du JWT n'est loguée.
+  traceE2EE({ direction: 'send', component: 'aegis_transport', stage: 'AUTH_TOKEN_LOCAL_EXPIRY',
+    transport: 'aegis_server', outcome: !session.expires_at ? 'skip' : session.expires_at * 1000 > Date.now() ? 'ok' : 'error',
+    errorCode: session.expires_at && session.expires_at * 1000 <= Date.now() ? 'AUTH_TOKEN_EXPIRED' : undefined });
 
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 20_000);
@@ -92,6 +100,10 @@ async function callGateway<T>(
       credentials: gatewayCredentials(baseUrl),
       signal: controller.signal,
     });
+    traceE2EE({ direction: name === 'aegis_sync_device' ? 'receive' : 'send', component: 'aegis_transport',
+      stage: `${name}.HTTP_RESPONSE`, transport: 'aegis_server', outcome: response.ok ? 'ok' : 'error',
+      diagnosticId: response.headers.get('x-aegis-diagnostic-id') ?? undefined,
+      errorCode: response.ok ? undefined : `AEGIS_HTTP_${response.status}` });
     const payload = await response.json().catch(() => ({})) as {
       data?: T;
       error?: AegisRpcError;
@@ -144,13 +156,24 @@ async function callSupabase<T>(
  * the exact same encrypted protocol through the VPS gateway, without changing
  * UI, outbox, device identities or ciphertext formats.
  */
-export function callAegisServer<T>(
+export async function callAegisServer<T>(
   name: AegisRpcName,
   args: Record<string, unknown>,
 ): Promise<AegisRpcResponse<T>> {
-  return gatewayUrl()
-    ? callGateway<T>(name, args)
-    : callSupabase<T>(name, args);
+  const context = { direction: name === 'aegis_sync_device' ? 'receive' as const : 'send' as const,
+    component: 'aegis_transport', stage: name, transport: gatewayUrl() ? 'aegis_server' as const : 'supabase' as const };
+  const started = Date.now();
+  traceE2EE({ ...context, outcome: 'start' });
+  try {
+    const response = context.transport === 'aegis_server' ? await callGateway<T>(name, args) : await callSupabase<T>(name, args);
+    traceE2EE({ ...context, outcome: response.error ? 'error' : 'ok', blockMs: Date.now() - started,
+      errorCode: response.error?.code ?? undefined });
+    return response;
+  } catch (error) {
+    traceE2EE({ ...context, outcome: 'error', blockMs: Date.now() - started,
+      errorCode: error instanceof Error ? error.message : 'E_UNKNOWN' });
+    throw error;
+  }
 }
 
 export function getAegisTransportKind(): 'gateway' | 'supabase' {

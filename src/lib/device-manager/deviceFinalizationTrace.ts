@@ -8,6 +8,8 @@
  * limité aux statuts serveur du cycle de vie.
  */
 
+import { isE2EEDebugEnabled, rawConsoleWrite } from '@/lib/consoleGuard';
+
 export type DeviceFinalizationOutcome =
   | 'start'
   | 'success'
@@ -63,7 +65,7 @@ export const DEVICE_FINALIZATION_TRACE_EVENT = 'forsure:device-finalization-trac
 const buffer: DeviceFinalizationTraceEvent[] = [];
 let sequence = 0;
 
-/** Empreinte locale courte, non réversible, jamais l'identifiant complet. */
+/** Référence pseudonymisée courte : ce n'est pas une garantie d'anonymat. */
 export function maskIdentifier(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
   let hash = 0x811c9dc5;
@@ -75,6 +77,18 @@ export function maskIdentifier(value: string | null | undefined): string | undef
 }
 
 const ALLOWED_ERROR_CODES = new Set([
+  'DEVICE_BINDING_TIMEOUT',
+  'CRYPTO_NOT_READY',
+  'PIN_UNLOCK_REQUIRED',
+  'DEVICE_APPROVAL_REQUIRED',
+  'DEVICE_NOT_REGISTERED',
+  'DEVICE_BINDING_LOOKUP_FAILED',
+  'DEVICE_ACCOUNT_BIND_FAILED',
+  'DEVICE_ACCOUNT_BIND_REJECTED',
+  'DEVICE_BINDING_DEVICE_MISMATCH',
+  'DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH',
+  'DEVICE_AUTHORIZATION_SIGNATURE_INVALID',
+  'ACCOUNT_BINDING_SIGNATURE_INVALID',
   'AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED',
   'AEGIS_LIBSIGNAL_STORE_MISSING',
   'AEGIS_LIBSIGNAL_DEVICE_NUMBER_UNAVAILABLE',
@@ -116,7 +130,6 @@ export function normalizeFinalizationErrorCode(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const head = raw.split(':')[0]?.trim().toUpperCase() ?? '';
   if (ALLOWED_ERROR_CODES.has(head)) return head;
-  if (/_TIMEOUT$/.test(head) && /^DEVICE_[A-Z0-9_]+$/.test(head)) return head;
   const upper = raw.toUpperCase();
   for (const code of ALLOWED_ERROR_CODES) {
     if (upper.includes(code)) return code;
@@ -129,10 +142,10 @@ export function normalizeFinalizationErrorCode(error: unknown): string {
 function sanitizeState(state: DeviceFinalizationStateSnapshot | null | undefined) {
   if (!state) return undefined;
   const safe: DeviceFinalizationStateSnapshot = {};
-  if (state.approvalStatus !== undefined) safe.approvalStatus = state.approvalStatus ?? null;
-  if (state.bindingStatus !== undefined) safe.bindingStatus = state.bindingStatus ?? null;
-  if (state.routingStatus !== undefined) safe.routingStatus = state.routingStatus ?? null;
-  if (state.lifecycleStatus !== undefined) safe.lifecycleStatus = state.lifecycleStatus ?? null;
+  const statuses = new Set(['pending', 'approved', 'rejected', 'revoked', 'unbound', 'bound', 'required', 'ready', 'not_ready', 'incomplete', 'registered', 'enrolling', 'binding', 'key_setup', 'syncing', 'active', 'stale', 'blocked', 'error', 'repairing', 'unavailable', 'key_setup_required']);
+  for (const field of ['approvalStatus', 'bindingStatus', 'routingStatus', 'lifecycleStatus'] as const) {
+    if (state[field] !== undefined) safe[field] = state[field] === null ? null : statuses.has(state[field]!) ? state[field] : 'unknown';
+  }
   if (state.isActive !== undefined) safe.isActive = state.isActive ?? null;
   if (state.revoked !== undefined) safe.revoked = state.revoked ?? null;
   return Object.keys(safe).length > 0 ? safe : undefined;
@@ -140,8 +153,17 @@ function sanitizeState(state: DeviceFinalizationStateSnapshot | null | undefined
 
 function sanitizeDetail(detail: string | null | undefined): string | undefined {
   if (!detail) return undefined;
-  const normalized = detail.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 48).toUpperCase();
-  return normalized || undefined;
+  const normalized = detail.toUpperCase();
+  const allowed = new Set(['STILL_WAITING', 'ALREADY_READY', 'MESSAGING_READY', 'NO_NEXT_ACTION',
+    'RPC_ERROR', 'NO_CODE', 'PROBE_ERROR', 'BACKUP_FOUND', 'NO_BACKUP', 'LOCAL_KEYS_PRESENT',
+    'RESTORED_FROM_KEYCHAIN_SNAPSHOT', 'RESTORED_ACTIVE_SESSION', 'NO_BACKUP_NEW_ACCOUNT',
+    'DEVICE_ROUTE_READY', 'DEVICE_SYNCHRONIZATION_COMPLETE', 'DEVICE_ROUTE_INCOMPLETE',
+    'ENROLLING', 'AWAITING_APPROVAL', 'BINDING_ACCOUNT', 'PREPARING_KEYS', 'SYNCING_ACCOUNT',
+    'DEVICE_ID_READY', 'DEVICE_ID_PENDING', 'DEVICE_ID_FAILED']);
+  for (const reason of ['ACCOUNT_BACKUP_PROBE_FAILED', 'COLD_START_SENTINEL', 'SERVER_BACKUP_WITHOUT_SENTINEL']) allowed.add(reason);
+  if (allowed.has(normalized)) return normalized;
+  const code = normalizeFinalizationErrorCode(detail);
+  return code === 'UNKNOWN_ERROR' ? 'UNCLASSIFIED_DETAIL' : code;
 }
 
 /** Construit l'événement assaini sans l'enregistrer (utilisé par les tests). */
@@ -177,7 +199,7 @@ export function traceDeviceFinalization(input: DeviceFinalizationTraceInput): De
   if (buffer.length > MAX_EVENTS) buffer.splice(0, buffer.length - MAX_EVENTS);
 
   try {
-    console.info(TRACE_PREFIX, event);
+    if (isE2EEDebugEnabled()) rawConsoleWrite('info', TRACE_PREFIX, event);
   } catch {
     // La journalisation console est facultative.
   }
@@ -192,7 +214,7 @@ export function traceDeviceFinalization(input: DeviceFinalizationTraceInput): De
 }
 
 export function getDeviceFinalizationTrace(limit?: number): DeviceFinalizationTraceEvent[] {
-  const events = buffer.map((event) => ({ ...event }));
+  const events = buffer.map((event) => ({ ...event, ...(event.state ? { state: { ...event.state } } : {}) }));
   return typeof limit === 'number' && limit > 0 ? events.slice(-limit) : events;
 }
 
@@ -233,6 +255,18 @@ export function traceCurrentDeviceFinalization(
 }
 
 export const DEVICE_FINALIZATION_TRACE_MAX_EVENTS = MAX_EVENTS;
+
+/** Uniquement des booléens calculés au point de comparaison, jamais les clés. */
+export function traceDeviceKeyChecks(context: { userId: string; deviceId: string }, checks: {
+  signingPresent: boolean; exchangePresent: boolean;
+  signingMatches: boolean | null; exchangeMatches: boolean | null;
+}): void {
+  for (const name of ['signingPresent', 'exchangePresent', 'signingMatches', 'exchangeMatches'] as const) {
+    const result = checks[name];
+    traceCurrentDeviceFinalization({ ...context, step: `device_keys.${name}`,
+      outcome: result === null ? 'skipped' : result ? 'success' : 'failure' });
+  }
+}
 
 /** Observation seule : aucun résultat, argument secret ou message d'erreur brut.
  * Le délai informatif ne modifie ni n'annule l'opération cryptographique.

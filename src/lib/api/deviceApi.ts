@@ -53,6 +53,7 @@ import {
   getCurrentDeviceFinalizationTraceId,
   traceFinalizationOperation,
   traceCurrentDeviceFinalization,
+  traceDeviceKeyChecks,
 } from '@/lib/device-manager/deviceFinalizationTrace';
 import { adoptReusableAndroidDevice, resolveExistingAndroidDevice } from '@/platforms/android/androidDeviceReuse';
 import { backupAndroidDeviceVault, restoreAndroidDeviceVault } from '@/platforms/android/androidDeviceVault';
@@ -403,6 +404,11 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
       ]);
     }
   }
+  traceDeviceKeyChecks({ userId, deviceId: record.deviceId }, {
+    signingPresent: Boolean(identity), exchangePresent: Boolean(kx),
+    signingMatches: identity ? identity.publicB64 === record.deviceSigningKey : null,
+    exchangeMatches: kx ? kx.publicB64 === record.devicePublicKey : null,
+  });
   if (!identity || !kx) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
   if (identity.publicB64 !== record.deviceSigningKey || kx.publicB64 !== record.devicePublicKey) throw new Error('DEVICE_LOCAL_KEY_MISMATCH');
 

@@ -4,7 +4,9 @@ vi.mock('../deviceApi', () => ({ deviceApi: { getState: mocks.state, prepareKeys
 vi.mock('@/lib/crypto/libsignalPlatformBridge', () => ({ hasLibsignalStore: mocks.hasStore }));
 vi.mock('@/lib/device-manager/pinUnlockSignal', () => ({ readPinUnlocked: mocks.unlocked }));
 import { cryptoApi } from '../cryptoApi';
+import { clearDeviceFinalizationTrace, getDeviceFinalizationTrace } from '@/lib/device-manager/deviceFinalizationTrace';
 beforeEach(() => {
+  clearDeviceFinalizationTrace();
   vi.resetAllMocks();
   mocks.unlocked.mockReturnValue(true);
   mocks.state.mockResolvedValue({ state: 'ready', record: { deviceId: 'device' } });
@@ -34,4 +36,13 @@ it('does not access private state before PIN unlock', async () => {
   await expect(cryptoApi.ensureReady('alice')).rejects.toThrow('PIN_UNLOCK_REQUIRED');
   expect(mocks.hasStore).not.toHaveBeenCalled();
   expect(mocks.prepare).not.toHaveBeenCalled();
+});
+it('reports routing ready but lifecycle syncing without pretending the runtime is ready', async () => {
+  mocks.state.mockResolvedValue({ state: 'key_setup_required', record: {
+    deviceId: 'device', approvalStatus: 'approved', bindingStatus: 'bound', routingStatus: 'ready', lifecycleStatus: 'syncing', isActive: true,
+  } });
+  await expect(cryptoApi.ensureReady('alice')).rejects.toThrow('CRYPTO_NOT_READY:key_setup_required');
+  expect(getDeviceFinalizationTrace().find(e => e.step === 'crypto_readiness.device_state')).toMatchObject({
+    outcome: 'failure', errorCode: 'CRYPTO_NOT_READY', state: { routingStatus: 'ready', lifecycleStatus: 'syncing' },
+  });
 });

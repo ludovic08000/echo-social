@@ -5,6 +5,7 @@ on:
     paths:
       - 'api/aegis-*.mjs'
       - 'infra/aegis-server/**'
+      - 'supabase/functions/_shared/aegisDiagnostics.mjs'
       - 'vercel.json'
       - '.github/workflows/aegis-gateway.yml'
   push:
@@ -13,6 +14,7 @@ on:
     paths:
       - 'api/aegis-*.mjs'
       - 'infra/aegis-server/**'
+      - 'supabase/functions/_shared/aegisDiagnostics.mjs'
       - 'vercel.json'
       - '.github/workflows/aegis-gateway.yml'
 

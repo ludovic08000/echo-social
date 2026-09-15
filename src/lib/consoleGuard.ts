@@ -26,44 +26,41 @@ export function rawConsoleWrite(level: RawConsoleLevel, ...args: unknown[]): voi
 }
 
 const DEBUG_KEY = 'forsure:e2ee-debug';
+const DEBUG_UNTIL_KEY = 'forsure:e2ee-debug-until';
+let debugUntil = 0;
 
-/** Active/désactive le traçage E2EE visible dans F12 (persisté). */
+/** Diagnostic explicite, limité à dix minutes et à cet onglet. */
 export function setE2EEDebugEnabled(enabled: boolean): void {
+  debugUntil = enabled ? Date.now() + 10 * 60_000 : 0;
   try {
-    if (enabled) localStorage.setItem(DEBUG_KEY, '1');
-    else localStorage.setItem(DEBUG_KEY, '0');
+    sessionStorage.setItem(DEBUG_UNTIL_KEY, String(debugUntil));
+    localStorage.removeItem(DEBUG_KEY);
   } catch {
     /* stockage indisponible */
   }
 }
 
 export function isE2EEDebugEnabled(): boolean {
-  if (IS_DEV) return true;
   try {
-    if (typeof window !== 'undefined' && window.location.search.includes('e2eeDebug=1')) {
-      setE2EEDebugEnabled(true);
-      return true;
-    }
-    // These diagnostics contain sanitized metadata only. Keep them visible by
-    // default in production so device-route failures can be inspected in F12.
-    return localStorage.getItem(DEBUG_KEY) !== '0';
-  } catch {
-    return false;
-  }
+    debugUntil = Number(sessionStorage.getItem(DEBUG_UNTIL_KEY) ?? debugUntil);
+  } catch { /* Le mode reste disponible en mémoire si le stockage est bloqué. */ }
+  const remaining = debugUntil - Date.now();
+  return remaining > 0 && remaining <= 10 * 60_000;
 }
 
 export function lockdownConsole(): void {
   // Expose l'interrupteur de diagnostic avant toute neutralisation.
   if (typeof window !== 'undefined') {
     (window as any).forsureDebug = {
-      enable: () => { setE2EEDebugEnabled(true); rawConsoleWrite('log', '[AEGIS] traçage activé — rechargez la page'); },
+      enable: () => { setE2EEDebugEnabled(true); rawConsoleWrite('log', '[AEGIS] traçage activé pour 10 minutes'); },
       disable: () => { setE2EEDebugEnabled(false); rawConsoleWrite('log', '[AEGIS] traçage désactivé'); },
       enabled: isE2EEDebugEnabled,
       traces: async () => (await import('@/lib/messaging/e2eeTrace')).readE2EETrace(),
+      report: async () => (await import('@/lib/messaging/aegisDiagnosticReport')).getAegisDiagnosticReport(),
       clearTraces: async () => (await import('@/lib/messaging/e2eeTrace')).clearE2EETrace(),
-      help: () => rawConsoleWrite('log', '[AEGIS] forsureDebug: enabled(), enable(), disable(), traces(), clearTraces()'),
+      help: () => rawConsoleWrite('log', '[AEGIS] forsureDebug: enabled(), enable() (10 min), disable(), traces(), report(), clearTraces()'),
     };
-    rawConsoleWrite('log', '[AEGIS] diagnostic F12 actif (métadonnées uniquement). Tapez forsureDebug.help()');
+    rawConsoleWrite('log', '[AEGIS] diagnostic disponible (métadonnées uniquement). Tapez forsureDebug.help()');
   }
   if (IS_DEV) return; // Keep logs in dev mode
 

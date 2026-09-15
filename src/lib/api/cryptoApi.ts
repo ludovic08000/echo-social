@@ -1,6 +1,7 @@
 import { deviceApi, type DeviceApiSnapshot } from '@/lib/api/deviceApi';
 import { readPinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
 import { hasLibsignalStore } from '@/lib/crypto/libsignalPlatformBridge';
+import { traceCurrentDeviceFinalization } from '@/lib/device-manager/deviceFinalizationTrace';
 
 export type CryptoApiState =
   | 'locked'
@@ -34,7 +35,9 @@ async function getState(userId: string): Promise<CryptoApiSnapshot> {
 }
 
 async function ensureReady(userId: string): Promise<CryptoApiSnapshot> {
-  if (!readPinUnlocked(userId)) throw new Error('PIN_UNLOCK_REQUIRED');
+  const unlocked = readPinUnlocked(userId);
+  traceCurrentDeviceFinalization({ userId, step: 'crypto_readiness.pin_unlocked', outcome: unlocked ? 'success' : 'failure' });
+  if (!unlocked) throw new Error('PIN_UNLOCK_REQUIRED');
 
   let snapshot = await deviceApi.getState(userId);
   if (snapshot.state === 'unregistered') throw new Error('DEVICE_NOT_REGISTERED');
@@ -54,11 +57,24 @@ async function ensureReady(userId: string): Promise<CryptoApiSnapshot> {
     snapshot = await deviceApi.getState(userId);
   }
 
+  // La route peut être prête alors que le cycle de vie attend encore la synchronisation.
+  // Observer cette distinction ne doit ni forcer READY ni contourner le coffre.
+  traceCurrentDeviceFinalization({ userId, deviceId: snapshot.record?.deviceId,
+    step: 'crypto_readiness.device_state', outcome: snapshot.state === 'ready' ? 'success' : 'failure',
+    errorCode: snapshot.state === 'ready' ? undefined : 'CRYPTO_NOT_READY',
+    state: snapshot.record ? {
+      approvalStatus: snapshot.record.approvalStatus, bindingStatus: snapshot.record.bindingStatus,
+      routingStatus: snapshot.record.routingStatus, lifecycleStatus: snapshot.record.lifecycleStatus,
+      isActive: snapshot.record.isActive, revoked: Boolean(snapshot.record.revokedAt),
+    } : null });
   if (snapshot.state !== 'ready') {
     throw new Error(`CRYPTO_NOT_READY:${snapshot.state}`);
   }
 
-  if (!snapshot.record || !await hasLibsignalStore(userId, snapshot.record.deviceId)) {
+  const storePresent = Boolean(snapshot.record && await hasLibsignalStore(userId, snapshot.record.deviceId));
+  traceCurrentDeviceFinalization({ userId, deviceId: snapshot.record?.deviceId,
+    step: 'crypto_readiness.owner_store_present', outcome: storePresent ? 'success' : 'failure' });
+  if (!storePresent) {
     throw new Error('AEGIS_LIBSIGNAL_STORE_MISSING');
   }
 
