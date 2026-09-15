@@ -8909,6 +8909,10 @@ export type Database = {
         Args: { conv_id: string; uid: string }
         Returns: boolean
       }
+      is_invalid_e2ee_device: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: boolean
+      }
       is_restricted_by: {
         Args: { p_owner_id: string; p_viewer_id: string }
         Returns: boolean

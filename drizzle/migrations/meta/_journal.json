@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789472938167,
+      "tag": "0000_align_active_identity_after_legacy_removal",
+      "breakpoints": true
+    }
+  ]
+}
