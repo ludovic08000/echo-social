@@ -5856,6 +5856,72 @@ export type Database = {
         }
         Relationships: []
       }
+      sealed_sender_events: {
+        Row: {
+          anonymous_sender_tag: string
+          conversation_id: string | null
+          created_at: string
+          id: string
+          recipient_user_id: string | null
+          sender_hint_hash: string | null
+        }
+        Insert: {
+          anonymous_sender_tag: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          recipient_user_id?: string | null
+          sender_hint_hash?: string | null
+        }
+        Update: {
+          anonymous_sender_tag?: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          recipient_user_id?: string | null
+          sender_hint_hash?: string | null
+        }
+        Relationships: []
+      }
+      sealed_sender_messages: {
+        Row: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at: string
+          delivered_at: string | null
+          delivery_state: string
+          id: string
+          read_at: string | null
+          recipient_user_id: string
+          sealed_header: Json
+          sealed_payload: string
+        }
+        Insert: {
+          anonymous_sender_tag: string
+          conversation_id: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_state?: string
+          id?: string
+          read_at?: string | null
+          recipient_user_id: string
+          sealed_header?: Json
+          sealed_payload: string
+        }
+        Update: {
+          anonymous_sender_tag?: string
+          conversation_id?: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_state?: string
+          id?: string
+          read_at?: string | null
+          recipient_user_id?: string
+          sealed_header?: Json
+          sealed_payload?: string
+        }
+        Relationships: []
+      }
       security_ai_patterns: {
         Row: {
           autonomy_level: number | null
@@ -8593,14 +8659,6 @@ export type Database = {
         }
         Returns: Json
       }
-      finalize_device_account_binding_pre_signal_validation: {
-        Args: {
-          p_device_authorization_signature: string
-          p_device_id: string
-          p_user_id: string
-        }
-        Returns: Json
-      }
       finalize_device_approval_decision: {
         Args: {
           p_approver_device_id?: string
@@ -8907,6 +8965,10 @@ export type Database = {
       }
       is_conversation_participant: {
         Args: { conv_id: string; uid: string }
+        Returns: boolean
+      }
+      is_invalid_e2ee_device: {
+        Args: { p_device_id: string; p_user_id: string }
         Returns: boolean
       }
       is_restricted_by: {
