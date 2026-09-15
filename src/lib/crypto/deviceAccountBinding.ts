@@ -19,12 +19,16 @@ export async function bindApprovedDeviceToAccount(
   userId: string,
   deviceId: string,
 ): Promise<void> {
-  const { data, error } = await supabase
-    .from('user_devices')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('device_id', deviceId)
-    .maybeSingle();
+  const { data, error } = await runDeviceRpcWithTimeout(
+    'DEVICE_BINDING_LOOKUP_FAILED',
+    (signal) => supabase
+      .from('user_devices')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .abortSignal(signal)
+      .maybeSingle(),
+  );
 
   if (error) throw new Error(`DEVICE_BINDING_LOOKUP_FAILED:${error.message}`);
   if (!data) throw new Error('DEVICE_NOT_FOUND');

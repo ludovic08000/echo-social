@@ -1,10 +1,8 @@
 /**
  * Interface commune des fournisseurs sécurisés par plateforme.
  *
- * Invariant : cette interface est purement additive. Le chemin Windows
- * (WebAuthn / Windows Hello / device lifecycle) n'est PAS modifié et
- * n'implémente pas encore cette interface. Elle sert de socle à
- * l'architecture iOS isolée (platforms/ios).
+ * Invariant : cette interface isole le stockage matériel natif du coffre web
+ * Aegis. Elle sert de socle commun aux implémentations de plateforme.
  */
 
 export type SecureProviderPlatform = 'ios' | 'android' | 'web' | 'windows' | 'unknown';

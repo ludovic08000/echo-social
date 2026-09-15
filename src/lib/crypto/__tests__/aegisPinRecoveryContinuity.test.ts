@@ -116,11 +116,9 @@ describe('Aegis PIN recovery and identity continuity', () => {
 
   it('always scopes restored-session checks to the signed-in account and catches bootstrap pauses', () => {
     const auth = source('src/lib/auth.tsx');
-    const dialog = source('src/components/messages/E2EERestorePromptDialog.tsx');
     const bootstrap = source('src/lib/crypto/identityBootstrap.ts');
 
     expect(auth).toContain('hasLocalKeys(userId)');
-    expect(dialog).toContain('Recovery is now handled by the canonical DeviceID / Windows Hello lifecycle');
     expect(bootstrap).toContain('error instanceof PinUnlockRequiredError');
     expect(bootstrap).toContain('runWithoutUnhandledRejection(userId)');
   });

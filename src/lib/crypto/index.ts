@@ -19,12 +19,6 @@ export {
 } from './secureBackupVault';
 
 export {
-  registerPasskeyForBackupVault,
-  verifyPasskeyBeforeVaultRestore,
-  hasLocalPasskeyVaultAlias,
-} from './passkeyVault';
-
-export {
   rotateEncryptedBackupVault,
   ensureBackupRotation,
 } from './backupRotation';

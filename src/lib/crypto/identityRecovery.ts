@@ -29,7 +29,7 @@ function announceRestoreRequired(userId: string, reason: string): void {
  * A new epoch is returned only when the strict key manager has proved that the
  * account has no prior identity or backup. Recovery failures never generate a
  * replacement identity: they stay blocked until the existing identity is
- * restored with the PIN, password session, recovery key or passkey.
+ * restored with the PIN, password session or recovery key.
  */
 export async function resolveUserIdentity(userId: string): Promise<{
   keys: IdentityKeyPair;

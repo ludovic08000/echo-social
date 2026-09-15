@@ -411,7 +411,7 @@ export async function loadIdentityKeys(userId: string): Promise<IdentityKeyPair 
 // NOTE: the legacy `createFreshIdentity()` helper was removed on purpose.
 // Any "local keys missing" path that previously generated a brand new
 // identity now throws PinUnlockRequiredError so the UI drives a real
-// restore (PIN / recovery key / passkey) instead of silently breaking
+// restore (PIN / recovery key) instead of silently breaking
 // E2EE continuity for every peer.
 
 export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityKeyPair & { isNewIdentity?: boolean; recoveredAfterLoss?: boolean }> {
@@ -439,7 +439,7 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
   // for this account. We must NEVER silently rotate to a brand new key —
   // peers would lose verification, sealed-sender would break, and devices
   // would be impersonated. Surface the requirement so the UI can drive the
-  // restore / recovery-key / passkey flow.
+  // PIN / recovery-key restore flow.
   try {
     const { supabase } = await import('@/integrations/supabase/client');
     const [activeResult, backupResult] = await Promise.all([
@@ -462,7 +462,7 @@ export async function getOrCreateIdentityKeys(userId: string): Promise<IdentityK
 
     if (decision === 'continuity') {
       throw new PinUnlockRequiredError(
-        'PIN_UNLOCK_REQUIRED: server identity continuity detected — restore via PIN / recovery key / passkey before generating a new identity.',
+        'PIN_UNLOCK_REQUIRED: server identity continuity detected — restore via PIN / recovery key before generating a new identity.',
       );
     }
   } catch (err) {

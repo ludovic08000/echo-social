@@ -1,19 +1,12 @@
-import { useState, type ReactNode } from 'react';
-import { Fingerprint, Loader2, ShieldQuestion, Smartphone } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Loader2, ShieldQuestion, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/lib/auth';
 import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
 import {
   DeviceFinalizationDiagnostics,
   useFinalizationStall,
 } from '@/components/messaging/DeviceFinalizationDiagnostics';
-import { getSessionMasterKey, initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
-import {
-  isWindowsWeb,
-  recoverCurrentWindowsHelloDevice,
-} from '@/lib/crypto/windowsHelloDeviceRecovery';
 
 interface DeviceApprovalGateProps {
   children: ReactNode;
@@ -40,40 +33,7 @@ function Shell({ children, compact }: { children: ReactNode; compact: boolean })
  * affichée avec un bouton Réessayer, jamais remplacée par une attente infinie.
  */
 export function DeviceApprovalGate({ children, compact = false }: DeviceApprovalGateProps) {
-  const { user } = useAuth();
   const lifecycle = useDeviceLifecycle();
-  const [recovering, setRecovering] = useState(false);
-  const [recoveryPassword, setRecoveryPassword] = useState('');
-  const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
-  const [recoveryError, setRecoveryError] = useState<string | null>(null);
-
-  const recoverWithWindowsHello = async () => {
-    if (!user?.id || recovering) return;
-    setRecoveryError(null);
-    if (!getSessionMasterKey() && !recoveryPassword) {
-      setShowRecoveryPassword(true);
-      return;
-    }
-    setRecovering(true);
-    try {
-      if (!getSessionMasterKey()) {
-        const status = await initAccountKeySync(recoveryPassword, user.id);
-        if (status !== 'restored' && status !== 'local_ok') {
-          throw new Error(status === 'no_backup'
-            ? 'Aucune sauvegarde de compte disponible pour restaurer les clés.'
-            : 'Mot de passe incorrect ou sauvegarde du compte illisible.');
-        }
-      }
-      await recoverCurrentWindowsHelloDevice(user.id);
-      setRecoveryPassword('');
-      setShowRecoveryPassword(false);
-      lifecycle.refresh();
-    } catch (error) {
-      setRecoveryError(error instanceof Error ? error.message : 'WEBAUTHN_DEVICE_RECOVERY_FAILED');
-    } finally {
-      setRecovering(false);
-    }
-  };
 
   const failure = (
     <ErrorBlock error={lifecycle.error} onRetry={lifecycle.retry} />
@@ -99,87 +59,52 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
   }
 
   if (lifecycle.state === 'DEVICE_CREDENTIAL_CHECK' || lifecycle.state === 'LINK_REQUIRED') {
-    // Hors Windows Web (récupération Windows Hello prioritaire), l'appareil
-    // s'enrôle et se fait approuver automatiquement : aucun écran d'attente.
-    if (!isWindowsWeb() && !lifecycle.error) {
+    if (lifecycle.error) {
       return (
         <Shell compact={compact}>
           <div className="flex flex-col items-center gap-3 text-center">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <p className="text-sm font-medium">Enregistrement de cet appareil…</p>
-            <p className="text-xs text-muted-foreground">Vérification cryptographique automatique en cours.</p>
-          {diagnostics}
+            <p className="text-sm font-medium">Initialisation Aegis interrompue</p>
+            {failure}
+            {diagnostics}
           </div>
         </Shell>
       );
     }
+
+    if (lifecycle.state === 'LINK_REQUIRED' && lifecycle.stage === 'idle') {
+      return (
+        <Shell compact={compact}>
+          <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                <Smartphone className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold">Nouvel enrôlement Aegis requis</h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  L’ancien état local ne peut plus être utilisé. Un nouveau DeviceID et de nouvelles clés Libsignal seront créés sur cet appareil.
+                </p>
+              </div>
+            </div>
+            {lifecycle.canStartEnrollment && (
+              <Button className="w-full rounded-xl" onClick={lifecycle.startEnrollment}>
+                <ShieldQuestion className="mr-2 h-4 w-4" />
+                Créer les clés Aegis
+              </Button>
+            )}
+            {diagnostics}
+          </div>
+        </Shell>
+      );
+    }
+
     return (
       <Shell compact={compact}>
-
-        <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-          <div className="mb-4 flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-              <Smartphone className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold">Appareil non retrouvé</h2>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Si vous avez supprimé les données du navigateur, restaurez d’abord le même appareil avec Windows Hello. Un nouvel enrôlement ne doit être créé que si cette récupération est impossible.
-              </p>
-            </div>
-          </div>
-
-          <div className="mb-4 rounded-xl bg-muted/50 px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Sécurité</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Le DeviceID et ses clés privées sont restaurés uniquement après preuve Windows Hello et vérification du coffre chiffré du compte.
-            </p>
-          </div>
-
-          {recoveryError && (
-            <p className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {recoveryError}
-            </p>
-          )}
-          {!recoveryError && <div className="mb-3">{failure}</div>}
-
-          {isWindowsWeb() && (
-            <div className="mb-3 space-y-2">
-              {showRecoveryPassword && !getSessionMasterKey() && (
-                <Input
-                  type="password"
-                  autoComplete="current-password"
-                  value={recoveryPassword}
-                  disabled={recovering}
-                  onChange={(event) => setRecoveryPassword(event.target.value)}
-                  placeholder="Mot de passe du compte"
-                />
-              )}
-              <Button
-                variant="outline"
-                className="w-full rounded-xl"
-                disabled={recovering || lifecycle.stage !== 'idle'}
-                onClick={() => void recoverWithWindowsHello()}
-              >
-                {recovering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Fingerprint className="mr-2 h-4 w-4" />}
-                Reconnaître cet appareil avec Windows Hello
-              </Button>
-              <p className="text-center text-[10px] text-muted-foreground">ou, uniquement si cet appareil n’a jamais été enregistré</p>
-            </div>
-          )}
-
-          {lifecycle.canStartEnrollment && <Button
-            className="w-full rounded-xl"
-            disabled={recovering || lifecycle.stage !== 'idle'}
-            onClick={lifecycle.startEnrollment}
-          >
-            {lifecycle.stage === 'enrolling' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldQuestion className="mr-2 h-4 w-4" />}
-            Enregistrer comme nouvel appareil
-          </Button>}
-
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            Aucun nouvel identifiant n’est généré automatiquement.
-          </p>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <p className="text-sm font-medium">Initialisation de Libsignal…</p>
+          <p className="text-xs text-muted-foreground">Attribution du DeviceID et création locale des clés Aegis en cours.</p>
+          {diagnostics}
         </div>
       </Shell>
     );

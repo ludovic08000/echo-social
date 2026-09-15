@@ -11,7 +11,7 @@ import type { X3dhPrivatePrekeySnapshot } from '@/lib/crypto/x3dh';
 import type { DeviceSessionSnapshot } from '@/lib/crypto/deviceSessionStore';
 
 
-const VAULT_VERSION = 1 as const;
+const VAULT_VERSION = 2 as const;
 const IV_BYTES = 12;
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
@@ -45,7 +45,7 @@ interface PlainDeviceVault {
   createdAt: number;
 }
 
-export interface EncryptedWebDeviceVault {
+export interface EncryptedAegisDeviceVault {
   version: typeof VAULT_VERSION;
   iv: string;
   ciphertext: string;
@@ -61,7 +61,7 @@ function kxStorageKey(userId: string, deviceId: string): string {
 
 function aad(userId: string, deviceId: string): Uint8Array {
   return new hardGlobals.TextEncoder().encode(
-    `FORSURE-WEBAUTHN-DEVICE-VAULT-v1|${userId}|${deviceId}`,
+    `FORSURE-AEGIS-DEVICE-VAULT-v2|${userId}|${deviceId}`,
   );
 }
 
@@ -73,7 +73,7 @@ function toBase64Url(bytes: ArrayBuffer | Uint8Array): string {
 }
 
 function fromBase64Url(value: string): Uint8Array {
-  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('WEBAUTHN_DEVICE_VAULT_BASE64_INVALID');
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('AEGIS_DEVICE_VAULT_BASE64_INVALID');
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
   const binary = hardGlobals.atob(padded);
@@ -153,17 +153,17 @@ async function readDeviceRecords(userId: string, deviceId: string): Promise<{
   });
   const resolvedSigning = sealedSigning ?? signing;
   const resolvedKx = sealedKx ?? kx;
-  if (!validateSigningRecord(resolvedSigning, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_SIGNING_KEYS_MISSING');
-  if (!validateKxRecord(resolvedKx, userId, deviceId)) throw new Error('WEBAUTHN_DEVICE_KX_KEYS_MISSING');
+  if (!validateSigningRecord(resolvedSigning, userId, deviceId)) throw new Error('AEGIS_DEVICE_SIGNING_KEYS_MISSING');
+  if (!validateKxRecord(resolvedKx, userId, deviceId)) throw new Error('AEGIS_DEVICE_KX_KEYS_MISSING');
   return { signing: resolvedSigning, kx: resolvedKx };
 }
 
 
-export async function captureEncryptedWebDeviceVault(
+export async function captureEncryptedAegisDeviceVault(
   userId: string,
   deviceId: string,
-): Promise<EncryptedWebDeviceVault> {
-  if (!userId || !DEVICE_ID_RE.test(deviceId)) throw new Error('WEBAUTHN_DEVICE_VAULT_SCOPE_INVALID');
+): Promise<EncryptedAegisDeviceVault> {
+  if (!userId || !DEVICE_ID_RE.test(deviceId)) throw new Error('AEGIS_DEVICE_VAULT_SCOPE_INVALID');
   const masterKey = getSessionMasterKey();
   if (!masterKey) throw new Error('ACCOUNT_MASTER_KEY_REQUIRED');
   const { signing, kx } = await readDeviceRecords(userId, deviceId);
@@ -203,21 +203,21 @@ export async function captureEncryptedWebDeviceVault(
   };
 }
 
-export async function restoreEncryptedWebDeviceVault(args: {
+export async function restoreEncryptedAegisDeviceVault(args: {
   userId: string;
   deviceId: string;
-  vault: EncryptedWebDeviceVault;
+  vault: EncryptedAegisDeviceVault;
   expectedDeviceSigningKey: string;
   expectedDevicePublicKey: string;
 }): Promise<void> {
   const { userId, deviceId, vault } = args;
   if (!userId || !DEVICE_ID_RE.test(deviceId) || vault.version !== VAULT_VERSION) {
-    throw new Error('WEBAUTHN_DEVICE_VAULT_SCOPE_INVALID');
+    throw new Error('AEGIS_DEVICE_VAULT_SCOPE_INVALID');
   }
   const masterKey = getSessionMasterKey();
   if (!masterKey) throw new Error('ACCOUNT_MASTER_KEY_REQUIRED');
   const iv = fromBase64Url(vault.iv);
-  if (iv.byteLength !== IV_BYTES) throw new Error('WEBAUTHN_DEVICE_VAULT_IV_INVALID');
+  if (iv.byteLength !== IV_BYTES) throw new Error('AEGIS_DEVICE_VAULT_IV_INVALID');
   const ciphertext = fromBase64Url(vault.ciphertext);
   let decoded: unknown;
   try {
@@ -229,7 +229,7 @@ export async function restoreEncryptedWebDeviceVault(args: {
     }, masterKey, ciphertext);
     decoded = hardGlobals.jsonParse(new hardGlobals.TextDecoder().decode(plaintext));
   } catch {
-    throw new Error('WEBAUTHN_DEVICE_VAULT_DECRYPT_FAILED');
+    throw new Error('AEGIS_DEVICE_VAULT_DECRYPT_FAILED');
   }
   const plain = decoded as Partial<PlainDeviceVault> | null;
   if (!plain
@@ -244,11 +244,11 @@ export async function restoreEncryptedWebDeviceVault(args: {
       !Array.isArray(plain.sessions?.sessions)
       || !Array.isArray(plain.sessions?.initiating)
     ))) {
-    throw new Error('WEBAUTHN_DEVICE_VAULT_INVALID');
+    throw new Error('AEGIS_DEVICE_VAULT_INVALID');
   }
   if (jwkXToStandardBase64(plain.signing.publicKeyJWK.x!) !== args.expectedDeviceSigningKey
     || jwkXToStandardBase64(plain.kx.publicKeyJWK.x!) !== args.expectedDevicePublicKey) {
-    throw new Error('WEBAUTHN_DEVICE_VAULT_KEY_MISMATCH');
+    throw new Error('AEGIS_DEVICE_VAULT_KEY_MISMATCH');
   }
   // Refuser un recul Libsignal avant de modifier les autres clés du coffre.
   const { restoreLibsignalStore } = await import('@/lib/crypto/libsignalPlatformBridge');

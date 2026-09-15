@@ -1,12 +1,11 @@
 import { restoreAegisRecoveryVault } from './aegisRecoveryVault';
 import { runPostRestoreLifecycle } from './postRestoreLifecycle';
 
-export type RecoverySource = 'pin' | 'recovery_key' | 'passkey';
+export type RecoverySource = 'pin' | 'recovery_key';
 
 export type RecoveryAttempt =
   | { source: 'pin'; pin: string }
-  | { source: 'recovery_key'; key: string }
-  | { source: 'passkey' };
+  | { source: 'recovery_key'; key: string };
 
 export type RecoveryResult =
   | { ok: true; source: RecoverySource }
@@ -77,17 +76,7 @@ export async function attemptRecovery(
       };
     }
 
-    const mod = await import('./passkeyVault');
-    const candidate = mod as unknown as {
-      restoreWithPasskey?: (targetUserId: string) => Promise<unknown>;
-      unwrapWithPasskey?: (targetUserId: string) => Promise<unknown>;
-    };
-    const restore = candidate.restoreWithPasskey ?? candidate.unwrapWithPasskey;
-    if (!restore) return { ok: false, source: 'passkey', reason: 'passkey_restore_unavailable' };
-    const output = await restore(userId);
-    return output
-      ? await finishSuccessfulRecovery(userId, 'passkey')
-      : { ok: false, source: 'passkey', reason: 'passkey_cancelled_or_failed' };
+    return { ok: false, source: 'pin', reason: 'unsupported_recovery_source' };
   } catch (error) {
     return {
       ok: false,

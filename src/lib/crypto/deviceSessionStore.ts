@@ -1,10 +1,10 @@
 /**
- * Durable Signal-style session store shared by Windows, iOS and Android.
+ * Durable Signal-style session store shared by web, iOS and Android.
  *
  * iOS Web/PWA stores ratchet material only in ACE. Native iOS/Android stores
  * it in the platform key vault and retains the IndexedDB compatibility mirror.
- * Windows keeps its established IndexedDB path. All sealed writes are read
- * back by DeviceVault before this module reports success.
+ * Web keeps an encrypted IndexedDB vault. All sealed writes are read back by
+ * DeviceVault before this module reports success.
  */
 import {
   adoptLegacyPlaintextRecord,
@@ -26,7 +26,7 @@ export interface DeviceSessionSnapshot {
 const backupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function scheduleEncryptedSessionBackup(recordId: string): void {
-  if (typeof navigator === 'undefined' || !/(Windows|iPhone|iPad|iPod)/i.test(navigator.userAgent || '')) return;
+  if (typeof navigator === 'undefined' || !/(iPhone|iPad|iPod)/i.test(navigator.userAgent || '')) return;
   const parts = recordId.split('::');
   if (parts.length < 2) return;
   const [userId, deviceId] = parts;
@@ -38,9 +38,7 @@ function scheduleEncryptedSessionBackup(recordId: string): void {
     backupTimers.delete(key);
     void (async () => {
       const { backupIosDeviceVaultIfReady } = await import('@/platforms/ios/iosDeviceVaultRestore');
-      if (await backupIosDeviceVaultIfReady(userId)) return;
-      const { backupWindowsHelloDeviceVaultIfReady } = await import('./windowsHelloDeviceRecovery');
-      await backupWindowsHelloDeviceVaultIfReady(userId);
+      await backupIosDeviceVaultIfReady(userId);
     })().catch(() => undefined);
   }, 1_500));
 }

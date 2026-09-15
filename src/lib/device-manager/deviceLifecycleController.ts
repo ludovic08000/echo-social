@@ -106,7 +106,6 @@ export interface DeviceLifecycleDeps {
   getDeviceIdStatus(): DeviceIdStatus;
   peekDeviceId(): string | null;
   setUserScope(userId: string | null): void;
-  isWindowsWeb(): boolean;
   readPinUnlocked(userId: string): boolean;
   subscribePinUnlocked(userId: string, listener: (unlocked: boolean) => void): () => void;
   onDeviceRecordChanged(userId: string, listener: () => void): () => void;
@@ -248,7 +247,7 @@ export class DeviceLifecycleController {
     return this.advance();
   }
 
-  /** Windows Web : enrôlement d'un nouvel appareil sur action utilisateur. */
+  /** Ré-enrôlement explicite après rejet ou révocation du DeviceID courant. */
   startEnrollment(): Promise<void> {
     this.manualEnrollmentRequested = true;
     this.error = null;
@@ -318,14 +317,14 @@ export class DeviceLifecycleController {
 
   /** Détermine la SEULE prochaine transition légitime, dans l'ordre canonique. */
   private nextAction(): Exclude<DeviceLifecycleStage, 'idle' | 'reading'> | null {
+    if (this.manualEnrollmentRequested) return 'enrolling';
     if (this.deviceIdStatus === 'mismatch' || this.deviceIdStatus === 'storage_unavailable') return null;
     const record = this.record;
 
     if (record === 'unknown') return null;
     if (!record || !this.deviceId) {
-      // Aucun device serveur : Windows Web garde la récupération Windows Hello
-      // prioritaire et n'enrôle jamais silencieusement un nouvel appareil.
-      if (this.deps.isWindowsWeb() && !this.manualEnrollmentRequested) return null;
+      // Premier démarrage réel : toutes les plateformes créent directement le
+      // DeviceID et les clés Libsignal, sans authentificateur intermédiaire.
       return 'enrolling';
     }
     if (record.deviceId !== this.deviceId) return null;
@@ -519,7 +518,9 @@ export class DeviceLifecycleController {
       canRunDeviceKeySetup: canRunDeviceKeySetup(state),
       canRunCryptoRuntime: canRunCryptoRuntime(state),
       needsApprovalUi: requiresDeviceApprovalUi(state),
-      canStartEnrollment: this.record !== 'unknown' && this.record === null && this.stage === 'idle',
+      canStartEnrollment: this.stage === 'idle'
+        && this.record !== 'unknown'
+        && (this.record === null || state === 'LINK_REQUIRED'),
     };
   }
 
@@ -565,7 +566,6 @@ export const __deviceLifecycleTestUtils = {
       getDeviceIdStatus: () => 'ok',
       peekDeviceId: () => 'dev_00000000000000000000000000000000',
       setUserScope: () => undefined,
-      isWindowsWeb: () => false,
       readPinUnlocked: () => true,
       subscribePinUnlocked: () => () => undefined,
       onDeviceRecordChanged: () => () => undefined,

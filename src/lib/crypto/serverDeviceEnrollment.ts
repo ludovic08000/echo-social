@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { signDeviceEnrollmentPossession } from '@/lib/crypto/deviceEnrollmentPossession';
 import { consumeExplicitDeviceEnrollmentAuthorization } from '@/lib/crypto/deviceEnrollmentGate';
 import { getCurrentPlatform } from '@/lib/messaging/currentDevice';
+import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 import type { DeviceIdentityKey } from '@/lib/crypto/deviceIdentity';
 import type { DeviceKxKey } from '@/lib/crypto/deviceKx';
 
@@ -122,12 +123,16 @@ export function parseDeviceEnrollmentSettlement(value: unknown, expectedDeviceId
 
 export async function hasRegisteredDevice(userId: string, deviceId: string): Promise<boolean> {
   if (!deviceId) return false;
-  const { data, error } = await supabase
-    .from('user_devices')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('device_id', deviceId)
-    .maybeSingle();
+  const { data, error } = await runDeviceRpcWithTimeout(
+    'DEVICE_ROUTE_LOOKUP_FAILED',
+    (signal) => supabase
+      .from('user_devices')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .abortSignal(signal)
+      .maybeSingle(),
+  );
   if (error) throw new Error(`DEVICE_ROUTE_LOOKUP_FAILED:${error.message}`);
   if (!data) return false;
   const row = data as unknown as RegisteredDeviceRow;
@@ -144,11 +149,14 @@ export async function beginServerAssignedDeviceEnrollment(
   metadata: DeviceEnrollmentMetadata,
 ): Promise<DeviceEnrollmentChallenge> {
   consumeExplicitDeviceEnrollmentAuthorization();
-  const { data, error } = await supabase.rpc('begin_user_device_enrollment' as never, {
-    p_device_name: metadata.deviceName,
-    p_platform: metadata.platform,
-    p_user_agent: metadata.userAgent,
-  } as never);
+  const { data, error } = await runDeviceRpcWithTimeout(
+    'DEVICE_ENROLLMENT_BEGIN_FAILED',
+    (signal) => supabase.rpc('begin_user_device_enrollment' as never, {
+      p_device_name: metadata.deviceName,
+      p_platform: metadata.platform,
+      p_user_agent: metadata.userAgent,
+    } as never).abortSignal(signal),
+  );
   if (error) throw new Error(`DEVICE_ENROLLMENT_BEGIN_FAILED:${error.message}`);
   return parseDeviceEnrollmentChallenge(data);
 }
@@ -168,13 +176,16 @@ export async function completeServerAssignedDeviceEnrollment(
     deviceSigningPrivateKey: deviceIdentity.privateKey,
   });
 
-  const { data, error } = await supabase.rpc('complete_user_device_enrollment' as never, {
-    p_challenge_id: challenge.challengeId,
-    p_nonce: challenge.nonce,
-    p_device_public_key: deviceKx.publicB64,
-    p_device_signing_key: deviceIdentity.publicB64,
-    p_device_possession_signature: possessionSignature,
-  } as never);
+  const { data, error } = await runDeviceRpcWithTimeout(
+    'DEVICE_ENROLLMENT_COMPLETE_FAILED',
+    (signal) => supabase.rpc('complete_user_device_enrollment' as never, {
+      p_challenge_id: challenge.challengeId,
+      p_nonce: challenge.nonce,
+      p_device_public_key: deviceKx.publicB64,
+      p_device_signing_key: deviceIdentity.publicB64,
+      p_device_possession_signature: possessionSignature,
+    } as never).abortSignal(signal),
+  );
   if (error) throw new Error(`DEVICE_ENROLLMENT_COMPLETE_FAILED:${error.message}`);
   return parseCompletedDeviceEnrollment(data, challenge.deviceId);
 }
@@ -183,11 +194,14 @@ export async function cancelServerAssignedDeviceEnrollment(
   challenge: DeviceEnrollmentChallenge,
   reason: string,
 ): Promise<DeviceEnrollmentSettlement> {
-  const { data, error } = await supabase.rpc('cancel_user_device_enrollment' as never, {
-    p_challenge_id: challenge.challengeId,
-    p_nonce: challenge.nonce,
-    p_reason: reason.slice(0, 120),
-  } as never);
+  const { data, error } = await runDeviceRpcWithTimeout(
+    'DEVICE_ENROLLMENT_CANCEL_FAILED',
+    (signal) => supabase.rpc('cancel_user_device_enrollment' as never, {
+      p_challenge_id: challenge.challengeId,
+      p_nonce: challenge.nonce,
+      p_reason: reason.slice(0, 120),
+    } as never).abortSignal(signal),
+  );
   if (error) throw new Error(`DEVICE_ENROLLMENT_CANCEL_FAILED:${error.message}`);
   return parseDeviceEnrollmentSettlement(data, challenge.deviceId);
 }

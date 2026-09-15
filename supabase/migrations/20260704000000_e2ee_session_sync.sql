@@ -8,7 +8,7 @@
 -- Stores CLIENT-SIDE-ENCRYPTED ratchet state so a WKWebView IndexedDB purge
 -- (iOS) no longer loses the session. The server only ever sees opaque
 -- ciphertext + IV: blobs are encrypted with the account Master Key
--- (getSessionMasterKey), which is wrapped by the passkey/PIN vault and never
+-- (getSessionMasterKey), which is wrapped by the Aegis PIN vault and never
 -- uploaded. RLS restricts every row to its owner as defense-in-depth.
 --
 -- One row per (user_id, device_id, conversation_id, kind); kind is 'session'

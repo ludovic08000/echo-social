@@ -8,7 +8,6 @@ import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
 import { deviceApi, type DeviceApiListRecord } from '@/lib/api/deviceApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { WindowsHelloDeviceRecoverySection } from '@/components/settings/WindowsHelloDeviceRecoverySection';
 import { IosDeviceDiagnosticsSection } from '@/components/settings/IosDeviceDiagnosticsSection';
 import {
   AlertDialog,
@@ -27,7 +26,6 @@ type DeviceDiagnostic = {
   lifecycleStatus: string | null;
   spkCount: number;
   opkCount: number;
-  webauthnCount: number;
   loadedAt: string;
   error: string | null;
 };
@@ -80,7 +78,7 @@ export function DevicesPanel() {
 
     await Promise.all(rows.map(async (device) => {
       try {
-        const [deviceState, spk, opk, webauthn] = await Promise.all([
+        const [deviceState, spk, opk] = await Promise.all([
           supabase
             .from('user_devices')
             .select('routing_error,lifecycle_status')
@@ -97,15 +95,9 @@ export function DevicesPanel() {
             .select('*', { count: 'exact', head: true })
             .eq('user_id', user.id)
             .eq('device_id', device.deviceId),
-          supabase
-            .from('webauthn_device_credentials' as never)
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .eq('device_id', device.deviceId)
-            .is('revoked_at', null),
         ]);
 
-        const firstError = deviceState.error || spk.error || opk.error || webauthn.error;
+        const firstError = deviceState.error || spk.error || opk.error;
         const state = deviceState.data as { routing_error?: string | null; lifecycle_status?: string | null } | null;
 
         next[device.deviceId] = {
@@ -113,7 +105,6 @@ export function DevicesPanel() {
           lifecycleStatus: state?.lifecycle_status ?? device.lifecycleStatus ?? null,
           spkCount: spk.count ?? 0,
           opkCount: opk.count ?? 0,
-          webauthnCount: webauthn.count ?? 0,
           loadedAt: new Date().toISOString(),
           error: firstError?.message ?? null,
         };
@@ -123,7 +114,6 @@ export function DevicesPanel() {
           lifecycleStatus: device.lifecycleStatus ?? null,
           spkCount: 0,
           opkCount: 0,
-          webauthnCount: 0,
           loadedAt: new Date().toISOString(),
           error: error instanceof Error ? error.message : String(error),
         };
@@ -197,7 +187,6 @@ export function DevicesPanel() {
       revokedAt: device.revokedAt,
       spkCount: diag?.spkCount ?? null,
       opkCount: diag?.opkCount ?? null,
-      webauthnActiveCredentials: diag?.webauthnCount ?? null,
       diagnosticReadError: diag?.error ?? null,
     };
 
@@ -236,10 +225,6 @@ export function DevicesPanel() {
           </Button>
         </div>
       </div>
-
-      {user?.id && (
-        <WindowsHelloDeviceRecoverySection userId={user.id} deviceId={currentDeviceId} />
-      )}
 
       {devices.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -325,7 +310,6 @@ export function DevicesPanel() {
                         <div><span className="text-muted-foreground">Routing : </span>{diagnosticLine(device.routingStatus === 'ready', 'ready', device.routingStatus ?? 'inconnu')}</div>
                         <div><span className="text-muted-foreground">SPK : </span>{diag ? diagnosticLine(diag.spkCount > 0, `${diag.spkCount} publiée(s)`, 'absente') : '…'}</div>
                         <div><span className="text-muted-foreground">OPK : </span><span className="font-mono">{diag?.opkCount ?? '…'}</span></div>
-                        <div><span className="text-muted-foreground">Windows Hello : </span>{diag ? diagnosticLine(diag.webauthnCount > 0, 'activé', 'non enregistré') : '…'}</div>
                         <div><span className="text-muted-foreground">Actif : </span>{diagnosticLine(device.isActive && !device.revokedAt, 'oui', 'non')}</div>
                       </div>
 

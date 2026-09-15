@@ -3,5 +3,3 @@ export * from '@/platforms/ios/keychain';
 export * from '@/platforms/ios/secureEnclave';
 export * from '@/platforms/ios/iosDeviceProvider';
 export * from '@/platforms/ios/iosDiagnostics';
-export * from '@/platforms/ios/iosPasskeyProvider';
-export * from '@/platforms/ios/iosPasskeyState';

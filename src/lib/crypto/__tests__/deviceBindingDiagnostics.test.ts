@@ -5,7 +5,11 @@ vi.mock('@/integrations/supabase/client', () => ({ supabase: { from: () => {
 } } }));
 vi.mock('@/lib/crypto/deviceIdentity', () => ({ loadDeviceIdentity: mocks.identity, prepareDeviceAuthorization: mocks.authorization }));
 vi.mock('@/lib/crypto/deviceKx', () => ({ loadDeviceKxKey: mocks.kx }));
-vi.mock('@/lib/api/deviceRpcTimeout', () => ({ runDeviceRpcWithTimeout: mocks.rpc }));
+vi.mock('@/lib/api/deviceRpcTimeout', () => ({
+  runDeviceRpcWithTimeout: (code: string) => (
+    code === 'DEVICE_BINDING_LOOKUP_FAILED' ? mocks.lookup() : mocks.rpc()
+  ),
+}));
 import { bindApprovedDeviceToAccount } from '../deviceAccountBinding';
 import { clearDeviceFinalizationTrace, getDeviceFinalizationTrace } from '@/lib/device-manager/deviceFinalizationTrace';
 

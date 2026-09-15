@@ -285,9 +285,9 @@ export async function captureDeviceX3dhPrivatePrekeys(
     recordsById.set(record.id, record);
   }
 
-  // Windows/desktop Web keeps its private X3DH records in the historical
-  // IndexedDB store. Enumerate that store so the Windows Hello recovery vault
-  // contains the exact same SPK/OPK material as the live device.
+  // Desktop Web can still have private X3DH records in the historical
+  // IndexedDB store. Enumerate it so the Aegis vault captures the exact same
+  // SPK/OPK material as the live device.
   const indexedDbRecords = await runTxOn('spk', [SPK_STORE], 'readonly', (tx) =>
     reqToPromise<StoredSPK[]>(tx.objectStore(SPK_STORE).getAll()),
   ).catch(() => [] as StoredSPK[]);
@@ -388,9 +388,7 @@ function randomPositiveId(): number {
 
 async function syncDeviceX3dhVault(userId: string): Promise<void> {
   const { backupIosDeviceVaultIfReady } = await import('@/platforms/ios/iosDeviceVaultRestore');
-  if (await backupIosDeviceVaultIfReady(userId)) return;
-  const { backupWindowsHelloDeviceVaultIfReady } = await import('./windowsHelloDeviceRecovery');
-  await backupWindowsHelloDeviceVaultIfReady(userId);
+  await backupIosDeviceVaultIfReady(userId);
 }
 
 async function pruneOldDeviceSPKs(userId: string, deviceId: string, activeSpkId: number): Promise<void> {

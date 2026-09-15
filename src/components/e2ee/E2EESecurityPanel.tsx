@@ -3,7 +3,6 @@ import { QRCodeSVG as QRCode } from 'qrcode.react';
 import {
   fetchActiveDevices,
   fetchTransparencyLog,
-  hasLocalPasskeyVaultAlias,
 } from '@/lib/crypto';
 import { generatePairingQRCode } from '@/lib/crypto/devicePairing';
 
@@ -16,13 +15,11 @@ export default function E2EESecurityPanel({ userId, fingerprint }: Props) {
   const [qr, setQr] = useState<string>('');
   const [devices, setDevices] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
-  const [hasPasskey, setHasPasskey] = useState(false);
 
   useEffect(() => {
     void generatePairingQRCode(userId, fingerprint).then(setQr).catch(() => {});
     void fetchActiveDevices(userId).then(setDevices).catch(() => {});
     void fetchTransparencyLog(userId).then(setLogs).catch(() => {});
-    setHasPasskey(hasLocalPasskeyVaultAlias(userId));
   }, [userId, fingerprint]);
 
   return (
@@ -30,13 +27,6 @@ export default function E2EESecurityPanel({ userId, fingerprint }: Props) {
       <div>
         <h2 className="text-lg font-semibold">E2EE Security</h2>
         <p className="text-sm opacity-70">Fingerprint: {fingerprint}</p>
-      </div>
-
-      <div className="space-y-2">
-        <h3 className="font-medium">Passkey</h3>
-        <p className="text-sm opacity-70">
-          {hasPasskey ? 'Passkey active' : 'No passkey registered'}
-        </p>
       </div>
 
       <div className="space-y-2">

@@ -3,7 +3,7 @@ import { getCurrentDeviceId, hydrateDeviceId } from '@/lib/messaging/currentDevi
 import { getOrCreateDeviceIdentity } from './deviceIdentity';
 import { provisionLibsignalDevice } from './libsignalProvisioning';
 
-export type PostRestoreSource = 'pin' | 'recovery_key' | 'passkey' | 'password' | 'unknown';
+export type PostRestoreSource = 'pin' | 'recovery_key' | 'password' | 'unknown';
 
 async function bumpKeysEpochBestEffort(userId: string): Promise<number | null> {
   try {

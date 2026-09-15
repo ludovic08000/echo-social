@@ -6,8 +6,8 @@
  * le serveur. L'ancrage Keychain sert de source de vérité quand WebKit a purgé
  * localStorage/IndexedDB.
  *
- * Ce module ne s'exécute que sur iOS : le flux Windows (WebAuthn / Windows
- * Hello / lifecycle validé) n'emprunte jamais ce chemin.
+ * Ce module ne s'exécute que sur iOS ; les autres plateformes n'empruntent
+ * jamais ce chemin.
  */
 import { isIosRuntime } from '@/platforms/ios/capacitorBridge';
 import { readIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';

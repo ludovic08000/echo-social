@@ -9,26 +9,26 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import {
-  captureEncryptedWebDeviceVault,
-  restoreEncryptedWebDeviceVault,
-  type EncryptedWebDeviceVault,
-} from './webDeviceKeyVault';
+  captureEncryptedAegisDeviceVault,
+  restoreEncryptedAegisDeviceVault,
+  type EncryptedAegisDeviceVault,
+} from './aegisDeviceKeyVault';
 import { logDeviceVaultEvent } from './deviceVault';
 import { runCrossTabExclusive } from './crossTabLock';
 
 const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 
-function isEncryptedVault(value: unknown): value is EncryptedWebDeviceVault {
-  const candidate = value as Partial<EncryptedWebDeviceVault> | null;
+function isEncryptedVault(value: unknown): value is EncryptedAegisDeviceVault {
+  const candidate = value as Partial<EncryptedAegisDeviceVault> | null;
   return Boolean(
     candidate
-      && candidate.version === 1
+      && candidate.version === 2
       && typeof candidate.iv === 'string' && candidate.iv.length > 0
       && typeof candidate.ciphertext === 'string' && candidate.ciphertext.length > 0,
   );
 }
 
-function sameEncryptedVault(left: unknown, right: EncryptedWebDeviceVault): boolean {
+function sameEncryptedVault(left: unknown, right: EncryptedAegisDeviceVault): boolean {
   return isEncryptedVault(left)
     && left.version === right.version
     && left.iv === right.iv
@@ -51,7 +51,7 @@ async function backupDeviceVaultToCloudUnlocked(args: {
     return false;
   }
   try {
-    const vault = await captureEncryptedWebDeviceVault(userId, deviceId);
+    const vault = await captureEncryptedAegisDeviceVault(userId, deviceId);
     const { error } = await supabase
       .from('device_encrypted_vaults')
       .upsert({
@@ -109,7 +109,7 @@ export async function backupDeviceVaultToCloud(args: {
 export async function fetchCloudDeviceVault(
   userId: string,
   deviceId: string,
-): Promise<EncryptedWebDeviceVault | null> {
+): Promise<EncryptedAegisDeviceVault | null> {
   const { data, error } = await supabase
     .from('device_encrypted_vaults')
     .select('vault')
@@ -138,7 +138,7 @@ export async function restoreDeviceVaultFromCloud(args: {
     return false;
   }
   try {
-    await restoreEncryptedWebDeviceVault({
+    await restoreEncryptedAegisDeviceVault({
       userId: args.userId,
       deviceId: args.deviceId,
       vault,
