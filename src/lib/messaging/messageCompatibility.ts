@@ -4,13 +4,10 @@ import {
   parseAegisMessageEnvelope,
   type AegisMessageEnvelope,
 } from '@/lib/messaging/aegisEnvelope';
-import { isAegisRatchetPayload, isAegisInitialPayload } from '@/lib/crypto/aegisDeviceWire';
 import { decodeLibsignalWire } from '@/lib/crypto/libsignalWire';
 
 export const AEGIS_PROTOCOL = AEGIS_MESSAGE_PROTOCOL;
 export const AEGIS_VERSION = AEGIS_WIRE_VERSION;
-export const AEGIS_DEVICE_COPY_RATCHET_PREFIX = 'aegis1.ratchet.';
-export const AEGIS_DEVICE_COPY_INIT_PREFIX = 'aegis1.init.v1.';
 
 export type MultiDeviceEnvelopeShape = AegisMessageEnvelope;
 
@@ -29,13 +26,13 @@ export function isMultiDeviceEnvelopeBody(body: string | null | undefined): body
   return parseAegisMessageEnvelope(body) !== null;
 }
 
-/** Exact device-copy formats accepted by both Aegis clients and SQL. */
+/**
+ * Invariant cryptographique : la seule capsule d'appareil acceptée est le fil
+ * libsignal. Les anciens formats `aegis1.*` ne sont plus déchiffrables et
+ * doivent rester « non supportés », jamais repris par un chemin de secours.
+ */
 export function isAegisDeviceCopyWire(body: string | null | undefined): body is string {
-  return typeof body === 'string' && (
-    isAegisRatchetPayload(body) ||
-    isAegisInitialPayload(body) ||
-    decodeLibsignalWire(body) !== null
-  );
+  return typeof body === 'string' && decodeLibsignalWire(body) !== null;
 }
 
 export function isKnownCryptoEnvelopeBody(body: string | null | undefined): boolean {
@@ -43,5 +40,8 @@ export function isKnownCryptoEnvelopeBody(body: string | null | undefined): bool
 }
 
 export function isUnsupportedEncryptedBody(body: string | null | undefined): boolean {
+  if (typeof body === 'string' && (body.startsWith('aegis1.ratchet.') || body.startsWith('aegis1.init.'))) {
+    return true;
+  }
   return isCryptoJsonBody(body) && !isMultiDeviceEnvelopeBody(body);
 }

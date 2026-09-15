@@ -1,6 +1,7 @@
 import { restoreAegisRecoveryVault } from './aegisRecoveryVault';
 import { runPostRestoreLifecycle } from './postRestoreLifecycle';
 
+// La restauration passe uniquement par le PIN Aegis ou la clé de récupération.
 export type RecoverySource = 'pin' | 'recovery_key';
 
 export type RecoveryAttempt =
@@ -76,7 +77,11 @@ export async function attemptRecovery(
       };
     }
 
-    return { ok: false, source: 'pin', reason: 'unsupported_recovery_source' };
+    return {
+      ok: false,
+      source: (attempt as { source: RecoverySource }).source,
+      reason: 'unsupported_recovery_source',
+    };
   } catch (error) {
     return {
       ok: false,

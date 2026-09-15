@@ -158,11 +158,12 @@ describe('single canonical device lifecycle authority', () => {
     expect(lifecycle).not.toContain('keySetupTransitions');
   });
 
-  it('publishes the signed prekey the server route readiness check requires', () => {
-    expect(api).toContain('refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey)');
-    expect(api.indexOf('refreshDeviceSignedPrekeyIfNeeded'))
+  it('publishes only the libsignal bundle before the server route readiness check', () => {
+    expect(api).not.toContain('refreshDeviceSignedPrekeyIfNeeded');
+    expect(api).not.toContain('refillDeviceOneTimePrekeysIfNeeded');
+    expect(api).toContain('provisionLibsignalDevice(userId, record.deviceId)');
+    expect(api.indexOf('provisionLibsignalDevice'))
       .toBeLessThan(api.indexOf('mark_current_device_route_ready'));
-    expect(api).toContain('void refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId)');
   });
 
   it('never derives trust from a device fingerprint', () => {
