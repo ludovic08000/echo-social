@@ -33,6 +33,10 @@ export function diagnosticDebugActive(level, until, now = Date.now()) {
   return level === 'debug' && Number.isFinite(expires) && expires > now && expires - now <= 15 * 60_000;
 }
 
+/**
+ * @param {string} service
+ * @param {{ logLevel?: string, debugUntil?: string, logger?: (record: Record<string, unknown>) => void, now?: () => number }} [options]
+ */
 export function createAegisDiagnostic(service, {
   logLevel, debugUntil, logger = (record) => console.log(JSON.stringify(record)), now = Date.now,
 } = {}) {
