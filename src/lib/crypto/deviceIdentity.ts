@@ -17,7 +17,6 @@ import {
 import { getOrCreateDeviceKxKey, type DeviceKxKey } from './deviceKx';
 import {
   adoptLegacyPlaintextRecord,
-  deviceVaultMirrorsPlaintext,
   logDeviceVaultEvent,
   readDeviceVaultRecord,
   removeDeviceVaultRecord,
@@ -80,7 +79,7 @@ async function loadStoredDeviceIdentity(
 
   const sealed = await readDeviceVaultRecord(id, validate);
   if (sealed) {
-    if (deviceVaultMirrorsPlaintext()) await dbPut(sealed).catch(() => undefined);
+    await dbDelete(id);
     return sealed;
   }
 
@@ -101,12 +100,8 @@ async function loadStoredDeviceIdentity(
 
 async function persistStoredDeviceIdentity(record: StoredDeviceIdentity): Promise<void> {
   await writeDeviceVaultRecord(record.id, record);
-  if (deviceVaultMirrorsPlaintext()) {
-    await dbPut(record).catch(() => undefined);
-    return;
-  }
-  // Web : aucune clé privée en clair ne doit subsister.
-  await dbDelete(record.id).catch(() => undefined);
+  // Le coffre scellé est l'unique autorité privée sur Web comme sur natif.
+  await dbDelete(record.id);
   logDeviceVaultEvent('device_signing', 'ok', { reason: 'sealed' });
 }
 
@@ -115,12 +110,6 @@ function dbGet<T>(key: string): Promise<T | undefined> {
   return runTx([STORE_KEYS], 'readonly', (tx) =>
     reqToPromise(tx.objectStore(STORE_KEYS).get(key) as IDBRequest<T | undefined>),
   );
-}
-
-function dbPut<T>(value: T): Promise<void> {
-  return runTx([STORE_KEYS], 'readwrite', (tx) => {
-    tx.objectStore(STORE_KEYS).put(value as unknown as object);
-  });
 }
 
 function dbDelete(key: string): Promise<void> {

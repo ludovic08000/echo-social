@@ -16,7 +16,6 @@ import { runTx, reqToPromise } from './indexedDbTx';
 import { runCrossTabExclusive } from './crossTabLock';
 import {
   adoptLegacyPlaintextRecord,
-  deviceVaultMirrorsPlaintext,
   logDeviceVaultEvent,
   readDeviceVaultRecord,
   removeDeviceVaultRecord,
@@ -65,7 +64,7 @@ async function loadStoredDeviceKx(deviceId: string, userId: string): Promise<Sto
 
   const sealed = await readDeviceVaultRecord(id, validate);
   if (sealed) {
-    if (deviceVaultMirrorsPlaintext()) await dbPut(sealed).catch(() => undefined);
+    await dbDelete(id);
     return sealed;
   }
 
@@ -86,11 +85,8 @@ async function loadStoredDeviceKx(deviceId: string, userId: string): Promise<Sto
 
 async function persistStoredDeviceKx(record: StoredDeviceKx): Promise<void> {
   await writeDeviceVaultRecord(record.id, record);
-  if (deviceVaultMirrorsPlaintext()) {
-    await dbPut(record).catch(() => undefined);
-    return;
-  }
-  await dbDelete(record.id).catch(() => undefined);
+  // Le coffre scellé est l'unique autorité privée sur Web comme sur natif.
+  await dbDelete(record.id);
   logDeviceVaultEvent('device_kx', 'ok', { reason: 'sealed' });
 }
 
@@ -119,12 +115,6 @@ function dbGet<T>(key: string): Promise<T | undefined> {
   return runTx([STORE_KEYS], 'readonly', (tx) =>
     reqToPromise(tx.objectStore(STORE_KEYS).get(key) as IDBRequest<T | undefined>),
   );
-}
-
-function dbPut<T>(value: T): Promise<void> {
-  return runTx([STORE_KEYS], 'readwrite', (tx) => {
-    tx.objectStore(STORE_KEYS).put(value as unknown as IDBValidKey | object);
-  });
 }
 
 function dbDelete(key: string): Promise<void> {

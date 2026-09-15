@@ -161,6 +161,18 @@ async function bootstrap() {
     }
 
     try {
+      const { cleanupLegacyCryptoStorage } = await import(
+        '@/lib/crypto/legacyCryptoStorageCleanup'
+      );
+      const cleanup = await cleanupLegacyCryptoStorage();
+      if (!cleanup.complete) {
+        console.warn('[BOOT] legacy crypto storage cleanup deferred');
+      }
+    } catch {
+      // Un onglet ancien peut bloquer IndexedDB ; le prochain démarrage réessaie.
+    }
+
+    try {
       const [
         { activateRuntimeShield },
         crypto,

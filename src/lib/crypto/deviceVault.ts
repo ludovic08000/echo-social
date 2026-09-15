@@ -2,8 +2,8 @@
  * Device Vault — persistance protégée des clés privées device.
  *
  * Tous les navigateurs utilisent ACE Web. Les plateformes natives utilisent
- * leur Keychain/Keystore ; leur ancien miroir IndexedDB reste conservé tant
- * qu'une purge locale séparée n'a pas été explicitement autorisée.
+ * leur Keychain/Keystore. Après readback du coffre, aucun miroir privé en
+ * clair n'est conservé dans l'ancien IndexedDB.
  */
 
 import {
@@ -68,14 +68,6 @@ async function updateWebManifest(storageId: string, present: boolean): Promise<v
 export async function listDeviceVaultStorageIds(prefix: string): Promise<string[]> {
   if (mode() !== 'web') return [];
   return (await readWebManifest()).filter((storageId) => storageId.startsWith(prefix));
-}
-
-/**
- * Le miroir IndexedDB historique reste l'autorité sur Windows Web et reste
- * conservé sur natif. Seul iOS Web interdit le miroir privé en clair.
- */
-export function deviceVaultMirrorsPlaintext(): boolean {
-  return mode() === 'native';
 }
 
 export function logDeviceVaultEvent(
@@ -176,7 +168,7 @@ export async function removeDeviceVaultRecord(storageId: string): Promise<void> 
  * Migration d'un ancien record privé en clair.
  *
  * - Web : ancien record -> ACE -> readback -> suppression du duplicata.
- * - Natif : Keychain/Keystore + conservation temporaire du miroir existant.
+ * - Natif : ancien record -> Keychain/Keystore -> readback -> suppression.
  */
 export async function adoptLegacyPlaintextRecord<T>(args: {
   storageId: string;
@@ -193,7 +185,6 @@ export async function adoptLegacyPlaintextRecord<T>(args: {
     throw new DeviceVaultCorruptError(storageId);
   }
 
-  const vaultMode = mode();
   await writeDeviceVaultRecord(storageId, legacy);
   const readback = await readDeviceVaultRecord(storageId, validate);
   if (!readback) {
@@ -201,9 +192,7 @@ export async function adoptLegacyPlaintextRecord<T>(args: {
     throw new Error(`E2EE_DEVICE_VAULT_READBACK_FAILED:${storageId}`);
   }
 
-  if (vaultMode === 'web') {
-    await deleteLegacy();
-  }
+  await deleteLegacy();
 
   logDeviceVaultEvent(stage, 'ok', { reason: 'migrated' });
   return readback;
