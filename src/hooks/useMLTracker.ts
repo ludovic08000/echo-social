@@ -157,6 +157,16 @@ export function trackMLSignal(
   extra?: { dwell_ms?: number; scroll_depth?: number }
 ) {
   if (!userId || !postId) return;
+
+  // `skip_fast` is a measured dwell-time signal, not a generic negative action.
+  // Reject synthetic/misrouted skips so they cannot poison training data.
+  if (
+    signal === "skip_fast" &&
+    (typeof extra?.dwell_ms !== "number" || !Number.isFinite(extra.dwell_ms) || extra.dwell_ms >= 800)
+  ) {
+    return;
+  }
+
   queue.push({
     user_id: userId,
     post_id: postId,
