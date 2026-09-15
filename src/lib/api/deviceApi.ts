@@ -33,10 +33,6 @@ import { submitAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecisi
 import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import { hasLibsignalStore } from '@/lib/crypto/libsignalPlatformBridge';
-import {
-  refillDeviceOneTimePrekeysIfNeeded,
-  refreshDeviceSignedPrekeyIfNeeded,
-} from '@/lib/crypto/x3dh';
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
@@ -413,22 +409,17 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   if (identity.publicB64 !== record.deviceSigningKey || kx.publicB64 !== record.devicePublicKey) throw new Error('DEVICE_LOCAL_KEY_MISMATCH');
 
   await traced('libsignal_provision', () => provisionLibsignalDevice(userId, record.deviceId));
-  // Invariant corrigé : `mark_current_device_route_ready` exige côté serveur une
-  // `device_signed_prekeys` active, non expirée et vérifiable. Personne ne la
-  // publiait, donc la route restait DEVICE_ROUTE_INCOMPLETE et l'écran
-  // « Finalisation de cet appareil » tournait sans fin. Elle est désormais
-  // publiée ici, avant la validation serveur.
-  const signingKey = identity.privateKey;
-  await traced('signed_prekey', () => refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, signingKey));
-  // iOS becomes routable only after the exact private X3DH material has been
-  // sealed, uploaded and read back successfully for this DeviceID.
+  // Invariant corrigé : la seule publication de clés est le bundle libsignal
+  // (préclés signées + Kyber + OPK gérées par libsignal). Aucune préclé maison
+  // n'est publiée, et la route ne devient prête qu'après ce provisioning.
+  // iOS ne devient routable qu'après scellement et relecture du coffre.
   const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');
   if (isIosWebRuntime() && !await traced('required_ios_backup', () => backupIosDeviceVaultIfReady(userId, { fresh: true }))) {
-    throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
+    throw new Error('DEVICE_VAULT_BACKUP_REQUIRED');
   }
   const { isAndroidRuntime } = await import('@/platforms/android/androidRuntime');
   if (isAndroidRuntime() && !await traced('required_android_backup', () => backupAndroidDeviceVault(userId))) {
-    throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
+    throw new Error('DEVICE_VAULT_BACKUP_REQUIRED');
   }
   const rpcElapsed = startFinalizationTimer();
   traceCurrentDeviceFinalization({
@@ -458,8 +449,8 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   invalidateAegisDeviceRuntime(userId);
   // Maintenance non bloquante : le pool de préclés à usage unique se remplit en
   // arrière-plan, l'interface ne doit jamais l'attendre pour devenir prête.
-  void refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId)
-    .catch((error) => console.warn('[DEVICE] OPK refill deferred:', error));
+  void provisionLibsignalDevice(userId, record.deviceId)
+    .catch((error) => console.warn('[DEVICE] libsignal prekey refill deferred:', error));
   await traced('device_trust', () => ensureApprovedDeviceTrust(userId, record.deviceId));
   // Invariant corrigé : la préparation des clés s'arrête à la route prête. La
   // finalisation serveur (`complete_current_device_synchronization`) n'a lieu
@@ -578,9 +569,9 @@ async function finalizeSynchronization(userId: string): Promise<DeviceApiRecord>
 /**
  * Invariant cryptographique : la maintenance périodique ne PRÉPARE jamais un
  * appareil. Elle exige un état serveur complet (approuvé, actif, lié, route
- * prête, `lifecycle_status='ready'`), ne provisionne pas libsignal et ne touche
- * ni `routing_status` ni `lifecycle_status`. Elle renouvelle uniquement la
- * préclé signée expirante et recharge le pool de préclés à usage unique.
+ * prête, `lifecycle_status='ready'`) et ne touche ni `routing_status` ni
+ * `lifecycle_status`. Invariant corrigé : elle recharge uniquement le pool de
+ * bundles de préclés libsignal, seule source de clés de session.
  */
 async function runKeyMaintenance(userId: string): Promise<DeviceApiRecord> {
   const snapshot = await getState(userId);
@@ -591,8 +582,7 @@ async function runKeyMaintenance(userId: string): Promise<DeviceApiRecord> {
   }
   const identity = await loadDeviceIdentity(userId, record.deviceId);
   if (!identity) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
-  await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
-  await refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId);
+  await provisionLibsignalDevice(userId, record.deviceId);
   return record;
 }
 

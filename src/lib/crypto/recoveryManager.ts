@@ -1,12 +1,14 @@
 import { restoreAegisRecoveryVault } from './aegisRecoveryVault';
 import { runPostRestoreLifecycle } from './postRestoreLifecycle';
 
-export type RecoverySource = 'pin' | 'recovery_key' | 'passkey';
+// Invariant cryptographique : la restauration passe uniquement par le PIN de
+// sauvegarde ou la clé de récupération. Aucun chemin WebAuthn/passkey ne
+// subsiste, et aucune identité n'est recréée silencieusement.
+export type RecoverySource = 'pin' | 'recovery_key';
 
 export type RecoveryAttempt =
   | { source: 'pin'; pin: string }
-  | { source: 'recovery_key'; key: string }
-  | { source: 'passkey' };
+  | { source: 'recovery_key'; key: string };
 
 export type RecoveryResult =
   | { ok: true; source: RecoverySource }
@@ -77,17 +79,11 @@ export async function attemptRecovery(
       };
     }
 
-    const mod = await import('./passkeyVault');
-    const candidate = mod as unknown as {
-      restoreWithPasskey?: (targetUserId: string) => Promise<unknown>;
-      unwrapWithPasskey?: (targetUserId: string) => Promise<unknown>;
+    return {
+      ok: false,
+      source: (attempt as { source: RecoverySource }).source,
+      reason: 'unsupported_recovery_source',
     };
-    const restore = candidate.restoreWithPasskey ?? candidate.unwrapWithPasskey;
-    if (!restore) return { ok: false, source: 'passkey', reason: 'passkey_restore_unavailable' };
-    const output = await restore(userId);
-    return output
-      ? await finishSuccessfulRecovery(userId, 'passkey')
-      : { ok: false, source: 'passkey', reason: 'passkey_cancelled_or_failed' };
   } catch (error) {
     return {
       ok: false,

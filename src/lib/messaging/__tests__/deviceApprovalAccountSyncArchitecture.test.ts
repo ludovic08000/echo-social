@@ -55,8 +55,8 @@ describe('single canonical device lifecycle authority', () => {
   const lifecycle = readFileSync('src/hooks/useDeviceLifecycle.ts', 'utf8');
   const messagingGate = readFileSync('src/components/MessagingPinGate.tsx', 'utf8');
 
-  it('auto-enrolls the current device outside Windows Hello recovery', () => {
-    expect(controller).toContain("if (this.deps.isWindowsWeb() && !this.manualEnrollmentRequested) return null;");
+  it('auto-enrolls the current device on every platform, without WebAuthn', () => {
+    expect(controller).not.toContain('isWindowsWeb');
     expect(controller).toContain("return 'enrolling';");
   });
 
@@ -69,10 +69,11 @@ describe('single canonical device lifecycle authority', () => {
     expect(existsSync('src/components/messaging/DeviceAccountBindingGate.tsx')).toBe(false);
   });
 
-  it('removes the manual waiting screens but keeps Windows Hello recovery', () => {
+  it('removes the manual waiting screens and every WebAuthn recovery path', () => {
     expect(gate).toContain('Enregistrement de cet appareil…');
     expect(gate).toContain('Activation de cet appareil…');
-    expect(gate).toContain('recoverCurrentWindowsHelloDevice(user.id)');
+    expect(gate).not.toContain('WindowsHello');
+    expect(gate).not.toContain('passkey');
     expect(gate).not.toContain('Approuver');
   });
 
@@ -155,11 +156,12 @@ describe('single canonical device lifecycle authority', () => {
     expect(lifecycle).not.toContain('keySetupTransitions');
   });
 
-  it('publishes the signed prekey the server route readiness check requires', () => {
-    expect(api).toContain('refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey)');
-    expect(api.indexOf('refreshDeviceSignedPrekeyIfNeeded'))
+  it('publishes only the libsignal bundle before the server route readiness check', () => {
+    expect(api).not.toContain('refreshDeviceSignedPrekeyIfNeeded');
+    expect(api).not.toContain('refillDeviceOneTimePrekeysIfNeeded');
+    expect(api).toContain('provisionLibsignalDevice(userId, record.deviceId)');
+    expect(api.indexOf('provisionLibsignalDevice'))
       .toBeLessThan(api.indexOf('mark_current_device_route_ready'));
-    expect(api).toContain('void refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId)');
   });
 
   it('never derives trust from a device fingerprint', () => {

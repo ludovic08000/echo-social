@@ -297,17 +297,10 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     rejectedController.dispose();
   });
 
-  it('n’enrôle jamais silencieusement sur Windows Web sans action utilisateur', async () => {
+  it('enrôle automatiquement un appareil inconnu, sans WebAuthn', async () => {
     const server = fakeServer(null);
-    const controller = __deviceLifecycleTestUtils.create('user-1', {
-      api: server.api,
-      isWindowsWeb: () => true,
-    });
+    const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
     await controller.refresh();
-    expect(server.calls.enroll).toBe(0);
-    expect(controller.getSnapshot().canStartEnrollment).toBe(true);
-
-    await controller.startEnrollment();
     expect(server.calls.enroll).toBe(1);
     expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
     controller.dispose();
