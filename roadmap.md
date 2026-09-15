@@ -1,9 +1,11 @@
-# Roadmap — migration libsignal-only
+# Chantier libsignal-only
 
-- [ ] Supprimer le sous-système Windows Hello / WebAuthn (client, API, edge function, workflow, config)
-- [ ] Supprimer la crypto message custom (x3dh, kdfChain, aegisDeviceWire, deviceSessionStore, skippedKeyVault, replayGuard, securityEpoch, deviceManifest, deviceTransfer)
-- [ ] deviceApi.prepareKeys / provisioning / lifecycle / routage : libsignal exclusif
-- [ ] messageCompatibility : ancien ciphertext => unsupported, aucun fallback
-- [ ] Migration destructive (non déployée) : purge devices/sessions/copies/webauthn/prekeys custom + gate bundle libsignal
-- [ ] Tests, typecheck, verify-libsignal-wasm, build au vert
-- [ ] Bloqué : création/checkout/push de la branche codex/libsignal-only-messaging (opérations git interdites dans cet environnement)
+- [x] Supprimer Windows Hello / WebAuthn / passkeys (code, UI, fonction edge, workflow)
+- [x] Supprimer la crypto message maison (X3DH, Double Ratchet, aegis1.*)
+- [x] deviceApi.prepareKeys : provisioning libsignal uniquement
+- [x] deviceLifecycleController : enrôlement auto sur toute plateforme
+- [x] Fixtures et tests alignés sur le fil libsignal
+- [x] Tests (793 passés), typecheck, verify-libsignal-wasm, build
+- [x] SQL de cutover rédigé (supabase/pending-migrations/, non appliqué)
+- [ ] BLOQUÉ : écriture Git sur la branche codex/libsignal-only-messaging (aucune opération git possible ici)
+- [ ] BLOQUÉ : le fichier de migration ne peut pas être ajouté sans être appliqué immédiatement
