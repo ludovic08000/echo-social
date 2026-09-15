@@ -7,13 +7,12 @@
  *   ACCOUNT_KEY_SYNC -> MESSAGING_READY) reste inchangé ;
  * - un provider n'ajoute qu'une couche d'attestation/récupération locale,
  *   jamais une identité E2EE alternative ;
- * - Windows délègue au chemin existant, iOS au provider passkey WebAuthn.
+ * - invariant corrigé : plus aucun chemin WebAuthn/Windows Hello. Les
+ *   plateformes sans coffre natif restent fail-closed.
  */
-import { iosPasskeyProvider } from '@/platforms/ios/iosPasskeyProvider';
-import { windowsPasskeyProvider, isWindowsWeb } from '@/platforms/windows/windowsPasskeyProvider';
-import { isIosRuntime } from '@/platforms/ios/capacitorBridge';
 import { androidDeviceProvider } from '@/platforms/android/androidDeviceProvider';
 import { isAndroidRuntime } from '@/platforms/android/androidRuntime';
+import { isIosRuntime } from '@/platforms/ios/capacitorBridge';
 
 export type DevicePlatformKind = 'ios' | 'android' | 'windows' | 'generic';
 
@@ -40,19 +39,9 @@ const genericProvider: DevicePlatformProvider = {
 export function detectDevicePlatformKind(): DevicePlatformKind {
   if (isIosRuntime()) return 'ios';
   if (isAndroidRuntime()) return 'android';
-  if (isWindowsWeb()) return 'windows';
   return 'generic';
 }
 
 export function resolveDevicePlatformProvider(): DevicePlatformProvider {
-  switch (detectDevicePlatformKind()) {
-    case 'ios':
-      return iosPasskeyProvider;
-    case 'android':
-      return androidDeviceProvider;
-    case 'windows':
-      return windowsPasskeyProvider;
-    default:
-      return genericProvider;
-  }
+  return detectDevicePlatformKind() === 'android' ? androidDeviceProvider : genericProvider;
 }

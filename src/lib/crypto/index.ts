@@ -1,11 +1,10 @@
 /**
- * ForSure E2EE - Public API v2
+ * ForSure E2EE - API publique
  *
- * X25519 + Ed25519 + AES-256-GCM + HKDF-SHA-256
- * Double Ratchet + Hybrid Post-Quantum Ready (Kyber768)
+ * Invariant cryptographique : le protocole de messagerie est libsignal
+ * exclusivement (X3DH/PQXDH + Double Ratchet côté libsignal). Aucune primitive
+ * de session maison n'est exportée ici.
  */
-
-export { kdfChainStep, kdfChainStepExportable, kdfRootStep } from './kdfChain';
 
 export { getOrCreateIdentityKeys } from './keyManagerSafe';
 export { resolveUserIdentity, type IdentityRecoveryMode } from './identityRecovery';
@@ -19,23 +18,9 @@ export {
 } from './secureBackupVault';
 
 export {
-  registerPasskeyForBackupVault,
-  verifyPasskeyBeforeVaultRestore,
-  hasLocalPasskeyVaultAlias,
-} from './passkeyVault';
-
-export {
   rotateEncryptedBackupVault,
   ensureBackupRotation,
 } from './backupRotation';
-
-export {
-  ensureSecurityEpoch,
-  bumpSecurityEpoch,
-  getLocalSecurityEpoch,
-  attachEpochToEnvelope,
-  isEnvelopeEpochStale,
-} from './securityEpoch';
 
 export {
   publishCurrentDevice,
@@ -43,22 +28,6 @@ export {
   revokeCurrentDevice,
   getOrCreateCurrentDeviceId,
 } from './deviceList';
-
-export {
-  publishSignedDeviceManifest,
-  fetchSignedDeviceManifest,
-} from './deviceManifest';
-
-export {
-  createEncryptedDeviceTransferPackage,
-  openEncryptedDeviceTransferPackage,
-} from './deviceTransfer';
-
-export {
-  assertNotReplay,
-  isReplay,
-  markReplaySeen,
-} from './replayGuard';
 
 export {
   exportPublicKeyBundle,
@@ -104,11 +73,7 @@ export {
 export { fetchTransparencyLog, appendTransparencyLog, type TransparencyEventType } from './transparencyLog';
 
 export {
-  x3dhInitiate,
-  refreshDeviceSignedPrekeyIfNeeded,
-  refillDeviceOneTimePrekeysIfNeeded,
-  isPQXDHAvailable,
-  type X3DHPrekeyBundle,
-  type X3DHResult,
-  type X3DHInitialMessage,
-} from './x3dh';
+  LIBSIGNAL_WIRE_PREFIX,
+  decodeLibsignalWire,
+  encodeLibsignalWire,
+} from './libsignalWire';
