@@ -297,9 +297,33 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     rejectedController.dispose();
   });
 
-  it('enrôle automatiquement un appareil inconnu, sans WebAuthn', async () => {
+  it('attribue directement les clés au premier démarrage sans DeviceID local', async () => {
     const server = fakeServer(null);
-    const controller = __deviceLifecycleTestUtils.create('user-1', { api: server.api });
+    let hasDeviceId = false;
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: {
+        ...server.api,
+        enroll: async (userId) => {
+          await server.api.enroll(userId);
+          hasDeviceId = true;
+        },
+      },
+      getDeviceIdStatus: () => hasDeviceId ? 'ok' : 'uninitialized',
+      peekDeviceId: () => hasDeviceId ? DEVICE_ID : null,
+    });
+    await controller.refresh();
+    expect(server.calls.enroll).toBe(1);
+    expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('réenrôle directement un DeviceID local absent du serveur', async () => {
+    const server = fakeServer(null);
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      getDeviceIdStatus: () => 'ok',
+      peekDeviceId: () => DEVICE_ID,
+    });
     await controller.refresh();
     expect(server.calls.enroll).toBe(1);
     expect(controller.getSnapshot().state).toBe('MESSAGING_READY');

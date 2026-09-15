@@ -1,11 +1,10 @@
-# Chantier libsignal-only
+# Chantier Aegis + Libsignal
 
-- [x] Supprimer Windows Hello / WebAuthn / passkeys (code, UI, fonction edge, workflow)
-- [x] Supprimer la crypto message maison (X3DH, Double Ratchet, aegis1.*)
-- [x] deviceApi.prepareKeys : provisioning libsignal uniquement
-- [x] deviceLifecycleController : enrôlement auto sur toute plateforme
-- [x] Fixtures et tests alignés sur le fil libsignal
-- [x] Tests (793 passés), typecheck, verify-libsignal-wasm, build
-- [x] SQL de cutover rédigé (supabase/pending-migrations/, non appliqué)
-- [ ] BLOQUÉ : écriture Git sur la branche codex/libsignal-only-messaging (aucune opération git possible ici)
-- [ ] BLOQUÉ : le fichier de migration ne peut pas être ajouté sans être appliqué immédiatement
+- [x] Conserver Aegis comme autorité appareil unique
+- [x] Conserver Libsignal comme moteur de chiffrement unique
+- [x] Supprimer les anciens fichiers, écrans, API et workflow de récupération appareil
+- [x] Supprimer la pile de chiffrement message remplacée
+- [x] Enrôler directement les nouveaux appareils
+- [x] Borner et tracer les lectures RPC
+- [x] Aligner les tests et les fixtures sur le fil Libsignal
+- [x] Valider typecheck, tests complets, scénarios Libsignal et build

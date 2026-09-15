@@ -1,7 +1,7 @@
 //! ABI native Aegis au-dessus de libsignal.
 //!
 //! Invariant : les octets secrets retournés par ce bridge doivent être placés
-//! immédiatement dans ACE/Keychain, Android Keystore ou Windows Hello. Ils ne
+//! immédiatement dans le coffre Aegis local, ACE/Keychain ou Android Keystore. Ils ne
 //! doivent jamais être envoyés à l'API Aegis ni journalisés.
 
 use std::cell::RefCell;

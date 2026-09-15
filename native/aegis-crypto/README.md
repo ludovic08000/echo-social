@@ -5,7 +5,7 @@ Bridge natif Aegis au-dessus de la copie auditée de libsignal Rust.
 ## Frontière
 
 - Le record d'identité et le record SPK sont secrets et doivent être scellés
-  immédiatement par ACE/Keychain, Android Keystore ou Windows Hello.
+  immédiatement par le coffre Aegis local, ACE/Keychain ou Android Keystore.
 - Les clés publiques et signatures peuvent être envoyées aux RPC Aegis.
 - L'API et Supabase ne chargent jamais cette bibliothèque pour déchiffrer.
 

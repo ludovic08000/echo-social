@@ -247,7 +247,7 @@ export class DeviceLifecycleController {
     return this.advance();
   }
 
-  /** Windows Web : enrôlement d'un nouvel appareil sur action utilisateur. */
+  /** Ré-enrôlement explicite après rejet ou révocation du DeviceID courant. */
   startEnrollment(): Promise<void> {
     this.manualEnrollmentRequested = true;
     this.error = null;
@@ -317,13 +317,14 @@ export class DeviceLifecycleController {
 
   /** Détermine la SEULE prochaine transition légitime, dans l'ordre canonique. */
   private nextAction(): Exclude<DeviceLifecycleStage, 'idle' | 'reading'> | null {
+    if (this.manualEnrollmentRequested) return 'enrolling';
     if (this.deviceIdStatus === 'mismatch' || this.deviceIdStatus === 'storage_unavailable') return null;
     const record = this.record;
 
     if (record === 'unknown') return null;
     if (!record || !this.deviceId) {
-      // Invariant corrigé : sans WebAuthn, toute plateforme enrôle le device
-      // par la cérémonie serveur canonique, jamais par récupération locale.
+      // Premier démarrage réel : toutes les plateformes créent directement le
+      // DeviceID et les clés Libsignal, sans authentificateur intermédiaire.
       return 'enrolling';
     }
     if (record.deviceId !== this.deviceId) return null;
@@ -517,7 +518,9 @@ export class DeviceLifecycleController {
       canRunDeviceKeySetup: canRunDeviceKeySetup(state),
       canRunCryptoRuntime: canRunCryptoRuntime(state),
       needsApprovalUi: requiresDeviceApprovalUi(state),
-      canStartEnrollment: this.record !== 'unknown' && this.record === null && this.stage === 'idle',
+      canStartEnrollment: this.stage === 'idle'
+        && this.record !== 'unknown'
+        && (this.record === null || state === 'LINK_REQUIRED'),
     };
   }
 

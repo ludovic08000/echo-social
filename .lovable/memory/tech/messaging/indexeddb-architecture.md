@@ -1,6 +1,6 @@
 ---
 name: IndexedDB Architecture
-description: Singleton DB + write queue + retry helper, RAM cache, CryptoStateMachine prevents identity recreation loops, RecoveryManager routes PIN/recovery/passkey
+description: Singleton DB + write queue + retry helper, RAM cache, CryptoStateMachine prevents identity recreation loops, RecoveryManager routes PIN/recovery key
 type: feature
 ---
 
@@ -12,7 +12,7 @@ type: feature
 - `src/lib/crypto/indexedDbTx.ts` — **only** sanctioned way to write: `runTx(stores, mode, fn)`, `txGet/Put/Delete/Clear`. FIFO queue per store-set + exponential retry (50/150/400 ms) on `InvalidStateError` / `TransactionInactiveError` / "database connection is closing".
 - `src/lib/crypto/memoryIdentityCache.ts` — RAM-only hot cache (CryptoKey, deviceId). Cleared on epoch change, lock, logout, hidden > 5 min.
 - `src/lib/crypto/CryptoStateMachine.ts` — single source of truth. **Hard lock**: `identity_creating` is reachable **at most once per session**. `withEnsureLock()` shares the boot promise across concurrent callers.
-- `src/lib/crypto/recoveryManager.ts` — `attemptRecovery({source: 'pin'|'recovery_key'|'passkey'})` returns tagged `{ok, source, reason}` — never throws.
+- `src/lib/crypto/recoveryManager.ts` — `attemptRecovery({source: 'pin'|'recovery_key'})` returns tagged `{ok, source, reason}` — never throws.
 - `src/lib/crypto/sessionInvalidation.ts` — uses the same Safari-safe pattern (retry + always close after tx) for the `forsure-ratchet` DB.
 
 ## Boot flow

@@ -7,7 +7,7 @@ vi.mock('../cryptoIntegrity', () => ({
 vi.mock('../accountKeyBackup', () => ({ getSessionMasterKey: () => ({}) }));
 vi.mock('../deviceVault', () => ({ deviceVaultMirrorsPlaintext: () => false, readDeviceVaultRecord: vi.fn(), writeDeviceVaultRecord: mocks.write }));
 vi.mock('../libsignalPlatformBridge', () => ({ restoreLibsignalStore: mocks.restore }));
-import { restoreEncryptedWebDeviceVault } from '../webDeviceKeyVault';
+import { restoreEncryptedAegisDeviceVault } from '../aegisDeviceKeyVault';
 const userId = 'alice';
 const deviceId = `dev_${'a'.repeat(32)}`;
 const key = Buffer.alloc(32, 1).toString('base64url');
@@ -16,20 +16,20 @@ const record = (type: string, crv: string) => ({
   publicKeyJWK: { kty: 'OKP', crv, x: key },
   privateKeyJWK: { kty: 'OKP', crv, x: key, d: key },
 });
-const plain = () => ({ version: 1, userId, deviceId, signing: record('signing', 'Ed25519'), kx: record('kx', 'X25519'), libsignalStore: 'A'.repeat(40) });
-const input = { userId, deviceId, vault: { version: 1 as const, iv: Buffer.alloc(12).toString('base64url'), ciphertext: 'AQID' }, expectedDeviceSigningKey: key + '=', expectedDevicePublicKey: key + '=' };
+const plain = () => ({ version: 2, userId, deviceId, signing: record('signing', 'Ed25519'), kx: record('kx', 'X25519'), libsignalStore: 'A'.repeat(40) });
+const input = { userId, deviceId, vault: { version: 2 as const, iv: Buffer.alloc(12).toString('base64url'), ciphertext: 'AQID' }, expectedDeviceSigningKey: key + '=', expectedDevicePublicKey: key + '=' };
 const decoded = (value: unknown) => mocks.decrypt.mockResolvedValue(new TextEncoder().encode(JSON.stringify(value)).buffer);
 beforeEach(() => { vi.resetAllMocks(); mocks.restore.mockResolvedValue(undefined); });
 describe('complete encrypted device vault required', () => {
   it.each([undefined, '', 42])('rejects missing/invalid Libsignal data before any private write: %s', async libsignalStore => {
     decoded({ ...plain(), libsignalStore });
-    await expect(restoreEncryptedWebDeviceVault(input)).rejects.toThrow('DEVICE_VAULT_INVALID');
+    await expect(restoreEncryptedAegisDeviceVault(input)).rejects.toThrow('AEGIS_DEVICE_VAULT_INVALID');
     expect(mocks.write).not.toHaveBeenCalled();
     expect(mocks.restore).not.toHaveBeenCalled();
   });
   it('restores Libsignal before the other keys', async () => {
     decoded(plain());
-    await restoreEncryptedWebDeviceVault(input);
+    await restoreEncryptedAegisDeviceVault(input);
     expect(mocks.restore).toHaveBeenCalledWith(userId, deviceId, 'A'.repeat(40));
     expect(mocks.write).toHaveBeenCalledTimes(2);
     expect(mocks.restore.mock.invocationCallOrder[0]).toBeLessThan(mocks.write.mock.invocationCallOrder[0]);
@@ -37,7 +37,7 @@ describe('complete encrypted device vault required', () => {
   it('does not modify other keys if Libsignal refuses a stale backup', async () => {
     decoded(plain());
     mocks.restore.mockRejectedValue(new Error('AEGIS_LIBSIGNAL_RESTORE_CONFLICT'));
-    await expect(restoreEncryptedWebDeviceVault(input)).rejects.toThrow('RESTORE_CONFLICT');
+    await expect(restoreEncryptedAegisDeviceVault(input)).rejects.toThrow('RESTORE_CONFLICT');
     expect(mocks.write).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,1 @@
+-- Historical migration slot retained after removal of the obsolete device recovery system.

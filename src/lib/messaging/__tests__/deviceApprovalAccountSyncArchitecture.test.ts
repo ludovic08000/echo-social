@@ -55,7 +55,8 @@ describe('single canonical device lifecycle authority', () => {
   const lifecycle = readFileSync('src/hooks/useDeviceLifecycle.ts', 'utf8');
   const messagingGate = readFileSync('src/components/MessagingPinGate.tsx', 'utf8');
 
-  it('auto-enrolls the current device on every platform, without WebAuthn', () => {
+  it('auto-enrolls a true first device while preserving explicit stale-device replacement', () => {
+    expect(controller).toContain("if (!record || !this.deviceId)");
     expect(controller).not.toContain('isWindowsWeb');
     expect(controller).toContain("return 'enrolling';");
   });
@@ -69,11 +70,10 @@ describe('single canonical device lifecycle authority', () => {
     expect(existsSync('src/components/messaging/DeviceAccountBindingGate.tsx')).toBe(false);
   });
 
-  it('removes the manual waiting screens and every WebAuthn recovery path', () => {
-    expect(gate).toContain('Enregistrement de cet appareil…');
+  it('uses direct Aegis enrollment without a manual approval screen', () => {
+    expect(gate).toContain('Initialisation de Libsignal…');
     expect(gate).toContain('Activation de cet appareil…');
-    expect(gate).not.toContain('WindowsHello');
-    expect(gate).not.toContain('passkey');
+    expect(gate).toContain('Créer les clés Aegis');
     expect(gate).not.toContain('Approuver');
   });
 
@@ -145,6 +145,8 @@ describe('single canonical device lifecycle authority', () => {
     expect(controller).toContain('DEVICE_STATE_LOOKUP_FAILED');
     expect(controller).toContain('withStepTimeout');
     expect(controller).toContain('this.blockedUntilRetry = true;');
+    expect(api).toContain("'DEVICE_LOOKUP_FAILED'");
+    expect(api).toContain('.abortSignal(signal)');
     expect(gate).toContain('Réessayer');
   });
 

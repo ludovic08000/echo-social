@@ -1,9 +1,7 @@
 import { restoreAegisRecoveryVault } from './aegisRecoveryVault';
 import { runPostRestoreLifecycle } from './postRestoreLifecycle';
 
-// Invariant cryptographique : la restauration passe uniquement par le PIN de
-// sauvegarde ou la clé de récupération. Aucun chemin WebAuthn/passkey ne
-// subsiste, et aucune identité n'est recréée silencieusement.
+// La restauration passe uniquement par le PIN Aegis ou la clé de récupération.
 export type RecoverySource = 'pin' | 'recovery_key';
 
 export type RecoveryAttempt =

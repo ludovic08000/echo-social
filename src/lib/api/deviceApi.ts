@@ -175,15 +175,21 @@ function mapDbRecord(row: DeviceDbRow): DeviceApiRecord {
 }
 
 async function readDeviceRecord(userId: string, deviceId: string): Promise<DeviceApiRecord | null> {
-  const { data, error } = await supabase
-    .from('user_devices')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('device_id', deviceId)
-    .maybeSingle();
-  if (error) throw new Error(`DEVICE_LOOKUP_FAILED:${error.message}`);
-  if (!data) return null;
-  return mapDbRecord(data as unknown as DeviceDbRow);
+  return traceFinalizationOperation('device_api.state_lookup', async () => {
+    const { data, error } = await runDeviceRpcWithTimeout(
+      'DEVICE_LOOKUP_FAILED',
+      (signal) => supabase
+        .from('user_devices')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('device_id', deviceId)
+        .abortSignal(signal)
+        .maybeSingle(),
+    );
+    if (error) throw new Error(`DEVICE_LOOKUP_FAILED:${error.message}`);
+    if (!data) return null;
+    return mapDbRecord(data as unknown as DeviceDbRow);
+  }, { userId, deviceId });
 }
 
 async function getState(userId: string): Promise<DeviceApiSnapshot> {
@@ -226,6 +232,12 @@ async function listDevices(userId: string): Promise<DeviceApiListRecord[]> {
 
 async function enroll(userId: string): Promise<DeviceApiRecord> {
   setCurrentDeviceUserScope(userId);
+  const traced = <T>(step: string, operation: () => Promise<T>, deviceId?: string) =>
+    traceFinalizationOperation(`device_api.enroll.${step}`, operation, {
+      userId,
+      deviceId,
+      traceId: getCurrentDeviceFinalizationTraceId(),
+    });
 
   const reusedAndroidDeviceId = await adoptReusableAndroidDevice(userId).catch(() => null);
   if (reusedAndroidDeviceId) {
@@ -271,21 +283,31 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
     throw new Error(`DEVICE_VAULT_RECOVERY_REQUIRED:${existingIosDevice.deviceId}:${restored}`);
   }
 
-  await beginExplicitDeviceEnrollment('user_requested_new_device');
+  await traced('device_id_allocate', () => beginExplicitDeviceEnrollment('first_device'));
   let challenge: DeviceEnrollmentChallenge | null = null;
   let deviceId: string | null = null;
   try {
-    challenge = await beginServerAssignedDeviceEnrollment({
+    challenge = await traced('challenge_begin', () => beginServerAssignedDeviceEnrollment({
       deviceName: getCurrentDeviceLabel(),
       platform: normalizePlatform(getCurrentPlatform()),
       userAgent: typeof navigator === 'undefined' ? null : navigator.userAgent.slice(0, 500),
-    });
+    }));
     deviceId = setCurrentDeviceId(challenge.deviceId);
     const [identity, kx] = await Promise.all([
-      getOrCreateDeviceIdentity(userId, deviceId),
-      getOrCreateDeviceKxKey(deviceId, userId),
+      traced('signing_identity_create', () => getOrCreateDeviceIdentity(userId, deviceId), deviceId),
+      traced('exchange_identity_create', () => getOrCreateDeviceKxKey(deviceId, userId), deviceId),
     ]);
-    await completeServerAssignedDeviceEnrollment(challenge, identity, kx);
+    traceDeviceKeyChecks({ userId, deviceId }, {
+      signingPresent: true,
+      exchangePresent: true,
+      signingMatches: null,
+      exchangeMatches: null,
+    });
+    await traced(
+      'challenge_complete',
+      () => completeServerAssignedDeviceEnrollment(challenge!, identity, kx),
+      deviceId,
+    );
     challenge = null;
     const record = await readDeviceRecord(userId, deviceId);
     if (!record || record.approvalStatus !== 'pending') throw new Error('DEVICE_ENROLLMENT_NOT_PENDING');

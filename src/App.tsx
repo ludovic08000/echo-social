@@ -9,7 +9,6 @@ import { I18nProvider } from "@/lib/i18n";
 import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContext";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
-import { SafetyNumberRevalidationBanner } from "@/components/messages/SafetyNumberRevalidationBanner";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useVersionWatcher } from "@/hooks/useVersionWatcher";
@@ -27,7 +26,6 @@ import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
 import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
-import { E2EERestorePromptDialog } from "@/components/messages/E2EERestorePromptDialog";
 import { ContactVerificationDialog } from "@/components/messages/ContactVerificationDialog";
 import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
 
@@ -201,7 +199,6 @@ function MessagingRuntimeRunner() {
 
   return (
     <>
-      <SafetyNumberRevalidationBanner />
       <IncomingCallHandler />
       <E2EEDebugPanel />
     </>
@@ -308,7 +305,6 @@ function AppContent() {
                 </Suspense>
               </RoutedErrorBoundary>
               <ChatWidget />
-              <E2EERestorePromptDialog />
               <ContactVerificationDialog />
               <CookieConsentBanner />
             </BrowserRouter>

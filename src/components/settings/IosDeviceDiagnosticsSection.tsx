@@ -22,7 +22,7 @@ function line(ok: boolean, okLabel: string, badLabel: string) {
   );
 }
 
-/** Bloc de debug iOS isolé : lecture seule, sans impact sur le flux Windows. */
+/** Bloc de debug iOS isolé et strictement en lecture seule. */
 export function IosDeviceDiagnosticsSection({ userId, deviceId, server }: Props) {
   const [report, setReport] = useState<IosDeviceDiagnosticsReport | null>(null);
   const [loading, setLoading] = useState(false);

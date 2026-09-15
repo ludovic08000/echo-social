@@ -1,5 +1,5 @@
 //! Façade WebAssembly pour Windows Web. Les records secrets retournés ici
-//! doivent être scellés immédiatement par Windows Hello avant persistance.
+//! doivent être scellés immédiatement par le coffre Aegis avant persistance.
 
 use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};

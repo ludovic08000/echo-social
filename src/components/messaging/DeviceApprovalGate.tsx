@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Loader2, ShieldQuestion, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -35,7 +35,6 @@ function Shell({ children, compact }: { children: ReactNode; compact: boolean })
 export function DeviceApprovalGate({ children, compact = false }: DeviceApprovalGateProps) {
   const lifecycle = useDeviceLifecycle();
 
-
   const failure = (
     <ErrorBlock error={lifecycle.error} onRetry={lifecycle.retry} />
   );
@@ -60,57 +59,52 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
   }
 
   if (lifecycle.state === 'DEVICE_CREDENTIAL_CHECK' || lifecycle.state === 'LINK_REQUIRED') {
-    // Invariant corrigé : plus aucune récupération WebAuthn. L'appareil
-    // s'enrôle et se fait approuver automatiquement côté serveur.
-    if (!lifecycle.error) {
+    if (lifecycle.error) {
       return (
         <Shell compact={compact}>
           <div className="flex flex-col items-center gap-3 text-center">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <p className="text-sm font-medium">Enregistrement de cet appareil…</p>
-            <p className="text-xs text-muted-foreground">Vérification cryptographique automatique en cours.</p>
-          {diagnostics}
+            <p className="text-sm font-medium">Initialisation Aegis interrompue</p>
+            {failure}
+            {diagnostics}
           </div>
         </Shell>
       );
     }
+
+    if (lifecycle.state === 'LINK_REQUIRED' && lifecycle.stage === 'idle') {
+      return (
+        <Shell compact={compact}>
+          <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                <Smartphone className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold">Nouvel enrôlement Aegis requis</h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  L’ancien état local ne peut plus être utilisé. Un nouveau DeviceID et de nouvelles clés Libsignal seront créés sur cet appareil.
+                </p>
+              </div>
+            </div>
+            {lifecycle.canStartEnrollment && (
+              <Button className="w-full rounded-xl" onClick={lifecycle.startEnrollment}>
+                <ShieldQuestion className="mr-2 h-4 w-4" />
+                Créer les clés Aegis
+              </Button>
+            )}
+            {diagnostics}
+          </div>
+        </Shell>
+      );
+    }
+
     return (
       <Shell compact={compact}>
-
-        <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-          <div className="mb-4 flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-              <Smartphone className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold">Appareil non retrouvé</h2>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Si vous avez supprimé les données du navigateur, cet appareil doit être enregistré à nouveau puis approuvé par le serveur.
-              </p>
-            </div>
-          </div>
-
-          <div className="mb-4 rounded-xl bg-muted/50 px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Sécurité</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Le DeviceID et ses clés privées ne sont jamais recréés en silence : un nouvel enrôlement complet est exigé.
-            </p>
-          </div>
-
-          <div className="mb-3">{failure}</div>
-
-          {lifecycle.canStartEnrollment && <Button
-            className="w-full rounded-xl"
-            disabled={lifecycle.stage !== 'idle'}
-            onClick={lifecycle.startEnrollment}
-          >
-            {lifecycle.stage === 'enrolling' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldQuestion className="mr-2 h-4 w-4" />}
-            Enregistrer comme nouvel appareil
-          </Button>}
-
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            Aucun nouvel identifiant n’est généré automatiquement.
-          </p>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <p className="text-sm font-medium">Initialisation de Libsignal…</p>
+          <p className="text-xs text-muted-foreground">Attribution du DeviceID et création locale des clés Aegis en cours.</p>
+          {diagnostics}
         </div>
       </Shell>
     );
