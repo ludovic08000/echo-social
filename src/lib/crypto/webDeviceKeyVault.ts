@@ -69,7 +69,7 @@ function toBase64Url(bytes: ArrayBuffer | Uint8Array): string {
 }
 
 function fromBase64Url(value: string): Uint8Array {
-  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('DEVICE_VAULT_VAULT_BASE64_INVALID');
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('DEVICE_VAULT_BASE64_INVALID');
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
   const binary = hardGlobals.atob(padded);
@@ -159,7 +159,7 @@ export async function captureEncryptedWebDeviceVault(
   userId: string,
   deviceId: string,
 ): Promise<EncryptedWebDeviceVault> {
-  if (!userId || !DEVICE_ID_RE.test(deviceId)) throw new Error('DEVICE_VAULT_VAULT_SCOPE_INVALID');
+  if (!userId || !DEVICE_ID_RE.test(deviceId)) throw new Error('DEVICE_VAULT_SCOPE_INVALID');
   const masterKey = getSessionMasterKey();
   if (!masterKey) throw new Error('ACCOUNT_MASTER_KEY_REQUIRED');
   const { signing, kx } = await readDeviceRecords(userId, deviceId);
@@ -200,12 +200,12 @@ export async function restoreEncryptedWebDeviceVault(args: {
 }): Promise<void> {
   const { userId, deviceId, vault } = args;
   if (!userId || !DEVICE_ID_RE.test(deviceId) || vault.version !== VAULT_VERSION) {
-    throw new Error('DEVICE_VAULT_VAULT_SCOPE_INVALID');
+    throw new Error('DEVICE_VAULT_SCOPE_INVALID');
   }
   const masterKey = getSessionMasterKey();
   if (!masterKey) throw new Error('ACCOUNT_MASTER_KEY_REQUIRED');
   const iv = fromBase64Url(vault.iv);
-  if (iv.byteLength !== IV_BYTES) throw new Error('DEVICE_VAULT_VAULT_IV_INVALID');
+  if (iv.byteLength !== IV_BYTES) throw new Error('DEVICE_VAULT_IV_INVALID');
   const ciphertext = fromBase64Url(vault.ciphertext);
   let decoded: unknown;
   try {
@@ -217,7 +217,7 @@ export async function restoreEncryptedWebDeviceVault(args: {
     }, masterKey, ciphertext);
     decoded = hardGlobals.jsonParse(new hardGlobals.TextDecoder().decode(plaintext));
   } catch {
-    throw new Error('DEVICE_VAULT_VAULT_DECRYPT_FAILED');
+    throw new Error('DEVICE_VAULT_DECRYPT_FAILED');
   }
   const plain = decoded as Partial<PlainDeviceVault> | null;
   if (!plain
@@ -227,11 +227,11 @@ export async function restoreEncryptedWebDeviceVault(args: {
     || !validateSigningRecord(plain.signing, userId, deviceId)
     || !validateKxRecord(plain.kx, userId, deviceId)
     || typeof plain.libsignalStore !== 'string' || plain.libsignalStore.length < 32) {
-    throw new Error('DEVICE_VAULT_VAULT_INVALID');
+    throw new Error('DEVICE_VAULT_INVALID');
   }
   if (jwkXToStandardBase64(plain.signing.publicKeyJWK.x!) !== args.expectedDeviceSigningKey
     || jwkXToStandardBase64(plain.kx.publicKeyJWK.x!) !== args.expectedDevicePublicKey) {
-    throw new Error('DEVICE_VAULT_VAULT_KEY_MISMATCH');
+    throw new Error('DEVICE_VAULT_KEY_MISMATCH');
   }
   // Refuser un recul Libsignal avant de modifier les autres clés du coffre.
   const { restoreLibsignalStore } = await import('@/lib/crypto/libsignalPlatformBridge');
