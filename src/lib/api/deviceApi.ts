@@ -569,9 +569,9 @@ async function finalizeSynchronization(userId: string): Promise<DeviceApiRecord>
 /**
  * Invariant cryptographique : la maintenance périodique ne PRÉPARE jamais un
  * appareil. Elle exige un état serveur complet (approuvé, actif, lié, route
- * prête, `lifecycle_status='ready'`), ne provisionne pas libsignal et ne touche
- * ni `routing_status` ni `lifecycle_status`. Elle renouvelle uniquement la
- * préclé signée expirante et recharge le pool de préclés à usage unique.
+ * prête, `lifecycle_status='ready'`) et ne touche ni `routing_status` ni
+ * `lifecycle_status`. Invariant corrigé : elle recharge uniquement le pool de
+ * bundles de préclés libsignal, seule source de clés de session.
  */
 async function runKeyMaintenance(userId: string): Promise<DeviceApiRecord> {
   const snapshot = await getState(userId);
@@ -582,8 +582,7 @@ async function runKeyMaintenance(userId: string): Promise<DeviceApiRecord> {
   }
   const identity = await loadDeviceIdentity(userId, record.deviceId);
   if (!identity) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
-  await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
-  await refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId);
+  await provisionLibsignalDevice(userId, record.deviceId);
   return record;
 }
 
