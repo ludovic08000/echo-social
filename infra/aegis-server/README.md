@@ -41,6 +41,9 @@ Supabase; authorization remains inside PostgreSQL.
 
 ## Start on a VPS
 
+Use the repository checkout: Compose builds from its root, copying only the gateway
+and the shared diagnostic module (see `Dockerfile.dockerignore`).
+
 1. Copy `.env.example` to `.env`.
 2. Set `SUPABASE_URL` and the public `SUPABASE_ANON_KEY`.
 3. Keep every web/Capacitor origin explicit in `AEGIS_ALLOWED_ORIGINS`.
@@ -54,6 +57,11 @@ Supabase; authorization remains inside PostgreSQL.
 Without `VITE_AEGIS_SERVER_URL`, the same client calls the same Supabase RPCs
 directly. This makes gateway deployment reversible and requires no ciphertext
 conversion.
+
+## Logs and temporary diagnostics
+
+See [Aegis diagnostics](../../docs/aegis-diagnostics.md) for per-check results,
+`x-aegis-diagnostic-id` correlation and the expiring operator debug mode.
 
 ## Health check
 

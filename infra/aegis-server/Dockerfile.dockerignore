@@ -1,0 +1,9 @@
+**
+!infra/
+!infra/aegis-server/
+!infra/aegis-server/server.mjs
+!infra/aegis-server/Dockerfile
+!supabase/
+!supabase/functions/
+!supabase/functions/_shared/
+!supabase/functions/_shared/aegisDiagnostics.mjs

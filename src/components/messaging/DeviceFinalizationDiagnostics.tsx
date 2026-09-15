@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Copy, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getAegisDiagnosticReport } from '@/lib/messaging/aegisDiagnosticReport';
+import { isE2EEDebugEnabled, setE2EEDebugEnabled } from '@/lib/consoleGuard';
 import {
   DEVICE_FINALIZATION_TRACE_EVENT,
   getDeviceFinalizationTrace,
@@ -37,6 +39,12 @@ export function DeviceFinalizationDiagnostics({ open: initialOpen = false }: { o
   const [open, setOpen] = useState(initialOpen);
   const [events, setEvents] = useState<DeviceFinalizationTraceEvent[]>(() => getDeviceFinalizationTrace(VISIBLE_EVENTS));
   const [copied, setCopied] = useState(false);
+  const [debug, setDebug] = useState(isE2EEDebugEnabled);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setDebug(isE2EEDebugEnabled()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const refresh = () => setEvents(getDeviceFinalizationTrace(VISIBLE_EVENTS));
@@ -47,7 +55,7 @@ export function DeviceFinalizationDiagnostics({ open: initialOpen = false }: { o
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(events, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify(getAegisDiagnosticReport(), null, 2));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -69,6 +77,10 @@ export function DeviceFinalizationDiagnostics({ open: initialOpen = false }: { o
 
       {open && (
         <div className="mt-2 space-y-2">
+          <p className="text-xs text-muted-foreground">Les 20 dernières étapes sont affichées. L’export contient tout le tampon disponible, sans clés ni jetons.</p>
+          <Button size="sm" variant="outline" aria-pressed={debug} onClick={() => {
+            setE2EEDebugEnabled(!debug); setDebug(isE2EEDebugEnabled());
+          }}>{debug ? 'Arrêter le debug' : 'Activer le debug 10 minutes'}</Button>
           <div className="max-h-48 overflow-auto rounded-lg bg-background/70 p-2 font-mono text-[10px] leading-relaxed">
             {events.length === 0 ? (
               <p className="text-muted-foreground">Aucun événement de finalisation enregistré.</p>

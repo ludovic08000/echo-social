@@ -1,4 +1,5 @@
 import { isE2EEDebugEnabled, rawConsoleWrite } from '@/lib/consoleGuard';
+import { normalizeFinalizationErrorCode } from '@/lib/device-manager/deviceFinalizationTrace';
 
 export type E2EETraceDirection = 'send' | 'receive' | 'device' | 'session';
 
@@ -24,6 +25,8 @@ export interface E2EETraceEvent {
   cache?: 'memory' | 'disk' | 'network' | 'miss';
   transport?: 'supabase' | 'aegis_server' | 'local';
   errorCode?: string;
+  /** Identifiant aléatoire du journal serveur, jamais un identifiant métier. */
+  diagnosticId?: string;
 }
 
 export type E2EETraceInput = Omit<E2EETraceEvent, 'at' | 'seq'> & {
@@ -60,14 +63,25 @@ function localReference(kind: string, value: unknown): string | undefined {
   const next = (referenceCounters.get(kind) ?? 0) + 1;
   referenceCounters.set(kind, next);
   const reference = `${kind}-${String(next).padStart(3, '0')}`;
+  // Le tampon est borné ; sa table de références doit l'être aussi.
+  if (references.size >= 1200) references.delete(references.keys().next().value!);
   references.set(key, reference);
   return reference;
 }
 
 function safeErrorCode(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length === 0) return undefined;
-  const explicit = value.toUpperCase().match(/[A-Z][A-Z0-9_]{2,95}/)?.[0];
-  return explicit ? safeToken(explicit, 'E_UNKNOWN') : 'E_UNKNOWN';
+  const known = normalizeFinalizationErrorCode(value);
+  if (known !== 'UNKNOWN_ERROR') return known;
+  const head = value.split(':')[0].trim();
+  const codes = new Set(['NOT_AUTHENTICATED', 'AUTH_SESSION_LOOKUP_FAILED', 'AUTH_TOKEN_EXPIRED',
+    'AEGIS_GATEWAY_UNREACHABLE', 'AEGIS_LIBSIGNAL_PREKEY_BUNDLE_UNAVAILABLE',
+    'AEGIS_SYNCED_COPY_SCOPE_MISMATCH', 'AEGIS_DEVICE_ROUTE_UNAVAILABLE', 'AEGIS_PARTIAL_DEVICE_FANOUT',
+    'E2EE_DEVICE_COPIES_UNAVAILABLE', 'E2EE_DEVICE_NOT_AUTHORIZED', 'DEVICE_COPY_DECRYPT_NULL',
+    'DEVICE_PUBLIC_KEY_MISSING', 'AUTH_USER_MISSING', 'AEGIS_TEMPORARY_DEVICE_ID',
+    'SessionNotFound', 'UntrustedIdentity', 'InvalidSignature', 'InvalidKey', 'InvalidMessage',
+    'DuplicatedMessage', 'InvalidPreKeyId', '42501', 'P0001', 'PGRST301', 'PGRST302', 'PGRST303']);
+  return codes.has(head) || /^AEGIS_HTTP_[45]\d\d$/.test(head) ? head : 'E_UNKNOWN';
 }
 
 /** Strip every account, conversation, message, device and session identifier. */
@@ -81,6 +95,7 @@ export function sanitizeE2EETraceEvent(
   };
   if (event.component) record.component = safeToken(event.component, 'unknown');
   if (event.outcome) record.outcome = event.outcome;
+  if (typeof event.diagnosticId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(event.diagnosticId)) record.diagnosticId = event.diagnosticId;
   record.traceRef = localReference('trace', event.traceId);
   record.messageRef = localReference('msg', event.messageId);
   record.conversationRef = localReference('conv', event.conversationId);

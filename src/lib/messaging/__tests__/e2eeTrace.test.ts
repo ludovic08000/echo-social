@@ -34,7 +34,7 @@ describe('Aegis structured trace', () => {
     });
 
     expect(sanitized).not.toHaveProperty('messageId');
-    expect(sanitized.errorCode).toBe('FAILED');
+    expect(sanitized.errorCode).toBe('E_UNKNOWN');
     expect(JSON.stringify(sanitized)).not.toContain('secret plaintext');
   });
 });

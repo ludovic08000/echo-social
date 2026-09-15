@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { base64ToBuffer } from './utils';
 import { withLibsignalSessionFreshness } from './libsignalSessionFreshness';
+import { traceE2EE, traceE2EEBlock, type E2EETraceInput } from '@/lib/messaging/e2eeTrace';
 import {
   decryptLibsignalMessage,
   encryptLibsignalMessage,
@@ -19,14 +20,20 @@ async function deviceNumber(userId: string, deviceId: string): Promise<number> {
 }
 
 async function addresses(localUserId: string, localDeviceId: string, remoteUserId: string, remoteDeviceId: string): Promise<{ local: LibsignalAddress; remote: LibsignalAddress }> {
-  const [localNumber, remoteNumber] = await Promise.all([deviceNumber(localUserId, localDeviceId), deviceNumber(remoteUserId, remoteDeviceId)]);
+  const [localNumber, remoteNumber] = await Promise.all([
+    traceE2EEBlock({ direction: 'session', component: 'libsignal', stage: 'LOCAL_DEVICE_NUMBER', deviceId: localDeviceId }, () => deviceNumber(localUserId, localDeviceId)),
+    traceE2EEBlock({ direction: 'session', component: 'libsignal', stage: 'REMOTE_DEVICE_NUMBER', peerDeviceId: remoteDeviceId }, () => deviceNumber(remoteUserId, remoteDeviceId)),
+  ]);
   return { local: { userId: localUserId, deviceNumber: localNumber }, remote: { userId: remoteUserId, deviceNumber: remoteNumber } };
 }
 
 export async function encryptForLibsignalDevice(args: { conversationId: string; ownerUserId: string; ownerDeviceId: string; remoteUserId: string; remoteDeviceId: string; plaintext: string }): Promise<string> {
+  const context: E2EETraceInput = { direction: 'send', component: 'libsignal', stage: 'SESSION',
+    conversationId: args.conversationId, deviceId: args.ownerDeviceId, peerDeviceId: args.remoteDeviceId };
   return withLibsignalSessionFreshness(args, async (renew, established) => {
+    traceE2EE({ ...context, stage: renew ? 'SESSION_RENEW_REQUIRED' : 'SESSION_REUSE_ATTEMPT', outcome: 'start' });
     const route = await addresses(args.ownerUserId, args.ownerDeviceId, args.remoteUserId, args.remoteDeviceId);
-    const attempt = () => encryptLibsignalMessage({ ownerUserId: args.ownerUserId, ownerDeviceId: args.ownerDeviceId, ...route, plaintext: new TextEncoder().encode(args.plaintext) });
+    const attempt = () => traceE2EEBlock({ ...context, stage: 'LIBSIGNAL_ENCRYPT' }, () => encryptLibsignalMessage({ ownerUserId: args.ownerUserId, ownerDeviceId: args.ownerDeviceId, ...route, plaintext: new TextEncoder().encode(args.plaintext) }));
     if (!renew) {
       try {
         const encrypted = await attempt();
@@ -35,18 +42,23 @@ export async function encryptForLibsignalDevice(args: { conversationId: string; 
         // Seule l'absence de session autorise un bootstrap, jamais une erreur de confiance ou de coffre.
         const message = error instanceof Error ? error.message : String(error);
         if (!/\bSessionNotFound\b|\bsession(?: with [^\r\n]+)? not found(?:\b|:)/.test(message)) throw error;
+        traceE2EE({ ...context, stage: 'SESSION_MISSING_BOOTSTRAP', outcome: 'retry', errorCode: 'SessionNotFound' });
       }
     }
-    const { data, error } = await (supabase as any).rpc('claim_libsignal_prekey_bundle', {
-      p_user_id: args.remoteUserId,
-      p_device_id: args.remoteDeviceId,
-      p_conversation_id: args.conversationId,
-      p_sender_device_id: args.ownerDeviceId,
+    const row = await traceE2EEBlock({ ...context, stage: 'CLAIM_REMOTE_PREKEY_BUNDLE', transport: 'supabase' }, async () => {
+      const { data, error } = await (supabase as any).rpc('claim_libsignal_prekey_bundle', {
+        p_user_id: args.remoteUserId,
+        p_device_id: args.remoteDeviceId,
+        p_conversation_id: args.conversationId,
+        p_sender_device_id: args.ownerDeviceId,
+      });
+      const bundle = Array.isArray(data) ? data[0] : data;
+      if (error || !bundle?.public_bundle) throw new Error('AEGIS_LIBSIGNAL_PREKEY_BUNDLE_UNAVAILABLE');
+      return bundle;
     });
-    const row = Array.isArray(data) ? data[0] : data;
-    if (error || !row?.public_bundle) throw new Error('AEGIS_LIBSIGNAL_PREKEY_BUNDLE_UNAVAILABLE');
-    await establishLibsignalSession({ ownerUserId: args.ownerUserId, ownerDeviceId: args.ownerDeviceId, ...route, bundle: new Uint8Array(base64ToBuffer(row.public_bundle)) });
-    await established();
+    // Libsignal effectue lui-même ses contrôles de signature/confiance : pas de succès inventé à partir de la présence du bundle.
+    await traceE2EEBlock({ ...context, stage: 'LIBSIGNAL_ESTABLISH_SESSION' }, () => establishLibsignalSession({ ownerUserId: args.ownerUserId, ownerDeviceId: args.ownerDeviceId, ...route, bundle: new Uint8Array(base64ToBuffer(row.public_bundle)) }));
+    await traceE2EEBlock({ ...context, stage: 'SESSION_FRESHNESS_COMMIT' }, established);
     const encrypted = await attempt();
     return encodeLibsignalWire(encrypted.messageType, encrypted.ciphertext);
   });
@@ -56,6 +68,7 @@ export async function decryptFromLibsignalDevice(args: { ownerUserId: string; ow
   const encrypted = decodeLibsignalWire(args.payload);
   if (!encrypted) return null;
   const route = await addresses(args.ownerUserId, args.ownerDeviceId, args.remoteUserId, args.remoteDeviceId);
-  const plaintext = await decryptLibsignalMessage({ ownerUserId: args.ownerUserId, ownerDeviceId: args.ownerDeviceId, ...route, encrypted });
+  const plaintext = await traceE2EEBlock({ direction: 'receive', component: 'libsignal', stage: 'LIBSIGNAL_DECRYPT',
+    deviceId: args.ownerDeviceId, peerDeviceId: args.remoteDeviceId }, () => decryptLibsignalMessage({ ownerUserId: args.ownerUserId, ownerDeviceId: args.ownerDeviceId, ...route, encrypted }));
   return new TextDecoder('utf-8', { fatal: true }).decode(plaintext);
 }

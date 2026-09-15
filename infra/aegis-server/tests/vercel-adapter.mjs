@@ -7,9 +7,10 @@ function responseRecorder() {
     status: null,
     headers: {},
     text: '',
+    setHeader(name, value) { this.headers[name] = value; },
     writeHead(status, headers) {
       this.status = status;
-      this.headers = { ...headers };
+      this.headers = { ...this.headers, ...headers };
     },
     end(value = '') {
       this.text = String(value);
