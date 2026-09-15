@@ -25,7 +25,7 @@ beforeEach(() => { vi.resetAllMocks(); mocks.restore.mockResolvedValue(undefined
 describe('complete encrypted device vault required', () => {
   it.each([undefined, '', 42])('rejects missing/invalid Libsignal data before any private write: %s', async libsignalStore => {
     decoded({ ...plain(), libsignalStore });
-    await expect(restoreEncryptedWebDeviceVault(input)).rejects.toThrow('WEBAUTHN_DEVICE_VAULT_INVALID');
+    await expect(restoreEncryptedWebDeviceVault(input)).rejects.toThrow('DEVICE_VAULT_VAULT_INVALID');
     expect(mocks.write).not.toHaveBeenCalled();
     expect(mocks.restore).not.toHaveBeenCalled();
   });
