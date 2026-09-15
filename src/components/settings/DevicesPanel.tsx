@@ -8,7 +8,6 @@ import { useDeviceLifecycle } from '@/hooks/useDeviceLifecycle';
 import { deviceApi, type DeviceApiListRecord } from '@/lib/api/deviceApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { WindowsHelloDeviceRecoverySection } from '@/components/settings/WindowsHelloDeviceRecoverySection';
 import { IosDeviceDiagnosticsSection } from '@/components/settings/IosDeviceDiagnosticsSection';
 import {
   AlertDialog,
@@ -236,10 +235,6 @@ export function DevicesPanel() {
           </Button>
         </div>
       </div>
-
-      {user?.id && (
-        <WindowsHelloDeviceRecoverySection userId={user.id} deviceId={currentDeviceId} />
-      )}
 
       {devices.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">

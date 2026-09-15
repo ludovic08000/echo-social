@@ -38,7 +38,6 @@ import type {
   DeviceLifecycleRecord,
 } from '@/lib/device-manager/deviceLifecycleMachine';
 import { readPinUnlocked, subscribePinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
-import { isWindowsWeb } from '@/lib/crypto/windowsHelloDeviceRecovery';
 import { syncIosDeviceAdapter } from '@/platforms/ios/iosLifecycleAdapter';
 import { syncAndroidDeviceAdapter } from '@/platforms/android/androidLifecycleAdapter';
 
@@ -107,7 +106,6 @@ configureDeviceLifecycleDeps((userId) => ({
   getDeviceIdStatus: () => getDeviceIdStatus() as DeviceIdStatus,
   peekDeviceId: () => peekCurrentDeviceId(),
   setUserScope: (id) => setCurrentDeviceUserScope(id),
-  isWindowsWeb: () => isWindowsWeb(),
   readPinUnlocked: (id) => readPinUnlocked(id),
   subscribePinUnlocked: (id, listener) => subscribePinUnlocked(id, listener),
   onDeviceRecordChanged: (id, listener) => {
