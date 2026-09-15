@@ -4,7 +4,7 @@
 
 Aegis owns encrypted delivery, not decryption.
 
-- Clients own Ed25519/X25519 account and device identities, Ratchet state,
+- Clients own Ed25519/X25519 Aegis account and device identities, Libsignal session state,
   plaintext and private keys.
 - PostgreSQL stores the encrypted parent, one encrypted capsule per authorized
   device and the minimum delivery metadata required for durable synchronization.
@@ -53,10 +53,11 @@ capsule or parent cascades to the delivery state.
 
 ### Device authority
 
-`user_devices`, account identity records, signed prekeys and
-`get_sesame_device_list()` remain the source of truth for authorization and
-routing. A DeviceID must be active, non-revoked, account-authorized and
-cryptographically routable before it may send, sync or ACK.
+`user_devices`, Aegis account/device authorization records, Libsignal prekey
+bundles and `get_sesame_device_list()` remain the source of truth for
+authorization and routing. A DeviceID must be active, non-revoked,
+account-authorized and backed by a matching Libsignal bundle before it may send,
+sync or ACK.
 
 ## Atomic send path
 

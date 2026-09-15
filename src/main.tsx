@@ -20,7 +20,7 @@ if (import.meta.env.DEV) {
 }
 
 // Console noise filter — keep ONLY real errors/warnings; mute verbose
-// info/log/debug from crypto, E2EE, ML, X3DH, identity bootstrap, push,
+// info/log/debug from crypto, E2EE, Libsignal, identity bootstrap, push,
 // service worker, Vite HMR, third-party preview iframe noise, etc.
 {
   const origLog = console.log;
@@ -32,7 +32,7 @@ if (import.meta.env.DEV) {
   // Patterns that match purely informational chatter we don't need to see.
   const NOISE_PATTERNS: RegExp[] = [
     /^\[E2EE\]/i,
-    /^\[X3DH\]/i,
+    /^\[LIBSIGNAL\]/i,
     /^\[CRYPTO\]/i,
     /^\[KEY[_-]?SYNC\]/i,
     /^\[DEVICE\]/i,

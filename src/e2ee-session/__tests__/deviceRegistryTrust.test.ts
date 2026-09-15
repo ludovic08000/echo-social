@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   ensureApprovedDeviceTrust: vi.fn(),
-  peekDeviceSignedPrekey: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc: mocks.rpc } }));
@@ -14,10 +13,6 @@ vi.mock('@/lib/messaging/currentDevice', () => ({
 vi.mock('@/lib/crypto/deviceLinkTrust', () => ({
   ensureApprovedDeviceTrust: mocks.ensureApprovedDeviceTrust,
 }));
-vi.mock('@/lib/crypto/x3dh', () => ({
-  peekDeviceSignedPrekey: mocks.peekDeviceSignedPrekey,
-}));
-
 import { invalidateVerifiedDeviceCache, listDevicesForUser } from '../deviceRegistry';
 
 function route(deviceId: string, key = 'A'.repeat(44)) {
@@ -28,7 +23,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   invalidateVerifiedDeviceCache();
   mocks.ensureApprovedDeviceTrust.mockResolvedValue(undefined);
-  mocks.peekDeviceSignedPrekey.mockResolvedValue({ signedPrekeyId: 1 });
 });
 
 describe('canonical trust-gated device registry', () => {
@@ -37,7 +31,7 @@ describe('canonical trust-gated device registry', () => {
     mocks.ensureApprovedDeviceTrust.mockImplementation(async (_userId: string, deviceId: string) => {
       if (deviceId === 'dev-bad') throw new Error('BAD_DEVICE_AUTHORIZATION');
     });
-    const devices = await listDevicesForUser('user-123', { verifyPrekeys: false });
+    const devices = await listDevicesForUser('user-123');
     expect(devices.map((device) => device.deviceId)).toEqual(['dev-good']);
   });
 
@@ -53,7 +47,7 @@ describe('canonical trust-gated device registry', () => {
 
   it('drops malformed rows before cryptographic verification', async () => {
     mocks.rpc.mockResolvedValue({ data: [route('dev-a'), route('dev-empty', '')], error: null });
-    const devices = await listDevicesForUser('user-x', { verifyPrekeys: false });
+    const devices = await listDevicesForUser('user-x');
     expect(devices.map((device) => device.deviceId)).toEqual(['dev-a']);
     expect(mocks.ensureApprovedDeviceTrust).toHaveBeenCalledTimes(1);
   });
@@ -61,13 +55,12 @@ describe('canonical trust-gated device registry', () => {
   it('fails closed when every server route fails verification', async () => {
     mocks.rpc.mockResolvedValue({ data: [route('dev-bad')], error: null });
     mocks.ensureApprovedDeviceTrust.mockRejectedValue(new Error('BAD_DEVICE_AUTHORIZATION'));
-    await expect(listDevicesForUser('user-bad', { verifyPrekeys: false }))
+    await expect(listDevicesForUser('user-bad'))
       .rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
   });
 
   it('trusts the canonical RPC to require a current Libsignal bundle', async () => {
     mocks.rpc.mockResolvedValue({ data: [route('dev-current')], error: null });
-    mocks.peekDeviceSignedPrekey.mockResolvedValue(null);
     await expect(listDevicesForUser('user-no-spk')).resolves.toHaveLength(1);
   });
 });

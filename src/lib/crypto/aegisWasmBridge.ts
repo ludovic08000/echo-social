@@ -6,9 +6,6 @@ import initWasm, {
   aegis_wasm_abi_version,
   aegis_wasm_identity_generate,
   aegis_wasm_identity_public,
-  aegis_wasm_ratchet_decrypt,
-  aegis_wasm_ratchet_encrypt,
-  aegis_wasm_signed_prekey_generate,
   aegis_wasm_store_create,
   aegis_wasm_bundle_create,
   aegis_wasm_session_establish,
@@ -23,12 +20,6 @@ import { traceFinalizationOperation } from '@/lib/device-manager/deviceFinalizat
 const EXPECTED_ABI = 1;
 const LIBSIGNAL_STORE_PREFIX = 'aegis.libsignal.store:';
 let initPromise: Promise<void> | null = null;
-
-export type WasmSignedPrekey = {
-  privateRecord: Uint8Array;
-  publicKey: Uint8Array;
-  signature: Uint8Array;
-};
 
 function unpackParts(packed: Uint8Array, expectedParts: number): Uint8Array[] {
   const parts: Uint8Array[] = [];
@@ -52,11 +43,6 @@ function ensureWebAssemblyRuntime(): void {
   if (!window.isSecureContext || !globalThis.crypto?.subtle) {
     throw new Error('AEGIS_WASM_SECURE_CONTEXT_REQUIRED');
   }
-}
-
-function ensureWindowsWeb(): void {
-  ensureWebAssemblyRuntime();
-  if (!/Windows/i.test(navigator.userAgent || '')) throw new Error('AEGIS_WASM_WINDOWS_ONLY');
 }
 
 type SealedLibsignalStore = { bytes: string };
@@ -173,42 +159,6 @@ export async function restoreLibsignalStore(userId: string, deviceId: string, by
   });
 }
 
-export function unpackWasmSignedPrekey(packed: Uint8Array): WasmSignedPrekey {
-  const parts = unpackParts(packed, 3);
-  return { privateRecord: parts[0], publicKey: parts[1], signature: parts[2] };
-}
-
-export async function wasmRatchetEncrypt(args: {
-  chainKey: Uint8Array;
-  aad: Uint8Array;
-  plaintext: Uint8Array;
-}): Promise<{ nextChainKey: Uint8Array; iv: Uint8Array; ciphertext: Uint8Array }> {
-  ensureWindowsWeb();
-  await initializeAegisWasm();
-  const [nextChainKey, iv, ciphertext] = unpackParts(aegis_wasm_ratchet_encrypt(
-    args.chainKey, args.aad, args.plaintext,
-  ), 3);
-  if (nextChainKey.length !== 32 || iv.length !== 12 || ciphertext.length < 16) {
-    throw new Error('AEGIS_WASM_RATCHET_OUTPUT_INVALID');
-  }
-  return { nextChainKey, iv, ciphertext };
-}
-
-export async function wasmRatchetDecrypt(args: {
-  chainKey: Uint8Array;
-  aad: Uint8Array;
-  iv: Uint8Array;
-  ciphertext: Uint8Array;
-}): Promise<{ nextChainKey: Uint8Array; plaintext: Uint8Array }> {
-  ensureWindowsWeb();
-  await initializeAegisWasm();
-  const [nextChainKey, plaintext] = unpackParts(aegis_wasm_ratchet_decrypt(
-    args.chainKey, args.aad, args.iv, args.ciphertext,
-  ), 2);
-  if (nextChainKey.length !== 32) throw new Error('AEGIS_WASM_RATCHET_OUTPUT_INVALID');
-  return { nextChainKey, plaintext };
-}
-
 export async function generateWasmIdentity(): Promise<{
   privateRecord: Uint8Array;
   publicKey: Uint8Array;
@@ -217,20 +167,4 @@ export async function generateWasmIdentity(): Promise<{
   const privateRecord = aegis_wasm_identity_generate();
   const publicKey = aegis_wasm_identity_public(privateRecord);
   return { privateRecord, publicKey };
-}
-
-export async function generateWasmSignedPrekey(
-  identityPrivateRecord: Uint8Array,
-  keyId: number,
-  timestampMs = Date.now(),
-): Promise<WasmSignedPrekey> {
-  await initializeAegisWasm();
-  if (!Number.isSafeInteger(keyId) || keyId <= 0 || keyId > 0x7fffffff) {
-    throw new Error('AEGIS_WASM_SPK_ID_INVALID');
-  }
-  return unpackWasmSignedPrekey(aegis_wasm_signed_prekey_generate(
-    identityPrivateRecord,
-    keyId,
-    BigInt(timestampMs),
-  ));
 }

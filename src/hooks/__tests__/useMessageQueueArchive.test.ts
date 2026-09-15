@@ -81,7 +81,7 @@ describe('useMessageQueue Aegis transport', () => {
     expect(classifyOutboundFailure(new Error('E2EE_DEVICE_COPIES_UNAVAILABLE'))).toMatchObject({
       status: 'waiting_secure_channel',
     });
-    expect(classifyOutboundFailure(new Error('DEVICE_SPK_SIGNATURE_INVALID'))).toMatchObject({
+    expect(classifyOutboundFailure(new Error('DEVICE_ROUTE_NOT_READY:LIBSIGNAL_BUNDLE_REQUIRED'))).toMatchObject({
       status: 'waiting_secure_channel',
     });
     expect(classifyOutboundFailure(new Error('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE'))).toMatchObject({

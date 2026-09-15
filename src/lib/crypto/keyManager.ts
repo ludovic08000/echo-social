@@ -4,7 +4,7 @@
  */
 
 import {
-  STORE_KEYS, STORE_SESSION, STORE_PREKEYS,
+  STORE_KEYS,
   KX_KEY_PARAMS, SIG_KEY_PARAMS,
 } from './constants';
 import { isIndexedDBClosingError, openE2EEDB, reopenE2EEDB } from './indexedDb';
@@ -18,7 +18,6 @@ import {
 import { hardCrypto, hardGlobals } from './cryptoIntegrity';
 import * as memCache from './memoryIdentityCache';
 import { evaluateServerContinuityProbe } from './aegisContinuityGuards';
-import { runTxOn, reqToPromise } from './indexedDbTx';
 
 export interface IdentityKeyPair {
   publicKey: CryptoKey;
@@ -40,14 +39,6 @@ export interface PublicIdentityBundle {
   bindingSignature: string;
 }
 
-export interface SessionKey {
-  conversationId: string;
-  sharedSecret: CryptoKey;
-  messageCount: number;
-  createdAt: number;
-  peerFingerprint: string;
-}
-
 interface StoredKeyPair {
   publicKeyJWK: JsonWebKey;
   privateKeyJWK: JsonWebKey;
@@ -55,14 +46,6 @@ interface StoredKeyPair {
   signingPrivateKeyJWK: JsonWebKey;
   createdAt: number;
   fingerprint: string;
-}
-
-interface StoredSessionKey {
-  conversationId: string;
-  keyJWK: JsonWebKey;
-  messageCount: number;
-  createdAt: number;
-  peerFingerprint: string;
 }
 
 function openDB(forceFresh = false): Promise<IDBDatabase> {
@@ -564,57 +547,6 @@ export async function exportPublicKeyBundleFromStoredKeys(
   };
 }
 
-export async function saveSessionKey(session: SessionKey): Promise<void> {
-  let keyJWK: JsonWebKey;
-  try {
-    keyJWK = await exportKeyToJWK(session.sharedSecret);
-  } catch {
-    const existing = await dbGet<StoredSessionKey>(STORE_SESSION, session.conversationId);
-    if (!existing) return;
-    keyJWK = existing.keyJWK;
-  }
-
-  await dbPut<StoredSessionKey>(STORE_SESSION, {
-    conversationId: session.conversationId,
-    keyJWK,
-    messageCount: session.messageCount,
-    createdAt: session.createdAt,
-    peerFingerprint: session.peerFingerprint,
-  });
-}
-
-export async function loadSessionKey(conversationId: string): Promise<SessionKey | null> {
-  const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
-  if (!stored) return null;
-
-  const sharedSecret = await importKeyFromJWK(
-    stored.keyJWK,
-    { name: 'AES-GCM', length: 256 } as AesKeyAlgorithm,
-    ['encrypt', 'decrypt'],
-    false,
-  );
-
-  return {
-    conversationId: stored.conversationId,
-    sharedSecret,
-    messageCount: stored.messageCount,
-    createdAt: stored.createdAt,
-    peerFingerprint: stored.peerFingerprint,
-  };
-}
-
-export async function deleteSessionKey(conversationId: string): Promise<void> {
-  await dbDelete(STORE_SESSION, conversationId);
-}
-
-export async function incrementSessionMessageCount(conversationId: string): Promise<number> {
-  const stored = await dbGet<StoredSessionKey>(STORE_SESSION, conversationId);
-  if (!stored) return 0;
-  stored.messageCount += 1;
-  await dbPut<StoredSessionKey>(STORE_SESSION, stored);
-  return stored.messageCount;
-}
-
 export async function deleteRawIdentityKeys(userId: string): Promise<void> {
   try {
     memCache.clear(userId, 'delete_raw');
@@ -638,86 +570,14 @@ export async function wipeAllKeys(): Promise<void> {
   }
   try {
     const db = await openDB();
-    const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');
+    const tx = db.transaction([STORE_KEYS], 'readwrite');
     tx.objectStore(STORE_KEYS).clear();
-    tx.objectStore(STORE_SESSION).clear();
-    tx.objectStore(STORE_PREKEYS).clear();
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   } catch {
     // Best-effort emergency wipe.
-  }
-}
-
-export async function wipeSessionKeys(userId?: string): Promise<void> {
-  try {
-    const db = await openDB();
-    const tx = db.transaction([STORE_SESSION], 'readwrite');
-    tx.objectStore(STORE_SESSION).clear();
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {
-    // Best-effort session wipe.
-  }
-
-  try {
-    await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
-      tx.objectStore('ratchet-states').clear();
-    });
-  } catch {
-    // Best-effort legacy ratchet wipe.
-  }
-}
-
-export async function exportAllSessionKeys(): Promise<StoredSessionKey[]> {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_SESSION, 'readonly');
-    const req = tx.objectStore(STORE_SESSION).getAll();
-    return new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-  } catch {
-    return [];
-  }
-}
-
-export async function importAllSessionKeys(records: StoredSessionKey[]): Promise<void> {
-  if (!records.length) return;
-  const db = await openDB();
-  const tx = db.transaction(STORE_SESSION, 'readwrite');
-  const store = tx.objectStore(STORE_SESSION);
-  for (const r of records) store.put(r);
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function exportAllRatchetStates(): Promise<unknown[]> {
-  try {
-    return await runTxOn('ratchet', ['ratchet-states'], 'readonly', (tx) =>
-      reqToPromise(tx.objectStore('ratchet-states').getAll() as IDBRequest<unknown[]>),
-    ) ?? [];
-  } catch {
-    return [];
-  }
-}
-
-export async function importAllRatchetStates(records: unknown[]): Promise<void> {
-  if (!records.length) return;
-  try {
-    await runTxOn('ratchet', ['ratchet-states'], 'readwrite', (tx) => {
-      const store = tx.objectStore('ratchet-states');
-      for (const r of records) store.put(r);
-    });
-  } catch {
-    // Import is best-effort for compatibility with older backups.
   }
 }
 

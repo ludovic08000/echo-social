@@ -1,10 +1,9 @@
 /**
  * Device Vault — persistance protégée des clés privées device.
  *
- * IMPORTANT : le chemin WebCrypto ACE est STRICTEMENT limité à iOS Web/PWA.
- * Windows Web conserve exactement son stockage historique IndexedDB et ne
- * passe jamais par ACE via ce module. Les plateformes natives conservent leur
- * nativeKeyVault/Keychain existant.
+ * Tous les navigateurs utilisent ACE Web. Les plateformes natives utilisent
+ * leur Keychain/Keystore ; leur ancien miroir IndexedDB reste conservé tant
+ * qu'une purge locale séparée n'a pas été explicitement autorisée.
  */
 
 import {
@@ -21,8 +20,8 @@ import {
 import { logCryptoError } from './errorLogger';
 
 const VAULT_VERSION = 1 as const;
-const IOS_WEB_KEY_PREFIX = 'aegis.device-vault.v1:';
-const IOS_WEB_MANIFEST_KEY = 'aegis.device-vault.v1:manifest';
+const WEB_KEY_PREFIX = 'aegis.device-vault.v1:';
+const WEB_MANIFEST_KEY = 'aegis.device-vault.v1:manifest';
 
 type DeviceVaultMode = 'native' | 'web';
 
@@ -45,11 +44,11 @@ function mode(): DeviceVaultMode {
 }
 
 function webKey(storageId: string): string {
-  return `${IOS_WEB_KEY_PREFIX}${storageId}`;
+  return `${WEB_KEY_PREFIX}${storageId}`;
 }
 
-async function readIosManifest(): Promise<string[]> {
-  const encoded = await secureGetCriticalSecret(IOS_WEB_MANIFEST_KEY);
+async function readWebManifest(): Promise<string[]> {
+  const encoded = await secureGetCriticalSecret(WEB_MANIFEST_KEY);
   if (!encoded) return [];
   try {
     const parsed = JSON.parse(encoded);
@@ -59,16 +58,16 @@ async function readIosManifest(): Promise<string[]> {
   }
 }
 
-async function updateIosManifest(storageId: string, present: boolean): Promise<void> {
-  const current = new Set(await readIosManifest());
+async function updateWebManifest(storageId: string, present: boolean): Promise<void> {
+  const current = new Set(await readWebManifest());
   if (present) current.add(storageId);
   else current.delete(storageId);
-  await secureSetCriticalSecret(IOS_WEB_MANIFEST_KEY, JSON.stringify([...current].sort()));
+  await secureSetCriticalSecret(WEB_MANIFEST_KEY, JSON.stringify([...current].sort()));
 }
 
 export async function listDeviceVaultStorageIds(prefix: string): Promise<string[]> {
   if (mode() !== 'web') return [];
-  return (await readIosManifest()).filter((storageId) => storageId.startsWith(prefix));
+  return (await readWebManifest()).filter((storageId) => storageId.startsWith(prefix));
 }
 
 /**
@@ -109,9 +108,6 @@ export async function readDeviceVaultRecord<T>(
   if (vaultMode === 'native') {
     return readNativeKeyRecord(storageId, validate);
   }
-
-  // Windows/desktop Web : comportement historique inchangé. Le caller relit
-  // son IndexedDB legacy comme avant ce chantier.
 
   const encoded = await secureGetCriticalSecret(webKey(storageId));
   if (encoded === null) return null;
@@ -154,9 +150,9 @@ export async function writeDeviceVaultRecord<T>(storageId: string, payload: T): 
   } satisfies WebVaultEnvelope);
 
   await secureSetCriticalSecret(webKey(storageId), encoded);
-  await updateIosManifest(storageId, true);
+  await updateWebManifest(storageId, true);
 
-  // Invariant fail-closed : readback explicite sur iOS Web en plus du readback
+  // Invariant fail-closed : readback explicite sur le Web en plus du readback
   // interne de secureSetCriticalSecret/webAegisEnclaveSet.
   const readback = await secureGetCriticalSecret(webKey(storageId));
   if (readback !== encoded) {
@@ -173,17 +169,14 @@ export async function removeDeviceVaultRecord(storageId: string): Promise<void> 
   }
 
   await secureRemoveCriticalSecret(webKey(storageId));
-  await updateIosManifest(storageId, false);
+  await updateWebManifest(storageId, false);
 }
 
 /**
  * Migration d'un ancien record privé en clair.
  *
- * - iOS Web : legacy -> ACE -> readback -> suppression du legacy.
- * - natif : comportement historique nativeKeyVault + miroir conservé.
- * - Windows/desktop Web : retourne simplement le legacy, sans migration ni
- *   suppression. C'est volontaire afin de ne modifier aucun comportement
- *   Windows dans ce lot.
+ * - Web : ancien record -> ACE -> readback -> suppression du duplicata.
+ * - Natif : Keychain/Keystore + conservation temporaire du miroir existant.
  */
 export async function adoptLegacyPlaintextRecord<T>(args: {
   storageId: string;

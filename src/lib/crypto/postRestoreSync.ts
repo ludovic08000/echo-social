@@ -4,10 +4,9 @@
  * Run AFTER the local identity has been re-hydrated (recovery key, PIN backup,
  * password active-session, in-memory Master Key). Three responsibilities:
  *
- *   1. **Publish a fresh `keys_epoch`** for the current device. Contacts
- *      observing `device_signed_prekeys` via realtime will see the bump and
- *      invalidate any cached prekey bundle / Double Ratchet session targeting
- *      this device, forcing a fresh X3DH on the next outbound message.
+ *   1. **Publish a fresh `keys_epoch`** for the current device. Route watchers
+ *      invalidate cached Libsignal sessions targeting this device so the next
+ *      outbound message establishes a fresh authenticated session.
  *
  *   2. **Trigger a queue resume** so messages that piled up during the wipe
  *      (and that couldn't be decrypted before keys were back) get retried

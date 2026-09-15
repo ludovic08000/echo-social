@@ -33,7 +33,7 @@ async function ensureApprovedDeviceTrustWithRepair(userId: string, deviceId: str
     if (!errorMessage(error).includes('DEVICE_ROUTE_NOT_READY')) throw error;
   }
 
-  // A device may already be approved + account-bound while its X3DH bundle
+  // A device may already be approved + account-bound while its Libsignal bundle
   // has not yet been published (for example after a browser reset/reload).
   // Repair only this narrow state, using the device's local private keys.
   // Dynamic import avoids a static cycle because deviceApi invalidates this
@@ -42,15 +42,15 @@ async function ensureApprovedDeviceTrustWithRepair(userId: string, deviceId: str
   await deviceApi.prepareKeys(userId);
 
   // Never trust the repair optimistically. Re-read and re-verify the canonical
-  // account binding + route before allowing any Ratchet/send work.
+  // account binding + route before allowing any Libsignal send work.
   await ensureApprovedDeviceTrust(userId, deviceId);
 }
 
 /**
  * Establishes and verifies the stable Aegis installation before any route or
- * Ratchet work. A stable local DeviceID is not enough: the exact current device
+ * Libsignal work. A stable local DeviceID is not enough: the exact current device
  * must have a valid account authorization, a routable server state and a valid
- * active Signed PreKey.
+ * active Libsignal prekey bundle.
  */
 export async function ensureAegisDeviceReady(userId: string): Promise<ReadyDevice> {
   if (!userId) throw new Error('AEGIS_USER_ID_REQUIRED');

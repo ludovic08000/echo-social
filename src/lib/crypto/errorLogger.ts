@@ -100,8 +100,7 @@ export function classifyCryptoError(err: unknown): { code: string; message: stri
   else if (/initializ/i.test(msg)) code = 'E_INITIALIZING';
   else if (/no session/i.test(msg) || /session.*not.*found/i.test(msg)) code = 'E_NO_SESSION';
   else if (/handler.*missing/i.test(msg)) code = 'E_NO_HANDLER';
-  else if (/x3dh/i.test(msg)) code = 'E_X3DH';
-  else if (/ratchet/i.test(msg)) code = 'E_RATCHET';
+  else if (/libsignal|pqxdh|ratchet/i.test(msg)) code = 'E_LIBSIGNAL';
   else if (/decrypt/i.test(msg)) code = 'E_DECRYPT';
   else if (/encrypt/i.test(msg)) code = 'E_ENCRYPT';
   else if (/key/i.test(msg)) code = 'E_KEY';

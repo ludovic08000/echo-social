@@ -136,26 +136,6 @@ export function aegis_wasm_identity_public(secret) {
 }
 
 /**
- * Retourne record || public || signature, chacun précédé de sa taille u32 LE.
- * Le record est privé ; public et signature sont les seules parties publiables.
- * @param {Uint8Array} identity_secret
- * @param {number} key_id
- * @param {bigint} timestamp_ms
- * @returns {Uint8Array}
- */
-export function aegis_wasm_signed_prekey_generate(identity_secret, key_id, timestamp_ms) {
-    const ptr0 = passArray8ToWasm0(identity_secret, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.aegis_wasm_signed_prekey_generate(ptr0, len0, key_id, timestamp_ms);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v2;
-}
-
-/**
  * @param {number} registration_id
  * @returns {Uint8Array}
  */
@@ -306,63 +286,12 @@ export function aegis_wasm_message_decrypt(store, local_name, local_device, remo
     return ret;
 }
 
-/**
- * Étape d'envoi compatible avec `deviceRatchet.ts` : retourne
- * nextChainKey || iv || ciphertext+tag, encodés par longueurs u32 LE.
- * @param {Uint8Array} chain_key
- * @param {Uint8Array} aad
- * @param {Uint8Array} plaintext
- * @returns {Uint8Array}
- */
-export function aegis_wasm_ratchet_encrypt(chain_key, aad, plaintext) {
-    const ptr0 = passArray8ToWasm0(chain_key, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(aad, wasm.__wbindgen_malloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.aegis_wasm_ratchet_encrypt(ptr0, len0, ptr1, len1, ptr2, len2);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v4;
+function __wbg_adapter_6(arg0, arg1, arg2) {
+    wasm.closure119_externref_shim(arg0, arg1, arg2);
 }
 
-/**
- * Étape de réception compatible : retourne nextChainKey || plaintext.
- * L'appelant ne persiste la nouvelle chaîne qu'après authentification réussie.
- * @param {Uint8Array} chain_key
- * @param {Uint8Array} aad
- * @param {Uint8Array} iv
- * @param {Uint8Array} ciphertext
- * @returns {Uint8Array}
- */
-export function aegis_wasm_ratchet_decrypt(chain_key, aad, iv, ciphertext) {
-    const ptr0 = passArray8ToWasm0(chain_key, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(aad, wasm.__wbindgen_malloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(iv, wasm.__wbindgen_malloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ptr3 = passArray8ToWasm0(ciphertext, wasm.__wbindgen_malloc);
-    const len3 = WASM_VECTOR_LEN;
-    const ret = wasm.aegis_wasm_ratchet_decrypt(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v5 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v5;
-}
-
-function __wbg_adapter_8(arg0, arg1, arg2) {
-    wasm.closure113_externref_shim(arg0, arg1, arg2);
-}
-
-function __wbg_adapter_34(arg0, arg1, arg2, arg3) {
-    wasm.closure176_externref_shim(arg0, arg1, arg2, arg3);
+function __wbg_adapter_31(arg0, arg1, arg2, arg3) {
+    wasm.closure182_externref_shim(arg0, arg1, arg2, arg3);
 }
 
 const EXPECTED_RESPONSE_TYPES = new Set(['basic', 'cors', 'default']);
@@ -425,7 +354,7 @@ function __wbg_get_imports() {
                 const a = state0.a;
                 state0.a = 0;
                 try {
-                    return __wbg_adapter_34(a, state0.b, arg0, arg1);
+                    return __wbg_adapter_31(a, state0.b, arg0, arg1);
                 } finally {
                     state0.a = a;
                 }
@@ -495,9 +424,9 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_cast_5f9a13552260be22 = function(arg0, arg1) {
-        // Cast intrinsic for `Closure(Closure { dtor_idx: 112, function: Function { arguments: [Externref], shim_idx: 113, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-        const ret = makeMutClosure(arg0, arg1, 112, __wbg_adapter_8);
+    imports.wbg.__wbindgen_cast_5b09fbeec74be75e = function(arg0, arg1) {
+        // Cast intrinsic for `Closure(Closure { dtor_idx: 118, function: Function { arguments: [Externref], shim_idx: 119, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+        const ret = makeMutClosure(arg0, arg1, 118, __wbg_adapter_6);
         return ret;
     };
     imports.wbg.__wbindgen_cast_77bc3e92745e9a35 = function(arg0, arg1) {

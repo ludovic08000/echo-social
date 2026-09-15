@@ -22,8 +22,7 @@ export interface IosDeviceDiagnosticsReport {
   secureEnclaveBacking: string;
   bindingStatus: string | null;
   routingStatus: string | null;
-  spkCount: number | null;
-  opkCount: number | null;
+  libsignalBundleCount: number | null;
   lastError: string | null;
   lastRpcError: string | null;
   collectedAt: string;
@@ -35,8 +34,7 @@ export interface IosDiagnosticsServerContext {
   bindingStatus?: string | null;
   routingStatus?: string | null;
   routingError?: string | null;
-  spkCount?: number | null;
-  opkCount?: number | null;
+  libsignalBundleCount?: number | null;
 }
 
 function keychainState(
@@ -74,8 +72,7 @@ export async function collectIosDeviceDiagnostics(args: {
     secureEnclaveBacking: diagnostics.enclave.backing,
     bindingStatus: args.server?.bindingStatus ?? null,
     routingStatus: args.server?.routingStatus ?? null,
-    spkCount: args.server?.spkCount ?? null,
-    opkCount: args.server?.opkCount ?? null,
+    libsignalBundleCount: args.server?.libsignalBundleCount ?? null,
     lastError: args.server?.routingError ?? diagnostics.lastError,
     lastRpcError: rpcError ? `${rpcError.operation}: ${rpcError.message}` : null,
     collectedAt: diagnostics.collectedAt,

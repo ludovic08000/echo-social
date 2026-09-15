@@ -8,7 +8,7 @@
  * `maxEntries`, the oldest entry is evicted.
  *
  * Used by:
- *   - ChatView decrypted plaintext cache (prevents unbounded RAM growth in
+ *   - ChatWidget decrypted plaintext cache (prevents unbounded RAM growth in
  *     long sessions or when scrolling huge conversations).
  */
 export class LRUMap<K, V> {

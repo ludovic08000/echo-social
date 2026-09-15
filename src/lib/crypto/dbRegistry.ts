@@ -18,12 +18,6 @@ import { hardGlobals } from './cryptoIntegrity';
 
 export type DBKey =
   | 'e2ee-keys'              // src/lib/crypto/indexedDb.ts (handled separately)
-  | 'ratchet'                // forsure-ratchet
-  | 'device-sessions'        // forsure-device-sessions
-  | 'spk'                    // forsure-spk
-  | 'prekeys'                // forsure-prekeys (legacy backup-only)
-  | 'x3dh-replay'            // forsure-x3dh-replay
-  | 'skipped-wrap'           // forsure-crypto-skipped-wrap
   | 'pin-wrap'               // forsure-pin-wrap
   | 'plaintext-cache'        // forsure-plaintext-cache
   | 'msg-queue';             // forsure-msg-queue (strictly device-local)
@@ -39,46 +33,6 @@ interface DBSpec {
 }
 
 const SPECS: Record<Exclude<DBKey, 'e2ee-keys'>, DBSpec> = {
-  ratchet: {
-    name: 'forsure-ratchet',
-    version: 2,
-    stores: [{ name: 'ratchet-states', keyPath: 'convId' }],
-  },
-  'device-sessions': {
-    name: 'forsure-device-sessions',
-    version: 5,
-    stores: [
-      { name: 'sessions', keyPath: 'id' },
-      {
-        name: 'initiating-sessions',
-        keyPath: 'id',
-        indexes: [
-          { name: 'by-session-id', keyPath: 'sessionId', options: { unique: false } },
-          { name: 'by-expiry', keyPath: 'expiresAt', options: { unique: false } },
-        ],
-      },
-    ],
-  },
-  spk: {
-    name: 'forsure-spk',
-    version: 2,
-    stores: [{ name: 'signed-prekeys', keyPath: 'id' }],
-  },
-  prekeys: {
-    name: 'forsure-prekeys',
-    version: 1,
-    stores: [{ name: 'private-prekeys', keyPath: 'id' }],
-  },
-  'x3dh-replay': {
-    name: 'forsure-x3dh-replay',
-    version: 2,
-    stores: [{ name: 'consumed-initials', keyPath: 'id' }],
-  },
-  'skipped-wrap': {
-    name: 'forsure-crypto-skipped-wrap',
-    version: 1,
-    stores: [{ name: 'wrap-keys' }],
-  },
   'pin-wrap': {
     name: 'forsure-pin-wrap',
     version: 3,
@@ -169,18 +123,6 @@ export function openDB(key: Exclude<DBKey, 'e2ee-keys'>): Promise<IDBDatabase> {
     };
     request.onupgradeneeded = (event) => {
       ensureStores(request.result, spec, request.transaction);
-      // Aegis v1 is a hard development cutover: identities, device KX and
-      // prekeys survive, but no earlier message/session state is reusable.
-      if (key === 'device-sessions' && event.oldVersion > 0 && event.oldVersion < 5) {
-        request.transaction?.objectStore('sessions').clear();
-        request.transaction?.objectStore('initiating-sessions').clear();
-      }
-      if (key === 'ratchet' && event.oldVersion > 0 && event.oldVersion < 2) {
-        request.transaction?.objectStore('ratchet-states').clear();
-      }
-      if (key === 'x3dh-replay' && event.oldVersion > 0 && event.oldVersion < 2) {
-        request.transaction?.objectStore('consumed-initials').clear();
-      }
       if (key === 'pin-wrap' && event.oldVersion < 3) {
         // The old store mixed the UI PIN verifier and PIN-wrapped identity
         // bundle under the same user id. The two records overwrote each other.

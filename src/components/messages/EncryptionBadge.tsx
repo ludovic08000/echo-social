@@ -81,7 +81,7 @@ export function EncryptionStatusBar({ encrypted, fingerprint, peerFingerprint, r
     statusText = '⚠️ Aegis : clé de sécurité modifiée — vérification obligatoire';
     StatusIcon = AlertTriangle;
   } else if (ratchetActive) {
-    statusText = 'Aegis — X3DH + Double Ratchet, confidentialité persistante par message';
+    statusText = 'Aegis — Libsignal PQXDH + Double Ratchet, confidentialité persistante par message';
     StatusIcon = Zap;
   } else {
     statusText = 'Aegis — chiffrement de bout en bout activé';

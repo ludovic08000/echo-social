@@ -13,10 +13,6 @@ libsignal-protocol = { path = "../../third_party/libsignal/rust/protocol" }
 rand = "0.9.4"
 async-trait = "0.1.89"
 futures = "0.3.31"
-aes-gcm = "0.10.3"
-hmac = "0.12.1"
-sha2 = "0.10.9"
-
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22.4"
 

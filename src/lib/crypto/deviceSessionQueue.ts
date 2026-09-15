@@ -16,7 +16,7 @@ export class DeviceSessionLockTimeoutError extends Error {
 
 /**
  * Serializes every mutation of one device-pair state. The scope separates the
- * complete X3DH/initiating-envelope operation from the nested ratchet writes,
+ * complete Libsignal session bootstrap from the nested session writes,
  * while each scope remains exclusive across tabs even when Web Locks is absent.
  */
 export async function runDeviceSessionJob<T>(

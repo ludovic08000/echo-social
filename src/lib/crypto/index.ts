@@ -2,7 +2,7 @@
  * ForSure E2EE - API publique
  *
  * Invariant cryptographique : le protocole de messagerie est libsignal
- * exclusivement (X3DH/PQXDH + Double Ratchet côté libsignal). Aucune primitive
+ * exclusivement (PQXDH + Double Ratchet côté Libsignal). Aucune primitive
  * de session maison n'est exportée ici.
  */
 
@@ -31,17 +31,8 @@ export {
 
 export {
   exportPublicKeyBundle,
-  loadSessionKey,
-  saveSessionKey,
-  deleteSessionKey,
   wipeAllKeys,
-  wipeSessionKeys,
-  exportAllSessionKeys,
-  importAllSessionKeys,
-  exportAllRatchetStates,
-  importAllRatchetStates,
   type IdentityKeyPair,
-  type SessionKey,
 } from './keyManager';
 
 export {

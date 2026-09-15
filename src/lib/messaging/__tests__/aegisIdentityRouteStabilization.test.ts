@@ -20,6 +20,13 @@ const currentDevice = readFileSync(
   resolve(process.cwd(), 'src/lib/messaging/currentDevice.ts'),
   'utf8',
 );
+const routeCutover = readFileSync(
+  resolve(
+    process.cwd(),
+    'supabase/migrations/20260915180000_require_libsignal_bundle_for_route.sql',
+  ),
+  'utf8',
+).toLowerCase();
 
 function functionBody(name: string, nextMarker: string): string {
   const start = migration.indexOf(name);
@@ -37,7 +44,7 @@ describe('Aegis identity and stable-route migration', () => {
     expect(migration).toContain('identity.identity_binding_version = 1');
   });
 
-  it('keeps authorization distinct from route health', () => {
+  it('keeps authorization distinct from Libsignal route health', () => {
     expect(migration).toContain(
       "check (routing_status in ('ready', 'repairing', 'unavailable'))",
     );
@@ -45,9 +52,9 @@ describe('Aegis identity and stable-route migration', () => {
     expect(migration).toContain("'device_key_mismatch'");
     expect(migration).toContain('perform public.ensure_primary_device_exists(v_uid)');
     expect(migration).toContain('mark_current_device_route_unavailable');
-    expect(migration).toContain('quarantine_own_invalid_device_spk');
-    expect(migration).toContain('bump_aegis_signed_prekey_route');
-    expect(migration).toContain('spk.is_active = true');
+    expect(routeCutover).toContain('public.device_libsignal_prekey_bundles');
+    expect(routeCutover).toContain("'libsignal_bundle_required'");
+    expect(routeCutover).not.toContain('device_signed_prekeys');
   });
 
   it('recovers a revoked DeviceID instead of silently rotating around it', () => {

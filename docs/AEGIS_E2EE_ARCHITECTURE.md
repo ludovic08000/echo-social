@@ -1,100 +1,95 @@
-# Aegis E2EE v1
+# Aegis + Libsignal messaging architecture
 
-Aegis is the only peer-message wire format accepted by the client and database.
-There is no legacy reader. The development cutover deliberately deletes old
-messages so every remaining row follows one contract.
+This document describes the only encrypted peer-message path supported by the
+application. Aegis provides authenticated device routing and durable delivery;
+Libsignal provides per-device session establishment and message-key evolution.
 
 ## Security boundary
 
-- The server authenticates accounts, registers devices, signs device routes and
-  atomically stores delivery data.
-- Plaintext, attachment keys and message content keys never reach the server.
-- Account identity keys are portable through the password-protected Aegis Vault.
-- A physical device keeps its own DeviceID, private KX key, prekeys and ratchet
-  sessions. The server vault never clones those secrets onto another device.
-- The six-digit messaging PIN is a device-local UI lock. It never leaves the
-  device and never deletes, restores or advances a ratchet.
+- Message plaintext, attachment keys and Libsignal session state remain on the
+  client.
+- Supabase stores account/device authorization proofs, public Libsignal prekey
+  bundles, opaque message parents and one encrypted capsule per destination
+  device.
+- The messaging PIN unlocks the local encrypted store. It is never sent to the
+  server and does not derive a peer-session key.
+- Aegis account and device signing keys authorize which physical installations
+  may publish a route. They are separate from Libsignal session keys.
 
-## Stable identity
+## Runtime implementations
 
-One UUID is created before encryption and reused by the local bubble, encrypted
-outbox, `messages` row, every `message_device_copies` row, receipts, retries and
-bubble archive. The database trigger rejects a parent whose embedded UUID,
-conversation or sender differs from the row.
+- Browsers load the checked-in Libsignal WASM module.
+- Android and iOS call the native Libsignal bridge.
+- Both implementations expose the same narrow session API and persist the
+  updated session before returning ciphertext or releasing plaintext.
+- Unsupported wire formats fail closed; there is no alternate peer-message
+  decryptor.
 
-## Send flow
+## Device provisioning and routing
 
-1. Save the plaintext and stable UUID in the encrypted local outbox.
-2. Encrypt the text or attachment marker once with a random AES-256-GCM content
-   key. Bind UUID, conversation and sender as authenticated data.
-3. Build a small key capsule containing that content key and the ciphertext
-   digest.
-4. Encrypt only the key capsule to every authenticated recipient device and to
-   the sender's other devices. Each device pair has an independent X3DH/Double
-   Ratchet session.
-5. Persist the exact parent and exact device copies in the outbox before network
+1. Aegis assigns and authorizes a stable DeviceID.
+2. The device provisions its Libsignal identity, signed prekey and one-time
+   prekeys locally.
+3. The public bundle is published for that exact authorized DeviceID.
+4. The server marks the route ready only when the Aegis trust chain and matching
+   Libsignal bundle are both present.
+5. A sender resolves a fresh, authenticated device list before creating fan-out.
+
+A revoked, repairing, unsigned or bundle-less device is not a secure target.
+Routing never falls back to an unauthenticated table read.
+
+## Send transaction
+
+1. Allocate one stable message UUID and save the draft in the encrypted outbox.
+2. Encrypt the message body or attachment manifest once with a random content
+   key and bind its immutable metadata as authenticated data.
+3. Create a compact capsule containing that content key and the parent digest.
+4. Encrypt one capsule for every exact destination device through Libsignal.
+   PQXDH establishes a new session when required; Double Ratchet protects later
+   messages.
+5. Persist the parent and generated copies in the local outbox before network
    delivery.
-6. The Aegis Coordinator RPC validates the signed route and atomically inserts
-   the parent plus the complete copy set. A retry reuses the same UUID,
-   ciphertext and copies.
-7. After acknowledgement, write the sender's encrypted bubble archive in the
-   background. Local archive latency never keeps the bubble in `sending`.
+6. `aegis_send_message` validates the pinned route and atomically commits the
+   parent, complete device-copy set and durable inbox rows.
+7. A retry reuses the stable UUID and immutable encrypted request. It never
+   encrypts a second logical message for the same send operation.
 
-The content ciphertext does not change when a ratchet advances. A ratchet
-failure can delay one key capsule, but it cannot turn an already authenticated
-bubble into a different or empty message.
+If exact fan-out cannot be produced, the send remains queued with a secure-route
+error. It is never downgraded to plaintext or a weaker crypto path.
 
-## Durable browser transaction
+## Receive transaction
 
-The outbox payload is AES-256-GCM encrypted with one non-extractable device-local
-key per account. First-run key creation is atomic in IndexedDB, so concurrent
-tabs cannot overwrite each other with different vault keys. Only routing and
-retry metadata remain indexable outside the ciphertext.
+1. `aegis_sync_device` returns only rows addressed to the authenticated
+   `(UserID, DeviceID)` route.
+2. The client validates the parent/capsule binding and decrypts the capsule with
+   Libsignal.
+3. The advanced Libsignal state and authenticated plaintext are committed to the
+   sealed local store as one logical operation.
+4. Only after durable local persistence does the client ACK the server row.
 
-A pending, retrying, failed or unreadable row is never deleted by age or count.
-It remains durable until the coordinator returns the exact authoritative receipt
-or the user explicitly removes it. Every row retry/deletion, conversation send
-and device-session mutation is exclusive across tabs. Browsers use Web Locks
-when available and a renewable IndexedDB lease otherwise; a second tab always
-re-reads the row after acquiring ownership before it can send or delete it.
-BroadcastChannel carries metadata-only refresh notifications and never carries
-message plaintext, ciphertext or keys.
+Duplicate deliveries are idempotent. Authentication failures, replayed keys,
+route changes and persistence failures do not produce visible plaintext or an
+ACK.
 
-## Receive flow
+## Concurrency and durability
 
-1. Load recent device copies in one bounded query.
-2. Select only the copy addressed to the authenticated DeviceID.
-3. Decrypt the capsule once and cache it by user, device, message UUID and exact
-   encrypted copy. Remounts cannot advance the same ratchet envelope twice.
-4. Verify capsule UUID, conversation, sender and SHA-256 digest against the
-   parent, then open AES-256-GCM.
-5. Cache plaintext against the exact parent ciphertext and create the
-   recipient's encrypted bubble archive.
-6. If a device copy is temporarily unavailable, use the authenticated local or
-   per-user encrypted archive and retry the copy route after a short bounded
-   delay. Never render ciphertext as text.
+Per-device provisioning, session mutation and outbox mutation are serialized
+across tabs. Browsers use Web Locks when available and a renewable IndexedDB
+lease otherwise. A second owner re-reads durable state after acquiring the lock.
+Broadcast channels carry refresh metadata only, never message content or keys.
 
-## Attachments and documents
+Pending and failed outbox rows remain encrypted and durable until an
+authoritative receipt is recorded or the user explicitly removes them.
 
-Images, videos, voice notes, long text and documents remain separately encrypted
-object-storage attachments. Their random attachment key and metadata are inside
-the Aegis plaintext, so the same device-capsule flow protects messages and every
-attachment type without a second message protocol.
+## Verification gates
 
-## Device enrollment
+The release gates cover:
 
-After an authenticated account session restores the account identity, the
-client silently creates or loads a physical-device KX key, calls only the
-authenticated registration RPC, publishes a signed prekey and one-time prekeys,
-and verifies that the exact DeviceID appears in the signed route. A retained
-DeviceID without its private device key is retired and replaced; it is never
-silently overwritten.
+- browser WASM and native bridge contract tests;
+- PQXDH first-message and Double Ratchet continuation paths;
+- complete multi-device fan-out and route-change retry;
+- send idempotency, durable sync, decrypt-before-ACK and replay rejection;
+- TypeScript, unit/integration tests and production build.
 
-## Fail-closed rules
-
-- No peer plaintext fallback.
-- No parent insert without a complete authenticated device-copy set.
-- No unsigned device-list fallback.
-- No second encryption after an ambiguous network result.
-- No server-side PIN verifier or server-readable keychain.
-- No Vite source rewriting of cryptographic or messaging logic.
+Public wording states that the application uses Libsignal. It does not claim
+affiliation with or certification by Signal.

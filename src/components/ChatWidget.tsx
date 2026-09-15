@@ -350,7 +350,7 @@ function WidgetConversationList() {
 }
 
 // ─── Chat View (inside widget) ───────────────────────────
-function WidgetChatView({ conversationId }: { conversationId: string }) {
+function WidgetConversationPane({ conversationId }: { conversationId: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { data: conversations } = useConversations();
@@ -2284,7 +2284,7 @@ export function ChatWidget() {
       <div className="fixed inset-0 z-[80] bg-background flex flex-col animate-in slide-in-from-right-4 duration-200 overflow-hidden">
         <MessagingPinGate compact>
           {state.conversationId ? (
-            <WidgetChatView conversationId={state.conversationId} />
+            <WidgetConversationPane conversationId={state.conversationId} />
           ) : (
             <WidgetConversationList />
           )}
@@ -2317,7 +2317,7 @@ export function ChatWidget() {
     >
       <MessagingPinGate compact>
         {state.conversationId ? (
-          <WidgetChatView conversationId={state.conversationId} />
+          <WidgetConversationPane conversationId={state.conversationId} />
         ) : (
           <WidgetConversationList />
         )}

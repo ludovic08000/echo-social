@@ -7,8 +7,6 @@ type DeviceState = {
   deviceId: string;
   signingFingerprint: string;
   kxFingerprint: string;
-  signedPrekeyId: number;
-  signedPrekeyFingerprint: string;
 };
 
 type RouteTarget = {
@@ -40,15 +38,6 @@ vi.mock('@/lib/messaging/currentDevice', () => ({
   isDeviceIdTemporary: () => false,
 }));
 
-vi.mock('@/lib/crypto/x3dh', () => ({
-  isDevicePrekeyBundleError: () => false,
-}));
-
-vi.mock('@/lib/crypto/keyManager', () => ({
-  PinUnlockRequiredError: class PinUnlockRequiredError extends Error {},
-}));
-
-
 vi.mock('@/lib/crypto/libsignalRuntime', () => ({
   decodeLibsignalWire: () => null,
   decryptFromLibsignalDevice: vi.fn(),
@@ -56,10 +45,6 @@ vi.mock('@/lib/crypto/libsignalRuntime', () => ({
     runtime.encryptionCount += 1;
     return `aegis.libsignal.2.${Buffer.from(`cipher-${runtime.encryptionCount}-${remoteDeviceId}`).toString('base64')}`;
   },
-}));
-
-vi.mock('@/lib/crypto/aegisDeviceWire', () => ({
-  parseAegisRatchetPayload: () => null,
 }));
 
 vi.mock('@/lib/crypto/errorLogger', () => ({
@@ -126,8 +111,6 @@ function restoreOrEnrollSenderDevice(): DeviceState {
     deviceId: runtime.senderDeviceId,
     signingFingerprint: `ed25519-device-${generation}`,
     kxFingerprint: `x25519-device-${generation}`,
-    signedPrekeyId: 7000 + generation,
-    signedPrekeyFingerprint: `spk-device-${generation}`,
   };
   runtime.sealedNativeState = cloneDeviceState(created);
   runtime.webCacheState = cloneDeviceState(created);

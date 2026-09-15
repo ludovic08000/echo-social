@@ -25,11 +25,6 @@ AEGIS_API void aegis_crypto_buffer_free(AegisBuffer buffer);
 AEGIS_API int32_t aegis_crypto_identity_generate(AegisBuffer *secret, AegisBuffer *public_key);
 AEGIS_API int32_t aegis_crypto_identity_public(
     const uint8_t *secret, size_t secret_len, AegisBuffer *public_key);
-AEGIS_API int32_t aegis_crypto_signed_prekey_generate(
-    const uint8_t *identity_secret, size_t identity_secret_len,
-    uint32_t key_id, uint64_t timestamp_ms,
-    AegisBuffer *record, AegisBuffer *public_key, AegisBuffer *signature);
-
 /* Serialized-store API shared by Android, iOS and Windows native bindings. */
 AEGIS_API int32_t aegis_crypto_store_create(
     uint32_t registration_id, AegisBuffer *store);

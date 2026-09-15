@@ -4,18 +4,6 @@ vi.mock('@/lib/messaging/fanoutCopyCache', () => ({
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  fetchPrekeyBundleForDevice: vi.fn(),
-  isDevicePrekeyBundleError: vi.fn((value: unknown, code?: string) => {
-    const candidate = value as { name?: string; code?: string } | null;
-    return candidate?.name === 'DevicePrekeyBundleError'
-      && (!code || candidate.code === code);
-  }),
-  x3dhInitiate: vi.fn(),
-  peekDeviceSignedPrekey: vi.fn(),
-  ratchetEncrypt: vi.fn(),
-  getSessionPeerSpkId: vi.fn(),
-  invalidateDeviceSession: vi.fn(),
-  wrapPlaintextForDevice: vi.fn(),
   logCryptoError: vi.fn(),
   logCryptoException: vi.fn(),
   resolveFanoutRouteSnapshot: vi.fn(),
@@ -37,34 +25,11 @@ vi.mock('@/lib/messaging/currentDevice', () => ({
   isDeviceIdTemporary: () => false,
 }));
 
-vi.mock('@/lib/messaging/deviceWrap', () => ({
-  wrapPlaintextForDevice: mocks.wrapPlaintextForDevice,
-  unwrapPlaintextForDevice: vi.fn(),
-}));
-
-vi.mock('@/lib/messaging/deviceCopyRetryRequest', () => ({
-  requestDeviceCopyRetry: vi.fn(),
-}));
-
 vi.mock('@/lib/messaging/fanoutRouteCache', () => ({
   resolveFanoutRouteSnapshot: mocks.resolveFanoutRouteSnapshot,
   invalidateFanoutRoute: vi.fn(),
 }));
 
-
-
-vi.mock('@/lib/crypto/x3dh', () => ({
-  fetchPrekeyBundleForDevice: mocks.fetchPrekeyBundleForDevice,
-  isDevicePrekeyBundleError: mocks.isDevicePrekeyBundleError,
-  x3dhInitiate: mocks.x3dhInitiate,
-  x3dhRespondForDevice: vi.fn(),
-  peekDeviceSignedPrekey: mocks.peekDeviceSignedPrekey,
-}));
-
-vi.mock('@/lib/crypto/keyManager', () => ({
-  getOrCreateIdentityKeys: vi.fn(),
-  PinUnlockRequiredError: class PinUnlockRequiredError extends Error {},
-}));
 
 
 vi.mock('@/lib/crypto/errorLogger', () => ({
@@ -76,8 +41,6 @@ import {
   buildFanoutCopies,
   encryptPlaintextForDeviceTarget,
 } from '@/lib/messaging/multiDeviceFanout';
-
-const INVALID_CACHE_KEY = 'forsure:invalid-device-spk-cache:v1';
 
 function target(deviceId: string) {
   return {
@@ -95,9 +58,6 @@ describe('multiDeviceFanout security gates', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
-    mocks.ratchetEncrypt.mockResolvedValue(null);
-    mocks.getSessionPeerSpkId.mockResolvedValue(null);
-    mocks.fetchPrekeyBundleForDevice.mockResolvedValue(null);
     mocks.resolveFanoutRouteSnapshot.mockResolvedValue({
       version: 'route-version-empty',
       targets: [],
@@ -110,12 +70,9 @@ describe('multiDeviceFanout security gates', () => {
 
     expect(result).toBeNull();
     expect(mocks.encryptForLibsignalDevice).toHaveBeenCalledTimes(1);
-    expect(mocks.ratchetEncrypt).not.toHaveBeenCalled();
-    expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
-    expect(localStorage.getItem(INVALID_CACHE_KEY)).toBeNull();
   });
 
-  it('quarantines an invalid SPK and does not fall back to deviceWrap', async () => {
+  it('rejects an invalid Libsignal bundle without a compatibility fallback', async () => {
     mocks.encryptForLibsignalDevice.mockRejectedValue(new Error('AEGIS_LIBSIGNAL_BUNDLE_INVALID'));
 
     const result = await encryptPlaintextForDeviceTarget(target('fresh-invalid-spk-device'));
@@ -124,8 +81,6 @@ describe('multiDeviceFanout security gates', () => {
     expect(result).toBeNull();
     expect(quarantinedRetry).toBeNull();
     expect(mocks.encryptForLibsignalDevice).toHaveBeenCalledTimes(2);
-    expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
-    expect(localStorage.getItem(INVALID_CACHE_KEY)).toBeNull();
   });
 
   it('does not permanently mark a temporarily missing bundle as invalid', async () => {
@@ -135,8 +90,6 @@ describe('multiDeviceFanout security gates', () => {
 
     expect(result).toBeNull();
     expect(mocks.encryptForLibsignalDevice).toHaveBeenCalledTimes(1);
-    expect(mocks.wrapPlaintextForDevice).not.toHaveBeenCalled();
-    expect(localStorage.getItem(INVALID_CACHE_KEY) ?? '').not.toContain('temporarily-offline-device');
   });
 
   it('creates one capsule for every iOS, Android and Windows route', async () => {
@@ -173,12 +126,10 @@ describe('multiDeviceFanout security gates', () => {
         { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
       ],
     });
-    mocks.ratchetEncrypt.mockImplementation(async (
-      _senderUserId: string,
-      _senderDeviceId: string,
-      _recipientUserId: string,
-      recipientDeviceId: string,
-    ) => recipientDeviceId === 'ios-device' ? null : `aegis1.ratchet.${recipientDeviceId}`);
+    mocks.encryptForLibsignalDevice.mockImplementation(async ({ remoteDeviceId }: { remoteDeviceId: string }) => {
+      if (remoteDeviceId === 'ios-device') throw new Error('AEGIS_LIBSIGNAL_PREKEY_BUNDLE_UNAVAILABLE');
+      return `aegis.libsignal.3.${Buffer.from(remoteDeviceId).toString('base64')}`;
+    });
 
     await expect(buildFanoutCopies({
       messageId: 'message-partial-route',
@@ -197,8 +148,6 @@ describe('multiDeviceFanout security gates', () => {
         { userId: 'recipient-user', deviceId: 'windows-device', devicePublicKey: 'windows-key' },
       ],
     });
-    mocks.ratchetEncrypt.mockResolvedValue(null);
-
     await expect(buildFanoutCopies({
       messageId: 'message-no-route',
       conversationId: 'conversation-all-platforms',

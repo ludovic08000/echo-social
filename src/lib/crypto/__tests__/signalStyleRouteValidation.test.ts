@@ -13,6 +13,14 @@ const atomicApprovalMigration = readFileSync(
   'supabase/migrations/20260811143200_atomic_device_approval_authorization.sql',
   'utf8',
 );
+const libsignalMigration = readFileSync(
+  'supabase/migrations/20260813162000_libsignal_protocol_cutover.sql',
+  'utf8',
+);
+const routeCutover = readFileSync(
+  'supabase/migrations/20260915180000_require_libsignal_bundle_for_route.sql',
+  'utf8',
+);
 const approvalBridge = readFileSync(
   'supabase/migrations/20260809190000_temporary_device_crypto_bridges.sql',
   'utf8',
@@ -30,56 +38,30 @@ describe('Signal-style server route trust validation', () => {
     expect(cryptoMigration).toMatch(/do\s+\$\$[\s\S]*?aegis_verify_ed25519\([\s\S]*?raise exception/i);
   });
 
-  it('uses PostgreSQL Ed25519 verification for the canonical account/device/SPK chain', () => {
+  it('uses PostgreSQL Ed25519 verification for the canonical account/device chain', () => {
     expect(cryptoMigration).toContain('pgsodium.crypto_sign_verify_detached');
     expect(cryptoMigration).toContain('forsure-aegis-account-identity');
     expect(cryptoMigration).toContain('forsure-aegis-device-authorization');
     expect(cryptoMigration).toContain('aegis_verify_account_binding');
     expect(cryptoMigration).toContain('aegis_verify_device_authorization');
-    expect(cryptoMigration).toContain('aegis_verify_signed_prekey');
   });
 
-  it('makes Sesame routability depend on cryptographic validity, not field presence', () => {
-    const sesameStart = cryptoMigration.indexOf(
+  it('makes Sesame routability depend on cryptographic validity and a Libsignal bundle', () => {
+    const sesameStart = libsignalMigration.indexOf(
       'create or replace function public.get_sesame_device_list',
     );
     expect(sesameStart).toBeGreaterThanOrEqual(0);
-    const sesame = cryptoMigration.slice(sesameStart);
+    const sesame = libsignalMigration.slice(sesameStart);
 
     expect(sesame).toContain('d.crypto_invalid_at is null');
     expect(sesame).toContain('public.aegis_verify_account_binding(');
     expect(sesame).toContain('public.aegis_verify_device_authorization(');
-    expect(sesame).toContain('public.aegis_verify_signed_prekey(');
+    expect(sesame).toContain('public.device_libsignal_prekey_bundles');
   });
 
-  it('verifies a Signed PreKey before delegating to the existing atomic publisher', () => {
-    const publisherStart = cryptoMigration.indexOf(
-      'create function public.publish_device_signed_prekey(',
-    );
-    expect(publisherStart).toBeGreaterThanOrEqual(0);
-    const publisher = cryptoMigration.slice(publisherStart);
-    const verifyIndex = publisher.indexOf('public.aegis_verify_signed_prekey(');
-    const publishIndex = publisher.indexOf(
-      'public.publish_device_signed_prekey_pre_signal_validation(',
-    );
-
-    expect(verifyIndex).toBeGreaterThanOrEqual(0);
-    expect(publishIndex).toBeGreaterThan(verifyIndex);
-    expect(publisher.slice(0, publishIndex)).toContain('DEVICE_SPK_SIGNATURE_INVALID');
-  });
-
-  it('removes the implicit binding helper and keeps prekey publishers internal', () => {
+  it('removes the implicit binding helper', () => {
     expect(cryptoMigration).toContain(
       'drop function if exists public.finalize_device_account_binding_pre_signal_validation(uuid,text,text)',
-    );
-    expect(cryptoMigration).toContain(
-      'rename to publish_device_signed_prekey_pre_signal_validation',
-    );
-    expect(cryptoMigration).toContain(
-      'rename to publish_device_one_time_prekeys_pre_signal_validation',
-    );
-    expect(cryptoMigration).toMatch(
-      /revoke all on function public\.publish_device_signed_prekey_pre_signal_validation\([\s\S]*?from public, anon, authenticated, service_role/,
     );
   });
 
@@ -164,7 +146,8 @@ describe('Signal-style server route trust validation', () => {
     );
     expect(entrypointMigration).toContain('public.aegis_verify_account_binding(');
     expect(entrypointMigration).toContain('public.aegis_verify_device_authorization(');
-    expect(entrypointMigration).toContain('public.aegis_verify_signed_prekey(');
+    expect(routeCutover).toContain('public.device_libsignal_prekey_bundles');
+    expect(routeCutover).not.toContain('public.device_signed_prekeys');
     expect(entrypointMigration).toContain(
       'create or replace function public.complete_current_device_synchronization',
     );

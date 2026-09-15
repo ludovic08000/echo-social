@@ -78,7 +78,7 @@ export function useMessageQueue(
                 .filter((id): id is string => typeof id === 'string' && id.length > 0),
             ));
 
-            await listFanoutTargets(user.id, recipientUserIds, { verifyPrekeys: false });
+            await listFanoutTargets(user.id, recipientUserIds);
           })(),
         ]);
         if (!cancelled) prewarmCompletedAt.set(prewarmKey, Date.now());

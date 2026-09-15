@@ -6,8 +6,6 @@ vi.mock('@/lib/messaging/currentDevice', () => ({
   getCurrentDeviceId: () => 'sender-device', isDeviceIdTemporary: () => false,
 }));
 vi.mock('@/lib/crypto/deviceLinkTrust', () => ({ ensureApprovedDeviceTrust: mocks.ensureApprovedDeviceTrust }));
-vi.mock('@/lib/crypto/x3dh', () => ({ peekDeviceSignedPrekey: vi.fn(async () => ({ signedPrekeyId: 1 })) }));
-
 import { invalidateVerifiedDeviceCache, listFanoutTargets } from '@/e2ee-session/deviceRegistry';
 
 function route(userId: string, deviceId = `${userId}-device`) {
@@ -34,7 +32,7 @@ describe('device registry fail-closed fan-out gate', () => {
     mocks.ensureApprovedDeviceTrust.mockImplementation(async (_userId: string, deviceId: string) => {
       if (deviceId === 'peer-invalid') throw new Error('BAD_DEVICE_AUTHORIZATION');
     });
-    const targets = await listFanoutTargets('sender', ['peer'], { verifyPrekeys: false });
+    const targets = await listFanoutTargets('sender', ['peer']);
     expect(targets.map((target) => target.deviceId).sort()).toEqual(['peer-valid', 'sender-device']);
   });
 
@@ -42,7 +40,7 @@ describe('device registry fail-closed fan-out gate', () => {
     mocks.ensureApprovedDeviceTrust.mockImplementation(async (userId: string) => {
       if (userId === 'peer') throw new Error('BAD_DEVICE_AUTHORIZATION');
     });
-    await expect(listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }))
+    await expect(listFanoutTargets('sender', ['peer']))
       .rejects.toThrow('E2EE_DEVICE_REGISTRY_INVALID');
   });
 
@@ -50,7 +48,7 @@ describe('device registry fail-closed fan-out gate', () => {
     mocks.rpc.mockImplementation(async (_name: string, args: { p_user_id: string }) => ({
       data: args.p_user_id === 'peer' ? [] : [route(args.p_user_id)], error: null,
     }));
-    await expect(listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }))
+    await expect(listFanoutTargets('sender', ['peer']))
       .rejects.toThrow('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:peer');
   });
 
@@ -59,12 +57,12 @@ describe('device registry fail-closed fan-out gate', () => {
       data: args.p_user_id === 'peer' ? null : [route(args.p_user_id)],
       error: args.p_user_id === 'peer' ? new Error('network') : null,
     }));
-    await expect(listFanoutTargets('sender', ['peer'], { verifyPrekeys: false }))
+    await expect(listFanoutTargets('sender', ['peer']))
       .rejects.toThrow('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
   });
 
   it('returns all routes only after every participant verifies', async () => {
-    const targets = await listFanoutTargets('sender', ['peer'], { verifyPrekeys: false });
+    const targets = await listFanoutTargets('sender', ['peer']);
     expect(targets.map((target) => target.userId).sort()).toEqual(['peer', 'sender']);
   });
 });

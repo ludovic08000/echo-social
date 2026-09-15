@@ -7,9 +7,7 @@
 use std::cell::RefCell;
 use std::ptr;
 
-use libsignal_protocol::{
-    GenericSignedPreKey, IdentityKeyPair, KeyPair, SignedPreKeyId, SignedPreKeyRecord, Timestamp,
-};
+use libsignal_protocol::IdentityKeyPair;
 
 mod store;
 pub use store::AegisSignalStore;
@@ -162,61 +160,9 @@ pub unsafe extern "C" fn aegis_crypto_identity_public(
     })
 }
 
-/// Génère une SPK signée. `out_record` contient le record privé à sceller ;
-/// seules `out_public` et `out_signature` peuvent être publiées par l'API.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn aegis_crypto_signed_prekey_generate(
-    identity_secret: *const u8,
-    identity_secret_len: usize,
-    key_id: u32,
-    timestamp_ms: u64,
-    out_record: *mut AegisBuffer,
-    out_public: *mut AegisBuffer,
-    out_signature: *mut AegisBuffer,
-) -> i32 {
-    ffi_guard(|| {
-        if out_record.is_null() || out_public.is_null() || out_signature.is_null() {
-            set_error("pointeur de sortie nul");
-            return Err(AEGIS_ERR_NULL_POINTER);
-        }
-        let identity_bytes = unsafe { input_slice(identity_secret, identity_secret_len)? };
-        let identity = IdentityKeyPair::try_from(identity_bytes).map_err(|error| {
-            set_error(format!("identité libsignal invalide: {error}"));
-            AEGIS_ERR_INVALID_INPUT
-        })?;
-        let mut rng = rand::rng();
-        let key_pair = KeyPair::generate(&mut rng);
-        let public = key_pair.public_key.serialize();
-        let signature = identity
-            .private_key()
-            .calculate_signature(&public, &mut rng)
-            .map_err(|error| {
-                set_error(format!("signature SPK impossible: {error}"));
-                AEGIS_ERR_CRYPTO
-            })?;
-        let record = SignedPreKeyRecord::new(
-            SignedPreKeyId::from(key_id),
-            Timestamp::from_epoch_millis(timestamp_ms),
-            &key_pair,
-            &signature,
-        );
-        let serialized = record.serialize().map_err(|error| {
-            set_error(format!("sérialisation SPK impossible: {error}"));
-            AEGIS_ERR_CRYPTO
-        })?;
-        unsafe {
-            out_record.write(owned_buffer(serialized));
-            out_public.write(owned_buffer(public.into_vec()));
-            out_signature.write(owned_buffer(signature.into_vec()));
-        }
-        Ok(())
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libsignal_protocol::PublicKey;
 
     fn take(buffer: AegisBuffer) -> Vec<u8> {
         if buffer.data.is_null() {
@@ -228,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn identity_round_trip_and_spk_signature() {
+    fn identity_round_trip() {
         let mut secret = AegisBuffer::default();
         let mut public = AegisBuffer::default();
         assert_eq!(
@@ -246,29 +192,5 @@ mod tests {
             AEGIS_OK
         );
         assert_eq!(take(restored_public), public);
-
-        let mut record = AegisBuffer::default();
-        let mut spk_public = AegisBuffer::default();
-        let mut signature = AegisBuffer::default();
-        assert_eq!(
-            unsafe {
-                aegis_crypto_signed_prekey_generate(
-                    secret.as_ptr(),
-                    secret.len(),
-                    7,
-                    42,
-                    &mut record,
-                    &mut spk_public,
-                    &mut signature,
-                )
-            },
-            AEGIS_OK
-        );
-        let record = take(record);
-        let spk_public = take(spk_public);
-        let signature = take(signature);
-        assert!(!record.is_empty());
-        let identity_public = PublicKey::deserialize(&public).expect("public identity");
-        assert!(identity_public.verify_signature(&spk_public, &signature));
     }
 }

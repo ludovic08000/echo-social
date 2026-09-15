@@ -49,7 +49,7 @@ import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody
 import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { clearMediaKey, getMediaKey } from '@/components/messages/mediaKeyCache';
 
-const RATCHET_BODY = 'x3dh4.sess-id.AAAA.0.0.IV.CT';
+const UNSUPPORTED_ENCRYPTED_BODY = 'legacy.session.AAAA.0.0.IV.CT';
 
 describe('DecryptedMessageBody', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -69,7 +69,7 @@ describe('DecryptedMessageBody', () => {
     const decrypt = vi.fn();
     render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={UNSUPPORTED_ENCRYPTED_BODY}
         decrypt={decrypt}
         isEncryptionActive={true}
         cachedPlaintext="bonjour"
@@ -83,7 +83,7 @@ describe('DecryptedMessageBody', () => {
     const onDecrypted = vi.fn();
     const decrypt = vi.fn();
     const props = {
-      body: RATCHET_BODY,
+      body: UNSUPPORTED_ENCRYPTED_BODY,
       decrypt,
       isEncryptionActive: true,
       cachedPlaintext: 'bonjour',
@@ -140,7 +140,7 @@ describe('DecryptedMessageBody', () => {
 
     const { container } = render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={UNSUPPORTED_ENCRYPTED_BODY}
         decrypt={vi.fn()}
         isEncryptionActive={true}
         cachedPlaintext={cachedPlaintext}
@@ -157,7 +157,7 @@ describe('DecryptedMessageBody', () => {
   it('renders cached GIF plaintext as media instead of raw text', async () => {
     render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={UNSUPPORTED_ENCRYPTED_BODY}
         decrypt={vi.fn()}
         isEncryptionActive={true}
         cachedPlaintext="GIF:https://example.com/a.gif"
@@ -172,21 +172,21 @@ describe('DecryptedMessageBody', () => {
     const decrypt = vi.fn().mockResolvedValue({ text: 'decrypted!', incompatible: false });
     render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={UNSUPPORTED_ENCRYPTED_BODY}
         decrypt={decrypt}
         isEncryptionActive={true}
         messageId="msg-1"
       />,
     );
     expect(await screen.findByText('decrypted!')).toBeInTheDocument();
-    expect(decrypt).toHaveBeenCalledWith(RATCHET_BODY);
+    expect(decrypt).toHaveBeenCalledWith(UNSUPPORTED_ENCRYPTED_BODY);
   });
 
   it.skip('stays silent (no placeholder text) when all decrypt paths fail', async () => {
     const decrypt = vi.fn().mockResolvedValue({ text: '', incompatible: true });
     const { container } = render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={UNSUPPORTED_ENCRYPTED_BODY}
         decrypt={decrypt}
         isEncryptionActive={true}
         messageId="msg-fail"
@@ -215,7 +215,7 @@ describe('DecryptedMessageBody', () => {
 
     render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={UNSUPPORTED_ENCRYPTED_BODY}
         decrypt={decrypt}
         isEncryptionActive={true}
         messageId="msg-retry"
@@ -235,7 +235,7 @@ describe('DecryptedMessageBody', () => {
   it('isMe self-message: tries plaintext store, stays silent if missing', async () => {
     const { container } = render(
       <DecryptedMessageBody
-        body={RATCHET_BODY}
+        body={UNSUPPORTED_ENCRYPTED_BODY}
         decrypt={vi.fn()}
         isEncryptionActive={true}
         isMe={true}

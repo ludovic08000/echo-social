@@ -77,7 +77,7 @@ describe('messageCompatibility', () => {
     expect(isAegisDeviceCopyWire(VALID_INIT_COPY)).toBe(true);
     expect(isAegisDeviceCopyWire('aegis1.ratchet.session.dh.0.0.iv.ct')).toBe(false);
     expect(isAegisDeviceCopyWire('aegis.libsignal.1.QUJD')).toBe(false);
-    expect(isAegisDeviceCopyWire('x3dh5.init.v3.payload')).toBe(false);
+    expect(isAegisDeviceCopyWire('legacy.init.v3.payload')).toBe(false);
     expect(isAegisDeviceCopyWire('aegis1.init.v2.payload')).toBe(false);
     expect(isAegisDeviceCopyWire(null)).toBe(false);
   });

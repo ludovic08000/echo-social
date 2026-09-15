@@ -101,7 +101,17 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(accountBackup).not.toContain('release_backup_pin_blob');
   });
 
-  it('never mistakes orphan Ratchet state for a recoverable account identity', () => {
+  it('backs up and restores only the supported account identity store', () => {
+    const accountBackup = source('src/lib/crypto/accountKeyBackup.ts');
+
+    expect(accountBackup).toContain("getAllFromStore(db, 'identity-keys')");
+    expect(accountBackup).toContain('selectPortableAccountIdentityRows(rows, userId)');
+    expect(accountBackup).not.toContain('Array.from(db.objectStoreNames)');
+    expect(accountBackup).not.toContain("data['device:kx']");
+    expect(accountBackup).not.toContain("key.startsWith('e2ee:')");
+  });
+
+  it('never mistakes orphan session state for a recoverable account identity', () => {
     const accountBackup = source('src/lib/crypto/accountKeyBackup.ts');
     const identityProbeStart = accountBackup.indexOf('export async function hasLocalKeys');
     const digestStart = accountBackup.indexOf('export async function computeLocalCryptoDigest');
@@ -110,7 +120,7 @@ describe('Aegis PIN recovery and identity continuity', () => {
 
     expect(identityProbe).toContain('loadIdentityKeys(userId)');
     expect(identityProbe).toContain('hasWrappedKeys(userId)');
-    expect(identityProbe).not.toContain("countSideDB('forsure-ratchet'");
+    expect(identityProbe).not.toContain('countSideDB');
     expect(sync).toContain('hasLocalKeys(userId)');
   });
 

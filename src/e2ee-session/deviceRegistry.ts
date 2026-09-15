@@ -4,7 +4,7 @@
  * Server routing eligibility comes only from list_active_devices_for_user:
  * approved + active + account-bound + route-ready + bundle Libsignal. Each returned
  * route is then cryptographically verified against the account identity and
- * the device authorization before it is exposed to X3DH/fanout.
+ * the device authorization before it is exposed to Libsignal fan-out.
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
@@ -12,10 +12,6 @@ import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import type { DeviceDescriptor, UserId, DeviceId } from './types';
 
 const VERIFIED_DEVICE_CACHE_TTL_MS = 30_000;
-
-interface DeviceListOptions {
-  verifyPrekeys?: boolean;
-}
 
 interface CachedDeviceList {
   expiresAt: number;
@@ -33,8 +29,8 @@ const verifiedDeviceCache = new Map<string, CachedDeviceList>();
 const verifiedDeviceInflight = new Map<string, Promise<DeviceDescriptor[]>>();
 let verifiedDeviceGeneration = 0;
 
-function cacheKey(userId: UserId, options: DeviceListOptions): string {
-  return `${userId}:${options.verifyPrekeys === false ? 'no-spk' : 'spk'}`;
+function cacheKey(userId: UserId): string {
+  return String(userId);
 }
 
 function cloneDevices(devices: DeviceDescriptor[]): DeviceDescriptor[] {
@@ -66,7 +62,6 @@ async function readCanonicalRoutes(userId: UserId): Promise<CanonicalRouteRow[]>
 async function verifyCanonicalRoutes(
   userId: UserId,
   rows: CanonicalRouteRow[],
-  options: DeviceListOptions,
 ): Promise<DeviceDescriptor[]> {
   const deduped = new Map<string, CanonicalRouteRow>();
   for (const row of rows) {
@@ -80,8 +75,7 @@ async function verifyCanonicalRoutes(
   const verified = await Promise.all(Array.from(deduped.values()).map(async (row): Promise<DeviceDescriptor | null> => {
     try {
       await ensureApprovedDeviceTrust(userId, row.device_id);
-      // La RPC canonique vérifie atomiquement la présence du bundle public.
-      void options.verifyPrekeys;
+      // La RPC canonique vérifie atomiquement la présence du bundle Libsignal.
       return {
         userId,
         deviceId: row.device_id,
@@ -105,12 +99,11 @@ async function verifyCanonicalRoutes(
 
 async function resolveDevicesForUser(
   userId: UserId,
-  options: DeviceListOptions,
 ): Promise<DeviceDescriptor[]> {
   const rows = await readCanonicalRoutes(userId);
   if (rows.length === 0) return [];
 
-  const devices = await verifyCanonicalRoutes(userId, rows, options);
+  const devices = await verifyCanonicalRoutes(userId, rows);
   if (rows.length > 0 && devices.length === 0) {
     throw new Error('E2EE_DEVICE_REGISTRY_INVALID');
   }
@@ -119,9 +112,8 @@ async function resolveDevicesForUser(
 
 export async function listDevicesForUser(
   userId: UserId,
-  options: DeviceListOptions = {},
 ): Promise<DeviceDescriptor[]> {
-  const key = cacheKey(userId, options);
+  const key = cacheKey(userId);
   const cached = verifiedDeviceCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cloneDevices(cached.devices);
   if (cached) verifiedDeviceCache.delete(key);
@@ -130,7 +122,7 @@ export async function listDevicesForUser(
   if (pending) return cloneDevices(await pending);
 
   const generation = verifiedDeviceGeneration;
-  const request = resolveDevicesForUser(userId, options)
+  const request = resolveDevicesForUser(userId)
     .then((devices) => {
       if (generation === verifiedDeviceGeneration) {
         verifiedDeviceCache.set(key, {
@@ -156,22 +148,17 @@ export function invalidateVerifiedDeviceCache(userId?: UserId): void {
     return;
   }
 
-  const prefix = `${userId}:`;
-  for (const key of verifiedDeviceCache.keys()) {
-    if (key.startsWith(prefix)) verifiedDeviceCache.delete(key);
-  }
-  for (const key of verifiedDeviceInflight.keys()) {
-    if (key.startsWith(prefix)) verifiedDeviceInflight.delete(key);
-  }
+  const key = cacheKey(userId);
+  verifiedDeviceCache.delete(key);
+  verifiedDeviceInflight.delete(key);
 }
 
 export async function listFanoutTargets(
   senderUserId: UserId,
   recipientUserIds: UserId[],
-  options: DeviceListOptions = {},
 ): Promise<DeviceDescriptor[]> {
   const userIds = Array.from(new Set([...recipientUserIds, senderUserId]));
-  const lists = await Promise.all(userIds.map((userId) => listDevicesForUser(userId, options)));
+  const lists = await Promise.all(userIds.map((userId) => listDevicesForUser(userId)));
   const unroutable = userIds.filter((_, index) => lists[index].length === 0);
   if (unroutable.length > 0) {
     throw new Error(`E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:${unroutable.join(',')}`);
