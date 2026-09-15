@@ -22,6 +22,13 @@
       "when": 1789473011572,
       "tag": "0002_repair_device_binding_prerequisites",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789498653554,
+      "tag": "0003_require_libsignal_bundle_for_route",
+      "breakpoints": true
     }
   ]
 }
