@@ -136,7 +136,8 @@ STABLE
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $function$
-  SELECT h.epoch, h.root, h.leaf_count, h.prev_epoch, h.signature, h.created_at
+  -- La colonne stockée est root_hash ; le contrat RPC conserve le nom root.
+  SELECT h.epoch, h.root_hash, h.leaf_count, h.prev_epoch, h.signature, h.created_at
   FROM public.e2ee_kt_tree_heads h
   ORDER BY h.epoch DESC
   LIMIT 1;

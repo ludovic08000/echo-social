@@ -17,7 +17,7 @@ import {
 } from './utils';
 import { KX_KEY_PARAMS, SIG_KEY_PARAMS, STORE_KEYS } from './constants';
 import { txDelete, txGet, txPut } from './indexedDbTx';
-import { clearAllDeviceSessions } from './deviceRatchet';
+import { invalidateLibsignalSessions } from './libsignalSessionFreshness';
 import {
   isAutoBackupActive,
   syncBackupToServer,
@@ -288,7 +288,7 @@ async function promoteStage(userId: string, expected: {
   if (!deviceIdentity) throw new Error('IDENTITY_ROTATION_DEVICE_PRIVATE_KEY_REQUIRED');
 
   await provisionLibsignalDevice(userId, deviceId);
-  await clearAllDeviceSessions();
+  await invalidateLibsignalSessions(userId);
   await txDelete(STORE_KEYS, stageId(userId));
   await syncKeychainSnapshotFromLocal(userId).catch(() => false);
   await finalizeIdentityRotationRecovery(expected.rotationId).catch(() => undefined);

@@ -5,6 +5,8 @@
 --   mark_device_copy_retry_failed(request_id, error)
 -- This migration exposes those names on top of device_copy_retry_requests.
 
+-- Le type de retour évolue : recréer la signature sans supprimer de dépendances.
+drop function if exists public.list_pending_device_copy_retries(integer);
 create or replace function public.list_pending_device_copy_retries(
   p_limit integer default 20
 )
@@ -53,6 +55,8 @@ $$;
 
 grant execute on function public.list_pending_device_copy_retries(integer) to authenticated;
 
+-- Le type de retour évolue : recréer la signature sans supprimer de dépendances.
+drop function if exists public.complete_device_copy_retry(uuid, text, text);
 create or replace function public.complete_device_copy_retry(
   p_request_id uuid,
   p_encrypted_body text,
@@ -114,6 +118,8 @@ $$;
 
 grant execute on function public.complete_device_copy_retry(uuid, text, text) to authenticated;
 
+-- Le type de retour évolue : recréer la signature sans supprimer de dépendances.
+drop function if exists public.mark_device_copy_retry_failed(uuid, text);
 create or replace function public.mark_device_copy_retry_failed(
   p_request_id uuid,
   p_error text default null

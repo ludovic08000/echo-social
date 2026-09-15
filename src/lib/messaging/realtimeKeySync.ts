@@ -6,7 +6,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId } from './currentDevice';
-import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { invalidateLibsignalDeviceSession as invalidateDeviceSession } from '@/lib/crypto/libsignalSessionFreshness';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 
 const KEY_TABLES = [

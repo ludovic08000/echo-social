@@ -108,6 +108,84 @@ impl AegisSignalStore {
 
     pub fn identity_key_pair(&self) -> IdentityKeyPair { self.identity }
     pub fn registration_id(&self) -> u32 { self.registration_id }
+
+    // Chaque trait reçoit des champs disjoints : aucune référence mutable
+    // concurrente ne couvre le store entier, même pendant un await Libsignal.
+    pub(crate) fn protocol_stores(&mut self) -> ProtocolStores<'_> {
+        ProtocolStores {
+            identity: IdentityStoreView {
+                identity: &self.identity,
+                registration_id: self.registration_id,
+                known: &mut self.known,
+            },
+            sessions: SessionStoreView(&mut self.sessions),
+            prekeys: PreKeyStoreView(&mut self.prekeys),
+            signed_prekeys: SignedPreKeyStoreView(&mut self.signed_prekeys),
+            kyber: KyberStoreView { records: &mut self.kyber_prekeys, seen: &mut self.kyber_seen },
+        }
+    }
+}
+
+pub(crate) struct ProtocolStores<'a> {
+    pub identity: IdentityStoreView<'a>,
+    pub sessions: SessionStoreView<'a>,
+    pub prekeys: PreKeyStoreView<'a>,
+    pub signed_prekeys: SignedPreKeyStoreView<'a>,
+    pub kyber: KyberStoreView<'a>,
+}
+
+pub(crate) struct IdentityStoreView<'a> {
+    identity: &'a IdentityKeyPair,
+    registration_id: u32,
+    known: &'a mut HashMap<ProtocolAddress, IdentityKey>,
+}
+pub(crate) struct SessionStoreView<'a>(&'a mut HashMap<ProtocolAddress, SessionRecord>);
+pub(crate) struct PreKeyStoreView<'a>(&'a mut HashMap<PreKeyId, PreKeyRecord>);
+pub(crate) struct SignedPreKeyStoreView<'a>(&'a mut HashMap<SignedPreKeyId, SignedPreKeyRecord>);
+pub(crate) struct KyberStoreView<'a> {
+    records: &'a mut HashMap<KyberPreKeyId, KyberPreKeyRecord>,
+    seen: &'a mut HashMap<(KyberPreKeyId, SignedPreKeyId), Vec<PublicKey>>,
+}
+
+#[async_trait(?Send)]
+impl IdentityKeyStore for IdentityStoreView<'_> {
+    async fn get_identity_key_pair(&self) -> Result<IdentityKeyPair> { Ok(*self.identity) }
+    async fn get_local_registration_id(&self) -> Result<u32> { Ok(self.registration_id) }
+    async fn save_identity(&mut self, a: &ProtocolAddress, k: &IdentityKey) -> Result<IdentityChange> {
+        let changed = self.known.insert(a.clone(), *k).is_some_and(|old| old != *k);
+        Ok(if changed { IdentityChange::ReplacedExisting } else { IdentityChange::NewOrUnchanged })
+    }
+    async fn is_trusted_identity(&self, a: &ProtocolAddress, k: &IdentityKey, _: Direction) -> Result<bool> {
+        Ok(self.known.get(a).is_none_or(|old| old == k))
+    }
+    async fn get_identity(&self, a: &ProtocolAddress) -> Result<Option<IdentityKey>> { Ok(self.known.get(a).copied()) }
+}
+#[async_trait(?Send)]
+impl SessionStore for SessionStoreView<'_> {
+    async fn load_session(&self, a: &ProtocolAddress) -> Result<Option<SessionRecord>> { Ok(self.0.get(a).cloned()) }
+    async fn store_session(&mut self, a: &ProtocolAddress, r: &SessionRecord) -> Result<()> { self.0.insert(a.clone(), r.clone()); Ok(()) }
+}
+#[async_trait(?Send)]
+impl PreKeyStore for PreKeyStoreView<'_> {
+    async fn get_pre_key(&self, id: PreKeyId) -> Result<PreKeyRecord> { self.0.get(&id).cloned().ok_or(SignalProtocolError::InvalidPreKeyId) }
+    async fn save_pre_key(&mut self, id: PreKeyId, r: &PreKeyRecord) -> Result<()> { self.0.insert(id, r.clone()); Ok(()) }
+    async fn remove_pre_key(&mut self, id: PreKeyId) -> Result<()> { self.0.remove(&id); Ok(()) }
+}
+#[async_trait(?Send)]
+impl SignedPreKeyStore for SignedPreKeyStoreView<'_> {
+    async fn get_signed_pre_key(&self, id: SignedPreKeyId) -> Result<SignedPreKeyRecord> { self.0.get(&id).cloned().ok_or(SignalProtocolError::InvalidSignedPreKeyId) }
+    async fn save_signed_pre_key(&mut self, id: SignedPreKeyId, r: &SignedPreKeyRecord) -> Result<()> { self.0.insert(id, r.clone()); Ok(()) }
+}
+#[async_trait(?Send)]
+impl KyberPreKeyStore for KyberStoreView<'_> {
+    async fn get_kyber_pre_key(&self, id: KyberPreKeyId) -> Result<KyberPreKeyRecord> { self.records.get(&id).cloned().ok_or(SignalProtocolError::InvalidKyberPreKeyId) }
+    async fn save_kyber_pre_key(&mut self, id: KyberPreKeyId, r: &KyberPreKeyRecord) -> Result<()> { self.records.insert(id, r.clone()); Ok(()) }
+    async fn mark_kyber_pre_key_used(&mut self, id: KyberPreKeyId, sid: SignedPreKeyId, base: &PublicKey) -> Result<()> {
+        let seen = self.seen.entry((id, sid)).or_default();
+        if seen.contains(base) { return Err(invalid("reused kyber base key")); }
+        seen.push(*base);
+        Ok(())
+    }
 }
 
 fn take_u32(input: &mut &[u8]) -> Result<u32> { let raw = input.get(..4).ok_or_else(|| invalid("store truncated"))?; *input = &input[4..]; Ok(u32::from_le_bytes(raw.try_into().expect("four bytes"))) }
@@ -128,6 +206,35 @@ impl IdentityKeyStore for AegisSignalStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn disjoint_protocol_views_persist_in_the_original_store() {
+        futures::executor::block_on(async {
+            let mut rng = rand::rng();
+            let identity = IdentityKeyPair::generate(&mut rng);
+            let peer_identity = IdentityKeyPair::generate(&mut rng);
+            let address = ProtocolAddress::new("peer".into(), 1u32.try_into().unwrap());
+            let mut store = AegisSignalStore::new(identity, 42);
+            let bundle = crate::create_device_bundle(&mut store, 1, 11, 12, 13).await.unwrap();
+            let base = PublicKey::deserialize(&bundle.pre_key).unwrap();
+            {
+                let mut views = store.protocol_stores();
+                assert_eq!(views.identity.get_local_registration_id().await.unwrap(), 42);
+                views.identity.save_identity(&address, peer_identity.identity_key()).await.unwrap();
+                views.sessions.store_session(&address, &SessionRecord::new_fresh()).await.unwrap();
+                views.prekeys.remove_pre_key(11.into()).await.unwrap();
+                assert!(views.signed_prekeys.get_signed_pre_key(12.into()).await.is_ok());
+                views.kyber.mark_kyber_pre_key_used(13.into(), 12.into(), &base).await.unwrap();
+            }
+            let mut restored = AegisSignalStore::deserialize(&store.serialize().unwrap()).unwrap();
+            assert_eq!(restored.get_identity(&address).await.unwrap(), Some(*peer_identity.identity_key()));
+            assert!(restored.load_session(&address).await.unwrap().is_some());
+            assert!(restored.get_pre_key(11.into()).await.is_err());
+            assert!(restored.get_signed_pre_key(12.into()).await.is_ok());
+            assert!(restored.get_kyber_pre_key(13.into()).await.is_ok());
+            assert!(restored.mark_kyber_pre_key_used(13.into(), 12.into(), &base).await.is_err());
+        });
+    }
+
     #[test]
     fn empty_store_round_trip_preserves_identity() {
         let mut rng = rand::rng();

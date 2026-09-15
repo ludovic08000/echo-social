@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS public.user_crypto_state (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- CREATE IF NOT EXISTS ne complète pas la table créée en février.
+ALTER TABLE public.user_crypto_state ADD COLUMN IF NOT EXISTS fingerprint text;
 ALTER TABLE public.user_crypto_state ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "user_crypto_state_select_own" ON public.user_crypto_state;
@@ -65,6 +67,8 @@ $$;
 GRANT EXECUTE ON FUNCTION public.ensure_user_crypto_state() TO authenticated;
 
 -- ── RPC: mark_user_crypto_ready ────────────────────────────────────────────
+-- Le DEFAULT NULL de la définition initiale est retiré : recréer sans CASCADE.
+DROP FUNCTION IF EXISTS public.mark_user_crypto_ready(text);
 CREATE OR REPLACE FUNCTION public.mark_user_crypto_ready(p_fingerprint text)
 RETURNS public.user_crypto_state
 LANGUAGE plpgsql

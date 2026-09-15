@@ -37,6 +37,8 @@ jobs:
       - name: Run crypto + messaging test suite
         id: tests
         run: |
+          set -o pipefail
+          npm run test:libsignal-wasm
           mkdir -p test-results
           npm exec vitest run -- \
             src/lib/crypto/__tests__ \

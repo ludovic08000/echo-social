@@ -2,6 +2,8 @@
 -- This function is intentionally small: it does not approve a second/new
 -- device automatically. Existing approved devices can refresh metadata.
 
+-- La suppression des valeurs par défaut impose de recréer cette signature historique.
+drop function if exists public.register_user_device_safe(uuid, text, text, text, text, text, text);
 create or replace function public.register_user_device_safe(
   p_user_id uuid,
   p_device_id text,
@@ -149,3 +151,6 @@ begin
   return jsonb_build_object('ok', true, 'status', 'approved', 'device_id', p_device_id, 'first_device', true);
 end;
 $$;
+
+revoke all on function public.register_user_device_safe(uuid, text, text, text, text, text, text) from public, anon;
+grant execute on function public.register_user_device_safe(uuid, text, text, text, text, text, text) to authenticated;

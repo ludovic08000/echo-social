@@ -74,8 +74,10 @@ CREATE POLICY "deny_all_device_link_requests"
   ON public.device_link_requests FOR ALL
   USING (false) WITH CHECK (false);
 
-DROP FUNCTION IF EXISTS public.cleanup_expired_device_link_requests();
 -- Cleanup helper
+-- Le type de retour passe d'integer à void : PostgreSQL impose de recréer la fonction.
+-- Sans CASCADE : toute dépendance inattendue doit bloquer le rejeu, pas être supprimée.
+DROP FUNCTION IF EXISTS public.cleanup_expired_device_link_requests();
 CREATE OR REPLACE FUNCTION public.cleanup_expired_device_link_requests()
 RETURNS void
 LANGUAGE plpgsql
@@ -145,6 +147,7 @@ END;
 $$;
 
 -- Existing device fetches a request to display for approval
+-- Les colonnes OUT changent également : recréer la signature sans CASCADE.
 DROP FUNCTION IF EXISTS public.get_device_link_request_for_approval(text);
 CREATE OR REPLACE FUNCTION public.get_device_link_request_for_approval(
   p_token_hash text
@@ -220,6 +223,8 @@ END;
 $$;
 
 -- New device pulls approved payload
+-- La colonne OUT approved_at disparaît dans cette révision historique.
+DROP FUNCTION IF EXISTS public.get_approved_device_link_payload(text, text);
 CREATE OR REPLACE FUNCTION public.get_approved_device_link_payload(
   p_token_hash text,
   p_requester_device_id text

@@ -68,9 +68,9 @@ describe('Signal-style server route trust validation', () => {
     expect(publisher.slice(0, publishIndex)).toContain('DEVICE_SPK_SIGNATURE_INVALID');
   });
 
-  it('keeps old mutation implementations unreachable directly after wrapping them', () => {
+  it('removes the implicit binding helper and keeps prekey publishers internal', () => {
     expect(cryptoMigration).toContain(
-      'rename to finalize_device_account_binding_pre_signal_validation',
+      'drop function if exists public.finalize_device_account_binding_pre_signal_validation(uuid,text,text)',
     );
     expect(cryptoMigration).toContain(
       'rename to publish_device_signed_prekey_pre_signal_validation',
@@ -81,6 +81,24 @@ describe('Signal-style server route trust validation', () => {
     expect(cryptoMigration).toMatch(
       /revoke all on function public\.publish_device_signed_prekey_pre_signal_validation\([\s\S]*?from public, anon, authenticated, service_role/,
     );
+  });
+
+  it('only transitions to syncing after validating both account and device signatures', () => {
+    const forward = readFileSync('supabase/migrations/20260914234402_repair_device_binding_prerequisites.sql', 'utf8');
+    const functionBlock = (sql: string) => sql.match(
+      /create or replace function public\.finalize_device_account_binding\([\s\S]*?end;\s*\$\$;/,
+    )?.[0].replace(/\r\n/g, '\n');
+    const binding = functionBlock(cryptoMigration);
+    expect(binding).toBeDefined();
+    expect(functionBlock(forward)).toBe(binding);
+    const transition = binding!.indexOf("set binding_status = 'bound'");
+    expect(transition).toBeGreaterThan(binding!.indexOf('DEVICE_POSSESSION_NOT_VERIFIED'));
+    expect(transition).toBeGreaterThan(binding!.indexOf('ACCOUNT_BINDING_SIGNATURE_INVALID'));
+    expect(transition).toBeGreaterThan(binding!.indexOf('DEVICE_AUTHORIZATION_SIGNATURE_INVALID'));
+    expect(binding).toContain("lifecycle_status = 'syncing'");
+    expect(binding).toContain("routing_status = 'repairing'");
+    expect(binding).not.toContain("routing_status = 'ready'");
+    expect(binding).not.toContain('finalize_device_account_binding_pre_signal_validation(');
   });
 
   it('provides the predecessor RPCs before the Signal wrappers rename them', () => {

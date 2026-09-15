@@ -70,9 +70,10 @@ create table if not exists public.sealed_sender_events (
   created_at timestamptz not null default now()
 );
 
+-- Schéma initial aligné sur Lovable Cloud : les feuilles Merkle référencent un bigint.
 create table if not exists public.e2ee_transparency_log (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade,
+  id bigserial primary key,
+  user_id uuid not null,
   event_type text not null,
   fingerprint text,
   identity_epoch integer,

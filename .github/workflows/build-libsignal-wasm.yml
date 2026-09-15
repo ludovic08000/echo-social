@@ -1,0 +1,85 @@
+name: Build and test Libsignal WASM
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/build-libsignal-wasm.yml
+      - native/aegis-crypto/**
+      - third_party/libsignal/**
+      - scripts/verify-libsignal-*.mjs
+      - scripts/libsignal-native-test-bridge.py
+      - src/lib/crypto/wasm/generated/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-libsignal-wasm.yml
+      - native/aegis-crypto/**
+      - third_party/libsignal/**
+      - scripts/verify-libsignal-*.mjs
+      - scripts/libsignal-native-test-bridge.py
+      - src/lib/crypto/wasm/generated/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: libsignal-wasm-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wasm-native-interop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-07-15
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install compiler prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler clang
+          rustup toolchain install nightly-2026-07-15 --profile minimal --target wasm32-unknown-unknown
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/aegis-crypto/target
+            .wasm-bindgen-cli
+          key: libsignal-web-${{ runner.os }}-2026-07-15-${{ hashFiles('native/aegis-crypto/Cargo.lock') }}
+      - name: Install matching wasm-bindgen CLI
+        run: |
+          if [ ! -x .wasm-bindgen-cli/bin/wasm-bindgen ]; then
+            cargo install wasm-bindgen-cli --version 0.2.104 --locked --root .wasm-bindgen-cli
+          fi
+      - name: Test native engine and shipped WASM interoperability
+        run: |
+          cargo test --manifest-path native/aegis-crypto/Cargo.toml --locked -- --test-threads=2
+          node scripts/verify-libsignal-native-wasm.mjs native/aegis-crypto/target/debug/deps/libaegis_crypto.so
+      - name: Build browser WASM from the tested source
+        env:
+          RUSTFLAGS: '--cfg getrandom_backend="wasm_js"'
+        run: |
+          cargo build --manifest-path native/aegis-crypto/Cargo.toml --target wasm32-unknown-unknown --release --locked
+          .wasm-bindgen-cli/bin/wasm-bindgen native/aegis-crypto/target/wasm32-unknown-unknown/release/aegis_crypto.wasm --target web --out-dir src/lib/crypto/wasm/generated --out-name aegis_crypto
+      - name: Verify rebuilt WASM and native interoperability
+        run: |
+          node scripts/verify-libsignal-wasm.mjs
+          node scripts/verify-libsignal-native-wasm.mjs native/aegis-crypto/target/debug/deps/libaegis_crypto.so
+          git rev-parse HEAD > src/lib/crypto/wasm/generated/source-sha.txt
+      - name: Upload verified browser bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-libsignal-wasm
+          path: src/lib/crypto/wasm/generated/
+          if-no-files-found: error
+          retention-days: 14

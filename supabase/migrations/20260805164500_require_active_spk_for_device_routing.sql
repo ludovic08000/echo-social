@@ -1,5 +1,7 @@
 begin;
 
+-- Le résultat change de structure : recréer la signature sans CASCADE.
+drop function if exists public.get_sesame_device_list(uuid);
 create or replace function public.get_sesame_device_list(p_user_id uuid)
 returns table (
   device_id text,

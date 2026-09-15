@@ -17,8 +17,8 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-vi.mock('@/lib/crypto/deviceRatchet', () => ({
-  invalidateDeviceSession: vi.fn(),
+vi.mock('@/lib/crypto/libsignalSessionFreshness', () => ({
+  invalidateLibsignalDeviceSession: vi.fn(),
 }));
 
 vi.mock('../fanoutRouteCache', () => ({

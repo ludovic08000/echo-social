@@ -16,6 +16,23 @@ create table if not exists public.invalid_e2ee_devices (
 
 alter table public.invalid_e2ee_devices enable row level security;
 
+-- Invariant : le rejeu doit définir le filtre de quarantaine avant les RPC
+-- de routage qui l'utilisent. Ce helper interne n'est pas une API publique.
+create or replace function public.is_invalid_e2ee_device(p_user_id uuid, p_device_id text)
+returns boolean
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.invalid_e2ee_devices bad
+    where bad.user_id = p_user_id and bad.device_id = p_device_id
+  );
+$$;
+revoke all on function public.is_invalid_e2ee_device(uuid, text) from public, anon, authenticated;
+grant execute on function public.is_invalid_e2ee_device(uuid, text) to service_role;
+
 drop policy if exists "invalid_e2ee_devices_read_own" on public.invalid_e2ee_devices;
 create policy "invalid_e2ee_devices_read_own"
 on public.invalid_e2ee_devices
@@ -60,6 +77,8 @@ where exists (
 );
 
 -- Sender-side device listing. Never advertise quarantined devices as targets.
+-- Le résultat change de structure : recréer la signature sans CASCADE.
+drop function if exists public.list_active_devices_for_user(uuid);
 create or replace function public.list_active_devices_for_user(p_user_id uuid)
 returns table (
   device_id text,
@@ -92,6 +111,8 @@ $$;
 grant execute on function public.list_active_devices_for_user(uuid) to authenticated;
 
 -- X3DH bundle resolver. Never return a SPK for a quarantined device.
+-- Le résultat change de structure : recréer la signature sans CASCADE.
+drop function if exists public.get_device_prekey_bundle(uuid, text);
 create or replace function public.get_device_prekey_bundle(
   p_user_id uuid,
   p_device_id text

@@ -128,74 +128,6 @@ function detectSearchIntent(message: string): { isSearch: boolean; query: string
   return { isSearch, query };
 }
 
-const ZEUS_BOT_ID = "00000000-0000-0000-0000-000000000001";
-
-// Push a SHORT summary of Zeus response to the regular messaging system
-async function pushToMessenger(supabase: any, userId: string, zeusMessage: string) {
-  try {
-    // Clean the message: remove action blocks, product blocks, markdown
-    let cleanMsg = zeusMessage
-      .replace(/```forsure-action[\s\S]*?```/g, '')
-      .replace(/```forsure-products[\s\S]*?```/g, '')
-      .replace(/[#*_`~>]/g, '')
-      .trim();
-    if (!cleanMsg || cleanMsg.length < 2) return;
-
-    // Keep only the first 2-3 sentences max for messenger (short notification-style)
-    const sentences = cleanMsg.split(/(?<=[.!?…])\s+/).filter(s => s.length > 1);
-    cleanMsg = sentences.slice(0, 3).join(' ');
-    if (cleanMsg.length > 300) cleanMsg = cleanMsg.substring(0, 297) + '…';
-
-    // Find existing Zeus conversation with this user (use a single joined query)
-    const { data: zeusConvs } = await supabase
-      .from("conversation_participants")
-      .select("conversation_id")
-      .eq("user_id", ZEUS_BOT_ID);
-
-    let messengerConvId: string | null = null;
-
-    if (zeusConvs && zeusConvs.length > 0) {
-      const convIds = zeusConvs.map((p: any) => p.conversation_id);
-      const { data: userParts } = await supabase
-        .from("conversation_participants")
-        .select("conversation_id")
-        .eq("user_id", userId)
-        .in("conversation_id", convIds)
-        .limit(1);
-      if (userParts && userParts.length > 0) {
-        messengerConvId = userParts[0].conversation_id;
-      }
-    }
-
-    // Create conversation if not exists
-    if (!messengerConvId) {
-      const { data: newConv } = await supabase
-        .from("conversations")
-        .insert({ is_group: false, name: null, created_by: ZEUS_BOT_ID })
-        .select("id")
-        .single();
-      if (!newConv) return;
-      messengerConvId = newConv.id;
-      await supabase.from("conversation_participants").insert([
-        { conversation_id: messengerConvId, user_id: ZEUS_BOT_ID },
-        { conversation_id: messengerConvId, user_id: userId },
-      ]);
-    }
-
-    await supabase.from("messages").insert({
-      conversation_id: messengerConvId,
-      sender_id: ZEUS_BOT_ID,
-      body: cleanMsg,
-      status: "delivered",
-    });
-
-    await supabase.from("conversations")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", messengerConvId);
-  } catch (err) {
-    console.error("pushToMessenger error:", err);
-  }
-}
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -837,10 +769,7 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
       conversation_id: convId, role: "assistant", content: finalContent,
     });
 
-    // Push to messenger
-    if (agent.slug === "zeus-companion" && finalContent) {
-      pushToMessenger(supabase, userId!, finalContent);
-    }
+    // Zeus reste dans son espace IA ; aucun envoi en clair dans la messagerie E2EE.
 
     // Update usage
     if (usage) {

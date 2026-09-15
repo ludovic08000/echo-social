@@ -56,7 +56,7 @@ export interface DeviceFinalizationTraceEvent {
   detail?: string;
 }
 
-const MAX_EVENTS = 200;
+const MAX_EVENTS = 600;
 const TRACE_PREFIX = '[E2EE_TRACE][DEVICE_FINALIZATION]';
 export const DEVICE_FINALIZATION_TRACE_EVENT = 'forsure:device-finalization-trace';
 
@@ -75,6 +75,14 @@ export function maskIdentifier(value: string | null | undefined): string | undef
 }
 
 const ALLOWED_ERROR_CODES = new Set([
+  'AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED',
+  'AEGIS_LIBSIGNAL_STORE_MISSING',
+  'AEGIS_LIBSIGNAL_DEVICE_NUMBER_UNAVAILABLE',
+  'AEGIS_LIBSIGNAL_BUNDLE_COUNT_FAILED',
+  'AEGIS_LIBSIGNAL_BUNDLE_PUBLISH_FAILED',
+  'AEGIS_WASM_ABI_MISMATCH',
+  'AEGIS_WASM_RUNTIME_UNAVAILABLE',
+  'AEGIS_WASM_SECURE_CONTEXT_REQUIRED',
   'ACCOUNT_KEY_RESTORE_REQUIRED',
   'ACCOUNT_SYNC_USER_REQUIRED',
   'DEVICE_ACCOUNT_BINDING_FAILED',
@@ -225,3 +233,29 @@ export function traceCurrentDeviceFinalization(
 }
 
 export const DEVICE_FINALIZATION_TRACE_MAX_EVENTS = MAX_EVENTS;
+
+/** Observation seule : aucun résultat, argument secret ou message d'erreur brut.
+ * Le délai informatif ne modifie ni n'annule l'opération cryptographique.
+ */
+export async function traceFinalizationOperation<T>(
+  step: string,
+  operation: () => Promise<T>,
+  context: { userId?: string; deviceId?: string; attempt?: number; traceId?: string } = {},
+): Promise<T> {
+  const traceId = context.traceId ?? getCurrentDeviceFinalizationTraceId();
+  const elapsed = startFinalizationTimer();
+  const emit = (outcome: DeviceFinalizationOutcome, errorCode?: unknown, detail?: string) =>
+    traceDeviceFinalization({ ...context, traceId, step, outcome, elapsedMs: elapsed(), errorCode, detail });
+  emit('start');
+  const timer = setInterval(() => emit('info', undefined, 'STILL_WAITING'), 15_000);
+  try {
+    const result = await operation();
+    emit('success');
+    return result;
+  } catch (error) {
+    emit('failure', error);
+    throw error;
+  } finally {
+    clearInterval(timer);
+  }
+}

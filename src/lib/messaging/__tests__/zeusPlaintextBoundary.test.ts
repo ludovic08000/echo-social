@@ -1,14 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-
-function collectTypeScriptFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const entryPath = join(directory, entry.name);
-    if (entry.isDirectory()) return collectTypeScriptFiles(entryPath);
-    return /\.tsx?$/u.test(entry.name) ? [entryPath] : [];
-  });
-}
 
 const initialMigration = readFileSync(
   'supabase/migrations/20260806232000_block_plaintext_zeus_messaging.sql',
@@ -28,7 +19,6 @@ const sqlSecurityTest = readFileSync(
 );
 const messagesPublicApi = readFileSync('src/hooks/useMessages.ts', 'utf8');
 const secureSendHook = readFileSync('src/hooks/useSendMessageSecure.ts', 'utf8');
-const legacyMessagesHook = readFileSync('src/hooks/useMessages.legacy.ts', 'utf8');
 const agentChat = readFileSync('supabase/functions/agent-chat/index.ts', 'utf8');
 
 describe('Zeus plaintext boundary', () => {
@@ -85,7 +75,7 @@ describe('Zeus plaintext boundary', () => {
   });
 
   it('routes the public messenger send hook through Aegis only', () => {
-    expect(messagesPublicApi).toContain("export * from './useMessages.legacy'");
+    expect(messagesPublicApi).not.toContain('useMessages.legacy');
     expect(messagesPublicApi).toContain("export { useSendMessage } from './useSendMessageSecure'");
     expect(messagesPublicApi).not.toContain('sendToZeus');
 
@@ -110,25 +100,6 @@ describe('Zeus plaintext boundary', () => {
     expect(secureSendHook).not.toContain('optimistic-');
   });
 
-  it('allows the legacy module only behind the controlled public facade', () => {
-    const testPaths = new Set([
-      'src/lib/messaging/__tests__/zeusPlaintextBoundary.test.ts',
-      'src/lib/messaging/__tests__/aegisUiRpcCompatibility.test.ts',
-    ]);
-    const normalizePath = (path: string) => relative('.', path).replace(/\\/gu, '/');
-    const directReferences = collectTypeScriptFiles('src')
-      .filter((path) => !testPaths.has(normalizePath(path)))
-      .filter((path) => readFileSync(path, 'utf8').includes('useMessages.legacy'))
-      .map(normalizePath)
-      .sort();
-
-    expect(directReferences).toEqual(['src/hooks/useMessages.ts']);
-    expect(legacyMessagesHook).toContain('sendToZeus');
-    expect(legacyMessagesHook).toContain('export function useSendMessage()');
-    expect(messagesPublicApi.indexOf("export { useSendMessage } from './useSendMessageSecure'"))
-      .toBeGreaterThan(messagesPublicApi.indexOf("export * from './useMessages.legacy'"));
-  });
-
   it('rejects legacy plaintext paths at the database boundary', () => {
     expect(durableMigration).toContain("new.sender_id = '00000000-0000-0000-0000-000000000001'::uuid");
     expect(durableMigration).toContain("message = 'zeus_messenger_e2ee_required'");
@@ -143,8 +114,10 @@ describe('Zeus plaintext boundary', () => {
     expect(sqlSecurityTest).toContain("'delete from public.conversation_participants'");
   });
 
-  it('keeps the remaining server legacy push behind the database invariant', () => {
-    expect(agentChat).toContain('pushToMessenger');
+  it('removes the server plaintext push and retains the database invariant', () => {
+    expect(agentChat).not.toContain('pushToMessenger');
+    expect(messagesPublicApi).not.toContain('sendToZeus');
+    expect(messagesPublicApi).not.toContain('export function useSendMessage()');
     expect(durableMigration).toContain('zeus_messenger_blocked_conversations');
     expect(durableMigration).toContain("message = 'zeus_messenger_e2ee_required'");
   });

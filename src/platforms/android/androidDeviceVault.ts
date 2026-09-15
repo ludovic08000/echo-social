@@ -3,6 +3,7 @@ import { getSessionMasterKey } from '@/lib/crypto/accountKeyBackup';
 import { backupDeviceVaultToCloud, restoreDeviceVaultFromCloud } from '@/lib/crypto/deviceVaultSync';
 import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
 import { loadDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { hasLibsignalStore } from '@/lib/crypto/libsignalPlatformBridge';
 import { peekCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { isAndroidRuntime } from './androidRuntime';
 
@@ -11,7 +12,7 @@ export async function restoreAndroidDeviceVault(userId: string): Promise<boolean
   const deviceId = peekCurrentDeviceId();
   if (!deviceId) return false;
   const [identity, kx] = await Promise.all([loadDeviceIdentity(userId, deviceId), loadDeviceKxKey(deviceId, userId)]);
-  if (identity && kx) return true;
+  if (identity && kx && await hasLibsignalStore(userId, deviceId)) return true;
   const expected = await fetchVerifiedDeviceIdentity(userId, deviceId);
   if (!expected?.deviceSigningKey || !expected.devicePublicKey) return false;
   return restoreDeviceVaultFromCloud({

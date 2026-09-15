@@ -12,6 +12,7 @@ import { peekCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { fetchVerifiedDeviceIdentity } from '@/lib/crypto/canonicalDeviceRegistry';
 import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
 import { loadDeviceKxKey } from '@/lib/crypto/deviceKx';
+import { hasLibsignalStore } from '@/lib/crypto/libsignalPlatformBridge';
 import { getSessionMasterKey } from '@/lib/crypto/accountKeyBackup';
 import {
   backupDeviceVaultToCloud,
@@ -35,15 +36,12 @@ export type IosVaultRestoreOutcome =
   | 'failed';
 
 async function hasLocalDeviceKeys(userId: string, deviceId: string): Promise<boolean> {
-  try {
-    const [signing, kx] = await Promise.all([
-      loadDeviceIdentity(userId, deviceId),
-      loadDeviceKxKey(deviceId, userId),
-    ]);
-    return Boolean(signing && kx);
-  } catch {
-    return false;
-  }
+  const [signing, kx] = await Promise.all([
+    loadDeviceIdentity(userId, deviceId),
+    loadDeviceKxKey(deviceId, userId),
+  ]);
+  // Une erreur de lecture doit remonter ; seules les clés absentes se restaurent.
+  return Boolean(signing && kx) && await hasLibsignalStore(userId, deviceId);
 }
 
 async function isServerDeviceBound(userId: string, deviceId: string): Promise<boolean> {
@@ -136,13 +134,17 @@ export async function ensureIosDeviceVaultRestored(userId: string): Promise<IosV
  * serveur réellement READY. Si le lifecycle ou la Master Key arrivent quelques
  * secondes plus tard, un retry borné reprend le même DeviceID sans rotation.
  */
-export async function backupIosDeviceVaultIfReady(userId: string): Promise<boolean> {
+export async function backupIosDeviceVaultIfReady(userId: string, options: { fresh?: boolean } = {}): Promise<boolean> {
   if (!isIosWebRuntime()) return false;
   const deviceId = peekCurrentDeviceId();
   if (!userId || !deviceId) return false;
   const cacheKey = `${userId}:${deviceId}`;
   const existing = backupInFlight.get(cacheKey);
-  if (existing) return existing;
+  if (existing) {
+    if (!options.fresh) return existing;
+    // La finalisation exige une capture APRÈS le provisionnement en cours.
+    await existing.catch(() => false);
+  }
 
   const run = (async (): Promise<boolean> => {
     if (!(await isServerDeviceBound(userId, deviceId))) {
@@ -166,8 +168,12 @@ export async function backupIosDeviceVaultIfReady(userId: string): Promise<boole
     clearBackupRetry(cacheKey);
     logDeviceVaultEvent('ios_backup', 'ok');
     return true;
-  })().finally(() => {
-    backupInFlight.delete(cacheKey);
+  })().catch(() => {
+    // La sauvegarde opportuniste ne doit pas produire de rejet non géré.
+    scheduleBackupRetry(userId, deviceId, 'local_vault_unavailable');
+    return false;
+  }).finally(() => {
+    if (backupInFlight.get(cacheKey) === run) backupInFlight.delete(cacheKey);
   });
 
   backupInFlight.set(cacheKey, run);

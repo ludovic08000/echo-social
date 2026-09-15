@@ -16,6 +16,22 @@ use crate::AegisSignalStore;
 
 type Result<T> = std::result::Result<T, SignalProtocolError>;
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = Date, js_name = now)]
+    fn javascript_now() -> f64;
+}
+
+// Invariant : le WASM navigateur lit l'horloge hôte, jamais SystemTime::now(),
+// qui panique sur wasm32-unknown-unknown avant la publication des préclés.
+fn protocol_now() -> SystemTime {
+    #[cfg(target_arch = "wasm32")]
+    { SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(javascript_now() as u64) }
+    #[cfg(not(target_arch = "wasm32"))]
+    { SystemTime::now() }
+}
+
 #[derive(Clone, Debug)]
 pub struct DevicePreKeyBundle {
     pub registration_id: u32,
@@ -71,16 +87,23 @@ pub async fn create_device_bundle(
     let signed_pair = KeyPair::generate(&mut rng);
     let signed_public = signed_pair.public_key.serialize();
     let signed_signature = identity.private_key().calculate_signature(&signed_public, &mut rng)?.into_vec();
-    let kyber_record = KyberPreKeyRecord::generate(
-        kem::KeyType::Kyber1024,
+    let timestamp = Timestamp::from_epoch_millis(
+        protocol_now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+    );
+    // Même construction officielle et même signature, avec horloge portable :
+    // KyberPreKeyRecord::generate appelle directement l'horloge système native.
+    let kyber_pair = kem::KeyPair::generate(kem::KeyType::Kyber1024, &mut rng);
+    let kyber_signature = identity.private_key()
+        .calculate_signature(&kyber_pair.public_key.serialize(), &mut rng)?;
+    let kyber_record = KyberPreKeyRecord::new(
         KyberPreKeyId::from(kyber_pre_key_id),
-        identity.private_key(),
-    )?;
+        timestamp,
+        &kyber_pair,
+        &kyber_signature,
+    );
     let signed_record = SignedPreKeyRecord::new(
         SignedPreKeyId::from(signed_pre_key_id),
-        Timestamp::from_epoch_millis(
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
-        ),
+        timestamp,
         &signed_pair,
         &signed_signature,
     );
@@ -103,6 +126,7 @@ pub async fn create_device_bundle(
     })
 }
 
+#[forbid(unsafe_code)]
 pub async fn establish_outbound_session(
     store: &mut AegisSignalStore,
     local: &ProtocolAddress,
@@ -110,10 +134,11 @@ pub async fn establish_outbound_session(
     bundle: &DevicePreKeyBundle,
 ) -> Result<()> {
     let mut rng = rand::rng();
-    let ptr: *mut AegisSignalStore = store;
-    unsafe { process_prekey_bundle(remote, local, &mut *ptr, &mut *ptr, &bundle.to_libsignal()?, SystemTime::now(), &mut rng).await }
+    let mut stores = store.protocol_stores();
+    process_prekey_bundle(remote, local, &mut stores.sessions, &mut stores.identity, &bundle.to_libsignal()?, protocol_now(), &mut rng).await
 }
 
+#[forbid(unsafe_code)]
 pub async fn encrypt_message(
     store: &mut AegisSignalStore,
     local: &ProtocolAddress,
@@ -121,15 +146,12 @@ pub async fn encrypt_message(
     plaintext: &[u8],
 ) -> Result<EncryptedMessage> {
     let mut rng = rand::rng();
-    // Les deux traits partagent le store ; les pointeurs sont séparés uniquement
-    // pendant l'appel et libsignal ne les conserve jamais.
-    let store_ptr: *mut AegisSignalStore = store;
-    let message = unsafe {
-        message_encrypt(plaintext, remote, local, &mut *store_ptr, &mut *store_ptr, SystemTime::now(), &mut rng).await?
-    };
+    let mut stores = store.protocol_stores();
+    let message = message_encrypt(plaintext, remote, local, &mut stores.sessions, &mut stores.identity, protocol_now(), &mut rng).await?;
     Ok(EncryptedMessage { message_type: message.message_type() as u8, ciphertext: message.serialize().to_vec() })
 }
 
+#[forbid(unsafe_code)]
 pub async fn decrypt_message(
     store: &mut AegisSignalStore,
     local: &ProtocolAddress,
@@ -144,8 +166,8 @@ pub async fn decrypt_message(
         other => return Err(SignalProtocolError::InvalidArgument(format!("unsupported message type {other:?}"))),
     };
     let mut rng = rand::rng();
-    let ptr: *mut AegisSignalStore = store;
-    unsafe { message_decrypt(&message, remote, local, &mut *ptr, &mut *ptr, &mut *ptr, &*ptr, &mut *ptr, &mut rng).await }
+    let mut stores = store.protocol_stores();
+    message_decrypt(&message, remote, local, &mut stores.sessions, &mut stores.identity, &mut stores.prekeys, &stores.signed_prekeys, &mut stores.kyber, &mut rng).await
 }
 
 #[cfg(test)]

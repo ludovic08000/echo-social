@@ -19,6 +19,16 @@ CREATE TABLE IF NOT EXISTS public.user_devices (
   CONSTRAINT user_devices_unique_per_user UNIQUE (user_id, device_id)
 );
 
+-- Le registre peut déjà venir de la migration E2EE : CREATE TABLE IF NOT EXISTS
+-- ne complète pas ses colonnes. Ajouter le schéma avant les index et RPC.
+ALTER TABLE public.user_devices
+  ADD COLUMN IF NOT EXISTS device_name text,
+  ADD COLUMN IF NOT EXISTS device_public_key text,
+  ADD COLUMN IF NOT EXISTS platform text,
+  ADD COLUMN IF NOT EXISTS user_agent text,
+  ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone NOT NULL DEFAULT now();
+
 CREATE INDEX IF NOT EXISTS idx_user_devices_user_active
   ON public.user_devices (user_id, is_active, last_seen_at DESC);
 

@@ -32,6 +32,7 @@ import {
 import { submitAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecision';
 import { bindApprovedDeviceToAccount } from '@/lib/crypto/deviceAccountBinding';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
+import { hasLibsignalStore } from '@/lib/crypto/libsignalPlatformBridge';
 import {
   refillDeviceOneTimePrekeysIfNeeded,
   refreshDeviceSignedPrekeyIfNeeded,
@@ -39,7 +40,7 @@ import {
 import { ensureApprovedDeviceTrust } from '@/lib/crypto/deviceLinkTrust';
 import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
-import { invalidateDeviceSession } from '@/lib/crypto/deviceRatchet';
+import { invalidateLibsignalDeviceSession as invalidateDeviceSession } from '@/lib/crypto/libsignalSessionFreshness';
 import {
   adoptExistingIosDevice,
   adoptReusableIosDevice,
@@ -49,6 +50,8 @@ import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 import {
   startFinalizationTimer,
+  getCurrentDeviceFinalizationTraceId,
+  traceFinalizationOperation,
   traceCurrentDeviceFinalization,
 } from '@/lib/device-manager/deviceFinalizationTrace';
 import { adoptReusableAndroidDevice, resolveExistingAndroidDevice } from '@/platforms/android/androidDeviceReuse';
@@ -353,6 +356,9 @@ async function bind(userId: string): Promise<DeviceApiRecord> {
 }
 
 async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
+  const traceId = getCurrentDeviceFinalizationTraceId();
+  const traced = <T>(step: string, operation: () => Promise<T>) =>
+    traceFinalizationOperation(`device_api.prepare_keys.${step}`, operation, { userId, traceId });
   const elapsed = startFinalizationTimer();
   const snapshot = await getState(userId);
   const record = snapshot.record;
@@ -376,46 +382,46 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
     throw new Error('DEVICE_NOT_READY_FOR_KEYS');
   }
   let [identity, kx] = await Promise.all([
-    loadDeviceIdentity(userId, record.deviceId),
-    loadDeviceKxKey(record.deviceId, userId),
+    traced('load_identity', () => loadDeviceIdentity(userId, record.deviceId)),
+    traced('load_kx', () => loadDeviceKxKey(record.deviceId, userId)),
   ]);
-  if (!identity || !kx) {
+  if (!identity || !kx || !await traced('check_libsignal_store', () => hasLibsignalStore(userId, record.deviceId))) {
     // iOS Web : Safari peut purger l'IndexedDB. On restaure le coffre scellé
     // du MÊME DeviceID déjà approuvé, sans jamais en créer un nouveau.
-    const restored = await ensureIosDeviceVaultRestored(userId);
+    const restored = await traced('restore_ios_vault', () => ensureIosDeviceVaultRestored(userId));
     if (restored === 'restored') {
       [identity, kx] = await Promise.all([
-        loadDeviceIdentity(userId, record.deviceId),
-        loadDeviceKxKey(record.deviceId, userId),
+        traced('reload_ios_identity', () => loadDeviceIdentity(userId, record.deviceId)),
+        traced('reload_ios_kx', () => loadDeviceKxKey(record.deviceId, userId)),
       ]);
     }
-    if ((!identity || !kx) && await restoreAndroidDeviceVault(userId)) {
+    if ((!identity || !kx || !await hasLibsignalStore(userId, record.deviceId))
+      && await traced('restore_android_vault', () => restoreAndroidDeviceVault(userId))) {
       [identity, kx] = await Promise.all([
-        loadDeviceIdentity(userId, record.deviceId),
-        loadDeviceKxKey(record.deviceId, userId),
+        traced('reload_android_identity', () => loadDeviceIdentity(userId, record.deviceId)),
+        traced('reload_android_kx', () => loadDeviceKxKey(record.deviceId, userId)),
       ]);
     }
   }
   if (!identity || !kx) throw new Error('DEVICE_LOCAL_PRIVATE_KEYS_MISSING');
   if (identity.publicB64 !== record.deviceSigningKey || kx.publicB64 !== record.devicePublicKey) throw new Error('DEVICE_LOCAL_KEY_MISMATCH');
-  void backupIosDeviceVaultIfReady(userId);
-  void backupAndroidDeviceVault(userId);
 
-  await provisionLibsignalDevice(userId, record.deviceId);
+  await traced('libsignal_provision', () => provisionLibsignalDevice(userId, record.deviceId));
   // Invariant corrigé : `mark_current_device_route_ready` exige côté serveur une
   // `device_signed_prekeys` active, non expirée et vérifiable. Personne ne la
   // publiait, donc la route restait DEVICE_ROUTE_INCOMPLETE et l'écran
   // « Finalisation de cet appareil » tournait sans fin. Elle est désormais
   // publiée ici, avant la validation serveur.
-  await refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, identity.privateKey);
+  const signingKey = identity.privateKey;
+  await traced('signed_prekey', () => refreshDeviceSignedPrekeyIfNeeded(userId, record.deviceId, signingKey));
   // iOS becomes routable only after the exact private X3DH material has been
   // sealed, uploaded and read back successfully for this DeviceID.
   const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');
-  if (isIosWebRuntime() && !await backupIosDeviceVaultIfReady(userId)) {
+  if (isIosWebRuntime() && !await traced('required_ios_backup', () => backupIosDeviceVaultIfReady(userId, { fresh: true }))) {
     throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
   }
   const { isAndroidRuntime } = await import('@/platforms/android/androidRuntime');
-  if (isAndroidRuntime() && !await backupAndroidDeviceVault(userId)) {
+  if (isAndroidRuntime() && !await traced('required_android_backup', () => backupAndroidDeviceVault(userId))) {
     throw new Error('DEVICE_X3DH_VAULT_BACKUP_REQUIRED');
   }
   const rpcElapsed = startFinalizationTimer();
@@ -448,7 +454,7 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   // arrière-plan, l'interface ne doit jamais l'attendre pour devenir prête.
   void refillDeviceOneTimePrekeysIfNeeded(userId, record.deviceId)
     .catch((error) => console.warn('[DEVICE] OPK refill deferred:', error));
-  await ensureApprovedDeviceTrust(userId, record.deviceId);
+  await traced('device_trust', () => ensureApprovedDeviceTrust(userId, record.deviceId));
   // Invariant corrigé : la préparation des clés s'arrête à la route prête. La
   // finalisation serveur (`complete_current_device_synchronization`) n'a lieu
   // qu'APRÈS la vraie synchronisation des clés de compte.

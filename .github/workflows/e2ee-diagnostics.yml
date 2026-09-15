@@ -65,7 +65,6 @@ jobs:
           files=(
             supabase/functions/sealed-mint-token/index.ts
             supabase/functions/sealed-relay/index.ts
-            supabase/functions/approve-device-enrollment/index.ts
             supabase/functions/identity-rotation/index.ts
             supabase/functions/identity-rotation-recovery/index.ts
             supabase/functions/zeus/index.ts

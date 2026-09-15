@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   createBundle: vi.fn(),
   createStore: vi.fn(),
+  captureStore: vi.fn(),
   rpc: vi.fn(),
 }));
 
@@ -10,6 +11,7 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: { rpc: (...args: unknown[]) => mocks.rpc(...args) },
 }));
 vi.mock('@/lib/crypto/libsignalPlatformBridge', () => ({
+  captureLibsignalStore: (...args: unknown[]) => mocks.captureStore(...args),
   createLibsignalBundle: (...args: unknown[]) => mocks.createBundle(...args),
   createLibsignalStore: (...args: unknown[]) => mocks.createStore(...args),
 }));
@@ -28,6 +30,7 @@ describe('libsignal device provisioning', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.createStore.mockResolvedValue(undefined);
+    mocks.captureStore.mockResolvedValue('sealed-private-store');
     mocks.createBundle.mockImplementation(async () => bundleBytes());
   });
 
@@ -68,6 +71,53 @@ describe('libsignal device provisioning', () => {
 
     await provisionLibsignalDevice('user-id', `dev_${'b'.repeat(32)}`);
 
+    expect(mocks.createStore).not.toHaveBeenCalled();
+    expect(mocks.captureStore).toHaveBeenCalledWith('user-id', `dev_${'b'.repeat(32)}`);
+    expect(mocks.createBundle).not.toHaveBeenCalled();
+  });
+
+  it('stops before publishing if private store persistence fails', async () => {
+    mocks.rpc.mockImplementation((name: string) => ({
+      abortSignal: async () => ({ data: name === 'get_libsignal_device_number' ? 1 : 0, error: null }),
+    }));
+    mocks.createStore.mockRejectedValue(new Error('AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED'));
+    await expect(provisionLibsignalDevice('user-id', 'device-id')).rejects.toThrow('STORE_COMMIT_FAILED');
+    expect(mocks.createBundle).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([1, 10, 20])('requires recovery when %i public bundles outlive the private store', async (count) => {
+    mocks.rpc.mockImplementation((name: string) => ({
+      abortSignal: async () => ({ data: name === 'get_libsignal_device_number' ? 1
+        : name === 'publish_libsignal_prekey_bundle' ? { ok: true } : count, error: null }),
+    }));
+    mocks.captureStore.mockRejectedValueOnce(new Error('AEGIS_LIBSIGNAL_STORE_MISSING'));
+    await expect(provisionLibsignalDevice('user-id', 'device-id')).rejects.toThrow('STORE_MISSING');
+    expect(mocks.createStore).not.toHaveBeenCalled();
+    expect(mocks.createBundle).not.toHaveBeenCalled();
+    // Après restauration réelle du coffre, une nouvelle tentative peut réussir.
+    await provisionLibsignalDevice('user-id', 'device-id');
+    expect(mocks.captureStore).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces simultaneous lifecycle triggers for the same device', async () => {
+    mocks.rpc.mockImplementation((name: string) => ({
+      abortSignal: async () => ({ data: name === 'get_libsignal_device_number' ? 1
+        : name === 'publish_libsignal_prekey_bundle' ? { ok: true } : 0, error: null }),
+    }));
+    const first = provisionLibsignalDevice('user-id', 'device-id');
+    const second = provisionLibsignalDevice('user-id', 'device-id');
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(mocks.createBundle).toHaveBeenCalledTimes(20);
+    expect(mocks.createStore).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([-1, 1.5, 'invalid'])('rejects invalid server bundle count %s', async (count) => {
+    mocks.rpc.mockImplementation((name: string) => ({
+      abortSignal: async () => ({ data: name === 'get_libsignal_device_number' ? 1 : count, error: null }),
+    }));
+    await expect(provisionLibsignalDevice('user-id', 'device-id')).rejects.toThrow('BUNDLE_COUNT_INVALID');
     expect(mocks.createStore).not.toHaveBeenCalled();
     expect(mocks.createBundle).not.toHaveBeenCalled();
   });

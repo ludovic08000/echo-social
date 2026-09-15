@@ -295,6 +295,8 @@ drop table if exists public.user_device_signatures cascade;
 drop table if exists public.user_identity_roots cascade;
 drop table if exists public.device_primary_repair_requests cascade;
 
+-- Supprimer le trigger sous son nom SQL avant sa fonction, sans CASCADE implicite.
+drop trigger if exists aegis_reconcile_device_root on public.user_devices;
 drop trigger if exists trg_aegis_reconcile_device_root on public.user_devices;
 drop function if exists public.trg_aegis_reconcile_device_root();
 drop function if exists public.ensure_primary_device_exists(uuid);

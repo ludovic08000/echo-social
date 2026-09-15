@@ -7,7 +7,6 @@ import {
   sendMessageWithAegisRetry,
 } from '@/lib/messaging/aegisSendRpc';
 import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
-import { rollbackFanoutSessionTransaction } from '@/lib/messaging/fanoutSessionTransaction';
 import {
   MAX_INLINE_MESSAGE_BODY_BYTES,
   prepareLongMessageForSend,
@@ -194,10 +193,8 @@ export async function sendAegisOutboundMessage(
   ]);
   trace('OUTBOX_DURABLE');
 
-  // One lock owns the complete mutable Ratchet transaction: copy creation,
-  // authoritative RPC, confirmation and any rollback. Releasing the lock
-  // after copy creation would let a later message commit before an earlier
-  // rejection rewinds the shared session.
+  // Une seule tentative par conversation ; les copies scellées survivent aux
+  // refus réseau sans restaurer un ancien état du ratchet Libsignal.
   try {
     return await runAegisConversationJob(
       `${input.senderUserId}:${input.conversationId}:aegis-outbound`,
@@ -309,7 +306,6 @@ export async function sendAegisOutboundMessage(
       await persist({ status: 'sending', preparedCopies: copies, lastError: null });
     }
   } catch (error) {
-    await rollbackFanoutSessionTransaction(messageId).catch(() => 0);
     copies = [];
     requestSenderTrustRepair(error);
     await persist({
@@ -340,7 +336,6 @@ export async function sendAegisOutboundMessage(
       rebuildCopies: buildCopies,
     });
   } catch (error) {
-    await rollbackFanoutSessionTransaction(messageId).catch(() => 0);
     copies = [];
     await persist({
       preparedCopies: [],

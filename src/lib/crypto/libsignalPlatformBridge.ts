@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { isVerifiedNativeRuntime } from '@/lib/runtimePlatform';
 import { readDeviceVaultRecord, writeDeviceVaultRecord } from './deviceVault';
 import { base64ToBuffer, bufferToBase64 } from './utils';
+import { withLibsignalStoreLock as withNativeStoreLock } from './libsignalStoreLock';
 import {
   captureLibsignalStore as captureWasmStore,
   createLibsignalBundle as createWasmBundle,
@@ -66,7 +67,6 @@ type NativeLibsignalPlugin = {
 
 const NativeLibsignal = registerPlugin<NativeLibsignalPlugin>('LibSignal');
 let nativeCapabilitiesPromise: Promise<NativeCapabilities> | null = null;
-const nativeStoreQueues = new Map<string, Promise<void>>();
 
 type SealedLibsignalStore = { bytes: string };
 const validStore = (value: unknown): value is SealedLibsignalStore =>
@@ -112,22 +112,6 @@ async function requireNativeCapabilities(): Promise<NativeCapabilities> {
     throw error;
   });
   return nativeCapabilitiesPromise;
-}
-
-async function withNativeStoreLock<T>(userId: string, deviceId: string, work: () => Promise<T>): Promise<T> {
-  const key = vaultId(userId, deviceId);
-  const previous = nativeStoreQueues.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => { release = resolve; });
-  const queued = previous.then(() => current);
-  nativeStoreQueues.set(key, queued);
-  await previous;
-  try {
-    return await work();
-  } finally {
-    release();
-    if (nativeStoreQueues.get(key) === queued) nativeStoreQueues.delete(key);
-  }
 }
 
 async function loadNativeStore(userId: string, deviceId: string): Promise<string> {
@@ -297,7 +281,28 @@ export async function captureLibsignalStore(userId: string, deviceId: string): P
   return withNativeStoreLock(userId, deviceId, () => loadNativeStore(userId, deviceId));
 }
 
+/** Une clé de signature présente ne prouve pas la présence du store Libsignal. */
+export async function hasLibsignalStore(userId: string, deviceId: string): Promise<boolean> {
+  try {
+    await captureLibsignalStore(userId, deviceId);
+    return true;
+  } catch (error) {
+    // Seule l'absence explicite autorise la récupération ; jamais une erreur du coffre.
+    if (error instanceof Error && error.message === 'AEGIS_LIBSIGNAL_STORE_MISSING') return false;
+    throw error;
+  }
+}
+
 export async function restoreLibsignalStore(userId: string, deviceId: string, bytes: string): Promise<void> {
   if (!nativePlatform()) return restoreWasmStore(userId, deviceId, bytes);
-  await withNativeStoreLock(userId, deviceId, () => commitNativeStore(userId, deviceId, bytes));
+  if (!bytes) throw new Error('AEGIS_LIBSIGNAL_STORE_INVALID');
+  await withNativeStoreLock(userId, deviceId, async () => {
+    const existing = await readDeviceVaultRecord(vaultId(userId, deviceId), validStore);
+    // Une sauvegarde ne doit jamais faire reculer un ratchet déjà présent.
+    if (existing) {
+      if (existing.bytes !== bytes) throw new Error('AEGIS_LIBSIGNAL_RESTORE_CONFLICT');
+      return;
+    }
+    await commitNativeStore(userId, deviceId, bytes);
+  });
 }

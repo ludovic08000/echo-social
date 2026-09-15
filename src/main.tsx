@@ -8,14 +8,12 @@ import { installGlobalCrashHandlers } from "@/lib/crashLogger";
 installGlobalCrashHandlers();
 
 if (import.meta.env.DEV) {
-  void import('@/lib/libsignalNative').then(({ getLibSignalCapabilities, runLibSignalSelfTest }) => {
+  void import('@/lib/crypto/libsignalPlatformBridge').then(({ getLibsignalBackendInfo }) => {
     const diagnosticWindow = window as typeof window & {
-      __libsignalCapabilities?: typeof getLibSignalCapabilities;
-      __libsignalSelfTest?: typeof runLibSignalSelfTest;
+      __libsignalCapabilities?: typeof getLibsignalBackendInfo;
     };
-    diagnosticWindow.__libsignalCapabilities = getLibSignalCapabilities;
-    diagnosticWindow.__libsignalSelfTest = runLibSignalSelfTest;
-    console.info('[LIBSIGNAL] window.__libsignalCapabilities() and window.__libsignalSelfTest() are available');
+    diagnosticWindow.__libsignalCapabilities = getLibsignalBackendInfo;
+    console.info('[LIBSIGNAL] window.__libsignalCapabilities() is available');
   });
 }
 
