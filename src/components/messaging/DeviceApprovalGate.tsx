@@ -35,21 +35,6 @@ function Shell({ children, compact }: { children: ReactNode; compact: boolean })
 export function DeviceApprovalGate({ children, compact = false }: DeviceApprovalGateProps) {
   const lifecycle = useDeviceLifecycle();
 
-      return;
-    }
-    try {
-      if (!getSessionMasterKey()) {
-        if (status !== 'restored' && status !== 'local_ok') {
-          throw new Error(status === 'no_backup'
-            ? 'Aucune sauvegarde de compte disponible pour restaurer les clés.'
-            : 'Mot de passe incorrect ou sauvegarde du compte illisible.');
-        }
-      }
-      lifecycle.refresh();
-    } catch (error) {
-    } finally {
-    }
-  };
 
   const failure = (
     <ErrorBlock error={lifecycle.error} onRetry={lifecycle.retry} />
