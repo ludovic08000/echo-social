@@ -4,9 +4,8 @@
  * Run AFTER the local identity has been re-hydrated (recovery key, PIN backup,
  * password active-session, in-memory Master Key). Three responsibilities:
  *
- *   1. **Publish a fresh `keys_epoch`** for the current device. Route watchers
- *      invalidate cached Libsignal sessions targeting this device so the next
- *      outbound message establishes a fresh authenticated session.
+ *   1. **Revalidate the sealed Libsignal store and public bundle pool** for the
+ *      current device. No custom Signed PreKey epoch participates in routing.
  *
  *   2. **Trigger a queue resume** so messages that piled up during the wipe
  *      (and that couldn't be decrypted before keys were back) get retried
@@ -19,7 +18,6 @@
  * Idempotent — safe to call from every restore site.
  */
 
-import { supabase } from '@/integrations/supabase/client';
 import { getCurrentDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { logCryptoError, logCryptoException } from './errorLogger';
 
@@ -44,37 +42,24 @@ export async function runPostRestoreSync(userId: string, reason: RestoreReason):
     try { return getCurrentDeviceId(); } catch { return null; }
   })();
 
-  // 1. Bump server-side epoch — contacts will see this via realtime.
+  // 1. Le store scellé et le pool public Libsignal sont l'unique source session.
   if (deviceId && !isDeviceIdTemporary()) {
     try {
-      const { data, error } = await (supabase as any).rpc('bump_device_keys_epoch', {
-        p_user_id: userId,
-        p_device_id: deviceId,
+      const { provisionLibsignalDevice } = await import('./libsignalProvisioning');
+      await provisionLibsignalDevice(userId, deviceId);
+      logCryptoError({
+        severity: 'info',
+        context: 'restore',
+        errorCode: 'POST_RESTORE_LIBSIGNAL_READY',
+        errorMessage: 'Libsignal store and bundle pool revalidated after restore',
+        myDeviceId: deviceId,
+        metadata: { reason },
       });
-      if (error) {
-        logCryptoError({
-          severity: 'warning',
-          context: 'restore',
-          errorCode: 'POST_RESTORE_EPOCH_BUMP_FAILED',
-          errorMessage: error.message,
-          myDeviceId: deviceId,
-          metadata: { reason },
-        });
-      } else {
-        logCryptoError({
-          severity: 'info',
-          context: 'restore',
-          errorCode: 'POST_RESTORE_EPOCH_BUMPED',
-          errorMessage: 'Device keys_epoch bumped after restore',
-          myDeviceId: deviceId,
-          metadata: { reason, newEpoch: data },
-        });
-      }
     } catch (e) {
       logCryptoException('restore', e, {
         severity: 'warning',
         myDeviceId: deviceId ?? undefined,
-        metadata: { stage: 'bump_device_keys_epoch', reason },
+        metadata: { stage: 'provision_libsignal_device', reason },
       });
     }
   }

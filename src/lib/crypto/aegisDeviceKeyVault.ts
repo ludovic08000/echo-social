@@ -3,7 +3,6 @@ import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { runTx, reqToPromise } from '@/lib/crypto/indexedDbTx';
 import { getSessionMasterKey } from '@/lib/crypto/accountKeyBackup';
 import {
-  deviceVaultMirrorsPlaintext,
   readDeviceVaultRecord,
   writeDeviceVaultRecord,
 } from '@/lib/crypto/deviceVault';
@@ -236,15 +235,13 @@ export async function restoreEncryptedAegisDeviceVault(args: {
   // Refuser un recul Libsignal avant de modifier les autres clés du coffre.
   const { restoreLibsignalStore } = await import('@/lib/crypto/libsignalPlatformBridge');
   await restoreLibsignalStore(userId, deviceId, plain.libsignalStore);
-  // Restauration : les clés reviennent dans le coffre scellé, jamais en clair sur web.
+  // Restauration : les clés reviennent dans le coffre scellé, jamais en clair.
   await writeDeviceVaultRecord(plain.signing.id, plain.signing);
   await writeDeviceVaultRecord(plain.kx.id, plain.kx);
-  if (deviceVaultMirrorsPlaintext()) {
-    await runTx([STORE_KEYS], 'readwrite', (tx) => {
-      const store = tx.objectStore(STORE_KEYS);
-      store.put(plain.signing as object);
-      store.put(plain.kx as object);
-    });
-  }
+  await runTx([STORE_KEYS], 'readwrite', (tx) => {
+    const store = tx.objectStore(STORE_KEYS);
+    store.delete(plain.signing.id);
+    store.delete(plain.kx.id);
+  });
 
 }

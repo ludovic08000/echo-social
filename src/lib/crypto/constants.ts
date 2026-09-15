@@ -35,5 +35,13 @@ export const HKDF_SALT_LENGTH = 32;
 
 // IndexedDB — only Aegis account/device identity material is active here.
 export const DB_NAME = 'forsure-e2ee';
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 export const STORE_KEYS = 'identity-keys';
+
+// Invariant Libsignal : ces stores appartenaient aux anciens moteurs maison.
+// Ils sont supprimés pendant l'upgrade, sans toucher au store d'identité actif.
+export const LEGACY_E2EE_OBJECT_STORES = [
+  'session-keys',
+  'pre-keys',
+  'encrypted-outbox',
+] as const;

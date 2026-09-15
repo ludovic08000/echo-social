@@ -117,22 +117,22 @@ describe('native iOS device X25519 persistence', () => {
     vi.resetModules();
   });
 
-  it('restores the same key after an IndexedDB purge and app-module reload', async () => {
+  it('restores the same key and removes a stale IndexedDB mirror', async () => {
     let deviceKx = await loadDeviceKxModule();
     const first = await deviceKx.getOrCreateDeviceKxKey(deviceId, userId);
 
     expect(runtime.generationCount).toBe(1);
     expect(runtime.nativeRecords.has(storageId)).toBe(true);
-    expect(runtime.indexedRecords.has(storageId)).toBe(true);
+    expect(runtime.indexedRecords.has(storageId)).toBe(false);
 
-    runtime.indexedRecords.clear();
+    runtime.indexedRecords.set(storageId, { id: storageId, stalePlaintextMirror: true });
     vi.resetModules();
     deviceKx = await loadDeviceKxModule();
 
     const restored = await deviceKx.getOrCreateDeviceKxKey(deviceId, userId);
     expect(restored.publicB64).toBe(first.publicB64);
     expect(runtime.generationCount).toBe(1);
-    expect(runtime.indexedRecords.has(storageId)).toBe(true);
+    expect(runtime.indexedRecords.has(storageId)).toBe(false);
   });
 
   it('migrates a valid legacy IndexedDB key to the native vault without rotation', async () => {
@@ -150,6 +150,7 @@ describe('native iOS device X25519 persistence', () => {
 
     expect(runtime.generationCount).toBe(0);
     expect(runtime.nativeRecords.has(storageId)).toBe(true);
+    expect(runtime.indexedRecords.has(storageId)).toBe(false);
   });
 
   it('fails closed instead of generating a replacement when Keychain reads fail', async () => {

@@ -128,22 +128,22 @@ describe('native iOS Ed25519 device identity persistence', () => {
     vi.resetModules();
   });
 
-  it('restores the same signing identity after IndexedDB is purged', async () => {
+  it('restores the same signing identity and removes a stale IndexedDB mirror', async () => {
     let identity = await loadDeviceIdentityModule();
     const first = await identity.getOrCreateDeviceIdentity(userId, deviceId);
 
     expect(runtime.generationCount).toBe(1);
     expect(runtime.nativeRecords.has(storageId)).toBe(true);
-    expect(runtime.indexedRecords.has(storageId)).toBe(true);
+    expect(runtime.indexedRecords.has(storageId)).toBe(false);
 
-    runtime.indexedRecords.clear();
+    runtime.indexedRecords.set(storageId, { id: storageId, stalePlaintextMirror: true });
     vi.resetModules();
     identity = await loadDeviceIdentityModule();
 
     const restored = await identity.getOrCreateDeviceIdentity(userId, deviceId);
     expect(restored.publicB64).toBe(first.publicB64);
     expect(runtime.generationCount).toBe(1);
-    expect(runtime.indexedRecords.has(storageId)).toBe(true);
+    expect(runtime.indexedRecords.has(storageId)).toBe(false);
   });
 
   it('migrates the legacy IndexedDB identity without changing its key', async () => {
@@ -161,6 +161,7 @@ describe('native iOS Ed25519 device identity persistence', () => {
 
     expect(runtime.generationCount).toBe(0);
     expect(runtime.nativeRecords.has(storageId)).toBe(true);
+    expect(runtime.indexedRecords.has(storageId)).toBe(false);
   });
 
   it('fails closed rather than silently rotating identity when Keychain is unavailable', async () => {

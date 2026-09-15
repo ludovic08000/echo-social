@@ -2,10 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ decrypt: vi.fn(), restore: vi.fn(), write: vi.fn() }));
 vi.mock('../cryptoIntegrity', () => ({
   hardCrypto: { decrypt: mocks.decrypt },
-  hardGlobals: { TextEncoder, TextDecoder, atob, btoa, jsonParse: JSON.parse },
+  hardGlobals: {
+    TextEncoder,
+    TextDecoder,
+    atob,
+    btoa,
+    jsonParse: JSON.parse,
+    idbOpen: (...args: Parameters<IDBFactory['open']>) => indexedDB.open(...args),
+  },
 }));
 vi.mock('../accountKeyBackup', () => ({ getSessionMasterKey: () => ({}) }));
-vi.mock('../deviceVault', () => ({ deviceVaultMirrorsPlaintext: () => false, readDeviceVaultRecord: vi.fn(), writeDeviceVaultRecord: mocks.write }));
+vi.mock('../deviceVault', () => ({
+  readDeviceVaultRecord: vi.fn(),
+  writeDeviceVaultRecord: mocks.write,
+}));
 vi.mock('../libsignalPlatformBridge', () => ({ restoreLibsignalStore: mocks.restore }));
 import { restoreEncryptedAegisDeviceVault } from '../aegisDeviceKeyVault';
 const userId = 'alice';

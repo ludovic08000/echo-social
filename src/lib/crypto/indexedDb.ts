@@ -1,6 +1,7 @@
 import {
   DB_NAME,
   DB_VERSION,
+  LEGACY_E2EE_OBJECT_STORES,
   STORE_KEYS,
 } from './constants';
 import { hardGlobals } from './cryptoIntegrity';
@@ -10,6 +11,14 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 export function ensureE2EEObjectStores(db: IDBDatabase) {
   if (!db.objectStoreNames.contains(STORE_KEYS)) {
     db.createObjectStore(STORE_KEYS, { keyPath: 'id' });
+  }
+}
+
+export function removeLegacyE2EEObjectStores(db: IDBDatabase) {
+  for (const storeName of LEGACY_E2EE_OBJECT_STORES) {
+    if (db.objectStoreNames.contains(storeName)) {
+      db.deleteObjectStore(storeName);
+    }
   }
 }
 
@@ -85,6 +94,7 @@ export function openE2EEDB(): Promise<IDBDatabase> {
     };
 
     request.onupgradeneeded = () => {
+      removeLegacyE2EEObjectStores(request.result);
       ensureE2EEObjectStores(request.result);
     };
   });

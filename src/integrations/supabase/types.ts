@@ -787,42 +787,6 @@ export type Database = {
           },
         ]
       }
-      aegis_x3dh_initial_replay: {
-        Row: {
-          created_at: string
-          expires_at: string
-          finalized_at: string | null
-          fingerprint: string
-          reservation_token: string | null
-          reserved_until: string | null
-          status: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          expires_at: string
-          finalized_at?: string | null
-          fingerprint: string
-          reservation_token?: string | null
-          reserved_until?: string | null
-          status: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          expires_at?: string
-          finalized_at?: string | null
-          fingerprint?: string
-          reservation_token?: string | null
-          reserved_until?: string | null
-          status?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       ai_agent_conversations: {
         Row: {
           agent_id: string
@@ -2322,39 +2286,6 @@ export type Database = {
           },
         ]
       }
-      device_one_time_prekeys: {
-        Row: {
-          created_at: string
-          device_id: string
-          id: string
-          opk_id: number
-          public_key: string
-          signature: string | null
-          signature_version: number
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          device_id: string
-          id?: string
-          opk_id: number
-          public_key: string
-          signature?: string | null
-          signature_version?: number
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          device_id?: string
-          id?: string
-          opk_id?: number
-          public_key?: string
-          signature?: string | null
-          signature_version?: number
-          user_id?: string
-        }
-        Relationships: []
-      }
       device_platform_metadata: {
         Row: {
           app_version: string | null
@@ -2407,87 +2338,6 @@ export type Database = {
             referencedColumns: ["user_id", "device_id"]
           },
         ]
-      }
-      device_prekey_repair_requests: {
-        Row: {
-          created_at: string
-          id: string
-          owner_device_id: string
-          owner_user_id: string
-          reason: string
-          reporter_user_id: string
-          resolved_at: string | null
-          status: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          owner_device_id: string
-          owner_user_id: string
-          reason?: string
-          reporter_user_id: string
-          resolved_at?: string | null
-          status?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          owner_device_id?: string
-          owner_user_id?: string
-          reason?: string
-          reporter_user_id?: string
-          resolved_at?: string | null
-          status?: string
-        }
-        Relationships: []
-      }
-      device_signed_prekeys: {
-        Row: {
-          created_at: string
-          device_id: string
-          expires_at: string
-          id: string
-          is_active: boolean
-          is_last_resort: boolean
-          keys_epoch: number
-          public_key: string
-          signature: string
-          signature_version: number
-          spk_id: number
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          device_id: string
-          expires_at?: string
-          id?: string
-          is_active?: boolean
-          is_last_resort?: boolean
-          keys_epoch?: number
-          public_key: string
-          signature: string
-          signature_version?: number
-          spk_id: number
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          device_id?: string
-          expires_at?: string
-          id?: string
-          is_active?: boolean
-          is_last_resort?: boolean
-          keys_epoch?: number
-          public_key?: string
-          signature?: string
-          signature_version?: number
-          spk_id?: number
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
       }
       e2ee_kt_leaves: {
         Row: {
@@ -7451,45 +7301,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_signed_prekeys: {
-        Row: {
-          created_at: string
-          expires_at: string
-          id: string
-          is_active: boolean
-          is_last_resort: boolean
-          public_key: string
-          signature: string
-          signature_version: number
-          spk_id: number
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          expires_at?: string
-          id?: string
-          is_active?: boolean
-          is_last_resort?: boolean
-          public_key: string
-          signature: string
-          signature_version?: number
-          spk_id: number
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          expires_at?: string
-          id?: string
-          is_active?: boolean
-          is_last_resort?: boolean
-          public_key?: string
-          signature?: string
-          signature_version?: number
-          spk_id?: number
-          user_id?: string
-        }
-        Relationships: []
-      }
       video_comments: {
         Row: {
           body: string
@@ -7749,30 +7560,6 @@ export type Database = {
           screen_time_score?: number
           social_balance_score?: number
           updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      x3dh_replay_ledger: {
-        Row: {
-          consumed_at: string
-          expires_at: string
-          fingerprint: string
-          id: string
-          user_id: string
-        }
-        Insert: {
-          consumed_at?: string
-          expires_at?: string
-          fingerprint: string
-          id?: string
-          user_id: string
-        }
-        Update: {
-          consumed_at?: string
-          expires_at?: string
-          fingerprint?: string
-          id?: string
           user_id?: string
         }
         Relationships: []
@@ -8246,14 +8033,6 @@ export type Database = {
         Args: { p_message: string; p_public_key: string; p_signature: string }
         Returns: boolean
       }
-      aegis_verify_signed_prekey: {
-        Args: {
-          p_device_signing_key: string
-          p_spk_public_key: string
-          p_spk_signature: string
-        }
-        Returns: boolean
-      }
       ai_engine_module_stats: {
         Args: { p_window_minutes?: number }
         Returns: {
@@ -8320,10 +8099,6 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: undefined
       }
-      bump_device_keys_epoch: {
-        Args: { p_device_id: string; p_user_id: string }
-        Returns: number
-      }
       can_view_order: {
         Args: { _buyer_id: string; _order_id: string }
         Returns: boolean
@@ -8335,10 +8110,6 @@ export type Database = {
       cancel_user_device_enrollment: {
         Args: { p_challenge_id: string; p_nonce: string; p_reason?: string }
         Returns: Json
-      }
-      cancel_x3dh_initial: {
-        Args: { p_fingerprint: string; p_reservation_token: string }
-        Returns: boolean
       }
       check_login_rate_limit: {
         Args: { p_email_hash: string; p_ip: string }
@@ -8359,18 +8130,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      claim_device_one_time_prekey: {
-        Args: {
-          p_conversation_id: string
-          p_device_id: string
-          p_sender_device_id: string
-          p_user_id: string
-        }
-        Returns: {
-          opk_id: number
-          public_key: string
-        }[]
-      }
       claim_libsignal_prekey_bundle: {
         Args: {
           p_conversation_id: string
@@ -8388,14 +8147,12 @@ export type Database = {
         Args: { p_conversation_id: string; p_matrix_room_id: string }
         Returns: string
       }
-      claim_x3dh_initial: { Args: { p_fingerprint: string }; Returns: boolean }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {
         Args: { p_current_device_id: string; p_stale_after?: string }
         Returns: Json
       }
       cleanup_edge_rate_limits: { Args: never; Returns: undefined }
-      cleanup_expired_device_prekeys: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
       cleanup_old_login_attempts: { Args: never; Returns: undefined }
@@ -8444,20 +8201,6 @@ export type Database = {
           p_nonce: string
         }
         Returns: Json
-      }
-      consume_device_prekey_repair_requests: {
-        Args: { p_limit?: number }
-        Returns: {
-          created_at: string
-          id: string
-          owner_device_id: string
-          reason: string
-          reporter_user_id: string
-        }[]
-      }
-      count_device_one_time_prekeys: {
-        Args: { p_device_id: string; p_user_id: string }
-        Returns: number
       }
       count_libsignal_prekey_bundles: {
         Args: { p_device_id: string }
@@ -8558,10 +8301,6 @@ export type Database = {
         }
         Returns: Json
       }
-      finalize_x3dh_initial: {
-        Args: { p_fingerprint: string; p_reservation_token: string }
-        Returns: boolean
-      }
       generate_order_number: { Args: never; Returns: string }
       get_active_device_public_key: {
         Args: { p_device_id: string; p_user_id: string }
@@ -8622,10 +8361,6 @@ export type Database = {
           unread_count: number
         }[]
       }
-      get_current_device_prekey_inventory: {
-        Args: { p_device_id: string }
-        Returns: Json
-      }
       get_device_copies_for_messages: {
         Args: { p_device_id: string; p_message_ids: string[] }
         Returns: {
@@ -8659,14 +8394,6 @@ export type Database = {
       get_device_enrollment_approval_mode: {
         Args: { p_device_id: string }
         Returns: Json
-      }
-      get_device_prekey_bundle: {
-        Args: { p_device_id: string; p_user_id: string }
-        Returns: {
-          public_key: string
-          signature: string
-          spk_id: number
-        }[]
       }
       get_feed_posts: {
         Args: { p_limit?: number; p_offset?: number; p_user_id: string }
@@ -8815,23 +8542,6 @@ export type Database = {
           device_signing_key: string
           is_routable: boolean
           last_seen_at: string
-        }[]
-      }
-      get_signed_prekey: {
-        Args: { p_user_id: string }
-        Returns: {
-          public_key: string
-          signature: string
-          spk_id: number
-        }[]
-      }
-      get_signed_prekey_with_fallback: {
-        Args: { p_user_id: string }
-        Returns: {
-          is_last_resort: boolean
-          public_key: string
-          signature: string
-          spk_id: number
         }[]
       }
       get_user_archive_keys: {
@@ -9093,32 +8803,6 @@ export type Database = {
         }
         Returns: number
       }
-      publish_device_one_time_prekeys: {
-        Args: { p_device_id: string; p_prekeys: Json }
-        Returns: Json
-      }
-      publish_device_one_time_prekeys_pre_signal_validation: {
-        Args: { p_device_id: string; p_prekeys: Json }
-        Returns: Json
-      }
-      publish_device_signed_prekey: {
-        Args: {
-          p_device_id: string
-          p_public_key: string
-          p_signature: string
-          p_spk_id: number
-        }
-        Returns: Json
-      }
-      publish_device_signed_prekey_pre_signal_validation: {
-        Args: {
-          p_device_id: string
-          p_public_key: string
-          p_signature: string
-          p_spk_id: number
-        }
-        Returns: Json
-      }
       publish_libsignal_prekey_bundle: {
         Args: {
           p_device_id: string
@@ -9157,13 +8841,8 @@ export type Database = {
           views: number
         }[]
       }
-      quarantine_ghost_e2ee_devices: { Args: never; Returns: number }
       quarantine_own_invalid_device: {
         Args: { p_device_id: string; p_reason?: string }
-        Returns: Json
-      }
-      quarantine_own_invalid_device_spk: {
-        Args: { p_device_id: string; p_reason?: string; p_spk_id: number }
         Returns: Json
       }
       read_email_batch: {
@@ -9230,24 +8909,12 @@ export type Database = {
         }
         Returns: Json
       }
-      request_device_prekey_repair: {
-        Args: {
-          p_owner_device_id: string
-          p_owner_user_id: string
-          p_reason?: string
-        }
-        Returns: Json
-      }
       request_message_refanout: {
         Args: {
           p_message_id: string
           p_requester_device_id: string
           p_sender_user_id: string
         }
-        Returns: Json
-      }
-      reserve_x3dh_initial: {
-        Args: { p_fingerprint: string; p_ttl_seconds?: number }
         Returns: Json
       }
       reset_backup_pin_attempts: {
