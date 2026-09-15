@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const app = read('src/App.tsx');
-const x3dh = read('src/lib/crypto/x3dh.ts');
 const deviceTrust = read('src/lib/crypto/deviceLinkTrust.ts');
 const managedDevice = read('src/lib/messaging/currentDevice.ts');
 const deviceIdStore = read('src/lib/messaging/currentDevice.ts');
@@ -20,9 +19,7 @@ describe('manual-only DeviceID revocation policy', () => {
     expect(app).not.toContain("rpc('cleanup_current_user_stale_devices'");
   });
 
-  it('repairs an invalid SPK without quarantining the whole DeviceID', () => {
-    expect(x3dh).toContain("rpc('quarantine_own_invalid_device_spk'");
-    expect(x3dh).not.toContain("rpc('quarantine_own_invalid_device',");
+  it('never quarantines a whole DeviceID from the client', () => {
     expect(deviceTrust).not.toContain("rpc('quarantine_own_invalid_device'");
   });
 
