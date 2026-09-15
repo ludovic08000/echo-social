@@ -8659,14 +8659,6 @@ export type Database = {
         }
         Returns: Json
       }
-      finalize_device_account_binding_pre_signal_validation: {
-        Args: {
-          p_device_authorization_signature: string
-          p_device_id: string
-          p_user_id: string
-        }
-        Returns: Json
-      }
       finalize_device_approval_decision: {
         Args: {
           p_approver_device_id?: string

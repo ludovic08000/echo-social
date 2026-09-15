@@ -15,6 +15,13 @@
       "when": 1789472970315,
       "tag": "0001_repair_atomic_relay_prerequisites",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789473011572,
+      "tag": "0002_repair_device_binding_prerequisites",
+      "breakpoints": true
     }
   ]
 }
