@@ -31,8 +31,6 @@ interface DeviceEncryptTargetInput {
   recipientDeviceId: string;
   recipientDevicePublicKey: string;
   plaintext: string;
-  forceFreshSession?: boolean;
-  useOneTimePrekey?: boolean;
 }
 
 const FANOUT_ENCRYPT_CONCURRENCY = 2;

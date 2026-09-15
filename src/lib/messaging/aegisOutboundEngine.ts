@@ -80,9 +80,11 @@ function failureStatus(error: unknown): OutboxStatus {
     text.includes('e2ee_sender_device_required') ||
     text.includes('e2ee_participant_route_unavailable') ||
     text.includes('e2ee_no_secure_target') ||
-    text.includes('device_prekey_bundle_unavailable') ||
-    text.includes('signed_device_list_missing') ||
-    text.includes('device_spk_signature_invalid')
+    text.includes('e2ee_device_registry_unavailable') ||
+    text.includes('e2ee_device_registry_invalid') ||
+    text.includes('aegis_libsignal_prekey_bundle_unavailable') ||
+    text.includes('libsignal_bundle_required') ||
+    text.includes('device_route_not_ready')
   ) {
     return 'waiting_secure_channel';
   }

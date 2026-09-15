@@ -2,7 +2,7 @@
  * Peer public key cache + auth user ID cache — extracted from useE2EE.ts.
  *
  * Module-level Maps deduplicate request storms when multiple chat surfaces
- * (ChatView + ChatWidget) mount and call ensureKeysAndPeerSync simultaneously.
+ * Multiple ChatWidget consumers can mount and call ensureKeysAndPeerSync simultaneously.
  */
 
 import { supabase } from '@/integrations/supabase/client';

@@ -124,13 +124,11 @@ beforeEach(async () => {
   // from open connections still held by the modules under test (fake-indexeddb).
   try {
     const { openE2EEDB } = await import('../indexedDb');
-    const { STORE_KEYS, STORE_SESSION, STORE_PREKEYS } = await import('../constants');
+    const { STORE_KEYS } = await import('../constants');
     const db = await openE2EEDB();
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction([STORE_KEYS, STORE_SESSION, STORE_PREKEYS], 'readwrite');
+      const tx = db.transaction(STORE_KEYS, 'readwrite');
       tx.objectStore(STORE_KEYS).clear();
-      tx.objectStore(STORE_SESSION).clear();
-      tx.objectStore(STORE_PREKEYS).clear();
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -290,7 +288,7 @@ describe('iOS WebKit exportKey raw → jwk fallback', () => {
     expect(devicePublicKeyB64).toHaveLength(44);
 
     // The device kx key MUST differ from the identity key (true per-device
-    // isolation — the very property the X3DH bundle relies on).
+    // isolation — the property the Libsignal bundle relies on).
     expect(devicePublicKeyB64).not.toBe(bundle.identityKey);
 
     // Republish must be IDEMPOTENT — running it again yields the same bytes.

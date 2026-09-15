@@ -251,7 +251,7 @@ describe('canonical Aegis outbound transaction engine', () => {
       plaintext: durable.plaintext,
       resumePayload: {
         ...durable,
-        preparedCopies: [{ ...COPY, encrypted_body: 'x3dh5.init.v3.obsolete' }],
+        preparedCopies: [{ ...COPY, encrypted_body: 'legacy.init.v3.obsolete' }],
         status: 'retry_pending',
       },
     });
@@ -260,7 +260,7 @@ describe('canonical Aegis outbound transaction engine', () => {
     expect(mocks.sendRpc).toHaveBeenCalledWith(expect.objectContaining({
       initialCopies: [COPY],
     }));
-    expect(JSON.stringify(mocks.sendRpc.mock.calls[0][0])).not.toContain('x3dh5');
+    expect(JSON.stringify(mocks.sendRpc.mock.calls[0][0])).not.toContain('legacy.init');
   });
 
   it('commits the sender history archive atomically when backup is enabled', async () => {

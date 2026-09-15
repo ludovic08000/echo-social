@@ -223,7 +223,7 @@ export async function secureSetSecret(key: string, value: string): Promise<boole
     }
   }
 
-  // Invariant ACE : sur iOS le snapshot X3DH + sessions est un unique
+  // Invariant ACE : sur iOS le snapshot Libsignal + sessions est un unique
   // enregistrement authentifié. Le découpage Keychain générique pourrait
   // exposer un mélange ancien/nouveau après une interruption entre chunks.
   if (isIOSNative()) {

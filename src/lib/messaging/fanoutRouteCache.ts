@@ -87,7 +87,7 @@ async function loadFanoutRoute(
 
   if (userIds.length === 0) return [];
 
-  const targets = await listFanoutTargets(senderUserId, userIds, { verifyPrekeys: false });
+  const targets = await listFanoutTargets(senderUserId, userIds);
   return targets.filter((device) =>
     !(device.userId === senderUserId && device.deviceId === senderDeviceId),
   );
@@ -187,8 +187,8 @@ export function invalidateAllFanoutRoutes(): void {
 }
 
 /**
- * Preloads participants and verified device descriptors only. It never fetches
- * prekeys, claims an OPK, creates X3DH state or advances a ratchet.
+ * Preloads participants and verified device descriptors only. It never claims
+ * a Libsignal bundle and never reads or mutates the sealed Libsignal store.
  */
 export async function warmFanoutRoute(
   conversationId: string,

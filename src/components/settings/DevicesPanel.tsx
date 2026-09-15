@@ -24,8 +24,7 @@ import {
 type DeviceDiagnostic = {
   routingError: string | null;
   lifecycleStatus: string | null;
-  spkCount: number;
-  opkCount: number;
+  libsignalBundleCount: number;
   loadedAt: string;
   error: string | null;
 };
@@ -78,7 +77,7 @@ export function DevicesPanel() {
 
     await Promise.all(rows.map(async (device) => {
       try {
-        const [deviceState, spk, opk] = await Promise.all([
+        const [deviceState, libsignalBundles] = await Promise.all([
           supabase
             .from('user_devices')
             .select('routing_error,lifecycle_status')
@@ -86,25 +85,19 @@ export function DevicesPanel() {
             .eq('device_id', device.deviceId)
             .maybeSingle(),
           supabase
-            .from('device_signed_prekeys')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .eq('device_id', device.deviceId),
-          supabase
-            .from('device_one_time_prekeys')
+            .from('device_libsignal_prekey_bundles')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', user.id)
             .eq('device_id', device.deviceId),
         ]);
 
-        const firstError = deviceState.error || spk.error || opk.error;
+        const firstError = deviceState.error || libsignalBundles.error;
         const state = deviceState.data as { routing_error?: string | null; lifecycle_status?: string | null } | null;
 
         next[device.deviceId] = {
           routingError: state?.routing_error ?? null,
           lifecycleStatus: state?.lifecycle_status ?? device.lifecycleStatus ?? null,
-          spkCount: spk.count ?? 0,
-          opkCount: opk.count ?? 0,
+          libsignalBundleCount: libsignalBundles.count ?? 0,
           loadedAt: new Date().toISOString(),
           error: firstError?.message ?? null,
         };
@@ -112,8 +105,7 @@ export function DevicesPanel() {
         next[device.deviceId] = {
           routingError: null,
           lifecycleStatus: device.lifecycleStatus ?? null,
-          spkCount: 0,
-          opkCount: 0,
+          libsignalBundleCount: 0,
           loadedAt: new Date().toISOString(),
           error: error instanceof Error ? error.message : String(error),
         };
@@ -185,8 +177,7 @@ export function DevicesPanel() {
       routingError: diag?.routingError ?? null,
       active: device.isActive,
       revokedAt: device.revokedAt,
-      spkCount: diag?.spkCount ?? null,
-      opkCount: diag?.opkCount ?? null,
+      libsignalBundleCount: diag?.libsignalBundleCount ?? null,
       diagnosticReadError: diag?.error ?? null,
     };
 
@@ -308,8 +299,7 @@ export function DevicesPanel() {
                         <div><span className="text-muted-foreground">Binding : </span>{diagnosticLine(device.bindingStatus === 'bound', 'bound', device.bindingStatus ?? 'inconnu')}</div>
                         <div><span className="text-muted-foreground">Lifecycle : </span><span className="font-mono">{diag?.lifecycleStatus ?? device.lifecycleStatus ?? 'inconnu'}</span></div>
                         <div><span className="text-muted-foreground">Routing : </span>{diagnosticLine(device.routingStatus === 'ready', 'ready', device.routingStatus ?? 'inconnu')}</div>
-                        <div><span className="text-muted-foreground">SPK : </span>{diag ? diagnosticLine(diag.spkCount > 0, `${diag.spkCount} publiée(s)`, 'absente') : '…'}</div>
-                        <div><span className="text-muted-foreground">OPK : </span><span className="font-mono">{diag?.opkCount ?? '…'}</span></div>
+                        <div><span className="text-muted-foreground">Bundles Libsignal : </span>{diag ? diagnosticLine(diag.libsignalBundleCount > 0, `${diag.libsignalBundleCount} disponible(s)`, 'absent') : '…'}</div>
                         <div><span className="text-muted-foreground">Actif : </span>{diagnosticLine(device.isActive && !device.revokedAt, 'oui', 'non')}</div>
                       </div>
 
@@ -329,8 +319,7 @@ export function DevicesPanel() {
                             bindingStatus: device.bindingStatus,
                             routingStatus: device.routingStatus,
                             routingError: diag?.routingError ?? null,
-                            spkCount: diag?.spkCount ?? null,
-                            opkCount: diag?.opkCount ?? null,
+                            libsignalBundleCount: diag?.libsignalBundleCount ?? null,
                           }}
                         />
                       )}

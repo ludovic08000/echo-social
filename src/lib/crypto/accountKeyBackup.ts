@@ -7,8 +7,8 @@
  * 
  * 1. A random 32-byte MASTER KEY is generated once per account
  * 2. The portable vault contains only the permanent account identity and the
- *    account-scoped fingerprint continuity cache. Ratchets, prekeys and device
- *    identities remain device-local (native Keychain/Keystore snapshot only).
+ *    account-scoped fingerprint continuity cache. The Libsignal store and
+ *    device identities remain sealed in the dedicated Aegis device vault.
  * 3. The Master Key itself is "wrapped" (encrypted) by TWO parallel mechanisms:
  *    a. PASSWORD wrapping: PBKDF2(password + userId) → wraps Master Key → stored as backup_type='account'
  *    b. RECOVERY KEY wrapping: PBKDF2(recoveryKey) → wraps Master Key → stored as backup_type='recovery'
@@ -27,7 +27,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
-import { getCurrentDeviceId } from '@/lib/messaging/currentDevice';
 import { discardLegacyDeviceIdFromBackup } from '@/lib/crypto/deviceBackupPolicy';
 import { runPostRestoreSync, type RestoreReason } from '@/lib/crypto/postRestoreSync';
 import {
@@ -145,28 +144,11 @@ function generateMasterKey(): Uint8Array {
 // stack.
 
 import { runTxOn } from './indexedDbTx';
-import type { DBKey } from './dbRegistry';
-
-/** Map legacy DB names used in this file to registered DBKey ids. */
-const LEGACY_DB_TO_KEY: Record<string, Exclude<DBKey, 'e2ee-keys'>> = {
-  'forsure-ratchet': 'ratchet',
-  'forsure-pin-wrap': 'pin-wrap',
-  'forsure-prekeys': 'prekeys',
-  'forsure-spk': 'spk',
-  'forsure-device-sessions': 'device-sessions',
-};
-
-function dbKeyForLegacyName(name: string): Exclude<DBKey, 'e2ee-keys'> {
-  const k = LEGACY_DB_TO_KEY[name];
-  if (!k) throw new Error(`[accountKeyBackup] Unknown legacy DB name: ${name}`);
-  return k;
-}
 
 /** Read all rows from a side-DB store via the registry/runTxOn pipeline. */
-async function getAllFromSideDB(dbName: string, storeName: string): Promise<any[]> {
-  const key = dbKeyForLegacyName(dbName);
+async function getAllFromPinDB(storeName: string): Promise<any[]> {
   try {
-    return await runTxOn(key, [storeName], 'readonly', (tx) => {
+    return await runTxOn('pin-wrap', [storeName], 'readonly', (tx) => {
       return new Promise<any[]>((resolve, reject) => {
         const req = tx.objectStore(storeName).getAll();
         req.onsuccess = () => resolve(req.result ?? []);
@@ -181,9 +163,8 @@ async function getAllFromSideDB(dbName: string, storeName: string): Promise<any[
 }
 
 /** Atomically clear+repopulate a side-DB store. */
-async function putAllInSideDB(dbName: string, storeName: string, records: any[]): Promise<void> {
-  const key = dbKeyForLegacyName(dbName);
-  await runTxOn(key, [storeName], 'readwrite', (tx) => {
+async function putAllInPinDB(storeName: string, records: any[]): Promise<void> {
+  await runTxOn('pin-wrap', [storeName], 'readwrite', (tx) => {
     return new Promise<void>((resolve, reject) => {
       const store = tx.objectStore(storeName);
       const clearReq = store.clear();
@@ -201,10 +182,9 @@ async function putAllInSideDB(dbName: string, storeName: string, records: any[])
 }
 
 /** Count rows in a side-DB store (used by hasLocalKeys / digest). */
-async function countSideDB(dbName: string, storeName: string): Promise<number> {
-  const key = dbKeyForLegacyName(dbName);
+async function countPinDB(storeName: string): Promise<number> {
   try {
-    return await runTxOn(key, [storeName], 'readonly', (tx) => {
+    return await runTxOn('pin-wrap', [storeName], 'readonly', (tx) => {
       return new Promise<number>((resolve, reject) => {
         const req = tx.objectStore(storeName).count();
         req.onsuccess = () => resolve(req.result);
@@ -247,28 +227,17 @@ async function collectAllKeys(userId: string, scope: BackupScope = 'aegis-vault'
 
   try {
     const db = await openE2EEDB();
-    for (const storeName of Array.from(db.objectStoreNames)) {
-      if (!includeDeviceSecrets && storeName !== 'identity-keys') continue;
-      const rows = await getAllFromStore(db, storeName);
-      data[`e2ee:${storeName}`] = storeName === 'identity-keys' && !includeDeviceSecrets
-        ? selectPortableAccountIdentityRows(rows, userId)
-        : rows;
-    }
+    const rows = await getAllFromStore(db, 'identity-keys');
+    data['e2ee:identity-keys'] = selectPortableAccountIdentityRows(rows, userId);
     // db.close() skipped — shared singleton, see indexedDb.ts
   } catch {}
 
   if (includeDeviceSecrets) {
     try {
-      data['pinwrap:keys'] = await getAllFromSideDB('forsure-pin-wrap', 'wrapped-keys');
+      data['pinwrap:keys'] = await getAllFromPinDB('wrapped-keys');
     } catch {
       // Optional when this device has never wrapped an identity with a PIN.
     }
-    try {
-      data['prekeys:private'] = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
-    } catch {}
-    try {
-      data['spk:private'] = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
-    } catch {}
   }
 
   try {
@@ -360,45 +329,22 @@ const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
   const rollbackOps: Array<() => Promise<void>> = [];
 
   try {
-    // Phase 1: E2EE stores
-    for (const [key, records] of Object.entries(data)) {
-      if (!key.startsWith('e2ee:') || !Array.isArray(records)) continue;
-      const storeName = key.replace('e2ee:', '');
-      if (!isDeviceKeychain && storeName !== 'identity-keys') continue;
-      const safeRecords = storeName === 'identity-keys' && !isDeviceKeychain
-        ? selectPortableAccountIdentityRows(records, userId)
-        : records;
-      const db = await openE2EEDB();
-      if (db.objectStoreNames.contains(storeName)) {
-        const existing = await getAllFromStore(db, storeName);
-        const recordsToWrite = storeName === 'identity-keys' && !isDeviceKeychain
-          ? [
-            ...existing.filter((row: any) => row?.id !== userId),
-            ...safeRecords,
-          ]
-          : safeRecords;
-        await putAllInStore(db, storeName, recordsToWrite);
-        const sn = storeName;
-        const ed = existing;
-        rollbackOps.push(async () => {
-          const rdb = await openE2EEDB();
-          await putAllInStore(rdb, sn, ed);
-          // db.close() skipped — shared singleton, see indexedDb.ts
-        });
-      }
-      // db.close() skipped — shared singleton, see indexedDb.ts
-    }
-
-    if (isDeviceKeychain && Array.isArray(data['device:kx'])) {
-      const currentDeviceKxId = `device-kx::${getCurrentDeviceId()}`;
-      const deviceKx = data['device:kx'].filter((r: any) => r?.id === currentDeviceKxId);
-      if (deviceKx.length > 0) {
-        const db = await openE2EEDB();
-        const existing = await getAllFromStore(db, 'identity-keys');
-        await putAllInStore(db, 'identity-keys', [...existing.filter((r: any) => r?.id !== currentDeviceKxId), ...deviceKx]);
-        // db.close() skipped — shared singleton, see indexedDb.ts
-      }
-    }
+    // Phase 1: restore only the account identity owned by this backup. Device
+    // identities and Libsignal session state live in the dedicated device vault.
+    const safeIdentityRecords = selectPortableAccountIdentityRows(
+      data['e2ee:identity-keys'] as Array<{ id?: unknown }>,
+      userId,
+    );
+    const db = await openE2EEDB();
+    const existing = await getAllFromStore(db, 'identity-keys');
+    await putAllInStore(db, 'identity-keys', [
+      ...existing.filter((row: any) => row?.id !== userId),
+      ...safeIdentityRecords,
+    ]);
+    rollbackOps.push(async () => {
+      const rollbackDb = await openE2EEDB();
+      await putAllInStore(rollbackDb, 'identity-keys', existing);
+    });
 
     // Phase 2: PIN-wrapped keys
     if (isDeviceKeychain && Array.isArray(data['pinwrap:keys'])) {
@@ -411,32 +357,14 @@ const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
           typeof candidate.iv === 'string' &&
           typeof candidate.ciphertext === 'string';
       });
-      const existing = await getAllFromSideDB('forsure-pin-wrap', 'wrapped-keys');
-      await putAllInSideDB('forsure-pin-wrap', 'wrapped-keys', wrappedKeys);
+      const existing = await getAllFromPinDB('wrapped-keys');
+      await putAllInPinDB('wrapped-keys', wrappedKeys);
       rollbackOps.push(async () => {
-        await putAllInSideDB('forsure-pin-wrap', 'wrapped-keys', existing);
+        await putAllInPinDB('wrapped-keys', existing);
       });
     }
 
-    // Phase 4: Private prekeys
-    if (isDeviceKeychain && Array.isArray(data['prekeys:private'])) {
-      const existing = await getAllFromSideDB('forsure-prekeys', 'private-prekeys');
-      await putAllInSideDB('forsure-prekeys', 'private-prekeys', data['prekeys:private']);
-      rollbackOps.push(async () => {
-        await putAllInSideDB('forsure-prekeys', 'private-prekeys', existing);
-      });
-    }
-
-    // Phase 4b: Signed prekey private halves (required to decrypt X3DH/device copies)
-    if (isDeviceKeychain && Array.isArray(data['spk:private'])) {
-      const existing = await getAllFromSideDB('forsure-spk', 'signed-prekeys');
-      await putAllInSideDB('forsure-spk', 'signed-prekeys', data['spk:private']);
-      rollbackOps.push(async () => {
-        await putAllInSideDB('forsure-spk', 'signed-prekeys', existing);
-      });
-    }
-
-    // Phase 5: Fingerprints
+    // Phase 3: Fingerprints
     if (data['fingerprints']) {
       const oldFps = localStorage.getItem('forsure-known-fps');
       const current = JSON.parse(oldFps || '{}') as Record<string, unknown>;
@@ -465,7 +393,7 @@ const isDeviceKeychain = data?._meta?.scope === 'device-keychain';
  * Check if local E2EE keys exist.
  */
 export async function hasLocalKeys(userId?: string): Promise<boolean> {
-  // Correction : une session Ratchet orpheline n'est jamais une identite de
+  // Une ancienne session locale n'est jamais une identité de
   // compte. Seule l'identite brute du compte ou sa copie locale verrouillee
   // par PIN autorise l'application a sauter une restauration.
   if (userId) {
@@ -498,7 +426,7 @@ export async function hasLocalKeys(userId?: string): Promise<boolean> {
   } catch {}
 
   try {
-    const pinCount = await countSideDB('forsure-pin-wrap', 'wrapped-keys');
+    const pinCount = await countPinDB('wrapped-keys');
     if (pinCount > 0) return true;
   } catch {}
 
@@ -513,24 +441,15 @@ export async function computeLocalCryptoDigest(): Promise<string> {
 
   try {
     const db = await openE2EEDB();
-    for (const storeName of Array.from(db.objectStoreNames)) {
-      const all = await getAllFromStore(db, storeName);
-      parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
-    }
+    const identities = await getAllFromStore(db, 'identity-keys');
+    parts.push(`identity-keys:${identities.length}:${JSON.stringify(identities).length}`);
     // db.close() skipped — shared singleton, see indexedDb.ts
   } catch {}
 
-  for (const [dbName, storeName] of [
-    ['forsure-ratchet', 'ratchet-states'],
-    ['forsure-pin-wrap', 'wrapped-keys'],
-    ['forsure-prekeys', 'private-prekeys'],
-    ['forsure-spk', 'signed-prekeys'],
-  ]) {
-    try {
-      const all = await getAllFromSideDB(dbName, storeName);
-      parts.push(`${storeName}:${all.length}:${JSON.stringify(all).length}`);
-    } catch {}
-  }
+  try {
+    const all = await getAllFromPinDB('wrapped-keys');
+    parts.push(`wrapped-keys:${all.length}:${JSON.stringify(all).length}`);
+  } catch {}
 
   const combined = parts.join('|');
   const hash = await hardCrypto.digest('SHA-256', new hardGlobals.TextEncoder().encode(combined));

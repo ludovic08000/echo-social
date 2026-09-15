@@ -73,8 +73,7 @@ export function IosDeviceDiagnosticsSection({ userId, deviceId, server }: Props)
           <div><span className="text-muted-foreground">Secure Enclave : </span>{line(report.secureEnclaveAvailable, report.secureEnclaveBacking, report.secureEnclaveBacking)}</div>
           <div><span className="text-muted-foreground">Binding serveur : </span>{line(report.bindingStatus === 'bound', 'bound', report.bindingStatus ?? 'inconnu')}</div>
           <div><span className="text-muted-foreground">Routing : </span>{line(report.routingStatus === 'ready', 'ready', report.routingStatus ?? 'inconnu')}</div>
-          <div><span className="text-muted-foreground">SPK : </span><span className="font-mono">{report.spkCount ?? '…'}</span></div>
-          <div><span className="text-muted-foreground">OPK : </span><span className="font-mono">{report.opkCount ?? '…'}</span></div>
+          <div><span className="text-muted-foreground">Bundles Libsignal : </span><span className="font-mono">{report.libsignalBundleCount ?? '…'}</span></div>
           <div className="sm:col-span-2">
             <span className="text-muted-foreground">Dernière erreur RPC : </span>
             {report.lastRpcError

@@ -49,7 +49,7 @@ describe('native iOS Aegis Continuity Enclave contract', () => {
     expect(source).not.toContain('kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly');
   });
 
-  it('routes complete X3DH and session snapshots through ACE as one record', () => {
+  it('routes complete Libsignal session snapshots through ACE as one record', () => {
     const setSecret = secureStore.slice(
       secureStore.indexOf('export async function secureSetSecret'),
       secureStore.indexOf('export async function secureGetSecret'),

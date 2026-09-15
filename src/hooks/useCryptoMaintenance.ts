@@ -1,11 +1,11 @@
 /**
- * useCryptoMaintenance — maintenance périodique des préclés X3DH.
+ * useCryptoMaintenance — maintenance périodique des bundles Libsignal/PQXDH.
  *
  * Invariant cryptographique : ce hook ne PRÉPARE plus aucun appareil. La
- * préparation initiale (identité, libsignal, SPK, OPK, route, synchronisation)
+ * préparation initiale (identité, store Libsignal, bundles, route, synchronisation)
  * appartient exclusivement à `deviceLifecycleController` via `deviceApi`.
- * Ici, on se contente de renouveler la préclé signée expirante et de recharger
- * le pool de préclés à usage unique, uniquement lorsque l'état serveur est
+ * Ici, on se contente de recharger le pool de bundles publics Libsignal,
+ * uniquement lorsque l'état serveur est
  * complet (approuvé, actif, lié, route prête, `lifecycle_status='ready'`), le
  * PIN déverrouillé et la synchronisation de compte réussie. La maintenance
  * partage le verrou de `deviceApi.prepareKeys` et ne modifie jamais

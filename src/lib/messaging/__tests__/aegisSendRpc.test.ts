@@ -246,7 +246,7 @@ describe('sendMessageWithAegisRetry', () => {
   });
 
   it('rejects an obsolete prepared copy before any server write', async () => {
-    const obsolete = [{ ...INITIAL[0], encrypted_body: 'x3dh5.init.v3.obsolete' }];
+    const obsolete = [{ ...INITIAL[0], encrypted_body: 'legacy.init.v3.obsolete' }];
 
     const result = await sendMessageWithAegisRetry({
       ...args(),

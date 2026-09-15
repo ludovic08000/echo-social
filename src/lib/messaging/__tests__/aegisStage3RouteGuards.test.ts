@@ -2,59 +2,52 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const migration = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260730090000_aegis_clean_rebuild.sql'),
-  'utf8',
-).toLowerCase();
-const registry = readFileSync(
-  resolve(process.cwd(), 'src/e2ee-session/deviceRegistry.ts'),
-  'utf8',
-);
-const routeResolver = readFileSync(
-  resolve(process.cwd(), 'src/lib/messaging/aegisRouteResolver.ts'),
-  'utf8',
-);
+const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8').toLowerCase();
+const libsignalMigration = source('supabase/migrations/20260813162000_libsignal_protocol_cutover.sql');
+const publisherMigration = source('supabase/migrations/20260910130517_0dc56e3c-0feb-4d30-9a4a-d66e8e247e8b.sql');
+const routeCutover = source('supabase/migrations/20260915180000_require_libsignal_bundle_for_route.sql');
+const registry = source('src/e2ee-session/deviceRegistry.ts');
+const routeResolver = source('src/lib/messaging/aegisRouteResolver.ts');
 
-describe('Aegis stage 3 route guards in the final schema', () => {
-  it('uses one canonical device registry without recreating the old projection', () => {
-    expect(migration).toContain('public.get_sesame_device_list');
-    expect(migration).toContain('drop function if exists public.get_signed_device_list(uuid)');
-    expect(migration).not.toContain('create or replace function public.get_signed_device_list');
-  });
-
-  it('separates historical identity verification from current routing', () => {
-    expect(migration).toContain('is_routable boolean');
-    expect(migration).toContain('device.revoked_at');
-    expect(migration).toContain('device.is_routable = true');
-    expect(routeResolver).toContain('sender_device_routable');
-    expect(routeResolver).toContain('verifyRouteDeviceIdentityOffline');
-
-    // Only signed, currently routable devices with a public key may leave the
-    // canonical registry as transport routes. Invalid current routes block;
-    // only invalid non-routable historical entries may be quarantined.
+describe('Aegis Libsignal route guards', () => {
+  it('uses the canonical verified device registry', () => {
     expect(registry).toContain("rpc('list_active_devices_for_user'");
-    expect(registry).toContain('ensureApprovedDeviceTrust');
-    expect(registry).toContain('E2EE_DEVICE_REGISTRY_INVALID');
+    expect(registry).toContain('ensureapproveddevicetrust');
+    expect(registry).toContain('e2ee_device_registry_invalid');
+    expect(routeResolver).toContain('sender_device_routable');
+    expect(routeResolver).toContain('verifyroutedeviceidentityoffline');
   });
 
-  it('binds destructive OPK claims to both users and the sender device', () => {
-    expect(migration).toContain('p_conversation_id uuid');
-    expect(migration).toContain('p_sender_device_id text');
-    expect(migration).toContain('participant.user_id = v_uid');
-    expect(migration).toContain('participant.user_id = p_user_id');
-    expect(migration).toContain('sender_device.is_routable = true');
-    expect(migration).toContain('claim_device_one_time_prekey(uuid,text,uuid,text)');
+  it('binds destructive Libsignal bundle claims to participants and sender device', () => {
+    expect(libsignalMigration).toContain('p_conversation_id uuid');
+    expect(libsignalMigration).toContain('p_sender_device_id text');
+    expect(libsignalMigration).toContain('mine.user_id=auth.uid()');
+    expect(libsignalMigration).toContain('peer.user_id=p_user_id');
+    expect(libsignalMigration).toContain('for update skip locked');
+    expect(libsignalMigration).toContain('claim_libsignal_prekey_bundle(uuid,text,uuid,text)');
   });
 
-  it('requires an approved device before publishing OPKs', () => {
-    const start = migration.indexOf('create or replace function public.publish_device_one_time_prekeys');
-    const end = migration.indexOf('create function public.claim_device_one_time_prekey', start);
-    expect(migration.slice(start, end)).toContain("coalesce(device.approval_status, 'approved') = 'approved'");
+  it('requires an approved bound device before publishing Libsignal bundles', () => {
+    const start = publisherMigration.indexOf('create or replace function public.publish_libsignal_prekey_bundle');
+    const end = publisherMigration.indexOf('create or replace function public.mark_current_device_route_ready', start);
+    const publisher = publisherMigration.slice(start, end);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(publisher).toMatch(/d\.approval_status\s*=\s*'approved'/);
+    expect(publisher).toMatch(/d\.binding_status\s*=\s*'bound'/);
+    expect(publisher).toContain('d.account_bound_at is not null');
+  });
+
+  it('marks a route ready only from the matching canonical Libsignal bundle', () => {
+    expect(routeCutover).toContain('device.libsignal_device_number between 1 and 127');
+    expect(routeCutover).toContain('from public.device_libsignal_prekey_bundles bundle');
+    expect(routeCutover).toContain('bundle.device_number = device.libsignal_device_number');
+    expect(routeCutover).not.toContain('device_signed_prekeys');
+    expect(routeCutover).not.toContain('aegis_verify_signed_prekey');
   });
 
   it('rejects partial registries before fan-out mutation', () => {
-    expect(registry).toContain('E2EE_DEVICE_REGISTRY_INVALID');
-    expect(registry).toContain('E2EE_DEVICE_REGISTRY_UNAVAILABLE');
-    expect(registry).toContain('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE');
+    expect(registry).toContain('e2ee_device_registry_invalid');
+    expect(registry).toContain('e2ee_device_registry_unavailable');
+    expect(registry).toContain('e2ee_participant_route_unavailable');
   });
 });

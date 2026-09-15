@@ -12,9 +12,7 @@ import { invalidateAllFanoutRoutes } from '@/lib/messaging/fanoutRouteCache';
 const KEY_TABLES = [
   'user_public_keys',
   'user_devices',
-  'signed_prekeys',
-  'device_signed_prekeys',
-  'device_one_time_prekeys',
+  'device_libsignal_prekey_bundles',
 ] as const;
 
 let activeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -49,20 +47,17 @@ function scheduleResume(reason: string): void {
   }, RESUME_DEBOUNCE_MS);
 }
 
-/** Drop a peer-device session after a keys_epoch bump. */
-async function handleDeviceSpkUpdate(payload: KeyChangePayload, selfUserId: string): Promise<void> {
+/** Drop a peer-device session when its canonical Libsignal bundle changes. */
+async function handleLibsignalBundleChange(payload: KeyChangePayload, selfUserId: string): Promise<void> {
   try {
-    const newRow = payload?.new;
-    const oldRow = payload?.old;
-    if (!newRow || typeof newRow !== 'object') return;
+    const row = (payload?.new && typeof payload.new === 'object' ? payload.new : payload?.old) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return;
 
-    const peerUserId = newRow.user_id as string | undefined;
-    const peerDeviceId = newRow.device_id as string | undefined;
+    const peerUserId = row.user_id as string | undefined;
+    const peerDeviceId = row.device_id as string | undefined;
     if (!peerUserId || !peerDeviceId || peerUserId === selfUserId) return;
-
-    const newEpoch = Number(newRow.keys_epoch ?? 0);
-    const oldEpoch = Number(oldRow?.keys_epoch ?? 0);
-    if (!(newEpoch > oldEpoch)) return;
 
     const myDeviceId = (() => {
       try { return getCurrentDeviceId(); } catch { return null; }
@@ -70,14 +65,12 @@ async function handleDeviceSpkUpdate(payload: KeyChangePayload, selfUserId: stri
     if (!myDeviceId) return;
 
     await invalidateDeviceSession(selfUserId, myDeviceId, peerUserId, peerDeviceId);
-    console.log('[RT_KEYS] peer keys_epoch bump → session invalidated', {
+    console.log('[RT_KEYS] peer Libsignal bundle changed → session invalidated', {
       peer: peerUserId.slice(0, 8),
       device: peerDeviceId.slice(0, 8),
-      oldEpoch,
-      newEpoch,
     });
   } catch (e) {
-    console.warn('[RT_KEYS] handleDeviceSpkUpdate failed:', e);
+    console.warn('[RT_KEYS] handleLibsignalBundleChange failed:', e);
   }
 }
 
@@ -137,8 +130,8 @@ export function startRealtimeKeySync({ userId }: RealtimeKeySyncOptions): () => 
       { event: '*', schema: 'public', table },
       (payload: KeyChangePayload) => {
         scheduleResume(`${payload?.table ?? table}:${payload?.eventType ?? 'change'}`);
-        if (table === 'device_signed_prekeys') {
-          void handleDeviceSpkUpdate(payload, userId);
+        if (table === 'device_libsignal_prekey_bundles') {
+          void handleLibsignalBundleChange(payload, userId);
         }
         if (table === 'user_devices') {
           void handleDeviceRevocation(payload, userId);

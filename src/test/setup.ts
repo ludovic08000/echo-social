@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom";
 
 // Real in-memory IndexedDB implementation for crypto modules that need
-// to persist sessions across calls (deviceRatchet, accountKeyBackup, …).
+// to persist key material across calls (accountKeyBackup, Libsignal store, …).
 // Falls back gracefully if a test never touches IndexedDB.
 import 'fake-indexeddb/auto';
 

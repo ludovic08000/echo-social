@@ -126,7 +126,7 @@ export default function PrivacyPolicy() {
               <MessageSquare className="w-4 h-4 text-primary" /> 4.2. Messagerie et appels
             </h3>
             <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Chiffrement de bout en bout (E2EE)</strong> pour les conversations privées 1-à-1 via le protocole <strong>X3DH + Double Ratchet</strong> (standard Signal)</li>
+              <li><strong>Chiffrement de bout en bout (E2EE)</strong> pour les conversations privées 1-à-1 via <strong>Libsignal avec PQXDH + Double Ratchet</strong></li>
               <li>Les clés privées ne quittent <strong>jamais votre appareil</strong> — Forsure ne peut pas lire vos messages chiffrés</li>
               <li>Vérification d'identité cryptographique par empreinte de clé (fingerprint) pour détecter les changements d'appareil</li>
               <li>Protection locale d'accès à la messagerie par <strong>code PIN dédié</strong> (le PIN de messagerie n'est pas une clé de récupération distante)</li>
@@ -252,7 +252,7 @@ export default function PrivacyPolicy() {
               <KeyRound className="w-4 h-4 text-primary" /> 10.1. Chiffrement
             </h3>
             <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Chiffrement de bout en bout (E2EE)</strong> des messages privés via X3DH + Double Ratchet (protocole Signal)</li>
+              <li><strong>Chiffrement de bout en bout (E2EE)</strong> des messages privés via Libsignal avec PQXDH + Double Ratchet</li>
               <li>Architecture <strong>prête pour le post-quantique</strong> (PQXDH)</li>
               <li>Chiffrement des données en transit (TLS/HTTPS)</li>
               <li>Sauvegarde chiffrée des clés avec transfert sécurisé entre appareils</li>

@@ -15,7 +15,6 @@ vi.mock('@/lib/crypto/libsignalPlatformBridge', () => ({
   createLibsignalBundle: (...args: unknown[]) => mocks.createBundle(...args),
   createLibsignalStore: (...args: unknown[]) => mocks.createStore(...args),
 }));
-
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 
 function bundleBytes(): Uint8Array {

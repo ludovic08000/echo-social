@@ -82,7 +82,7 @@ export default function LegalTerms() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 9 — Sécurité des communications</h2>
-            <p>Les messages privés en conversation 1-à-1 bénéficient d'un <strong>chiffrement de bout en bout (E2EE)</strong> selon le protocole X3DH + Double Ratchet (standard Signal). Les clés privées ne sont jamais transmises au serveur. L'accès à la messagerie peut être protégé par un code PIN dédié.</p>
+            <p>Les messages privés en conversation 1-à-1 bénéficient d'un <strong>chiffrement de bout en bout (E2EE)</strong> assuré par Libsignal avec PQXDH + Double Ratchet. Les clés privées ne sont jamais transmises au serveur. L'accès à la messagerie peut être protégé par un code PIN dédié.</p>
             <p>L'architecture est conçue pour être <strong>prête pour le post-quantique</strong> (PQXDH).</p>
           </section>
 
