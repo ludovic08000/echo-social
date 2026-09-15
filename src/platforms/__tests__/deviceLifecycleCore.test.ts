@@ -18,10 +18,10 @@ describe('deviceLifecycleCore provider selection', () => {
     isIosRuntimeMock.mockReturnValue(false);
   });
 
-  it('sélectionne le provider iOS sur runtime iOS', () => {
+  it('détecte iOS mais reste fail-closed sans provider de récupération', () => {
     isIosRuntimeMock.mockReturnValue(true);
     expect(detectDevicePlatformKind()).toBe('ios');
-    expect(resolveDevicePlatformProvider().platform).toBe('ios');
+    expect(resolveDevicePlatformProvider().platform).toBe('generic');
   });
 
   it('retombe sur un provider générique fail-closed', async () => {
