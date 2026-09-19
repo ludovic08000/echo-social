@@ -6,6 +6,7 @@ on:
       - main
       - 'fix/**'
       - 'security/**'
+      - codex/libsignal-node-windows-ci
   pull_request:
     branches:
       - main
