@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
-  backupIosDeviceVaultIfReady,
+  backupIosDeviceVaultWithOutcome,
+  classifyIosVaultBackupOutcome,
   ensureIosDeviceVaultRestored,
 } from '@/platforms/ios/iosDeviceVaultRestore';
 
@@ -434,10 +435,37 @@ async function prepareKeys(userId: string): Promise<DeviceApiRecord> {
   // Invariant corrigé : la seule publication de clés est le bundle libsignal
   // (préclés signées + Kyber + OPK gérées par libsignal). Aucune préclé maison
   // n'est publiée, et la route ne devient prête qu'après ce provisioning.
-  // iOS ne devient routable qu'après scellement et relecture du coffre.
+  // Le store Libsignal local valide rend la route utilisable. Sur iOS Web, la
+  // copie de résilience reste obligatoire dès que la Master Key est disponible,
+  // mais son verrouillage temporaire ne doit pas bloquer le moteur de messages.
   const { isIosWebRuntime } = await import('@/platforms/ios/iosRuntime');
-  if (isIosWebRuntime() && !await traced('required_ios_backup', () => backupIosDeviceVaultIfReady(userId, { fresh: true }))) {
-    throw new Error('DEVICE_VAULT_BACKUP_REQUIRED');
+  if (isIosWebRuntime()) {
+    const backupElapsed = startFinalizationTimer();
+    traceCurrentDeviceFinalization({
+      step: 'device_api.prepare_keys.required_ios_backup',
+      outcome: 'start',
+      userId,
+      deviceId: record.deviceId,
+    });
+    const backupOutcome = await backupIosDeviceVaultWithOutcome(userId, { fresh: true });
+    const backupDisposition = classifyIosVaultBackupOutcome(backupOutcome);
+    const backupDetail = backupOutcome.replace(/^(deferred|failed|skipped)_/, '').toUpperCase();
+    traceCurrentDeviceFinalization({
+      step: 'device_api.prepare_keys.required_ios_backup',
+      outcome: backupDisposition === 'complete'
+        ? 'success'
+        : backupDisposition === 'deferred'
+          ? 'skipped'
+          : 'failure',
+      elapsedMs: backupElapsed(),
+      userId,
+      deviceId: record.deviceId,
+      detail: backupDetail,
+      errorCode: backupDisposition === 'blocked' ? 'DEVICE_VAULT_BACKUP_REQUIRED' : undefined,
+    });
+    if (backupDisposition === 'blocked') {
+      throw new Error(`DEVICE_VAULT_BACKUP_REQUIRED:${backupOutcome}`);
+    }
   }
   const { isAndroidRuntime } = await import('@/platforms/android/androidRuntime');
   if (isAndroidRuntime() && !await traced('required_android_backup', () => backupAndroidDeviceVault(userId))) {

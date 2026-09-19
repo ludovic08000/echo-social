@@ -24,7 +24,8 @@ import { isIosWebRuntime } from '@/platforms/ios/iosRuntime';
 const BACKUP_RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000] as const;
 const backupRetryAttempts = new Map<string, number>();
 const backupRetryTimers = new Map<string, number>();
-const backupInFlight = new Map<string, Promise<boolean>>();
+const backupInFlight = new Map<string, Promise<IosVaultBackupOutcome>>();
+const masterKeyWakeListeners = new Map<string, EventListener>();
 
 export type IosVaultRestoreOutcome =
   | 'restored'
@@ -34,6 +35,31 @@ export type IosVaultRestoreOutcome =
   | 'skipped_unknown_device'
   | 'skipped_no_master_key'
   | 'failed';
+
+export type IosVaultBackupOutcome =
+  | 'backed_up'
+  | 'skipped_not_ios'
+  | 'skipped_no_device'
+  | 'deferred_device_not_bound'
+  | 'deferred_master_key_locked'
+  | 'failed_local_device_keys_missing'
+  | 'failed_cloud_backup'
+  | 'failed_local_vault_unavailable';
+
+export type IosVaultBackupDisposition = 'complete' | 'deferred' | 'blocked';
+
+/**
+ * The live Libsignal store is sufficient to route messages. A temporarily
+ * locked account Master Key only postpones the encrypted disaster-recovery
+ * copy; every other failure remains fail-closed.
+ */
+export function classifyIosVaultBackupOutcome(
+  outcome: IosVaultBackupOutcome,
+): IosVaultBackupDisposition {
+  if (outcome === 'backed_up') return 'complete';
+  if (outcome === 'deferred_master_key_locked') return 'deferred';
+  return 'blocked';
+}
 
 async function hasLocalDeviceKeys(userId: string, deviceId: string): Promise<boolean> {
   const [signing, kx] = await Promise.all([
@@ -71,11 +97,36 @@ function clearBackupRetry(cacheKey: string): void {
   const timer = backupRetryTimers.get(cacheKey);
   if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer);
   backupRetryTimers.delete(cacheKey);
+  const wakeListener = masterKeyWakeListeners.get(cacheKey);
+  if (wakeListener && typeof window !== 'undefined') {
+    window.removeEventListener('forsure:e2ee-unlocked', wakeListener);
+  }
+  masterKeyWakeListeners.delete(cacheKey);
+}
+
+function installMasterKeyWakeup(userId: string, deviceId: string): void {
+  if (typeof window === 'undefined') return;
+  const cacheKey = `${userId}:${deviceId}`;
+  if (masterKeyWakeListeners.has(cacheKey)) return;
+
+  const listener: EventListener = (event) => {
+    const detail = (event as CustomEvent<{ userId?: string | null }>).detail;
+    if (detail?.userId && detail.userId !== userId) return;
+    if (!getSessionMasterKey()) return;
+
+    const timer = backupRetryTimers.get(cacheKey);
+    if (timer !== undefined) window.clearTimeout(timer);
+    backupRetryTimers.delete(cacheKey);
+    void backupIosDeviceVaultWithOutcome(userId);
+  };
+  masterKeyWakeListeners.set(cacheKey, listener);
+  window.addEventListener('forsure:e2ee-unlocked', listener);
 }
 
 function scheduleBackupRetry(userId: string, deviceId: string, reason: string): void {
   if (!isIosWebRuntime() || typeof window === 'undefined') return;
   const cacheKey = `${userId}:${deviceId}`;
+  if (reason === 'master_key_locked') installMasterKeyWakeup(userId, deviceId);
   if (backupRetryTimers.has(cacheKey)) return;
   const attempt = backupRetryAttempts.get(cacheKey) ?? 0;
   if (attempt >= BACKUP_RETRY_DELAYS_MS.length) {
@@ -85,7 +136,7 @@ function scheduleBackupRetry(userId: string, deviceId: string, reason: string): 
   backupRetryAttempts.set(cacheKey, attempt + 1);
   const timer = window.setTimeout(() => {
     backupRetryTimers.delete(cacheKey);
-    void backupIosDeviceVaultIfReady(userId);
+    void backupIosDeviceVaultWithOutcome(userId);
   }, BACKUP_RETRY_DELAYS_MS[attempt]);
   backupRetryTimers.set(cacheKey, timer);
   logDeviceVaultEvent('ios_backup', 'skipped', { reason: `retry_scheduled:${reason}` });
@@ -134,44 +185,47 @@ export async function ensureIosDeviceVaultRestored(userId: string): Promise<IosV
  * serveur réellement READY. Si le lifecycle ou la Master Key arrivent quelques
  * secondes plus tard, un retry borné reprend le même DeviceID sans rotation.
  */
-export async function backupIosDeviceVaultIfReady(userId: string, options: { fresh?: boolean } = {}): Promise<boolean> {
-  if (!isIosWebRuntime()) return false;
+export async function backupIosDeviceVaultWithOutcome(
+  userId: string,
+  options: { fresh?: boolean } = {},
+): Promise<IosVaultBackupOutcome> {
+  if (!isIosWebRuntime()) return 'skipped_not_ios';
   const deviceId = peekCurrentDeviceId();
-  if (!userId || !deviceId) return false;
+  if (!userId || !deviceId) return 'skipped_no_device';
   const cacheKey = `${userId}:${deviceId}`;
   const existing = backupInFlight.get(cacheKey);
   if (existing) {
     if (!options.fresh) return existing;
     // La finalisation exige une capture APRÈS le provisionnement en cours.
-    await existing.catch(() => false);
+    await existing.catch(() => 'failed_local_vault_unavailable' as const);
   }
 
-  const run = (async (): Promise<boolean> => {
+  const run = (async (): Promise<IosVaultBackupOutcome> => {
     if (!(await isServerDeviceBound(userId, deviceId))) {
       scheduleBackupRetry(userId, deviceId, 'device_not_bound');
-      return false;
+      return 'deferred_device_not_bound';
     }
     if (!getSessionMasterKey()) {
       scheduleBackupRetry(userId, deviceId, 'master_key_locked');
-      return false;
+      return 'deferred_master_key_locked';
     }
     if (!(await hasLocalDeviceKeys(userId, deviceId))) {
       logDeviceVaultEvent('ios_backup', 'failed', { reason: 'local_device_keys_missing' });
-      return false;
+      return 'failed_local_device_keys_missing';
     }
 
     const backedUp = await backupDeviceVaultToCloud({ userId, deviceId, platform: 'ios-web' });
     if (!backedUp) {
       scheduleBackupRetry(userId, deviceId, 'cloud_backup_failed');
-      return false;
+      return 'failed_cloud_backup';
     }
     clearBackupRetry(cacheKey);
     logDeviceVaultEvent('ios_backup', 'ok');
-    return true;
+    return 'backed_up';
   })().catch(() => {
     // La sauvegarde opportuniste ne doit pas produire de rejet non géré.
     scheduleBackupRetry(userId, deviceId, 'local_vault_unavailable');
-    return false;
+    return 'failed_local_vault_unavailable' as const;
   }).finally(() => {
     if (backupInFlight.get(cacheKey) === run) backupInFlight.delete(cacheKey);
   });
@@ -180,9 +234,20 @@ export async function backupIosDeviceVaultIfReady(userId: string, options: { fre
   return run;
 }
 
+export async function backupIosDeviceVaultIfReady(
+  userId: string,
+  options: { fresh?: boolean } = {},
+): Promise<boolean> {
+  return (await backupIosDeviceVaultWithOutcome(userId, options)) === 'backed_up';
+}
+
 export const __test__ = {
   resetBackupRetries(): void {
-    for (const cacheKey of backupRetryTimers.keys()) clearBackupRetry(cacheKey);
+    const cacheKeys = new Set([
+      ...backupRetryTimers.keys(),
+      ...masterKeyWakeListeners.keys(),
+    ]);
+    for (const cacheKey of cacheKeys) clearBackupRetry(cacheKey);
     backupRetryAttempts.clear();
     backupInFlight.clear();
   },
