@@ -1,0 +1,103 @@
+name: Build and test libsignal Node on Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/libsignal-node-windows-ci
+    paths:
+      - .github/workflows/build-libsignal-node-windows.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: libsignal-node-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  node-windows:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      CARGO_BUILD_JOBS: "1"
+      RUSTUP_TOOLCHAIN: nightly-2026-07-15
+      LIBSIGNAL_COMMIT: 857c4dca03537dc5e395a5e1eda6bf18f59c3601
+
+    steps:
+      - name: Check out Echo Social
+        uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.17.0"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install native prerequisites
+        shell: pwsh
+        run: |
+          choco install nasm -y --no-progress
+          choco install protoc -y --no-progress
+
+      - name: Install pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal
+          rustup default $env:RUSTUP_TOOLCHAIN
+          rustc --version
+          cargo --version
+
+      - name: Check out pinned Signal libsignal
+        shell: pwsh
+        run: |
+          git clone --filter=blob:none --sparse https://github.com/signalapp/libsignal.git libsignal
+          git -C libsignal sparse-checkout set bin node rust
+          git -C libsignal checkout $env:LIBSIGNAL_COMMIT
+          git -C libsignal rev-parse HEAD
+
+      - name: Install Node dependencies
+        working-directory: libsignal/node
+        run: npm ci
+
+      - name: Build native Node bridge
+        working-directory: libsignal/node
+        run: npm run build -- --arch x64 --copy-to-prebuilds
+
+      - name: Type-check Node bindings
+        working-directory: libsignal/node
+        run: npm run tsc
+
+      - name: Run official Node tests
+        working-directory: libsignal/node
+        run: npm test
+
+      - name: Collect build outputs and diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Get-ChildItem libsignal\node\build,libsignal\node\prebuilds -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in ".node", ".dll", ".pdb" } |
+            Copy-Item -Destination artifacts -Force
+          if (Test-Path libsignal\node\dist) {
+            Compress-Archive -Path libsignal\node\dist\* -DestinationPath artifacts\libsignal-node-dist.zip -Force
+          }
+          rustc --version | Out-File artifacts\toolchain.txt -Encoding utf8
+          cargo --version | Out-File artifacts\toolchain.txt -Encoding utf8 -Append
+          node --version | Out-File artifacts\toolchain.txt -Encoding utf8 -Append
+          npm --version | Out-File artifacts\toolchain.txt -Encoding utf8 -Append
+          python --version 2>&1 | Out-File artifacts\toolchain.txt -Encoding utf8 -Append
+
+      - name: Upload Windows Node artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libsignal-node-windows-857c4dca
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
