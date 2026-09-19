@@ -53,7 +53,12 @@ vi.mock('@/lib/crypto/deviceVaultSync', () => ({
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: () => {
-      const chain: any = {};
+      type QueryChain = {
+        select: () => QueryChain;
+        eq: () => QueryChain;
+        maybeSingle: () => Promise<{ data: Record<string, unknown>; error: null }>;
+      };
+      const chain = {} as QueryChain;
       chain.select = () => chain;
       chain.eq = () => chain;
       chain.maybeSingle = async () => ({
@@ -134,7 +139,37 @@ describe('iOS Web encrypted device vault backup', () => {
     const vault = await load();
 
     await expect(vault.backupIosDeviceVaultIfReady('user-1')).resolves.toBe(false);
+    await expect(vault.backupIosDeviceVaultWithOutcome('user-1')).resolves.toBe('deferred_master_key_locked');
+    expect(vault.classifyIosVaultBackupOutcome('deferred_master_key_locked')).toBe('deferred');
     expect(state.backups).toEqual([]);
+    vault.__test__.resetBackupRetries();
+  });
+
+  it('resumes the deferred backup as soon as the Master Key unlocks', async () => {
+    state.masterKey = false;
+    vi.useFakeTimers();
+    const vault = await load();
+
+    await expect(vault.backupIosDeviceVaultWithOutcome('user-1'))
+      .resolves.toBe('deferred_master_key_locked');
+    state.masterKey = true;
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-unlocked', {
+      detail: { userId: 'user-1' },
+    }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(state.backups).toHaveLength(1);
+    vault.__test__.resetBackupRetries();
+  });
+
+  it('blocks finalization for real backup failures', async () => {
+    state.backupOk = false;
+    vi.useFakeTimers();
+    const vault = await load();
+
+    const outcome = await vault.backupIosDeviceVaultWithOutcome('user-1');
+    expect(outcome).toBe('failed_cloud_backup');
+    expect(vault.classifyIosVaultBackupOutcome(outcome)).toBe('blocked');
     vault.__test__.resetBackupRetries();
   });
 });

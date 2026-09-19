@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   anchored: [] as string[],
   published: [] as string[],
   publishOk: true,
+  backups: 0,
 }));
 
 vi.mock('@/platforms/ios/capacitorBridge', () => ({
@@ -25,6 +26,13 @@ vi.mock('@/platforms/ios/iosPlatformMetadata', () => ({
   },
 }));
 
+vi.mock('@/platforms/ios/iosDeviceVaultRestore', () => ({
+  backupIosDeviceVaultIfReady: async () => {
+    state.backups += 1;
+    return true;
+  },
+}));
+
 const DEVICE_ID = 'dev_0123456789abcdef0123456789abcdef';
 
 async function load() {
@@ -37,6 +45,7 @@ describe('iOS lifecycle adapter', () => {
     state.anchored = [];
     state.published = [];
     state.publishOk = true;
+    state.backups = 0;
     vi.resetModules();
   });
 
@@ -47,6 +56,7 @@ describe('iOS lifecycle adapter', () => {
 
     expect(state.anchored).toEqual([DEVICE_ID, DEVICE_ID]);
     expect(state.published).toEqual([DEVICE_ID]);
+    expect(state.backups).toBe(2);
   });
 
   it('retries metadata publication after a failure', async () => {
@@ -66,5 +76,6 @@ describe('iOS lifecycle adapter', () => {
 
     expect(state.anchored).toEqual([]);
     expect(state.published).toEqual([]);
+    expect(state.backups).toBe(0);
   });
 });

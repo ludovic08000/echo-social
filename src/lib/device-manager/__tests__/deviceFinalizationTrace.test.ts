@@ -54,6 +54,23 @@ describe('device finalization trace', () => {
     expect(normalizeFinalizationErrorCode(new Error('boom raw server text'))).toBe('UNKNOWN_ERROR');
     expect(normalizeFinalizationErrorCode('DEVICE_BINDING_TIMEOUT')).toBe('DEVICE_BINDING_TIMEOUT');
     expect(normalizeFinalizationErrorCode('failed to fetch')).toBe('NETWORK_ERROR');
+    expect(normalizeFinalizationErrorCode('DEVICE_VAULT_BACKUP_REQUIRED:failed_cloud_backup'))
+      .toBe('DEVICE_VAULT_BACKUP_REQUIRED');
+  });
+
+  it('reports a locked Master Key as an explicit deferred backup, not success', () => {
+    const event = traceDeviceFinalization({
+      traceId: 'dft_ios_backup',
+      step: 'device_api.prepare_keys.required_ios_backup',
+      outcome: 'skipped',
+      userId: USER_ID,
+      deviceId: DEVICE_ID,
+      detail: 'master_key_locked',
+    });
+
+    expect(event.outcome).toBe('skipped');
+    expect(event.detail).toBe('MASTER_KEY_LOCKED');
+    expect(event.errorCode).toBeUndefined();
   });
 
   it('keeps event order and correlates sync then finalize with the same traceId', () => {

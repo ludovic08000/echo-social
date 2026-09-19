@@ -10,6 +10,7 @@ import { writeIosDeviceIdAnchor } from '@/platforms/ios/iosDeviceIdAnchor';
 import { publishIosPlatformMetadata } from '@/platforms/ios/iosPlatformMetadata';
 import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 import { iosDeviceIdStorageKey } from '@/platforms/ios/iosDeviceIdStorageKey';
+import { backupIosDeviceVaultIfReady } from '@/platforms/ios/iosDeviceVaultRestore';
 
 const publishedDevices = new Set<string>();
 
@@ -23,6 +24,13 @@ export async function syncIosDeviceAdapter(userId: string, deviceId: string): Pr
   } catch (error) {
     recordIosRpcError('ios.device-id-anchor', error);
   }
+
+  // Re-arm the encrypted recovery copy on every application start. The helper
+  // is a strict no-op on native iOS and waits for the account Master Key on
+  // Safari/PWA without blocking the live Libsignal runtime.
+  void backupIosDeviceVaultIfReady(userId).catch((error) => {
+    recordIosRpcError('ios.device-vault-backup', error);
+  });
 
   if (publishedDevices.has(cacheKey)) return;
   publishedDevices.add(cacheKey);
