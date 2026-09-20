@@ -101,6 +101,10 @@ describe('single canonical device lifecycle authority', () => {
     expect(lifecycle).toContain('beginAccountSynchronization');
     // La barrière entoure la VRAIE synchronisation des clés de compte.
     expect(lifecycle).toContain('synchronizeAccountKeysBeforeRuntime');
+    // La vérification pré-finalisation ne peut pas exiger lifecycle_status=ready
+    // puisque ce statut est écrit seulement par la finalisation qui suit.
+    expect(lifecycle).toContain('cryptoApi.ensurePreFinalizationReady');
+    expect(lifecycle).not.toContain('await cryptoApi.ensureReady(id);');
     expect(existsSync('src/lib/crypto/accountKeySync.ts')).toBe(true);
     expect(existsSync('src/hooks/useAccountKeySync.ts')).toBe(false);
     // La finalisation serveur n'appartient plus à prepareKeys.

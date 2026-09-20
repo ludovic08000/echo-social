@@ -75,17 +75,23 @@ configureDeviceLifecycleDeps((userId) => ({
     // Preuve réelle de synchronisation de compte : la barrière partagée est la
     // même que celle attendue par le runtime de messagerie.
     // Vraie synchronisation : contrôle/restauration des clés de compte, puis
-    // seulement mise en route du runtime crypto. Jamais un ready simulé.
+    // preuve de la route et du store Libsignal AVANT l'unique transition
+    // serveur vers lifecycle_status=ready. Jamais un ready simulé.
     syncAccount: (id) => beginAccountSynchronization(id, async () => {
       await synchronizeAccountKeysBeforeRuntime(id);
-      // Diagnostic uniquement : mesure du démarrage du runtime crypto.
+      // Ne pas appeler ensureReady ici : lifecycle_status ne devient `ready`
+      // qu'après le retour de cette synchronisation, dans le contrôleur.
       const ensureElapsed = startFinalizationTimer();
-      traceCurrentDeviceFinalization({ step: 'crypto_api.ensure_ready', outcome: 'start', userId: id });
+      traceCurrentDeviceFinalization({
+        step: 'crypto_api.ensure_pre_finalization_ready',
+        outcome: 'start',
+        userId: id,
+      });
       try {
-        await cryptoApi.ensureReady(id);
+        await cryptoApi.ensurePreFinalizationReady(id);
       } catch (error) {
         traceCurrentDeviceFinalization({
-          step: 'crypto_api.ensure_ready',
+          step: 'crypto_api.ensure_pre_finalization_ready',
           outcome: 'failure',
           elapsedMs: ensureElapsed(),
           userId: id,
@@ -94,7 +100,7 @@ configureDeviceLifecycleDeps((userId) => ({
         throw error;
       }
       traceCurrentDeviceFinalization({
-        step: 'crypto_api.ensure_ready',
+        step: 'crypto_api.ensure_pre_finalization_ready',
         outcome: 'success',
         elapsedMs: ensureElapsed(),
         userId: id,
