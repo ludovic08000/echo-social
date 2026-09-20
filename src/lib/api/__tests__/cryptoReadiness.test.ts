@@ -46,3 +46,33 @@ it('reports routing ready but lifecycle syncing without pretending the runtime i
     outcome: 'failure', errorCode: 'CRYPTO_NOT_READY', state: { routingStatus: 'ready', lifecycleStatus: 'syncing' },
   });
 });
+
+it('accepts a verified route and Libsignal store before lifecycle finalization', async () => {
+  const transitional = { state: 'key_setup_required' as const, record: {
+    deviceId: 'device', approvalStatus: 'approved' as const, bindingStatus: 'bound' as const,
+    routingStatus: 'ready' as const, lifecycleStatus: 'syncing' as const, isActive: true,
+  } };
+  mocks.state.mockResolvedValue(transitional);
+
+  await expect(cryptoApi.ensurePreFinalizationReady('alice')).resolves.toEqual(transitional);
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  expect(mocks.hasStore).toHaveBeenCalledWith('alice', 'device');
+  expect(getDeviceFinalizationTrace().find(
+    e => e.step === 'crypto_readiness.pre_finalize_device_state',
+  )).toMatchObject({
+    outcome: 'success', state: { routingStatus: 'ready', lifecycleStatus: 'syncing' },
+  });
+});
+
+it('repairs missing Libsignal material before lifecycle finalization', async () => {
+  const transitional = { state: 'key_setup_required' as const, record: {
+    deviceId: 'device', approvalStatus: 'approved' as const, bindingStatus: 'bound' as const,
+    routingStatus: 'ready' as const, lifecycleStatus: 'approved' as const, isActive: true,
+  } };
+  mocks.state.mockResolvedValue(transitional);
+  mocks.hasStore.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+  await expect(cryptoApi.ensurePreFinalizationReady('alice')).resolves.toEqual(transitional);
+  expect(mocks.prepare).toHaveBeenCalledWith('alice');
+  expect(mocks.hasStore).toHaveBeenCalledTimes(2);
+});
