@@ -12,7 +12,7 @@
     "dev": "vite",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test:device-approval": "vitest run src/lib/crypto/__tests__/deviceEnrollmentGate.test.ts src/lib/messaging/__tests__/stableDeviceIdentityArchitecture.test.ts src/lib/messaging/__tests__/accountSyncBarrier.test.ts src/lib/messaging/__tests__/deviceApprovalAccountSyncArchitecture.test.ts",
-    "test:pin-safety": "vitest run --maxWorkers=1 src/hooks/__tests__/useChatPinLocal.test.ts src/lib/crypto/__tests__/aegisPinContinuityVault.test.ts src/lib/crypto/__tests__/aegisPinRecoveryContinuity.test.ts src/lib/crypto/__tests__/chatPinRecoverySafetyContract.test.ts",
+    "test:pin-safety": "vitest run --maxWorkers=1 src/hooks/__tests__/useChatPinLocal.test.ts src/lib/crypto/__tests__/aegisPinContinuityVault.test.ts src/lib/crypto/__tests__/aegisPinRecoveryContinuity.test.ts src/lib/crypto/__tests__/chatPinRecoverySafetyContract.test.ts src/lib/crypto/__tests__/chatPinResetClient.test.ts",
     "test:libsignal-wasm": "node scripts/verify-libsignal-wasm.mjs",
     "build": "npm run test:device-approval && npm run test:libsignal-wasm && npm run typecheck && node scripts/generate-version.mjs && vite build && npm run verify:browser-boundary",
     "build:dev": "npm run test:device-approval && npm run typecheck && node scripts/generate-version.mjs && vite build --mode development && npm run verify:browser-boundary",
