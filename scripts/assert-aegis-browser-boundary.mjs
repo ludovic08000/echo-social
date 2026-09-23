@@ -14,6 +14,10 @@ const forbiddenPatterns = [
   new RegExp(["authenticator", "attachment"].join(""), "i"),
   new RegExp(["allow", "credentials"].join(""), "i"),
   new RegExp(["exclude", "credentials"].join(""), "i"),
+  // L'auth Lovable Cloud doit rester sur la coordination sans verrou du SDK.
+  // Ce message et cette clé identifient l'ancien chemin Navigator LockManager.
+  new RegExp(["navigator", " lockmanager"].join(""), "i"),
+  new RegExp(["lock:sb-", "[a-z0-9]+", "-auth-token"].join(""), "i"),
 ];
 
 async function listTextFiles(directory) {

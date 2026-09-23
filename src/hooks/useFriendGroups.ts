@@ -109,7 +109,7 @@ export function useUpdateFriendGroup() {
 
   return useMutation({
     mutationFn: async ({ id, name, color, icon }: { id: string; name?: string; color?: string; icon?: string }) => {
-      const updates: Record<string, string> = {};
+      const updates: { name?: string; color?: string; icon?: string } = {};
       if (name) updates.name = name;
       if (color) updates.color = color;
       if (icon) updates.icon = icon;

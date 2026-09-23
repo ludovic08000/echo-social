@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +24,13 @@ export function ArchivesSection() {
   });
 
   const updateArchive = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Record<string, any> }) => {
+    mutationFn: async ({
+      id,
+      updates,
+    }: {
+      id: string;
+      updates: Database['public']['Tables']['identity_theft_archives']['Update'];
+    }) => {
       const { error } = await supabase.from('identity_theft_archives').update(updates).eq('id', id);
       if (error) throw error;
     },
