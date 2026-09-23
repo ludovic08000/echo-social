@@ -45,10 +45,18 @@ function disableUnusedSupabaseHardwareFactor(): Plugin {
       }
 
       return `
+const disabledFactorError = () => new Error("Aegis browser hardware factor disabled");
+export const createCredential = async () => ({ data: null, error: disabledFactorError() });
+export const getCredential = async () => ({ data: null, error: disabledFactorError() });
 export const deserializeCredentialCreationOptions = (value) => value;
 export const deserializeCredentialRequestOptions = (value) => value;
 export const serializeCredentialCreationResponse = (value) => value;
 export const serializeCredentialRequestResponse = (value) => value;
+export const browserSupportsaegisDisabledFactor = () => false;
+export const aegisDisabledFactorAbortService = {
+  createNewAbortSignal: () => new AbortController().signal,
+  cancelCeremony: () => {},
+};
 export class aegisDisabledFactorApi {}
 `;
     },

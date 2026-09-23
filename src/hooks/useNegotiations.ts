@@ -167,7 +167,10 @@ export function useRespondNegotiation() {
       action: 'accepted' | 'rejected' | 'counter';
       counterPrice?: number;
     }) => {
-      const update: Record<string, any> = { status: action, updated_at: new Date().toISOString() };
+      const update: { status: string; updated_at: string; counter_price?: number } = {
+        status: action,
+        updated_at: new Date().toISOString(),
+      };
       if (action === 'counter' && counterPrice) {
         update.counter_price = counterPrice;
         update.status = 'counter';
