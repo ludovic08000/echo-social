@@ -197,7 +197,7 @@ jobs:
           persist-credentials: false
       - name: Verify checked-out SHA
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.117.0
       - name: Start isolated Supabase stack
