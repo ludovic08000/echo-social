@@ -38,7 +38,7 @@ jobs:
           test "$(git diff --name-only)" = 'supabase/migrations/20260206052233_8fbcde5e-10ab-46ba-a586-81784dd91221.sql'
       - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.117.0
       - name: Validate complete migration history
         shell: bash
         run: |
