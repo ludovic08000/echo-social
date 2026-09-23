@@ -420,7 +420,6 @@ begin
     || p_challenge_id::text || '|'
     || p_user_id::text || '|'
     || p_device_id || '|'
-    || p_authorization_hash || '|'
     || p_device_proof_issued_at_ms::text;
 
   if not exists (

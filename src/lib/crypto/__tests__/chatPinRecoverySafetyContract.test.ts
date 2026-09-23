@@ -22,7 +22,10 @@ describe('messaging PIN recovery safety contract', () => {
 
     expect(hook).toContain("body: { action: 'register-local-recovery' }");
     expect(hook).not.toMatch(/register-local-recovery'\s*,\s*pin/);
-    expect(edgeFunction).toContain('const { action, code } = body;');
+    expect(edgeFunction).toContain(
+      'const action = typeof body.action === "string" ? body.action : ""',
+    );
+    expect(edgeFunction).not.toMatch(/body\.pin\b/);
     expect(edgeFunction).toContain('PIN_LOCAL_ONLY');
   });
 
@@ -30,8 +33,8 @@ describe('messaging PIN recovery safety contract', () => {
     const edgeFunction = source('supabase/functions/verify-chat-pin/index.ts');
     const resetBlock = between(
       edgeFunction,
-      'if (action === "confirm-reset")',
-      'return new Response(JSON.stringify({ error: `Action inconnue:',
+      'if (action === "request-reset")',
+      '// Cached clients may still call the old destructive action.',
     );
 
     const forbiddenTargets = [
@@ -47,6 +50,7 @@ describe('messaging PIN recovery safety contract', () => {
     for (const target of forbiddenTargets) {
       expect(resetBlock).not.toContain(target);
     }
+    expect(resetBlock).not.toContain('.delete()');
   });
 
   it('limits local PIN removal to the PIN verifier store', () => {
@@ -78,12 +82,71 @@ describe('messaging PIN recovery safety contract', () => {
   it('authenticates the account before accepting any reset action', () => {
     const edgeFunction = source('supabase/functions/verify-chat-pin/index.ts');
     const authCheck = edgeFunction.indexOf('userClient.auth.getUser()');
-    const bodyRead = edgeFunction.indexOf('const body = await req.json()');
+    const bodyRead = edgeFunction.indexOf('const parsedBody = await req.json()');
     const resetAction = edgeFunction.indexOf('if (action === "request-reset")');
 
     expect(authCheck).toBeGreaterThanOrEqual(0);
     expect(bodyRead).toBeGreaterThan(authCheck);
     expect(resetAction).toBeGreaterThan(bodyRead);
+  });
+
+  it('uses a verified email and a server-created challenge before sending a code', () => {
+    const edgeFunction = source('supabase/functions/verify-chat-pin/index.ts');
+    const requestReset = between(
+      edgeFunction,
+      'if (action === "request-reset")',
+      'if (action === "authorize-reset")',
+    );
+
+    expect(edgeFunction).toContain('if (!hasVerifiedEmail(user))');
+    expect(requestReset).toContain('.rpc("aegis_chat_pin_reset_begin"');
+    expect(requestReset).toContain('idempotencyKey: `pin-reset-${result.challenge_id}`');
+    expect(requestReset).toContain('recipientEmail: user.email');
+    expect(requestReset).toContain('emailData.success !== true');
+    expect(requestReset.indexOf('aegis_chat_pin_reset_begin')).toBeLessThan(
+      requestReset.indexOf('send-transactional-email'),
+    );
+  });
+
+  it('requires a fresh device signature before issuing a one-time reset authorization', () => {
+    const edgeFunction = source('supabase/functions/verify-chat-pin/index.ts');
+    const authorizeReset = between(
+      edgeFunction,
+      'if (action === "authorize-reset")',
+      'if (action === "commit-reset")',
+    );
+
+    expect(authorizeReset).toContain('body.deviceProofIssuedAtMs');
+    expect(authorizeReset).toContain('body.deviceProofSignature');
+    expect(authorizeReset).toContain('generateAuthorizationToken()');
+    expect(authorizeReset).toContain('hashAuthorizationToken(authorizationToken)');
+    expect(authorizeReset).toContain('.rpc(\n        "aegis_chat_pin_reset_authorize"');
+    expect(authorizeReset).toContain('p_device_proof_signature: proofSignature');
+    expect(authorizeReset).toContain('authorizationToken,');
+    expect(authorizeReset).not.toContain('console.');
+  });
+
+  it('commits only an encrypted PIN envelope and refuses the legacy destructive reset', () => {
+    const edgeFunction = source('supabase/functions/verify-chat-pin/index.ts');
+    const commitReset = between(
+      edgeFunction,
+      'if (action === "commit-reset")',
+      '// Cached clients may still call the old destructive action.',
+    );
+    const legacyReset = between(
+      edgeFunction,
+      'if (action === "confirm-reset")',
+      'return jsonResponse(corsHeaders, 400, {',
+    );
+
+    expect(commitReset).toContain('body.ciphertext');
+    expect(commitReset).toContain('body.iv');
+    expect(commitReset).toContain('hashAuthorizationToken(authorizationToken)');
+    expect(commitReset).toContain('.rpc("aegis_chat_pin_reset_commit"');
+    expect(commitReset).not.toMatch(/body\.pin\b/);
+    expect(legacyReset).toContain('SECURE_RESET_REQUIRED');
+    expect(legacyReset).not.toContain('.delete()');
+    expect(edgeFunction).not.toContain('.from("user_chat_pins").delete()');
   });
 
   it('keeps reset challenges and mutation RPCs server-only', () => {
@@ -122,6 +185,8 @@ describe('messaging PIN recovery safety contract', () => {
     expect(authorization).toContain("p_device_id !~ '^dev_[a-f0-9]{32}$'");
     expect(authorization).toContain('p_device_proof_issued_at_ms < v_now_ms - 120000');
     expect(authorization).toContain("v_proof_payload := 'forsure-aegis-pin-reset|'");
+    expect(authorization).toContain("|| p_device_id || '|'\n    || p_device_proof_issued_at_ms::text");
+    expect(authorization).not.toContain("|| p_authorization_hash || '|'");
     expect(authorization).toContain('public.aegis_verify_account_binding(');
     expect(authorization).toContain('public.aegis_verify_device_authorization(');
     expect(authorization).toContain('public.aegis_verify_ed25519(');
