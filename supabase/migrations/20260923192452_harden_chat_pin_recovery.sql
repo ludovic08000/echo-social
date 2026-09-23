@@ -753,6 +753,11 @@ to authenticated, service_role;
 grant execute on function public.aegis_pin_continuity_upsert(integer, text, text)
 to authenticated, service_role;
 
+-- Cached clients must fail closed instead of deleting the authoritative PIN
+-- envelope. Replacement is now possible only through the generation-checked
+-- reset transaction above.
+drop function if exists public.aegis_pin_continuity_delete();
+
 do $verification$
 begin
   if has_table_privilege('authenticated', 'public.user_chat_pins', 'select')

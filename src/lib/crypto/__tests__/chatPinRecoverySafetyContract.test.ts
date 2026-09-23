@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 function source(path: string): string {
-  return readFileSync(resolve(process.cwd(), path), 'utf8');
+  return readFileSync(resolve(process.cwd(), path), 'utf8').replace(/\r\n/g, '\n');
 }
 
 function between(contents: string, start: string, end: string): string {
@@ -149,6 +149,30 @@ describe('messaging PIN recovery safety contract', () => {
     expect(edgeFunction).not.toContain('.from("user_chat_pins").delete()');
   });
 
+  it('keeps the working local PIN until the remote replacement is committed', () => {
+    const hook = source('src/hooks/useChatPin.ts');
+    const reset = between(
+      hook,
+      'const confirmReset = useCallback',
+      'return {\n    ...state,',
+    );
+
+    const createIndex = reset.indexOf('createLocalPinRecord(user.id, newPin)');
+    const sealIndex = reset.indexOf('sealPinContinuityRecord(candidate, user.id, masterKey)');
+    const authorizeIndex = reset.indexOf('authorizeChatPinReset({');
+    const commitIndex = reset.indexOf('commitChatPinReset({');
+    const persistIndex = reset.indexOf('persistLocalRecord(user.id, candidate)');
+
+    expect(createIndex).toBeGreaterThanOrEqual(0);
+    expect(sealIndex).toBeGreaterThan(createIndex);
+    expect(authorizeIndex).toBeGreaterThan(sealIndex);
+    expect(commitIndex).toBeGreaterThan(authorizeIndex);
+    expect(persistIndex).toBeGreaterThan(commitIndex);
+    expect(reset).toContain('fetchRemotePinContinuityState()');
+    expect(reset).not.toContain('deleteRemotePinContinuity');
+    expect(reset).not.toContain("action: 'confirm-reset'");
+  });
+
   it('keeps reset challenges and mutation RPCs server-only', () => {
     const migration = source(
       'supabase/migrations/20260923192452_harden_chat_pin_recovery.sql',
@@ -169,6 +193,9 @@ describe('messaging PIN recovery safety contract', () => {
     expect(migration).toContain('to service_role;');
     expect(migration).not.toMatch(
       /grant execute on function public\.aegis_chat_pin_reset_(?:begin|authorize|commit)[^;]*?to authenticated/i,
+    );
+    expect(migration).toContain(
+      'drop function if exists public.aegis_pin_continuity_delete()',
     );
   });
 
