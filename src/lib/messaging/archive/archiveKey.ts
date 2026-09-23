@@ -56,6 +56,7 @@ function dispatchArchiveKeysReady(userId: string, loaded: number): void {
 if (typeof window !== 'undefined') {
   window.addEventListener('forsure:e2ee-purge', clearArchiveKeyCache);
   window.addEventListener('forsure:e2ee-restore-needed', clearArchiveKeyCache);
+  window.addEventListener('forsure:logout', clearArchiveKeyCache);
 
   const preloadOnUnlock = (event: Event) => {
     const detail = (event as CustomEvent).detail || {};

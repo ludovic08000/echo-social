@@ -150,6 +150,18 @@ export function cacheKey(messageId: string | undefined, body: string): string {
   return `${messageId ?? 'noid'}|${body}`;
 }
 
+const senderCache = new LruMap<string, string>(500);
+
+export function clearDecryptionSessionCaches(): void {
+  cache.clear();
+  lastGoodByMessage.clear();
+  inflight.clear();
+  purgedMessageIds.clear();
+  negCache.clear();
+  senderCache.clear();
+  clearDeviceCopyCache();
+}
+
 if (typeof window !== 'undefined') {
   const marker = '__forsureDecryptRetryCacheListenerV1';
   const globalWindow = window as typeof window & Record<string, unknown>;
@@ -165,10 +177,9 @@ if (typeof window !== 'undefined') {
       clearNegativeCache();
       clearDeviceCopyCache();
     });
+    window.addEventListener('forsure:logout', clearDecryptionSessionCaches);
   }
 }
-
-const senderCache = new LruMap<string, string>(500);
 
 async function getSenderId(messageId: string): Promise<string | null> {
   const cached = senderCache.get(messageId);

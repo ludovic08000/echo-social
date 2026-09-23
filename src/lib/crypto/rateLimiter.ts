@@ -114,7 +114,11 @@ export function cryptoRateCheck(operation: string): boolean {
     }
 
     for (const cb of violationCallbacks) {
-      try { cb(operation, bucket.count); } catch {}
+      try {
+        cb(operation, bucket.count);
+      } catch {
+        // Security callbacks are observational and must not interrupt rate limiting.
+      }
     }
 
     buckets.delete(operation);
@@ -139,13 +143,4 @@ export function resetCryptoRateLimits() {
   lockdownUntilMap.clear();
   lockdownHistory.length = 0;
   securityJournal.length = 0;
-}
-
-// ─── Auto-wipe callbacks kept for backward compatibility, but never triggered ───
-
-const wipeCallbacks: Array<() => void> = [];
-
-/** Register callback for auto-wipe event (legacy compatibility only) */
-export function onAutoWipe(cb: () => void) {
-  wipeCallbacks.push(cb);
 }

@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
 import { safeUUID } from '@/e2ee-session';
-import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
+import { messagingApi } from '@/lib/api/messagingApi';
 import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility';
 import type { FanoutCopyRow } from '@/lib/messaging/multiDeviceFanout';
 import { savePlaintext } from '@/lib/crypto/plaintextStore';
@@ -234,8 +234,6 @@ function toOutboundMessage(payload: OutboxPayload): OutboundMessage {
 
 export function useAegisMessageQueue(
   conversationId: string,
-  _encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
-  isEncryptionReady: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
   allowPlaintext = false,
   onPlaintextCached?: (serverId: string, plaintext: string) => void,
@@ -562,7 +560,7 @@ throw new Error(visibleMessage);
       data = { id: insertedRow?.id || serverMessageId };
     } else {
       try {
-        const sent = await sendAegisOutboundMessage({
+        const sent = await messagingApi.send({
           conversationId,
           senderUserId: user.id,
           plaintext: sanitized,
@@ -657,7 +655,7 @@ throw new Error(visibleMessage);
       console.warn('[MSG_SEND] post-send callback failed', { localId, callbackError });
     });
     scheduleLightConversationRefresh(queryClient);
-  }, [user, conversationId, isEncryptionReady, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
+  }, [user, conversationId, allowPlaintext, queryClient, onPlaintextCached, onMessageSent]);
 
   const retryMessage = useCallback(async (localId: string) => {
     if (!user) return;

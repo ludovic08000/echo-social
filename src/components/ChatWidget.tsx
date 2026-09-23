@@ -461,8 +461,6 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
 
   const queue = useMessageQueue(
     conversationId,
-    e2ee.encrypt,
-    e2ee.isReady(),
     isEncryptionActive,
     e2ee.acknowledgeSentPayload,
     isZeusConversation,

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
@@ -17,6 +17,23 @@ import {
 } from '@/lib/crypto/r2BackupVault';
 import { primeAuthUserId } from '@/lib/crypto/peerKeyCache';
 import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManagerSafe';
+import { resetAccountSynchronization } from '@/lib/messaging/accountSyncBarrier';
+import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
+import { clearPinUnlockedSession } from '@/lib/device-manager/pinUnlockSignal';
+
+function clearMessagingSession(userId?: string | null): void {
+  clearPinUnlockedSession(userId);
+  resetAccountSynchronization(userId ?? undefined);
+  invalidateAegisDeviceRuntime(userId ?? undefined);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('forsure:logout', {
+      detail: { userId: userId ?? undefined },
+    }));
+    window.dispatchEvent(new CustomEvent('forsure:e2ee-purge', {
+      detail: { userId: userId ?? undefined, reason: 'session_cleared' },
+    }));
+  }
+}
 
 /** Check URL hash for recovery tokens BEFORE any session is exposed */
 function detectRecoveryFromHash(): boolean {
@@ -191,18 +208,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const activeUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const isResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
 
     const applySessionState = (nextSession: Session | null) => {
-      primeAuthUserId(nextSession?.user?.id ?? null);
+      const nextUserId = nextSession?.user?.id ?? null;
+      const previousUserId = activeUserIdRef.current;
+      if (previousUserId && previousUserId !== nextUserId) {
+        clearMessagingSession(previousUserId);
+      }
+      activeUserIdRef.current = nextUserId;
+      primeAuthUserId(nextUserId);
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       setLoading(false);
     };
 
     const clearSessionState = () => {
+      const previousUserId = activeUserIdRef.current;
+      activeUserIdRef.current = null;
+      clearMessagingSession(previousUserId);
       primeAuthUserId(null);
       stopSessionGuard();
       clearArchiveMasterKeySession();
@@ -337,6 +364,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { stopSessionGuard(); } catch { /* guard may already be stopped */ }
     clearArchiveMasterKeySession();
     clearAccountKeySession();
+    clearMessagingSession(activeUserIdRef.current ?? user?.id ?? null);
+    activeUserIdRef.current = null;
     setSession(null);
     setUser(null);
 

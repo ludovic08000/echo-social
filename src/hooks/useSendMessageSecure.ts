@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { validateMessage, recordSentMessage, sanitizeMessageBody } from '@/lib/messageAntiSpam';
-import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
+import { messagingApi } from '@/lib/api/messagingApi';
 
 const ZEUS_BOT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -61,9 +61,9 @@ export function useSendMessage() {
 
       const sanitizedBody = isSpecialMessage ? body : sanitizeMessageBody(body);
 
-      let sent: Awaited<ReturnType<typeof sendAegisOutboundMessage>>;
+      let sent: Awaited<ReturnType<typeof messagingApi.send>>;
       try {
-        sent = await sendAegisOutboundMessage({
+        sent = await messagingApi.send({
           conversationId,
           senderUserId: user.id,
           plaintext: sanitizedBody,

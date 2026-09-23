@@ -172,8 +172,6 @@ export interface DeviceLifecycleSnapshot {
   canStartEnrollment: boolean;
   /** Erreur serveur réelle : jamais masquée par un spinner permanent. */
   error: string | null;
-  /** Alias historique conservé pour les écrans existants. */
-  transitionError: string | null;
   refresh: () => void;
   retry: () => void;
   startEnrollment: () => void;
@@ -212,7 +210,6 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
 
   return useMemo(() => ({
     ...snapshot,
-    transitionError: snapshot.error,
     refresh,
     retry,
     startEnrollment,

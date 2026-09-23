@@ -54,6 +54,7 @@ describe('single canonical device lifecycle authority', () => {
   const gate = readFileSync('src/components/messaging/DeviceApprovalGate.tsx', 'utf8');
   const lifecycle = readFileSync('src/hooks/useDeviceLifecycle.ts', 'utf8');
   const messagingGate = readFileSync('src/components/MessagingPinGate.tsx', 'utf8');
+  const auth = readFileSync('src/lib/auth.tsx', 'utf8');
 
   it('auto-enrolls a true first device while preserving explicit stale-device replacement', () => {
     expect(controller).toContain("if (!record || !this.deviceId)");
@@ -114,6 +115,15 @@ describe('single canonical device lifecycle authority', () => {
     expect(api).toContain('finalizeSynchronization');
     expect(finalGate).toContain('if (!lifecycle.canRunCryptoRuntime)');
     expect(finalGate).toContain('Réessayer');
+  });
+
+  it('purges every live messaging authorization when the auth session ends', () => {
+    expect(auth).toContain('clearMessagingSession');
+    expect(auth).toContain('clearPinUnlockedSession');
+    expect(auth).toContain('resetAccountSynchronization');
+    expect(auth).toContain('invalidateAegisDeviceRuntime');
+    expect(auth).toContain("new CustomEvent('forsure:logout'");
+    expect(auth).toContain("new CustomEvent('forsure:e2ee-purge'");
   });
 
   it('resumes finalisation when routing is ready but lifecycle_status is not', () => {

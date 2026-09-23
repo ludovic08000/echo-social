@@ -271,18 +271,24 @@ export function useE2EE(_conversationId: string | undefined, peerUserId: string 
         initError: 'pin_unlock_required',
       }));
     };
+    const onLogout = () => {
+      identityInitialization.delete(user.id);
+      setState(INITIAL_STATE);
+    };
     const onRouteReady = () => requestRefresh(true);
     const onOnline = () => requestRefresh(true);
 
     window.addEventListener('forsure-keys-unlocked', onUnlockedOrRestored);
     window.addEventListener('forsure-keys-restored', onUnlockedOrRestored);
     window.addEventListener('forsure-keys-locked', onLocked);
+    window.addEventListener('forsure:logout', onLogout);
     window.addEventListener('forsure:aegis-route-ready', onRouteReady);
     window.addEventListener('online', onOnline);
     return () => {
       window.removeEventListener('forsure-keys-unlocked', onUnlockedOrRestored);
       window.removeEventListener('forsure-keys-restored', onUnlockedOrRestored);
       window.removeEventListener('forsure-keys-locked', onLocked);
+      window.removeEventListener('forsure:logout', onLogout);
       window.removeEventListener('forsure:aegis-route-ready', onRouteReady);
       window.removeEventListener('online', onOnline);
     };
