@@ -12,13 +12,26 @@ import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { loadIdentityKeys } from '@/lib/crypto/keyManager';
 import { reqToPromise, runTxOn } from '@/lib/crypto/indexedDbTx';
 import {
-  deleteRemotePinContinuity,
+  equalPortablePinRecords,
   ensurePinContinuity,
+  fetchRemotePinContinuityState,
   restorePinContinuity,
+  sealPinContinuityRecord,
   validatePortablePinRecord,
   type PinContinuityEnsureStatus,
   type PortablePinRecord,
 } from '@/lib/crypto/pinContinuityVault';
+import { getSessionMasterKey } from '@/lib/crypto/accountKeyBackup';
+import {
+  authorizeChatPinReset,
+  commitChatPinReset,
+  requestChatPinReset,
+} from '@/lib/crypto/chatPinResetClient';
+import { runCrossTabExclusive } from '@/lib/crypto/crossTabLock';
+import {
+  hydrateDeviceId,
+  isDeviceIdTemporary,
+} from '@/lib/messaging/currentDevice';
 import {
   isSecureStoreNative,
   secureGetSecret,
@@ -174,7 +187,8 @@ async function persistLocalRecord(userId: string, record: LocalPinRecord): Promi
   const persisted = await runTxOn('pin-wrap', [STORE], 'readonly', (tx) =>
     reqToPromise(tx.objectStore(STORE).get(userId)),
   ) as Partial<LocalPinRecord> | undefined;
-  if (persisted?.version !== PIN_VERSION || persisted.wrappedBlob !== record.wrappedBlob) {
+  const validated = validatePortablePinRecord(persisted, userId);
+  if (!validated || !equalPortablePinRecords(validated, record)) {
     throw new Error('PIN_PERSISTENCE_READBACK_FAILED');
   }
 
@@ -193,7 +207,7 @@ async function persistLocalRecord(userId: string, record: LocalPinRecord): Promi
   }
 }
 
-async function saveLocalPin(userId: string, pin: string): Promise<LocalPinRecord> {
+async function createLocalPinRecord(userId: string, pin: string): Promise<LocalPinRecord> {
   const salt = hardCrypto.getRandomValues(new Uint8Array(32));
   const iv = hardCrypto.getRandomValues(new Uint8Array(12));
   const key = await derivePinKey(pin, salt);
@@ -215,6 +229,25 @@ async function saveLocalPin(userId: string, pin: string): Promise<LocalPinRecord
     wrappedBlob: bytesToBase64(new Uint8Array(ciphertext)),
     createdAt: Date.now(),
   };
+  return record;
+}
+
+interface PendingPinResetChallenge {
+  challengeId: string;
+  expiresAt: string;
+}
+
+type PinResetCompletion =
+  | { ok: true }
+  | {
+    ok: false;
+    error: string;
+    remoteCommitted: boolean;
+    clearChallenge: boolean;
+  };
+
+async function saveLocalPin(userId: string, pin: string): Promise<LocalPinRecord> {
+  const record = await createLocalPinRecord(userId, pin);
   await persistLocalRecord(userId, record);
   return record;
 }
@@ -396,6 +429,11 @@ export function useChatPin() {
   // verrouillage explicite. Une simple ré-inspection (clés restaurées, identité
   // prête) ne doit plus refermer le volet PIN juste après la saisie du code.
   const unlockedRef = useRef(false);
+  const resetChallengeRef = useRef<PendingPinResetChallenge | null>(null);
+
+  useEffect(() => {
+    resetChallengeRef.current = null;
+  }, [user?.id]);
 
 
   useEffect(() => {
@@ -652,60 +690,179 @@ export function useChatPin() {
   const requestReset = useCallback(async (): Promise<boolean> => {
     if (!user?.id) return false;
     setState((current) => ({ ...current, processing: true, error: null }));
-    const { data, error } = await supabase.functions.invoke('verify-chat-pin', {
-      body: { action: 'request-reset' },
-    });
-    const ok = !error && data?.ok === true;
-    setState((current) => ({
-      ...current,
-      processing: false,
-      error: ok ? null : data?.error ?? 'Erreur envoi email',
-    }));
-    return ok;
+    const result = await requestChatPinReset();
+    if (result.ok === false) {
+      resetChallengeRef.current = null;
+      setState((current) => ({
+        ...current,
+        processing: false,
+        error: result.error,
+      }));
+      return false;
+    }
+
+    resetChallengeRef.current = {
+      challengeId: result.challengeId,
+      expiresAt: result.expiresAt,
+    };
+    setState((current) => ({ ...current, processing: false, error: null }));
+    return true;
   }, [user?.id]);
 
-  const confirmReset = useCallback(async (code: string): Promise<boolean> => {
+  const confirmReset = useCallback(async (
+    code: string,
+    newPin: string,
+  ): Promise<boolean> => {
     if (!user?.id) return false;
+    if (!/^\d{6}$/.test(code) || !newPin || !/^\d{6}$/.test(newPin)) {
+      setState((current) => ({
+        ...current,
+        processing: false,
+        error: 'Saisissez le code email et un nouveau PIN à 6 chiffres.',
+      }));
+      return false;
+    }
+
+    const challenge = resetChallengeRef.current;
+    if (!challenge || Date.parse(challenge.expiresAt) <= Date.now()) {
+      resetChallengeRef.current = null;
+      setState((current) => ({
+        ...current,
+        processing: false,
+        error: 'Le code a expiré. Demandez un nouveau code.',
+      }));
+      return false;
+    }
+
     setState((current) => ({ ...current, processing: true, error: null }));
-    const { data, error } = await supabase.functions.invoke('verify-chat-pin', {
-      body: { action: 'confirm-reset', code },
-    });
-    if (error || data?.ok !== true) {
+    try {
+      const masterKey = getSessionMasterKey();
+      if (!masterKey) {
+        setState((current) => ({
+          ...current,
+          processing: false,
+          error: 'Restaurez d’abord la clé sécurisée du compte avant de changer le PIN.',
+        }));
+        return false;
+      }
+
+      const deviceId = await hydrateDeviceId();
+      if (!deviceId || isDeviceIdTemporary()) {
+        throw new Error('PIN_RESET_DEVICE_NOT_STABLE');
+      }
+
+      // Creating and sealing the candidate has no persistent side effect. The
+      // currently working local PIN remains authoritative until the remote
+      // generation-checked transaction has committed successfully.
+      const candidate = await createLocalPinRecord(user.id, newPin);
+      const envelope = await sealPinContinuityRecord(candidate, user.id, masterKey);
+
+      const completion = await runCrossTabExclusive<PinResetCompletion>(
+        `forsure:chat-pin-reset:${user.id}`,
+        async () => {
+          const authorization = await authorizeChatPinReset({
+            userId: user.id,
+            deviceId,
+            challengeId: challenge.challengeId,
+            code,
+          });
+          if (authorization.ok === false) {
+            return {
+              ok: false,
+              error: authorization.error,
+              remoteCommitted: false,
+              clearChallenge: authorization.code !== 'CODE_MISMATCH'
+                && authorization.code !== 'RATE_LIMITED',
+            };
+          }
+
+          const committed = await commitChatPinReset({
+            challengeId: challenge.challengeId,
+            deviceId,
+            authorizationToken: authorization.authorizationToken,
+            expectedGeneration: authorization.generation,
+            envelope,
+          });
+
+          if (committed.ok === false) {
+            // A lost HTTP response can hide a successful database commit. Read
+            // the authoritative generation and exact ciphertext before ever
+            // reporting failure or touching the local verifier.
+            const remote = await fetchRemotePinContinuityState();
+            const remoteCommitted = Boolean(
+              remote
+              && typeof remote === 'object'
+              && remote.generation === authorization.generation + 1
+              && remote.version === envelope.version
+              && remote.ciphertext === envelope.ciphertext
+              && remote.iv === envelope.iv,
+            );
+            if (!remoteCommitted) {
+              return {
+                ok: false,
+                error: committed.error,
+                remoteCommitted: false,
+                clearChallenge: true,
+              };
+            }
+          }
+
+          resetChallengeRef.current = null;
+          try {
+            await persistLocalRecord(user.id, candidate);
+            if (!(await verifyLocalPin(user.id, newPin))) {
+              throw new Error('PIN_RESET_LOCAL_READBACK_FAILED');
+            }
+          } catch {
+            // The cloud envelope is already authoritative. Remove any partial
+            // local write so the normal Master-Key restoration path can recover
+            // this exact candidate instead of presenting a false mismatch.
+            await removeLocalPin(user.id).catch(() => undefined);
+            return {
+              ok: false,
+              error: 'Le nouveau PIN est sécurisé dans le coffre, mais le stockage local doit être restauré. Rechargez la messagerie.',
+              remoteCommitted: true,
+              clearChallenge: true,
+            };
+          }
+
+          return { ok: true };
+        },
+        { waitTimeoutMs: 15_000, leaseMs: 90_000 },
+      );
+
+      if (completion.ok === false) {
+        if (completion.clearChallenge) resetChallengeRef.current = null;
+        setState((current) => ({
+          ...current,
+          loaded: true,
+          hasPin: true,
+          unlocked: false,
+          processing: false,
+          error: completion.error,
+        }));
+        return false;
+      }
+
+      unlockedRef.current = true;
+      announceUnlock(user.id);
+      setState((current) => ({
+        ...current,
+        loaded: true,
+        hasPin: true,
+        unlocked: true,
+        processing: false,
+        error: null,
+      }));
+      return true;
+    } catch {
       setState((current) => ({
         ...current,
         processing: false,
-        error: data?.error ?? 'Code incorrect',
+        error: 'La réinitialisation sécurisée du PIN a échoué. Votre PIN actuel est conservé.',
       }));
       return false;
     }
-    // Delete the remote authority first. A transient network failure must never
-    // destroy the only local verifier while the cloud continuity still exists.
-    const vaultCleared = await deleteRemotePinContinuity();
-    if (!vaultCleared) {
-      setState((current) => ({
-        ...current,
-        processing: false,
-        error: 'Le coffre PIN distant n’a pas pu être supprimé. Votre PIN local est conservé.',
-      }));
-      return false;
-    }
-    await removeLocalPin(user.id);
-    unlockedRef.current = false;
-    storageRemove(sessionStorage, SESSION_KEY);
-    storageRemove(localStorage, `${MODE_PREFIX}${user.id}`);
-    pinModeRef.current = 'every_open';
-    setState({
-      loaded: true,
-      hasPin: false,
-      unlocked: false,
-      error: null,
-      processing: false,
-      pinMode: 'every_open',
-    });
-    window.dispatchEvent(new CustomEvent(PIN_STATE_CHANGED_EVENT, {
-      detail: { userId: user.id, unlocked: false },
-    }));
-    return true;
   }, [user?.id]);
 
   return {
@@ -721,6 +878,7 @@ export function useChatPin() {
 
 export const __test__ = {
   loadLocalPin,
+  createLocalPinRecord,
   saveLocalPin,
   persistLocalRecord,
   verifyLocalPin,

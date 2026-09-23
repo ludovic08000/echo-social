@@ -197,18 +197,28 @@ jobs:
           persist-credentials: false
       - name: Verify checked-out SHA
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.117.0
       - name: Start isolated Supabase stack
-        run: supabase start
+        # Migration and pgTAP checks only need Postgres. The database-only
+        # command avoids pulling unrelated service images on shared runners.
+        run: supabase db start
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: docker.io
       - name: Apply every migration from scratch
         run: supabase db reset
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: docker.io
       - name: Run SQL security tests
         run: supabase test db
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: docker.io
       - name: Stop isolated Supabase stack
         if: always()
         run: supabase stop --no-backup
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: docker.io
 
   production-build:
     name: Production build

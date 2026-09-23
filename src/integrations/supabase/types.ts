@@ -7904,11 +7904,20 @@ export type Database = {
           user_id: string
         }[]
       }
-      aegis_pin_continuity_delete: { Args: never; Returns: boolean }
       aegis_pin_continuity_get: {
         Args: never
         Returns: {
           ciphertext: string
+          iv: string
+          updated_at: string
+          version: number
+        }[]
+      }
+      aegis_pin_continuity_state: {
+        Args: never
+        Returns: {
+          ciphertext: string
+          generation: number
           iv: string
           updated_at: string
           version: number

@@ -2,16 +2,14 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type VaultRow = { version: number; ciphertext: string; iv: string };
+type VaultRow = { version: number; ciphertext: string; iv: string; generation: number };
 
 const store: {
   row: VaultRow | null;
   upsertCalls: number;
-  deleteFails: boolean;
 } = {
   row: null,
   upsertCalls: 0,
-  deleteFails: false,
 };
 
 let masterKey: CryptoKey | null = null;
@@ -25,20 +23,17 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (fn === 'aegis_pin_continuity_get') {
         return { data: store.row ? [store.row] : [], error: null };
       }
+      if (fn === 'aegis_pin_continuity_state') {
+        return { data: store.row ? [store.row] : [], error: null };
+      }
       if (fn === 'aegis_pin_continuity_upsert') {
         store.upsertCalls += 1;
         store.row = {
           version: args?.p_version as number,
           ciphertext: args?.p_ciphertext as string,
           iv: args?.p_iv as string,
+          generation: 1,
         };
-        return { data: true, error: null };
-      }
-      if (fn === 'aegis_pin_continuity_delete') {
-        if (store.deleteFails) {
-          return { data: null, error: { message: 'offline' } };
-        }
-        store.row = null;
         return { data: true, error: null };
       }
       return { data: null, error: { message: 'unknown rpc' } };
@@ -67,8 +62,8 @@ vi.mock('@/lib/crypto/accountKeyBackup', () => ({
 
 import {
   clearPinContinuitySingleFlightForTests,
-  deleteRemotePinContinuity,
   ensurePinContinuity,
+  fetchRemotePinContinuityState,
   hasRemotePinContinuity,
   openPinContinuityRecord,
   publishPinContinuity,
@@ -115,7 +110,6 @@ describe('coffre de continuité du PIN Aegis', () => {
   beforeEach(async () => {
     store.row = null;
     store.upsertCalls = 0;
-    store.deleteFails = false;
     masterKey = await randomMasterKey();
     clearPinContinuitySingleFlightForTests();
     await __test__.removeLocalPin(USER_ID).catch(() => undefined);
@@ -307,33 +301,30 @@ describe('coffre de continuité du PIN Aegis', () => {
     expect(store.row).toBeNull();
   });
 
-  it('supprime et vérifie le coffre distant', async () => {
+  it('lit la génération et l’enveloppe autoritatives sans les modifier', async () => {
     await expect(ensurePinContinuity(USER_ID, sampleRecord()))
       .resolves.toBe('published');
     expect(await hasRemotePinContinuity()).toBe(true);
 
-    await expect(deleteRemotePinContinuity()).resolves.toBe(true);
-    expect(await hasRemotePinContinuity()).toBe(false);
-    await expect(restorePinContinuity(USER_ID))
-      .resolves.toEqual({ status: 'absent' });
+    const state = await fetchRemotePinContinuityState();
+    expect(state).toEqual(store.row);
+    expect(await hasRemotePinContinuity()).toBe(true);
   });
 
-  it('conserve le PIN local lorsque la suppression distante échoue', () => {
+  it('retire le chemin client de suppression du coffre distant', () => {
     const source = readFileSync(
       resolve('src/hooks/useChatPin.ts'),
       'utf8',
     );
-    const remoteDelete = source.indexOf(
-      'const vaultCleared = await deleteRemotePinContinuity()',
-    );
-    const localDelete = source.indexOf(
-      'await removeLocalPin(user.id)',
-      remoteDelete,
+    const migration = readFileSync(
+      resolve('supabase/migrations/20260923192452_harden_chat_pin_recovery.sql'),
+      'utf8',
     );
 
-    expect(remoteDelete).toBeGreaterThan(-1);
-    expect(localDelete).toBeGreaterThan(remoteDelete);
-    expect(source).toContain('Votre PIN local est conservé.');
+    expect(source).not.toContain('deleteRemotePinContinuity');
+    expect(migration).toContain(
+      'drop function if exists public.aegis_pin_continuity_delete()',
+    );
   });
 
   it('ne déverrouille un setup neuf qu’après publication et readback', () => {

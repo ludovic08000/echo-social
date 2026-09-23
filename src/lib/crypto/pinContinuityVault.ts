@@ -26,6 +26,10 @@ export interface PinContinuityEnvelope {
   iv: string;
 }
 
+export interface PinContinuityState extends PinContinuityEnvelope {
+  generation: number;
+}
+
 export interface PortablePinRecord {
   id: string;
   version: typeof LOCAL_PIN_VERSION;
@@ -47,6 +51,12 @@ export type PinContinuityEnsureStatus =
 
 type RemotePinContinuity =
   | PinContinuityEnvelope
+  | null
+  | 'unavailable'
+  | 'invalid';
+
+export type RemotePinContinuityState =
+  | PinContinuityState
   | null
   | 'unavailable'
   | 'invalid';
@@ -275,6 +285,28 @@ export async function fetchRemotePinContinuity(): Promise<RemotePinContinuity> {
   }
 }
 
+export async function fetchRemotePinContinuityState(): Promise<RemotePinContinuityState> {
+  try {
+    const { data, error } = await rpcClient().rpc('aegis_pin_continuity_state');
+    if (error) return 'unavailable';
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+    const envelope = validateEnvelope(row);
+    const generation = (row as { generation?: unknown }).generation;
+    if (
+      !envelope
+      || typeof generation !== 'number'
+      || !Number.isSafeInteger(generation)
+      || generation < 1
+    ) {
+      return 'invalid';
+    }
+    return { ...envelope, generation };
+  } catch {
+    return 'unavailable';
+  }
+}
+
 async function upsertRemotePinContinuity(
   envelope: PinContinuityEnvelope,
 ): Promise<boolean> {
@@ -289,17 +321,6 @@ async function upsertRemotePinContinuity(
         p_ciphertext: validated.ciphertext,
         p_iv: validated.iv,
       },
-    );
-    return !error && data === true;
-  } catch {
-    return false;
-  }
-}
-
-export async function deleteRemotePinContinuity(): Promise<boolean> {
-  try {
-    const { data, error } = await rpcClient().rpc(
-      'aegis_pin_continuity_delete',
     );
     return !error && data === true;
   } catch {
