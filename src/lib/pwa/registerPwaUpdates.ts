@@ -31,9 +31,6 @@ export function registerPwaUpdates(): void {
         if (!document.hidden) requestUpdate();
       });
     },
-    onNeedReload() {
-      window.location.reload();
-    },
     onRegisterError(error) {
       console.error('[PWA_UPDATE] service-worker registration failed', error);
     },
