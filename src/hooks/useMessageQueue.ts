@@ -31,8 +31,6 @@ const prewarmInflight = new Map<string, Promise<void>>();
 
 export function useMessageQueue(
   conversationId: string,
-  _encrypt: ((plaintext: string, localId?: string) => Promise<string>) | null,
-  isEncryptionReady: boolean,
   isEncryptionActive: boolean,
   onMessageSent?: (localId: string) => void | Promise<void>,
   allowPlaintext = false,
@@ -106,8 +104,6 @@ export function useMessageQueue(
 
   const queue = useAegisMessageQueue(
     conversationId,
-    null,
-    isEncryptionReady,
     handleSent,
     allowPlaintext,
     async (serverId, plaintext) => {

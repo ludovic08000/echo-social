@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = process.cwd();
@@ -25,6 +25,15 @@ const messageBody = readFileSync(
 );
 const chatWidget = readFileSync(resolve(root, 'src/components/ChatWidget.tsx'), 'utf8');
 const viteConfig = readFileSync(resolve(root, 'vite.config.ts'), 'utf8');
+const messagingApi = readFileSync(resolve(root, 'src/lib/api/messagingApi.ts'), 'utf8');
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = resolve(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(absolute);
+    return /\.(ts|tsx)$/.test(entry.name) ? [absolute] : [];
+  });
+}
 
 describe('Aegis single-engine cutover', () => {
   it('removes the parallel edit-copy protocol', () => {
@@ -50,10 +59,18 @@ describe('Aegis single-engine cutover', () => {
     expect(lifecycle).toContain('ensureapproveddevicetrust(userid, deviceid)');
   });
 
-  it('routes every encrypted UI send through the canonical engine', () => {
-    expect(queueHook).toContain('sendAegisOutboundMessage');
+  it('routes every encrypted UI send through the guarded messaging API', () => {
+    expect(queueHook).toContain('messagingApi.send');
     expect(mutationHook).toContain("export { useSendMessage } from './useSendMessageSecure'");
-    expect(secureMutationHook).toContain('sendAegisOutboundMessage');
+    expect(secureMutationHook).toContain('messagingApi.send');
+    expect(messagingApi).toContain('sendAegisOutboundMessage');
+
+    const directEngineImporters = sourceFiles(resolve(root, 'src'))
+      .filter((path) => !path.includes(`${resolve(root, 'src/lib/messaging/__tests__')}`))
+      .filter((path) => readFileSync(path, 'utf8').includes("from '@/lib/messaging/aegisOutboundEngine'"))
+      .map((path) => relative(root, path).replace(/\\/g, '/'));
+    expect(directEngineImporters).toEqual(['src/lib/api/messagingApi.ts']);
+
     expect(existsSync(resolve(root, 'src/lib/messaging/sendAegisMessage.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'src/hooks/useMessageQueueSignal.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'src/lib/messaging/signalWebConversationQueue.ts'))).toBe(false);

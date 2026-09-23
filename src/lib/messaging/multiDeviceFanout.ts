@@ -80,6 +80,10 @@ export function clearDeviceCopyCache(): void {
   deviceRouteHealthInFlight = null;
 }
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure:logout', clearDeviceCopyCache);
+}
+
 export function clearDeviceCopyCacheForMessage(messageId: string): void {
   if (!messageId) return;
   const suffix = `|${messageId}`;

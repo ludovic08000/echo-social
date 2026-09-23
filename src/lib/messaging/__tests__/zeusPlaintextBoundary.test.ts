@@ -79,7 +79,7 @@ describe('Zeus plaintext boundary', () => {
     expect(messagesPublicApi).toContain("export { useSendMessage } from './useSendMessageSecure'");
     expect(messagesPublicApi).not.toContain('sendToZeus');
 
-    expect(secureSendHook).toContain('sendAegisOutboundMessage');
+    expect(secureSendHook).toContain('messagingApi.send');
     expect(secureSendHook).toContain('useSendMessage');
     expect(secureSendHook).toContain('ZEUS_BOT_ID');
     expect(secureSendHook).not.toContain('sendToZeus');
@@ -94,7 +94,7 @@ describe('Zeus plaintext boundary', () => {
     expect(secureSendHook).toContain(".eq('user_id', ZEUS_BOT_ID)");
     expect(secureSendHook).toContain('await assertRegularMessengerConversation(conversationId);');
     const guardCall = secureSendHook.indexOf('await assertRegularMessengerConversation(conversationId);');
-    const sendCall = secureSendHook.indexOf('sent = await sendAegisOutboundMessage');
+    const sendCall = secureSendHook.indexOf('sent = await messagingApi.send');
     expect(guardCall).toBeLessThan(sendCall);
     expect(secureSendHook).not.toContain('onMutate:');
     expect(secureSendHook).not.toContain('optimistic-');

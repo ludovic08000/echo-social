@@ -11,6 +11,25 @@ const attempts = new Map<string, Promise<void>>();
 const localAttempts = new Map<string, Promise<{ keys: IdentityKeyPair; mode: 'local' | 'restored' | 'new_epoch' }>>();
 const lastSuccessAt = new Map<string, number>();
 
+export function resetIdentityBootstrapSession(userId?: string): void {
+  if (userId) {
+    attempts.delete(userId);
+    localAttempts.delete(userId);
+    lastSuccessAt.delete(userId);
+    return;
+  }
+  attempts.clear();
+  localAttempts.clear();
+  lastSuccessAt.clear();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure:logout', (event: Event) => {
+    const userId = (event as CustomEvent<{ userId?: string }>).detail?.userId;
+    resetIdentityBootstrapSession(userId);
+  });
+}
+
 interface EnsureIdentityOptions {
   /**
    * Fast path for message sending: wait only for local identity material.

@@ -59,6 +59,14 @@ export function clearMediaKey(messageId: string): void {
   // Explicit clearing of a key is not a reason to detach a mounted subscriber.
 }
 
+export function clearAllMediaKeys(): void {
+  store.clear();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure:logout', clearAllMediaKeys);
+}
+
 export function subscribeMediaKey(messageId: string, notify: (entry: Entry) => void): () => void {
   let set = listeners.get(messageId);
   if (!set) {

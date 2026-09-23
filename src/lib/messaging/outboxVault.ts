@@ -99,6 +99,21 @@ interface StoredOutboxRecord {
 const keyPromises = new Map<string, Promise<CryptoKey>>();
 let outboxChannel: BroadcastChannel | null | undefined;
 
+export function clearOutboxKeyCache(userId?: string): void {
+  if (userId) {
+    keyPromises.delete(userId);
+    return;
+  }
+  keyPromises.clear();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure:logout', (event: Event) => {
+    const userId = (event as CustomEvent<{ userId?: string }>).detail?.userId;
+    clearOutboxKeyCache(userId);
+  });
+}
+
 function aadFor(userId: string, conversationId: string, localId: string): Uint8Array {
   return new TextEncoder().encode(
     `${OUTBOX_AAD_PREFIX}${userId}|${conversationId}|${localId}`,
@@ -409,6 +424,6 @@ export const __test__ = {
   aadFor,
   createOrLoadOutboxKey,
   clearKeyCache(): void {
-    keyPromises.clear();
+    clearOutboxKeyCache();
   },
 };

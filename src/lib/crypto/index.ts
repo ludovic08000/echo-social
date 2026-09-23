@@ -10,14 +10,6 @@ export { getOrCreateIdentityKeys } from './keyManagerSafe';
 export { resolveUserIdentity, type IdentityRecoveryMode } from './identityRecovery';
 
 export {
-  createSecureBackupVault,
-  restoreSecureBackupVault,
-  hasSecureBackupVault,
-  type CreatedSecureBackupVault,
-  type SecureBackupVaultPayload,
-} from './secureBackupVault';
-
-export {
   rotateEncryptedBackupVault,
   ensureBackupRotation,
 } from './backupRotation';
@@ -40,7 +32,6 @@ export {
   isCryptoLocked,
   onCryptoViolation,
   resetCryptoRateLimits,
-  onAutoWipe,
 } from './rateLimiter';
 
 export {
