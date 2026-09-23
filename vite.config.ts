@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
+import { readFileSync } from "node:fs";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
@@ -8,6 +9,16 @@ import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/supabase/vite";
 const retiredFactorStem = ["web", "authn"].join("");
 const retiredFactorClassStem = ["Web", "Authn"].join("");
 const retiredDomCredential = ["Public", "Key", "Credential"].join("");
+
+function readGeneratedBuildVersion(): string {
+  try {
+    const versionFile = path.resolve(process.cwd(), "public/version.json");
+    const parsed = JSON.parse(readFileSync(versionFile, "utf8")) as { version?: string };
+    return parsed.version ?? "development";
+  } catch {
+    return "development";
+  }
+}
 
 /**
  * Supabase Auth ships an optional browser hardware-factor implementation in its
@@ -79,6 +90,9 @@ export class aegisDisabledFactorApi {}
 }
 
 export default defineConfig(({ mode }) => ({
+  define: {
+    __FORSURE_BUILD_VERSION__: JSON.stringify(readGeneratedBuildVersion()),
+  },
   server: { host: "::", port: 8080, hmr: { overlay: false } },
   build: {
     sourcemap: false,
@@ -98,16 +112,30 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
+      // Registration is handled by registerPwaUpdates so every application
+      // start performs an explicit update check and reloads on activation.
+      injectRegister: null,
       includeAssets: ["favicon.png", "favicon.ico", "og-image.png"],
       workbox: {
         cacheId: "forsure-aegis-v1",
         maximumFileSizeToCacheInBytes: 5242880,
-        navigateFallbackDenylist: [/^\/~oauth/],
-        globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
+        // HTML must never be trapped in the precache. Documents use
+        // NetworkFirst below, with an offline fallback kept in runtime cache.
+        navigateFallback: null,
+        globPatterns: ["**/*.{js,css,ico,svg,woff2,webmanifest}"],
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "documents-aegis-v1",
+              networkTimeoutSeconds: 4,
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
           {
             urlPattern: /^https:\/\/vkpmoqfzrihcijjochks\.supabase\.co\/storage\/.*/i,
             handler: "CacheFirst",
