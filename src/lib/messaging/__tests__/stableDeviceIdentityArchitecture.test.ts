@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const currentDevice = readFileSync('src/lib/messaging/currentDevice.ts', 'utf8');
@@ -59,5 +59,21 @@ describe('stable DeviceID architecture', () => {
     expect(deviceApi).toContain('prepareKeys');
     expect(deviceApi).not.toContain('register_user_device_safe');
     expect(deviceApi).not.toContain('approve_user_device');
+  });
+
+  it('removes every legacy browser DeviceID generator', () => {
+    expect(existsSync('src/lib/e2eeCleanStartup.ts')).toBe(false);
+    expect(existsSync('src/lib/crypto/deviceList.ts')).toBe(false);
+    expect(existsSync('src/lib/crypto/deviceTrust.ts')).toBe(false);
+    expect(existsSync('src/components/e2ee/E2EESecurityPanel.tsx')).toBe(false);
+    const cryptoIndex = readFileSync('src/lib/crypto/index.ts', 'utf8');
+    expect(cryptoIndex).not.toContain('getOrCreateCurrentDeviceId');
+    expect(cryptoIndex).not.toContain("from './deviceList'");
+  });
+
+  it('requires an explicit replacement when a durable DeviceID has no server record', () => {
+    expect(deviceApi).toContain('requiresExplicitEnrollment: record === null');
+    expect(deviceApi).toContain('accountHasDeviceHistory');
+    expect(deviceApi).toContain('requireAuthenticatedDeviceSession(userId)');
   });
 });

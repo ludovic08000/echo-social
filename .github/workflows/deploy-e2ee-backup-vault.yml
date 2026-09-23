@@ -41,7 +41,7 @@ jobs:
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.117.0
 
       - name: Deploy Edge Function
         run: supabase functions deploy e2ee-backup-vault --project-ref "$PROJECT_REF" --no-verify-jwt

@@ -46,6 +46,7 @@ export interface DeviceLifecycleInput {
   authenticated: boolean;
   deviceRecord: DeviceLifecycleRecord | null | 'unknown';
   deviceIdStatus: DeviceIdStatus;
+  requiresExplicitEnrollment?: boolean;
   pinUnlocked: boolean;
   pinRequired?: boolean;
   accountSyncPhase: AccountSyncPhaseInput;
@@ -81,6 +82,7 @@ export function resolveDeviceLifecycleState(input: DeviceLifecycleInput): Device
   if (!input.authenticated) return { state: 'AUTHENTICATED', reason: 'not_authenticated' };
   if (input.deviceIdStatus === 'mismatch') return { state: 'LINK_REQUIRED', reason: 'device_id_reapproval_required' };
   if (input.deviceIdStatus === 'storage_unavailable') return { state: 'LINK_REQUIRED', reason: 'device_id_unavailable' };
+  if (input.requiresExplicitEnrollment) return { state: 'LINK_REQUIRED', reason: 'device_id_reapproval_required' };
   if (input.deviceRecord === 'unknown') return { state: 'DEVICE_CREDENTIAL_CHECK', reason: 'credential_check_in_progress' };
   if (input.deviceIdStatus === 'uninitialized' || input.deviceRecord === null) {
     return { state: 'DEVICE_CREDENTIAL_CHECK', reason: 'credential_check_in_progress' };

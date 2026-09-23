@@ -127,7 +127,7 @@ export interface Message {
   view_once_state?: 'pending' | 'consumed' | 'sent';
   image_url: string | null;
   created_at: string;
-  status: 'delivered' | 'pending' | 'blocked';
+  status: 'delivered' | 'blocked';
   profile: {
     name: string;
     avatar_url: string | null;
@@ -497,7 +497,7 @@ export function useMessages(conversationId: string) {
 
     window.addEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
     return () => window.removeEventListener('forsure-conversation-cleaned', handleCleaned as EventListener);
-  }, [conversationId, queryClient]);
+  }, [conversationId, queryClient, user?.id]);
 
   // Background cleanup: keep this non-destructive. Older builds inserted
   // message_deletions here, which could make a whole chat look empty after
@@ -510,7 +510,7 @@ export function useMessages(conversationId: string) {
         .from('messages')
         .select('id, body')
         .eq('conversation_id', conversationId)
-        .in('status', ['delivered', 'pending'])
+        .eq('status', 'delivered')
         .order('created_at', { ascending: false })
         .limit(120);
       if (cancelled || !msgs) return;
@@ -546,7 +546,7 @@ export function useMessages(conversationId: string) {
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
-        .in('status', ['delivered', 'pending'])
+        .eq('status', 'delivered')
         .order('created_at', { ascending: false })
         .limit(120);
 
@@ -832,71 +832,6 @@ export function useMarkConversationRead() {
     },
     onError: (_error, _conversationId, context) => {
       if (context?.previous) queryClient.setQueryData(context.key, context.previous);
-    },
-  });
-}
-
-// Check if a conversation has pending (non-friend) messages
-export function useHasPendingMessages(conversationId: string) {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ['pending-messages', conversationId],
-    queryFn: async () => {
-      if (!conversationId || !user) return false;
-
-      const { data } = await supabase
-        .from('messages')
-        .select('id')
-        .eq('conversation_id', conversationId)
-        .eq('status', 'pending')
-        .neq('sender_id', user.id)
-        .limit(1);
-
-      return (data?.length || 0) > 0;
-    },
-    enabled: !!conversationId && !!user,
-  });
-}
-
-// Accept a message request (deliver all pending messages)
-export function useAcceptMessageRequest() {
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-
-  return useMutation({
-    mutationFn: async (conversationId: string) => {
-      const { data, error } = await supabase.functions.invoke('zeus', {
-        body: { domain: 'moderation', action: 'accept_request', conversationId },
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      if (user?.id) invalidateUserConversations(queryClient, user.id);
-      queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
-    },
-  });
-}
-
-// Reject a message request (block all pending messages)
-export function useRejectMessageRequest() {
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-
-  return useMutation({
-    mutationFn: async (conversationId: string) => {
-      const { data, error } = await supabase.functions.invoke('zeus', {
-        body: { domain: 'moderation', action: 'reject_request', conversationId },
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      if (user?.id) invalidateUserConversations(queryClient, user.id);
-      queryClient.invalidateQueries({ queryKey: ['pending-messages'] });
     },
   });
 }

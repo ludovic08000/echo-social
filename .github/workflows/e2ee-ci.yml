@@ -199,7 +199,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.117.0
       - name: Start isolated Supabase stack
         run: supabase start
       - name: Apply every migration from scratch

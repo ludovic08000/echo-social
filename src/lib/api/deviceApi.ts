@@ -45,6 +45,7 @@ import {
 } from '@/platforms/ios/iosDeviceReuse';
 import { recordIosRpcError } from '@/platforms/ios/iosRpcErrorLog';
 import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
+import { requireAuthenticatedDeviceSession } from '@/lib/device-manager/sessionGate';
 import {
   startFinalizationTimer,
   getCurrentDeviceFinalizationTraceId,
@@ -115,6 +116,11 @@ export interface DeviceApiListRecord extends DeviceApiRecord {
 export interface DeviceApiSnapshot {
   state: DeviceApiState;
   record: DeviceApiRecord | null;
+  /**
+   * A local identity is missing or no longer maps to its server record while
+   * the account already has device history. Never replace it silently.
+   */
+  requiresExplicitEnrollment: boolean;
 }
 
 type DeviceDbRow = {
@@ -140,6 +146,23 @@ type DeviceDbRow = {
   stale_at?: string | null;
   revoke_reason?: string | null;
 };
+
+const DEVICE_RECORD_COLUMNS = [
+  'device_id',
+  'device_role',
+  'lifecycle_status',
+  'approval_status',
+  'binding_status',
+  'routing_status',
+  'is_active',
+  'revoked_at',
+  'device_name',
+  'platform',
+  'device_public_key',
+  'device_signing_key',
+  'approval_challenge_id',
+  'approved_by_device_id',
+].join(',');
 
 function normalizePlatform(value: unknown): DevicePlatform {
   const platform = String(value ?? '').toLowerCase();
@@ -177,11 +200,12 @@ function mapDbRecord(row: DeviceDbRow): DeviceApiRecord {
 
 async function readDeviceRecord(userId: string, deviceId: string): Promise<DeviceApiRecord | null> {
   return traceFinalizationOperation('device_api.state_lookup', async () => {
+    await requireAuthenticatedDeviceSession(userId);
     const { data, error } = await runDeviceRpcWithTimeout(
       'DEVICE_LOOKUP_FAILED',
       (signal) => supabase
         .from('user_devices')
-        .select('*')
+        .select(DEVICE_RECORD_COLUMNS)
         .eq('user_id', userId)
         .eq('device_id', deviceId)
         .abortSignal(signal)
@@ -193,12 +217,43 @@ async function readDeviceRecord(userId: string, deviceId: string): Promise<Devic
   }, { userId, deviceId });
 }
 
+async function accountHasDeviceHistory(userId: string): Promise<boolean> {
+  return traceFinalizationOperation('device_api.account_device_probe', async () => {
+    await requireAuthenticatedDeviceSession(userId);
+    const { data, error } = await runDeviceRpcWithTimeout(
+      'DEVICE_HISTORY_LOOKUP_FAILED',
+      (signal) => supabase
+        .from('user_devices')
+        .select('device_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .abortSignal(signal),
+    );
+    if (error) throw new Error(`DEVICE_HISTORY_LOOKUP_FAILED:${error.message}`);
+    return (data?.length ?? 0) > 0;
+  }, { userId });
+}
+
 async function getState(userId: string): Promise<DeviceApiSnapshot> {
   setCurrentDeviceUserScope(userId);
   const deviceId = peekCurrentDeviceId();
-  if (!deviceId || !DEVICE_ID_RE.test(deviceId)) return { state: 'unregistered', record: null };
+  if (!deviceId || !DEVICE_ID_RE.test(deviceId)) {
+    const hasDeviceHistory = await accountHasDeviceHistory(userId);
+    return {
+      state: 'unregistered',
+      record: null,
+      requiresExplicitEnrollment: hasDeviceHistory,
+    };
+  }
   const record = await readDeviceRecord(userId, deviceId);
-  return { state: stateFromRecord(record), record };
+  return {
+    state: stateFromRecord(record),
+    record,
+    // A durable local DeviceID that disappeared server-side is continuity
+    // evidence. Replacing it automatically is the rotation bug this guard
+    // prevents; the user must explicitly request a new enrollment.
+    requiresExplicitEnrollment: record === null,
+  };
 }
 
 function getCurrentId(userId: string): string | null {

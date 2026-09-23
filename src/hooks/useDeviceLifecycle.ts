@@ -153,6 +153,7 @@ const IDLE_SNAPSHOT: ControllerSnapshot = {
   canRunCryptoRuntime: false,
   needsApprovalUi: false,
   canStartEnrollment: false,
+  requiresExplicitEnrollment: false,
 };
 
 export interface DeviceLifecycleSnapshot {
@@ -170,6 +171,7 @@ export interface DeviceLifecycleSnapshot {
   canRunCryptoRuntime: boolean;
   needsApprovalUi: boolean;
   canStartEnrollment: boolean;
+  requiresExplicitEnrollment: boolean;
   /** Erreur serveur réelle : jamais masquée par un spinner permanent. */
   error: string | null;
   refresh: () => void;

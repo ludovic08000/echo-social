@@ -56,9 +56,11 @@ describe('single canonical device lifecycle authority', () => {
   const messagingGate = readFileSync('src/components/MessagingPinGate.tsx', 'utf8');
   const auth = readFileSync('src/lib/auth.tsx', 'utf8');
 
-  it('auto-enrolls a true first device while preserving explicit stale-device replacement', () => {
+  it('auto-enrolls only a true first device and blocks silent stale-device replacement', () => {
     expect(controller).toContain("if (!record || !this.deviceId)");
     expect(controller).not.toContain('isWindowsWeb');
+    expect(controller).toContain('if (this.requiresExplicitEnrollment) return null;');
+    expect(controller).toContain('snapshot.requiresExplicitEnrollment === true');
     expect(controller).toContain("return 'enrolling';");
   });
 

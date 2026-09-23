@@ -317,16 +317,43 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     controller.dispose();
   });
 
-  it('réenrôle directement un DeviceID local absent du serveur', async () => {
+  it('ne remplace jamais silencieusement un DeviceID local absent du serveur', async () => {
     const server = fakeServer(null);
     const controller = __deviceLifecycleTestUtils.create('user-1', {
-      api: server.api,
+      api: {
+        ...server.api,
+        getState: async () => ({ record: server.state.record, requiresExplicitEnrollment: server.state.record === null }),
+      },
       getDeviceIdStatus: () => 'ok',
       peekDeviceId: () => DEVICE_ID,
     });
     await controller.refresh();
+
+    expect(server.calls.enroll).toBe(0);
+    expect(controller.getSnapshot().state).toBe('LINK_REQUIRED');
+    expect(controller.getSnapshot().requiresExplicitEnrollment).toBe(true);
+
+    await controller.startEnrollment();
     expect(server.calls.enroll).toBe(1);
     expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('ne crée pas un nouveau DeviceID quand le stockage local a disparu mais que le compte a un historique', async () => {
+    const server = fakeServer(null);
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: {
+        ...server.api,
+        getState: async () => ({ record: null, requiresExplicitEnrollment: true }),
+      },
+      getDeviceIdStatus: () => 'uninitialized',
+      peekDeviceId: () => null,
+    });
+    await controller.refresh();
+
+    expect(server.calls.enroll).toBe(0);
+    expect(controller.getSnapshot().state).toBe('LINK_REQUIRED');
+    expect(controller.getSnapshot().canStartEnrollment).toBe(true);
     controller.dispose();
   });
 
