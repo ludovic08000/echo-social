@@ -564,6 +564,72 @@ export type Database = {
           },
         ]
       }
+      aegis_chat_pin_reset_challenges: {
+        Row: {
+          authorization_expires_at: string | null
+          authorization_hash: string | null
+          authorized_at: string | null
+          authorized_device_id: string | null
+          burst_request_count: number
+          burst_window_started_at: string
+          challenge_id: string
+          code_expires_at: string | null
+          code_hash: string | null
+          code_salt: string | null
+          consumed_at: string | null
+          daily_request_count: number
+          daily_window_started_at: string
+          failed_attempts: number
+          last_sent_at: string | null
+          locked_until: string | null
+          requested_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          authorization_expires_at?: string | null
+          authorization_hash?: string | null
+          authorized_at?: string | null
+          authorized_device_id?: string | null
+          burst_request_count?: number
+          burst_window_started_at?: string
+          challenge_id?: string
+          code_expires_at?: string | null
+          code_hash?: string | null
+          code_salt?: string | null
+          consumed_at?: string | null
+          daily_request_count?: number
+          daily_window_started_at?: string
+          failed_attempts?: number
+          last_sent_at?: string | null
+          locked_until?: string | null
+          requested_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          authorization_expires_at?: string | null
+          authorization_hash?: string | null
+          authorized_at?: string | null
+          authorized_device_id?: string | null
+          burst_request_count?: number
+          burst_window_started_at?: string
+          challenge_id?: string
+          code_expires_at?: string | null
+          code_hash?: string | null
+          code_salt?: string | null
+          consumed_at?: string | null
+          daily_request_count?: number
+          daily_window_started_at?: string
+          failed_attempts?: number
+          last_sent_at?: string | null
+          locked_until?: string | null
+          requested_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       aegis_device_inbox: {
         Row: {
           acked_at: string | null
@@ -628,6 +694,7 @@ export type Database = {
         Row: {
           ciphertext: string
           created_at: string
+          generation: number
           iv: string
           updated_at: string
           user_id: string
@@ -636,6 +703,7 @@ export type Database = {
         Insert: {
           ciphertext: string
           created_at?: string
+          generation?: number
           iv: string
           updated_at?: string
           user_id: string
@@ -644,6 +712,7 @@ export type Database = {
         Update: {
           ciphertext?: string
           created_at?: string
+          generation?: number
           iv?: string
           updated_at?: string
           user_id?: string
@@ -7885,6 +7954,41 @@ export type Database = {
         Args: { p_call_id: string; p_device_id: string; p_status: string }
         Returns: Json
       }
+      aegis_chat_pin_reset_authorize: {
+        Args: {
+          p_authorization_expires_at: string
+          p_authorization_hash: string
+          p_challenge_id: string
+          p_device_id: string
+          p_device_proof_issued_at_ms: number
+          p_device_proof_signature: string
+          p_expected_code_hash: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      aegis_chat_pin_reset_begin: {
+        Args: {
+          p_code_hash: string
+          p_code_salt: string
+          p_expires_at: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      aegis_chat_pin_reset_commit: {
+        Args: {
+          p_authorization_hash: string
+          p_challenge_id: string
+          p_ciphertext: string
+          p_device_id: string
+          p_expected_generation: number
+          p_iv: string
+          p_user_id: string
+          p_version: number
+        }
+        Returns: Json
+      }
       aegis_decode_base64: { Args: { p_value: string }; Returns: string }
       aegis_device_authorization_payload: {
         Args: {
@@ -7913,6 +8017,7 @@ export type Database = {
           version: number
         }[]
       }
+      aegis_pin_continuity_has: { Args: never; Returns: boolean }
       aegis_pin_continuity_state: {
         Args: never
         Returns: {
@@ -7923,7 +8028,6 @@ export type Database = {
           version: number
         }[]
       }
-      aegis_pin_continuity_has: { Args: never; Returns: boolean }
       aegis_pin_continuity_upsert: {
         Args: { p_ciphertext: string; p_iv: string; p_version: number }
         Returns: boolean
