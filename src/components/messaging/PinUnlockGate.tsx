@@ -24,6 +24,8 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
   const [confirmation, setConfirmation] = useState('');
   const [resetMode, setResetMode] = useState(false);
   const [resetCode, setResetCode] = useState('');
+  const [resetNewPin, setResetNewPin] = useState('');
+  const [resetNewPinConfirmation, setResetNewPinConfirmation] = useState('');
   const [resetSent, setResetSent] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -102,23 +104,47 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
   const requestReset = async () => {
     setLocalError(null);
     const ok = await pin.requestReset();
-    if (ok) setResetSent(true);
+    if (ok) {
+      setResetCode('');
+      setResetNewPin('');
+      setResetNewPinConfirmation('');
+      setResetSent(true);
+    }
   };
 
   const confirmReset = async () => {
     setLocalError(null);
-    if (!resetCode.trim()) {
-      setLocalError('Saisissez le code reçu par email.');
+    if (!/^\d{6}$/.test(resetCode)) {
+      setLocalError('Le code reçu par email doit contenir 6 chiffres.');
       return;
     }
-    const ok = await pin.confirmReset(resetCode.trim());
+    if (!/^\d{6}$/.test(resetNewPin)) {
+      setLocalError('Le nouveau PIN doit contenir exactement 6 chiffres.');
+      return;
+    }
+    if (resetNewPinConfirmation !== resetNewPin) {
+      setLocalError('Les deux nouveaux PIN ne correspondent pas.');
+      return;
+    }
+    const ok = await pin.confirmReset(resetCode, resetNewPin);
     if (ok) {
       setResetMode(false);
       setResetSent(false);
       setResetCode('');
+      setResetNewPin('');
+      setResetNewPinConfirmation('');
       setValue('');
       setConfirmation('');
     }
+  };
+
+  const leaveReset = () => {
+    setResetMode(false);
+    setResetSent(false);
+    setResetCode('');
+    setResetNewPin('');
+    setResetNewPinConfirmation('');
+    setLocalError(null);
   };
 
   const error = localError ?? pin.error;
@@ -154,17 +180,42 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
               <>
                 <Input
                   value={resetCode}
-                  onChange={(event) => setResetCode(event.target.value)}
+                  onChange={(event) => setResetCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="Code reçu par email"
+                  aria-label="Code reçu par email"
+                  inputMode="numeric"
                   autoComplete="one-time-code"
+                  maxLength={6}
                 />
+                <Input
+                  value={resetNewPin}
+                  onChange={(event) => setResetNewPin(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  placeholder="Nouveau PIN à 6 chiffres"
+                  aria-label="Nouveau PIN à 6 chiffres"
+                  maxLength={6}
+                />
+                <Input
+                  value={resetNewPinConfirmation}
+                  onChange={(event) => setResetNewPinConfirmation(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  placeholder="Confirmer le nouveau PIN"
+                  aria-label="Confirmer le nouveau PIN"
+                  maxLength={6}
+                />
+                {error && <p className="text-xs text-destructive">{error}</p>}
                 <Button className="w-full" disabled={pin.processing} onClick={() => void confirmReset()}>
                   {pin.processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Confirmer la réinitialisation
+                  Enregistrer le nouveau PIN
                 </Button>
               </>
             )}
-            <Button variant="ghost" className="w-full" onClick={() => setResetMode(false)}>
+            {!resetSent && error && <p className="text-xs text-destructive">{error}</p>}
+            <Button variant="ghost" className="w-full" onClick={leaveReset}>
               Retour
             </Button>
           </div>
@@ -200,7 +251,14 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
             </Button>
 
             {pin.hasPin && (
-              <Button variant="ghost" className="w-full" onClick={() => setResetMode(true)}>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setLocalError(null);
+                  setResetMode(true);
+                }}
+              >
                 PIN oublié
               </Button>
             )}

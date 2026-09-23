@@ -711,7 +711,7 @@ export function useChatPin() {
 
   const confirmReset = useCallback(async (
     code: string,
-    newPin?: string,
+    newPin: string,
   ): Promise<boolean> => {
     if (!user?.id) return false;
     if (!/^\d{6}$/.test(code) || !newPin || !/^\d{6}$/.test(newPin)) {
