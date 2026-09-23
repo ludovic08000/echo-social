@@ -29,6 +29,13 @@
       "when": 1789498653554,
       "tag": "0003_require_libsignal_bundle_for_route",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790181660862,
+      "tag": "0004_direct_message_auto_routing",
+      "breakpoints": true
     }
   ]
 }
