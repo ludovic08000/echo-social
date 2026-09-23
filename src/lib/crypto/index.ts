@@ -15,13 +15,6 @@ export {
 } from './backupRotation';
 
 export {
-  publishCurrentDevice,
-  fetchActiveDevices,
-  revokeCurrentDevice,
-  getOrCreateCurrentDeviceId,
-} from './deviceList';
-
-export {
   exportPublicKeyBundle,
   wipeAllKeys,
   type IdentityKeyPair,

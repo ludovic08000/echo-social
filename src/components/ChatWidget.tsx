@@ -14,7 +14,7 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, useHasPendingMessages, useAcceptMessageRequest, useRejectMessageRequest, type Message } from '@/hooks/useMessages';
+import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, type Message } from '@/hooks/useMessages';
 import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, useNegotiationsByConversation, type Negotiation } from '@/hooks/useNegotiations';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
@@ -359,9 +359,6 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const deleteForMe = useDeleteMessageForMe();
   const deleteForEveryone = useDeleteMessageForEveryone();
   const { mutate: markConversationRead } = useMarkConversationRead();
-  const { data: hasPending } = useHasPendingMessages(conversationId);
-  const acceptRequest = useAcceptMessageRequest();
-  const rejectRequest = useRejectMessageRequest();
   const [newMessage, setNewMessage] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
@@ -1161,30 +1158,6 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
 
       {/* Identity and route preparation stay silent. Aegis retries its
           encrypted device-copy outbox when peer keys become available. */}
-
-      {/* Pending message request banner */}
-      {hasPending && (
-        <div className="mx-2 mt-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1">📩 Demande de message</p>
-          <p className="text-[10px] text-muted-foreground mb-2">Cette personne ne fait pas partie de vos amis. Voulez-vous accepter ses messages ?</p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => acceptRequest.mutate(conversationId)}
-              disabled={acceptRequest.isPending}
-              className="px-3 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:bg-primary/90 transition-colors"
-            >
-              ✅ Accepter
-            </button>
-            <button
-              onClick={() => rejectRequest.mutate(conversationId)}
-              disabled={rejectRequest.isPending}
-              className="px-3 py-1 rounded-full bg-destructive/10 text-destructive text-[10px] font-medium hover:bg-destructive/20 transition-colors"
-            >
-              🚫 Refuser
-            </button>
-          </div>
-        </div>
-      )}
 
       <div
         ref={scrollContainerRef}

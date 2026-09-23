@@ -61,6 +61,7 @@ export interface DeviceLifecycleSnapshot {
   canRunCryptoRuntime: boolean;
   needsApprovalUi: boolean;
   canStartEnrollment: boolean;
+  requiresExplicitEnrollment: boolean;
 }
 
 interface ApiRecordLike {
@@ -74,7 +75,10 @@ interface ApiRecordLike {
 }
 
 export interface DeviceLifecycleApi {
-  getState(userId: string): Promise<{ record: ApiRecordLike | null }>;
+  getState(userId: string): Promise<{
+    record: ApiRecordLike | null;
+    requiresExplicitEnrollment?: boolean;
+  }>;
   enroll(userId: string): Promise<unknown>;
   autoApprove(userId: string): Promise<unknown>;
   bind(userId: string): Promise<unknown>;
@@ -163,6 +167,7 @@ export class DeviceLifecycleController {
   private stage: DeviceLifecycleStage = 'idle';
   private error: string | null = null;
   private manualEnrollmentRequested = false;
+  private requiresExplicitEnrollment = false;
   private blockedUntilRetry = false;
   private disposed = false;
   /** Corrélation d'une tentative complète de pipeline (diagnostic seulement). */
@@ -319,12 +324,15 @@ export class DeviceLifecycleController {
   private nextAction(): Exclude<DeviceLifecycleStage, 'idle' | 'reading'> | null {
     if (this.manualEnrollmentRequested) return 'enrolling';
     if (this.deviceIdStatus === 'mismatch' || this.deviceIdStatus === 'storage_unavailable') return null;
+    if (this.requiresExplicitEnrollment) return null;
     const record = this.record;
 
     if (record === 'unknown') return null;
     if (!record || !this.deviceId) {
       // Premier démarrage réel : toutes les plateformes créent directement le
-      // DeviceID et les clés Libsignal, sans authentificateur intermédiaire.
+      // DeviceID et les clés Libsignal. Si le compte a déjà une identité ou si
+      // un DeviceID local n'existe plus côté serveur, le garde ci-dessus exige
+      // au contraire une action explicite et interdit toute rotation cachée.
       return 'enrolling';
     }
     if (record.deviceId !== this.deviceId) return null;
@@ -437,7 +445,9 @@ export class DeviceLifecycleController {
     this.deviceIdStatus = this.deps.getDeviceIdStatus();
     this.deviceId = this.deps.peekDeviceId();
 
-    if (!this.deviceId || this.deviceIdStatus !== 'ok') {
+    const canProbeAccountHistory = !this.deviceId && this.deviceIdStatus === 'uninitialized';
+    if ((!this.deviceId || this.deviceIdStatus !== 'ok') && !canProbeAccountHistory) {
+      this.requiresExplicitEnrollment = false;
       this.setRecord(null);
       this.stage = 'idle';
       this.trace('state_hydration', 'skipped', {
@@ -456,6 +466,7 @@ export class DeviceLifecycleController {
         this.deps.stepTimeoutMs,
       );
       if (this.disposed) return;
+      this.requiresExplicitEnrollment = snapshot.requiresExplicitEnrollment === true;
       const row = snapshot.record;
       this.setRecord(row ? {
         deviceId: row.deviceId,
@@ -498,6 +509,7 @@ export class DeviceLifecycleController {
       authenticated: true,
       deviceRecord: this.record,
       deviceIdStatus: this.deviceIdStatus,
+      requiresExplicitEnrollment: this.requiresExplicitEnrollment,
       pinUnlocked: this.pinUnlocked,
       pinRequired: this.deps.pinRequired,
       accountSyncPhase: this.accountSyncPhase,
@@ -520,7 +532,8 @@ export class DeviceLifecycleController {
       needsApprovalUi: requiresDeviceApprovalUi(state),
       canStartEnrollment: this.stage === 'idle'
         && this.record !== 'unknown'
-        && (this.record === null || state === 'LINK_REQUIRED'),
+        && (this.requiresExplicitEnrollment || this.record === null || state === 'LINK_REQUIRED'),
+      requiresExplicitEnrollment: this.requiresExplicitEnrollment,
     };
   }
 
