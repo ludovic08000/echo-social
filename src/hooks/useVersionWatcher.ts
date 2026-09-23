@@ -5,6 +5,7 @@ const POLL_INTERVAL_MS = 60 * 1000;
 const VERSION_URL = '/version.json';
 const VERSION_STORAGE_KEY = 'forsure:last-seen-build-version';
 const RELOAD_LOCK_KEY = 'forsure:auto-reload-lock';
+const RUNNING_BUILD_VERSION = __FORSURE_BUILD_VERSION__;
 
 async function fetchVersion(): Promise<string | null> {
   try {
@@ -78,21 +79,22 @@ export function useVersionWatcher() {
       let stored: string | null = null;
       try { stored = localStorage.getItem(VERSION_STORAGE_KEY); } catch {}
 
+      const runningBundleIsStale =
+        RUNNING_BUILD_VERSION !== 'development' && version !== RUNNING_BUILD_VERSION;
+
       if (initialVersionRef.current === null) {
         initialVersionRef.current = version;
-        if (!stored) {
-          try { localStorage.setItem(VERSION_STORAGE_KEY, version); } catch {}
-          return;
-        }
-        if (stored !== version) {
+        if (runningBundleIsStale || (stored !== null && stored !== version)) {
           updatingRef.current = true;
           toast('Mise à jour du site', { description: 'Chargement automatique de la dernière version…', duration: 2500 });
           await applyNewVersion(version);
+          return;
         }
+        try { localStorage.setItem(VERSION_STORAGE_KEY, version); } catch {}
         return;
       }
 
-      if (version !== initialVersionRef.current) {
+      if (runningBundleIsStale || version !== initialVersionRef.current) {
         updatingRef.current = true;
         toast('Mise à jour du site', { description: 'Chargement automatique de la dernière version…', duration: 2500 });
         await applyNewVersion(version);
