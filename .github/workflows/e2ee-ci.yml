@@ -201,12 +201,9 @@ jobs:
         with:
           version: 2.117.0
       - name: Start isolated Supabase stack
-        # Migration and pgTAP checks only need Postgres. Starting every local
-        # service pulls a dozen unrelated images and can trip GHCR's shared
-        # runner rate limit before any SQL is evaluated.
-        run: >-
-          supabase start
-          -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+        # Migration and pgTAP checks only need Postgres. The database-only
+        # command avoids pulling unrelated service images on shared runners.
+        run: supabase db start
       - name: Apply every migration from scratch
         run: supabase db reset
       - name: Run SQL security tests
