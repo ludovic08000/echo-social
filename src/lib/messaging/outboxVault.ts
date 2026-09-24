@@ -55,9 +55,7 @@ export interface OutboxPayload {
   preparedCopies?: OutboxPreparedCopy[];
   /** Monotonic server route version used to prepare `preparedCopies`. */
   routeVersion?: string | null;
-  /** Backup policy captured when the durable send was first created. */
-  archiveBackupEnabled?: boolean;
-  /** Optional account-wrapped archive prepared before transport. */
+  /** Account-wrapped archive prepared before transport for ordinary messages. */
   archiveBody?: string | null;
   imageUrl: string | null;
   extra?: OutboxExtra;

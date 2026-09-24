@@ -46,7 +46,6 @@ import {
   decryptArchive,
   recoverBubbleFromArchive,
 } from '@/lib/messaging/archive/archiveKey';
-import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 import { acknowledgeAegisMessage } from '@/lib/messaging/aegisDeviceInbox';
 
@@ -354,30 +353,27 @@ function scheduleResolvedMessageFinalization(input: {
   if (finalizationInflight.has(key)) return;
 
   const operation = (async () => {
-    if (isArchiveBackupEnabled()) {
-      const archived = await archiveBubbleForUser({
-        messageId: input.messageId,
-        conversationId: input.conversationId,
-        userId: input.userId,
-        plaintext: input.plaintext,
-        ensureParent: input.isSender,
-      }).catch(() => false);
+    const archived = await archiveBubbleForUser({
+      messageId: input.messageId,
+      conversationId: input.conversationId,
+      userId: input.userId,
+      plaintext: input.plaintext,
+      ensureParent: input.isSender,
+    }).catch(() => false);
 
-      traceE2EE({
-        direction: 'receive',
-        component: 'decryption_service',
-        stage: 'ARCHIVE_DURABILITY_GATE',
-        outcome: archived ? 'ok' : 'error',
-        messageId: input.messageId,
-        conversationId: input.conversationId,
-        errorCode: archived ? undefined : 'ARCHIVE_WRITE_NOT_VERIFIED',
-      }, archived ? 'info' : 'warn');
+    traceE2EE({
+      direction: 'receive',
+      component: 'decryption_service',
+      stage: 'ARCHIVE_DURABILITY_GATE',
+      outcome: archived ? 'ok' : 'error',
+      messageId: input.messageId,
+      conversationId: input.conversationId,
+      errorCode: archived ? undefined : 'ARCHIVE_WRITE_NOT_VERIFIED',
+    }, archived ? 'info' : 'warn');
 
-      // Keep the authenticated device capsule pending on the server until the
-      // optional encrypted-history contract is actually durable. A later
-      // inbox sync or local-cache hit will retry without re-ratcheting.
-      if (!archived) return;
-    }
+    // Invariant : la capsule serveur reste pending tant que la copie de
+    // récupération chiffrée du destinataire n'a pas été relue et vérifiée.
+    if (!archived) return;
 
     await acknowledgeAfterPersistence(input.userId, input.messageId);
   })().catch((error) => {

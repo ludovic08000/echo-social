@@ -100,10 +100,6 @@ vi.mock('@/lib/crypto/accountKeyBackup', () => ({
   getSessionUserId: () => '00000000-0000-4000-8000-000000000002',
 }));
 
-vi.mock('@/lib/messaging/archive/archivePrefs', () => ({
-  isArchiveBackupEnabled: () => true,
-}));
-
 import {
   archiveBubbleForUser,
   clearArchiveKeyCache,
