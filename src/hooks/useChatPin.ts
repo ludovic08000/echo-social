@@ -40,6 +40,7 @@ import {
 } from '@/lib/secureStore';
 
 export type PinMode = 'every_open' | 'once_per_session' | 'on_inactivity' | 'on_return';
+export type ChatPinResetResult = 'success' | 'master_key_restore_required' | 'failure';
 
 export interface ChatPinState {
   loaded: boolean;
@@ -712,15 +713,15 @@ export function useChatPin() {
   const confirmReset = useCallback(async (
     code: string,
     newPin: string,
-  ): Promise<boolean> => {
-    if (!user?.id) return false;
+  ): Promise<ChatPinResetResult> => {
+    if (!user?.id) return 'failure';
     if (!/^\d{6}$/.test(code) || !newPin || !/^\d{6}$/.test(newPin)) {
       setState((current) => ({
         ...current,
         processing: false,
         error: 'Saisissez le code email et un nouveau PIN à 6 chiffres.',
       }));
-      return false;
+      return 'failure';
     }
 
     const challenge = resetChallengeRef.current;
@@ -731,7 +732,7 @@ export function useChatPin() {
         processing: false,
         error: 'Le code a expiré. Demandez un nouveau code.',
       }));
-      return false;
+      return 'failure';
     }
 
     setState((current) => ({ ...current, processing: true, error: null }));
@@ -741,9 +742,9 @@ export function useChatPin() {
         setState((current) => ({
           ...current,
           processing: false,
-          error: 'Restaurez d’abord la clé sécurisée du compte avant de changer le PIN.',
+          error: null,
         }));
-        return false;
+        return 'master_key_restore_required';
       }
 
       const deviceId = await hydrateDeviceId();
@@ -841,7 +842,7 @@ export function useChatPin() {
           processing: false,
           error: completion.error,
         }));
-        return false;
+        return 'failure';
       }
 
       unlockedRef.current = true;
@@ -854,14 +855,14 @@ export function useChatPin() {
         processing: false,
         error: null,
       }));
-      return true;
+      return 'success';
     } catch {
       setState((current) => ({
         ...current,
         processing: false,
         error: 'La réinitialisation sécurisée du PIN a échoué. Votre PIN actuel est conservé.',
       }));
-      return false;
+      return 'failure';
     }
   }, [user?.id]);
 

@@ -200,7 +200,19 @@ export function IdentityResetScreen({
 
 // ─── RESTORABLE_IDENTITY ───
 
-export function IdentityRestoreScreen({ onRestored }: { onRestored: () => void }) {
+interface IdentityRestoreScreenProps {
+  onRestored: () => void;
+  onCancel?: () => void;
+  title?: string;
+  description?: string;
+}
+
+export function IdentityRestoreScreen({
+  onRestored,
+  onCancel,
+  title = 'Restaurer votre identité sécurisée',
+  description = 'Une sauvegarde de votre identité existe. Restaurez-la avec votre mot de passe ou votre clé de récupération : elle ne peut pas être remplacée.',
+}: IdentityRestoreScreenProps) {
   const { user } = useAuth();
   const [tab, setTab] = useState<'password' | 'recovery'>('password');
   const [password, setPassword] = useState('');
@@ -245,10 +257,9 @@ export function IdentityRestoreScreen({ onRestored }: { onRestored: () => void }
         <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
           <Lock className="w-7 h-7 text-primary" />
         </div>
-        <h2 className="text-lg font-bold tracking-tight">Restaurer votre identité sécurisée</h2>
+        <h2 className="text-lg font-bold tracking-tight">{title}</h2>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Une sauvegarde de votre identité existe. Restaurez-la avec votre mot de passe ou votre
-          clé de récupération : elle ne peut pas être remplacée.
+          {description}
         </p>
       </div>
 
@@ -292,6 +303,11 @@ export function IdentityRestoreScreen({ onRestored }: { onRestored: () => void }
       </Tabs>
 
       {error && <p role="alert" className="text-xs font-medium text-destructive">{error}</p>}
+      {onCancel && (
+        <Button variant="ghost" className="w-full" disabled={busy} onClick={onCancel}>
+          Retour au changement de PIN
+        </Button>
+      )}
     </Shell>
   );
 }

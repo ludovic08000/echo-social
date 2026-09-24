@@ -27,6 +27,8 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
   const [resetNewPin, setResetNewPin] = useState('');
   const [resetNewPinConfirmation, setResetNewPinConfirmation] = useState('');
   const [resetSent, setResetSent] = useState(false);
+  const [resetRestoreMode, setResetRestoreMode] = useState(false);
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
 
   if (!pin.loaded || !crypto.loaded) {
@@ -54,6 +56,23 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
       <IdentityResetScreen
         onSuccess={() => { void crypto.refresh(); }}
         onRetryRestore={() => { void crypto.refresh(); }}
+      />
+    );
+  }
+
+  if (resetRestoreMode) {
+    return (
+      <IdentityRestoreScreen
+        title="Déverrouiller la clé sécurisée"
+        description="Pour changer votre PIN sans perdre vos messages ni votre identité Libsignal, restaurez la clé du compte avec votre mot de passe. Le code reçu par email et le nouveau PIN restent conservés sur cet écran."
+        onCancel={() => setResetRestoreMode(false)}
+        onRestored={() => {
+          setResetRestoreMode(false);
+          setLocalError(null);
+          setResetNotice('Clé sécurisée restaurée. Vous pouvez maintenant enregistrer le nouveau PIN.');
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored'));
+          void crypto.refresh();
+        }}
       />
     );
   }
@@ -103,6 +122,7 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
 
   const requestReset = async () => {
     setLocalError(null);
+    setResetNotice(null);
     const ok = await pin.requestReset();
     if (ok) {
       setResetCode('');
@@ -114,6 +134,7 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
 
   const confirmReset = async () => {
     setLocalError(null);
+    setResetNotice(null);
     if (!/^\d{6}$/.test(resetCode)) {
       setLocalError('Le code reçu par email doit contenir 6 chiffres.');
       return;
@@ -126,10 +147,16 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
       setLocalError('Les deux nouveaux PIN ne correspondent pas.');
       return;
     }
-    const ok = await pin.confirmReset(resetCode, resetNewPin);
-    if (ok) {
+    const result = await pin.confirmReset(resetCode, resetNewPin);
+    if (result === 'master_key_restore_required') {
+      setResetRestoreMode(true);
+      return;
+    }
+    if (result === 'success') {
       setResetMode(false);
       setResetSent(false);
+      setResetRestoreMode(false);
+      setResetNotice(null);
       setResetCode('');
       setResetNewPin('');
       setResetNewPinConfirmation('');
@@ -144,6 +171,8 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
     setResetCode('');
     setResetNewPin('');
     setResetNewPinConfirmation('');
+    setResetRestoreMode(false);
+    setResetNotice(null);
     setLocalError(null);
   };
 
@@ -207,6 +236,11 @@ export function PinUnlockGate({ children, compact = false }: PinUnlockGateProps)
                   aria-label="Confirmer le nouveau PIN"
                   maxLength={6}
                 />
+                {resetNotice && (
+                  <p role="status" aria-live="polite" className="text-xs text-emerald-600 dark:text-emerald-400">
+                    {resetNotice}
+                  </p>
+                )}
                 {error && <p className="text-xs text-destructive">{error}</p>}
                 <Button className="w-full" disabled={pin.processing} onClick={() => void confirmReset()}>
                   {pin.processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
