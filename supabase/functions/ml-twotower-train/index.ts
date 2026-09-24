@@ -50,14 +50,20 @@ function toPgVector(v: number[]): string {
   return "[" + v.map((x) => x.toFixed(6)).join(",") + "]";
 }
 
-// Convert ML signal type to a positive/negative label in [-1, 1]
+// Convert every feed signal collected by useMLTracker into a target in [-1, 1].
+// Keeping the mapping exhaustive prevents valid interactions from silently
+// becoming a neutral target (0) during training.
 const SIGNAL_LABEL: Record<string, number> = {
   view: 0.1,
+  dwell_medium: 0.4,
   dwell_long: 0.7,
+  watch_complete: 0.9,
   like: 0.8,
   comment: 0.9,
   share: 1.0,
+  save: 0.9,
   click: 0.5,
+  not_interested: -0.9,
   hide: -0.8,
   report: -1.0,
   skip_fast: -0.4,
