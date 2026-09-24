@@ -4,11 +4,14 @@ import {
   AEGIS_RECOVERY_VERSION,
   decideRecoveryInstall,
   generateAegisRecoveryKey,
+  isValidAegisRecoveryKey,
   nextRecoveryGeneration,
+  normalizeAegisRecoveryKey,
   openAegisRecoveryVault,
   sealAegisRecoveryVault,
   type AegisRecoveryVaultPayload,
 } from '../aegisRecoveryProtocol';
+import { bufferToBase64 } from '../utils';
 
 const userId = '11111111-1111-4111-8111-111111111111';
 
@@ -31,6 +34,13 @@ function payload(generation = 1): AegisRecoveryVaultPayload {
 }
 
 describe('Aegis recovery vault protocol', () => {
+  it('generates the 256-bit, 64-character recovery format', () => {
+    const recoveryKey = generateAegisRecoveryKey();
+    const normalized = normalizeAegisRecoveryKey(recoveryKey);
+    expect(normalized).toMatch(/^[A-F0-9]{64}$/);
+    expect(isValidAegisRecoveryKey(recoveryKey)).toBe(true);
+  });
+
   it('round-trips one account identity with bound metadata', async () => {
     const recoveryKey = generateAegisRecoveryKey();
     const sealed = await sealAegisRecoveryVault(payload(), recoveryKey);
@@ -55,6 +65,23 @@ describe('Aegis recovery vault protocol', () => {
       recoveryKey,
       userId,
     })).rejects.toBeTruthy();
+  });
+
+  it('rejects malformed recovery envelope lengths before decryption', async () => {
+    const recoveryKey = generateAegisRecoveryKey();
+    const sealed = await sealAegisRecoveryVault(payload(), recoveryKey);
+    const shortNonce = bufferToBase64(new Uint8Array(11).buffer);
+
+    await expect(openAegisRecoveryVault({
+      envelope: { ...sealed, iv: shortNonce },
+      recoveryKey,
+      userId,
+    })).rejects.toThrow('INVALID_RECOVERY_NONCE');
+    await expect(openAegisRecoveryVault({
+      envelope: { ...sealed, generation: Number.MAX_SAFE_INTEGER + 1 },
+      recoveryKey,
+      userId,
+    })).rejects.toThrow('INVALID_RECOVERY_GENERATION');
   });
 
   it('never overwrites a different local or server identity', () => {

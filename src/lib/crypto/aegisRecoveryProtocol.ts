@@ -6,6 +6,8 @@ export const AEGIS_RECOVERY_VERSION = 1;
 const RECOVERY_KEY_BYTES = 32;
 const SALT_BYTES = 32;
 const IV_BYTES = 12;
+const GCM_TAG_BYTES = 16;
+const MAX_VAULT_CIPHERTEXT_BYTES = 786_432;
 
 export interface PortableAccountIdentity {
   publicKeyJWK: JsonWebKey;
@@ -46,6 +48,24 @@ function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
     out[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
   }
   return out as Uint8Array<ArrayBuffer>;
+}
+
+function decodeCanonicalBase64(value: unknown, field: string): Uint8Array<ArrayBuffer> {
+  if (
+    typeof value !== 'string' ||
+    !value ||
+    value.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(value)
+  ) {
+    throw new Error(`INVALID_RECOVERY_${field}`);
+  }
+  try {
+    const decoded = new Uint8Array(base64ToBuffer(value)) as Uint8Array<ArrayBuffer>;
+    if (bufferToBase64(decoded.buffer) !== value) throw new Error('non-canonical');
+    return decoded;
+  } catch {
+    throw new Error(`INVALID_RECOVERY_${field}`);
+  }
 }
 
 export function normalizeAegisRecoveryKey(input: string): string {
@@ -146,8 +166,27 @@ export async function openAegisRecoveryVault(args: {
 }): Promise<AegisRecoveryVaultPayload> {
   const { envelope, recoveryKey, userId } = args;
   if (envelope.protocolVersion !== AEGIS_RECOVERY_VERSION) throw new Error('UNSUPPORTED_RECOVERY_VERSION');
-  const salt = new Uint8Array(base64ToBuffer(envelope.salt)) as Uint8Array<ArrayBuffer>;
-  const iv = new Uint8Array(base64ToBuffer(envelope.iv)) as Uint8Array<ArrayBuffer>;
+  if (!Number.isSafeInteger(envelope.generation) || envelope.generation < 1) {
+    throw new Error('INVALID_RECOVERY_GENERATION');
+  }
+  if (
+    typeof envelope.identityFingerprint !== 'string' ||
+    envelope.identityFingerprint.length < 16 ||
+    envelope.identityFingerprint.length > 256
+  ) {
+    throw new Error('INVALID_RECOVERY_IDENTITY_FINGERPRINT');
+  }
+  const salt = decodeCanonicalBase64(envelope.salt, 'SALT');
+  const iv = decodeCanonicalBase64(envelope.iv, 'NONCE');
+  const ciphertext = decodeCanonicalBase64(envelope.ciphertext, 'CIPHERTEXT');
+  if (salt.byteLength !== SALT_BYTES) throw new Error('INVALID_RECOVERY_SALT');
+  if (iv.byteLength !== IV_BYTES) throw new Error('INVALID_RECOVERY_NONCE');
+  if (
+    ciphertext.byteLength <= GCM_TAG_BYTES ||
+    ciphertext.byteLength > MAX_VAULT_CIPHERTEXT_BYTES
+  ) {
+    throw new Error('INVALID_RECOVERY_CIPHERTEXT');
+  }
   const key = await deriveVaultKey(recoveryKey, salt, userId, envelope.generation);
   const plaintext = await hardCrypto.decrypt(
     {
@@ -161,7 +200,7 @@ export async function openAegisRecoveryVault(args: {
       tagLength: 128,
     },
     key,
-    base64ToBuffer(envelope.ciphertext),
+    ciphertext,
   );
   const payload = JSON.parse(new hardGlobals.TextDecoder().decode(plaintext)) as AegisRecoveryVaultPayload;
   if (

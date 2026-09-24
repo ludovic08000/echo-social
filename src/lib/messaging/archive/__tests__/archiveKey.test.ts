@@ -10,13 +10,13 @@ type MockQueryBuilder = {
   eq: (...args: unknown[]) => MockQueryBuilder;
   maybeSingle: () => Promise<{ data: unknown; error: null }>;
   upsert?: (
-    row: Record<string, string>,
+    row: Record<string, unknown>,
     options: DuplicateSafeUpsertOptions,
   ) => Promise<{ error: null }>;
 };
 
 const mocks = vi.hoisted(() => ({
-  storedRow: { value: null as { wrapped_key: string } | null },
+  storedRow: { value: null as { wrapped_key: string; kdf_version: number } | null },
   upsertOptions: { value: null as DuplicateSafeUpsertOptions | null },
   selectCount: { value: 0 },
   masterKey: { value: null as CryptoKey | null },
@@ -38,12 +38,15 @@ vi.mock('@/integrations/supabase/client', () => ({
             return { data: mocks.storedRow.value, error: null };
           }),
           upsert: vi.fn(async (
-            row: Record<string, string>,
+            row: Record<string, unknown>,
             options: DuplicateSafeUpsertOptions,
           ) => {
             mocks.upsertOptions.value = options;
-            if (!mocks.storedRow.value && row.wrapped_key) {
-              mocks.storedRow.value = { wrapped_key: row.wrapped_key };
+            if (!mocks.storedRow.value && typeof row.wrapped_key === 'string') {
+              mocks.storedRow.value = {
+                wrapped_key: row.wrapped_key,
+                kdf_version: Number(row.kdf_version),
+              };
             }
             return { error: null };
           }),
@@ -62,11 +65,11 @@ vi.mock('@/integrations/supabase/client', () => ({
             error: null,
           })),
           upsert: vi.fn(async (
-            row: Record<string, string>,
+            row: Record<string, unknown>,
             options: DuplicateSafeUpsertOptions,
           ) => {
             mocks.archiveUpsertOptions.value = options;
-            if (!mocks.personalArchiveBody.value && row.archive_body) {
+            if (!mocks.personalArchiveBody.value && typeof row.archive_body === 'string') {
               mocks.personalArchiveBody.value = row.archive_body;
             }
             return { error: null };
@@ -168,6 +171,34 @@ describe('archiveKey', () => {
       userId,
       '00000000-0000-4000-8000-000000000004',
     )).resolves.toBeNull();
+  });
+
+  it('rejects malformed archive envelopes before attempting decryption', () => {
+    expect(isArchivePayload(JSON.stringify({
+      v: 2,
+      iv: 'AAAA',
+      ct: 'AAAA',
+      context: 'message-id',
+    }))).toBe(false);
+    expect(isArchivePayload(JSON.stringify({
+      v: 2,
+      iv: 'not/base64!',
+      ct: 'AAAAAAAAAAAAAAAAAAAAAA==',
+      context: 'message-id',
+    }))).toBe(false);
+    expect(isArchivePayload('x'.repeat(262_145))).toBe(false);
+  });
+
+  it('refuses an unsupported archive-key version without replacing it', async () => {
+    const conversationId = '00000000-0000-4000-8000-000000000031';
+    const userId = '00000000-0000-4000-8000-000000000002';
+    await expect(encryptArchive('first', conversationId, userId)).resolves.toEqual(expect.any(String));
+    expect(mocks.storedRow.value).not.toBeNull();
+    mocks.storedRow.value!.kdf_version = 2;
+    clearArchiveKeyCache();
+
+    await expect(encryptArchive('must not overwrite', conversationId, userId)).resolves.toBeNull();
+    expect(mocks.storedRow.value?.kdf_version).toBe(2);
   });
 
   it('verifies the per-user archive and repairs the immutable sender archive', async () => {
