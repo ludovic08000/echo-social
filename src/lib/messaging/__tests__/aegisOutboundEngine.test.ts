@@ -291,14 +291,15 @@ describe('canonical Aegis outbound transaction engine', () => {
         archive_body: 'aegis-archive-v1.encrypted',
       }),
     }));
-    await vi.waitFor(() => {
-      expect(mocks.archiveBubbleForUser).toHaveBeenCalledWith({
-        messageId: COPY.message_id,
-        conversationId: '44444444-4444-4444-8444-444444444444',
-        userId: COPY.sender_user_id,
-        plaintext: 'message sauvegardé',
-      });
+    expect(mocks.archiveBubbleForUser).toHaveBeenCalledWith({
+      messageId: COPY.message_id,
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      userId: COPY.sender_user_id,
+      plaintext: 'message sauvegardé',
+      ensureParent: true,
     });
+    expect(mocks.archiveBubbleForUser.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.deleteOutbox.mock.invocationCallOrder[0]);
   });
 
   it('sends securely without the optional history archive when it cannot be prepared', async () => {

@@ -60,7 +60,7 @@ if (typeof window !== 'undefined') {
 
   const preloadOnUnlock = (event: Event) => {
     const detail = (event as CustomEvent).detail || {};
-    const userId = (detail as any).userId as string | undefined;
+    const userId = (detail as { userId?: string }).userId;
     if (!userId) return;
     void preloadAllArchiveKeys(userId)
       .then((loaded) => dispatchArchiveKeysReady(userId, loaded))
@@ -123,7 +123,7 @@ async function importAesKey(raw: Uint8Array): Promise<CryptoKey> {
   return hardCrypto.importKey(
     'raw',
     raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength),
-    { name: 'AES-GCM' } as any,
+    { name: 'AES-GCM' },
     false,
     ['encrypt', 'decrypt'],
   );
@@ -143,14 +143,14 @@ export async function getOrCreateArchiveKey(
 
   try {
     const { data } = await supabase
-      .from('conversation_archive_keys' as any)
+      .from('conversation_archive_keys')
       .select('wrapped_key, kdf_version')
       .eq('conversation_id', conversationId)
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (data && (data as any).wrapped_key) {
-      const raw = await unwrapKey((data as any).wrapped_key, masterKey, aad);
+    if (data?.wrapped_key) {
+      const raw = await unwrapKey(data.wrapped_key, masterKey, aad);
       const key = await importAesKey(raw);
       raw.fill(0);
       ramCache.set(cacheKey, key);
@@ -166,7 +166,7 @@ export async function getOrCreateArchiveKey(
     const raw = hardCrypto.getRandomValues(new Uint8Array(KEY_LEN));
     const wrapped = await wrapKey(raw, masterKey, aad);
     const { error } = await supabase
-      .from('conversation_archive_keys' as any)
+      .from('conversation_archive_keys')
       .upsert({
         conversation_id: conversationId,
         user_id: userId,
@@ -180,16 +180,16 @@ export async function getOrCreateArchiveKey(
     }
 
     const { data: stored } = await supabase
-      .from('conversation_archive_keys' as any)
+      .from('conversation_archive_keys')
       .select('wrapped_key')
       .eq('conversation_id', conversationId)
       .eq('user_id', userId)
       .maybeSingle();
 
     raw.fill(0);
-    if (!stored || !(stored as any).wrapped_key) return null;
+    if (!stored?.wrapped_key) return null;
 
-    const storedRaw = await unwrapKey((stored as any).wrapped_key, masterKey, aad);
+    const storedRaw = await unwrapKey(stored.wrapped_key, masterKey, aad);
     const key = await importAesKey(storedRaw);
     storedRaw.fill(0);
     ramCache.set(cacheKey, key);
@@ -293,7 +293,7 @@ export async function preloadAllArchiveKeys(userId: string): Promise<number> {
   if (!masterKey) return 0;
 
   try {
-    const { data } = await supabase.rpc('get_user_archive_keys' as any);
+    const { data } = await supabase.rpc('get_user_archive_keys');
     const rows = (data || []) as ArchiveKeyRow[];
     let loaded = 0;
 
@@ -322,6 +322,37 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function readParentArchiveBody(messageId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('archive_body')
+      .eq('id', messageId)
+      .maybeSingle();
+    if (error) return null;
+    const value = (data as { archive_body?: unknown } | null)?.archive_body;
+    return typeof value === 'string' && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readUserArchiveBody(messageId: string, userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('message_archives')
+      .select('archive_body')
+      .eq('message_id', messageId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) return null;
+    const value = (data as { archive_body?: unknown } | null)?.archive_body;
+    return typeof value === 'string' && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function setMessageArchiveBody(
   messageId: string,
   archiveBody: string,
@@ -334,13 +365,18 @@ export async function setMessageArchiveBody(
   for (const delay of delays) {
     await wait(delay);
     try {
-      const { data, error } = await supabase.rpc('set_message_archive_body' as any, {
+      const { data, error } = await supabase.rpc('set_message_archive_body', {
         p_message_id: messageId,
         p_archive_body: archiveBody,
       });
       if (!error && data) return true;
-      lastError = error?.message ?? 'archive_write_not_applied';
+      // The RPC is immutable and therefore returns false when another tab or
+      // an earlier attempt already filled the column. Re-read before treating
+      // that idempotent state as a failure.
+      if (await readParentArchiveBody(messageId)) return true;
+      lastError = error?.message ?? 'archive_write_not_verified';
     } catch (error) {
+      if (await readParentArchiveBody(messageId)) return true;
       lastError = error instanceof Error ? error.message : String(error);
     }
   }
@@ -358,25 +394,61 @@ export async function archiveBubbleForUser(input: {
   conversationId: string;
   userId: string;
   plaintext: string;
+  /** Also repair the immutable sender archive on the parent message row. */
+  ensureParent?: boolean;
 }): Promise<boolean> {
-  const archiveBody = await encryptArchive(
-    input.plaintext,
-    input.conversationId,
-    input.userId,
-    input.messageId,
-  );
-  if (!archiveBody) return false;
-  const { error } = await supabase
-    .from('message_archives' as any)
-    .upsert({
-      message_id: input.messageId,
-      user_id: input.userId,
-      archive_body: archiveBody,
-    }, {
-      onConflict: 'message_id,user_id',
-      ignoreDuplicates: true,
+  if (!input.messageId || !input.conversationId || !input.userId || !input.plaintext) return false;
+
+  const delays = [0, 500, 2_000];
+  let lastError: string | null = null;
+  let storedArchiveBody = await readUserArchiveBody(input.messageId, input.userId);
+
+  if (!storedArchiveBody) {
+    const generatedArchiveBody = await encryptArchive(
+      input.plaintext,
+      input.conversationId,
+      input.userId,
+      input.messageId,
+    );
+    if (!generatedArchiveBody) return false;
+
+    for (const delay of delays) {
+      await wait(delay);
+      try {
+        const { error } = await supabase
+          .from('message_archives')
+          .upsert({
+            message_id: input.messageId,
+            user_id: input.userId,
+            archive_body: generatedArchiveBody,
+          }, {
+            onConflict: 'message_id,user_id',
+            ignoreDuplicates: true,
+          });
+        storedArchiveBody = await readUserArchiveBody(input.messageId, input.userId);
+        if (storedArchiveBody) break;
+        lastError = error?.message ?? 'recipient_archive_write_not_verified';
+      } catch (error) {
+        storedArchiveBody = await readUserArchiveBody(input.messageId, input.userId);
+        if (storedArchiveBody) break;
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+  }
+
+  if (!storedArchiveBody) {
+    console.warn('[archive] recipient archive failed after retries', {
+      messageId: input.messageId.slice(0, 8),
+      attempts: delays.length,
+      error: lastError,
     });
-  return !error;
+    return false;
+  }
+
+  if (input.ensureParent) {
+    return setMessageArchiveBody(input.messageId, storedArchiveBody);
+  }
+  return true;
 }
 
 export async function recoverBubbleFromArchive(input: {
@@ -385,14 +457,14 @@ export async function recoverBubbleFromArchive(input: {
   userId: string;
 }): Promise<string | null> {
   const { data, error } = await supabase
-    .from('message_archives' as any)
+    .from('message_archives')
     .select('archive_body')
     .eq('message_id', input.messageId)
     .eq('user_id', input.userId)
     .maybeSingle();
-  if (error || !(data as any)?.archive_body) return null;
+  if (error || !data?.archive_body) return null;
   return decryptArchive(
-    (data as any).archive_body,
+    data.archive_body,
     input.conversationId,
     input.userId,
     input.messageId,

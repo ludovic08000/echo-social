@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
     trace: vi.fn(),
     transportKind: vi.fn(),
     stageCopy: vi.fn(),
+    resolvePlaintext: vi.fn(),
   };
 });
 
@@ -43,6 +44,10 @@ vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   stageSyncedDeviceCopy: mocks.stageCopy,
 }));
 
+vi.mock('@/components/messages/decryptionService', () => ({
+  resolvePlaintext: mocks.resolvePlaintext,
+}));
+
 import {
   acknowledgeAegisMessage,
   formatAegisInboxError,
@@ -60,6 +65,7 @@ beforeEach(() => {
   });
   mocks.transportKind.mockReturnValue('supabase');
   mocks.callAegisServer.mockResolvedValue({ data: [], error: null });
+  mocks.resolvePlaintext.mockResolvedValue({ text: 'decrypted', mediaKeyB64: null, hidden: false });
 });
 
 describe('Aegis durable device inbox client', () => {
@@ -99,6 +105,16 @@ describe('Aegis durable device inbox client', () => {
       sender_user_id: 'user-two',
       sender_device_id: 'device-two',
       recipient_device_id: 'device-stable',
+    });
+    await vi.waitFor(() => {
+      expect(mocks.resolvePlaintext).toHaveBeenCalledWith({
+        body: row.parent_body,
+        messageId: 'message-one',
+        senderId: 'user-two',
+        isMe: false,
+        archiveBody: null,
+        decrypt: expect.any(Function),
+      });
     });
     window.removeEventListener('forsure-decrypt-retry', listener);
   });
