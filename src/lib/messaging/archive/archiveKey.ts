@@ -10,7 +10,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { getArchiveMasterKey } from '@/lib/crypto/archiveMasterKey';
-import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 
 const ACTIVATED_FLAG = 'forsure:archive-activated-toast-shown:v1';
 const KDF_VERSION = 1;
@@ -226,7 +225,7 @@ export async function encryptArchive(
   userId: string,
   contextId = conversationId,
 ): Promise<string | null> {
-  if (!plaintext || !isArchiveBackupEnabled()) return null;
+  if (!plaintext) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
   if (!key) return null;
 

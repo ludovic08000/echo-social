@@ -25,7 +25,6 @@ import {
   type OutboxStatus,
 } from '@/lib/messaging/outboxVault';
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
-import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 
@@ -148,9 +147,9 @@ export async function sendAegisOutboundMessage(
     ? resumed.encryptedBody
     : null;
   let keyCapsule = parentBody ? resumed?.keyCapsule ?? null : null;
-  let archiveBody = resumed?.archiveBody ?? null;
-  const archiveBackupEnabled =
-    resumed?.archiveBackupEnabled ?? isArchiveBackupEnabled();
+  const messageExtra = input.extra ?? resumed?.extra;
+  const archiveRequired = messageExtra?.view_once !== true;
+  let archiveBody = archiveRequired ? resumed?.archiveBody ?? null : null;
   let copies = parentBody
     ? (resumed?.preparedCopies ?? []).filter((copy) =>
         copy.message_id === messageId && isAegisDeviceCopyWire(copy.encrypted_body),
@@ -170,10 +169,9 @@ export async function sendAegisOutboundMessage(
     keyCapsule,
     preparedCopies: copies,
     routeVersion,
-    archiveBackupEnabled,
     archiveBody,
     imageUrl: input.imageUrl ?? resumed?.imageUrl ?? null,
-    extra: input.extra ?? resumed?.extra,
+    extra: messageExtra,
     status: 'encrypting',
     retryCount: resumed?.retryCount ?? 0,
     maxRetries: resumed?.maxRetries ?? 5,
@@ -210,7 +208,7 @@ export async function sendAegisOutboundMessage(
     input.conversationId,
   );
 
-  if (archiveBackupEnabled && !archiveBody) {
+  if (archiveRequired && !archiveBody) {
     const { encryptArchive } = await import('@/lib/messaging/archive/archiveKey');
     archiveBody = await encryptArchive(
       input.plaintext,
@@ -218,8 +216,18 @@ export async function sendAegisOutboundMessage(
       input.senderUserId,
       messageId,
     );
-    // L'archive est optionnelle : son absence ne désactive jamais le chiffrement des copies.
-    if (!archiveBody) trace('ARCHIVE_UNAVAILABLE', {}, 'warn');
+    // Invariant : un message ordinaire ne quitte jamais le navigateur sans sa
+    // copie de récupération chiffrée par la Master Key du compte.
+    if (!archiveBody) {
+      const error = new Error('AEGIS_ARCHIVE_REQUIRED');
+      await persist({
+        archiveBody: null,
+        status: 'retry_pending',
+        lastError: error.message,
+      }).catch(() => undefined);
+      trace('ARCHIVE_REQUIRED', { errorCode: error.message }, 'error');
+      throw error;
+    }
     await persist({ archiveBody });
   }
 
@@ -327,7 +335,7 @@ export async function sendAegisOutboundMessage(
       body: parentBody,
       imageUrl: input.imageUrl ?? resumed?.imageUrl ?? null,
       extra: {
-        ...(input.extra ?? resumed?.extra ?? {}),
+        ...(messageExtra ?? {}),
         body_kind: 'multi_device',
         archive_body: archiveBody,
       },
@@ -372,7 +380,7 @@ export async function sendAegisOutboundMessage(
   // ciphertext index after commit; writing the same plaintext row twice wastes
   // IndexedDB work on resource-constrained mobile browsers.
   void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
-  if (archiveBackupEnabled) {
+  if (archiveRequired) {
     const archiveDurable = await import('@/lib/messaging/archive/archiveKey')
       .then(({ archiveBubbleForUser }) => archiveBubbleForUser({
         messageId: committedId,
@@ -382,11 +390,12 @@ export async function sendAegisOutboundMessage(
         ensureParent: true,
       }))
       .catch(() => false);
-    trace(
-      archiveDurable ? 'ARCHIVE_DURABLE' : 'ARCHIVE_UNAVAILABLE',
-      {},
-      archiveDurable ? 'info' : 'warn',
-    );
+    trace(archiveDurable ? 'ARCHIVE_DURABLE' : 'ARCHIVE_REQUIRED', {}, archiveDurable ? 'info' : 'error');
+    if (!archiveDurable) {
+      // Le RPC est idempotent : conserver l'outbox permet de vérifier puis
+      // finaliser l'archive au prochain essai sans renvoyer un autre message.
+      throw new Error('AEGIS_ARCHIVE_DURABILITY_REQUIRED');
+    }
   }
   await deleteOutboxPayload(localId).catch(() => undefined);
   trace('SEND_COMPLETE', { copyCount: copies.length });
