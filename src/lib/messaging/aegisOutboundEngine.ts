@@ -373,14 +373,20 @@ export async function sendAegisOutboundMessage(
   // IndexedDB work on resource-constrained mobile browsers.
   void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
   if (archiveBackupEnabled) {
-    void import('@/lib/messaging/archive/archiveKey').then(({ archiveBubbleForUser }) =>
-      archiveBubbleForUser({
+    const archiveDurable = await import('@/lib/messaging/archive/archiveKey')
+      .then(({ archiveBubbleForUser }) => archiveBubbleForUser({
         messageId: committedId,
         conversationId: input.conversationId,
         userId: input.senderUserId,
         plaintext: input.plaintext,
-      }),
-    ).catch(() => false);
+        ensureParent: true,
+      }))
+      .catch(() => false);
+    trace(
+      archiveDurable ? 'ARCHIVE_DURABLE' : 'ARCHIVE_UNAVAILABLE',
+      {},
+      archiveDurable ? 'info' : 'warn',
+    );
   }
   await deleteOutboxPayload(localId).catch(() => undefined);
   trace('SEND_COMPLETE', { copyCount: copies.length });

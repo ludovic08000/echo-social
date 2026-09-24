@@ -16,6 +16,7 @@ export type AegisInboxRow = {
   sender_user_id: string;
   sender_device_id: string;
   recipient_device_id?: string;
+  archive_body?: string | null;
   created_at: string;
   expires_at: string;
 };
@@ -23,6 +24,8 @@ export type AegisInboxRow = {
 const syncInflight = new Map<string, Promise<AegisInboxRow[]>>();
 const ackInflight = new Map<string, Promise<void>>();
 const acknowledged = new Set<string>();
+const recoveryQueued = new Set<string>();
+let recoveryTail: Promise<void> = Promise.resolve();
 const MAX_LOCAL_CACHE = 1_000;
 
 function rememberBounded(cache: Set<string>, key: string): void {
@@ -88,6 +91,58 @@ function dispatchInboxRow(row: AegisInboxRow, userId: string, deviceId: string):
   }));
 }
 
+function schedulePendingMessageRecovery(row: AegisInboxRow, userId: string): void {
+  const key = `${userId}:${row.message_id}`;
+  if (recoveryQueued.has(key)) return;
+  recoveryQueued.add(key);
+
+  // Process one pending capsule at a time. This keeps background catch-up
+  // bounded on mobile/low-memory browsers while still covering conversations
+  // that the user has not opened yet.
+  const operation = recoveryTail
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        const { resolvePlaintext } = await import('@/components/messages/decryptionService');
+        const outcome = await resolvePlaintext({
+          body: row.parent_body,
+          messageId: row.message_id,
+          senderId: row.sender_user_id,
+          isMe: row.sender_user_id === userId,
+          archiveBody: row.archive_body ?? null,
+          decrypt: async () => ({
+            text: '',
+            incompatible: true,
+            encrypted: true,
+            verified: false,
+          }),
+        });
+        traceE2EE({
+          direction: 'receive',
+          component: 'device_inbox',
+          stage: 'BACKGROUND_ARCHIVE_RECOVERY',
+          outcome: outcome && !outcome.hidden ? 'ok' : 'retry',
+          messageId: row.message_id,
+          conversationId: row.conversation_id,
+        }, outcome && !outcome.hidden ? 'info' : 'warn');
+      } catch (error) {
+        traceE2EE({
+          direction: 'receive',
+          component: 'device_inbox',
+          stage: 'BACKGROUND_ARCHIVE_RECOVERY',
+          outcome: 'error',
+          messageId: row.message_id,
+          conversationId: row.conversation_id,
+          errorCode: formatAegisInboxError(error),
+        }, 'warn');
+      } finally {
+        recoveryQueued.delete(key);
+      }
+    });
+
+  recoveryTail = operation;
+}
+
 /**
  * Pull the current authorized device's pending encrypted capsules.
  *
@@ -127,7 +182,10 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
     const rows = data ?? [];
     // Tant que le serveur conserve l'état pending, chaque synchronisation peut
     // rejouer la capsule. Elle ne devient livrée qu'après decrypt + stockage + ACK.
-    for (const row of rows) dispatchInboxRow(row, userId, ready.deviceId);
+    for (const row of rows) {
+      dispatchInboxRow(row, userId, ready.deviceId);
+      schedulePendingMessageRecovery(row, userId);
+    }
     traceE2EE({
       direction: 'receive',
       component: 'device_inbox',

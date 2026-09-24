@@ -89,6 +89,7 @@ const cache = new LruMap<string, DecryptionOutcome>(CACHE_CAP);
 type LastGoodEntry = { body: string; outcome: DecryptionOutcome };
 const lastGoodByMessage = new LruMap<string, LastGoodEntry>(CACHE_CAP);
 const inflight = new Map<string, Promise<DecryptionOutcome | null>>();
+const finalizationInflight = new Map<string, Promise<void>>();
 const purgedMessageIds = new Set<string>();
 const PURGED_MESSAGE_CAP = 2_000;
 
@@ -156,6 +157,7 @@ export function clearDecryptionSessionCaches(): void {
   cache.clear();
   lastGoodByMessage.clear();
   inflight.clear();
+  finalizationInflight.clear();
   purgedMessageIds.clear();
   negCache.clear();
   senderCache.clear();
@@ -247,14 +249,18 @@ async function buildAuthenticatedOutcomeFromText(
 }
 
 export function persistOutcome(body: string, outcome: DecryptionOutcome, messageId?: string): string {
-  const persisted = outcome.mediaKeyB64
-    ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
-    : outcome.text;
+  const persisted = serializeOutcome(outcome);
   if (messageId && purgedMessageIds.has(messageId)) return persisted;
   rememberLastGoodOutcome(messageId, outcome, body);
   if (messageId) void savePlaintext(messageId, persisted);
   void savePlaintextForCiphertext(body, persisted);
   return persisted;
+}
+
+function serializeOutcome(outcome: DecryptionOutcome): string {
+  return outcome.mediaKeyB64
+    ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
+    : outcome.text;
 }
 
 async function loadPersistedOutcome(
@@ -285,19 +291,27 @@ function cacheAndPersist(
   outcome: DecryptionOutcome,
   messageId?: string,
   currentUserId?: string | null,
+  conversationId?: string,
+  isSender = false,
 ): Promise<DecryptionOutcome> {
   if (messageId && purgedMessageIds.has(messageId)) return Promise.resolve(outcome);
   cache.set(key, outcome);
-  const persisted = outcome.mediaKeyB64
-    ? buildMediaMessageBody(outcome.text, outcome.mediaKeyB64)
-    : outcome.text;
+  const persisted = serializeOutcome(outcome);
   rememberLastGoodOutcome(messageId, outcome, body);
   return Promise.all([
     messageId ? savePlaintext(messageId, persisted) : Promise.resolve(),
     savePlaintextForCiphertext(body, persisted),
   ]).then(async () => {
-    if (currentUserId && messageId) {
-      await acknowledgeAfterPersistence(currentUserId, messageId);
+    if (currentUserId && messageId && conversationId) {
+      scheduleResolvedMessageFinalization({
+        userId: currentUserId,
+        messageId,
+        conversationId,
+        plaintext: persisted,
+        isSender,
+      });
+    } else if (currentUserId && messageId) {
+      scheduleAcknowledgement(currentUserId, messageId);
     }
     return outcome;
   });
@@ -324,6 +338,88 @@ function scheduleAcknowledgement(userId: string, messageId: string): void {
     // L'échec est déjà tracé et le serveur conserve la capsule pending : la
     // prochaine synchronisation retentera sans faux état livré côté client.
   });
+}
+
+function scheduleResolvedMessageFinalization(input: {
+  userId: string;
+  messageId: string;
+  conversationId: string;
+  plaintext: string;
+  isSender: boolean;
+}): void {
+  if (!input.userId || !input.messageId || !input.conversationId || !input.plaintext) return;
+  if (purgedMessageIds.has(input.messageId)) return;
+
+  const key = `${input.userId}:${input.messageId}:${input.isSender ? 'sender' : 'recipient'}`;
+  if (finalizationInflight.has(key)) return;
+
+  const operation = (async () => {
+    if (isArchiveBackupEnabled()) {
+      const archived = await archiveBubbleForUser({
+        messageId: input.messageId,
+        conversationId: input.conversationId,
+        userId: input.userId,
+        plaintext: input.plaintext,
+        ensureParent: input.isSender,
+      }).catch(() => false);
+
+      traceE2EE({
+        direction: 'receive',
+        component: 'decryption_service',
+        stage: 'ARCHIVE_DURABILITY_GATE',
+        outcome: archived ? 'ok' : 'error',
+        messageId: input.messageId,
+        conversationId: input.conversationId,
+        errorCode: archived ? undefined : 'ARCHIVE_WRITE_NOT_VERIFIED',
+      }, archived ? 'info' : 'warn');
+
+      // Keep the authenticated device capsule pending on the server until the
+      // optional encrypted-history contract is actually durable. A later
+      // inbox sync or local-cache hit will retry without re-ratcheting.
+      if (!archived) return;
+    }
+
+    await acknowledgeAfterPersistence(input.userId, input.messageId);
+  })().catch((error) => {
+    traceE2EE({
+      direction: 'receive',
+      component: 'decryption_service',
+      stage: 'MESSAGE_FINALIZATION_FAILED',
+      outcome: 'error',
+      messageId: input.messageId,
+      conversationId: input.conversationId,
+      errorCode: error instanceof Error ? error.message : String(error),
+    }, 'warn');
+  }).finally(() => {
+    if (finalizationInflight.get(key) === operation) finalizationInflight.delete(key);
+  });
+
+  finalizationInflight.set(key, operation);
+}
+
+function scheduleKnownOutcomeFinalization(input: {
+  outcome: DecryptionOutcome;
+  messageId?: string;
+  conversationId: string;
+  senderId?: string | null;
+  isMe?: boolean;
+}): void {
+  if (!input.messageId || input.outcome.hidden) return;
+  const plaintext = serializeOutcome(input.outcome);
+  if (!plaintext) return;
+
+  void getCachedAuthUserId()
+    .then((userId) => {
+      if (!userId || !input.messageId) return;
+      scheduleResolvedMessageFinalization({
+        userId,
+        messageId: input.messageId,
+        conversationId: input.conversationId,
+        plaintext,
+        isSender: input.isMe === true || input.senderId === userId,
+      });
+    })
+    .catch(() => undefined);
 }
 
 function stickyOrNull(messageId: string | undefined, body: string): DecryptionOutcome | null {
@@ -370,10 +466,13 @@ export async function resolvePlaintext(opts: {
   const cached = cache.get(key);
   if (cached) {
     trace('PLAINTEXT_RESOLVE', { outcome: 'ok', cache: 'memory' });
-    if (messageId) {
-      void getCachedAuthUserId()
-        .then((userId) => { if (userId) scheduleAcknowledgement(userId, messageId); });
-    }
+    scheduleKnownOutcomeFinalization({
+      outcome: cached,
+      messageId,
+      conversationId: aegisEnvelope.conversationId,
+      senderId: opts.senderId ?? aegisEnvelope.senderId,
+      isMe: opts.isMe,
+    });
     return cached;
   }
 
@@ -381,10 +480,13 @@ export async function resolvePlaintext(opts: {
   if (persisted) {
     trace('PLAINTEXT_RESOLVE', { outcome: 'ok', cache: 'disk' });
     cache.set(key, persisted);
-    if (messageId) {
-      void getCachedAuthUserId()
-        .then((userId) => { if (userId) scheduleAcknowledgement(userId, messageId); });
-    }
+    scheduleKnownOutcomeFinalization({
+      outcome: persisted,
+      messageId,
+      conversationId: aegisEnvelope.conversationId,
+      senderId: opts.senderId ?? aegisEnvelope.senderId,
+      isMe: opts.isMe,
+    });
     return persisted;
   }
 
@@ -424,15 +526,15 @@ export async function resolvePlaintext(opts: {
                   conversationId: aegisEnvelope.conversationId,
                 });
                 const outcome = await buildAuthenticatedOutcomeFromText(plaintext, messageId);
-                if (currentUserId && isArchiveBackupEnabled()) {
-                  void archiveBubbleForUser({
-                    messageId,
-                    conversationId: aegisEnvelope.conversationId,
-                    userId: currentUserId,
-                    plaintext,
-                  }).catch(() => false);
-                }
-                return cacheAndPersist(key, body, outcome, messageId, currentUserId);
+                return cacheAndPersist(
+                  key,
+                  body,
+                  outcome,
+                  messageId,
+                  currentUserId,
+                  aegisEnvelope.conversationId,
+                  opts.isMe === true || senderId === currentUserId,
+                );
               }
             }
           } catch (error) {
@@ -458,7 +560,15 @@ export async function resolvePlaintext(opts: {
             if (parentArchive !== null) {
               trace('ARCHIVE_RECOVERY', { outcome: 'ok', cache: 'network' });
               const outcome = await buildAuthenticatedOutcomeFromText(parentArchive, messageId);
-              return cacheAndPersist(key, body, outcome, messageId, currentUserId);
+              return cacheAndPersist(
+                key,
+                body,
+                outcome,
+                messageId,
+                currentUserId,
+                aegisEnvelope.conversationId,
+                true,
+              );
             }
           }
 
@@ -470,7 +580,15 @@ export async function resolvePlaintext(opts: {
           if (archived !== null) {
             trace('ARCHIVE_RECOVERY', { outcome: 'ok', cache: 'network' });
             const outcome = await buildAuthenticatedOutcomeFromText(archived, messageId);
-            return cacheAndPersist(key, body, outcome, messageId, currentUserId);
+            return cacheAndPersist(
+              key,
+              body,
+              outcome,
+              messageId,
+              currentUserId,
+              aegisEnvelope.conversationId,
+              opts.isMe === true || senderId === currentUserId,
+            );
           }
         }
       }

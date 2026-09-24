@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   openAegisMessage: vi.fn(),
   from: vi.fn(),
   getUser: vi.fn(),
+  archiveBubbleForUser: vi.fn(),
+  acknowledgeAegisMessage: vi.fn(),
 }));
 
 vi.mock('@/lib/crypto/plaintextStore', () => ({
@@ -21,6 +23,8 @@ vi.mock('@/lib/crypto/plaintextStore', () => ({
 
 vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   tryReadDeviceCopy: mocks.tryReadDeviceCopy,
+  clearDeviceCopyCache: vi.fn(),
+  clearDeviceCopyCacheForMessage: vi.fn(),
 }));
 
 vi.mock('@/e2ee-session', () => ({
@@ -45,18 +49,24 @@ vi.mock('@/integrations/supabase/client', () => ({
 vi.mock('@/lib/messaging/archive/archiveKey', () => ({
   decryptArchive: vi.fn(async () => null),
   isArchivePayload: vi.fn(() => false),
-  archiveBubbleForUser: vi.fn(async () => true),
+  archiveBubbleForUser: mocks.archiveBubbleForUser,
   recoverBubbleFromArchive: vi.fn(async () => null),
+}));
+
+vi.mock('@/lib/messaging/aegisDeviceInbox', () => ({
+  acknowledgeAegisMessage: mocks.acknowledgeAegisMessage,
 }));
 
 import {
   clearLastGoodOutcome,
+  clearDecryptionSessionCaches,
   clearNegativeCache,
   clearNegativeCacheForMessage,
   dropCache,
   looksEncrypted,
   resolvePlaintext,
 } from '@/components/messages/decryptionService';
+import { primeAuthUserId } from '@/lib/crypto/peerKeyCache';
 
 function multiDeviceBody(messageId: string, seed: string): string {
   return JSON.stringify({
@@ -87,8 +97,11 @@ function failedDecrypt() {
 describe('targeted decryption cache and Bubble Hold', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearDecryptionSessionCaches();
     clearNegativeCache();
     clearLastGoodOutcome();
+    primeAuthUserId(null);
+    localStorage.clear();
     mocks.loadPlaintext.mockResolvedValue(null);
     mocks.loadPlaintextForCiphertext.mockResolvedValue(null);
     mocks.savePlaintext.mockResolvedValue(undefined);
@@ -97,6 +110,8 @@ describe('targeted decryption cache and Bubble Hold', () => {
     mocks.routeIncoming.mockResolvedValue({ ok: false, plaintext: null });
     mocks.openAegisMessage.mockImplementation(async (_body: string, capsule: string) => capsule);
     mocks.getUser.mockResolvedValue({ data: { user: null } });
+    mocks.archiveBubbleForUser.mockResolvedValue(true);
+    mocks.acknowledgeAegisMessage.mockResolvedValue(undefined);
     mocks.from.mockImplementation((table: string) => {
       if (table !== 'messages') throw new Error(`Unexpected table: ${table}`);
       return {
@@ -232,6 +247,55 @@ describe('targeted decryption cache and Bubble Hold', () => {
       { requestRetry: true },
     );
     expect(result?.text).toBe('copie directe');
+  });
+
+  it('backfills a disk-cached recipient message before acknowledging its server capsule', async () => {
+    const body = multiDeviceBody('message-disk-backfill', 'disk-backfill');
+    mocks.loadPlaintext.mockResolvedValueOnce('message déjà déchiffré localement');
+    mocks.getUser.mockResolvedValue({ data: { user: { id: 'recipient-user' } } });
+
+    const result = await resolvePlaintext({
+      body,
+      messageId: 'message-disk-backfill',
+      senderId: 'sender',
+      isMe: false,
+      decrypt: vi.fn(async () => failedDecrypt()),
+    });
+
+    expect(result?.text).toBe('message déjà déchiffré localement');
+    await vi.waitFor(() => {
+      expect(mocks.archiveBubbleForUser).toHaveBeenCalledWith({
+        messageId: 'message-disk-backfill',
+        conversationId: 'conversation-id',
+        userId: 'recipient-user',
+        plaintext: 'message déjà déchiffré localement',
+        ensureParent: false,
+      });
+      expect(mocks.acknowledgeAegisMessage).toHaveBeenCalledWith(
+        'recipient-user',
+        'message-disk-backfill',
+      );
+    });
+    expect(mocks.archiveBubbleForUser.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.acknowledgeAegisMessage.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps the server capsule pending when archive durability cannot be verified', async () => {
+    const body = multiDeviceBody('message-archive-retry', 'archive-retry');
+    mocks.loadPlaintext.mockResolvedValueOnce('message à retenter');
+    mocks.getUser.mockResolvedValue({ data: { user: { id: 'recipient-user' } } });
+    mocks.archiveBubbleForUser.mockResolvedValueOnce(false);
+
+    await expect(resolvePlaintext({
+      body,
+      messageId: 'message-archive-retry',
+      senderId: 'sender',
+      isMe: false,
+      decrypt: vi.fn(async () => failedDecrypt()),
+    })).resolves.toEqual(expect.objectContaining({ text: 'message à retenter' }));
+
+    await vi.waitFor(() => expect(mocks.archiveBubbleForUser).toHaveBeenCalled());
+    expect(mocks.acknowledgeAegisMessage).not.toHaveBeenCalled();
   });
 
   it('treats future crypto JSON envelopes as encrypted recovery rows', () => {
