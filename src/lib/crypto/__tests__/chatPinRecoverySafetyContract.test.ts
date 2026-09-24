@@ -173,6 +173,25 @@ describe('messaging PIN recovery safety contract', () => {
     expect(reset).not.toContain("action: 'confirm-reset'");
   });
 
+  it('routes a missing Master Key through authenticated restoration without weakening the reset', () => {
+    const hook = source('src/hooks/useChatPin.ts');
+    const gate = source('src/components/messaging/PinUnlockGate.tsx');
+    const reset = between(
+      hook,
+      'const confirmReset = useCallback',
+      'return {\n    ...state,',
+    );
+
+    expect(reset).toContain('const masterKey = getSessionMasterKey()');
+    expect(reset).toContain("return 'master_key_restore_required'");
+    expect(reset.indexOf('const masterKey = getSessionMasterKey()')).toBeLessThan(
+      reset.indexOf('createLocalPinRecord(user.id, newPin)'),
+    );
+    expect(gate).toContain("result === 'master_key_restore_required'");
+    expect(gate).toContain('<IdentityRestoreScreen');
+    expect(gate).not.toContain('setResetCode(\'\')\n      setResetRestoreMode(true)');
+  });
+
   it('keeps reset challenges and mutation RPCs server-only', () => {
     const migration = source(
       'supabase/migrations/20260923192452_harden_chat_pin_recovery.sql',
