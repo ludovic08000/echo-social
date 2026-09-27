@@ -5757,7 +5757,6 @@ export type Database = {
           anonymous_sender_tag: string
           context_id: string | null
           conversation_id: string
-          context_id: string | null
           created_at: string
           delivered_at: string | null
           delivery_state: string
@@ -5771,7 +5770,6 @@ export type Database = {
           anonymous_sender_tag: string
           context_id?: string | null
           conversation_id: string
-          context_id?: string | null
           created_at?: string
           delivered_at?: string | null
           delivery_state?: string
@@ -5785,7 +5783,6 @@ export type Database = {
           anonymous_sender_tag?: string
           context_id?: string | null
           conversation_id?: string
-          context_id?: string | null
           created_at?: string
           delivered_at?: string | null
           delivery_state?: string
