@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { requireAdmin, requireCronSecret } from "../_shared/auth-guard.ts";
 
 /**
  * Scheduled data cleanup function.
@@ -11,6 +12,21 @@ Deno.serve(async (req) => {
   const headers = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers });
+  }
+
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "METHOD_NOT_ALLOWED" }), {
+      status: 405,
+      headers: { ...headers, "Content-Type": "application/json", Allow: "POST" },
+    });
+  }
+
+  // Scheduled callers use CRON_SECRET. A signed-in administrator may also run
+  // cleanup manually, while anonymous callers never receive the service role.
+  const cronGuard = requireCronSecret(req, headers);
+  if (!cronGuard.ok) {
+    const adminGuard = await requireAdmin(req, headers);
+    if (!adminGuard.ok) return adminGuard.response;
   }
 
   try {

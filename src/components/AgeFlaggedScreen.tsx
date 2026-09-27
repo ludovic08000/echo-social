@@ -6,9 +6,16 @@ import { Label } from '@/components/ui/label';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
-import { uploadToR2 } from '@/lib/r2';
 import { toast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
+
+const MAX_ID_DOCUMENT_BYTES = 10 * 1024 * 1024;
+const ALLOWED_ID_DOCUMENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+]);
 
 /**
  * Blocking screen shown when the AI age verification flags a user.
@@ -61,18 +68,41 @@ export function AgeFlaggedScreen() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (!ALLOWED_ID_DOCUMENT_TYPES.has(file.type)) {
+      toast({ title: 'Format non accepté', description: 'Utilisez un fichier JPG, PNG, WEBP ou PDF.', variant: 'destructive' });
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > MAX_ID_DOCUMENT_BYTES) {
       toast({ title: 'Fichier trop volumineux', description: 'Maximum 10 Mo.', variant: 'destructive' });
+      e.target.value = '';
       return;
     }
 
     setIsUploadingId(true);
     try {
-      const { url } = await uploadToR2(file, 'documents');
+      const extension = file.type === 'application/pdf' ? 'pdf'
+        : file.type === 'image/png' ? 'png'
+          : file.type === 'image/webp' ? 'webp'
+            : 'jpg';
+      const objectPath = `${user.id}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from('id-documents')
+        .upload(objectPath, file, {
+          contentType: file.type || 'image/jpeg',
+          upsert: false,
+        });
+      if (uploadError) throw uploadError;
+
+      const { data: signed, error: signedError } = await supabase.storage
+        .from('id-documents')
+        .createSignedUrl(objectPath, 10 * 60);
+      if (signedError || !signed?.signedUrl) throw signedError || new Error('Lien de vérification indisponible');
 
       // 🔒 AI verification: detect fake / AI-generated documents
       const { data: verifyResult, error: verifyError } = await supabase.functions.invoke('verify-id-document', {
-        body: { imageUrl: url },
+        body: { imageUrl: signed.signedUrl },
       });
 
       if (verifyError) {
@@ -106,20 +136,11 @@ export function AgeFlaggedScreen() {
         return;
       }
 
-      // Document accepted — update the identity verification record
-      const { error } = await supabase
-        .from('identity_verifications')
-        .update({ id_document_url: url, status: 'pending' })
-        .eq('reported_user_id', user.id)
-        .eq('status', 'pending');
-
+      // Store only the private object path. The RPC owns all status changes.
+      const { error } = await (supabase.rpc as any)('submit_own_identity_document', {
+        p_document_path: objectPath,
+      });
       if (error) throw error;
-
-      // Update profile status to pending
-      await supabase
-        .from('profiles')
-        .update({ age_verification_status: 'pending' })
-        .eq('user_id', user.id);
 
       setIdUploaded(true);
       toast({ title: 'Pièce d\'identité envoyée ✓', description: 'Votre compte sera vérifié dans les 72h.' });
@@ -241,10 +262,10 @@ export function AgeFlaggedScreen() {
                 <span className="text-sm font-medium text-foreground">
                   {isUploadingId ? 'Envoi en cours…' : 'Cliquez pour uploader'}
                 </span>
-                <span className="text-xs text-muted-foreground">JPG, PNG ou PDF — Max 10 Mo</span>
+                <span className="text-xs text-muted-foreground">JPG, PNG, WEBP ou PDF — Max 10 Mo</span>
                 <input
                   type="file"
-                  accept="image/*,application/pdf"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
                   onChange={handleIdUpload}
                   disabled={isUploadingId}
                   className="hidden"

@@ -22,6 +22,11 @@ interface EditingUser {
   profile_type: string;
 }
 
+interface AdminUser extends EditingUser {
+  avatar_url: string | null;
+  created_at: string;
+}
+
 function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
   if (!open) return null;
   return (
@@ -54,11 +59,13 @@ export function UsersSection() {
   const { data: users, isLoading } = useQuery({
     queryKey: ['admin-users', search],
     queryFn: async () => {
-      let query = supabase.from('profiles').select('user_id, name, avatar_url, city, bio, created_at, profile_type').order('created_at', { ascending: false }).limit(50);
-      if (search.trim()) query = query.ilike('name', `%${search}%`);
-      const { data, error } = await query;
+      const { data, error } = await (supabase.rpc as any)('admin_list_profiles', {
+        p_search: search.trim() || null,
+        p_user_ids: null,
+        p_limit: 50,
+      });
       if (error) throw error;
-      return data;
+      return data as AdminUser[];
     },
   });
 
@@ -74,7 +81,13 @@ export function UsersSection() {
 
   const updateUser = useMutation({
     mutationFn: async (data: EditingUser) => {
-      const { error } = await supabase.from('profiles').update({ name: data.name, city: data.city, bio: data.bio, profile_type: data.profile_type }).eq('user_id', data.user_id);
+      const { error } = await (supabase.rpc as any)('admin_update_profile', {
+        p_user_id: data.user_id,
+        p_name: data.name,
+        p_city: data.city,
+        p_bio: data.bio,
+        p_profile_type: data.profile_type,
+      });
       if (error) throw error;
     },
     onSuccess: () => { toast({ title: '✅ Profil mis à jour' }); setEditingUser(null); queryClient.invalidateQueries({ queryKey: ['admin-users'] }); },
@@ -219,7 +232,6 @@ export function UsersSection() {
                     <SelectContent>
                       <SelectItem value="user">Utilisateur</SelectItem>
                       <SelectItem value="creator">Créateur</SelectItem>
-                      <SelectItem value="business">Business</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

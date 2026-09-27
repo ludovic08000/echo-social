@@ -23,14 +23,8 @@ export default defineTool({
       if (input[key] !== undefined) patch[key] = input[key];
     }
     if (Object.keys(patch).length === 0) return errorResult("Aucun champ à mettre à jour.");
-    if ("mood_emoji" in patch || "mood_text" in patch) patch.mood_updated_at = new Date().toISOString();
-
     const { data, error } = await supabaseForUser(ctx)
-      .from("profiles")
-      .update(patch)
-      .eq("user_id", ctx.getUserId())
-      .select("id, name, bio, city, website_url, mood_emoji, mood_text")
-      .maybeSingle();
+      .rpc("update_own_profile", { p_updates: patch });
 
     if (error) return errorResult(error.message);
     if (!data) return errorResult("Profil introuvable ou mise à jour refusée.");

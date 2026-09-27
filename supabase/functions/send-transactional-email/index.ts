@@ -44,7 +44,15 @@ Deno.serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const legacyServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const serverSecretKeys = configuredServerSecretKeys(
+    Deno.env.get('SUPABASE_SECRET_KEYS'),
+    legacyServiceRoleKey,
+  )
+  const supabaseServiceKey =
+    legacyServiceRoleKey ??
+    serverSecretKeys.find((key) => key.startsWith('sb_secret_')) ??
+    serverSecretKeys[0]
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('Missing required environment variables')
@@ -57,33 +65,24 @@ Deno.serve(async (req) => {
     )
   }
 
-  // Authenticate the exact configured server key before parsing the body. The
-  // gateway check alone does not authenticate opaque sb_secret_* keys, so this
-  // comparison intentionally remains inside the handler.
-  const serverSecretKeys = configuredServerSecretKeys(
-    Deno.env.get('SUPABASE_SECRET_KEYS'),
-    supabaseServiceKey
-  )
   const hasPresentedCredential = Boolean(
-    req.headers.get('apikey') || req.headers.get('Authorization')
+    req.headers.get('apikey') || req.headers.get('Authorization'),
   )
   if (!hasPresentedCredential) {
-    return new Response(
-      JSON.stringify({ error: 'Unauthorized' }),
-      {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
+
+  // The gateway accepts ordinary user JWTs as well as server credentials.
+  // This explicit comparison keeps arbitrary clients from using the service
+  // role held by this function to enqueue branded transactional emails.
   if (!isAuthorizedServerRequest(req.headers, serverSecretKeys)) {
-    return new Response(
-      JSON.stringify({ error: 'Forbidden' }),
-      {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 
   // Parse request body

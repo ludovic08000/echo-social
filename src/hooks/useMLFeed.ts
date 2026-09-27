@@ -31,7 +31,8 @@ export function useMLTracking() {
 
 /**
  * Hook to get AI-powered scores for a set of post IDs.
- * Now uses the unified SQL batch function `ml_pareto_score_batch`.
+ * Uses the caller-bound SQL batch facade. The browser never supplies a user
+ * ID, so an authenticated client cannot score content as another account.
  */
 export function useMLScoring(postIds: string[]) {
   const { user } = useAuth();
@@ -41,8 +42,7 @@ export function useMLScoring(postIds: string[]) {
     queryFn: async () => {
       if (!user || postIds.length === 0) return { scores: {} as Record<string, number> };
 
-      const { data, error } = await supabase.rpc('ml_pareto_score_batch' as any, {
-        p_user_id: user.id,
+      const { data, error } = await supabase.rpc('ml_pareto_score_batch_for_current_user' as any, {
         p_post_ids: postIds,
       });
 
@@ -100,7 +100,7 @@ export function blendScores(
   mlWeight: number = 0.3
 ): number {
   if (mlScore === undefined) return localScore;
-  // ml_pareto_score_batch returns scores in 0..1 range — normalize to local scale (~0..200)
+  // The batch scorer returns scores in 0..1 range — normalize to local scale (~0..200)
   const normalizedMl = mlScore * 200;
   return localScore * (1 - mlWeight) + normalizedMl * mlWeight;
 }

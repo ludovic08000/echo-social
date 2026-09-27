@@ -45,7 +45,7 @@ var get_my_profile_default = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (_input, ctx) => {
     if (!ctx.isAuthenticated()) return notAuthenticated();
-    const { data, error } = await supabaseForUser(ctx).from("profiles").select("id, user_id, name, bio, city, website_url, mood_emoji, mood_text, is_creator, creator_tier, created_at").eq("user_id", ctx.getUserId()).maybeSingle();
+    const { data, error } = await supabaseForUser(ctx).rpc("get_profile_for_viewer", { p_user_id: ctx.getUserId() });
     if (error) return errorResult(error.message);
     if (!data) return errorResult("Aucun profil trouv\xE9 pour ce compte.");
     return jsonResult({ profile: data });
@@ -75,8 +75,7 @@ var update_my_profile_default = defineTool2({
       if (input[key] !== void 0) patch[key] = input[key];
     }
     if (Object.keys(patch).length === 0) return errorResult("Aucun champ \xE0 mettre \xE0 jour.");
-    if ("mood_emoji" in patch || "mood_text" in patch) patch.mood_updated_at = (/* @__PURE__ */ new Date()).toISOString();
-    const { data, error } = await supabaseForUser(ctx).from("profiles").update(patch).eq("user_id", ctx.getUserId()).select("id, name, bio, city, website_url, mood_emoji, mood_text").maybeSingle();
+    const { data, error } = await supabaseForUser(ctx).rpc("update_own_profile", { p_updates: patch });
     if (error) return errorResult(error.message);
     if (!data) return errorResult("Profil introuvable ou mise \xE0 jour refus\xE9e.");
     return jsonResult({ profile: data });

@@ -108,7 +108,11 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     disableUnusedSupabaseHardwareFactor(),
     react(),
-    mcpPlugin(),
+    // mcp-js 0.24 externalizes a Windows drive path instead of bundling it.
+    // Keep the checked-in standalone function on Windows; Linux/Lovable builds
+    // still regenerate it from src/lib/mcp and the production assertion below
+    // rejects any local absolute path before a release can complete.
+    process.platform !== "win32" && mcpPlugin(),
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",

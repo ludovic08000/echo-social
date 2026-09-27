@@ -10,10 +10,7 @@ export default defineTool({
   handler: async (_input, ctx) => {
     if (!ctx.isAuthenticated()) return notAuthenticated();
     const { data, error } = await supabaseForUser(ctx)
-      .from("profiles")
-      .select("id, user_id, name, bio, city, website_url, mood_emoji, mood_text, is_creator, creator_tier, created_at")
-      .eq("user_id", ctx.getUserId())
-      .maybeSingle();
+      .rpc("get_profile_for_viewer", { p_user_id: ctx.getUserId() });
     if (error) return errorResult(error.message);
     if (!data) return errorResult("Aucun profil trouvé pour ce compte.");
     return jsonResult({ profile: data });

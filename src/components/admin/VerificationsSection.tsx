@@ -34,10 +34,12 @@ export function VerificationsSection() {
 
   const updateVerification = useMutation({
     mutationFn: async ({ id, status, note }: { id: string; status: string; note?: string }) => {
-      const updates: any = { status, updated_at: new Date().toISOString() };
-      if (status === 'verified') updates.verified_at = new Date().toISOString();
-      if (note) updates.admin_note = note;
-      const { error } = await supabase.from('identity_verifications').update(updates).eq('id', id);
+      const { error } = await (supabase.rpc as any)('admin_update_identity_verification', {
+        p_verification_id: id,
+        p_status: status,
+        p_admin_note: note || null,
+        p_auto_deleted: null,
+      });
       if (error) throw error;
     },
     onSuccess: () => { toast({ title: 'Vérification mise à jour' }); queryClient.invalidateQueries({ queryKey: ['admin-verifications'] }); },
@@ -45,7 +47,13 @@ export function VerificationsSection() {
 
   const deleteAccount = useMutation({
     mutationFn: async ({ id, userId }: { id: string; userId: string }) => {
-      await supabase.from('identity_verifications').update({ status: 'deleted', auto_deleted: true, updated_at: new Date().toISOString() }).eq('id', id);
+      const { error: verificationError } = await (supabase.rpc as any)('admin_update_identity_verification', {
+        p_verification_id: id,
+        p_status: 'deleted',
+        p_admin_note: null,
+        p_auto_deleted: true,
+      });
+      if (verificationError) throw verificationError;
       const { data: { user } } = await supabase.auth.getUser();
       if (user) await supabase.from('banned_users').insert({ user_id: userId, reason: 'Faux compte non vérifié', banned_by: user.id });
     },
@@ -56,7 +64,13 @@ export function VerificationsSection() {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) return;
-      const { data: profile } = await supabase.from('profiles').select('id, user_id, name, avatar_url, bio, city, created_at').eq('user_id', v.reported_user_id).maybeSingle();
+      const { data: profileRows, error: profileError } = await (supabase.rpc as any)('admin_list_profiles', {
+        p_search: null,
+        p_user_ids: [v.reported_user_id],
+        p_limit: 1,
+      });
+      if (profileError) throw profileError;
+      const profile = profileRows?.[0] || null;
       const { data: fingerprints } = await supabase.from('device_fingerprints').select('*').eq('user_id', v.reported_user_id);
       const ips = [...new Set((fingerprints || []).map((f: any) => f.ip_address).filter(Boolean))] as string[];
       const { data: connLogs } = await supabase.from('security_logs').select('*').or(`details->>user_id.eq.${v.reported_user_id},ip_address.in.(${ips.join(',')})`).order('created_at', { ascending: false }).limit(50);
@@ -70,7 +84,13 @@ export function VerificationsSection() {
       if (error) throw error;
       await supabase.from('banned_users').insert({ user_id: v.reported_user_id, reason: `Usurpation d'identité - Dossier ${caseNumber}`, banned_by: currentUser.id });
       for (const ip of ips) { try { await supabase.from('banned_ips').insert({ ip_address: ip, reason: `Usurpation - ${caseNumber}`, banned_by: currentUser.id }); } catch {} }
-      await supabase.from('identity_verifications').update({ status: 'deleted', auto_deleted: true, updated_at: new Date().toISOString() }).eq('id', v.id);
+      const { error: verificationError } = await (supabase.rpc as any)('admin_update_identity_verification', {
+        p_verification_id: v.id,
+        p_status: 'deleted',
+        p_admin_note: `Archivé sous le dossier ${caseNumber}`,
+        p_auto_deleted: true,
+      });
+      if (verificationError) throw verificationError;
       toast({ title: '📁 Profil archivé', description: `Dossier ${caseNumber} créé.` });
       queryClient.invalidateQueries({ queryKey: ['admin-verifications'] });
     } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }

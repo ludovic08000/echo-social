@@ -123,12 +123,15 @@ export function useTrustScores() {
 
       if (data && data.length > 0) {
         const userIds = (data as any[]).map((d: any) => d.user_id);
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, name, city')
-          .in('id', userIds);
+        const { data: profiles } = await (supabase.rpc as any)('admin_list_profiles', {
+          p_search: null,
+          p_user_ids: userIds,
+          p_limit: Math.min(userIds.length, 100),
+        });
 
-        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+        const profileMap = new Map<string, { name?: string | null; city?: string | null }>(
+          (profiles || []).map((p: any) => [p.user_id, p] as const),
+        );
         setScores((data as any[]).map((d: any) => ({
           ...d,
           name: profileMap.get(d.user_id)?.name || 'Inconnu',

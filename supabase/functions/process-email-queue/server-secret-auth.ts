@@ -1,2 +1,2 @@
-// Compat : ré-exporte l'implémentation partagée pour les imports existants.
+// Compatibility shim for existing imports and tests.
 export * from '../_shared/server-secret-auth.ts'

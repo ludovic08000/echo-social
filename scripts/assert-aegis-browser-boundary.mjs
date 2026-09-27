@@ -3,6 +3,7 @@ import { extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const outputRoot = fileURLToPath(new URL("../dist/", import.meta.url));
+const mcpFunctionPath = fileURLToPath(new URL("../supabase/functions/mcp/index.ts", import.meta.url));
 const textExtensions = new Set([".css", ".html", ".js", ".json", ".mjs", ".webmanifest"]);
 const forbiddenPatterns = [
   new RegExp(["web", "authn"].join(""), "i"),
@@ -84,4 +85,23 @@ if (pwaViolations.length > 0) {
   throw new Error(`Unsafe PWA update boundary: ${pwaViolations.join(", ")}`);
 }
 
-console.log("[aegis-browser-boundary] supported device path and active PWA updates verified");
+const mcpFunctionContents = await readFile(mcpFunctionPath, "utf8");
+const mcpViolations = [];
+if (/from\s+["']npm:[a-z]:[\\/]/i.test(mcpFunctionContents)) {
+  mcpViolations.push("local Windows path escaped into the deployable function");
+}
+if (!mcpFunctionContents.includes('.rpc("get_profile_for_viewer"')) {
+  mcpViolations.push("profile reads bypass the guarded RPC");
+}
+if (!mcpFunctionContents.includes('.rpc("update_own_profile"')) {
+  mcpViolations.push("profile writes bypass the guarded RPC");
+}
+if (mcpFunctionContents.includes('.from("profiles")')) {
+  mcpViolations.push("direct profile table access remains in the MCP bundle");
+}
+
+if (mcpViolations.length > 0) {
+  throw new Error(`Unsafe MCP deployment boundary: ${mcpViolations.join(", ")}`);
+}
+
+console.log("[aegis-browser-boundary] supported device path, PWA updates, and MCP boundary verified");

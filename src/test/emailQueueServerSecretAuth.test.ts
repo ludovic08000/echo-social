@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   configuredServerSecretKeys,
@@ -62,5 +63,20 @@ describe('email queue server-secret authentication', () => {
     const headers = new Headers({ Authorization: `Bearer ${modernSecret}` })
 
     expect(isAuthorizedServerRequest(headers, [])).toBe(false)
+  })
+
+  it('protects both email entry points with the exact configured server secret', () => {
+    for (const path of [
+      'supabase/functions/process-email-queue/index.ts',
+      'supabase/functions/send-transactional-email/index.ts',
+    ]) {
+      const source = readFileSync(path, 'utf8')
+
+      expect(source).toContain('configuredServerSecretKeys(')
+      expect(source).toContain('isAuthorizedServerRequest(')
+      expect(source).toContain("Deno.env.get('SUPABASE_SECRET_KEYS')")
+      expect(source).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')")
+      expect(source).toContain("error: 'Forbidden'")
+    }
   })
 })
