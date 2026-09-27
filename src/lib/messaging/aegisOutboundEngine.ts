@@ -27,6 +27,7 @@ import {
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface AegisOutboundInput {
   conversationId: string;
@@ -105,6 +106,46 @@ function requestSenderTrustRepair(error: unknown): void {
     }));
   } catch {
     // Browser event delivery is best-effort outside the DOM runtime.
+  }
+}
+
+function isMessageIdConflict(error: unknown): boolean {
+  if (errorMessage(error).toLowerCase().includes('message_id_conflict')) return true;
+  try {
+    return JSON.stringify(error).toLowerCase().includes('message_id_conflict');
+  } catch {
+    return false;
+  }
+}
+
+async function isExactCommittedMessage(input: {
+  messageId: string;
+  conversationId: string;
+  senderUserId: string;
+  body: string;
+  imageUrl: string | null;
+}): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, sender_id, conversation_id, body, image_url')
+      .eq('id', input.messageId)
+      .maybeSingle();
+    if (error || !data) return false;
+    const row = data as {
+      id?: unknown;
+      sender_id?: unknown;
+      conversation_id?: unknown;
+      body?: unknown;
+      image_url?: unknown;
+    };
+    return row.id === input.messageId &&
+      row.sender_id === input.senderUserId &&
+      row.conversation_id === input.conversationId &&
+      row.body === input.body &&
+      (row.image_url ?? null) === input.imageUrl;
+  } catch {
+    return false;
   }
 }
 
@@ -356,6 +397,27 @@ export async function sendAegisOutboundMessage(
   }
 
   copies = result.copies;
+  if (result.error) {
+    const exactCommittedConflict = isMessageIdConflict(result.error) &&
+      await isExactCommittedMessage({
+        messageId,
+        conversationId: input.conversationId,
+        senderUserId: input.senderUserId,
+        body: parentBody,
+        imageUrl: input.imageUrl ?? resumed?.imageUrl ?? null,
+      });
+    if (exactCommittedConflict) {
+      // A previous attempt committed this exact encrypted message before the
+      // archive became durable. The immutable RPC correctly rejects the now
+      // richer request; continue only after an exact row match so the common
+      // archive finalizer can repair it without creating a duplicate.
+      trace('MESSAGE_COMMIT_CONFIRMED_FOR_ARCHIVE_REPAIR', {
+        copyCount: copies.length,
+      }, 'warn');
+      result = { ...result, data: messageId, error: null };
+    }
+  }
+
   if (result.error) {
     trace('SERVER_SEND_FAILED', {
       copyCount: copies.length,

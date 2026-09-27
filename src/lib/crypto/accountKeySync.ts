@@ -10,7 +10,9 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import {
+  hasAccountMasterKeySession,
   hasLocalKeys,
+  restoreAccountMasterKeyFromDeviceStore,
   restoreAccountKeysFromActiveSession,
   restoreKeysFromKeychainSnapshot,
   syncKeychainSnapshotFromLocal,
@@ -86,6 +88,8 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       import('@/lib/crypto/keyManager'),
     ]);
 
+    const deviceMasterStatus = await restoreAccountMasterKeyFromDeviceStore(userId);
+
     const [localKeysPresent, rawIdentityPresent, wrappedKeysPresent] = await Promise.all([
       hasLocalKeys(userId),
       hasRawIdentityKeys(userId),
@@ -97,6 +101,8 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       localKeysPresent,
       rawIdentityPresent,
       wrappedKeysPresent,
+      deviceMasterStatus,
+      masterKeyReady: hasAccountMasterKeySession(userId),
       native: isNativePlatform(),
     });
 
@@ -106,12 +112,24 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
       if (refreshed === 'restored') {
         announce('forsure-keys-restored', { status: 'refreshed_from_keychain_snapshot' });
       }
+      if (!hasAccountMasterKeySession(userId)) {
+        const restoreStatus = await restoreAccountKeysFromActiveSession(userId);
+        if (!hasAccountMasterKeySession(userId)) {
+          requireRestore(userId, 'account_master_key_locked', { restoreStatus, deviceMasterStatus });
+        }
+      }
       outcome = 'local_keys_present';
       return;
     }
 
     const keychainStatus = await restoreKeysFromKeychainSnapshot(userId);
     if (keychainStatus === 'restored') {
+      if (!hasAccountMasterKeySession(userId)) {
+        const restoreStatus = await restoreAccountKeysFromActiveSession(userId);
+        if (!hasAccountMasterKeySession(userId)) {
+          requireRestore(userId, 'account_master_key_locked', { restoreStatus, deviceMasterStatus });
+        }
+      }
       announce('forsure-keys-restored', { status: 'restored_from_keychain_snapshot' });
       outcome = 'restored_from_keychain_snapshot';
       return;
@@ -123,13 +141,16 @@ export async function synchronizeAccountKeysBeforeRuntime(userId: string): Promi
     }
 
     const restoreStatus = await restoreAccountKeysFromActiveSession(userId);
-    if (restoreStatus === 'restored' || restoreStatus === 'local_ok') {
+    if (
+      (restoreStatus === 'restored' || restoreStatus === 'local_ok') &&
+      hasAccountMasterKeySession(userId)
+    ) {
       announce('forsure-keys-restored', { status: 'restored_active_session' });
       outcome = 'restored_active_session';
       return;
     }
 
-    if (await hasLocalKeys(userId)) {
+    if (await hasLocalKeys(userId) && hasAccountMasterKeySession(userId)) {
       outcome = 'local_keys_present';
       return;
     }

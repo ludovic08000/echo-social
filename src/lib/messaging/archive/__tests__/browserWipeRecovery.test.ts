@@ -169,6 +169,27 @@ beforeEach(async () => {
 });
 
 describe('message recovery after a complete browser wipe', () => {
+  it('reopens the persisted non-extractable device key after a page reload', async () => {
+    await expect(initializeArchiveMasterKeyFromPassword(PASSWORD, USER_ID))
+      .resolves.toBe('restored');
+    await expect(archiveBubbleForUser({
+      messageId: MESSAGE_ID,
+      conversationId: CONVERSATION_ID,
+      userId: USER_ID,
+      plaintext: 'Lisible après simple rechargement',
+      ensureParent: true,
+    })).resolves.toBe(true);
+
+    clearArchiveKeyCache();
+    clearArchiveMasterKeySession();
+
+    await expect(recoverBubbleFromArchive({
+      messageId: MESSAGE_ID,
+      conversationId: CONVERSATION_ID,
+      userId: USER_ID,
+    })).resolves.toBe('Lisible après simple rechargement');
+  });
+
   it('restores the account Master Key with the password and reads the cloud archive', async () => {
     await expect(initializeArchiveMasterKeyFromPassword(PASSWORD, USER_ID))
       .resolves.toBe('restored');

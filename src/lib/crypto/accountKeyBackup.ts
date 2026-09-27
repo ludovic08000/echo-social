@@ -28,7 +28,7 @@ import { logCryptoError, logCryptoException } from '@/lib/crypto/errorLogger';
 import { writeKeySentinel, clearKeySentinel } from '@/lib/crypto/keySentinel';
 import { secureGetSecret, secureSetSecret, secureRemoveSecret } from '@/lib/secureStore';
 import { discardLegacyDeviceIdFromBackup } from '@/lib/crypto/deviceBackupPolicy';
-import { runPostRestoreSync, type RestoreReason } from '@/lib/crypto/postRestoreSync';
+import { runPostRestoreSync } from '@/lib/crypto/postRestoreSync';
 import {
   createSingleFlightByKey,
   decidePasswordChangeReadiness,
@@ -67,6 +67,26 @@ let _sessionUserId: string | null = null;
 
 type AccountKeyInitStatus = 'restored' | 'local_ok' | 'no_backup' | 'error';
 const runAccountKeyInitSingleFlight = createSingleFlightByKey<AccountKeyInitStatus>();
+export type DeviceMasterKeyRestoreStatus = 'restored' | 'local_ok' | 'unavailable' | 'error';
+const runDeviceMasterKeyRestoreSingleFlight = createSingleFlightByKey<DeviceMasterKeyRestoreStatus>();
+
+async function persistMasterKeyForDevice(userId: string, raw: Uint8Array | null): Promise<void> {
+  if (!raw || raw.byteLength !== MASTER_KEY_LENGTH) return;
+  try {
+    const { importArchiveMasterKeyFromDeviceLink } = await import('@/lib/crypto/archiveMasterKey');
+    await importArchiveMasterKeyFromDeviceLink(
+      bufferToBase64(raw.slice().buffer),
+      userId,
+    );
+  } catch (error) {
+    // The authoritative password/recovery backup remains valid. A failure to
+    // mirror the key locally only means the next reload must ask for recovery.
+    logCryptoException('backup', error, {
+      severity: 'warning',
+      metadata: { stage: 'persist_master_key_for_device', userId },
+    });
+  }
+}
 
 // ── Crypto Primitives ──
 
@@ -651,6 +671,7 @@ async function initAccountKeySyncOnce(
 
       _sessionRawMasterKey = restored.masterKeyRaw;
       _sessionMasterKey = restored.masterKey;
+      await persistMasterKeyForDevice(userId, restored.masterKeyRaw);
       dispatchSessionUnlocked(userId);
       await writeKeychainSnapshot(userId);
       void runPostRestoreSync(userId, 'password_sign_in');
@@ -714,6 +735,7 @@ async function initAccountKeySyncOnce(
 
     _sessionRawMasterKey = mkRaw;
     _sessionMasterKey = mk;
+    await persistMasterKeyForDevice(userId, mkRaw);
     dispatchSessionUnlocked(userId);
     await writeKeychainSnapshot(userId);
     return 'local_ok';
@@ -739,6 +761,77 @@ export function initAccountKeySync(
 }
 
 /**
+ * Rehydrate the volatile account Master Key from this device's durable store.
+ * The local key is accepted only after it authenticates and decrypts the
+ * authoritative account backup for the same user.
+ */
+export function restoreAccountMasterKeyFromDeviceStore(
+  userId: string,
+): Promise<DeviceMasterKeyRestoreStatus> {
+  if (!userId) return Promise.resolve('unavailable');
+  return runDeviceMasterKeyRestoreSingleFlight(userId, async () => {
+    if (hasAccountMasterKeySession(userId)) return 'local_ok';
+    const t0 = performance.now();
+    let candidateRaw: Uint8Array | null = null;
+    try {
+      const { loadArchiveMasterKeyMaterial } = await import('@/lib/crypto/archiveMasterKey');
+      const material = await loadArchiveMasterKeyMaterial(userId);
+      if (!material) return 'unavailable';
+      candidateRaw = material.raw;
+
+      const { data, error } = await supabase
+        .from('user_backups')
+        .select('encrypted_blob, iv')
+        .eq('user_id', userId)
+        .eq('backup_type', BACKUP_TYPE_ACCOUNT)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return 'unavailable';
+
+      const backup = data as unknown as { encrypted_blob: string; iv: string };
+      const json = await decryptWithMasterKey(
+        backup.encrypted_blob,
+        backup.iv,
+        material.key,
+        buildBackupAAD(userId, 'account'),
+      );
+      await restoreAllKeys(json, userId);
+      if (!(await hasLocalAccountIdentity(userId))) {
+        throw new Error('DEVICE_MASTER_KEY_RESTORE_VALIDATION_FAILED');
+      }
+
+      _sessionMasterKey = material.key;
+      _sessionRawMasterKey?.fill(0);
+      _sessionRawMasterKey = candidateRaw?.slice() ?? null;
+      _sessionUserId = userId;
+      dispatchSessionUnlocked(userId);
+      await writeKeychainSnapshot(userId);
+      logCryptoError({
+        severity: 'info', context: 'restore', errorCode: 'RESTORE_DEVICE_MASTER_KEY_SUCCESS',
+        errorMessage: 'Account Master Key restored from authenticated device storage',
+        metadata: { userId, durationMs: Math.round(performance.now() - t0) },
+      });
+      void runPostRestoreSync(userId, 'device_master_key');
+      return 'restored';
+    } catch (error) {
+      try {
+        const { clearArchiveMasterKeySession } = await import('@/lib/crypto/archiveMasterKey');
+        clearArchiveMasterKeySession();
+      } catch {
+        // A failed validation must not keep an untrusted candidate active.
+      }
+      logCryptoException('restore', error, {
+        severity: 'warning',
+        metadata: { stage: 'device_master_key_restore', userId, durationMs: Math.round(performance.now() - t0) },
+      });
+      return 'error';
+    } finally {
+      candidateRaw?.fill(0);
+    }
+  });
+}
+
+/**
  * Re-attempt restore using the in-memory password session when available.
  *
  * This only works inside the SAME JS lifetime as a successful password login.
@@ -751,9 +844,14 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 
   try {
     const hasLocal = targetUserId ? await hasLocalKeys(targetUserId) : false;
-    if (hasLocal) {
-      console.log('[MasterKey] Active-session restore skipped: local crypto already present');
+    if (hasLocal && targetUserId && hasAccountMasterKeySession(targetUserId)) {
+      console.log('[MasterKey] Active-session restore skipped: account crypto session already present');
       return 'local_ok';
+    }
+
+    if (targetUserId) {
+      const deviceStatus = await restoreAccountMasterKeyFromDeviceStore(targetUserId);
+      if (deviceStatus === 'restored' || deviceStatus === 'local_ok') return deviceStatus;
     }
 
     if (!_sessionPassword || !targetUserId || _sessionUserId !== targetUserId) {
@@ -783,6 +881,8 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 
     _sessionRawMasterKey = result.masterKeyRaw;
     _sessionMasterKey = result.masterKey;
+    _sessionUserId = targetUserId;
+    await persistMasterKeyForDevice(targetUserId, result.masterKeyRaw);
     dispatchSessionUnlocked(targetUserId);
     await writeKeychainSnapshot(targetUserId);
     console.log('[MasterKey] ✅ Keys restored from active session');
@@ -815,7 +915,7 @@ export async function restoreAccountKeysFromActiveSession(userId?: string): Prom
 export async function restoreFromInMemoryMasterKey(userId?: string): Promise<'restored' | 'local_ok' | 'unavailable' | 'error'> {
   const targetUserId = userId ?? _sessionUserId;
   try {
-    if (targetUserId && await hasLocalKeys(targetUserId)) return 'local_ok';
+    if (targetUserId && hasAccountMasterKeySession(targetUserId) && await hasLocalKeys(targetUserId)) return 'local_ok';
     if (!_sessionMasterKey || !targetUserId) return 'unavailable';
 
     const { data } = await supabase
@@ -876,6 +976,7 @@ export async function restoreWithRecoveryKey(recoveryKey: string, userId: string
       _sessionRawMasterKey = result.masterKeyRaw;
       _sessionMasterKey = result.masterKey;
       _sessionUserId = userId;
+      await persistMasterKeyForDevice(userId, result.masterKeyRaw);
       dispatchSessionUnlocked(userId);
       await writeKeychainSnapshot(userId);
       // Re-wrap with current password if available
@@ -1160,6 +1261,10 @@ export function clearAccountKeySession(): void {
  */
 export function getSessionMasterKey(): CryptoKey | null {
   return _sessionMasterKey;
+}
+
+export function hasAccountMasterKeySession(userId: string): boolean {
+  return Boolean(userId && _sessionUserId === userId && _sessionMasterKey);
 }
 
 /**

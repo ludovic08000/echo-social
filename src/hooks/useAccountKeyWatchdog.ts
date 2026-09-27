@@ -12,7 +12,9 @@ import { useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import {
   clearAccountKeySession,
+  hasAccountMasterKeySession,
   hasLocalKeys,
+  restoreAccountMasterKeyFromDeviceStore,
   restoreAccountKeysFromActiveSession,
   restoreKeysFromKeychainSnapshot,
   restoreFromInMemoryMasterKey,
@@ -49,21 +51,35 @@ export function useAccountKeyWatchdog() {
     if (!user) return;
 
     const attemptSilentRestore = async (origin: string): Promise<boolean> => {
-      if (await hasLocalKeys(user.id)) return true;
+      let localKeysPresent = await hasLocalKeys(user.id);
+      if (localKeysPresent && hasAccountMasterKeySession(user.id)) return true;
+
+      try {
+        const status = await restoreAccountMasterKeyFromDeviceStore(user.id);
+        localKeysPresent = await hasLocalKeys(user.id);
+        if ((status === 'restored' || status === 'local_ok') &&
+          localKeysPresent && hasAccountMasterKeySession(user.id)) {
+          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
+            detail: { status: `restored_master_key_from_device_${origin}` },
+          }));
+          return true;
+        }
+      } catch {
+        // Continue with the password/keychain recovery paths.
+      }
 
       try {
         if ((await restoreKeysFromKeychainSnapshot(user.id)) === 'restored') {
-          window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
-            detail: { status: `restored_from_keychain_${origin}` },
-          }));
-          return true;
+          localKeysPresent = true;
         }
       } catch {
         // Continue.
       }
 
       try {
-        if ((await restoreFromInMemoryMasterKey(user.id)) === 'restored') {
+        const restored = await restoreFromInMemoryMasterKey(user.id);
+        if ((restored === 'restored' || restored === 'local_ok') &&
+          hasAccountMasterKeySession(user.id)) {
           window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
             detail: { status: `restored_from_inmem_mk_${origin}` },
           }));
@@ -74,7 +90,9 @@ export function useAccountKeyWatchdog() {
       }
 
       try {
-        if ((await restoreAccountKeysFromActiveSession(user.id)) === 'restored') {
+        const restored = await restoreAccountKeysFromActiveSession(user.id);
+        if ((restored === 'restored' || restored === 'local_ok') &&
+          hasAccountMasterKeySession(user.id)) {
           window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
             detail: { status: `restored_from_password_${origin}` },
           }));
@@ -82,6 +100,12 @@ export function useAccountKeyWatchdog() {
         }
       } catch {
         // Retry on the next pass.
+      }
+
+      if (localKeysPresent && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+          detail: { userId: user.id, reason: 'account_master_key_locked', source: origin },
+        }));
       }
 
       return false;

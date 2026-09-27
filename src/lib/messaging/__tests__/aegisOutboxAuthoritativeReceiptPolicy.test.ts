@@ -38,4 +38,9 @@ describe('Aegis outbox authoritative receipt policy', () => {
       'await sendMessage(payload.plaintext, payload.imageUrl, payload.extra, payload)',
     );
   });
+
+  it('keeps the encrypted archive prepared by the first attempt', () => {
+    expect(source).toContain('archiveBody: resumePayload?.archiveBody ?? null');
+    expect(source).not.toContain('archiveBody: null,\n    };');
+  });
 });

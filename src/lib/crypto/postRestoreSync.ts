@@ -26,6 +26,7 @@ export type RestoreReason =
   | 'pin_backup'
   | 'password_sign_in'
   | 'password_active_session'
+  | 'device_master_key'
   | 'in_memory_master_key'
   | 'manual';
 

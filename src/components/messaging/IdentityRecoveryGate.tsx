@@ -19,7 +19,11 @@ import {
   type AccountCryptoInspection,
 } from '@/lib/crypto/accountCryptoState';
 import { resetUnrecoverableIdentityWithPassword } from '@/lib/crypto/explicitIdentityReset';
-import { initAccountKeySync } from '@/lib/crypto/accountKeyBackup';
+import {
+  hasAccountMasterKeySession,
+  initAccountKeySync,
+  restoreAccountMasterKeyFromDeviceStore,
+} from '@/lib/crypto/accountKeyBackup';
 import { restoreAegisRecoveryVault } from '@/lib/crypto/aegisRecoveryVault';
 import {
   acquireRecoveryDialog,
@@ -50,7 +54,17 @@ export function useAccountCryptoGate(): AccountCryptoGate {
       return chained;
     }
     const attempt = (async () => {
-      const result = await inspectAccountCryptoState(user.id);
+      await restoreAccountMasterKeyFromDeviceStore(user.id);
+      const inspected = await inspectAccountCryptoState(user.id);
+      const result: AccountCryptoInspection = inspected.state === 'READY' &&
+        inspected.hasAccountBackup &&
+        !hasAccountMasterKeySession(user.id)
+        ? {
+            ...inspected,
+            state: 'RESTORABLE_IDENTITY',
+            reason: 'account_master_key_locked',
+          }
+        : inspected;
       setInspection(result);
       setLoaded(true);
     })().finally(() => { running.current = null; });
@@ -63,9 +77,11 @@ export function useAccountCryptoGate(): AccountCryptoGate {
     const onRestored = () => { void refresh(); };
     window.addEventListener('forsure-keys-restored', onRestored);
     window.addEventListener('forsure-keys-unlocked', onRestored);
+    window.addEventListener('forsure:e2ee-restore-needed', onRestored);
     return () => {
       window.removeEventListener('forsure-keys-restored', onRestored);
       window.removeEventListener('forsure-keys-unlocked', onRestored);
+      window.removeEventListener('forsure:e2ee-restore-needed', onRestored);
     };
   }, [refresh]);
 

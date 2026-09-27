@@ -13,6 +13,20 @@ const mocks = vi.hoisted(() => ({
   assertTrusted: vi.fn(),
   encryptArchive: vi.fn(),
   archiveBubbleForUser: vi.fn(),
+  readCommitted: vi.fn(),
+}));
+
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    from: vi.fn(() => {
+      const builder = {
+        select: vi.fn(() => builder),
+        eq: vi.fn(() => builder),
+        maybeSingle: (...args: unknown[]) => mocks.readCommitted(...args),
+      };
+      return builder;
+    }),
+  },
 }));
 
 vi.mock('@/lib/crypto/libsignalProvisioning', () => ({ provisionLibsignalDevice: mocks.provision }));
@@ -95,6 +109,7 @@ beforeEach(() => {
   mocks.assertTrusted.mockResolvedValue(undefined);
   mocks.encryptArchive.mockResolvedValue('aegis-archive-v2.encrypted');
   mocks.archiveBubbleForUser.mockResolvedValue(true);
+  mocks.readCommitted.mockResolvedValue({ data: null, error: null });
 });
 
 describe('canonical Aegis outbound transaction engine', () => {
@@ -367,6 +382,74 @@ describe('canonical Aegis outbound transaction engine', () => {
         lastError: 'AEGIS_ARCHIVE_DURABILITY_REQUIRED',
       }),
     );
+  });
+
+  it('repairs the archive for an exact message already committed by an earlier attempt', async () => {
+    const conversationId = '44444444-4444-4444-8444-444444444444';
+    mocks.sendRpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '23505', message: 'MESSAGE_ID_CONFLICT' },
+      copies: [COPY],
+      retriedStaleRoute: false,
+      routeVersion: 'route-version-1',
+    });
+    mocks.readCommitted.mockImplementationOnce(async () => ({
+      data: {
+        id: COPY.message_id,
+        sender_id: COPY.sender_user_id,
+        conversation_id: conversationId,
+        body: mocks.putOutbox.mock.calls.find((call) => Boolean(call[1]?.encryptedBody))?.[1]?.encryptedBody,
+        image_url: null,
+      },
+      error: null,
+    }));
+
+    await expect(sendAegisOutboundMessage({
+      conversationId,
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'vocal déjà livré',
+      localId: 'local-conflict-repair',
+      traceId: 'trace-conflict-repair',
+      messageId: COPY.message_id,
+    })).resolves.toMatchObject({ id: COPY.message_id });
+
+    expect(mocks.archiveBubbleForUser).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: COPY.message_id,
+      ensureParent: true,
+    }));
+    expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-conflict-repair');
+  });
+
+  it('refuses archive repair when a conflicting server row is not an exact match', async () => {
+    mocks.sendRpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '23505', message: 'MESSAGE_ID_CONFLICT' },
+      copies: [COPY],
+      retriedStaleRoute: false,
+      routeVersion: 'route-version-1',
+    });
+    mocks.readCommitted.mockResolvedValueOnce({
+      data: {
+        id: COPY.message_id,
+        sender_id: COPY.sender_user_id,
+        conversation_id: '44444444-4444-4444-8444-444444444444',
+        body: 'different-ciphertext',
+        image_url: null,
+      },
+      error: null,
+    });
+
+    await expect(sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'ne pas réparer',
+      localId: 'local-conflict-rejected',
+      traceId: 'trace-conflict-rejected',
+      messageId: COPY.message_id,
+    })).rejects.toThrow('MESSAGE_ID_CONFLICT');
+
+    expect(mocks.archiveBubbleForUser).not.toHaveBeenCalled();
+    expect(mocks.deleteOutbox).not.toHaveBeenCalled();
   });
 
   it('blocks a durable retry when the peer identity changed after preparation', async () => {
