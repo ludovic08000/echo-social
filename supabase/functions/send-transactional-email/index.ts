@@ -30,9 +30,11 @@ function generateToken(): string {
     .join('')
 }
 
-// Auth note: this function uses verify_jwt = true in config.toml, so Supabase's
-// gateway validates the caller's JWT (anon or service_role) before the request
-// reaches this code. No in-function auth check is needed.
+// Auth note: verify_jwt = true in config.toml validates any Supabase JWT at the
+// gateway, but only an exact configured server secret (SUPABASE_SECRET_KEYS, or
+// the legacy SUPABASE_SERVICE_ROLE_KEY in compatibility) may trigger a send.
+// Invariant : les appels non serveur (JWT utilisateur anonyme/authentifié) sont
+// rejetés ici — 401 sans credential, 403 avec credential non serveur.
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
