@@ -13,3 +13,14 @@ it('allows cryptographic WASM without JavaScript eval or inline scripts', () => 
   expect(directives.get('script-src-elem')).toEqual(["'self'"]);
   expect(directives.get('object-src')).toEqual(["'none'"]);
 });
+
+it('allows camera and microphone capture only for the ForSure origin', () => {
+  const html = readFileSync('index.html', 'utf8');
+  const policy = html.match(/http-equiv="Permissions-Policy" content="([^"]+)"/)?.[1];
+
+  expect(policy).toBeDefined();
+  expect(policy).toContain('camera=(self)');
+  expect(policy).toContain('microphone=(self)');
+  expect(policy).toContain('geolocation=()');
+  expect(policy).toContain('payment=()');
+});
