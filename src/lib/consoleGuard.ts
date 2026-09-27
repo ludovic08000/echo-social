@@ -16,6 +16,18 @@ const RAW_CONSOLE = {
 
 export type RawConsoleLevel = keyof typeof RAW_CONSOLE;
 
+interface ForSureDebugApi {
+  enable: () => void;
+  disable: () => void;
+  enabled: () => boolean;
+  traces: () => Promise<unknown>;
+  report: () => Promise<unknown>;
+  clearTraces: () => Promise<void>;
+  help: () => void;
+}
+
+type DebugWindow = typeof window & { forsureDebug?: ForSureDebugApi };
+
 /** Écrit dans la vraie console même après le lockdown production. */
 export function rawConsoleWrite(level: RawConsoleLevel, ...args: unknown[]): void {
   try {
@@ -51,13 +63,20 @@ export function isE2EEDebugEnabled(): boolean {
 /** Installe l'aide seule : ne bloque pas la console et n'active jamais le debug. */
 export function installE2EEDebugHelper(): void {
   if (typeof window !== 'undefined') {
-    (window as any).forsureDebug = {
+    (window as DebugWindow).forsureDebug = {
       enable: () => { setE2EEDebugEnabled(true); rawConsoleWrite('log', '[AEGIS] traçage activé pour 10 minutes'); },
       disable: () => { setE2EEDebugEnabled(false); rawConsoleWrite('log', '[AEGIS] traçage désactivé'); },
       enabled: isE2EEDebugEnabled,
       traces: async () => (await import('@/lib/messaging/e2eeTrace')).readE2EETrace(),
       report: async () => (await import('@/lib/messaging/aegisDiagnosticReport')).getAegisDiagnosticReport(),
-      clearTraces: async () => (await import('@/lib/messaging/e2eeTrace')).clearE2EETrace(),
+      clearTraces: async () => {
+        const [messaging, calls] = await Promise.all([
+          import('@/lib/messaging/e2eeTrace'),
+          import('@/lib/calls/callDiagnostics'),
+        ]);
+        messaging.clearE2EETrace();
+        calls.clearCallTrace();
+      },
       help: () => rawConsoleWrite('log', '[AEGIS] forsureDebug: enabled(), enable() (10 min), disable(), traces(), report(), clearTraces()'),
     };
     rawConsoleWrite('log', '[AEGIS] diagnostic disponible (métadonnées uniquement). Tapez forsureDebug.help()');
@@ -83,11 +102,15 @@ export function lockdownConsole(): void {
   ];
 
   for (const method of methods) {
-    (console as any)[method] = noop;
+    Object.defineProperty(console, method, {
+      configurable: true,
+      writable: true,
+      value: noop,
+    });
   }
 
   // Error: only log a generic code, no details
-  console.error = (...args: unknown[]) => {
+  console.error = () => {
     // Security-critical errors get an opaque code only
     _origError.call(console, `[E${Date.now().toString(36).slice(-4)}]`);
   };
@@ -114,7 +137,15 @@ export function lockdownConsole(): void {
         if (!devtoolsWarned) {
           devtoolsWarned = true;
           // Clear console when DevTools detected
-          try { (console as any).clear = noop; } catch {}
+          try {
+            Object.defineProperty(console, 'clear', {
+              configurable: true,
+              writable: true,
+              value: noop,
+            });
+          } catch {
+            /* console déjà verrouillée */
+          }
         }
         return '';
       },

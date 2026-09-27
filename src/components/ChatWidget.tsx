@@ -30,6 +30,7 @@ import { EncryptedMedia } from '@/components/messages/EncryptedMedia';
 import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } from '@/hooks/useCall';
 import { CallOverlay } from '@/components/CallOverlay';
 import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
+import { callErrorUserMessage } from '@/lib/calls/callDiagnostics';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
@@ -596,7 +597,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
     onCallEnded: useCallback((info: CallEndInfo) => {
       // End the signaling record
       if (activeCallIdRef.current) {
-        endActiveCall(activeCallIdRef.current);
+        void endActiveCall(activeCallIdRef.current).catch(() => undefined);
         activeCallIdRef.current = null;
       }
       // Send a system message about the call
@@ -965,6 +966,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
             onClose={() => setShowCallHistory(false)}
             onCallBack={async (peerId, type) => {
               if (!user?.id) return;
+              if (call.callState !== 'idle') {
+                toast.error(callErrorUserMessage('CALL_ALREADY_ACTIVE'));
+                return;
+              }
               setShowCallHistory(false);
               setIsStartingCall(true);
               try {
@@ -972,9 +977,13 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                 const callId = await signalOutgoingCall(conversationId, user.id, peerId, type, callKey);
                 if (!callId) { toast.error("Impossible de signaler l'appel."); return; }
                 activeCallIdRef.current = callId;
-                await call.startCall(callId, type, callKey);
+                const started = await call.startCall(callId, type, callKey);
+                if (!started && activeCallIdRef.current === callId) {
+                  activeCallIdRef.current = null;
+                  await endActiveCall(callId).catch(() => undefined);
+                }
               } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Appel impossible");
+                toast.error(callErrorUserMessage(err));
               } finally {
                 setIsStartingCall(false);
               }
@@ -991,9 +1000,19 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
           prefilled={conversation?.participant?.user_id ? [conversation.participant.user_id] : []}
           onCallStarted={async (callId, _roomId, callKey, callType) => {
             try {
-              await call.startCall(callId, callType, callKey);
+              if (call.callState !== 'idle') {
+                await endActiveCall(callId).catch(() => undefined);
+                toast.error(callErrorUserMessage('CALL_ALREADY_ACTIVE'));
+                return;
+              }
+              activeCallIdRef.current = callId;
+              const started = await call.startCall(callId, callType, callKey);
+              if (!started && activeCallIdRef.current === callId) {
+                activeCallIdRef.current = null;
+                await endActiveCall(callId).catch(() => undefined);
+              }
             } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Impossible de rejoindre l'appel");
+              toast.error(callErrorUserMessage(err));
             }
           }}
         />
@@ -1061,6 +1080,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                 toast.error("Aucun contact à appeler dans cette conversation.");
                 return;
               }
+              if (call.callState !== 'idle') {
+                toast.error(callErrorUserMessage('CALL_ALREADY_ACTIVE'));
+                return;
+              }
               setIsStartingCall(true);
               try {
                 const callKey = generateCallE2EEKey();
@@ -1070,10 +1093,13 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                   return;
                 }
                 activeCallIdRef.current = callId;
-                await call.startCall(callId, 'audio', callKey);
+                const started = await call.startCall(callId, 'audio', callKey);
+                if (!started && activeCallIdRef.current === callId) {
+                  activeCallIdRef.current = null;
+                  await endActiveCall(callId).catch(() => undefined);
+                }
               } catch (err) {
-                console.error('[ChatWidget] audio call failed', err);
-                toast.error(err instanceof Error ? `Appel impossible : ${err.message}` : "Appel impossible");
+                toast.error(callErrorUserMessage(err));
               } finally {
                 setIsStartingCall(false);
               }
@@ -1091,6 +1117,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                 toast.error("Aucun contact à appeler dans cette conversation.");
                 return;
               }
+              if (call.callState !== 'idle') {
+                toast.error(callErrorUserMessage('CALL_ALREADY_ACTIVE'));
+                return;
+              }
               setIsStartingCall(true);
               try {
                 const callKey = generateCallE2EEKey();
@@ -1100,10 +1130,13 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                   return;
                 }
                 activeCallIdRef.current = callId;
-                await call.startCall(callId, 'video', callKey);
+                const started = await call.startCall(callId, 'video', callKey);
+                if (!started && activeCallIdRef.current === callId) {
+                  activeCallIdRef.current = null;
+                  await endActiveCall(callId).catch(() => undefined);
+                }
               } catch (err) {
-                console.error('[ChatWidget] video call failed', err);
-                toast.error(err instanceof Error ? `Visio impossible : ${err.message}` : "Visio impossible");
+                toast.error(callErrorUserMessage(err));
               } finally {
                 setIsStartingCall(false);
               }

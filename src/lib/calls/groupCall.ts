@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
-import { generateCallE2EEKey } from '@/hooks/useCall';
+import { generateCallE2EEKey } from './callKey';
 import { createAegisCall, updateAegisCallStatus } from './aegisCallProtocol';
+import { AegisCallError } from './callDiagnostics';
 
 export interface StartGroupCallOptions {
   conversationId: string;
@@ -16,11 +17,11 @@ export interface GroupCallStarted {
 
 export async function startGroupCall(opts: StartGroupCallOptions): Promise<GroupCallStarted> {
   const inviteeIds = Array.from(new Set(opts.inviteeIds));
-  if (inviteeIds.length === 0) throw new Error('No invitees');
-  if (inviteeIds.length > 7) throw new Error('Max 8 participants (you + 7)');
+  if (inviteeIds.length === 0) throw new AegisCallError('CALL_HAS_NO_INVITEES');
+  if (inviteeIds.length > 7) throw new AegisCallError('CALL_INVITEE_LIMIT_EXCEEDED');
 
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  if (!user) throw new AegisCallError('CALL_NOT_AUTHENTICATED');
 
   const callKey = generateCallE2EEKey();
   const created = await createAegisCall({

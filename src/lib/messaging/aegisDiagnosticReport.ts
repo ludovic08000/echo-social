@@ -1,5 +1,6 @@
 import { getDeviceFinalizationTrace } from '@/lib/device-manager/deviceFinalizationTrace';
 import { readE2EETrace } from './e2eeTrace';
+import { readCallTrace } from '@/lib/calls/callDiagnostics';
 
 /** Export des tampons bornés, sans interroger ni exporter les coffres ou la session Auth. */
 export function getAegisDiagnosticReport() {
@@ -7,5 +8,6 @@ export function getAegisDiagnosticReport() {
     exportedAt: new Date().toISOString(),
     deviceFinalization: getDeviceFinalizationTrace(),
     messaging: readE2EETrace(),
+    calls: readCallTrace(),
   };
 }

@@ -7,6 +7,8 @@ import {
   loadCurrentDeviceCallInvitation,
   updateAegisCallStatus,
 } from '@/lib/calls/aegisCallProtocol';
+import { AegisCallError, normalizeAegisCallError, traceCall } from '@/lib/calls/callDiagnostics';
+import { isAegisCallingEnabled } from '@/lib/calls/callPolicy';
 
 let sharedAudioContext: AudioContext | null = null;
 
@@ -34,7 +36,10 @@ function createRingtone(): { play: () => void; stop: () => void } {
     play: () => {
       stopped = false;
       try {
-        context = sharedAudioContext ?? new (window.AudioContext || (window as any).webkitAudioContext)();
+        const legacyWindow = window as typeof window & { webkitAudioContext?: typeof AudioContext };
+        const AudioContextConstructor = window.AudioContext ?? legacyWindow.webkitAudioContext;
+        if (!AudioContextConstructor) return;
+        context = sharedAudioContext ?? new AudioContextConstructor();
         sharedAudioContext = context;
         void context.resume().then(() => {
           if (stopped) return;
@@ -106,12 +111,15 @@ export function useIncomingCall() {
   }, [clearLocalCall]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !isAegisCallingEnabled()) return;
     let cancelled = false;
+    const ringtone = ringtoneRef.current;
 
-    const present = async (row: Record<string, any>) => {
-      const callId = String(row.id ?? '');
-      if (!callId || cancelled || incomingCallRef.current || phaseRef.current !== 'idle') return;
+    const present = async (row: Record<string, unknown>) => {
+      const callId = typeof row.id === 'string' ? row.id : '';
+      const conversationId = typeof row.conversation_id === 'string' ? row.conversation_id : '';
+      const callerId = typeof row.caller_id === 'string' ? row.caller_id : '';
+      if (!callId || !conversationId || !callerId || cancelled || incomingCallRef.current || phaseRef.current !== 'idle') return;
       if (handledCallIdsRef.current.has(callId)) return;
       handledCallIdsRef.current.add(callId);
       phaseRef.current = 'ringing';
@@ -119,24 +127,28 @@ export function useIncomingCall() {
       const { data: profile } = await supabase
         .from('profiles')
         .select('name, avatar_url')
-        .eq('user_id', row.caller_id)
+        .eq('user_id', callerId)
         .maybeSingle();
       if (cancelled) return;
 
       const next: IncomingCall = {
         id: callId,
-        conversation_id: row.conversation_id,
-        caller_id: row.caller_id,
-        callee_id: row.callee_id ?? user.id,
+        conversation_id: conversationId,
+        caller_id: callerId,
+        callee_id: typeof row.callee_id === 'string' ? row.callee_id : user.id,
         call_type: row.call_type === 'video' ? 'video' : 'audio',
-        status: row.status ?? 'ringing',
+        status: typeof row.status === 'string' ? row.status : 'ringing',
         caller_name: profile?.name || 'Utilisateur',
         caller_avatar: profile?.avatar_url || undefined,
         is_group: row.is_group === true,
-        room_name: row.room_name || `call-${callId}`,
+        room_name: typeof row.room_name === 'string' ? row.room_name : `call-${callId}`,
       };
       setIncomingCall(next);
-      ringtoneRef.current.play();
+      traceCall({
+        direction: 'incoming', stage: 'ringing', outcome: 'ok', callId,
+        conversationId: next.conversation_id,
+      });
+      ringtone.play();
       timeoutRef.current = setTimeout(() => {
         void declineById(callId);
       }, 30_000);
@@ -146,9 +158,10 @@ export function useIncomingCall() {
       if (cancelled || incomingCallRef.current || phaseRef.current !== 'idle') return;
       try {
         const row = await latestAegisCallForCurrentDevice();
-        if (row) await present(row as Record<string, any>);
+        if (row) await present(row);
       } catch (error) {
-        console.debug('[CALL] device invitation poll unavailable', error);
+        const normalized = normalizeAegisCallError(error, 'CALL_SERVICE_UNAVAILABLE');
+        traceCall({ direction: 'incoming', stage: 'invitation_poll', outcome: 'error', errorCode: normalized.code });
       }
     };
 
@@ -166,7 +179,7 @@ export function useIncomingCall() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'active_calls' },
         (payload) => {
-          const row = payload.new as Record<string, any>;
+          const row = payload.new as Record<string, unknown>;
           if (incomingCallRef.current?.id !== row.id) return;
           if (['ended', 'cancelled', 'declined'].includes(String(row.status))) clearLocalCall();
         },
@@ -177,7 +190,7 @@ export function useIncomingCall() {
       cancelled = true;
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
-      ringtoneRef.current.stop();
+      ringtone.stop();
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
       void supabase.removeChannel(channel);
@@ -190,6 +203,11 @@ export function useIncomingCall() {
     ringtoneRef.current.stop();
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     phaseRef.current = 'connecting';
+    const startedAt = Date.now();
+    traceCall({
+      direction: 'incoming', stage: 'accept', outcome: 'start', callId: incomingCall.id,
+      conversationId: incomingCall.conversation_id,
+    });
 
     try {
       const opened = await loadCurrentDeviceCallInvitation(incomingCall.id);
@@ -198,7 +216,7 @@ export function useIncomingCall() {
         opened.callerId !== incomingCall.caller_id ||
         opened.callType !== incomingCall.call_type
       ) {
-        throw new Error('CALL_INVITATION_METADATA_MISMATCH');
+        throw new AegisCallError('CALL_INVITATION_INVALID');
       }
       await updateAegisCallStatus(incomingCall.id, 'accepted');
       const accepted: AcceptedCall = {
@@ -208,11 +226,21 @@ export function useIncomingCall() {
       };
       setIncomingCall(null);
       phaseRef.current = 'active';
+      traceCall({
+        direction: 'incoming', stage: 'accept', outcome: 'ok', callId: incomingCall.id,
+        conversationId: incomingCall.conversation_id, elapsedMs: Date.now() - startedAt,
+      });
       return accepted;
     } catch (error) {
+      const normalized = normalizeAegisCallError(error, 'CALL_INVITATION_INVALID');
+      traceCall({
+        direction: 'incoming', stage: 'accept', outcome: 'error', callId: incomingCall.id,
+        conversationId: incomingCall.conversation_id, elapsedMs: Date.now() - startedAt,
+        errorCode: normalized.code,
+      });
       await updateAegisCallStatus(incomingCall.id, 'declined').catch(() => undefined);
       clearLocalCall();
-      throw error;
+      throw normalized;
     }
   }, [incomingCall, clearLocalCall]);
 
@@ -231,19 +259,14 @@ export async function signalOutgoingCall(
   callType: 'audio' | 'video',
   callKey: string,
 ): Promise<string | null> {
-  try {
-    const created = await createAegisCall({
-      conversationId,
-      callerId,
-      inviteeIds: [calleeId],
-      callType,
-      callKey,
-    });
-    return created.callId;
-  } catch (error) {
-    console.error('[CALL] Aegis call creation failed', error);
-    throw error;
-  }
+  const created = await createAegisCall({
+    conversationId,
+    callerId,
+    inviteeIds: [calleeId],
+    callType,
+    callKey,
+  });
+  return created.callId;
 }
 
 export async function endActiveCall(callId: string): Promise<void> {

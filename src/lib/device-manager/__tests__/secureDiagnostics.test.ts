@@ -4,8 +4,9 @@ import { clearDeviceFinalizationTrace, getDeviceFinalizationTrace, traceDeviceKe
 import { getAegisDiagnosticReport } from '@/lib/messaging/aegisDiagnosticReport';
 import { installE2EEDebugHelper, isE2EEDebugEnabled, setE2EEDebugEnabled } from '@/lib/consoleGuard';
 import { clearE2EETrace, traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { clearCallTrace, traceCall } from '@/lib/calls/callDiagnostics';
 
-beforeEach(() => { clearDeviceFinalizationTrace(); clearE2EETrace(); sessionStorage.clear(); setE2EEDebugEnabled(false); });
+beforeEach(() => { clearDeviceFinalizationTrace(); clearE2EETrace(); clearCallTrace(); sessionStorage.clear(); setE2EEDebugEnabled(false); });
 afterEach(() => { vi.useRealTimers(); setE2EEDebugEnabled(false); });
 
 it('distinguishes an absent exchange key from a mismatched signing key', () => {
@@ -30,9 +31,11 @@ it('exports more than the 20 visible events plus the correlated messaging trace'
   for (let i = 0; i < 35; i++) traceDeviceFinalization({ traceId: 'dft_test', step: `step.${i}`, outcome: 'info' });
   const id = '8a4c1d2e-64ba-4219-8c6c-893f3a702f98';
   traceE2EE({ direction: 'send', stage: 'HTTP_RESPONSE', diagnosticId: id, errorCode: 'TOKEN_SECRET_SENTINEL' });
+  traceCall({ direction: 'local', stage: 'token_request', outcome: 'error', callId: 'CALL_SECRET', errorCode: 'CALL_TOKEN_TIMEOUT' });
   const report = getAegisDiagnosticReport();
   expect(report.deviceFinalization).toHaveLength(35);
   expect(report.messaging[0].diagnosticId).toBe(id);
+  expect(report.calls[0].errorCode).toBe('CALL_TOKEN_TIMEOUT');
   expect(JSON.stringify(report)).not.toContain('SECRET');
 });
 

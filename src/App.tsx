@@ -28,6 +28,7 @@ import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
 import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
 import { ContactVerificationDialog } from "@/components/messages/ContactVerificationDialog";
 import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
+import { callErrorUserMessage } from "@/lib/calls/callDiagnostics";
 
 const isChunkLoadError = (e: unknown): boolean => {
   const msg = (e as Error)?.message || '';
@@ -128,7 +129,7 @@ function IncomingCallHandler() {
   const call = useCall({
     onCallEnded: useCallback(() => {
       if (activeIncomingCallIdRef.current) {
-        endActiveCall(activeIncomingCallIdRef.current);
+        void endActiveCall(activeIncomingCallIdRef.current).catch(() => undefined);
         activeIncomingCallIdRef.current = null;
       }
       activeIncomingConversationIdRef.current = null;
@@ -146,10 +147,14 @@ function IncomingCallHandler() {
       if (!accepted) return;
       activeIncomingCallIdRef.current = accepted.id;
       activeIncomingConversationIdRef.current = accepted.conversation_id;
-      call.startCall(accepted.id, accepted.call_type, accepted.decryptedCallKey);
+      const started = await call.startCall(accepted.id, accepted.call_type, accepted.decryptedCallKey);
+      if (!started) {
+        await endActiveCall(accepted.id).catch(() => undefined);
+        activeIncomingCallIdRef.current = null;
+        activeIncomingConversationIdRef.current = null;
+      }
     } catch (err) {
-      console.error('[CALL] Failed to accept call:', err);
-      toast.error("Impossible d'accepter l'appel — réessayez");
+      toast.error(callErrorUserMessage(err));
     }
   }, [acceptCall, call]);
 
