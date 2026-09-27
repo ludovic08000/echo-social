@@ -281,7 +281,6 @@ REVOKE EXECUTE ON FUNCTION public.is_user_minor(uuid) FROM PUBLIC, anon, authent
 REVOKE EXECUTE ON FUNCTION public.ml_build_post_embedding_text(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.ml_build_user_embedding_text(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.threat_shield_active_model() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.email_queue_dispatch() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.cleanup_ai_cache() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.cleanup_old_behavior_signals() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.cleanup_old_fingerprints() FROM PUBLIC, anon, authenticated;
@@ -303,7 +302,6 @@ GRANT EXECUTE ON FUNCTION public.is_user_minor(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.ml_build_post_embedding_text(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.ml_build_user_embedding_text(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.threat_shield_active_model() TO service_role;
-GRANT EXECUTE ON FUNCTION public.email_queue_dispatch() TO service_role;
 GRANT EXECUTE ON FUNCTION public.cleanup_ai_cache() TO service_role;
 GRANT EXECUTE ON FUNCTION public.cleanup_old_behavior_signals() TO service_role;
 GRANT EXECUTE ON FUNCTION public.cleanup_old_fingerprints() TO service_role;
@@ -320,6 +318,18 @@ GRANT EXECUTE ON FUNCTION public.ddos_check_ip(text, text, integer, integer) TO 
 GRANT EXECUTE ON FUNCTION public.ml_compute_post_scores(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.ml_refresh_creator_features_v8(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.ml_embeddings_cron_tick() TO service_role;
+
+-- Some historical Lovable environments provision this cron wrapper outside
+-- the migration chain. Keep it service-only when present without making a
+-- clean database rebuild depend on that external object.
+DO $email_queue_dispatch_privileges$
+BEGIN
+  IF pg_catalog.to_regprocedure('public.email_queue_dispatch()') IS NOT NULL THEN
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.email_queue_dispatch() FROM PUBLIC, anon, authenticated;';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.email_queue_dispatch() TO service_role;';
+  END IF;
+END
+$email_queue_dispatch_privileges$;
 
 -- Legacy Supabase Storage policies were permissive OR-branches that allowed
 -- any authenticated account to overwrite or delete another account's media.
