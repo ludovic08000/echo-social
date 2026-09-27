@@ -2,6 +2,10 @@ import * as React from 'npm:react@18.3.1'
 import { renderAsync } from 'npm:@react-email/components@0.0.22'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
+import {
+  configuredServerSecretKeys,
+  isAuthorizedServerRequest,
+} from '../_shared/server-secret-auth.ts'
 
 // Configuration baked in at scaffold time — do NOT change these manually.
 // To update, re-run the email domain setup flow.
@@ -26,10 +30,6 @@ function generateToken(): string {
     .join('')
 }
 
-// Auth note: this function uses verify_jwt = true in config.toml, so Supabase's
-// gateway validates the caller's JWT (anon or service_role) before the request
-// reaches this code. No in-function auth check is needed.
-
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   // Handle CORS preflight
@@ -38,7 +38,15 @@ Deno.serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const legacyServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const serverSecretKeys = configuredServerSecretKeys(
+    Deno.env.get('SUPABASE_SECRET_KEYS'),
+    legacyServiceRoleKey,
+  )
+  const supabaseServiceKey =
+    legacyServiceRoleKey ??
+    serverSecretKeys.find((key) => key.startsWith('sb_secret_')) ??
+    serverSecretKeys[0]
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error('Missing required environment variables')
@@ -49,6 +57,26 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
+  }
+
+  const hasPresentedCredential = Boolean(
+    req.headers.get('apikey') || req.headers.get('Authorization'),
+  )
+  if (!hasPresentedCredential) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // The gateway accepts ordinary user JWTs as well as server credentials.
+  // This explicit comparison keeps arbitrary clients from using the service
+  // role held by this function to enqueue branded transactional emails.
+  if (!isAuthorizedServerRequest(req.headers, serverSecretKeys)) {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 
   // Parse request body
