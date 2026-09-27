@@ -5,7 +5,7 @@ import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
 import {
   configuredServerSecretKeys,
   isAuthorizedServerRequest,
-} from '../process-email-queue/server-secret-auth.ts'
+} from '../_shared/server-secret-auth.ts'
 
 // Configuration baked in at scaffold time — do NOT change these manually.
 // To update, re-run the email domain setup flow.
