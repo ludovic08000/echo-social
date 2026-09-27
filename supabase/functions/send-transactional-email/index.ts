@@ -2,6 +2,10 @@ import * as React from 'npm:react@18.3.1'
 import { renderAsync } from 'npm:@react-email/components@0.0.22'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
+import {
+  configuredServerSecretKeys,
+  isAuthorizedServerRequest,
+} from '../process-email-queue/server-secret-auth.ts'
 
 // Configuration baked in at scaffold time — do NOT change these manually.
 // To update, re-run the email domain setup flow.
@@ -26,9 +30,11 @@ function generateToken(): string {
     .join('')
 }
 
-// Auth note: this function uses verify_jwt = true in config.toml, so Supabase's
-// gateway validates the caller's JWT (anon or service_role) before the request
-// reaches this code. No in-function auth check is needed.
+// Auth note: verify_jwt = true in config.toml validates any Supabase JWT at the
+// gateway, but only an exact configured server secret (SUPABASE_SECRET_KEYS, or
+// the legacy SUPABASE_SERVICE_ROLE_KEY in compatibility) may trigger a send.
+// Invariant : les appels non serveur (JWT utilisateur anonyme/authentifié) sont
+// rejetés ici — 401 sans credential, 403 avec credential non serveur.
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -46,6 +52,35 @@ Deno.serve(async (req) => {
       JSON.stringify({ error: 'Server configuration error' }),
       {
         status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  }
+
+  // Authenticate the exact configured server key before parsing the body. The
+  // gateway check alone does not authenticate opaque sb_secret_* keys, so this
+  // comparison intentionally remains inside the handler.
+  const serverSecretKeys = configuredServerSecretKeys(
+    Deno.env.get('SUPABASE_SECRET_KEYS'),
+    supabaseServiceKey
+  )
+  const hasPresentedCredential = Boolean(
+    req.headers.get('apikey') || req.headers.get('Authorization')
+  )
+  if (!hasPresentedCredential) {
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  }
+  if (!isAuthorizedServerRequest(req.headers, serverSecretKeys)) {
+    return new Response(
+      JSON.stringify({ error: 'Forbidden' }),
+      {
+        status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
