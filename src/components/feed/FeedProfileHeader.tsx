@@ -6,12 +6,18 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
-import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
+import { useProfile, useUpdateProfile, type FieldVisibility } from '@/hooks/useProfile';
 import { supabase } from '@/integrations/supabase/client';
 import { UserAvatar } from '@/components/UserAvatar';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { sanitizeUrl } from '@/lib/sanitizeUrl';
+
+function profileMediaErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim()
+    ? `${fallback} : ${error.message}`
+    : fallback;
+}
 
 export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
   const { user, signOut } = useAuth();
@@ -84,6 +90,7 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
   if (!targetId) return null;
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
@@ -95,12 +102,20 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
       const { url } = await uploadToR2(file, 'avatars');
       await updateProfile.mutateAsync({ avatar_url: url + '?t=' + Date.now() });
       toast({ title: 'Photo mise à jour' });
-    } catch {
-      toast({ title: 'Erreur', variant: 'destructive' });
+    } catch (error) {
+      console.error('[Profile] Avatar update failed:', error);
+      toast({
+        title: 'Erreur',
+        description: profileMediaErrorMessage(error, 'Impossible de mettre à jour la photo de profil'),
+        variant: 'destructive',
+      });
+    } finally {
+      input.value = '';
     }
   };
 
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
@@ -112,8 +127,15 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
       const { url } = await uploadToR2(file, 'covers');
       await updateProfile.mutateAsync({ cover_url: url + '?t=' + Date.now() });
       toast({ title: 'Fond mis à jour' });
-    } catch {
-      toast({ title: 'Erreur', variant: 'destructive' });
+    } catch (error) {
+      console.error('[Profile] Cover update failed:', error);
+      toast({
+        title: 'Erreur',
+        description: profileMediaErrorMessage(error, 'Impossible de mettre à jour la photo de couverture'),
+        variant: 'destructive',
+      });
+    } finally {
+      input.value = '';
     }
   };
 
@@ -249,10 +271,10 @@ export function FeedProfileHeader({ userId }: { userId?: string } = {}) {
             isOwn={isOwn}
             city={profile?.city ?? null}
             website={profile?.website_url ?? null}
-            visibility={(profile?.field_visibility as unknown as Record<string, string>) ?? null}
+            visibility={profile?.field_visibility ?? null}
             onToggle={async (next) => {
               try {
-                await updateProfile.mutateAsync({ field_visibility: next as any });
+                await updateProfile.mutateAsync({ field_visibility: next });
               } catch {
                 toast({ title: 'Erreur', variant: 'destructive' });
               }
@@ -367,18 +389,19 @@ function ProfileMeta({
   isOwn: boolean;
   city: string | null;
   website: string | null;
-  visibility: Record<string, string> | null;
-  onToggle: (next: Record<string, string>) => void;
+  visibility: FieldVisibility | null;
+  onToggle: (next: FieldVisibility) => void;
 }) {
   const cityHidden = (visibility?.city ?? 'public') === 'only_me';
-  const siteHidden = (visibility?.website_url ?? 'public') === 'only_me';
 
   const showCity = !!city && (isOwn || !cityHidden);
-  const showSite = !!website && (isOwn || !siteHidden);
+  const showSite = !!website;
   if (!showCity && !showSite) return null;
 
-  const toggle = (key: 'city' | 'website_url', hidden: boolean) =>
-    onToggle({ ...(visibility ?? {}), [key]: hidden ? 'public' : 'only_me' });
+  const toggleCity = () => {
+    if (!visibility) return;
+    onToggle({ ...visibility, city: cityHidden ? 'public' : 'only_me' });
+  };
 
   const host = (() => {
     try { return new URL(website!).hostname.replace(/^www\./, ''); } catch { return website ?? ''; }
@@ -397,7 +420,7 @@ function ProfileMeta({
           {city}
           {isOwn && (
             <button
-              onClick={() => toggle('city', cityHidden)}
+              onClick={toggleCity}
               aria-label={cityHidden ? 'Afficher la ville' : 'Masquer la ville'}
               className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
             >
@@ -407,12 +430,7 @@ function ProfileMeta({
         </span>
       )}
       {showSite && (
-        <span
-          className={cn(
-            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/50 border border-border/30',
-            isOwn && siteHidden && 'opacity-60',
-          )}
-        >
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/50 border border-border/30">
           <Globe className="w-3 h-3 text-muted-foreground" />
           <a
             href={sanitizeUrl(website!)}
@@ -422,15 +440,6 @@ function ProfileMeta({
           >
             {host}
           </a>
-          {isOwn && (
-            <button
-              onClick={() => toggle('website_url', siteHidden)}
-              aria-label={siteHidden ? 'Afficher le lien' : 'Masquer le lien'}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {siteHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-            </button>
-          )}
         </span>
       )}
     </div>

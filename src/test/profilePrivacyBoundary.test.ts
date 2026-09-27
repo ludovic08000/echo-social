@@ -9,6 +9,7 @@ const migration = readFileSync(
   .replace(/\s+/g, ' ')
 
 const profileHook = readFileSync('src/hooks/useProfile.ts', 'utf8')
+const feedProfileHeader = readFileSync('src/components/feed/FeedProfileHeader.tsx', 'utf8')
 const authConfirm = readFileSync('src/pages/AuthConfirm.tsx', 'utf8')
 const ageFlagged = readFileSync('src/components/AgeFlaggedScreen.tsx', 'utf8')
 const profilePage = readFileSync('src/pages/Profile.tsx', 'utf8')
@@ -41,6 +42,16 @@ describe('profile and identity security boundary', () => {
     expect(authConfirm).toContain("supabase.rpc('get_onboarding_state'")
     expect(creatorHook).toContain("'deactivate_own_creator_profile'")
     expect(creatorHook).not.toContain(".from('profiles').update")
+  })
+
+  it('keeps avatar and cover updates on the secured profile mutation path', () => {
+    expect(feedProfileHeader).toContain("uploadToR2(file, 'avatars')")
+    expect(feedProfileHeader).toContain("uploadToR2(file, 'covers')")
+    expect(feedProfileHeader).toContain('updateProfile.mutateAsync({ avatar_url:')
+    expect(feedProfileHeader).toContain('updateProfile.mutateAsync({ cover_url:')
+    expect(feedProfileHeader).toContain("console.error('[Profile] Avatar update failed:'")
+    expect(feedProfileHeader).toContain("console.error('[Profile] Cover update failed:'")
+    expect(feedProfileHeader).not.toContain(".from('profiles').update")
   })
 
   it('stores identity documents privately and makes the server own status changes', () => {
