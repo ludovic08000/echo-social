@@ -28,6 +28,7 @@ import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue'
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import { supabase } from '@/integrations/supabase/client';
+import { publishSealedSenderWakeups } from '@/lib/messaging/sealedSenderTransport';
 
 export interface AegisOutboundInput {
   conversationId: string;
@@ -438,6 +439,17 @@ export async function sendAegisOutboundMessage(
     copyCount: copies.length,
     retryCount: result.retriedStaleRoute ? 1 : 0,
   });
+  const sealedSender = await publishSealedSenderWakeups({
+    messageId: committedId,
+    conversationId: input.conversationId,
+    senderUserId: input.senderUserId,
+    copies,
+  }).catch(() => ({ attempted: 0, relayed: 0, failed: 1 }));
+  trace(
+    sealedSender.failed === 0 ? 'SEALED_SENDER_RELAYED' : 'SEALED_SENDER_DEFERRED',
+    { targetCount: sealedSender.attempted, copyCount: sealedSender.relayed },
+    sealedSender.failed === 0 ? 'info' : 'warn',
+  );
   // The stable message UUID was cached before the transaction. Only add the
   // ciphertext index after commit; writing the same plaintext row twice wastes
   // IndexedDB work on resource-constrained mobile browsers.

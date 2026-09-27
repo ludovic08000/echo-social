@@ -5756,6 +5756,7 @@ export type Database = {
         Row: {
           anonymous_sender_tag: string
           conversation_id: string
+          context_id: string | null
           created_at: string
           delivered_at: string | null
           delivery_state: string
@@ -5768,6 +5769,7 @@ export type Database = {
         Insert: {
           anonymous_sender_tag: string
           conversation_id: string
+          context_id?: string | null
           created_at?: string
           delivered_at?: string | null
           delivery_state?: string
@@ -5780,6 +5782,7 @@ export type Database = {
         Update: {
           anonymous_sender_tag?: string
           conversation_id?: string
+          context_id?: string | null
           created_at?: string
           delivered_at?: string | null
           delivery_state?: string
@@ -7902,6 +7905,10 @@ export type Database = {
       }
     }
     Functions: {
+      ack_sealed_sender_wakeups: {
+        Args: { p_message_ids: string[] }
+        Returns: number
+      }
       acknowledge_all_content_strikes: { Args: never; Returns: number }
       acknowledge_content_strike: {
         Args: { p_strike_id: string }

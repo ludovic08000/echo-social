@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
       !body ||
       !isUuid(body.recipient_user_id) ||
       !isUuid(body.conversation_id) ||
-      (body.context_id !== undefined && body.context_id !== null && typeof body.context_id !== 'string')
+      !isUuid(body.context_id)
     ) {
       return json(400, { error: 'invalid_request' });
     }
@@ -86,10 +86,6 @@ Deno.serve(async (req) => {
     const recipientUserId = body.recipient_user_id;
     const conversationId = body.conversation_id;
     if (recipientUserId === caller.id) return json(400, { error: 'invalid_recipient' });
-    if (typeof body.context_id === 'string' && utf8ByteLength(body.context_id) > 256) {
-      return json(400, { error: 'context_too_large' });
-    }
-
     diagnostic.step('conversation_access');
     const { data: conversation, error: conversationError } = await callerClient
       .from('conversations')
@@ -116,13 +112,12 @@ Deno.serve(async (req) => {
     const now = Date.now();
     const payload: SealedSenderTokenPayloadV1 = {
       version: SEALED_SENDER_PROTOCOL_VERSION,
-      sender_user_id: caller.id,
       recipient_user_id: recipientUserId,
       conversation_id: conversationId,
       nonce: crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, ''),
       issued_at: new Date(now).toISOString(),
       expires_at: new Date(now + SEALED_SENDER_TOKEN_TTL_MS).toISOString(),
-      context_id: typeof body.context_id === 'string' ? body.context_id : null,
+      context_id: body.context_id,
     };
     const mac = await signTokenPayload(payload, tokenSecret);
     const token = encodeSignedToken({ payload, mac });
@@ -133,7 +128,6 @@ Deno.serve(async (req) => {
       token_hash: tokenHash,
       nonce: payload.nonce,
       protocol_version: payload.version,
-      sender_user_id: payload.sender_user_id,
       recipient_user_id: payload.recipient_user_id,
       conversation_id: payload.conversation_id,
       context_id: payload.context_id,

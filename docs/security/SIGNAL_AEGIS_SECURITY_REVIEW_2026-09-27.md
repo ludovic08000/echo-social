@@ -22,7 +22,7 @@ Références officielles consultées :
 | Renouvellement des clés de message | Double Ratchet | Sessions Libsignal par appareil | Présent |
 | Multi-appareils | Sesame | Registre canonique, routage et fan-out par appareil, révocation | Présent, logique spécifique Aegis |
 | Vérification d'identité | Numéro de sécurité + transparence des clés | Alerte de changement d'identité, empreinte Aegis et journal Merkle | Partiel : pas de preuve d'équivalence avec NumericFingerprint ; pas d'auditeurs indépendants |
-| Expéditeur confidentiel | Sealed Sender | Jeton scellé et relais à contenu aveugle | Présent, implémentation Aegis |
+| Expéditeur confidentiel | Sealed Sender | Jeton scellé et relais à contenu aveugle | Transport progressif présent ; le message canonique conserve encore `sender_id` |
 | Sauvegarde après effacement | Sauvegarde chiffrée avec secret utilisateur | Coffre et archive chiffrés, restauration navigateur en cours dans cette PR | Présent dans la branche, validation de production encore nécessaire |
 | Appels individuels | Média E2EE, participants autorisés | LiveKit E2EE avec clé de média 256 bits enveloppée X25519/HKDF/AES-GCM pour chaque appareil autorisé | Présent et durci dans ce lot |
 | Appels de groupe | Clés propres aux participants et rotation lors des changements de groupe | Une clé de média commune distribuée aux appareils invités | Écart important : rotation join/leave et clés par émetteur à planifier |

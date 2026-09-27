@@ -10,7 +10,13 @@ const secret = 'SERVER_KEY_SENTINEL_123456789012345678901234567890';
 const sender = '01000000-0000-4000-8000-000000000001';
 const recipient = '02000000-0000-4000-8000-000000000002';
 const conversation = '03000000-0000-4000-8000-000000000003';
-let logs: Array<Record<string, any>>;
+type DiagnosticLog = {
+  failed_check?: string;
+  error_code?: string;
+  diagnostic_id?: string;
+  checks: Record<string, string>;
+};
+let logs: DiagnosticLog[];
 let rpc = vi.fn();
 
 // Exécute les vrais handlers Edge transpilés ; seuls Deno.serve/env et le réseau SDK sont simulés.
@@ -33,20 +39,25 @@ function handler(name: string, client: unknown) {
 }
 
 async function relayBody(overrides: Record<string, unknown> = {}) {
-  const payload = { version: 1 as const, sender_user_id: sender, recipient_user_id: recipient,
+  const payload = { version: 1 as const, recipient_user_id: recipient,
     conversation_id: conversation, nonce: 'NONCE_SENTINEL_123456789012345678901234567890',
-    issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(), context_id: null,
+    issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(),
+    context_id: '04000000-0000-4000-8000-000000000004',
     ...overrides };
   return { token: tokens.encodeSignedToken({ payload, mac: await tokens.signTokenPayload(payload, secret) }),
     conversation_id: conversation, recipient_user_id: recipient, anonymous_sender_tag: 'TAG_SENTINEL',
     sealed_payload: 'CIPHERTEXT_SENTINEL', sealed_header: { opaque: 'HEADER_SENTINEL' } };
 }
-const request = (body: unknown) => new Request('https://example.test/sealed-relay', { method: 'POST',
+const relayRequest = (body: unknown) => new Request('https://example.test/sealed-relay', { method: 'POST',
+  headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const mintRequest = (body: unknown) => new Request('https://example.test/sealed-mint-token', { method: 'POST',
   headers: { authorization: 'Bearer AUTH_SENTINEL', 'content-type': 'application/json' }, body: JSON.stringify(body) });
 beforeEach(() => {
   vi.stubGlobal('crypto', webcrypto);
   logs = []; rpc = vi.fn().mockResolvedValue({ data: 'message-id', error: null });
-  vi.spyOn(console, 'log').mockImplementation(line => { logs.push(JSON.parse(line)); });
+  vi.spyOn(console, 'log').mockImplementation(line => {
+    logs.push(JSON.parse(line) as DiagnosticLog);
+  });
 });
 afterEach(() => {
   expect(JSON.stringify(logs)).not.toContain('SENTINEL');
@@ -61,7 +72,7 @@ it.each([
   ['recipient_binding', 'recipient_mismatch', { recipient_user_id: sender }],
   ['token_lifetime', 'token_expired', { issued_at: new Date(Date.now() - 120_000).toISOString(), expires_at: new Date(Date.now() - 60_000).toISOString() }],
 ])('attributes %s failure without consuming the token', async (step, code, overrides) => {
-  const response = await handler('sealed-relay', { rpc })(request(await relayBody(overrides)));
+  const response = await handler('sealed-relay', { rpc })(relayRequest(await relayBody(overrides)));
   expect(response.status).toBeGreaterThanOrEqual(400);
   expect(await response.json()).toEqual({ error: code });
   expect(logs).toHaveLength(1);
@@ -72,7 +83,7 @@ it.each([
 
 it('reports malformed tokens before any MAC or database check', async () => {
   const body = await relayBody(); body.token = 'MALFORMED_SECRET_SENTINEL';
-  await handler('sealed-relay', { rpc })(request(body));
+  await handler('sealed-relay', { rpc })(relayRequest(body));
   expect(logs[0].failed_check).toBe('token_decode');
   expect(logs[0].checks.token_mac).toBe('not_checked');
   expect(rpc).not.toHaveBeenCalled();
@@ -82,30 +93,33 @@ it('rejects a mismatched MAC and does not call the database', async () => {
   const body = await relayBody();
   const signed = tokens.decodeSignedToken(body.token);
   body.token = tokens.encodeSignedToken({ ...signed, mac: 'AA' });
-  await handler('sealed-relay', { rpc })(request(body));
+  await handler('sealed-relay', { rpc })(relayRequest(body));
   expect(logs[0]).toMatchObject({ failed_check: 'token_mac', error_code: 'INVALID_TOKEN_MAC' });
   expect(rpc).not.toHaveBeenCalled();
 });
 
 it.each(['token_consumed', 'token_context_mismatch', 'token_not_found'])('reports the atomic RPC rejection %s', async code => {
   rpc.mockResolvedValue({ data: null, error: { message: code } });
-  await handler('sealed-relay', { rpc })(request(await relayBody()));
+  await handler('sealed-relay', { rpc })(relayRequest(await relayBody()));
   expect(rpc).toHaveBeenCalledTimes(1);
   expect(logs[0]).toMatchObject({ failed_check: 'token_consume_and_relay', error_code: code.toUpperCase() });
   expect(logs[0].checks.token_mac).toBe('pass');
 });
 
 it('correlates success without replaying the token or exporting its contents', async () => {
-  const response = await handler('sealed-relay', { rpc })(request(await relayBody()));
+  const response = await handler('sealed-relay', { rpc })(relayRequest(await relayBody()));
   expect(response.status).toBe(201);
   expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith('relay_sealed_sender', expect.not.objectContaining({
+    p_sender_user_id: expect.anything(),
+  }));
   expect(logs[0].checks.token_consume_and_relay).toBe('pass');
   expect(response.headers.get('x-aegis-diagnostic-id')).toBe(logs[0].diagnostic_id);
 });
 
 it('distinguishes token presence from actual Auth validation during minting', async () => {
   const getUser = vi.fn().mockResolvedValue({ data: { user: null }, error: { message: 'AUTH_SENTINEL' } });
-  const response = await handler('sealed-mint-token', { auth: { getUser } })(request({}));
+  const response = await handler('sealed-mint-token', { auth: { getUser } })(mintRequest({}));
   expect(response.status).toBe(401);
   expect(logs[0]).toMatchObject({ failed_check: 'auth_session', checks: { bearer_syntax: 'pass', token_signing: 'not_checked' } });
 });
@@ -121,7 +135,11 @@ it.each(['success', 'sender_not_member', 'recipient_not_member', 'token_persiste
     return chain;
   };
   const client = { from, auth: { getUser: async () => ({ data: { user: { id: sender } }, error: null }) } };
-  const response = await handler('sealed-mint-token', client)(request({ conversation_id: conversation, recipient_user_id: recipient }));
+  const response = await handler('sealed-mint-token', client)(mintRequest({
+    conversation_id: conversation,
+    recipient_user_id: recipient,
+    context_id: '04000000-0000-4000-8000-000000000004',
+  }));
   expect(logs).toHaveLength(1);
   if (scenario === 'success') {
     const data = await response.json();

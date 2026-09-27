@@ -16,18 +16,17 @@ function payload(overrides: Partial<SealedSenderTokenPayloadV1> = {}): SealedSen
   const issued = new Date('2026-08-06T20:00:00.000Z');
   return {
     version: SEALED_SENDER_PROTOCOL_VERSION,
-    sender_user_id: '11111111-1111-4111-8111-111111111111',
     recipient_user_id: '22222222-2222-4222-8222-222222222222',
     conversation_id: '33333333-3333-4333-8333-333333333333',
     nonce: 'a'.repeat(64),
     issued_at: issued.toISOString(),
     expires_at: new Date(issued.getTime() + 300_000).toISOString(),
-    context_id: 'send-context-1',
+    context_id: '44444444-4444-4444-8444-444444444444',
     ...overrides,
   };
 }
 
-describe('Sealed Sender v1 token', () => {
+describe('Sealed Sender token', () => {
   it('round-trips a valid signed token', async () => {
     const value = payload();
     const mac = await signTokenPayload(value, secret);
@@ -39,9 +38,8 @@ describe('Sealed Sender v1 token', () => {
   it.each([
     ['conversation_id', '44444444-4444-4444-8444-444444444444'],
     ['recipient_user_id', '55555555-5555-4555-8555-555555555555'],
-    ['sender_user_id', '66666666-6666-4666-8666-666666666666'],
     ['nonce', 'b'.repeat(64)],
-    ['context_id', 'other-context'],
+    ['context_id', '66666666-6666-4666-8666-666666666666'],
   ] as const)('rejects an altered %s through the MAC', async (field, replacement) => {
     const original = payload();
     const mac = await signTokenPayload(original, secret);

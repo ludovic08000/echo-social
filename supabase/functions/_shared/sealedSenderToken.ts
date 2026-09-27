@@ -7,13 +7,12 @@ export const SEALED_SENDER_MAX_TAG_BYTES = 512;
 
 export interface SealedSenderTokenPayloadV1 {
   version: 1;
-  sender_user_id: string;
   recipient_user_id: string;
   conversation_id: string;
   nonce: string;
   issued_at: string;
   expires_at: string;
-  context_id: string | null;
+  context_id: string;
 }
 
 export interface SignedSealedSenderTokenV1 {
@@ -35,7 +34,6 @@ export function utf8ByteLength(value: string): number {
 export function canonicalTokenPayload(payload: SealedSenderTokenPayloadV1): string {
   return JSON.stringify({
     version: payload.version,
-    sender_user_id: payload.sender_user_id,
     recipient_user_id: payload.recipient_user_id,
     conversation_id: payload.conversation_id,
     nonce: payload.nonce,
@@ -73,7 +71,6 @@ export function decodeSignedToken(encoded: string): SignedSealedSenderTokenV1 {
   if (
     !payload ||
     payload.version !== SEALED_SENDER_PROTOCOL_VERSION ||
-    !isUuid(payload.sender_user_id) ||
     !isUuid(payload.recipient_user_id) ||
     !isUuid(payload.conversation_id) ||
     typeof payload.nonce !== 'string' ||
@@ -81,7 +78,7 @@ export function decodeSignedToken(encoded: string): SignedSealedSenderTokenV1 {
     payload.nonce.length > 128 ||
     typeof payload.issued_at !== 'string' ||
     typeof payload.expires_at !== 'string' ||
-    (payload.context_id !== null && typeof payload.context_id !== 'string') ||
+    !isUuid(payload.context_id) ||
     typeof parsed.mac !== 'string'
   ) {
     throw new Error('invalid_token');

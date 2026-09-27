@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   encryptArchive: vi.fn(),
   archiveBubbleForUser: vi.fn(),
   readCommitted: vi.fn(),
+  publishSealedSender: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -58,6 +59,9 @@ vi.mock('@/lib/messaging/aegisSendRpc', () => ({
   sendMessageWithAegisRetry: mocks.sendRpc,
   isAegisAmbiguousTransportFailure: (error: unknown) =>
     error instanceof Error && error.message.includes('NETWORK_TRANSPORT_TIMEOUT'),
+}));
+vi.mock('@/lib/messaging/sealedSenderTransport', () => ({
+  publishSealedSenderWakeups: mocks.publishSealedSender,
 }));
 vi.mock('@/lib/messaging/aegisConversationQueue', () => ({
   runAegisConversationJob: mocks.runJob,
@@ -110,6 +114,7 @@ beforeEach(() => {
   mocks.encryptArchive.mockResolvedValue('aegis-archive-v2.encrypted');
   mocks.archiveBubbleForUser.mockResolvedValue(true);
   mocks.readCommitted.mockResolvedValue({ data: null, error: null });
+  mocks.publishSealedSender.mockResolvedValue({ attempted: 1, relayed: 1, failed: 0 });
 });
 
 describe('canonical Aegis outbound transaction engine', () => {
@@ -149,11 +154,36 @@ describe('canonical Aegis outbound transaction engine', () => {
       extra: expect.objectContaining({ body_kind: 'multi_device' }),
       routeVersion: 'route-version-1',
     }));
+    expect(mocks.publishSealedSender).toHaveBeenCalledWith({
+      messageId: COPY.message_id,
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      copies: [COPY],
+    });
+    expect(mocks.sendRpc.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.publishSealedSender.mock.invocationCallOrder[0]);
+    expect(mocks.publishSealedSender.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.deleteOutbox.mock.invocationCallOrder[0]);
     expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-one');
     expect(mocks.archiveBubbleForUser).toHaveBeenCalledWith(expect.objectContaining({
       messageId: COPY.message_id,
       ensureParent: true,
     }));
+  });
+
+  it('keeps the canonical send successful when the anonymous relay is unavailable', async () => {
+    mocks.publishSealedSender.mockRejectedValueOnce(new Error('relay offline'));
+
+    await expect(sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message secret',
+      localId: 'local-sealed-fallback',
+      messageId: COPY.message_id,
+    })).resolves.toMatchObject({ id: COPY.message_id });
+
+    expect(mocks.sendRpc).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-sealed-fallback');
   });
 
   it('stops before fanout when libsignal provisioning fails', async () => {

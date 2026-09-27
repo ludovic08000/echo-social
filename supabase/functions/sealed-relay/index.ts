@@ -108,11 +108,10 @@ Deno.serve(async (req) => {
     diagnostic.step('token_consume_and_relay');
     const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
     const tokenHash = await sha256Base64Url(body.token);
-    const { data, error } = await admin.rpc('relay_sealed_sender_v1', {
+    const { data, error } = await admin.rpc('relay_sealed_sender', {
       p_token_hash: tokenHash,
       p_nonce: payload.nonce,
       p_protocol_version: payload.version,
-      p_sender_user_id: payload.sender_user_id,
       p_recipient_user_id: payload.recipient_user_id,
       p_conversation_id: payload.conversation_id,
       p_context_id: payload.context_id,

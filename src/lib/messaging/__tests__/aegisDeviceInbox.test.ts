@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
     transportKind: vi.fn(),
     stageCopy: vi.fn(),
     resolvePlaintext: vi.fn(),
+    pullSealedWakeups: vi.fn(),
+    acknowledgeSealedWakeups: vi.fn(),
   };
 });
 
@@ -44,6 +46,11 @@ vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
   stageSyncedDeviceCopy: mocks.stageCopy,
 }));
 
+vi.mock('@/lib/messaging/sealedSenderTransport', () => ({
+  pullSealedSenderWakeups: mocks.pullSealedWakeups,
+  acknowledgeSealedSenderWakeups: mocks.acknowledgeSealedWakeups,
+}));
+
 vi.mock('@/components/messages/decryptionService', () => ({
   resolvePlaintext: mocks.resolvePlaintext,
 }));
@@ -51,6 +58,7 @@ vi.mock('@/components/messages/decryptionService', () => ({
 import {
   acknowledgeAegisMessage,
   formatAegisInboxError,
+  startAegisDeviceInbox,
   syncAegisDeviceInbox,
 } from '@/lib/messaging/aegisDeviceInbox';
 
@@ -66,6 +74,8 @@ beforeEach(() => {
   mocks.transportKind.mockReturnValue('supabase');
   mocks.callAegisServer.mockResolvedValue({ data: [], error: null });
   mocks.resolvePlaintext.mockResolvedValue({ text: 'decrypted', mediaKeyB64: null, hidden: false });
+  mocks.pullSealedWakeups.mockResolvedValue([]);
+  mocks.acknowledgeSealedWakeups.mockResolvedValue(undefined);
 });
 
 describe('Aegis durable device inbox client', () => {
@@ -247,5 +257,32 @@ describe('Aegis durable device inbox client', () => {
     await expect(syncAegisDeviceInbox('user-one'))
       .rejects.toThrow('AEGIS_DEVICE_USER_MISMATCH');
     expect(mocks.callAegisServer).not.toHaveBeenCalled();
+  });
+
+  it('subscribes to anonymous recipient wakeups and deletes them after inbox sync', async () => {
+    mocks.pullSealedWakeups.mockResolvedValue([
+      { id: 'wakeup-one', context_id: 'message-one' },
+    ]);
+
+    const stop = startAegisDeviceInbox('user-one');
+    await vi.waitFor(() => {
+      expect(mocks.acknowledgeSealedWakeups).toHaveBeenCalledWith(['wakeup-one']);
+    });
+
+    expect(mocks.channel.on).toHaveBeenCalledWith(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'sealed_sender_messages',
+        filter: 'recipient_user_id=eq.user-one',
+      },
+      expect.any(Function),
+    );
+    expect(mocks.callAegisServer).toHaveBeenCalledWith('aegis_sync_device', {
+      p_device_id: 'device-stable',
+      p_limit: 100,
+    });
+    stop();
   });
 });

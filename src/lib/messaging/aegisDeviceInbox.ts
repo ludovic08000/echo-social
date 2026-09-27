@@ -6,6 +6,10 @@ import {
 } from '@/lib/messaging/aegisTransport';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 import { stageSyncedDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
+import {
+  acknowledgeSealedSenderWakeups,
+  pullSealedSenderWakeups,
+} from '@/lib/messaging/sealedSenderTransport';
 
 export type AegisInboxRow = {
   copy_id: string;
@@ -269,7 +273,18 @@ export function startAegisDeviceInbox(userId: string): () => void {
 
   const sync = () => {
     if (stopped || document.visibilityState === 'hidden' || !navigator.onLine) return;
-    void syncAegisDeviceInbox(userId).catch((error) => {
+    void (async () => {
+      let wakeups: Awaited<ReturnType<typeof pullSealedSenderWakeups>> = [];
+      try {
+        wakeups = await pullSealedSenderWakeups();
+      } catch {
+        // Migration progressive : la synchronisation canonique reste disponible.
+      }
+      await syncAegisDeviceInbox(userId);
+      if (wakeups.length > 0) {
+        await acknowledgeSealedSenderWakeups(wakeups.map((wakeup) => wakeup.id));
+      }
+    })().catch((error) => {
       traceE2EE({
         direction: 'receive',
         component: 'device_inbox',
@@ -288,6 +303,16 @@ export function startAegisDeviceInbox(userId: string): () => void {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
+      },
+      sync,
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'sealed_sender_messages',
+        filter: `recipient_user_id=eq.${userId}`,
       },
       sync,
     )
