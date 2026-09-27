@@ -12,6 +12,7 @@ import { useAuth } from '@/lib/auth';
 import { Phone, Video, Search, X, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { startGroupCall } from '@/lib/calls/groupCall';
+import { callErrorUserMessage } from '@/lib/calls/callDiagnostics';
 
 interface FriendRow {
   user_id: string;
@@ -24,7 +25,12 @@ interface AddParticipantSheetProps {
   onClose: () => void;
   conversationId: string;
   prefilled?: string[];
-  onCallStarted?: (callId: string, roomId: string, callKey: string, callType: 'audio' | 'video') => void;
+  onCallStarted?: (
+    callId: string,
+    roomId: string,
+    callKey: string,
+    callType: 'audio' | 'video',
+  ) => void | Promise<void>;
 }
 
 const MAX_INVITEES = 7;
@@ -42,10 +48,11 @@ export function AddParticipantSheet({
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
+  const prefilledSignature = Array.from(new Set(prefilled)).sort().join(',');
 
   useEffect(() => {
     if (!open || !user) return;
-    setSelected(new Set(prefilled));
+    setSelected(new Set(prefilledSignature ? prefilledSignature.split(',') : []));
     setSearch('');
     setLoading(true);
 
@@ -83,7 +90,7 @@ export function AddParticipantSheet({
         setLoading(false);
       }
     })();
-  }, [open, user]);
+  }, [open, user, prefilledSignature]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -118,10 +125,10 @@ export function AddParticipantSheet({
         inviteeIds: Array.from(selected),
         callType,
       });
-      onCallStarted?.(result.callId, result.roomId, result.callKey, callType);
+      await onCallStarted?.(result.callId, result.roomId, result.callKey, callType);
       onClose();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Impossible de lancer l'appel");
+    } catch (error) {
+      toast.error(callErrorUserMessage(error));
     } finally {
       setStarting(false);
     }

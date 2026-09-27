@@ -3,7 +3,17 @@ import { Room, RoomEvent, Track, ExternalE2EEKeyProvider, isE2EESupported, Conne
 import { getLiveKitToken } from '@/lib/livekit';
 import { getCurrentDeviceId, hydrateDeviceId, isDeviceIdTemporary } from '@/lib/messaging/currentDevice';
 import { requestMediaPermissions, acquireWakeLock, releaseWakeLock } from '@/lib/platformPermissions';
+import { decodeCallE2EEKey } from '@/lib/calls/callKey';
+import {
+  AegisCallError,
+  callErrorUserMessage,
+  normalizeAegisCallError,
+  traceCall,
+} from '@/lib/calls/callDiagnostics';
 import { toast } from 'sonner';
+import { isAegisCallingEnabled } from '@/lib/calls/callPolicy';
+
+export { generateCallE2EEKey } from '@/lib/calls/callKey';
 
 export type CallType = 'audio' | 'video';
 export type CallPhase = 'idle' | 'connecting' | 'connected' | 'ending';
@@ -20,16 +30,19 @@ interface UseCallOptions {
   onCallConnected?: () => void;
 }
 
-export function generateCallE2EEKey(): string {
-  const key = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...key));
-}
+const ROOM_CONNECT_TIMEOUT_MS = 20_000;
 
-function decodeE2EEKey(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return arr;
+function withRoomTimeout<T>(operation: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(
+      () => reject(new AegisCallError('CALL_ROOM_CONNECT_TIMEOUT')),
+      ROOM_CONNECT_TIMEOUT_MS,
+    );
+    operation.then(
+      (value) => { globalThis.clearTimeout(timer); resolve(value); },
+      (error) => { globalThis.clearTimeout(timer); reject(error); },
+    );
+  });
 }
 
 export function useCall(options?: UseCallOptions) {
@@ -43,6 +56,8 @@ export function useCall(options?: UseCallOptions) {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
+  const e2eeWorkerRef = useRef<Worker | null>(null);
+  const activeCallIdRef = useRef<string | null>(null);
   const localVideoRef = useRef<HTMLDivElement | null>(null);
   const remoteVideoRef = useRef<HTMLDivElement | null>(null);
 
@@ -132,6 +147,7 @@ export function useCall(options?: UseCallOptions) {
     const wasMissed = phaseRef.current !== 'connected';
     const endDuration = durationRef.current;
     const endType = callTypeRef.current;
+    const callId = activeCallIdRef.current ?? undefined;
 
     console.info(`[CALL] ending call — reason=${reason}, phase=${phaseRef.current}, duration=${endDuration}s`);
 
@@ -139,13 +155,18 @@ export function useCall(options?: UseCallOptions) {
 
     const room = roomRef.current;
     roomRef.current = null;
+    activeCallIdRef.current = null;
 
     if (room) {
       try {
         room.disconnect();
-      } catch (err) {
-        console.warn('[CALL] room.disconnect() failed:', err);
+      } catch {
+        console.warn('[CALL] room disconnect failed');
       }
+    }
+    if (e2eeWorkerRef.current) {
+      try { e2eeWorkerRef.current.terminate(); } catch { /* already stopped */ }
+      e2eeWorkerRef.current = null;
     }
 
     cleanupDom();
@@ -161,6 +182,13 @@ export function useCall(options?: UseCallOptions) {
     hadRemoteRef.current = false;
 
     releaseWakeLock();
+
+    traceCall({
+      direction: 'local',
+      stage: 'disconnect',
+      outcome: 'ok',
+      callId,
+    });
 
     onCallEndedRef.current?.({
       type: endType,
@@ -180,25 +208,35 @@ export function useCall(options?: UseCallOptions) {
     onCallConnectedRef.current?.();
   }, []);
 
-  const startCall = useCallback(async (callId: string, type: CallType, e2eeKeyB64: string) => {
+  const startCall = useCallback(async (callId: string, type: CallType, e2eeKeyB64: string): Promise<boolean> => {
+    if (!isAegisCallingEnabled()) {
+      const error = new AegisCallError('CALLS_DISABLED');
+      traceCall({ direction: 'local', stage: 'start', outcome: 'skip', callId, errorCode: error.code });
+      toast.error(callErrorUserMessage(error));
+      return false;
+    }
     if (connectingRef.current) {
       console.warn('[CALL] startCall ignored — already connecting');
-      return;
+      traceCall({ direction: 'local', stage: 'start', outcome: 'skip', callId, errorCode: 'CALL_ALREADY_ACTIVE' });
+      return false;
     }
 
     if (roomRef.current) {
       console.warn('[CALL] startCall ignored — room already exists');
-      return;
+      traceCall({ direction: 'local', stage: 'start', outcome: 'skip', callId, errorCode: 'CALL_ALREADY_ACTIVE' });
+      return false;
     }
 
     if (phaseRef.current !== 'idle') {
       console.warn(`[CALL] startCall ignored — invalid phase ${phaseRef.current}`);
-      return;
+      traceCall({ direction: 'local', stage: 'start', outcome: 'skip', callId, errorCode: 'CALL_ALREADY_ACTIVE' });
+      return false;
     }
 
     connectingRef.current = true;
     endingRef.current = false;
     hadRemoteRef.current = false;
+    activeCallIdRef.current = callId;
 
     setCallType(type);
     setCallState('connecting');
@@ -208,34 +246,33 @@ export function useCall(options?: UseCallOptions) {
     setIsCameraOff(false);
     setIsE2eeActive(false);
 
-    console.info(`[CALL] starting ${type} call ${callId}`);
+    console.info(`[CALL] starting ${type} call`);
+    traceCall({ direction: 'local', stage: 'start', outcome: 'start', callId });
 
     try {
-      if (!e2eeKeyB64) {
-        throw new Error('Missing E2EE call key');
-      }
+      const keyBytes = decodeCallE2EEKey(e2eeKeyB64);
 
       if (!isE2EESupported()) {
-        throw new Error('LiveKit E2EE is not supported on this device');
+        throw new AegisCallError('CALL_E2EE_UNSUPPORTED');
       }
 
+      const mediaStartedAt = Date.now();
+      traceCall({ direction: 'local', stage: 'media_permission', outcome: 'start', callId });
       const perms = await requestMediaPermissions({
         audio: true,
         video: type === 'video',
       });
 
       if (!perms.granted) {
-        connectingRef.current = false;
-        setCallState('idle');
-        toast.error(perms.error || "Impossible d'accéder au micro/caméra");
-        return;
+        throw new AegisCallError('CALL_MEDIA_PERMISSION_DENIED');
       }
+      traceCall({ direction: 'local', stage: 'media_permission', outcome: 'ok', callId, elapsedMs: Date.now() - mediaStartedAt });
 
       await acquireWakeLock();
 
       const deviceId = await hydrateDeviceId().catch(() => getCurrentDeviceId());
       if (!deviceId || isDeviceIdTemporary()) {
-        throw new Error('Current device is not ready for a secure call');
+        throw new AegisCallError('CALL_CURRENT_DEVICE_NOT_READY');
       }
       const roomName = `call-${callId}`;
       const { token, url } = await getLiveKitToken(roomName, true, deviceId);
@@ -246,18 +283,20 @@ export function useCall(options?: UseCallOptions) {
       try {
         e2eeKeyProvider = new ExternalE2EEKeyProvider();
         e2eeWorker = new Worker(new URL('livekit-client/e2ee-worker', import.meta.url));
-        const keyBytes = decodeE2EEKey(e2eeKeyB64);
+        e2eeWorkerRef.current = e2eeWorker;
         await e2eeKeyProvider.setKey(keyBytes.buffer as ArrayBuffer);
       } catch (err) {
-        console.error('[CALL] E2EE init failed:', err);
-        throw new Error('Unable to initialize call E2EE');
+        console.error('[CALL] E2EE init failed');
+        throw new AegisCallError('CALL_E2EE_INIT_FAILED', { cause: err });
       }
 
       if (endingRef.current || phaseRef.current !== 'connecting') {
         console.info('[CALL] start aborted before room creation');
+        try { e2eeWorker.terminate(); } catch { /* already stopped */ }
+        e2eeWorkerRef.current = null;
         connectingRef.current = false;
         releaseWakeLock();
-        return;
+        return false;
       }
 
       const room = new Room({
@@ -391,15 +430,29 @@ export function useCall(options?: UseCallOptions) {
       });
 
       console.info('[CALL] connecting room...');
-      await room.connect(url, token);
+      const connectStartedAt = Date.now();
+      traceCall({ direction: 'local', stage: 'room_connect', outcome: 'start', callId, deviceId });
+      try {
+        await withRoomTimeout(room.connect(url, token));
+      } catch (error) {
+        const normalized = normalizeAegisCallError(error, 'CALL_ROOM_CONNECT_FAILED');
+        throw normalized.code === 'CALL_ROOM_CONNECT_TIMEOUT'
+          ? normalized
+          : new AegisCallError('CALL_ROOM_CONNECT_FAILED', { cause: error });
+      }
+      traceCall({ direction: 'local', stage: 'room_connect', outcome: 'ok', callId, deviceId, elapsedMs: Date.now() - connectStartedAt });
 
       if (endingRef.current || roomRef.current !== room) {
         console.info('[CALL] call ended during connect — cleaning up');
-        try { room.disconnect(); } catch {}
+        try { room.disconnect(); } catch { /* room may already be disconnected */ }
+        if (e2eeWorkerRef.current) {
+          try { e2eeWorkerRef.current.terminate(); } catch { /* already stopped */ }
+          e2eeWorkerRef.current = null;
+        }
         roomRef.current = null;
         connectingRef.current = false;
         releaseWakeLock();
-        return;
+        return false;
       }
 
       console.info('[CALL] room connected');
@@ -409,41 +462,49 @@ export function useCall(options?: UseCallOptions) {
         setIsE2eeActive(true);
         console.info('[CALL] LiveKit E2EE enabled');
       } catch (err) {
-        console.error('[CALL] LiveKit E2EE enable failed:', err);
-        throw new Error('Unable to enable call E2EE');
+        console.error('[CALL] LiveKit E2EE enable failed');
+        throw new AegisCallError('CALL_E2EE_ENABLE_FAILED', { cause: err });
       }
 
       if (endingRef.current || roomRef.current !== room) {
         console.info('[CALL] call ended before local track publication — cleaning up');
-        try { room.disconnect(); } catch {}
+        try { room.disconnect(); } catch { /* room may already be disconnected */ }
+        if (e2eeWorkerRef.current) {
+          try { e2eeWorkerRef.current.terminate(); } catch { /* already stopped */ }
+          e2eeWorkerRef.current = null;
+        }
         roomRef.current = null;
         connectingRef.current = false;
         releaseWakeLock();
-        return;
+        return false;
       }
 
       console.info('[CALL] publishing local tracks...');
-      await room.localParticipant.setMicrophoneEnabled(true, {
-        echoCancellation: true,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: 1,
-        sampleRate: 48000,
-      });
+      try {
+        await room.localParticipant.setMicrophoneEnabled(true, {
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+          sampleRate: 48000,
+        });
 
-      if (type === 'video') {
-        await room.localParticipant.setCameraEnabled(true);
+        if (type === 'video') {
+          await room.localParticipant.setCameraEnabled(true);
 
-        const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-        if (camPub?.track && localVideoRef.current) {
-          const el = camPub.track.attach();
-          el.style.width = '100%';
-          el.style.height = '100%';
-          el.style.objectFit = 'cover';
-          el.style.transform = 'scaleX(-1)';
-          localVideoRef.current.innerHTML = '';
-          localVideoRef.current.appendChild(el);
+          const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+          if (camPub?.track && localVideoRef.current) {
+            const el = camPub.track.attach();
+            el.style.width = '100%';
+            el.style.height = '100%';
+            el.style.objectFit = 'cover';
+            el.style.transform = 'scaleX(-1)';
+            localVideoRef.current.innerHTML = '';
+            localVideoRef.current.appendChild(el);
+          }
         }
+      } catch (error) {
+        throw new AegisCallError('CALL_TRACK_PUBLISH_FAILED', { cause: error });
       }
 
       console.info('[CALL] local tracks published');
@@ -463,10 +524,22 @@ export function useCall(options?: UseCallOptions) {
       }
 
       connectingRef.current = false;
+      traceCall({ direction: 'local', stage: 'start', outcome: 'ok', callId });
+      return true;
     } catch (err) {
-      console.error('[CALL] startCall error:', err);
-      toast.error("Impossible de lancer l'appel chiffré.");
+      const normalized = normalizeAegisCallError(err);
+      console.error(`[CALL] start failed (${normalized.code})`);
+      traceCall({
+        direction: 'local',
+        stage: 'start',
+        outcome: 'error',
+        callId,
+        errorCode: normalized.code,
+        diagnosticId: normalized.diagnosticId,
+      });
+      toast.error(callErrorUserMessage(normalized));
       safeDisconnect('start_call_error');
+      return false;
     }
   }, [markConnected, safeDisconnect]);
 
@@ -520,8 +593,8 @@ export function useCall(options?: UseCallOptions) {
       setIsScreenSharing(!enabled);
       if (!enabled) toast.success('Partage d\u2019\u00e9cran activ\u00e9');
       else toast.message('Partage d\u2019\u00e9cran arr\u00eat\u00e9');
-    } catch (err) {
-      console.error('[CALL] screen share toggle failed', err);
+    } catch {
+      console.error('[CALL] screen share toggle failed');
       toast.error('Partage d\u2019\u00e9cran indisponible');
     }
   }, []);
@@ -532,7 +605,7 @@ export function useCall(options?: UseCallOptions) {
 
     const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
     if (camPub?.track) {
-      const currentSettings = (camPub.track as any).mediaStreamTrack?.getSettings?.();
+      const currentSettings = camPub.track.mediaStreamTrack.getSettings();
       const newFacingMode = currentSettings?.facingMode === 'user' ? 'environment' : 'user';
 
       await room.localParticipant.setCameraEnabled(false);

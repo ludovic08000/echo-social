@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Cloud, Loader2, RefreshCw, Shield } from 'lucide-react';
+import { Archive, Cloud, Loader2, RefreshCw, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSecureBackup } from '@/hooks/useSecureBackup';
@@ -49,6 +49,16 @@ export function KeyBackupPanel() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+          <Archive className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <div className="space-y-1">
+            <p className="text-xs font-medium">Récupération des messages active</p>
+            <p className="text-[10px] text-muted-foreground">
+              Les messages ordinaires sont archivés sous forme chiffrée pour rester lisibles après un changement d’appareil ou l’effacement du navigateur. Les messages à vue unique restent exclus.
+            </p>
+          </div>
+        </div>
+
         <div className="space-y-2 rounded-lg bg-muted/50 p-3">
           <div className="flex items-center gap-2">
             <div className={`h-2 w-2 rounded-full ${autoBackupOn ? 'bg-green-500' : 'bg-yellow-500'}`} />

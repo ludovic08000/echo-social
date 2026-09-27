@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { KeyBackupPanel } from '@/components/KeyBackupPanel';
-import { ArchiveBackupToggle } from '@/components/settings/ArchiveBackupToggle';
 import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
@@ -247,7 +246,7 @@ export function PrivacySettingsPanel() {
               </p>
             </div>
             <Switch
-              checked={(settings as any).ghost_mode ?? false}
+              checked={settings.ghost_mode ?? false}
               onCheckedChange={(v) => handleUpdate('ghost_mode', v)}
             />
           </div>
@@ -390,7 +389,7 @@ export function PrivacySettingsPanel() {
           <div className="flex items-center justify-between">
             <Label>Qui peut écrire sur mon mur anonyme ?</Label>
             <Select
-              value={(settings as any).wall_visibility || 'friends'}
+              value={settings.wall_visibility || 'friends'}
               onValueChange={(v) => handleUpdate('wall_visibility', v)}
             >
               <SelectTrigger className="w-40">
@@ -566,9 +565,6 @@ export function PrivacySettingsPanel() {
 
       {/* E2EE Key Backup & Transfer */}
       <KeyBackupPanel />
-
-      {/* Conversation-level encrypted history backup */}
-      <ArchiveBackupToggle />
 
       {/* Data Export */}
       <DataExportSection />

@@ -10,12 +10,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto, hardGlobals } from '@/lib/crypto/cryptoIntegrity';
 import { bufferToBase64, base64ToBuffer } from '@/lib/crypto/utils';
 import { getArchiveMasterKey } from '@/lib/crypto/archiveMasterKey';
-import { isArchiveBackupEnabled } from '@/lib/messaging/archive/archivePrefs';
 
 const ACTIVATED_FLAG = 'forsure:archive-activated-toast-shown:v1';
 const KDF_VERSION = 1;
 const IV_LEN = 12;
 const KEY_LEN = 32;
+const GCM_TAG_LEN = 16;
+const WRAPPED_KEY_LEN = IV_LEN + KEY_LEN + GCM_TAG_LEN;
+const MAX_ARCHIVE_PAYLOAD_CHARS = 262_144;
 
 function maybeShowActivationToastOnce(): void {
   try {
@@ -99,7 +101,7 @@ async function wrapKey(rawKey: Uint8Array, masterKey: CryptoKey, aad: Uint8Array
 
 async function unwrapKey(wrapped: string, masterKey: CryptoKey, aad: Uint8Array): Promise<Uint8Array> {
   const combined = new Uint8Array(base64ToBuffer(wrapped));
-  if (combined.length <= IV_LEN) throw new Error('archive_key: wrapped payload too short');
+  if (combined.length !== WRAPPED_KEY_LEN) throw new Error('archive_key: invalid wrapped payload length');
   const iv = combined.slice(0, IV_LEN);
   const ct = combined.slice(IV_LEN);
   const pt = await hardCrypto.decrypt(
@@ -112,7 +114,12 @@ async function unwrapKey(wrapped: string, masterKey: CryptoKey, aad: Uint8Array)
     masterKey,
     ct.buffer.slice(ct.byteOffset, ct.byteOffset + ct.byteLength),
   );
-  return new Uint8Array(pt);
+  const raw = new Uint8Array(pt);
+  if (raw.byteLength !== KEY_LEN) {
+    raw.fill(0);
+    throw new Error('archive_key: invalid plaintext key length');
+  }
+  return raw;
 }
 
 function aadFor(userId: string, conversationId: string): Uint8Array {
@@ -150,6 +157,7 @@ export async function getOrCreateArchiveKey(
       .maybeSingle();
 
     if (data?.wrapped_key) {
+      if (data.kdf_version !== KDF_VERSION) return null;
       const raw = await unwrapKey(data.wrapped_key, masterKey, aad);
       const key = await importAesKey(raw);
       raw.fill(0);
@@ -181,13 +189,13 @@ export async function getOrCreateArchiveKey(
 
     const { data: stored } = await supabase
       .from('conversation_archive_keys')
-      .select('wrapped_key')
+      .select('wrapped_key, kdf_version')
       .eq('conversation_id', conversationId)
       .eq('user_id', userId)
       .maybeSingle();
 
     raw.fill(0);
-    if (!stored?.wrapped_key) return null;
+    if (!stored?.wrapped_key || stored.kdf_version !== KDF_VERSION) return null;
 
     const storedRaw = await unwrapKey(stored.wrapped_key, masterKey, aad);
     const key = await importAesKey(storedRaw);
@@ -207,14 +215,29 @@ export interface ArchivePayload {
   context: string;
 }
 
+function decodeArchiveBase64(value: unknown): Uint8Array | null {
+  if (typeof value !== 'string' || !value || value.length % 4 !== 0) return null;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
+  try {
+    return new Uint8Array(base64ToBuffer(value));
+  } catch {
+    return null;
+  }
+}
+
 export function isArchivePayload(value: string | null | undefined): boolean {
-  if (!value) return false;
+  if (!value || value.length > MAX_ARCHIVE_PAYLOAD_CHARS) return false;
   try {
     const payload = JSON.parse(value);
+    const iv = decodeArchiveBase64(payload?.iv);
+    const ciphertext = decodeArchiveBase64(payload?.ct);
     return payload?.v === 2
-      && typeof payload.iv === 'string'
-      && typeof payload.ct === 'string'
-      && typeof payload.context === 'string';
+      && typeof payload.context === 'string'
+      && payload.context.length > 0
+      && payload.context.length <= 128
+      && iv?.byteLength === IV_LEN
+      && ciphertext !== null
+      && ciphertext.byteLength >= GCM_TAG_LEN;
   } catch {
     return false;
   }
@@ -226,7 +249,7 @@ export async function encryptArchive(
   userId: string,
   contextId = conversationId,
 ): Promise<string | null> {
-  if (!plaintext || !isArchiveBackupEnabled()) return null;
+  if (!plaintext) return null;
   const key = await getOrCreateArchiveKey(conversationId, userId);
   if (!key) return null;
 
@@ -300,6 +323,7 @@ export async function preloadAllArchiveKeys(userId: string): Promise<number> {
     for (const row of rows) {
       const cacheKey = `${userId}:${row.conversation_id}`;
       if (ramCache.has(cacheKey)) continue;
+      if (row.kdf_version !== KDF_VERSION) continue;
       try {
         const raw = await unwrapKey(row.wrapped_key, masterKey, aadFor(userId, row.conversation_id));
         const key = await importAesKey(raw);

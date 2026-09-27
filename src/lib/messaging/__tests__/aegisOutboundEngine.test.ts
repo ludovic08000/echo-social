@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   assertTrusted: vi.fn(),
   encryptArchive: vi.fn(),
   archiveBubbleForUser: vi.fn(),
-  archiveEnabled: vi.fn(),
 }));
 
 vi.mock('@/lib/crypto/libsignalProvisioning', () => ({ provisionLibsignalDevice: mocks.provision }));
@@ -52,9 +51,6 @@ vi.mock('@/lib/messaging/aegisConversationQueue', () => ({
 vi.mock('@/lib/messaging/archive/archiveKey', () => ({
   archiveBubbleForUser: mocks.archiveBubbleForUser,
   encryptArchive: mocks.encryptArchive,
-}));
-vi.mock('@/lib/messaging/archive/archivePrefs', () => ({
-  isArchiveBackupEnabled: mocks.archiveEnabled,
 }));
 
 import { sendAegisOutboundMessage } from '@/lib/messaging/aegisOutboundEngine';
@@ -97,9 +93,8 @@ beforeEach(() => {
   });
   mocks.runJob.mockImplementation((_key: string, job: () => Promise<unknown>) => job());
   mocks.assertTrusted.mockResolvedValue(undefined);
-  mocks.encryptArchive.mockResolvedValue(null);
+  mocks.encryptArchive.mockResolvedValue('aegis-archive-v2.encrypted');
   mocks.archiveBubbleForUser.mockResolvedValue(true);
-  mocks.archiveEnabled.mockReturnValue(false);
 });
 
 describe('canonical Aegis outbound transaction engine', () => {
@@ -116,15 +111,15 @@ describe('canonical Aegis outbound transaction engine', () => {
     expect(mocks.provision).toHaveBeenCalledWith(COPY.sender_user_id, 'sender-device');
     expect(isMultiDeviceEnvelopeBody(result.parentBody)).toBe(true);
     expect(JSON.parse(result.parentBody).protocol).toBe(AEGIS_MESSAGE_PROTOCOL);
-    expect(mocks.putOutbox).toHaveBeenCalledTimes(3);
-    expect(mocks.putOutbox.mock.calls[2][1]).toMatchObject({
+    expect(mocks.putOutbox).toHaveBeenCalledTimes(4);
+    expect(mocks.putOutbox.mock.calls[3][1]).toMatchObject({
       localId: 'local-one',
       reservedServerId: COPY.message_id,
       transportPlaintext: 'message secret',
       preparedCopies: [COPY],
       status: 'sending',
     });
-    expect(mocks.putOutbox.mock.invocationCallOrder[2])
+    expect(mocks.putOutbox.mock.invocationCallOrder[3])
       .toBeLessThan(mocks.sendRpc.mock.invocationCallOrder[0]);
     const capsule = mocks.buildCopies.mock.calls[0][0].plaintext as string;
     expect(parseAegisKeyCapsule(capsule)).toMatchObject({
@@ -140,7 +135,10 @@ describe('canonical Aegis outbound transaction engine', () => {
       routeVersion: 'route-version-1',
     }));
     expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-one');
-    expect(mocks.archiveBubbleForUser).not.toHaveBeenCalled();
+    expect(mocks.archiveBubbleForUser).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: COPY.message_id,
+      ensureParent: true,
+    }));
   });
 
   it('stops before fanout when libsignal provisioning fails', async () => {
@@ -238,7 +236,7 @@ describe('canonical Aegis outbound transaction engine', () => {
       traceId: 'trace-wire-seed',
       messageId: COPY.message_id,
     });
-    const durable = mocks.putOutbox.mock.calls[2][1];
+    const durable = mocks.putOutbox.mock.calls[3][1];
 
     mocks.buildCopies.mockClear();
     mocks.sendRpc.mockClear();
@@ -263,9 +261,8 @@ describe('canonical Aegis outbound transaction engine', () => {
     expect(JSON.stringify(mocks.sendRpc.mock.calls[0][0])).not.toContain('legacy.init');
   });
 
-  it('commits the sender history archive atomically when backup is enabled', async () => {
-    mocks.archiveEnabled.mockReturnValue(true);
-    mocks.encryptArchive.mockResolvedValue('aegis-archive-v1.encrypted');
+  it('commits the sender history archive atomically for every ordinary message', async () => {
+    mocks.encryptArchive.mockResolvedValue('aegis-archive-v2.encrypted');
 
     await sendAegisOutboundMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
@@ -284,11 +281,11 @@ describe('canonical Aegis outbound transaction engine', () => {
     );
     expect(mocks.putOutbox).toHaveBeenCalledWith(
       COPY.sender_user_id,
-      expect.objectContaining({ archiveBody: 'aegis-archive-v1.encrypted' }),
+      expect.objectContaining({ archiveBody: 'aegis-archive-v2.encrypted' }),
     );
     expect(mocks.sendRpc).toHaveBeenCalledWith(expect.objectContaining({
       extra: expect.objectContaining({
-        archive_body: 'aegis-archive-v1.encrypted',
+        archive_body: 'aegis-archive-v2.encrypted',
       }),
     }));
     expect(mocks.archiveBubbleForUser).toHaveBeenCalledWith({
@@ -302,8 +299,7 @@ describe('canonical Aegis outbound transaction engine', () => {
       .toBeLessThan(mocks.deleteOutbox.mock.invocationCallOrder[0]);
   });
 
-  it('sends securely without the optional history archive when it cannot be prepared', async () => {
-    mocks.archiveEnabled.mockReturnValue(true);
+  it('fails closed before fanout when an ordinary archive cannot be prepared', async () => {
     mocks.encryptArchive.mockResolvedValue(null);
 
     await expect(sendAegisOutboundMessage({
@@ -313,14 +309,64 @@ describe('canonical Aegis outbound transaction engine', () => {
       localId: 'local-archive-failed',
       traceId: 'trace-archive-failed',
       messageId: COPY.message_id,
-    })).resolves.toEqual(expect.objectContaining({ id: COPY.message_id }));
+    })).rejects.toThrow('AEGIS_ARCHIVE_REQUIRED');
 
-    expect(mocks.buildCopies).toHaveBeenCalled();
+    expect(mocks.buildCopies).not.toHaveBeenCalled();
+    expect(mocks.sendRpc).not.toHaveBeenCalled();
+    expect(mocks.deleteOutbox).not.toHaveBeenCalled();
+    expect(mocks.putOutbox).toHaveBeenLastCalledWith(
+      COPY.sender_user_id,
+      expect.objectContaining({
+        archiveBody: null,
+        status: 'retry_pending',
+        lastError: 'AEGIS_ARCHIVE_REQUIRED',
+      }),
+    );
+  });
+
+  it('keeps view-once messages intentionally outside recoverable history', async () => {
+    await sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'secret éphémère',
+      localId: 'local-view-once',
+      traceId: 'trace-view-once',
+      messageId: COPY.message_id,
+      extra: { view_once: true },
+    });
+
+    expect(mocks.encryptArchive).not.toHaveBeenCalled();
+    expect(mocks.archiveBubbleForUser).not.toHaveBeenCalled();
     expect(mocks.sendRpc).toHaveBeenCalledWith(expect.objectContaining({
       extra: expect.objectContaining({
+        view_once: true,
         archive_body: null,
       }),
     }));
+  });
+
+  it('retains the idempotent outbox when post-commit archive verification fails', async () => {
+    mocks.archiveBubbleForUser.mockResolvedValue(false);
+
+    await expect(sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message à récupérer',
+      localId: 'local-post-commit-archive',
+      traceId: 'trace-post-commit-archive',
+      messageId: COPY.message_id,
+    })).rejects.toThrow('AEGIS_ARCHIVE_DURABILITY_REQUIRED');
+
+    expect(mocks.sendRpc).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteOutbox).not.toHaveBeenCalled();
+    expect(mocks.putOutbox).toHaveBeenLastCalledWith(
+      COPY.sender_user_id,
+      expect.objectContaining({
+        localId: 'local-post-commit-archive',
+        status: 'retry_pending',
+        lastError: 'AEGIS_ARCHIVE_DURABILITY_REQUIRED',
+      }),
+    );
   });
 
   it('blocks a durable retry when the peer identity changed after preparation', async () => {
@@ -332,7 +378,7 @@ describe('canonical Aegis outbound transaction engine', () => {
       traceId: 'trace-identity-seed',
       messageId: COPY.message_id,
     });
-    const durable = mocks.putOutbox.mock.calls[2][1];
+    const durable = mocks.putOutbox.mock.calls[3][1];
 
     mocks.sendRpc.mockClear();
     mocks.buildCopies.mockClear();

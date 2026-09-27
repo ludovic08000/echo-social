@@ -51,6 +51,17 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(auth).toContain("status: 'restored_from_password_sign_in'");
   });
 
+  it('finishes password-based crypto restoration before exposing private routes', () => {
+    const auth = source('src/lib/auth.tsx');
+    const routes = source('src/components/ProtectedRoute.tsx');
+
+    expect(auth).toContain('setCryptoRestoring(true)');
+    expect(auth).toContain('await runPostSignInSetup(password, data.user.id)');
+    expect(auth).not.toContain('void runPostSignInSetup(password, data.user.id)');
+    expect(routes).toContain('loading || cryptoRestoring');
+    expect(routes).toContain('Restauration du coffre chiffré');
+  });
+
   it('commits an explicit safety-number acknowledgement before enabling sending', () => {
     const banner = source('src/components/messages/IdentityChangeBanner.tsx');
     const tracker = source('src/lib/crypto/fingerprintTracker.ts');

@@ -2,6 +2,7 @@
 // Un contrôle absent n'est jamais déclaré réussi.
 const CHECKS = {
   gateway: ['host', 'route', 'origin', 'bearer_syntax', 'request_json', 'database_rpc', 'database_response'],
+  'livekit-token': ['method', 'bearer_syntax', 'configuration', 'auth_session', 'rate_limit', 'request_shape', 'room_lookup', 'device_authorization', 'invitation_authorization', 'profile_lookup', 'token_signing', 'audit_log'],
   'sealed-mint-token': ['method', 'bearer_syntax', 'configuration', 'auth_session', 'request_shape', 'recipient', 'conversation_access', 'membership_lookup', 'sender_membership', 'recipient_membership', 'token_signing', 'token_persistence'],
   'sealed-relay': ['method', 'configuration', 'request_shape', 'payload_limits', 'token_decode', 'conversation_binding', 'recipient_binding', 'token_lifetime', 'token_mac', 'token_consume_and_relay'],
 };
@@ -20,6 +21,9 @@ E2EE_INVALID_DEVICE_COPY E2EE_SENDER_DEVICE_REQUIRED E2EE_SENDER_DEVICE_NOT_TRUS
 E2EE_DEVICE_LIST_STALE E2EE_NO_SECURE_TARGET E2EE_DUPLICATE_DEVICE_COPY E2EE_PARTICIPANT_ROUTE_UNAVAILABLE
 AEGIS_WIRE_FORMAT_REJECTED AEGIS_STABLE_UUID_REQUIRED MESSAGE_ID_CONFLICT
 SENDER_NOT_CONVERSATION_PARTICIPANT AEGIS_ACK_BATCH_INVALID UNSUPPORTED_PROTOCOL_VERSION
+CALL_SERVICE_UNAVAILABLE CALL_RATE_LIMITED CALL_NOT_JOINABLE CALL_STATE_LOOKUP_FAILED
+CALL_DEVICE_LOOKUP_FAILED CALL_INVITATION_LOOKUP_FAILED CALL_DEVICE_NOT_AUTHORIZED
+CALL_DEVICE_NOT_INVITED CALL_TOKEN_REQUEST_FAILED CALL_TOKEN_RESPONSE_INVALID
 42501 28000 22023 23502 23505 23514 P0001 PGRST301 PGRST302 PGRST303`.split(/\s+/));
 
 export function diagnosticCode(value) {

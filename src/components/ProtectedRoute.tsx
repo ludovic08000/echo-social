@@ -11,7 +11,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, loading } = useAuth();
+  const { user, loading, cryptoRestoring } = useAuth();
   const location = useLocation();
   const { data: profile, isLoading: profileLoading } = useProfile();
   const [recoveryDetected, setRecoveryDetected] = useState(() => isRecoveryPending() || detectAndStoreRecoveryFromHash());
@@ -41,12 +41,14 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   // Show loading state
-  if (loading || (user && profileLoading)) {
+  if (loading || cryptoRestoring || (user && profileLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" />
-          <span className="text-muted-foreground">Chargement...</span>
+          <span className="text-muted-foreground">
+            {cryptoRestoring ? 'Restauration du coffre chiffré…' : 'Chargement...'}
+          </span>
         </div>
       </div>
     );
@@ -66,19 +68,21 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 }
 
 export function PublicOnlyRoute({ children }: ProtectedRouteProps) {
-  const { user, loading } = useAuth();
+  const { user, loading, cryptoRestoring } = useAuth();
   const location = useLocation();
 
   if (isRecoveryPending() || detectAndStoreRecoveryFromHash()) {
     return <Navigate to="/reset-password" replace />;
   }
 
-  if (loading) {
+  if (loading || cryptoRestoring) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" />
-          <span className="text-muted-foreground">Chargement...</span>
+          <span className="text-muted-foreground">
+            {cryptoRestoring ? 'Restauration du coffre chiffré…' : 'Chargement...'}
+          </span>
         </div>
       </div>
     );

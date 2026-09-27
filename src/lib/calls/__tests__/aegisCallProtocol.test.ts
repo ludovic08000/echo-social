@@ -57,13 +57,16 @@ describe('Aegis call protocol', () => {
     const devices = new Map<string, readonly CanonicalRoutableDevice[]>([
       [USER_A, [device('offline-device', false)]],
     ]);
-    expect(() => buildCallInvitationPlan([USER_A], devices)).toThrow(
-      `CALL_RECIPIENT_HAS_NO_ROUTABLE_DEVICE:${USER_A}`,
-    );
+    expect(() => buildCallInvitationPlan([USER_A], devices)).toThrow('CALL_RECIPIENT_HAS_NO_ROUTABLE_DEVICE');
+    try {
+      buildCallInvitationPlan([USER_A], devices);
+    } catch (error) {
+      expect(String(error)).not.toContain(USER_A);
+    }
   });
 
   it('rejects malformed room and call identifiers', () => {
-    expect(() => roomNameForCall('not-a-uuid')).toThrow('INVALID_CALL_ID');
+    expect(() => roomNameForCall('not-a-uuid')).toThrow('CALL_INVALID_REQUEST');
     expect(callIdFromRoomName(`live-${CALL_ID}`)).toBeNull();
   });
 });

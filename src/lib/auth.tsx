@@ -83,6 +83,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  cryptoRestoring: boolean;
   signUp: (email: string, password: string, name: string, dateOfBirth?: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -208,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cryptoRestoring, setCryptoRestoring] = useState(false);
   const activeUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -237,6 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(null);
       setUser(null);
       setLoading(false);
+      setCryptoRestoring(false);
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -346,18 +349,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const threatError = await inspectAuthThreat('auth.signin', normalizedEmail);
     if (threatError) return { error: threatError };
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
-      password,
-    });
+    setCryptoRestoring(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
 
-    if (!error && data.user) {
-      // Authentication has succeeded. Do not await R2, IndexedDB or E2EE key
-      // restoration here: those services continue in the background.
-      void runPostSignInSetup(password, data.user.id);
+      if (!error && data.user) {
+        // Invariant : après un navigateur vierge, aucune route privée ne
+        // démarre avant la restauration de la Master Key du compte.
+        await runPostSignInSetup(password, data.user.id);
+      }
+
+      return { error };
+    } catch (error) {
+      return { error: error instanceof Error ? error : new Error(String(error)) };
+    } finally {
+      setCryptoRestoring(false);
     }
-
-    return { error };
   };
 
   const signOut = async () => {
@@ -395,7 +405,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, cryptoRestoring, signUp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
