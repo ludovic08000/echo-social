@@ -79,6 +79,8 @@ function safeErrorCode(value: unknown): string | undefined {
     'AEGIS_SYNCED_COPY_SCOPE_MISMATCH', 'AEGIS_DEVICE_ROUTE_UNAVAILABLE', 'AEGIS_PARTIAL_DEVICE_FANOUT',
     'E2EE_DEVICE_COPIES_UNAVAILABLE', 'E2EE_DEVICE_NOT_AUTHORIZED', 'DEVICE_COPY_DECRYPT_NULL',
     'DEVICE_PUBLIC_KEY_MISSING', 'AUTH_USER_MISSING', 'AEGIS_TEMPORARY_DEVICE_ID',
+    'VOICE_PERMISSION_DENIED', 'VOICE_DEVICE_NOT_FOUND', 'VOICE_DEVICE_BUSY',
+    'VOICE_CAPTURE_UNSUPPORTED', 'VOICE_CAPTURE_FAILED', 'VOICE_EMPTY_RECORDING',
     'SessionNotFound', 'UntrustedIdentity', 'InvalidSignature', 'InvalidKey', 'InvalidMessage',
     'DuplicatedMessage', 'InvalidPreKeyId', '42501', 'P0001', 'PGRST301', 'PGRST302', 'PGRST303']);
   return codes.has(head) || /^AEGIS_HTTP_[45]\d\d$/.test(head) ? head : 'E_UNKNOWN';
