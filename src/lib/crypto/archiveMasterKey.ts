@@ -26,6 +26,13 @@ let sessionKey: CryptoKey | null = null;
 let sessionRaw: Uint8Array | null = null;
 let initInFlight: Promise<ArchiveMasterInitStatus> | null = null;
 
+function resetSessionMaterial(): void {
+  sessionKey = null;
+  sessionUserId = null;
+  sessionRaw?.fill(0);
+  sessionRaw = null;
+}
+
 function passwordSecret(password: string, userId: string): string {
   return `${password}::forsure::${userId}`;
 }
@@ -132,6 +139,57 @@ async function persistDeviceKey(userId: string, key: CryptoKey, raw?: Uint8Array
   }
 }
 
+function isUsableAesGcmKey(value: unknown): value is CryptoKey {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<CryptoKey> & {
+    algorithm?: { name?: unknown };
+    usages?: Iterable<unknown>;
+  };
+  let usages: unknown[] = [];
+  try {
+    usages = candidate.usages ? Array.from(candidate.usages) : [];
+  } catch {
+    return false;
+  }
+  return candidate.type === 'secret' &&
+    candidate.algorithm?.name === 'AES-GCM' &&
+    usages.includes('encrypt') &&
+    usages.includes('decrypt');
+}
+
+async function loadSecureRawKey(userId: string): Promise<Uint8Array | null> {
+  try {
+    const encoded = await secureGetSecret(`${SECURE_PREFIX}${userId}`);
+    if (!encoded) return null;
+    const raw = new Uint8Array(base64ToBuffer(encoded));
+    return raw.byteLength === 32 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+async function rawMatchesKey(raw: Uint8Array, key: CryptoKey): Promise<boolean> {
+  try {
+    const imported = await importMasterKey(raw);
+    const iv = hardCrypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new hardGlobals.TextEncoder().encode('forsure-master-key-device-proof');
+    const [candidateProof, rawProof] = await Promise.all([
+      hardCrypto.encrypt({ name: 'AES-GCM', iv }, key, plaintext),
+      hardCrypto.encrypt({ name: 'AES-GCM', iv }, imported, plaintext),
+    ]);
+    const left = new Uint8Array(candidateProof);
+    const right = new Uint8Array(rawProof);
+    if (left.byteLength !== right.byteLength) return false;
+    let difference = 0;
+    for (let index = 0; index < left.byteLength; index += 1) {
+      difference |= left[index] ^ right[index];
+    }
+    return difference === 0;
+  } catch {
+    return false;
+  }
+}
+
 async function loadDeviceKey(userId: string): Promise<CryptoKey | null> {
   try {
     const db = await openDeviceDb();
@@ -142,16 +200,24 @@ async function loadDeviceKey(userId: string): Promise<CryptoKey | null> {
       request.onerror = () => reject(request.error);
     });
     db.close();
-    if (row?.key instanceof CryptoKey) return row.key;
+    // Structured-cloned CryptoKey objects are not guaranteed to preserve the
+    // current realm's prototype (notably after an iOS/Android WebView reload).
+    // Validate their cryptographic shape instead of relying on instanceof.
+    if (isUsableAesGcmKey(row?.key)) {
+      const raw = await loadSecureRawKey(userId);
+      if (raw) {
+        if (await rawMatchesKey(raw, row.key)) sessionRaw = raw;
+        else raw.fill(0);
+      }
+      return row.key;
+    }
   } catch {
     // Fall through to native secure storage.
   }
 
   try {
-    const encoded = await secureGetSecret(`${SECURE_PREFIX}${userId}`);
-    if (!encoded) return null;
-    const raw = new Uint8Array(base64ToBuffer(encoded));
-    if (raw.byteLength !== 32) return null;
+    const raw = await loadSecureRawKey(userId);
+    if (!raw) return null;
     const key = await importMasterKey(raw);
     sessionRaw = raw.slice();
     await persistDeviceKey(userId, key);
@@ -179,6 +245,7 @@ function publishReady(userId: string, source: string): void {
 async function adoptRawMasterKey(userId: string, raw: Uint8Array, source: string): Promise<void> {
   if (raw.byteLength !== 32) throw new Error('invalid_archive_master_key_length');
   const key = await importMasterKey(raw);
+  resetSessionMaterial();
   sessionUserId = userId;
   sessionKey = key;
   sessionRaw = raw.slice();
@@ -195,7 +262,6 @@ export async function initializeArchiveMasterKeyFromPassword(
   userId: string,
 ): Promise<ArchiveMasterInitStatus> {
   if (!password || !userId) return 'blocked';
-  if (sessionUserId === userId && sessionKey) return 'restored';
   if (initInFlight) return initInFlight;
 
   initInFlight = (async () => {
@@ -260,6 +326,7 @@ export async function initializeArchiveMasterKeyAfterBackupCreation(
 export async function getArchiveMasterKey(userId: string): Promise<CryptoKey | null> {
   if (!userId) return null;
   if (sessionUserId === userId && sessionKey) return sessionKey;
+  if (sessionUserId && sessionUserId !== userId) resetSessionMaterial();
 
   const persisted = await loadDeviceKey(userId);
   if (persisted) {
@@ -281,6 +348,33 @@ export async function getArchiveMasterKey(userId: string): Promise<CryptoKey | n
   }
 
   return null;
+}
+
+/**
+ * Return the device-persisted account Master Key and, when the secure store
+ * retained it, a defensive copy of its raw bytes. Account restoration uses
+ * the CryptoKey to authenticate/decrypt the authoritative server backup before
+ * admitting messaging; a local key is never trusted on presence alone.
+ */
+export async function loadArchiveMasterKeyMaterial(userId: string): Promise<{
+  key: CryptoKey;
+  raw: Uint8Array | null;
+} | null> {
+  const key = await getArchiveMasterKey(userId);
+  if (!key) return null;
+
+  if (sessionUserId === userId && !sessionRaw) {
+    const raw = await loadSecureRawKey(userId);
+    if (raw) {
+      if (await rawMatchesKey(raw, key)) sessionRaw = raw;
+      else raw.fill(0);
+    }
+  }
+
+  return {
+    key,
+    raw: sessionUserId === userId && sessionRaw ? sessionRaw.slice() : null,
+  };
 }
 
 export async function exportArchiveMasterKeyForDeviceLink(userId: string): Promise<string | null> {
@@ -309,10 +403,7 @@ export async function importArchiveMasterKeyFromDeviceLink(
 }
 
 export function clearArchiveMasterKeySession(): void {
-  sessionKey = null;
-  sessionUserId = null;
-  if (sessionRaw) sessionRaw.fill(0);
-  sessionRaw = null;
+  resetSessionMaterial();
 }
 
 if (typeof window !== 'undefined') {

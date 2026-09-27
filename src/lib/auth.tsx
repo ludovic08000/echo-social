@@ -5,7 +5,14 @@ import { generateFingerprint } from '@/hooks/useTrustAndSafety';
 import { startSessionGuard, stopSessionGuard } from '@/lib/sessionGuard';
 import { clearRecoveryFlag, detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
 import { getSafeRedirectUrl } from '@/lib/urlUtils';
-import { hasLocalKeys, initAccountKeySync, restoreKeysFromKeychainSnapshot, clearAccountKeySession } from '@/lib/crypto/accountKeyBackup';
+import {
+  clearAccountKeySession,
+  hasAccountMasterKeySession,
+  hasLocalKeys,
+  initAccountKeySync,
+  restoreAccountMasterKeyFromDeviceStore,
+  restoreKeysFromKeychainSnapshot,
+} from '@/lib/crypto/accountKeyBackup';
 import {
   clearArchiveMasterKeySession,
   initializeArchiveMasterKeyAfterBackupCreation,
@@ -95,11 +102,12 @@ const initialRecovery = detectRecoveryFromHash() || isRecoveryPending();
 async function inspectCryptoReadiness(userId: string | undefined, reason: 'session_restored' | 'signed_in') {
   if (!userId) return;
   try {
-    const hasKeys = await hasLocalKeys(userId);
+    let hasKeys = await hasLocalKeys(userId);
     console.log(`[AUTH][E2EE] ${reason} user=${userId} hasLocalKeys=${hasKeys}`);
     if (!hasKeys) {
       const keychainStatus = await restoreKeysFromKeychainSnapshot(userId);
       if (keychainStatus === 'restored') {
+        hasKeys = await hasLocalKeys(userId);
         try {
           sessionStorage.setItem(
             `forsure:e2ee-resync-pending:${userId}`,
@@ -109,13 +117,19 @@ async function inspectCryptoReadiness(userId: string | undefined, reason: 'sessi
         window.dispatchEvent(new CustomEvent('forsure-keys-restored', {
           detail: { status: 'restored_from_keychain_auth', reason },
         }));
-        return;
       }
     }
 
-    if (!hasKeys && typeof window !== 'undefined') {
+    const deviceMasterStatus = await restoreAccountMasterKeyFromDeviceStore(userId);
+    const masterKeyReady = hasAccountMasterKeySession(userId);
+    console.log(`[AUTH][E2EE] ${reason} user=${userId} masterKey=${deviceMasterStatus}`);
+
+    if ((!hasKeys || !masterKeyReady) && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
-        detail: { userId, reason },
+        detail: {
+          userId,
+          reason: hasKeys ? 'account_master_key_locked' : reason,
+        },
       }));
     }
   } catch (error) {

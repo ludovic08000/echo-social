@@ -390,7 +390,7 @@ export function useAegisMessageQueue(
       transportPlaintext: resumePayload?.transportPlaintext ?? null,
       keyCapsule: resumePayload?.keyCapsule ?? null,
       preparedCopies: resumePayload?.preparedCopies ?? [],
-      archiveBody: null,
+      archiveBody: resumePayload?.archiveBody ?? null,
     };
     setPendingMessages(prev => [...prev.filter(message => message.localId !== localId), optimistic]);
 

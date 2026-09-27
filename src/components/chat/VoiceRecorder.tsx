@@ -65,6 +65,12 @@ function voiceCaptureErrorCode(errorName: string): string {
   return 'VOICE_CAPTURE_FAILED';
 }
 
+function isArchiveUnlockError(message: string): boolean {
+  const normalized = message.toUpperCase();
+  return normalized.includes('AEGIS_ARCHIVE_REQUIRED') ||
+    normalized.includes('AEGIS_ARCHIVE_DURABILITY_REQUIRED');
+}
+
 const VOICE_WAVEFORM_HEIGHTS = [
   11, 18, 9, 16, 13, 21, 10, 19, 14, 8,
   17, 12, 22, 15, 9, 20, 13, 18, 10, 16,
@@ -357,7 +363,22 @@ export function VoiceRecorder({ initialStreamRequest, onSend, onCancel }: VoiceR
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error('Voice upload error:', errorMessage);
-      toast.error(`Erreur lors de l'envoi du vocal: ${errorMessage || 'Réessayez'}`);
+      if (isArchiveUnlockError(errorMessage)) {
+        try {
+          window.dispatchEvent(new CustomEvent('forsure:e2ee-restore-needed', {
+            detail: {
+              userId: user.id,
+              reason: 'account_master_key_locked',
+              source: 'voice_message',
+            },
+          }));
+        } catch {
+          // The recovery event is best-effort; the actionable toast remains.
+        }
+        toast.error('Votre coffre sécurisé doit être déverrouillé. Restaurez-le avec votre mot de passe puis réessayez.');
+      } else {
+        toast.error(`Erreur lors de l'envoi du vocal: ${errorMessage || 'Réessayez'}`);
+      }
     } finally {
       if (mountedRef.current) setUploading(false);
     }

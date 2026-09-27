@@ -143,4 +143,37 @@ describe('VoiceRecorder', () => {
     expect(uploadToR2Mock).toHaveBeenCalledTimes(1);
     expect(onSend.mock.calls[1]?.[2]).toContain('🎙️ voice:');
   });
+
+  it('opens account-key recovery instead of exposing an archive error code', async () => {
+    const restoreEvents: Array<Record<string, unknown>> = [];
+    const onRestore = (event: Event) => {
+      restoreEvents.push((event as CustomEvent<Record<string, unknown>>).detail);
+    };
+    window.addEventListener('forsure:e2ee-restore-needed', onRestore);
+
+    try {
+      render(
+        <VoiceRecorder
+          initialStreamRequest={Promise.resolve(stream)}
+          onSend={vi.fn().mockRejectedValue(new Error('AEGIS_ARCHIVE_REQUIRED'))}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(await screen.findByLabelText("Arrêter l'enregistrement vocal"));
+      fireEvent.click(await screen.findByLabelText('Envoyer le message vocal'));
+
+      await waitFor(() => expect(restoreEvents).toContainEqual(expect.objectContaining({
+        userId: 'user-1',
+        reason: 'account_master_key_locked',
+        source: 'voice_message',
+      })));
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        'Votre coffre sécurisé doit être déverrouillé. Restaurez-le avec votre mot de passe puis réessayez.',
+      );
+      expect(toastErrorMock).not.toHaveBeenCalledWith(expect.stringContaining('AEGIS_ARCHIVE_REQUIRED'));
+    } finally {
+      window.removeEventListener('forsure:e2ee-restore-needed', onRestore);
+    }
+  });
 });
