@@ -57,6 +57,7 @@ vi.mock('@/components/messages/decryptionService', () => ({
 
 import {
   acknowledgeAegisMessage,
+  acknowledgeAegisMessages,
   formatAegisInboxError,
   startAegisDeviceInbox,
   syncAegisDeviceInbox,
@@ -210,6 +211,35 @@ describe('Aegis durable device inbox client', () => {
     expect(mocks.trace).toHaveBeenNthCalledWith(2, expect.objectContaining({
       stage: 'MESSAGE_READ_LOCAL',
       messageId: 'message-three',
+    }));
+  });
+
+  it('batches, deduplicates, and bounds explicit read acknowledgements', async () => {
+    mocks.callAegisServer.mockResolvedValue({ data: 2, error: null });
+
+    await acknowledgeAegisMessages(
+      'user-one',
+      ['message-batch-one', 'message-batch-one', 'message-batch-two'],
+      true,
+    );
+
+    expect(mocks.callAegisServer).toHaveBeenCalledTimes(1);
+    expect(mocks.callAegisServer).toHaveBeenCalledWith(
+      'aegis_ack_device_messages',
+      {
+        p_device_id: 'device-stable',
+        p_message_ids: ['message-batch-one', 'message-batch-two'],
+        p_mark_read: true,
+      },
+    );
+    expect(mocks.trace).toHaveBeenCalledTimes(2);
+    expect(mocks.trace).toHaveBeenCalledWith(expect.objectContaining({
+      stage: 'MESSAGE_READ_LOCAL',
+      messageId: 'message-batch-one',
+    }));
+    expect(mocks.trace).toHaveBeenCalledWith(expect.objectContaining({
+      stage: 'MESSAGE_READ_LOCAL',
+      messageId: 'message-batch-two',
     }));
   });
 

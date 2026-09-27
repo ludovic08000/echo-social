@@ -18,6 +18,10 @@ type RouteCacheEntry = {
 export type FanoutRouteSnapshot = {
   version: string;
   targets: DeviceDescriptor[];
+  blockedRecipients?: Array<{
+    userId: string;
+    reason: 'recipient_block' | 'sender_block';
+  }>;
 };
 
 type RouteLoader = () => Promise<FanoutRouteSnapshot>;
@@ -41,7 +45,13 @@ async function resolveCachedRoute(
 ): Promise<FanoutRouteSnapshot> {
   const cached = routeCache.get(key);
   if (cached && cached.expiresAt > now) {
-    return { version: cached.snapshot.version, targets: [...cached.snapshot.targets] };
+    return {
+      version: cached.snapshot.version,
+      targets: [...cached.snapshot.targets],
+      ...(cached.snapshot.blockedRecipients
+        ? { blockedRecipients: [...cached.snapshot.blockedRecipients] }
+        : {}),
+    };
   }
   if (cached) routeCache.delete(key);
 
@@ -115,7 +125,11 @@ async function loadStableFanoutRoute(
     if (resolved.unroutableUserIds.length > 0) {
       throw new Error(`E2EE_PARTICIPANT_ROUTE_UNAVAILABLE:${resolved.unroutableUserIds.join(',')}`);
     }
-    return { version: resolved.version, targets: resolved.targets };
+    return {
+      version: resolved.version,
+      targets: resolved.targets,
+      blockedRecipients: resolved.blockedRecipients,
+    };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (message.startsWith('E2EE_PARTICIPANT_ROUTE_UNAVAILABLE')) throw e;
@@ -128,7 +142,7 @@ async function loadStableFanoutRoute(
     const before = await readConversationRouteVersion(conversationId);
     const targets = await loadFanoutRoute(conversationId, senderUserId, senderDeviceId);
     const after = await readConversationRouteVersion(conversationId);
-    if (before === after) return { version: after, targets };
+    if (before === after) return { version: after, targets, blockedRecipients: [] };
     invalidateVerifiedDeviceCache();
   }
 
@@ -140,7 +154,7 @@ export async function resolveFanoutRouteSnapshot(
   senderUserId: string,
 ): Promise<FanoutRouteSnapshot> {
   if (!conversationId || !senderUserId || isDeviceIdTemporary()) {
-    return { version: '', targets: [] };
+    return { version: '', targets: [], blockedRecipients: [] };
   }
   const senderDeviceId = getCurrentDeviceId();
   const key = routeKey(conversationId, senderUserId, senderDeviceId);

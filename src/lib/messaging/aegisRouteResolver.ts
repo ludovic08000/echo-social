@@ -26,7 +26,12 @@ type RouteParticipantRow = {
   is_self: boolean;
   routable_count: number;
   total_count: number;
-  reason: 'OK' | 'NO_DEVICE_IDENTITY' | 'DEVICES_NOT_ROUTABLE';
+  reason:
+    | 'OK'
+    | 'NO_DEVICE_IDENTITY'
+    | 'DEVICES_NOT_ROUTABLE'
+    | 'BLOCKED_SENDER'
+    | 'BLOCKED_BY_SELF';
   devices: RouteDeviceRow[];
 };
 
@@ -43,6 +48,10 @@ export interface ResolvedConversationRoute {
   targets: DeviceDescriptor[];
   senderDeviceRoutable: boolean;
   unroutableUserIds: string[];
+  blockedRecipients: Array<{
+    userId: string;
+    reason: 'recipient_block' | 'sender_block';
+  }>;
 }
 
 function normalizeLastSeen(raw: string | null): number | undefined {
@@ -87,7 +96,7 @@ export async function resolveConversationRoute(
   }, level);
 
   trace('ROUTE_RESOLVE', { outcome: 'start', transport: 'supabase' });
-  const { data, error } = await (supabase as any).rpc('aegis_resolve_conversation_route', {
+  const { data, error } = await supabase.rpc('aegis_resolve_conversation_route', {
     p_conversation_id: conversationId,
     p_sender_device_id: senderDeviceId,
   });
@@ -104,8 +113,21 @@ export async function resolveConversationRoute(
   const participants = Array.isArray(payload.participants) ? payload.participants : [];
   const targets: DeviceDescriptor[] = [];
   const unroutableUserIds: string[] = [];
+  const blockedRecipients: ResolvedConversationRoute['blockedRecipients'] = [];
 
   for (const participant of participants) {
+    if (participant.reason === 'BLOCKED_SENDER' || participant.reason === 'BLOCKED_BY_SELF') {
+      if (!participant.is_self) {
+        blockedRecipients.push({
+          userId: participant.user_id,
+          reason: participant.reason === 'BLOCKED_SENDER'
+            ? 'recipient_block'
+            : 'sender_block',
+        });
+      }
+      continue;
+    }
+
     const rows = (Array.isArray(participant.devices) ? participant.devices : [])
       .filter((row) => row.is_routable === true);
 
@@ -167,6 +189,7 @@ export async function resolveConversationRoute(
     outcome: unroutableUserIds.length > 0 ? 'retry' : 'ok',
     targetCount: targets.length,
     copyCount: unroutableUserIds.length,
+    blockedCount: blockedRecipients.length,
     senderUserId,
   }, unroutableUserIds.length > 0 ? 'warn' : 'info');
 
@@ -175,5 +198,6 @@ export async function resolveConversationRoute(
     targets,
     senderDeviceRoutable: payload.sender_device_routable === true,
     unroutableUserIds,
+    blockedRecipients,
   };
 }

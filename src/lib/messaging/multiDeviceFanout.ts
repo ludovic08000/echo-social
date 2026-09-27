@@ -294,6 +294,11 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
   hasTargets: boolean;
   routeVersion: string;
   omittedDeviceIds: string[];
+  blockedRecipients: Array<{
+    userId: string;
+    reason: 'recipient_block' | 'sender_block';
+  }>;
+  allRecipientsBlocked: boolean;
 }> {
   const startedAt = Date.now();
   const baseTrace = {
@@ -305,25 +310,53 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
   traceE2EE({ ...baseTrace, stage: 'ROUTE_SNAPSHOT', outcome: 'start' });
   if (isDeviceIdTemporary()) {
     traceE2EE({ ...baseTrace, stage: 'ROUTE_SNAPSHOT', outcome: 'error', errorCode: 'AEGIS_TEMPORARY_DEVICE_ID' }, 'warn');
-    return { rows: [], hasTargets: false, routeVersion: '', omittedDeviceIds: [] };
+    return {
+      rows: [],
+      hasTargets: false,
+      routeVersion: '',
+      omittedDeviceIds: [],
+      blockedRecipients: [],
+      allRecipientsBlocked: false,
+    };
   }
   const senderDeviceId = getCurrentDeviceId();
 
   const route = await resolveFanoutRouteSnapshot(input.conversationId, input.senderUserId);
   const targets = route.targets;
+  const blockedRecipients = route.blockedRecipients ?? [];
+  const allRecipientsBlocked = targets.length === 0 && blockedRecipients.length > 0;
   traceE2EE({
     ...baseTrace,
     stage: 'ROUTE_SNAPSHOT',
-    outcome: targets.length > 0 ? 'ok' : 'error',
+    outcome: targets.length > 0 ? 'ok' : allRecipientsBlocked ? 'skip' : 'error',
     targetCount: targets.length,
     blockMs: Date.now() - startedAt,
-    errorCode: targets.length === 0 ? 'E2EE_NO_SECURE_TARGET' : undefined,
-  }, targets.length > 0 ? 'info' : 'warn');
+    errorCode: targets.length === 0 && !allRecipientsBlocked
+      ? 'E2EE_NO_SECURE_TARGET'
+      : undefined,
+  }, targets.length > 0 || allRecipientsBlocked ? 'info' : 'warn');
   if (targets.length === 0) {
+    if (allRecipientsBlocked) {
+      return {
+        rows: [],
+        hasTargets: true,
+        routeVersion: route.version,
+        omittedDeviceIds: [],
+        blockedRecipients,
+        allRecipientsBlocked: true,
+      };
+    }
     // Registration/trust publication can finish between two outbox attempts;
     // never keep a negative route cached across the next bounded retry.
     invalidateFanoutRoute(input.conversationId, input.senderUserId);
-    return { rows: [], hasTargets: false, routeVersion: route.version, omittedDeviceIds: [] };
+    return {
+      rows: [],
+      hasTargets: false,
+      routeVersion: route.version,
+      omittedDeviceIds: [],
+      blockedRecipients: [],
+      allRecipientsBlocked: false,
+    };
   }
 
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
@@ -400,7 +433,14 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
     throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
   }
   traceE2EE({ ...baseTrace, stage: 'FANOUT_EXACT_COVERAGE', outcome: 'ok', targetCount: targets.length, copyCount: rows.length, blockMs: Date.now() - startedAt });
-  return { rows, hasTargets: true, routeVersion: route.version, omittedDeviceIds: [] };
+  return {
+    rows,
+    hasTargets: true,
+    routeVersion: route.version,
+    omittedDeviceIds: [],
+    blockedRecipients,
+    allRecipientsBlocked,
+  };
 }
 
 /**

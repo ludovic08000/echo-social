@@ -5,7 +5,7 @@ import {
   Smile, Check, CheckCheck, Minus, Camera, Reply, Copy, Trash2,
   ChevronDown, Sparkles, MoreVertical, ThumbsUp, ImageIcon, PhoneOff, PhoneMissed,
   Flag, Forward, Wand2, Languages, SpellCheck, PenLine, Tag, ArrowRightLeft, CreditCard, XIcon, MapPin, Truck, Maximize2, Users,
-  Timer, Share2
+  Timer, Share2, Ban
 } from 'lucide-react';
 import { AddParticipantSheet } from '@/components/calls/AddParticipantSheet';
 import { formatDistanceToNow, format, isToday, isYesterday, isSameDay } from 'date-fns';
@@ -14,6 +14,16 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, type Message } from '@/hooks/useMessages';
 import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, useNegotiationsByConversation, type Negotiation } from '@/hooks/useNegotiations';
 import { useFriendships } from '@/hooks/useFriendships';
@@ -44,6 +54,8 @@ import { toast } from 'sonner';
 import { useMessageTranslation } from '@/hooks/useMessageTranslation';
 import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
+import { useMessageBlock } from '@/hooks/useMessageBlock';
+import { acknowledgeAegisMessages } from '@/lib/messaging/aegisDeviceInbox';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
@@ -79,6 +91,23 @@ function formatDateSeparator(dateStr: string) {
 function isSingleEmoji(text: string): boolean {
   const emojiRegex = /^(\p{Emoji_Presentation}|\p{Extended_Pictographic}){1,3}$/u;
   return emojiRegex.test(text.trim());
+}
+
+function outboundDeliveryLabel(message: Message): string {
+  switch (message.delivery_state) {
+    case 'read':
+      return 'Lu';
+    case 'delivered':
+      return 'Délivré';
+    case 'blocked':
+      if (message.blocked_reason === 'sender_block') return 'Contact bloqué';
+      if (message.blocked_reason === 'delivery_policy') return 'Envoi refusé';
+      return 'Bloqué par le destinataire';
+    case 'partial':
+      return 'Partiellement livré';
+    default:
+      return 'Envoyé';
+  }
 }
 
 const MESSAGE_REACTIONS = [
@@ -375,6 +404,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const [forwardMsg, setForwardMsg] = useState<{ id: string; plaintext: string } | null>(null);
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [showDisappearing, setShowDisappearing] = useState(false);
+  const [showBlockDialog, setShowBlockDialog] = useState(false);
   const [lightboxMedia, setLightboxMedia] = useState<{ url: string; body: string; messageId: string } | null>(null);
   // Persisted + realtime reactions (replaces local-only state)
   const [showAIMenu, setShowAIMenu] = useState(false);
@@ -388,6 +418,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const [isStartingCall, setIsStartingCall] = useState(false);
   const shouldAutoScrollRef = useRef(true);
   const lastScrollSigRef = useRef('');
+  const readReceiptSignatureRef = useRef('');
 
   const openVoiceRecorder = useCallback(() => {
     const request = requestVoiceCaptureStream();
@@ -412,6 +443,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const conversation = conversations?.find(c => c.id === conversationId);
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
+  const messageBlock = useMessageBlock(conversationId, peerUserId);
   const negotiationProduct = chatState.negotiationProduct;
 
   // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
@@ -849,14 +881,35 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
     return () => { cancelled = true; };
   }, [messages, bumpCache]);
 
-  const latestIncomingMessageId = messages?.reduce<string | undefined>(
-    (latest, message) => message.sender_id !== user?.id ? message.id : latest,
-    undefined,
-  );
-
   useEffect(() => {
-    if (conversationId) markConversationRead(conversationId);
-  }, [conversationId, latestIncomingMessageId, markConversationRead]);
+    if (!conversationId || !user?.id || !messages?.length) return;
+
+    const markReadableMessages = () => {
+      if (document.visibilityState !== 'visible') return;
+      const readableIncomingIds = messages
+        .filter((message) =>
+          message.sender_id !== user.id
+          && message.view_once !== true
+          && decryptedCacheRef.current.has(message.id),
+        )
+        .map((message) => message.id);
+      if (readableIncomingIds.length === 0) return;
+
+      const signature = `${conversationId}:${readableIncomingIds.join(',')}`;
+      if (readReceiptSignatureRef.current === signature) return;
+      readReceiptSignatureRef.current = signature;
+      markConversationRead(conversationId);
+      void acknowledgeAegisMessages(user.id, readableIncomingIds, true).catch(() => {
+        if (readReceiptSignatureRef.current === signature) {
+          readReceiptSignatureRef.current = '';
+        }
+      });
+    };
+
+    markReadableMessages();
+    document.addEventListener('visibilitychange', markReadableMessages);
+    return () => document.removeEventListener('visibilitychange', markReadableMessages);
+  }, [conversationId, messages, user?.id, cacheVersion, markConversationRead]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -865,7 +918,9 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
     // Show explicit reason if E2EE is not ready (especially on iOS Safari where
     // IndexedDB takes a moment to hydrate after login).
     if (sendBlocked) {
-      if (e2ee.peerKeyMissing) {
+      if (messageBlock.isBlockedByMe) {
+        toast.error("Débloque ce contact avant de lui envoyer un message.");
+      } else if (e2ee.peerKeyMissing) {
         toast.error("Clés du contact indisponibles. Réessaie dans quelques secondes.");
       } else if (e2ee.initError === 'pin_unlock_required') {
         toast.error("Déverrouille d'abord la messagerie sécurisée (PIN).");
@@ -905,6 +960,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   };
 
   const sendBlocked = !isZeusConversation && (
+    messageBlock.isBlockedByMe ||
     e2ee.fingerprintChanged ||
     e2ee.initError === 'fingerprint_changed' ||
     e2ee.peerKeyMissing ||
@@ -1185,6 +1241,23 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
               <Timer className="w-4 h-4" />
             </button>
           )}
+          {!isZeusConversation && !conversation?.is_group && peerUserId && (
+            <button
+              type="button"
+              onClick={() => setShowBlockDialog(true)}
+              disabled={messageBlock.isLoading || messageBlock.isChanging}
+              className={cn(
+                'w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm',
+                messageBlock.isBlockedByMe
+                  ? 'bg-destructive/80 hover:bg-destructive'
+                  : 'bg-primary-foreground/10 hover:bg-primary-foreground/25',
+              )}
+              title={messageBlock.isBlockedByMe ? 'Débloquer ce contact' : 'Bloquer ce contact'}
+              aria-label={messageBlock.isBlockedByMe ? 'Débloquer ce contact' : 'Bloquer ce contact'}
+            >
+              <Ban className="w-4 h-4" />
+            </button>
+          )}
           <button onClick={minimizeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm" title="Réduire">
             <Minus className="w-4 h-4" />
           </button>
@@ -1193,6 +1266,39 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
           </button>
         </div>
       </div>
+
+      <AlertDialog open={showBlockDialog} onOpenChange={setShowBlockDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {messageBlock.isBlockedByMe ? 'Débloquer ce contact ?' : 'Bloquer ce contact ?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {messageBlock.isBlockedByMe
+                ? 'Vous pourrez à nouveau échanger des messages chiffrés avec ce contact.'
+                : "Ce contact ne recevra plus vos messages et ses nouveaux messages ne vous seront plus remis. L’action est réversible."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const nextBlocked = !messageBlock.isBlockedByMe;
+                void messageBlock.setBlocked(nextBlocked)
+                  .then(() => {
+                    toast.success(nextBlocked ? 'Contact bloqué.' : 'Contact débloqué.');
+                  })
+                  .catch(() => {
+                    toast.error("Impossible de modifier le blocage pour le moment.");
+                  });
+              }}
+              className={messageBlock.isBlockedByMe ? undefined : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'}
+            >
+              {messageBlock.isBlockedByMe ? 'Débloquer' : 'Bloquer'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* E2EE Status bar removed per user request — encryption is silent */}
 
@@ -1228,6 +1334,12 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                 <button
                   key={s}
                   onClick={async () => {
+                    if (sendBlocked) {
+                      toast.error(messageBlock.isBlockedByMe
+                        ? 'Débloque ce contact avant de lui écrire.'
+                        : 'Messagerie sécurisée pas encore prête.');
+                      return;
+                    }
                     if (isZeusConversation) {
                       sendMessage.mutate({ conversationId, body: s });
                     } else {
@@ -1601,9 +1713,27 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                             )}
                             {isMe && (
                               <>
-                                <CheckCheck className="w-2.5 h-2.5 text-primary/60" />
-                                <span className="text-[8px] text-primary/70">
-                                  {msg.status === 'delivered' ? 'Délivré' : 'En attente'}
+                                {msg.delivery_state === 'sent' ? (
+                                  <Check className="w-2.5 h-2.5 text-primary/60" />
+                                ) : (
+                                  <CheckCheck className={cn(
+                                    'w-2.5 h-2.5',
+                                    msg.delivery_state === 'read'
+                                      ? 'text-blue-400'
+                                      : msg.delivery_state === 'blocked'
+                                        ? 'text-destructive'
+                                        : 'text-primary/60',
+                                  )} />
+                                )}
+                                <span className={cn(
+                                  'text-[8px]',
+                                  msg.delivery_state === 'blocked'
+                                    ? 'text-destructive'
+                                    : msg.delivery_state === 'read'
+                                      ? 'text-blue-400'
+                                      : 'text-primary/70',
+                                )}>
+                                  {outboundDeliveryLabel(msg)}
                                 </span>
                               </>
                             )}

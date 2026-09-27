@@ -118,6 +118,37 @@ describe('sendMessageWithAegisRetry', () => {
     expect(mocks.invalidateRoute).not.toHaveBeenCalled();
   });
 
+  it('commits an all-blocked route without a device copy and exposes the server reason', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        ...receipt(),
+        delivery_state: 'blocked',
+        blocked_recipients: [{
+          user_id: '22222222-2222-4222-8222-222222222222',
+          reason: 'recipient_block',
+        }],
+      },
+      error: null,
+    });
+
+    const result = await sendMessageWithAegisRetry({
+      ...args(),
+      initialCopies: [],
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.copies).toEqual([]);
+    expect(result.deliveryState).toBe('blocked');
+    expect(result.blockedRecipients).toEqual([{
+      userId: '22222222-2222-4222-8222-222222222222',
+      reason: 'recipient_block',
+    }]);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'aegis_send_message',
+      expect.objectContaining({ p_copies: [] }),
+    );
+  });
+
   it('confirms an ambiguous transport failure idempotently without blind rollback', async () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: null, error: { message: 'Failed to fetch' } })

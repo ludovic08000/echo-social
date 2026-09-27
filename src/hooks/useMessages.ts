@@ -17,7 +17,62 @@ export { useSendMessage } from './useSendMessageSecure';
 
 type MessageRow = Database['public']['Tables']['messages']['Row'];
 type MessageDeviceCopyRow = Database['public']['Tables']['message_device_copies']['Row'];
+type MessageRecipientStateRow = Database['public']['Tables']['message_recipient_states']['Row'];
 type ProfileSummary = Pick<Database['public']['Tables']['profiles']['Row'], 'name' | 'avatar_url'>;
+
+export type MessageDeliveryState = 'sent' | 'delivered' | 'read' | 'blocked' | 'partial';
+
+function aggregateRecipientStates(
+  rows: MessageRecipientStateRow[],
+): Pick<Message, 'recipient_states' | 'delivery_state' | 'delivered_at' | 'read_at' | 'blocked_reason'> {
+  const blocked = rows.filter((row) => row.state === 'blocked');
+  const active = rows.filter((row) => row.state !== 'blocked');
+  let deliveryState: MessageDeliveryState = 'sent';
+
+  if (blocked.length > 0 && active.length === 0) {
+    deliveryState = 'blocked';
+  } else if (blocked.length > 0) {
+    deliveryState = 'partial';
+  } else if (active.length > 0 && active.every((row) => row.state === 'read')) {
+    deliveryState = 'read';
+  } else if (active.some((row) => row.state === 'delivered' || row.state === 'read')) {
+    deliveryState = 'delivered';
+  }
+
+  const timestamps = (field: 'delivered_at' | 'read_at') => active
+    .map((row) => row[field])
+    .filter((value): value is string => Boolean(value))
+    .sort();
+
+  return {
+    recipient_states: rows,
+    delivery_state: deliveryState,
+    delivered_at: timestamps('delivered_at').at(-1) ?? null,
+    read_at: timestamps('read_at').at(-1) ?? null,
+    blocked_reason: blocked[0]?.blocked_reason ?? null,
+  };
+}
+
+async function loadMessageRecipientStates(
+  messageIds: string[],
+): Promise<Map<string, MessageRecipientStateRow[]>> {
+  const ids = Array.from(new Set(messageIds.filter(Boolean)));
+  const grouped = new Map<string, MessageRecipientStateRow[]>();
+  if (ids.length === 0) return grouped;
+
+  const { data, error } = await supabase
+    .from('message_recipient_states')
+    .select('*')
+    .in('message_id', ids);
+  if (error) throw error;
+
+  for (const row of data ?? []) {
+    const current = grouped.get(row.message_id) ?? [];
+    current.push(row);
+    grouped.set(row.message_id, current);
+  }
+  return grouped;
+}
 
 async function hideMessagesForUser(userId: string, messageIds: string[]) {
   if (!userId || messageIds.length === 0) return;
@@ -128,6 +183,11 @@ export interface Message {
   image_url: string | null;
   created_at: string;
   status: 'delivered' | 'blocked';
+  recipient_states: MessageRecipientStateRow[];
+  delivery_state: MessageDeliveryState;
+  delivered_at: string | null;
+  read_at: string | null;
+  blocked_reason: string | null;
   profile: {
     name: string;
     avatar_url: string | null;
@@ -347,8 +407,15 @@ export function useMessages(conversationId: string) {
             profile = p;
           }
 
+          const recipientStateMap = await loadMessageRecipientStates([newMsg.id])
+            .catch(() => new Map<string, MessageRecipientStateRow[]>());
+          const recipientStateMeta = aggregateRecipientStates(
+            recipientStateMap.get(newMsg.id) ?? [],
+          );
+
           const enriched: Message = {
             ...newMsg,
+            ...recipientStateMeta,
             body: isViewOnce ? '🔒 Vue unique' : newMsg.body,
             body_kind: isViewOnce ? 'view_once' : newMsg.body_kind,
             image_url: isViewOnce ? null : newMsg.image_url,
@@ -404,6 +471,32 @@ export function useMessages(conversationId: string) {
             }).catch(() => {});
           }
         }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'message_recipient_states',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const next = (payload.new ?? payload.old) as Partial<MessageRecipientStateRow>;
+          if (!next.message_id || !next.recipient_user_id) return;
+          const key = messagesKey(conversationId, user.id);
+          queryClient.setQueryData<Message[]>(key, (current) => current?.map((message) => {
+            if (message.id !== next.message_id) return message;
+            const previousRows = message.recipient_states ?? [];
+            const remaining = previousRows.filter(
+              (row) => row.recipient_user_id !== next.recipient_user_id,
+            );
+            const rows = payload.eventType === 'DELETE'
+              ? remaining
+              : [...remaining, next as MessageRecipientStateRow];
+            return { ...message, ...aggregateRecipientStates(rows) };
+          }) ?? []);
+          invalidateUserConversations(queryClient, user.id);
+        },
       )
       .on(
         'postgres_changes',
@@ -546,7 +639,7 @@ export function useMessages(conversationId: string) {
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
-        .eq('status', 'delivered')
+        .in('status', ['delivered', 'blocked'])
         .order('created_at', { ascending: false })
         .limit(120);
 
@@ -628,12 +721,16 @@ export function useMessages(conversationId: string) {
         .in('user_id', senderIds);
 
       const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      const recipientStateMap = await loadMessageRecipientStates(
+        compatibleMessages.map((message) => message.id),
+      );
 
       const hasZeusMessages = compatibleMessages.some(m => m.sender_id === ZEUS_BOT_ID);
       const companionDisplayName = hasZeusMessages ? await getCompanionName(user?.id) : 'Zeus ⚡';
 
       return compatibleMessages.map(msg => ({
         ...msg,
+        ...aggregateRecipientStates(recipientStateMap.get(msg.id) ?? []),
         view_once_state: msg.view_once === true
           ? (msg.sender_id === user.id
               ? 'sent'
