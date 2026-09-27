@@ -6,6 +6,8 @@ import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { fetchR2Object } from '@/lib/r2';
 import { readResponseArrayBufferBounded } from '@/lib/messaging/boundedResponse';
+import { traceE2EE, traceE2EEBlock } from '@/lib/messaging/e2eeTrace';
+import { requestVoiceCaptureStream } from '@/lib/messaging/voiceCapture';
 import {
   MAX_AUTO_DOWNLOAD_ATTACHMENT_BYTES,
   MAX_INCOMING_ATTACHMENT_CIPHERTEXT_BYTES,
@@ -42,11 +44,50 @@ function getSupportedMimeType(): { mimeType: string; ext: string } {
 }
 
 interface VoiceRecorderProps {
-  onSend: (audioUrl: string, duration: number, encryptedBody?: string) => void;
+  initialStreamRequest?: Promise<MediaStream> | null;
+  onSend: (audioUrl: string, duration: number, encryptedBody?: string) => void | Promise<void>;
   onCancel: () => void;
 }
 
-export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
+function voiceCaptureErrorCode(errorName: string): string {
+  if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+    return 'VOICE_PERMISSION_DENIED';
+  }
+  if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+    return 'VOICE_DEVICE_NOT_FOUND';
+  }
+  if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
+    return 'VOICE_DEVICE_BUSY';
+  }
+  if (errorName === 'NotSupportedError' || errorName === 'SecurityError') {
+    return 'VOICE_CAPTURE_UNSUPPORTED';
+  }
+  return 'VOICE_CAPTURE_FAILED';
+}
+
+const VOICE_WAVEFORM_HEIGHTS = [
+  11, 18, 9, 16, 13, 21, 10, 19, 14, 8,
+  17, 12, 22, 15, 9, 20, 13, 18, 10, 16,
+];
+
+function stopMediaStream(stream: MediaStream | null): void {
+  stream?.getTracks().forEach((track) => track.stop());
+}
+
+function stopRecorderSilently(recorder: MediaRecorder | null): void {
+  if (!recorder) return;
+  recorder.ondataavailable = null;
+  recorder.onstop = null;
+  recorder.onerror = null;
+  if (recorder.state === 'inactive') return;
+  try {
+    recorder.stop();
+  } catch {
+    // Browser teardown can make an otherwise active recorder un-stoppable.
+  }
+}
+
+export function VoiceRecorder({ initialStreamRequest, onSend, onCancel }: VoiceRecorderProps) {
   const { user } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -58,8 +99,19 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
   const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(false);
+  const startAttemptRef = useRef(0);
+  const audioUrlRef = useRef<string | null>(null);
+  const preparedVoiceRef = useRef<{
+    url: string;
+    duration: number;
+    encryptedBody: string;
+  } | null>(null);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (providedRequest?: Promise<MediaStream> | null) => {
+    if (mediaRecorderRef.current?.state === 'recording') return;
+    const startAttempt = ++startAttemptRef.current;
+
     // Check API availability
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       const msg = 'Votre navigateur ne supporte pas l\'enregistrement audio. Utilisez Chrome, Safari ou Edge.';
@@ -76,10 +128,27 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      traceE2EE({ direction: 'send', component: 'VoiceRecorder', stage: 'voice.permission', outcome: 'start' });
+      let stream = await (providedRequest ?? requestVoiceCaptureStream());
+      if (!mountedRef.current || startAttempt !== startAttemptRef.current) {
+        stopMediaStream(stream);
+        return;
+      }
 
-      const { mimeType, ext } = getSupportedMimeType();
+      // React's development effect replay can stop the stream obtained during
+      // the original click. Permission is already granted at this point, so a
+      // fresh stream is safe and prevents a dead recorder in previews.
+      if (stream.getTracks().every((track) => track.readyState === 'ended')) {
+        stream = await requestVoiceCaptureStream();
+        if (!mountedRef.current || startAttempt !== startAttemptRef.current) {
+          stopMediaStream(stream);
+          return;
+        }
+      }
+      streamRef.current = stream;
+      traceE2EE({ direction: 'send', component: 'VoiceRecorder', stage: 'voice.permission', outcome: 'ok' });
+
+      const { mimeType } = getSupportedMimeType();
 
       // WhatsApp-style voice: mono Opus/AAC @ 24 kbps → ~180 KB/min, much faster upload.
       const recorderOptions: MediaRecorderOptions = { audioBitsPerSecond: 24000 };
@@ -103,17 +172,64 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       };
 
       mediaRecorder.onstop = () => {
+        if (!mountedRef.current || startAttempt !== startAttemptRef.current) {
+          stopMediaStream(stream);
+          return;
+        }
+        clearInterval(timerRef.current);
+        setIsRecording(false);
         const actualMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
         const blob = new Blob(chunksRef.current, { type: actualMime });
+        if (mediaRecorderRef.current === mediaRecorder) mediaRecorderRef.current = null;
+        streamRef.current = null;
+        if (blob.size === 0) {
+          const msg = "Aucun son n'a été enregistré. Vérifiez le micro puis réessayez.";
+          setPermError(msg);
+          toast.error(msg);
+          traceE2EE({
+            direction: 'send',
+            component: 'VoiceRecorder',
+            stage: 'voice.recording',
+            outcome: 'error',
+            errorCode: 'VOICE_EMPTY_RECORDING',
+          }, 'error');
+          stopMediaStream(stream);
+          return;
+        }
+        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+        const nextAudioUrl = URL.createObjectURL(blob);
+        audioUrlRef.current = nextAudioUrl;
         setAudioBlob(blob);
-        setAudioUrl(URL.createObjectURL(blob));
-        stream.getTracks().forEach(t => t.stop());
+        setAudioUrl(nextAudioUrl);
+        preparedVoiceRef.current = null;
+        traceE2EE({
+          direction: 'send',
+          component: 'VoiceRecorder',
+          stage: 'voice.recording',
+          outcome: 'ok',
+          payloadBytes: blob.size,
+        });
+        stopMediaStream(stream);
       };
 
-      mediaRecorder.onerror = () => {
+      mediaRecorder.onerror = (event) => {
+        if (!mountedRef.current || startAttempt !== startAttemptRef.current) {
+          stopMediaStream(stream);
+          return;
+        }
+        clearInterval(timerRef.current);
         toast.error('Erreur pendant l\'enregistrement');
         setIsRecording(false);
-        stream.getTracks().forEach(t => t.stop());
+        if (mediaRecorderRef.current === mediaRecorder) mediaRecorderRef.current = null;
+        streamRef.current = null;
+        traceE2EE({
+          direction: 'send',
+          component: 'VoiceRecorder',
+          stage: 'voice.recording',
+          outcome: 'error',
+          errorCode: event.error?.name || 'VOICE_CAPTURE_FAILED',
+        }, 'error');
+        stopMediaStream(stream);
       };
 
       // Safari sometimes needs a larger timeslice
@@ -121,8 +237,16 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
       setIsRecording(true);
       setPermError(null);
       setDuration(0);
+      traceE2EE({ direction: 'send', component: 'VoiceRecorder', stage: 'voice.recording', outcome: 'start' });
       timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
     } catch (err: unknown) {
+      if (!mountedRef.current || startAttempt !== startAttemptRef.current) return;
+      clearInterval(timerRef.current);
+      setIsRecording(false);
+      stopMediaStream(streamRef.current);
+      streamRef.current = null;
+      mediaRecorderRef.current = null;
+
       const errorName = err instanceof Error ? err.name : '';
       const errorMessage = err instanceof Error ? err.message : String(err);
       const inPreviewIframe = window.self !== window.top;
@@ -146,6 +270,13 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
 
       setPermError(msg);
       toast.error(msg);
+      traceE2EE({
+        direction: 'send',
+        component: 'VoiceRecorder',
+        stage: 'voice.permission',
+        outcome: 'error',
+        errorCode: voiceCaptureErrorCode(errorName),
+      }, 'error');
       console.error('Microphone access error:', errorName, errorMessage);
     }
   }, []);
@@ -153,53 +284,95 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   const stopRecording = useCallback(() => {
     clearInterval(timerRef.current);
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.requestData();
+      } catch {
+        // Some WebViews do not implement requestData; stop still flushes there.
+      }
       mediaRecorderRef.current.stop();
     }
     setIsRecording(false);
   }, []);
 
   const handleSend = useCallback(async () => {
-    if (!audioBlob || !user) return;
+    if (!audioBlob || audioBlob.size === 0) {
+      toast.error("Aucun son n'a été enregistré. Réessayez.");
+      return;
+    }
+    if (!user) {
+      toast.error('Votre session a expiré. Reconnectez-vous puis réessayez.');
+      return;
+    }
     setUploading(true);
     try {
-      let ext = 'mp4';
-      const blobType = audioBlob.type.split(';')[0].trim();
-      if (blobType.includes('webm')) ext = 'webm';
-      else if (blobType.includes('ogg')) ext = 'ogg';
-      else if (blobType.includes('wav')) ext = 'wav';
-      else if (blobType.includes('aac')) ext = 'aac';
-      else if (blobType.includes('mp4') || blobType.includes('m4a')) ext = 'mp4';
+      let prepared = preparedVoiceRef.current;
+      if (!prepared) {
+        let ext = 'mp4';
+        const blobType = audioBlob.type.split(';')[0].trim();
+        if (blobType.includes('webm')) ext = 'webm';
+        else if (blobType.includes('ogg')) ext = 'ogg';
+        else if (blobType.includes('wav')) ext = 'wav';
+        else if (blobType.includes('aac')) ext = 'aac';
+        else if (blobType.includes('mp4') || blobType.includes('m4a')) ext = 'mp4';
 
-      // ─── E2EE: encrypt voice blob before upload ───
-      const { generateMediaKey, encryptMedia, buildMediaMessageBody } = await import('@/lib/crypto/mediaEncrypt');
-      const { key, keyB64 } = await generateMediaKey();
-      const encryptedBlob = await encryptMedia(audioBlob, key);
+        // ─── E2EE: encrypt voice blob before upload ───
+        const encrypted = await traceE2EEBlock({
+          direction: 'send',
+          component: 'VoiceRecorder',
+          stage: 'voice.encrypt',
+          payloadBytes: audioBlob.size,
+        }, async () => {
+          const { generateMediaKey, encryptMedia, buildMediaMessageBody } = await import('@/lib/crypto/mediaEncrypt');
+          const { key, keyB64 } = await generateMediaKey();
+          const encryptedBlob = await encryptMedia(audioBlob, key);
+          return { encryptedBlob, keyB64, buildMediaMessageBody };
+        });
 
-      const { uploadToR2 } = await import('@/lib/r2');
-      const { url } = await uploadToR2(encryptedBlob, 'voice', `voice-${Date.now()}.enc.${ext}`);
+        const uploaded = await traceE2EEBlock({
+          direction: 'send',
+          component: 'VoiceRecorder',
+          stage: 'voice.upload',
+          payloadBytes: encrypted.encryptedBlob.size,
+          transport: 'supabase',
+        }, async () => {
+          const { uploadToR2 } = await import('@/lib/r2');
+          return uploadToR2(encrypted.encryptedBlob, 'voice', `voice-${Date.now()}.enc.${ext}`);
+        });
 
-      // Build message body with embedded media key (will be E2EE-encrypted by the message queue)
-      const label = `🎙️ vocal:${url}|${duration}`;
-      const body = buildMediaMessageBody(label, keyB64);
-      onSend(url, duration, body);
+        // The media key remains inside the message envelope encrypted by Aegis.
+        const label = `🎙️ voice:${uploaded.url}|${duration}`;
+        prepared = {
+          url: uploaded.url,
+          duration,
+          encryptedBody: encrypted.buildMediaMessageBody(label, encrypted.keyB64),
+        };
+        preparedVoiceRef.current = prepared;
+      }
+
+      await traceE2EEBlock({
+        direction: 'send',
+        component: 'VoiceRecorder',
+        stage: 'voice.enqueue',
+      }, () => Promise.resolve(onSend(prepared.url, prepared.duration, prepared.encryptedBody)));
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error('Voice upload error:', errorMessage);
       toast.error(`Erreur lors de l'envoi du vocal: ${errorMessage || 'Réessayez'}`);
     } finally {
-      setUploading(false);
+      if (mountedRef.current) setUploading(false);
     }
   }, [audioBlob, user, duration, onSend]);
 
   const handleDiscard = () => {
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    startAttemptRef.current += 1;
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = null;
+    preparedVoiceRef.current = null;
     clearInterval(timerRef.current);
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
+    stopRecorderSilently(mediaRecorderRef.current);
+    mediaRecorderRef.current = null;
+    stopMediaStream(streamRef.current);
+    streamRef.current = null;
     setAudioBlob(null);
     setAudioUrl(null);
     setDuration(0);
@@ -208,21 +381,22 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   };
 
   useEffect(() => {
-    // Auto-start recording immediately on mount (triggered by user click on mic button)
-    startRecording();
+    mountedRef.current = true;
+    // The parent creates this promise during the user's click so permission
+    // remains valid on Safari/PWA. Direct mounts retain the legacy fallback.
+    void startRecording(initialStreamRequest);
     return () => {
+      mountedRef.current = false;
+      startAttemptRef.current += 1;
       clearInterval(timerRef.current);
-      streamRef.current?.getTracks().forEach(t => t.stop());
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try {
-          mediaRecorderRef.current.stop();
-        } catch {
-          // Recorder may already have stopped during browser teardown.
-        }
-      }
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+      stopRecorderSilently(mediaRecorderRef.current);
+      mediaRecorderRef.current = null;
+      stopMediaStream(streamRef.current);
+      streamRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialStreamRequest, startRecording]);
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
@@ -236,7 +410,7 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
         <div className="flex-1 text-[11px] text-destructive">{permError}</div>
         <button
           type="button"
-          onClick={startRecording}
+          onClick={() => void startRecording()}
           className="text-[11px] px-2 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
         >
           Réessayer
@@ -255,6 +429,8 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
   return (
     <div className="flex items-center gap-2 px-2.5 py-2 border-t border-border/30 bg-destructive/5">
       <button
+        type="button"
+        aria-label="Supprimer le vocal"
         onClick={handleDiscard}
         className="w-7 h-7 rounded-full flex items-center justify-center text-destructive hover:bg-destructive/10 transition-colors"
       >
@@ -269,12 +445,12 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
               <span className="text-[11px] font-mono font-medium text-destructive">{formatDuration(duration)}</span>
             </div>
             <div className="flex items-center gap-[2px] flex-1">
-              {Array.from({ length: 20 }).map((_, i) => (
+              {VOICE_WAVEFORM_HEIGHTS.map((height, i) => (
                 <div
                   key={i}
                   className="w-[3px] rounded-full bg-destructive/60"
                   style={{
-                    height: `${8 + Math.random() * 14}px`,
+                    height: `${height}px`,
                     animationDelay: `${i * 0.05}s`,
                     animation: 'pulse 0.8s ease-in-out infinite alternate',
                   }}
@@ -297,6 +473,8 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
 
       {isRecording ? (
         <button
+          type="button"
+          aria-label="Arrêter l'enregistrement vocal"
           onClick={stopRecording}
           className="w-8 h-8 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:bg-destructive/90 transition-colors"
         >
@@ -304,6 +482,8 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
         </button>
       ) : audioBlob ? (
         <button
+          type="button"
+          aria-label="Envoyer le message vocal"
           onClick={handleSend}
           disabled={uploading}
           className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition-colors"

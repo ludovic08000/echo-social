@@ -33,6 +33,7 @@ import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
 import { callErrorUserMessage } from '@/lib/calls/callDiagnostics';
 import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
+import { requestVoiceCaptureStream } from '@/lib/messaging/voiceCapture';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
 import { DocumentBubble } from '@/components/messages/DocumentBubble';
 import { CallHistoryPanel } from '@/components/calls/CallHistoryPanel';
@@ -364,6 +365,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const [showEmojis, setShowEmojis] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [voiceStreamRequest, setVoiceStreamRequest] = useState<Promise<MediaStream> | null>(null);
   const [viewOnceArmed, setViewOnceArmed] = useState(false);
   const [showCallHistory, setShowCallHistory] = useState(false);
   const [showGroupCallSheet, setShowGroupCallSheet] = useState(false);
@@ -386,6 +388,20 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const [isStartingCall, setIsStartingCall] = useState(false);
   const shouldAutoScrollRef = useRef(true);
   const lastScrollSigRef = useRef('');
+
+  const openVoiceRecorder = useCallback(() => {
+    const request = requestVoiceCaptureStream();
+    // The recorder awaits the original promise; this handler prevents a fast
+    // browser rejection from becoming an unhandled promise between renders.
+    void request.catch(() => undefined);
+    setVoiceStreamRequest(request);
+    setShowVoiceRecorder(true);
+  }, []);
+
+  const closeVoiceRecorder = useCallback(() => {
+    setShowVoiceRecorder(false);
+    setVoiceStreamRequest(null);
+  }, []);
 
   // Auto-translate non-French messages
   // Auto-translate disabled
@@ -1951,7 +1967,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
             <p className="text-[9px] text-muted-foreground">Laisser un message vocal ?</p>
           </div>
           <button
-            onClick={() => { setShowVoicemailPrompt(false); setShowVoiceRecorder(true); }}
+            onClick={() => { setShowVoicemailPrompt(false); openVoiceRecorder(); }}
             className="px-2.5 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium hover:bg-primary/90 transition-colors flex-shrink-0"
           >
             <Mic className="w-3 h-3 inline mr-1" />
@@ -1966,17 +1982,18 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       {/* Voice recorder */}
       {showVoiceRecorder && (
         <VoiceRecorder
+          initialStreamRequest={voiceStreamRequest}
           onSend={async (audioUrl, duration, encryptedBody) => {
             const body = encryptedBody || `🎙️ voice:${audioUrl}|dur:${duration}`;
             if (isZeusConversation) {
-              sendMessage.mutate({ conversationId, body });
+              await sendMessage.mutateAsync({ conversationId, body });
             } else {
-              queue.sendMessage(body).catch(() => toast.error('Erreur envoi vocal'));
+              await queue.sendMessage(body);
             }
-            setShowVoiceRecorder(false);
+            closeVoiceRecorder();
             setShowVoicemailPrompt(false);
           }}
-          onCancel={() => { setShowVoiceRecorder(false); }}
+          onCancel={closeVoiceRecorder}
         />
       )}
 
@@ -2155,7 +2172,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
               <div className="flex items-center gap-0">
                 <button
                   type="button"
-                  onClick={() => setShowVoiceRecorder(true)}
+                  onClick={openVoiceRecorder}
                   className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
                 >
                   <Mic className="w-5 h-5" />
