@@ -1,37 +1,26 @@
-# Diagnostic — comparaison workspace Lovable vs f806be98 (lecture seule, rien modifié)
+# Diagnostic : message vocal impossible sur forsure.fans (lecture seule)
 
-## 1. SHA et parents
+## Constats (journaux accessibles, rien modifié)
 
-| Côté | SHA | Parent | Sujet |
-|---|---|---|---|
-| Workspace Lovable (HEAD) | `42102c79a52511ceba9c3776f11943bdf313025d` | `d0d3d4ebd13414936c6999a3a011196b5a47d4b2` | "Work in progress" |
-| GitHub demandé | `f806be9858855a9bf4c15f548efac9aa55642fb6` | `8015397c3c6e700a5df355962868f7c0aae325cb` | "ci(supabase): deploy sealed sender transport" |
+- Les journaux sont accessibles.
+- **Aucune requête HTTP vers `r2-upload` ou `r2-presign` sur les 48 dernières heures** (0 POST, 0 GET, 0 erreur). Aucune tentative d'envoi de vocal n'a donc laissé de trace d'upload côté serveur.
+- `r2-upload` n'a qu'un démarrage/arrêt de routine (booted 13:49:06Z et 13:50:17Z, shutdown 13:52:26Z), sans aucune ligne applicative ni erreur.
+- Sur les 3 dernières heures, les seuls appels aux fonctions sont `image-optimize` (200), `security-monitor` (200, plus un 401 à 13:45:03Z sans lien) et `livekit-token` (200 à 13:48:25Z et 13:50:32Z, tous les contrôles passés, donc un appel a bien eu lieu).
+- Aucune erreur CORS, R2 ou d'authentification liée au vocal. Aucune insertion de message vocal n'est visible côté serveur.
 
-## 2. Merge-base
+**Conclusion :** la tentative de vocal s'arrête dans le navigateur, avant l'upload. Le serveur n'a jamais reçu le fichier.
 
-`f806be9858855a9bf4c15f548efac9aa55642fb6` — le commit GitHub est un **ancêtre direct** du HEAD du workspace. Aucune divergence : le workspace est strictement en avance.
+## Causes possibles dans le code (non confirmées)
 
-## 3. Fichiers différents (A/M/D)
+Chemin suivi : `VoiceRecorder` enregistre, chiffre, puis appelle `uploadToR2(..., 'voice', 'voice-<ts>.enc.<ext>')`. Ensuite `queue.sendMessage(body)` envoie le message.
 
-Un seul fichier diffère :
+1. **Échec avant l'upload** : l'accès au micro est refusé, `MediaRecorder` n'est pas pris en charge ou le blob est vide (fréquent sur iOS Safari/PWA). Le chiffrement du média (`encryptMedia`) peut aussi échouer. Dans ces cas, un toast « Erreur lors de l'envoi du vocal » s'affiche et aucune requête ne part.
+2. **Session absente** : `uploadToR2` lève « Not authenticated » avant tout appel réseau.
+3. **Blocage par le bouclier runtime / la CSP** d'un `fetch` vers la fonction, ce qui ne laisserait aucun log serveur.
+4. **Contexte d'appel manqué** : l'invite vocale ne s'affiche qu'après un appel manqué (`livekit-token` a été appelé à 13:48 et 13:50). Il faut vérifier si l'utilisateur voulait parler de ce flux « Laisser un message vocal ? ».
 
-```
-M  src/integrations/supabase/types.ts   (+3 / −59)
-```
+## Étape proposée (après validation, toujours sans modifier de code)
 
-Contenu du diff : uniquement le fichier de types **auto-généré** par Lovable Cloud.
-- Ajout : la table `sealed_sender_tokens` (créée par la migration `20260927172452_enable_sealed_sender_transport.sql`, déjà appliquée en production) + réordonnancement de colonnes dans `sealed_sender_messages`.
-- Le `types.ts` embarqué dans f806be98 est simplement obsolète par rapport à l'état réel de la base.
-
-## 4. Commits propres à chaque côté
-
-- Propres au workspace (3) : `42102c79` "Work in progress", `d0d3d4eb` "Update plan", `5ab81624` "Work in progress" — tous ne touchent que `src/integrations/supabase/types.ts` (régénération automatique).
-- Propres à f806be98 : **aucun**.
-
-## 5. Correctifs produit absents de f806be98 ?
-
-**Non.** Le workspace ne contient aucun correctif produit, aucune modification de code applicatif, de fonction Edge, de migration ou de configuration absente de f806be98. La seule avance est la régénération automatique des types TypeScript reflétant la migration sealed-sender déjà appliquée.
-
-## Conséquence pour le déploiement sealed-mint-token / sealed-relay
-
-Le blocage précédent est levé : le code des fonctions `sealed-mint-token` et `sealed-relay` présent dans le workspace est **identique** à celui de f806be98 (diff vide hors types.ts), et compatible avec la migration `20260927172452` déjà appliquée. Le déploiement demandé peut donc être exécuté depuis ce checkout sans écart de version.
+- Reproduire le flux sur forsure.fans avec un navigateur automatisé : ouvrir une conversation, déclencher l'enregistrement (micro simulé), cliquer sur Envoyer. Capturer le texte exact du toast, les erreurs console et les requêtes réseau (bloquées ou non).
+- Demander à l'utilisateur son appareil et son navigateur (iOS Safari, PWA, Windows), le message d'erreur affiché, et s'il s'agissait de la messagerie ou du message après appel manqué.
+- Rapporter la cause confirmée et un correctif proposé, sans rien appliquer.
