@@ -5815,8 +5815,8 @@ export type Database = {
       sealed_sender_messages: {
         Row: {
           anonymous_sender_tag: string
-          conversation_id: string
           context_id: string | null
+          conversation_id: string
           created_at: string
           delivered_at: string | null
           delivery_state: string
@@ -5828,8 +5828,8 @@ export type Database = {
         }
         Insert: {
           anonymous_sender_tag: string
-          conversation_id: string
           context_id?: string | null
+          conversation_id: string
           created_at?: string
           delivered_at?: string | null
           delivery_state?: string
@@ -5841,8 +5841,8 @@ export type Database = {
         }
         Update: {
           anonymous_sender_tag?: string
-          conversation_id?: string
           context_id?: string | null
+          conversation_id?: string
           created_at?: string
           delivered_at?: string | null
           delivery_state?: string
@@ -5851,6 +5851,48 @@ export type Database = {
           recipient_user_id?: string
           sealed_header?: Json
           sealed_payload?: string
+        }
+        Relationships: []
+      }
+      sealed_sender_tokens: {
+        Row: {
+          consumed_at: string | null
+          context_id: string | null
+          conversation_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          issued_at: string
+          nonce: string
+          protocol_version: number
+          recipient_user_id: string
+          token_hash: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          context_id?: string | null
+          conversation_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          issued_at: string
+          nonce: string
+          protocol_version: number
+          recipient_user_id: string
+          token_hash: string
+        }
+        Update: {
+          consumed_at?: string | null
+          context_id?: string | null
+          conversation_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          issued_at?: string
+          nonce?: string
+          protocol_version?: number
+          recipient_user_id?: string
+          token_hash?: string
         }
         Relationships: []
       }
@@ -8016,9 +8058,13 @@ export type Database = {
         }
         Returns: number
       }
-      aegis_get_user_message_block_status: {
-        Args: { p_target_user_id: string }
-        Returns: boolean
+      aegis_build_message_commit_receipt: {
+        Args: {
+          p_existing: boolean
+          p_message_id: string
+          p_request_digest: string
+        }
+        Returns: Json
       }
       aegis_call_create: {
         Args: {
@@ -8042,6 +8088,15 @@ export type Database = {
       aegis_call_update_status: {
         Args: { p_call_id: string; p_device_id: string; p_status: string }
         Returns: Json
+      }
+      aegis_can_view_message: {
+        Args: {
+          p_conversation_id: string
+          p_message_id: string
+          p_sender_user_id: string
+          p_status: string
+        }
+        Returns: boolean
       }
       aegis_chat_pin_reset_authorize: {
         Args: {
@@ -8089,6 +8144,10 @@ export type Database = {
         }
         Returns: string
       }
+      aegis_get_user_message_block_status: {
+        Args: { p_target_user_id: string }
+        Returns: boolean
+      }
       aegis_issue_sealed_sender_certificate: {
         Args: never
         Returns: {
@@ -8096,6 +8155,10 @@ export type Database = {
           public_bundle: string
           user_id: string
         }[]
+      }
+      aegis_message_block_reason: {
+        Args: { p_recipient_user_id: string; p_sender_user_id: string }
+        Returns: string
       }
       aegis_pin_continuity_get: {
         Args: never
@@ -9005,6 +9068,20 @@ export type Database = {
           p_user_agent?: string
         }
         Returns: undefined
+      }
+      relay_sealed_sender: {
+        Args: {
+          p_anonymous_sender_tag: string
+          p_context_id: string
+          p_conversation_id: string
+          p_nonce: string
+          p_protocol_version: number
+          p_recipient_user_id: string
+          p_sealed_header: Json
+          p_sealed_payload: string
+          p_token_hash: string
+        }
+        Returns: string
       }
       release_aegis_view_once_claim: {
         Args: {
