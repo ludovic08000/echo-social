@@ -46,6 +46,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { SEOHead } from '@/components/SEOHead';
 import { buildProfileMeta } from '@/lib/seo/buildMeta';
 
+const MAX_ID_DOCUMENT_BYTES = 10 * 1024 * 1024;
+const ALLOWED_ID_DOCUMENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+]);
+
 function NoIndexMeta() {
   useEffect(() => {
     let el = document.querySelector('meta[name="robots"]');
@@ -203,22 +211,49 @@ export default function Profile() {
   const [uploadingId, setUploadingId] = useState(false);
   const idInputRef = useRef<HTMLInputElement>(null);
 
+  const handleIdFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (!file) {
+      setIdFile(null);
+      return;
+    }
+    if (!ALLOWED_ID_DOCUMENT_TYPES.has(file.type)) {
+      toast({ title: 'Format non accepté', description: 'Utilisez un fichier JPG, PNG, WEBP ou PDF.', variant: 'destructive' });
+      e.target.value = '';
+      setIdFile(null);
+      return;
+    }
+    if (file.size > MAX_ID_DOCUMENT_BYTES) {
+      toast({ title: 'Fichier trop volumineux', description: 'Maximum 10 Mo.', variant: 'destructive' });
+      e.target.value = '';
+      setIdFile(null);
+      return;
+    }
+    setIdFile(file);
+  };
+
   const handleIdUpload = async () => {
     if (!idFile || !user || !pendingVerification) return;
     setUploadingId(true);
     try {
       // SECURITY FIX: Upload to private Supabase bucket instead of public R2
-      const fileName = `${user.id}/${Date.now()}-${idFile.name}`;
+      const extension = idFile.type === 'application/pdf' ? 'pdf'
+        : idFile.type === 'image/png' ? 'png'
+          : idFile.type === 'image/webp' ? 'webp'
+            : 'jpg';
+      const fileName = `${user.id}/${crypto.randomUUID()}.${extension}`;
       const { error: uploadError } = await supabase.storage
         .from('id-documents')
-        .upload(fileName, idFile, { upsert: true });
+        .upload(fileName, idFile, {
+          contentType: idFile.type || 'application/octet-stream',
+          upsert: false,
+        });
       if (uploadError) throw uploadError;
       // Store path only (not a public URL) — admin uses signed URL to view
-      await supabase.from('identity_verifications').update({
-        id_document_url: fileName,
-        status: 'document_submitted',
-        updated_at: new Date().toISOString(),
-      }).eq('id', pendingVerification.id);
+      const { error: submitError } = await (supabase.rpc as any)('submit_own_identity_document', {
+        p_document_path: fileName,
+      });
+      if (submitError) throw submitError;
       toast({ title: '✅ Document envoyé', description: 'Votre pièce d\'identité est en cours de vérification.' });
       setIdFile(null);
       queryClient.invalidateQueries({ queryKey: ['my-verification'] });
@@ -474,7 +509,7 @@ export default function Profile() {
       <div className="-mt-2">
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
         <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverChange} className="hidden" />
-        <input ref={idInputRef} type="file" accept="image/*,.pdf" onChange={e => setIdFile(e.target.files?.[0] || null)} className="hidden" />
+        <input ref={idInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleIdFileChange} className="hidden" />
 
         {/* Identity verification banner */}
         {isOwnProfile && pendingVerification && (

@@ -9,7 +9,6 @@ interface ProfileFriend {
   user_id: string;
   name: string;
   avatar_url: string | null;
-  city: string | null;
 }
 
 export function ProfileFriendsList({ userId }: { userId: string }) {
@@ -35,7 +34,7 @@ export function ProfileFriendsList({ userId }: { userId: string }) {
 
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('user_id, name, avatar_url, city')
+        .select('user_id, name, avatar_url')
         .in('user_id', friendIds);
 
       return (profiles || []) as ProfileFriend[];

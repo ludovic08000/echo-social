@@ -45,6 +45,30 @@ export interface Profile {
   updated_at: string;
 }
 
+type ProfileUpdates = Partial<Pick<Profile,
+  | 'name'
+  | 'bio'
+  | 'avatar_url'
+  | 'cover_url'
+  | 'cover_position_y'
+  | 'city'
+  | 'website_url'
+  | 'education_level'
+  | 'education_city'
+  | 'date_of_birth'
+  | 'work'
+  | 'relationship_status'
+  | 'interests'
+  | 'field_visibility'
+  | 'profile_bg_url'
+  | 'feed_bg_url'
+  | 'profile_music_url'
+  | 'mood_emoji'
+  | 'mood_text'
+>> & {
+  phone_number?: string | null;
+};
+
 export function useProfile(userId?: string) {
   const { user } = useAuth();
   const targetUserId = userId || user?.id;
@@ -54,17 +78,16 @@ export function useProfile(userId?: string) {
     queryFn: async () => {
       if (!targetUserId) return null;
       
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, user_id, name, avatar_url, bio, created_at, updated_at, cover_url, date_of_birth, city, website_url, profile_type, cover_position_y, education_level, education_city, work, field_visibility, relationship_status, interests, mood_emoji, mood_text, mood_updated_at, profile_music_url, is_creator, creator_since, creator_tier, profile_bg_url, feed_bg_url, age_verified, age_verification_status, onboarding_completed, onboarding_step')
-        .eq('user_id', targetUserId)
-        .maybeSingle();
+      const { data, error } = await (supabase.rpc as any)('get_profile_for_viewer', {
+        p_user_id: targetUserId,
+      });
 
       if (error) throw error;
       if (!data) return null;
+      const profile = data as unknown as Profile;
       return {
-        ...data,
-        field_visibility: data.field_visibility as unknown as FieldVisibility | null,
+        ...profile,
+        field_visibility: profile.field_visibility as unknown as FieldVisibility | null,
       } as Profile;
     },
     enabled: !!targetUserId,
@@ -76,7 +99,7 @@ export function useUpdateProfile() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'bio' | 'avatar_url' | 'cover_url' | 'cover_position_y' | 'city' | 'website_url' | 'education_level' | 'education_city' | 'date_of_birth' | 'work' | 'relationship_status' | 'interests' | 'field_visibility' | 'profile_bg_url' | 'feed_bg_url'>>) => {
+    mutationFn: async (updates: ProfileUpdates) => {
       if (!user) throw new Error('Not authenticated');
 
       // Cast field_visibility for Supabase compatibility
@@ -85,12 +108,9 @@ export function useUpdateProfile() {
         field_visibility: updates.field_visibility ? (updates.field_visibility as unknown as Json) : undefined,
       };
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .update(supabaseUpdates)
-        .eq('user_id', user.id)
-        .select('id, user_id, name, avatar_url, bio, created_at, updated_at, cover_url, date_of_birth, city, website_url, profile_type, cover_position_y, education_level, education_city, work, field_visibility, relationship_status, interests, mood_emoji, mood_text, mood_updated_at, profile_music_url, is_creator, creator_since, creator_tier, profile_bg_url, feed_bg_url, age_verified, age_verification_status, onboarding_completed, onboarding_step')
-        .single();
+      const { data, error } = await (supabase.rpc as any)('update_own_profile', {
+        p_updates: supabaseUpdates,
+      });
 
       if (error) throw error;
       return data;

@@ -72,15 +72,8 @@ export function useDeactivateCreator() {
     mutationFn: async () => {
       if (!user) throw new Error('Not authenticated');
 
-      await supabase.from('creator_subscriptions').update({
-        status: 'cancelled',
-        cancelled_at: new Date().toISOString(),
-      }).eq('user_id', user.id);
-
-      await supabase.from('profiles').update({
-        is_creator: false,
-        creator_tier: 'free',
-      }).eq('user_id', user.id);
+      const { error } = await (supabase.rpc as any)('deactivate_own_creator_profile');
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['is-creator'] });

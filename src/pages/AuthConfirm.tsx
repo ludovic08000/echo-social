@@ -43,11 +43,9 @@ export default function AuthConfirm() {
         }
 
         if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('onboarding_completed')
-            .eq('user_id', session.user.id)
-            .single() as any;
+          const { data: profile } = await supabase.rpc('get_onboarding_state', {
+            _user_id: session.user.id,
+          }) as any;
 
           setStatus('success');
 

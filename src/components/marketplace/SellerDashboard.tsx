@@ -17,6 +17,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { escapeHtml } from '@/lib/sanitizeUrl';
 
+const MAX_PACKING_VIDEO_BYTES = 100 * 1024 * 1024;
+const PACKING_VIDEO_EXTENSIONS: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+  'video/x-m4v': 'm4v',
+};
 
 export function SellerDashboard() {
   const [searchParams] = useSearchParams();
@@ -106,10 +113,23 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
   };
 
   const handlePackingVideoUpload = async (orderId: string, file: File) => {
+    if (!seller?.user_id) {
+      toast.error('Profil vendeur indisponible');
+      return;
+    }
+    const ext = PACKING_VIDEO_EXTENSIONS[file.type];
+    if (!ext) {
+      toast.error('Format vidéo non accepté (MP4, WEBM, MOV ou M4V)');
+      return;
+    }
+    if (file.size === 0 || file.size > MAX_PACKING_VIDEO_BYTES) {
+      toast.error('Vidéo invalide ou trop volumineuse (max 100 Mo)');
+      return;
+    }
+
     setUploadingVideo(orderId);
     try {
-      const ext = file.name.split('.').pop() || 'mp4';
-      const filePath = `packing/${orderId}_${Date.now()}.${ext}`;
+      const filePath = `${seller.user_id}/packing/${orderId}/${crypto.randomUUID()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from('videos')
         .upload(filePath, file, { contentType: file.type });
