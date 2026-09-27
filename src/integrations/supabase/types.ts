@@ -5755,6 +5755,7 @@ export type Database = {
       sealed_sender_messages: {
         Row: {
           anonymous_sender_tag: string
+          context_id: string | null
           conversation_id: string
           created_at: string
           delivered_at: string | null
@@ -5767,6 +5768,7 @@ export type Database = {
         }
         Insert: {
           anonymous_sender_tag: string
+          context_id?: string | null
           conversation_id: string
           created_at?: string
           delivered_at?: string | null
@@ -5779,6 +5781,7 @@ export type Database = {
         }
         Update: {
           anonymous_sender_tag?: string
+          context_id?: string | null
           conversation_id?: string
           created_at?: string
           delivered_at?: string | null
@@ -5788,6 +5791,48 @@ export type Database = {
           recipient_user_id?: string
           sealed_header?: Json
           sealed_payload?: string
+        }
+        Relationships: []
+      }
+      sealed_sender_tokens: {
+        Row: {
+          consumed_at: string | null
+          context_id: string | null
+          conversation_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          issued_at: string
+          nonce: string
+          protocol_version: number
+          recipient_user_id: string
+          token_hash: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          context_id?: string | null
+          conversation_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          issued_at: string
+          nonce: string
+          protocol_version: number
+          recipient_user_id: string
+          token_hash: string
+        }
+        Update: {
+          consumed_at?: string | null
+          context_id?: string | null
+          conversation_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          issued_at?: string
+          nonce?: string
+          protocol_version?: number
+          recipient_user_id?: string
+          token_hash?: string
         }
         Relationships: []
       }
@@ -7902,6 +7947,10 @@ export type Database = {
       }
     }
     Functions: {
+      ack_sealed_sender_wakeups: {
+        Args: { p_message_ids: string[] }
+        Returns: number
+      }
       acknowledge_all_content_strikes: { Args: never; Returns: number }
       acknowledge_content_strike: {
         Args: { p_strike_id: string }
@@ -8912,6 +8961,20 @@ export type Database = {
           p_user_agent?: string
         }
         Returns: undefined
+      }
+      relay_sealed_sender: {
+        Args: {
+          p_anonymous_sender_tag: string
+          p_context_id: string
+          p_conversation_id: string
+          p_nonce: string
+          p_protocol_version: number
+          p_recipient_user_id: string
+          p_sealed_header: Json
+          p_sealed_payload: string
+          p_token_hash: string
+        }
+        Returns: string
       }
       release_aegis_view_once_claim: {
         Args: {
