@@ -17,11 +17,18 @@ type RpcResponse = {
   error: RpcError;
 };
 
+export type AegisBlockedRecipient = {
+  userId: string;
+  reason: 'recipient_block' | 'sender_block' | 'delivery_policy';
+};
+
 type AegisCommitReceipt = {
   state: 'committed';
   message_id: string;
   request_digest: string;
   existing: boolean;
+  delivery_state: 'sent' | 'blocked' | 'partial';
+  blocked_recipients: AegisBlockedRecipient[];
 };
 
 const SEND_TRANSPORT_TIMEOUT_MS = 15_000;
@@ -46,6 +53,8 @@ export type AegisSendResult = {
   copies: FanoutCopyRow[];
   retriedStaleRoute: boolean;
   routeVersion: string;
+  deliveryState: 'sent' | 'blocked' | 'partial' | null;
+  blockedRecipients: AegisBlockedRecipient[];
 };
 
 function errorText(error: RpcError): string {
@@ -113,7 +122,14 @@ function thrownRpcError(error: unknown): RpcError {
 
 function parseCommitReceipt(data: unknown, expectedMessageId: string): AegisCommitReceipt | null {
   if (!data || typeof data !== 'object') return null;
-  const value = data as Partial<AegisCommitReceipt>;
+  const value = data as {
+    state?: unknown;
+    message_id?: unknown;
+    request_digest?: unknown;
+    existing?: unknown;
+    delivery_state?: unknown;
+    blocked_recipients?: Array<{ user_id?: unknown; reason?: unknown }>;
+  };
   if (
     value.state !== 'committed' ||
     value.message_id !== expectedMessageId ||
@@ -123,7 +139,35 @@ function parseCommitReceipt(data: unknown, expectedMessageId: string): AegisComm
   ) {
     return null;
   }
-  return value as AegisCommitReceipt;
+
+  const deliveryState = value.delivery_state === 'blocked' || value.delivery_state === 'partial'
+    ? value.delivery_state
+    : 'sent';
+  const blockedRecipients = Array.isArray(value.blocked_recipients)
+    ? value.blocked_recipients.flatMap((recipient) => {
+        const reason = recipient.reason;
+        if (
+          typeof recipient.user_id !== 'string'
+          || (
+            reason !== 'recipient_block'
+            && reason !== 'sender_block'
+            && reason !== 'delivery_policy'
+          )
+        ) {
+          return [];
+        }
+        return [{ userId: recipient.user_id, reason } as AegisBlockedRecipient];
+      })
+    : [];
+
+  return {
+    state: 'committed',
+    message_id: value.message_id,
+    request_digest: value.request_digest,
+    existing: value.existing,
+    delivery_state: deliveryState,
+    blocked_recipients: blockedRecipients,
+  };
 }
 
 function unverifiedReceiptError(): RpcError {
@@ -164,9 +208,9 @@ async function callAuthoritative(
   }
 }
 
-function committedMessageId(response: RpcResponse, expectedMessageId: string): string | null {
+function committedReceipt(response: RpcResponse, expectedMessageId: string): AegisCommitReceipt | null {
   if (response.error) return null;
-  return parseCommitReceipt(response.data, expectedMessageId)?.message_id ?? null;
+  return parseCommitReceipt(response.data, expectedMessageId);
 }
 
 /**
@@ -198,7 +242,6 @@ export async function sendMessageWithAegisRetry(
   }, level);
 
   if (
-    copies.length === 0 ||
     copies.some((copy) =>
       copy.message_id !== args.messageId || !isAegisDeviceCopyWire(copy.encrypted_body),
     )
@@ -213,6 +256,8 @@ export async function sendMessageWithAegisRetry(
       copies: [],
       retriedStaleRoute: false,
       routeVersion,
+      deliveryState: null,
+      blockedRecipients: [],
     };
   }
 
@@ -220,16 +265,18 @@ export async function sendMessageWithAegisRetry(
     const attemptStartedAt = Date.now();
     trace('RPC_COMMIT_ATTEMPT', { outcome: 'start', retryCount: staleAttempt, copyCount: copies.length });
     const response = await callAuthoritative(args, copies, SEND_TRANSPORT_TIMEOUT_MS);
-    const committedId = committedMessageId(response, args.messageId);
+    const receipt = committedReceipt(response, args.messageId);
 
-    if (committedId) {
+    if (receipt) {
       trace('RPC_COMMIT_RECEIPT', { outcome: 'ok', retryCount: staleAttempt, copyCount: copies.length, blockMs: Date.now() - attemptStartedAt });
       return {
-        data: committedId,
+        data: receipt.message_id,
         error: null,
         copies,
         retriedStaleRoute,
         routeVersion,
+        deliveryState: receipt.delivery_state,
+        blockedRecipients: receipt.blocked_recipients,
       };
     }
 
@@ -255,6 +302,8 @@ export async function sendMessageWithAegisRetry(
         copies,
         retriedStaleRoute: true,
         routeVersion,
+        deliveryState: null,
+        blockedRecipients: [],
       };
     }
 
@@ -263,15 +312,17 @@ export async function sendMessageWithAegisRetry(
       const confirmationStartedAt = Date.now();
       trace('RPC_CONFIRMATION', { outcome: 'start', copyCount: copies.length });
       const confirmation = await callAuthoritative(args, copies, SEND_CONFIRM_TIMEOUT_MS);
-      const confirmedId = committedMessageId(confirmation, args.messageId);
-      if (confirmedId) {
+      const confirmedReceipt = committedReceipt(confirmation, args.messageId);
+      if (confirmedReceipt) {
         trace('RPC_CONFIRMATION', { outcome: 'ok', copyCount: copies.length, blockMs: Date.now() - confirmationStartedAt });
         return {
-          data: confirmedId,
+          data: confirmedReceipt.message_id,
           error: null,
           copies,
           retriedStaleRoute,
           routeVersion,
+          deliveryState: confirmedReceipt.delivery_state,
+          blockedRecipients: confirmedReceipt.blocked_recipients,
         };
       }
 
@@ -284,6 +335,8 @@ export async function sendMessageWithAegisRetry(
         copies,
         retriedStaleRoute,
         routeVersion,
+        deliveryState: null,
+        blockedRecipients: [],
       };
     }
 
@@ -294,6 +347,8 @@ export async function sendMessageWithAegisRetry(
       copies,
       retriedStaleRoute,
       routeVersion,
+      deliveryState: null,
+      blockedRecipients: [],
     };
   }
 
@@ -306,6 +361,8 @@ export async function sendMessageWithAegisRetry(
     copies,
     retriedStaleRoute: true,
     routeVersion,
+    deliveryState: null,
+    blockedRecipients: [],
   };
 }
 

@@ -217,21 +217,28 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
  * storage. The RPC is idempotent and bound to auth.uid() plus the current
  * authorized DeviceID.
  */
-export async function acknowledgeAegisMessage(
+export async function acknowledgeAegisMessages(
   userId: string,
-  messageId: string,
+  messageIds: string[],
   markRead = false,
 ): Promise<void> {
-  if (!userId || !messageId) return;
+  const uniqueMessageIds = Array.from(new Set(messageIds.filter(Boolean))).slice(0, 250);
+  if (!userId || uniqueMessageIds.length === 0) return;
 
   const ready = await ensureAegisDeviceReady(userId);
   if (ready.userId !== userId) {
     throw new Error('AEGIS_DEVICE_USER_MISMATCH');
   }
 
-  const key = `${userId}:${ready.deviceId}:${messageId}:${markRead ? 'read' : 'delivered'}`;
-  if (acknowledged.has(key)) return;
+  const acknowledgementKind = markRead ? 'read' : 'delivered';
+  const pendingMessageIds = uniqueMessageIds.filter(
+    (messageId) => !acknowledged.has(
+      `${userId}:${ready.deviceId}:${messageId}:${acknowledgementKind}`,
+    ),
+  );
+  if (pendingMessageIds.length === 0) return;
 
+  const key = `${userId}:${ready.deviceId}:${acknowledgementKind}:${pendingMessageIds.slice().sort().join(',')}`;
   const active = ackInflight.get(key);
   if (active) return active;
 
@@ -240,22 +247,27 @@ export async function acknowledgeAegisMessage(
       'aegis_ack_device_messages',
       {
         p_device_id: ready.deviceId,
-        p_message_ids: [messageId],
+        p_message_ids: pendingMessageIds,
         p_mark_read: markRead,
       },
     );
     if (error) throw error;
 
-    rememberBounded(acknowledged, key);
-    traceE2EE({
-      direction: 'receive',
-      component: 'device_inbox',
-      stage: markRead ? 'MESSAGE_READ_LOCAL' : 'SERVER_INBOX_DURABLE_ACK',
-      outcome: 'ok',
-      messageId,
-      deviceId: ready.deviceId,
-      transport: traceTransport(),
-    });
+    for (const messageId of pendingMessageIds) {
+      rememberBounded(
+        acknowledged,
+        `${userId}:${ready.deviceId}:${messageId}:${acknowledgementKind}`,
+      );
+      traceE2EE({
+        direction: 'receive',
+        component: 'device_inbox',
+        stage: markRead ? 'MESSAGE_READ_LOCAL' : 'SERVER_INBOX_DURABLE_ACK',
+        outcome: 'ok',
+        messageId,
+        deviceId: ready.deviceId,
+        transport: traceTransport(),
+      });
+    }
   })();
 
   ackInflight.set(key, operation);
@@ -264,6 +276,14 @@ export async function acknowledgeAegisMessage(
   } finally {
     if (ackInflight.get(key) === operation) ackInflight.delete(key);
   }
+}
+
+export async function acknowledgeAegisMessage(
+  userId: string,
+  messageId: string,
+  markRead = false,
+): Promise<void> {
+  return acknowledgeAegisMessages(userId, [messageId], markRead);
 }
 
 export function startAegisDeviceInbox(userId: string): () => void {

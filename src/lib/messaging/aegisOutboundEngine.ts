@@ -5,6 +5,7 @@ import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
 import {
   isAegisAmbiguousTransportFailure,
   sendMessageWithAegisRetry,
+  type AegisBlockedRecipient,
 } from '@/lib/messaging/aegisSendRpc';
 import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
 import {
@@ -52,6 +53,8 @@ export interface AegisOutboundResult {
   retriedStaleRoute: boolean;
   localId: string;
   traceId: string;
+  deliveryState: 'sent' | 'blocked' | 'partial';
+  blockedRecipients: AegisBlockedRecipient[];
 }
 
 function errorMessage(error: unknown): string {
@@ -329,7 +332,7 @@ export async function sendAegisOutboundMessage(
       senderUserId: input.senderUserId,
       plaintext: keyCapsule!,
     });
-    if (!built.hasTargets || built.rows.length === 0) {
+    if (!built.hasTargets || (built.rows.length === 0 && built.allRecipientsBlocked !== true)) {
       throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
     }
     if (built.rows.some((row) => !isAegisDeviceCopyWire(row.encrypted_body))) {
@@ -347,7 +350,10 @@ export async function sendAegisOutboundMessage(
       status: 'sending',
       lastError: null,
     });
-    trace('FANOUT_READY', { targetCount: built.rows.length, copyCount: copies.length });
+    trace('FANOUT_READY', {
+      targetCount: built.rows.length,
+      copyCount: copies.length,
+    });
     return { copies, routeVersion };
   };
 
@@ -435,15 +441,22 @@ export async function sendAegisOutboundMessage(
   }
 
   const committedId = result.data ?? messageId;
+  const committedBlockedRecipients = result.blockedRecipients ?? [];
   trace('MESSAGE_COMMITTED', {
     copyCount: copies.length,
     retryCount: result.retriedStaleRoute ? 1 : 0,
   });
+  const blockedRecipientIds = new Set(
+    committedBlockedRecipients.map((recipient) => recipient.userId),
+  );
+  const wakeupCopies = copies.filter(
+    (copy) => !blockedRecipientIds.has(copy.recipient_user_id),
+  );
   const sealedSender = await publishSealedSenderWakeups({
     messageId: committedId,
     conversationId: input.conversationId,
     senderUserId: input.senderUserId,
-    copies,
+    copies: wakeupCopies,
   }).catch(() => ({ attempted: 0, relayed: 0, failed: 1 }));
   trace(
     sealedSender.failed === 0 ? 'SEALED_SENDER_RELAYED' : 'SEALED_SENDER_DEFERRED',
@@ -482,6 +495,8 @@ export async function sendAegisOutboundMessage(
     retriedStaleRoute: result.retriedStaleRoute,
     localId,
     traceId,
+    deliveryState: result.deliveryState ?? 'sent',
+    blockedRecipients: committedBlockedRecipients,
   };
       },
     );

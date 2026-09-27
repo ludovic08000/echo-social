@@ -3831,10 +3831,68 @@ export type Database = {
         }
         Relationships: []
       }
+      message_recipient_states: {
+        Row: {
+          blocked_at: string | null
+          blocked_reason: string | null
+          conversation_id: string
+          delivered_at: string | null
+          message_id: string
+          read_at: string | null
+          recipient_user_id: string
+          sender_user_id: string
+          sent_at: string | null
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          blocked_at?: string | null
+          blocked_reason?: string | null
+          conversation_id: string
+          delivered_at?: string | null
+          message_id: string
+          read_at?: string | null
+          recipient_user_id: string
+          sender_user_id: string
+          sent_at?: string | null
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          blocked_at?: string | null
+          blocked_reason?: string | null
+          conversation_id?: string
+          delivered_at?: string | null
+          message_id?: string
+          read_at?: string | null
+          recipient_user_id?: string
+          sender_user_id?: string
+          sent_at?: string | null
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_recipient_states_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_recipient_states_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           aegis_request_digest: string | null
           aegis_route_version: string | null
+          aegis_sender_device_id: string | null
           archive_body: string | null
           body: string
           body_kind: string
@@ -3855,6 +3913,7 @@ export type Database = {
         Insert: {
           aegis_request_digest?: string | null
           aegis_route_version?: string | null
+          aegis_sender_device_id?: string | null
           archive_body?: string | null
           body: string
           body_kind?: string
@@ -3875,6 +3934,7 @@ export type Database = {
         Update: {
           aegis_request_digest?: string | null
           aegis_route_version?: string | null
+          aegis_sender_device_id?: string | null
           archive_body?: string | null
           body?: string
           body_kind?: string
@@ -7236,6 +7296,24 @@ export type Database = {
         }
         Relationships: []
       }
+      user_message_blocks: {
+        Row: {
+          blocked_user_id: string
+          blocker_user_id: string
+          created_at: string
+        }
+        Insert: {
+          blocked_user_id: string
+          blocker_user_id: string
+          created_at?: string
+        }
+        Update: {
+          blocked_user_id?: string
+          blocker_user_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       user_public_keys: {
         Row: {
           created_at: string
@@ -7938,6 +8016,10 @@ export type Database = {
         }
         Returns: number
       }
+      aegis_get_user_message_block_status: {
+        Args: { p_target_user_id: string }
+        Returns: boolean
+      }
       aegis_call_create: {
         Args: {
           p_call_id: string
@@ -8056,6 +8138,10 @@ export type Database = {
           p_sender_device_id: string
         }
         Returns: Json
+      }
+      aegis_set_user_message_block: {
+        Args: { p_blocked: boolean; p_target_user_id: string }
+        Returns: boolean
       }
       aegis_sync_device: {
         Args: { p_device_id: string; p_limit?: number }
