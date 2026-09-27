@@ -8058,13 +8058,9 @@ export type Database = {
         }
         Returns: number
       }
-      aegis_build_message_commit_receipt: {
-        Args: {
-          p_existing: boolean
-          p_message_id: string
-          p_request_digest: string
-        }
-        Returns: Json
+      aegis_get_user_message_block_status: {
+        Args: { p_target_user_id: string }
+        Returns: boolean
       }
       aegis_call_create: {
         Args: {
@@ -8088,15 +8084,6 @@ export type Database = {
       aegis_call_update_status: {
         Args: { p_call_id: string; p_device_id: string; p_status: string }
         Returns: Json
-      }
-      aegis_can_view_message: {
-        Args: {
-          p_conversation_id: string
-          p_message_id: string
-          p_sender_user_id: string
-          p_status: string
-        }
-        Returns: boolean
       }
       aegis_chat_pin_reset_authorize: {
         Args: {
@@ -8144,10 +8131,6 @@ export type Database = {
         }
         Returns: string
       }
-      aegis_get_user_message_block_status: {
-        Args: { p_target_user_id: string }
-        Returns: boolean
-      }
       aegis_issue_sealed_sender_certificate: {
         Args: never
         Returns: {
@@ -8155,10 +8138,6 @@ export type Database = {
           public_bundle: string
           user_id: string
         }[]
-      }
-      aegis_message_block_reason: {
-        Args: { p_recipient_user_id: string; p_sender_user_id: string }
-        Returns: string
       }
       aegis_pin_continuity_get: {
         Args: never
