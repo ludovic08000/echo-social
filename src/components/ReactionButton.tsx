@@ -107,16 +107,6 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     setIsOpen((open) => !open);
   }, [isBusy, user, navigate]);
 
-  const emojiVariants = {
-    hidden: { scale: 0, y: 10 },
-    visible: (i: number) => ({
-      scale: 1,
-      y: 0,
-      transition: { delay: i * 0.04, type: 'spring' as const, stiffness: 500, damping: 15 },
-    }),
-    hover: { scale: 1.4, y: -8, transition: { type: 'spring' as const, stiffness: 400 } },
-  };
-
   const emojiPicker = isOpen ? (
     <motion.div
       role="menu"
@@ -126,7 +116,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       exit={{ opacity: 0, y: 6, scale: 0.96 }}
       className="absolute bottom-full left-1/2 z-50 mb-2 flex -translate-x-1/2 gap-1 rounded-full border border-border bg-popover p-1.5 shadow-2xl"
     >
-        {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type, i) => (
+        {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type) => (
           <Button
             key={type}
             type="button"

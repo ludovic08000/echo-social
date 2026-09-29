@@ -131,7 +131,6 @@ export function useRemoveReaction() {
     onMutate: async (postId) => {
       await Promise.all([
         queryClient.cancelQueries({ queryKey: ['posts'] }),
-        queryClient.cancelQueries({ queryKey: ['post-top-reactions', postId] }),
       ]);
 
       const previousPosts = queryClient.getQueriesData({ queryKey: ['posts'] });
@@ -145,8 +144,6 @@ export function useRemoveReaction() {
         }))
       );
 
-      queryClient.invalidateQueries({ queryKey: ['post-top-reactions', postId] });
-
       return { previousPosts, postId };
     },
     onError: (_err, _vars, context) => {
@@ -157,7 +154,7 @@ export function useRemoveReaction() {
       }
     },
     onSettled: (_data, _error, postId) => {
-      queryClient.invalidateQueries({ queryKey: ['post-top-reactions', postId] });
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
   });
 }
