@@ -3,16 +3,25 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
 import { loadContentPrefs, containsMutedKeyword } from '@/lib/feedAlgorithm';
-import { enforceDiversity, getSessionAdjustment } from '@/lib/feedDiversity';
+import { getSessionAdjustment } from '@/lib/feedDiversity';
 import { syncFeedPrefsFromServer } from '@/lib/feedPreferences';
 import { mapFeedRpcRow } from '@/lib/recsysV8';
+import { buildFeedPage, createInitialFeedCursor, type FeedCursor } from '@/lib/feedPagination';
 
-// One-shot sync per user (refreshes localStorage cache from DB-backed prefs)
-const _syncedPrefsUsers = new Set<string>();
-function ensureFeedPrefsSynced(userId: string) {
-  if (_syncedPrefsUsers.has(userId)) return;
-  _syncedPrefsUsers.add(userId);
-  void syncFeedPrefsFromServer(userId);
+// One-shot sync per user. Pages await the same promise so the first request
+// cannot race against stale local preferences.
+const _syncedPrefsUsers = new Map<string, Promise<void>>();
+function ensureFeedPrefsSynced(userId: string): Promise<void> {
+  const existing = _syncedPrefsUsers.get(userId);
+  if (existing) return existing;
+  const sync = syncFeedPrefsFromServer(userId)
+    .then(() => undefined)
+    .catch((error) => {
+      _syncedPrefsUsers.delete(userId);
+      throw error;
+    });
+  _syncedPrefsUsers.set(userId, sync);
+  return sync;
 }
 
 export interface Post {
@@ -40,8 +49,9 @@ export function usePosts() {
 
   return useInfiniteQuery({
     queryKey: ['posts', 'friends-feed', loading ? 'loading' : user?.id ?? 'guest'],
-    queryFn: async ({ pageParam }: { pageParam: number | null }) => {
-      const offset = pageParam || 0;
+    queryFn: async ({ pageParam }: { pageParam: FeedCursor }) => {
+      const cursor = pageParam;
+      const offset = cursor.offset;
 
       // ── Guest mode: simple chronological feed (no personalization) ──
       if (!user) {
@@ -62,17 +72,20 @@ export function usePosts() {
         const { data: guestPosts, error } = legacy;
 
         if (error) throw error;
-        if (!guestPosts || guestPosts.length === 0) return [];
-
-        return guestPosts.map((post: any) => ({
+        const mapped = (guestPosts || []).map((post: any) => ({
           ...(mapFeedRpcRow(post) as Post),
           is_liked: false,
           user_reaction: null,
         }));
+        return buildFeedPage<Post>(mapped, cursor, { fetchSize: PAGE_SIZE });
       }
 
       // ── Authenticated feed: server-side scoring (anti-cheat) ──
-      ensureFeedPrefsSynced(user.id);
+      try {
+        await ensureFeedPrefsSynced(user.id);
+      } catch {
+        // Local preferences remain a safe fallback when sync is unavailable.
+      }
       const prefs = loadContentPrefs();
 
       // ── Strategy 1: Single RPC call ──
@@ -93,12 +106,13 @@ export function usePosts() {
 
         const { data: rpcPosts, error: rpcError } = legacy;
 
-        if (!rpcError && rpcPosts && rpcPosts.length > 0) {
-          const filtered = rpcPosts.filter((p: any) => !containsMutedKeyword(p.body, prefs.mutedKeywords));
-
-          const mapped = filtered.map((post: any) => mapFeedRpcRow(post) as Post);
-
-          return enforceDiversity(mapped, 2);
+        if (!rpcError) {
+          const mapped = (rpcPosts || []).map((post: any) => mapFeedRpcRow(post) as Post);
+          return buildFeedPage<Post>(mapped, cursor, {
+            fetchSize: PAGE_SIZE,
+            include: (post) => !containsMutedKeyword(post.body, prefs.mutedKeywords),
+            maxConsecutiveSameAuthor: 2,
+          });
         }
       } catch {
         // Fall through to legacy fallback
@@ -106,28 +120,29 @@ export function usePosts() {
 
       // ── Fallback: direct query + enrichment ──
       const now = new Date().toISOString();
-      let query = supabase
+      const query = supabase
         .from('posts')
         .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
         .or(`expires_at.is.null,expires_at.gt.${now}`)
         .order('created_at', { ascending: false })
-        .limit(PAGE_SIZE * 2);
+        .range(offset, offset + PAGE_SIZE - 1);
 
       const { data: posts, error } = await query as { data: any[] | null; error: any };
       if (error) throw error;
-      if (!posts || posts.length === 0) return [];
+      if (!posts || posts.length === 0) {
+        return buildFeedPage<Post>([], cursor, { fetchSize: PAGE_SIZE });
+      }
 
-      const filteredPosts = posts.filter(p => !containsMutedKeyword(p.body, prefs.mutedKeywords));
-      const enriched = await enrichPosts(filteredPosts.slice(0, PAGE_SIZE), user.id);
-
-      return await serverRankPosts(enriched, user.id, prefs.feedAlgorithm);
+      const enriched = await enrichPosts(posts, user.id);
+      const ranked = await serverRankPosts(enriched, user.id, prefs.feedAlgorithm);
+      return buildFeedPage<Post>(ranked, cursor, {
+        fetchSize: PAGE_SIZE,
+        include: (post) => !containsMutedKeyword(post.body, prefs.mutedKeywords),
+        maxConsecutiveSameAuthor: 2,
+      });
     },
-    getNextPageParam: (lastPage, allPages) => {
-      if (lastPage.length < PAGE_SIZE) return undefined;
-      // Use offset-based pagination
-      return allPages.reduce((total, page) => total + page.length, 0);
-    },
-    initialPageParam: null as number | null,
+    getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.nextCursor : undefined,
+    initialPageParam: createInitialFeedCursor(),
     enabled: !loading,
     // Stabilize cache: avoid feed reshuffling on every focus / interval.
     // Realtime + manual pull-to-refresh handle freshness.
@@ -156,7 +171,7 @@ async function serverRankPosts(
 
   // Chronological: skip RPC, server already ordered by created_at desc
   if (algo === 'chronological') {
-    return enforceDiversity(posts, 2);
+    return posts;
   }
 
   try {
@@ -168,7 +183,7 @@ async function serverRankPosts(
     });
 
     if (error || !Array.isArray(data) || data.length === 0) {
-      return enforceDiversity(posts, 2);
+      return posts;
     }
 
     const scoreMap = new Map<string, number>();
@@ -183,9 +198,9 @@ async function serverRankPosts(
     });
 
     const sorted = scored.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
-    return enforceDiversity(sorted, 2);
+    return sorted;
   } catch {
-    return enforceDiversity(posts, 2);
+    return posts;
   }
 }
 

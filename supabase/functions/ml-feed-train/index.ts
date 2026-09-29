@@ -1,5 +1,12 @@
 // ML Feed trainer: hourly job that learns user preferences and post features
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import {
+  evaluateMmrShadow,
+  parsePgVector,
+  semanticMmrRerank,
+  type MmrEvaluation,
+  type SemanticCandidate,
+} from "../_shared/semantic-mmr.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -70,6 +77,25 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 // Convert a JS number array into the pgvector text format: "[0.1,0.2,...]"
 function toPgVector(arr: number[]): string {
   return "[" + arr.map((n) => Number(n.toFixed(6))).join(",") + "]";
+}
+
+// Deterministically fold the 768d semantic vector into a normalized 256d
+// cold-start vector. A trained two-tower vector always wins and is never
+// overwritten by this seed.
+function foldSemanticEmbedding(embedding: number[]): number[] | null {
+  if (embedding.length !== 768 || embedding.some((value) => !Number.isFinite(value))) return null;
+  const folded = new Array(256).fill(0).map((_, index) => (
+    embedding[index] + embedding[index + 256] + embedding[index + 512]
+  ));
+  const norm = Math.sqrt(folded.reduce((sum, value) => sum + value * value, 0));
+  if (!Number.isFinite(norm) || norm === 0) return null;
+  return folded.map((value) => value / norm);
+}
+
+function averageMetric(values: number[]): number | null {
+  const finite = values.filter((value) => Number.isFinite(value));
+  if (finite.length === 0) return null;
+  return finite.reduce((sum, value) => sum + value, 0) / finite.length;
 }
 
 // Average several embeddings into a single vector (weighted)
@@ -200,34 +226,56 @@ Deno.serve(async (req) => {
       .limit(50000);
     const allInter = (interactions || []) as InteractionRow[];
 
-    // 2) Fetch recent posts (last 30 days, what feed will surface)
-    const postsSince = new Date(Date.now() - 30 * 86400000).toISOString();
+    // 2) Fetch every active post. The previous 30-day window permanently
+    // stranded older active posts without semantic features or embeddings.
     const { data: posts } = await supabase
       .from("posts")
       .select("id, user_id, body, image_url, created_at, likes_count, comments_count")
-      .gte("created_at", postsSince)
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
       .order("created_at", { ascending: false })
       .limit(2000);
     const allPosts = (posts || []) as PostRow[];
 
-    // 3) Extract features for posts that don't have them yet (cap to 60 per run for cost).
-    // Single-batch fetch — avoids N+1 queries later in the user-profile build phase.
-    const { data: existing } = await supabase
-      .from("ml_post_features")
-      .select("post_id, topics, hashtags, embedding")
-      .in("post_id", allPosts.map((p) => p.id));
-    const existingMap = new Map<string, { topics: string[]; hashtags: string[]; embedding: any }>();
+    // 3) Fill missing feature rows AND rows whose semantic embedding is null.
+    // This is deliberately capped to keep Lovable AI cost and runtime bounded.
+    let existing: any[] = [];
+    if (allPosts.length > 0) {
+      const existingResult = await supabase
+        .from("ml_post_features")
+        .select("post_id, topics, hashtags, sentiment, quality_score, language, embedding, embedding_text")
+        .in("post_id", allPosts.map((p) => p.id));
+      if (existingResult.error) throw existingResult.error;
+      existing = existingResult.data || [];
+    }
+    type CachedFeature = {
+      topics: string[];
+      hashtags: string[];
+      sentiment: number;
+      quality: number;
+      language: string;
+      embedding: unknown;
+      embeddingText: string;
+    };
+    const existingMap = new Map<string, CachedFeature>();
     for (const r of existing || []) {
       existingMap.set((r as any).post_id, {
         topics: (r as any).topics || [],
         hashtags: (r as any).hashtags || [],
+        sentiment: Number((r as any).sentiment) || 0,
+        quality: Number((r as any).quality_score) || 0.5,
+        language: (r as any).language || "und",
         embedding: (r as any).embedding ?? null,
+        embeddingText: (r as any).embedding_text || "",
       });
     }
     const existingIds = new Set(existingMap.keys());
-    const toExtract = allPosts.filter((p) => !existingIds.has(p.id)).slice(0, 60);
+    const toExtract = allPosts
+      .filter((post) => !existingMap.has(post.id) || !parsePgVector(existingMap.get(post.id)?.embedding))
+      .slice(0, 60);
 
     let postsProcessed = 0;
+    let featureRowsCreated = 0;
+    let semanticEmbeddingsCreated = 0;
     const postEmbeddings = new Map<string, number[]>();
     // Cache for freshly extracted features so we can build the user-profile phase without re-querying
     const freshFeatures = new Map<string, { topics: string[]; hashtags: string[] }>();
@@ -237,9 +285,23 @@ Deno.serve(async (req) => {
     for (let i = 0; i < toExtract.length; i += EXTRACT_CONCURRENCY) {
       const chunk = toExtract.slice(i, i + EXTRACT_CONCURRENCY);
       const results = await Promise.all(chunk.map(async (post) => {
-        const f = await extractFeatures(post);
+        const current = existingMap.get(post.id);
+        const hasExtractedMetadata = !!current && (
+          current.topics.length > 0
+          || current.hashtags.length > 0
+          || current.language !== "und"
+        );
+        const f = hasExtractedMetadata
+          ? {
+              topics: current.topics,
+              hashtags: current.hashtags,
+              sentiment: current.sentiment,
+              quality: current.quality,
+              language: current.language,
+            }
+          : await extractFeatures(post);
         const embText = [
-          post.body || "",
+          post.body || (post.image_url ? "media image" : "post"),
           f.topics.join(" "),
           f.hashtags.map((h) => "#" + h).join(" "),
         ].filter(Boolean).join("\n").slice(0, 2000);
@@ -248,9 +310,10 @@ Deno.serve(async (req) => {
       }));
 
       for (const { post, f, emb } of results) {
+        const hadFeatureRow = existingMap.has(post.id);
         if (emb) postEmbeddings.set(post.id, emb);
         freshFeatures.set(post.id, { topics: f.topics, hashtags: f.hashtags });
-        await supabase.from("ml_post_features").upsert({
+        const featureResult = await supabase.from("ml_post_features").upsert({
           post_id: post.id,
           topics: f.topics,
           hashtags: f.hashtags,
@@ -258,28 +321,72 @@ Deno.serve(async (req) => {
           quality_score: f.quality,
           language: f.language,
           has_media: !!post.image_url,
-          engagement_velocity: 0,
-          ctr: 0,
-          view_count: 0,
-          positive_count: 0,
-          negative_count: 0,
-          ...(emb ? { embedding: toPgVector(emb), embedding_updated_at: new Date().toISOString() } : {}),
+          creator_id: post.user_id,
+          embedding_text: embText,
+          updated_at: new Date().toISOString(),
+          ...(emb ? {
+            embedding: toPgVector(emb),
+            embedding_source: "google/text-embedding-004",
+            embedding_updated_at: new Date().toISOString(),
+          } : {}),
         });
+        if (featureResult.error) throw featureResult.error;
+        existingMap.set(post.id, {
+          topics: f.topics,
+          hashtags: f.hashtags,
+          sentiment: f.sentiment,
+          quality: f.quality,
+          language: f.language,
+          embedding: emb || current?.embedding || null,
+          embeddingText: embText,
+        });
+        if (!hadFeatureRow) featureRowsCreated++;
+        if (emb) semanticEmbeddingsCreated++;
         postsProcessed++;
       }
     }
 
     // Also load existing embeddings into the postEmbeddings map (already fetched above — no extra query)
     for (const [pid, row] of existingMap) {
-      const e = row.embedding;
-      if (typeof e === "string") {
-        try {
-          const arr = JSON.parse(e);
-          if (Array.isArray(arr)) postEmbeddings.set(pid, arr);
-        } catch {}
-      } else if (Array.isArray(e)) {
-        postEmbeddings.set(pid, e);
-      }
+      const embedding = parsePgVector(row.embedding);
+      if (embedding?.length === 768) postEmbeddings.set(pid, embedding);
+    }
+
+    // Seed only missing 256d rows. ignoreDuplicates makes this race-safe and
+    // guarantees that an existing/trained two-tower vector is never replaced.
+    let existingItemIds = new Set<string>();
+    if (allPosts.length > 0) {
+      const itemResult = await supabase
+        .from("ml_post_embeddings")
+        .select("post_id")
+        .in("post_id", allPosts.map((post) => post.id));
+      if (itemResult.error) throw itemResult.error;
+      existingItemIds = new Set((itemResult.data || []).map((row: any) => row.post_id));
+    }
+    const seededAt = new Date().toISOString();
+    const semanticSeedRows = Array.from(postEmbeddings.entries())
+      .filter(([postId]) => !existingItemIds.has(postId))
+      .map(([postId, semantic]) => {
+        const folded = foldSemanticEmbedding(semantic);
+        return folded ? {
+          post_id: postId,
+          embedding: toPgVector(folded),
+          training_samples: 0,
+          embedding_source: "semantic_seed",
+          semantic_seeded_at: seededAt,
+          last_trained_at: seededAt,
+          updated_at: seededAt,
+        } : null;
+      })
+      .filter(Boolean);
+    if (semanticSeedRows.length > 0) {
+      const seedResult = await supabase
+        .from("ml_post_embeddings")
+        .upsert(semanticSeedRows, {
+          onConflict: "post_id",
+          ignoreDuplicates: true,
+        });
+      if (seedResult.error) throw seedResult.error;
     }
 
     // 4) Update CTR & velocity for ALL posts with features (cheap aggregation)
@@ -310,6 +417,18 @@ Deno.serve(async (req) => {
           })
           .eq("post_id", postId);
       }));
+    }
+
+    // Refresh creator statistics and their aggregate item embedding. This is
+    // bounded by the active creator set and uses the service-only RPC.
+    const creatorIds = [...new Set(allPosts.map((post) => post.user_id).filter(Boolean))];
+    let creatorsRefreshed = 0;
+    for (let index = 0; index < creatorIds.length; index += 10) {
+      const creatorChunk = creatorIds.slice(index, index + 10);
+      const refreshes = await Promise.all(creatorChunk.map((creatorId) => (
+        supabase.rpc("ml_refresh_creator_features_v8", { p_creator_id: creatorId })
+      )));
+      creatorsRefreshed += refreshes.filter((result) => !result.error && result.data === true).length;
     }
 
     // 5) Build per-user preference profiles — read features from in-memory cache (no N+1 query)
@@ -389,7 +508,95 @@ Deno.serve(async (req) => {
       usersProcessed++;
     }
 
-    // 6) Compute global metrics
+    // 6) Limited semantic-MMR experiment in shadow mode. It compares the
+    // current v8 order with MMR for at most five active users and persists only
+    // aggregate diagnostics. No response shown to users is reordered.
+    const shadowMetrics: MmrEvaluation[] = [];
+    let shadowCandidates = 0;
+    let mmrShadowRunId: number | null = null;
+    const sampleUserIds = [...new Set(allInter.map((interaction) => interaction.user_id))].slice(0, 5);
+
+    try {
+      for (const userId of sampleUserIds) {
+        const feedResult = await supabase.rpc("get_feed_posts_v8", {
+          p_user_id: userId,
+          p_limit: 40,
+          p_offset: 0,
+        });
+        const feedRows = Array.isArray(feedResult.data) ? feedResult.data.slice(0, 40) : [];
+        if (feedResult.error || feedRows.length < 2) continue;
+
+        const postIds = feedRows.map((row: any) => row.id).filter(Boolean);
+        const semanticResult = await supabase
+          .from("ml_post_features")
+          .select("post_id, embedding")
+          .in("post_id", postIds);
+        if (semanticResult.error) continue;
+        const semanticByPost = new Map(
+          (semanticResult.data || []).map((row: any) => [row.post_id, parsePgVector(row.embedding)]),
+        );
+        const candidates: SemanticCandidate[] = feedRows.map((row: any) => ({
+          id: row.id,
+          authorId: row.user_id,
+          relevance: Number(row.final_score) || 0,
+          embedding: semanticByPost.get(row.id) || null,
+        }));
+        const reranked = semanticMmrRerank(candidates, 20, 0.82);
+        shadowMetrics.push(evaluateMmrShadow(candidates, reranked, 20));
+        shadowCandidates += candidates.length;
+      }
+
+      const baselineSimilarity = shadowMetrics
+        .map((metric) => metric.baselinePairwiseSimilarity)
+        .filter((value): value is number => value !== null);
+      const mmrSimilarity = shadowMetrics
+        .map((metric) => metric.mmrPairwiseSimilarity)
+        .filter((value): value is number => value !== null);
+      const shadowInsert = await supabase
+        .from("ml_feed_mmr_shadow_runs")
+        .insert({
+          model_run_id: runId || null,
+          completed_at: new Date().toISOString(),
+          status: shadowMetrics.length > 0 ? "completed" : "skipped",
+          sampled_users: shadowMetrics.length,
+          candidates_evaluated: shadowCandidates,
+          top_k: 20,
+          lambda: 0.82,
+          semantic_coverage_pct: averageMetric(shadowMetrics.map((metric) => metric.semanticCoveragePct)) || 0,
+          top_k_overlap_pct: averageMetric(shadowMetrics.map((metric) => metric.topKOverlapPct)),
+          baseline_distinct_author_ratio: averageMetric(shadowMetrics.map((metric) => metric.baselineDistinctAuthorRatio)),
+          mmr_distinct_author_ratio: averageMetric(shadowMetrics.map((metric) => metric.mmrDistinctAuthorRatio)),
+          baseline_pairwise_similarity: averageMetric(baselineSimilarity),
+          mmr_pairwise_similarity: averageMetric(mmrSimilarity),
+          mean_relevance_delta: averageMetric(shadowMetrics.map((metric) => metric.meanRelevanceDelta)),
+          metadata: {
+            mode: "shadow_only",
+            baseline: "get_feed_posts_v8",
+            challenger: "semantic_mmr",
+            production_order_changed: false,
+          },
+        })
+        .select("id")
+        .maybeSingle();
+      if (!shadowInsert.error && shadowInsert.data?.id) {
+        mmrShadowRunId = Number(shadowInsert.data.id);
+      } else if (shadowInsert.error) {
+        console.error("MMR shadow metrics insert failed:", shadowInsert.error);
+      }
+    } catch (shadowError) {
+      console.error("MMR shadow experiment failed:", shadowError);
+    }
+
+    // Persist a coverage snapshot after feature, item and creator refreshes.
+    let coverageSnapshotId: number | string | null = null;
+    const coverageResult = await supabase.rpc("ml_capture_feed_coverage_snapshot");
+    if (!coverageResult.error && coverageResult.data != null) {
+      coverageSnapshotId = coverageResult.data as number | string;
+    } else if (coverageResult.error) {
+      console.error("Coverage snapshot failed:", coverageResult.error);
+    }
+
+    // 7) Compute global metrics
     const totalViews = allInter.filter((i) => i.signal_type === "view").length;
     const totalPositive = allInter.filter((i) => (signalW[i.signal_type] ?? 0) >= 1).length;
     const globalCTR = totalViews > 0 ? totalPositive / totalViews : 0;
@@ -406,10 +613,16 @@ Deno.serve(async (req) => {
         metrics: {
           global_ctr: Number(globalCTR.toFixed(4)),
           total_users_with_profiles: usersProcessed,
-          total_posts_with_features: postsProcessed + existingIds.size,
+          total_posts_with_features: featureRowsCreated + existingIds.size,
           avg_dwell_ms: 0,
           users_with_embedding: usersWithEmbedding,
-          posts_with_new_embedding: postEmbeddings.size,
+          posts_with_new_embedding: semanticEmbeddingsCreated,
+          semantic_seed_rows_created: semanticSeedRows.length,
+          creators_refreshed: creatorsRefreshed,
+          coverage_snapshot_id: coverageSnapshotId,
+          mmr_shadow_run_id: mmrShadowRunId,
+          mmr_shadow_sampled_users: shadowMetrics.length,
+          mmr_shadow_production_order_changed: false,
         },
       })
       .eq("id", runId);
@@ -422,6 +635,10 @@ Deno.serve(async (req) => {
         posts_processed: postsProcessed,
         interactions: allInter.length,
         global_ctr: globalCTR,
+        semantic_seed_rows_created: semanticSeedRows.length,
+        creators_refreshed: creatorsRefreshed,
+        coverage_snapshot_id: coverageSnapshotId,
+        mmr_shadow_run_id: mmrShadowRunId,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

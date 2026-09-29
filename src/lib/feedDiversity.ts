@@ -4,28 +4,36 @@
  * - SessionSignals: in-memory store of current-session signals to re-rank live.
  */
 
-import type { Post } from '@/hooks/usePosts';
+interface AuthoredFeedItem {
+  user_id: string;
+}
 
-export function enforceDiversity<T extends Post>(posts: T[], maxConsecutiveSameAuthor = 2): T[] {
-  if (posts.length < 3) return posts;
+export function enforceDiversity<T extends AuthoredFeedItem>(
+  posts: T[],
+  maxConsecutiveSameAuthor = 2,
+  precedingAuthorIds: string[] = [],
+): T[] {
+  if (posts.length < 2 || maxConsecutiveSameAuthor < 1) return posts;
   const result: T[] = [];
   const remaining = [...posts];
+  const recentAuthors = precedingAuthorIds.slice(-maxConsecutiveSameAuthor);
 
   while (remaining.length) {
     let pickIdx = 0;
-    if (result.length >= maxConsecutiveSameAuthor) {
-      const lastAuthor = result[result.length - 1]?.user_id;
-      const prevAuthor = result[result.length - 2]?.user_id;
-      if (lastAuthor && lastAuthor === prevAuthor) {
-        // Find next post from a different author
-        const altIdx = remaining.findIndex((p) => p.user_id !== lastAuthor);
-        if (altIdx !== -1) pickIdx = altIdx;
-      }
+    const authorHistory = [...recentAuthors, ...result.map((post) => post.user_id)];
+    const lastAuthor = authorHistory[authorHistory.length - 1];
+    let consecutive = 0;
+    for (let index = authorHistory.length - 1; index >= 0; index -= 1) {
+      if (authorHistory[index] !== lastAuthor) break;
+      consecutive += 1;
+    }
+    if (lastAuthor && consecutive >= maxConsecutiveSameAuthor) {
+      const alternativeIndex = remaining.findIndex((post) => post.user_id !== lastAuthor);
+      if (alternativeIndex !== -1) pickIdx = alternativeIndex;
     }
     result.push(remaining.splice(pickIdx, 1)[0]);
   }
 
-  // Inject discovery: every 5th slot, swap in a "less personalized" post if possible
   return result;
 }
 
