@@ -131,27 +131,6 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
     staleTime: 60_000,
   });
 
-  // Fetch top 2 reaction types for the post
-  const { data: topReactions } = useQuery({
-    queryKey: ['post-top-reactions', post.id],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('likes')
-        .select('reaction_type')
-        .eq('post_id', post.id)
-        .not('reaction_type', 'is', null);
-      if (!data || data.length === 0) return ['like'];
-      const counts: Record<string, number> = {};
-      data.forEach((r: any) => { counts[r.reaction_type] = (counts[r.reaction_type] || 0) + 1; });
-      return Object.entries(counts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 2)
-        .map(([type]) => type);
-    },
-    enabled: post.likes_count > 0 && !loading,
-    staleTime: 60_000,
-  });
-
   const trackVideoView = () => {
     if (viewTracked || !user || !isVideoPost) return;
     setViewTracked(true);
@@ -434,20 +413,12 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       {/* Engagement summary — Facebook style */}
       {showActions && (
         <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
-          {/* Left: reaction emojis + count */}
+          {/* Une seule icône résume les réactions : jamais de pile visuelle. */}
           {post.likes_count > 0 ? (
             <div className="flex items-center gap-1.5">
-              <div className="flex -space-x-1">
-                {(topReactions || ['like']).map((type, i) => (
-                  <span 
-                    key={`${type}-${i}`}
-                    className="w-[18px] h-[18px] rounded-full bg-primary/10 flex items-center justify-center text-[11px] ring-2 ring-card"
-                    style={{ zIndex: 2 - i }}
-                  >
-                    {REACTION_EMOJIS[type as ReactionType] || '👍'}
-                  </span>
-                ))}
-              </div>
+              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-primary/10 text-[11px]">
+                {post.user_reaction ? REACTION_EMOJIS[post.user_reaction] : '👍'}
+              </span>
               <span className="text-[13px] text-muted-foreground">
                 {post.likes_count}
               </span>
