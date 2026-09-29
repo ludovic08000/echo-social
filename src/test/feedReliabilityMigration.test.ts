@@ -43,9 +43,17 @@ describe('feed reliability migration', () => {
   });
 
   it('carries embedding text from the async extraction batch into persistence', () => {
-    expect(trainerSource).toContain('return { post, f, emb, embText };');
+    expect(trainerSource).toContain('generateEmbeddingBatch(embeddingTexts)');
     expect(trainerSource).toContain('for (const { post, f, emb, embText } of results)');
     expect(trainerSource).toContain('const current = existingMap.get(post.id);');
-    expect(trainerSource).not.toContain('return { post, f, emb };');
+  });
+
+  it('uses a bounded, batched Lovable embedding request with the stored dimension', () => {
+    expect(trainerSource).toContain('const EMBEDDING_MODEL = "google/gemini-embedding-2";');
+    expect(trainerSource).toContain('const EMBEDDING_DIMENSION = 768;');
+    expect(trainerSource).toContain('input: active.map(({ text }) => text)');
+    expect(trainerSource).toContain('dimensions: EMBEDDING_DIMENSION');
+    expect(trainerSource).toContain('signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS)');
+    expect(trainerSource).toContain('skipped: "RUN_ALREADY_ACTIVE"');
   });
 });
