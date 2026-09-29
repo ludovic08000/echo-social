@@ -185,6 +185,7 @@ jobs:
           deno check --no-config supabase/functions/identity-rotation/index.ts
           deno check --no-config supabase/functions/identity-rotation-recovery/index.ts
           deno check --no-config supabase/functions/zeus/index.ts
+          deno check --no-config supabase/functions/ml-feed-train/index.ts
 
   database:
     name: Migrations and SQL security tests
