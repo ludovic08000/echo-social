@@ -310,7 +310,8 @@ Deno.serve(async (req) => {
       }));
 
       for (const { post, f, emb, embText } of results) {
-        const hadFeatureRow = existingMap.has(post.id);
+        const current = existingMap.get(post.id);
+        const hadFeatureRow = current !== undefined;
         if (emb) postEmbeddings.set(post.id, emb);
         freshFeatures.set(post.id, { topics: f.topics, hashtags: f.hashtags });
         const featureResult = await supabase.from("ml_post_features").upsert({

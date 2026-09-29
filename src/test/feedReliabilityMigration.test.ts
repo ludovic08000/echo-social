@@ -45,6 +45,7 @@ describe('feed reliability migration', () => {
   it('carries embedding text from the async extraction batch into persistence', () => {
     expect(trainerSource).toContain('return { post, f, emb, embText };');
     expect(trainerSource).toContain('for (const { post, f, emb, embText } of results)');
+    expect(trainerSource).toContain('const current = existingMap.get(post.id);');
     expect(trainerSource).not.toContain('return { post, f, emb };');
   });
 });
