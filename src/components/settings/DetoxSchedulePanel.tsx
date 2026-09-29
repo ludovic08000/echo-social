@@ -5,14 +5,9 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
 import { toast } from '@/hooks/use-toast';
+import { isDetoxScheduleActive, type DetoxSchedule as RuntimeDetoxSchedule } from '@/lib/wellbeingRuntime';
 
-interface DetoxSchedule {
-  enabled: boolean;
-  days: string[];
-  startHour: number;
-  endHour: number;
-  streakDays: number;
-}
+type DetoxSchedule = RuntimeDetoxSchedule & { streakDays: number };
 
 const DAYS = [
   { key: 'mon', label: 'Lun' },
@@ -61,17 +56,7 @@ export function DetoxSchedulePanel() {
     save({ ...schedule, days: newDays });
   };
 
-  const isInDetoxNow = () => {
-    if (!schedule.enabled) return false;
-    const now = new Date();
-    const currentDay = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()];
-    if (!schedule.days.includes(currentDay)) return false;
-    const hour = now.getHours();
-    if (schedule.startHour > schedule.endHour) {
-      return hour >= schedule.startHour || hour < schedule.endHour;
-    }
-    return hour >= schedule.startHour && hour < schedule.endHour;
-  };
+  const isInDetoxNow = () => isDetoxScheduleActive(schedule);
 
   return (
     <div className="space-y-5">

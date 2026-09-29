@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { VolumeX, Volume2 } from 'lucide-react';
+import { useAccessibilityPreferences } from '@/hooks/useAccessibilityPreferences';
 
 interface FeedAutoplayVideoProps {
   src: string;
@@ -16,8 +17,10 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
   const [userPaused, setUserPaused] = useState(false);
   const hasTrackedPlay = useRef(false);
   const isVisibleRef = useRef(false);
+  const { autoplayVideos } = useAccessibilityPreferences();
 
   const tryPlay = (vid: HTMLVideoElement) => {
+    if (!autoplayVideos) return;
     vid.muted = true;
     vid.defaultMuted = true;
     vid.playsInline = true;
@@ -43,7 +46,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
         const shouldAutoplay = entry.isIntersecting && entry.intersectionRatio >= 0.35;
         isVisibleRef.current = shouldAutoplay;
 
-        if (shouldAutoplay) {
+        if (shouldAutoplay && autoplayVideos) {
           if (vid.readyState < 2) {
             vid.load();
             requestAnimationFrame(() => tryPlay(vid));
@@ -59,7 +62,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
     );
 
     const retryWhenReady = () => {
-      if (isVisibleRef.current && vid.paused) {
+      if (autoplayVideos && isVisibleRef.current && vid.paused) {
         tryPlay(vid);
       }
     };
@@ -75,7 +78,14 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
       vid.removeEventListener('loadeddata', retryWhenReady);
       vid.removeEventListener('canplay', retryWhenReady);
     };
-  }, [onPlay]);
+  }, [autoplayVideos, onPlay]);
+
+  useEffect(() => {
+    if (!autoplayVideos) {
+      videoRef.current?.pause();
+      setIsPlaying(false);
+    }
+  }, [autoplayVideos]);
 
   const toggleMute = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -103,7 +113,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
       <video
         ref={videoRef}
         src={src}
-        autoPlay
+        autoPlay={autoplayVideos}
         loop
         muted
         playsInline
@@ -116,7 +126,7 @@ export function FeedAutoplayVideo({ src, onMediaLoaded, onVideoError, onPlay }: 
         onLoadedMetadata={() => onMediaLoaded?.()}
         onLoadedData={() => onMediaLoaded?.()}
         onCanPlay={() => {
-          if (videoRef.current && isVisibleRef.current && videoRef.current.paused) {
+          if (autoplayVideos && videoRef.current && isVisibleRef.current && videoRef.current.paused) {
             tryPlay(videoRef.current);
           }
         }}

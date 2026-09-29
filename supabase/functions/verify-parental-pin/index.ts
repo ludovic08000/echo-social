@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action, pin, allowed_categories } = body;
+    const { action, pin, current_pin, allowed_categories } = body;
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -48,13 +48,21 @@ Deno.serve(async (req) => {
       return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
     }
 
-    // Validate PIN format: 8 digits minimum
+    // New PINs require 8–12 digits. Verification keeps 4-digit legacy PINs
+    // usable so existing families are not locked out during migration.
     if (pin !== undefined) {
-      if (typeof pin !== "string" || !/^\d{8,12}$/.test(pin)) {
-        return new Response(JSON.stringify({ error: "PIN invalide (8 à 12 chiffres requis)" }), {
+      const format = action === "set" ? /^\d{8,12}$/ : /^\d{4,12}$/;
+      if (typeof pin !== "string" || !format.test(pin)) {
+        const requirement = action === "set" ? "8 à 12" : "4 à 12";
+        return new Response(JSON.stringify({ error: `PIN invalide (${requirement} chiffres requis)` }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+    }
+    if (current_pin !== undefined && (typeof current_pin !== "string" || !/^\d{4,12}$/.test(current_pin))) {
+      return new Response(JSON.stringify({ error: "PIN actuel invalide" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // ── Rate limiting on verify ──
@@ -80,6 +88,18 @@ Deno.serve(async (req) => {
 
     function clearFailedAttempts(userId: string) {
       failedAttempts.delete(userId);
+    }
+
+    async function matchesStoredPin(rawPin: string, storedHash: string) {
+      const currentHash = await hashPinServer(rawPin, user.id);
+      if (currentHash === storedHash) return { ok: true, legacy: false, currentHash };
+
+      const legacyData = new TextEncoder().encode(rawPin + "forsure-parental-salt");
+      const legacyHashBuf = await crypto.subtle.digest("SHA-256", legacyData);
+      const legacyHash = Array.from(new Uint8Array(legacyHashBuf))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+      return { ok: legacyHash === storedHash, legacy: legacyHash === storedHash, currentHash };
     }
 
     switch (action) {
@@ -115,22 +135,43 @@ Deno.serve(async (req) => {
         }
 
         const pinHash = await hashPinServer(pin, user.id);
-        const categories = Array.isArray(allowed_categories) && allowed_categories.length > 0
-          ? allowed_categories
-          : ["education", "sport", "gaming", "musique", "art", "humour"];
+        const allowedValues = new Set(["general", "education", "sport", "gaming", "musique", "art", "humour"]);
+        const categories = Array.isArray(allowed_categories)
+          ? [...new Set(allowed_categories.filter((value: unknown) => typeof value === "string" && allowedValues.has(value)))]
+          : [];
+        if (categories.length === 0) {
+          return new Response(JSON.stringify({ error: "Sélectionnez au moins une catégorie autorisée" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
         const { data: existing } = await supabase
           .from("parental_controls")
-          .select("id")
+          .select("id,pin_hash")
           .eq("user_id", user.id)
           .maybeSingle();
 
         if (existing) {
+          if (!current_pin || !checkRateLimit(user.id)) {
+            return new Response(JSON.stringify({ error: "PIN actuel requis ou trop de tentatives" }), {
+              status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          const verified = await matchesStoredPin(current_pin, existing.pin_hash);
+          if (!verified.ok) {
+            recordFailedAttempt(user.id);
+            return new Response(JSON.stringify({ error: "PIN actuel incorrect" }), {
+              status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          clearFailedAttempts(user.id);
           const { error } = await supabase
             .from("parental_controls")
             .update({
               pin_hash: pinHash,
               allowed_categories: categories,
+              is_active: true,
+              is_minor: true,
               updated_at: new Date().toISOString(),
             })
             .eq("user_id", user.id);
@@ -153,6 +194,35 @@ Deno.serve(async (req) => {
         });
       }
 
+      case "disable": {
+        if (!pin || !checkRateLimit(user.id)) {
+          return new Response(JSON.stringify({ ok: false, error: "PIN requis ou trop de tentatives" }), {
+            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const { data, error } = await supabase
+          .from("parental_controls")
+          .select("pin_hash")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (error) throw error;
+        const verified = data ? await matchesStoredPin(pin, data.pin_hash) : null;
+        if (!verified?.ok) {
+          recordFailedAttempt(user.id);
+          return new Response(JSON.stringify({ ok: false, error: "PIN incorrect" }), {
+            status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        await supabase
+          .from("parental_controls")
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq("user_id", user.id);
+        clearFailedAttempts(user.id);
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // ── VERIFY PIN ──
       case "verify": {
         if (!pin) {
@@ -169,8 +239,6 @@ Deno.serve(async (req) => {
           });
         }
 
-        const pinHash = await hashPinServer(pin, user.id);
-
         const { data, error } = await supabase
           .from("parental_controls")
           .select("pin_hash")
@@ -184,26 +252,15 @@ Deno.serve(async (req) => {
           });
         }
 
-        const match = pinHash === data.pin_hash;
+        const verified = await matchesStoredPin(pin, data.pin_hash);
+        const success = verified.ok;
 
-        // Legacy hash migration (old 4-digit salt)
-        let legacyMatch = false;
-        if (!match) {
-          const legacyEncoder = new TextEncoder();
-          const legacyData = legacyEncoder.encode(pin + "forsure-parental-salt");
-          const legacyHashBuf = await crypto.subtle.digest("SHA-256", legacyData);
-          const legacyHash = Array.from(new Uint8Array(legacyHashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
-          legacyMatch = legacyHash === data.pin_hash;
-
-          if (legacyMatch) {
-            await supabase
-              .from("parental_controls")
-              .update({ pin_hash: pinHash, updated_at: new Date().toISOString() })
-              .eq("user_id", user.id);
-          }
+        if (verified.legacy) {
+          await supabase
+            .from("parental_controls")
+            .update({ pin_hash: verified.currentHash, updated_at: new Date().toISOString() })
+            .eq("user_id", user.id);
         }
-
-        const success = match || legacyMatch;
 
         if (success) {
           clearFailedAttempts(user.id);

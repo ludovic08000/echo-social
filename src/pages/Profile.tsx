@@ -171,16 +171,15 @@ export default function Profile() {
   const isFriend = friendshipData?.status === 'accepted';
 
   // Fetch target user's privacy settings for post visibility
-  const { data: targetPrivacy } = useQuery({
+  const { data: targetPrivacy, isLoading: privacyLoading, isError: privacyError } = useQuery({
     queryKey: ['target-privacy', userId],
     queryFn: async () => {
       if (!userId) return null;
-      const { data } = await supabase
-        .from('privacy_settings')
-        .select('posts_visibility, profile_visibility, wall_visibility')
-        .eq('user_id', userId)
-        .maybeSingle();
-      return data;
+      const { data, error } = await supabase.rpc('get_profile_privacy' as any, {
+        p_user_id: userId,
+      } as any);
+      if (error) throw error;
+      return Array.isArray(data) ? data[0] ?? null : data;
     },
     enabled: !!userId,
     staleTime: 5 * 60_000,
@@ -188,8 +187,12 @@ export default function Profile() {
 
   // posts_visibility: 'public' (tout le monde), 'friends' (amis), 'private' (moi seul)
   const postsVis = targetPrivacy?.posts_visibility || 'public';
+  const profileVis = targetPrivacy?.profile_visibility || 'public';
+  const friendsVis = targetPrivacy?.friends_list_visibility || 'friends';
+  const canViewProfile = isOwnProfile || (!privacyError && (profileVis === 'public' || (profileVis === 'friends' && isFriend)));
   const canViewPosts = isOwnProfile || postsVis === 'public' || (postsVis === 'friends' && isFriend);
-  const isPrivateProfile = postsVis !== 'public';
+  const canViewFriends = isOwnProfile || friendsVis === 'public' || (friendsVis === 'friends' && isFriend);
+  const isPrivateProfile = profileVis !== 'public' || postsVis !== 'public' || targetPrivacy?.search_engine_indexing === false;
 
   // Check if own profile has pending identity verification
   const { data: pendingVerification } = useQuery({
@@ -387,12 +390,11 @@ export default function Profile() {
       const [
         { count: postsCount },
         { data: postIds },
-        { count: friendsCount },
+        { data: friendsCount },
       ] = await Promise.all([
         supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
         supabase.from('posts').select('id').eq('user_id', userId),
-        // Amitiés mutuelles : on compte tous les liens acceptés peu importe qui a initié
-        supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+        (supabase.rpc as any)('get_visible_profile_friend_count', { p_user_id: userId }),
       ]);
       let likesReceived = 0;
       if (postIds && postIds.length > 0) {
@@ -402,9 +404,9 @@ export default function Profile() {
       return {
         postsCount: postsCount || 0,
         likesReceived,
-        friendsCount: friendsCount || 0,
-        followersCount: friendsCount || 0,
-        followingCount: friendsCount || 0,
+        friendsCount: Number(friendsCount || 0),
+        followersCount: Number(friendsCount || 0),
+        followingCount: Number(friendsCount || 0),
       };
     },
     enabled: !!userId,
@@ -430,17 +432,17 @@ export default function Profile() {
     queryKey: ['mutual-friends', userId],
     queryFn: async () => {
       if (!userId || isOwnProfile) return [];
-      const { data } = await supabase.from('friendships').select('requester_id, addressee_id').eq('status', 'accepted').or(`requester_id.eq.${userId},addressee_id.eq.${userId}`).limit(3);
-      if (!data) return [];
-      const friendIds = data.map(f => f.requester_id === userId ? f.addressee_id : f.requester_id);
-      if (friendIds.length === 0) return [];
-      const { data: profiles } = await supabase.from('profiles').select('id, user_id, name, avatar_url, bio, mood_emoji').in('user_id', friendIds).limit(3);
-      return profiles || [];
+      const { data, error } = await (supabase.rpc as any)('get_visible_mutual_friends', {
+        p_user_id: userId,
+        p_limit: 3,
+      });
+      if (error) throw error;
+      return data || [];
     },
     enabled: !!userId && !isOwnProfile,
   });
 
-  if (profileLoading) {
+  if (profileLoading || privacyLoading) {
     return (
       <AppLayout fullWidth>
         <div className="w-full px-2 md:px-6">
@@ -453,6 +455,25 @@ export default function Profile() {
                 <div className="h-4 w-32 bg-muted rounded-lg" />
               </div>
             </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!canViewProfile) {
+    return (
+      <AppLayout fullWidth>
+        <NoIndexMeta />
+        <div className="mx-auto w-full max-w-lg px-4 py-16">
+          <div className="premium-card p-10 text-center">
+            <Lock className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
+            <h1 className="font-semibold">Profil privé</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {profileVis === 'friends'
+                ? 'Ajoutez cette personne en ami pour consulter son profil.'
+                : 'Cet utilisateur a choisi de masquer son profil.'}
+            </p>
           </div>
         </div>
       </AppLayout>
@@ -875,6 +896,7 @@ export default function Profile() {
                   isOwnProfile={isOwnProfile}
                   isFriend={friendshipData?.status === 'accepted'}
                   friendsCount={stats?.friendsCount || 0}
+                  showFriends={canViewFriends}
                   onNavigateToAbout={() => setActiveTab('about')}
                 />
                 {/* Profile Music */}
@@ -990,7 +1012,7 @@ export default function Profile() {
                 isOwnProfile={isOwnProfile}
                 isFriend={friendshipData?.status === 'accepted'}
               />
-              <ProfileFriendsList userId={userId!} />
+              {canViewFriends && <ProfileFriendsList userId={userId!} />}
             </div>
           )}
 

@@ -811,6 +811,69 @@ body.ux-flow {
   color: var(--feed-text-color);
 }
 
+/* Runtime accessibility and wellbeing preferences. */
+:root {
+  --line-height-factor: 1.5;
+}
+
+html body {
+  line-height: var(--line-height-factor);
+}
+
+html.reduced-motion *,
+html.reduced-motion *::before,
+html.reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+html.high-contrast {
+  --border: 0 0% 30%;
+  --muted-foreground: 0 0% 28%;
+}
+
+html.dark.high-contrast {
+  --border: 0 0% 72%;
+  --muted-foreground: 0 0% 82%;
+}
+
+html.high-contrast button,
+html.high-contrast a,
+html.high-contrast input,
+html.high-contrast textarea,
+html.high-contrast [role="button"] {
+  outline-color: currentColor;
+}
+
+html.large-targets button,
+html.large-targets [role="button"],
+html.large-targets input:not([type="hidden"]),
+html.large-targets select,
+html.large-targets a[role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+html.screen-reader-optimized :focus-visible,
+html.keyboard-navigation :focus-visible {
+  outline: 3px solid hsl(var(--primary)) !important;
+  outline-offset: 3px !important;
+}
+
+html[data-color-blind-mode="deuteranopia"] body { filter: saturate(0.72) hue-rotate(12deg); }
+html[data-color-blind-mode="protanopia"] body { filter: saturate(0.68) hue-rotate(-12deg); }
+html[data-color-blind-mode="tritanopia"] body { filter: saturate(0.75) hue-rotate(165deg); }
+html.wellbeing-grayscale body { filter: grayscale(1); }
+html.wellbeing-grayscale[data-color-blind-mode="deuteranopia"] body,
+html.wellbeing-grayscale[data-color-blind-mode="protanopia"] body,
+html.wellbeing-grayscale[data-color-blind-mode="tritanopia"] body { filter: grayscale(1) contrast(1.05); }
+
+html.wellbeing-hide-counts [data-engagement-count] {
+  display: none !important;
+}
+
 .feed-custom-text .text-foreground {
   color: var(--feed-text-color) !important;
 }

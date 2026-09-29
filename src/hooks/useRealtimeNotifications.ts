@@ -10,43 +10,71 @@ import { toast } from 'sonner';
 let activeChannelUserId: string | null = null;
 const seenNotificationIds = new Set<string>();
 
+type RealtimeNotificationRow = {
+  id?: string;
+  type?: string;
+  actor_id?: string | null;
+  metadata?: {
+    device_name?: string;
+    platform?: string;
+  } | null;
+};
+
+function notificationSoundCategory(type: string | undefined) {
+  if (type === 'message') return 'message';
+  if (type === 'friend_request' || type === 'friend_accepted') return 'friend_request';
+  if (type === 'comment') return 'comment';
+  if (type === 'like' || type === 'reaction') return 'like';
+  if (type === 'story_view') return 'story_view';
+  if (type === 'close_friend_post') return 'close_friend_post';
+  return undefined;
+}
+
 /**
  * Global hook: listens for new notifications in realtime and plays a sound.
  * Also plays a sound on initial login if there are unread notifications/messages.
  */
 export function useRealtimeNotifications() {
   const { user } = useAuth();
+  const userId = user?.id;
   const enqueueSound = useRealtimeNotificationSound();
   const queryClient = useQueryClient();
   const loginSoundPlayed = useRef(false);
 
   // Play sound on login if unread notifications or messages exist
   useEffect(() => {
-    if (!user || loginSoundPlayed.current) return;
+    if (!userId || loginSoundPlayed.current) return;
     loginSoundPlayed.current = true;
 
     const checkUnread = async () => {
       try {
-        const [{ count: unreadNotifs }] = await Promise.all([
+        const [{ data: unreadNotifs }] = await Promise.all([
           supabase
             .from('notifications')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .is('read_at', null),
+            .select('type')
+            .eq('user_id', userId)
+            .is('read_at', null)
+            .limit(20),
         ]);
 
-        if ((unreadNotifs || 0) > 0) {
-          setTimeout(() => enqueueSound('message'), 500);
+        if (unreadNotifs?.length) {
+          setTimeout(() => {
+            unreadNotifs.forEach((notification) => {
+              enqueueSound(notificationSoundCategory(notification.type));
+            });
+          }, 500);
         }
-      } catch {}
+      } catch {
+        // Login remains usable if the best-effort unread check fails.
+      }
     };
     checkUnread();
-  }, [user]);
+  }, [enqueueSound, userId]);
 
   // Reset on logout
   useEffect(() => {
-    if (!user) loginSoundPlayed.current = false;
-  }, [user]);
+    if (!userId) loginSoundPlayed.current = false;
+  }, [userId]);
 
   // Keep latest callbacks in refs so the realtime subscription stays stable
   const enqueueSoundRef = useRef(enqueueSound);
@@ -57,24 +85,24 @@ export function useRealtimeNotifications() {
   }, [enqueueSound, queryClient]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
 
     // Guard against double subscription (StrictMode, parallel mounts)
-    if (activeChannelUserId === user.id) return;
-    activeChannelUserId = user.id;
+    if (activeChannelUserId === userId) return;
+    activeChannelUserId = userId;
 
     const channel = supabase
-      .channel(`global-notifications-${user.id}`)
+      .channel(`global-notifications-${userId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${userId}`,
         },
         async (payload) => {
-          const row = payload.new as any;
+          const row = payload.new as unknown as RealtimeNotificationRow;
 
           // Dedupe by notification id (Realtime can fire duplicate events on reconnect)
           const notifId: string | undefined = row?.id;
@@ -98,22 +126,20 @@ export function useRealtimeNotifications() {
               const { data } = await supabase
                 .from('profiles')
                 .select('name')
-                .eq('id', actorId)
+                .eq('user_id', actorId)
                 .maybeSingle();
               if (data?.name) senderName = data.name;
-            } catch {}
+            } catch {
+              // Sender name is optional; never block the notification itself.
+            }
           }
 
           // Map notification type → sound category
-          let category: string | undefined;
-          if (type === 'message') category = 'message';
-          else if (type === 'friend_request' || type === 'friend_accepted') category = 'friend_request';
-          else if (type === 'comment') category = 'comment';
-          else if (type === 'like' || type === 'reaction') category = 'like';
+          let category = notificationSoundCategory(type);
 
           // Special handling: new device linked to account → security toast
           if (type === 'new_device') {
-            const meta = (row?.metadata ?? {}) as { device_name?: string; platform?: string };
+            const meta = row?.metadata ?? {};
             const label = meta.device_name || meta.platform || 'Appareil inconnu';
             toast.warning('Nouvel appareil connecté', {
               description: `${label} vient de se connecter à votre compte. Vérifiez immédiatement.`,
@@ -133,10 +159,10 @@ export function useRealtimeNotifications() {
       .subscribe();
 
     return () => {
-      if (activeChannelUserId === user.id) {
+      if (activeChannelUserId === userId) {
         activeChannelUserId = null;
       }
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [userId]);
 }

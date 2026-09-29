@@ -50,7 +50,7 @@ export function AgeFlaggedScreen() {
         body: {
           action: 'set',
           pin,
-          allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
+          allowed_categories: ['general', 'education', 'sport', 'gaming', 'musique', 'art', 'humour'],
         },
       });
       if (error) throw error;

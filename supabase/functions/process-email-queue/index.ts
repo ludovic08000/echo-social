@@ -240,6 +240,42 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Preferences can change after a digest was queued. Re-check at send
+      // time so disabling email notifications takes effect immediately.
+      if (
+        queue === 'transactional_emails' &&
+        payload.preference_key === 'notification_digest' &&
+        typeof payload.user_id === 'string'
+      ) {
+        const { data: preference, error: preferenceError } = await supabase
+          .from('notification_settings')
+          .select('email_notifications_enabled')
+          .eq('user_id', payload.user_id)
+          .maybeSingle()
+
+        if (preferenceError) {
+          console.error('Failed to re-check digest preference', {
+            queue,
+            msg_id: msg.msg_id,
+          })
+          continue
+        }
+
+        if (preference?.email_notifications_enabled !== true) {
+          const { error: preferenceDeleteError } = await supabase.rpc('delete_email', {
+            queue_name: queue,
+            message_id: msg.msg_id,
+          })
+          if (preferenceDeleteError) {
+            console.error('Failed to remove disabled digest', {
+              queue,
+              msg_id: msg.msg_id,
+            })
+          }
+          continue
+        }
+      }
+
       try {
         await sendLovableEmail(
           {

@@ -16,6 +16,8 @@
 
 export interface ContentPrefs {
   feedAlgorithm: 'smart' | 'chronological' | 'friends_first';
+  aiSummariesEnabled: boolean;
+  autoTranslateEnabled: boolean;
   diversityBoost: number; // 0-100
   mutedKeywords: string[];
   priorityTopics: string[];
@@ -32,6 +34,8 @@ export interface FeedWeights {
 
 const DEFAULT_PREFS: ContentPrefs = {
   feedAlgorithm: 'smart',
+  aiSummariesEnabled: true,
+  autoTranslateEnabled: false,
   diversityBoost: 50,
   mutedKeywords: [],
   priorityTopics: [],

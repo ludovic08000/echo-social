@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Heart, MessageCircle, Check, ShoppingBag, UserPlus, UserCheck, Eye, SmilePlus, ShieldAlert } from 'lucide-react';
+import { Heart, MessageCircle, Check, ShoppingBag, UserPlus, UserCheck, Eye, SmilePlus, ShieldAlert, Users } from 'lucide-react';
 import { useNotifications, useMarkAsRead } from '@/hooks/useNotifications';
 import { AppLayout } from '@/components/AppLayout';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -71,6 +71,7 @@ function getNotificationText(group: GroupedNotification): string {
     message: 'vous a envoyé un message',
     reaction: 'a réagi à votre publication',
     story_view: 'a vu votre story',
+    close_friend_post: 'a publié dans votre cercle d’amis',
     new_device: 'Nouvel appareil connecté à votre compte — vérifiez immédiatement',
   };
 
@@ -92,6 +93,8 @@ function getNotificationLink(group: GroupedNotification): string {
       return '/marketplace?sellerTab=orders';
     case 'story_view':
       return '/feed';
+    case 'close_friend_post':
+      return group.post_id ? `/post/${group.post_id}` : '/feed';
     case 'new_device':
       return '/settings?tab=devices';
     case 'like':
@@ -121,6 +124,8 @@ function getNotificationIcon(type: string) {
       return { icon: SmilePlus, className: 'bg-pink-500', iconClass: 'text-white' };
     case 'story_view':
       return { icon: Eye, className: 'bg-purple-500', iconClass: 'text-white' };
+    case 'close_friend_post':
+      return { icon: Users, className: 'bg-cyan-600', iconClass: 'text-white' };
     case 'new_device':
       return { icon: ShieldAlert, className: 'bg-destructive', iconClass: 'text-destructive-foreground' };
     default:

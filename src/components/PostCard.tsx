@@ -198,7 +198,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const isOwner = user?.id === post.user_id;
 
   return (
-    <article ref={setRefs} className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] transition-all duration-300 shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)]">
+    <article ref={setRefs} data-post-card tabIndex={-1} className="group relative bg-card border-y border-border/20 sm:border sm:border-border/20 sm:rounded-[26px] transition-all duration-300 shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)]">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -412,7 +412,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
 
       {/* Engagement summary — Facebook style */}
       {showActions && (
-        <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
+        <div data-engagement-count className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
           {/* Le compteur reste textuel : l'unique emoji choisi apparaît seulement sur le bouton. */}
           {post.likes_count > 0 ? (
             <span className="text-[13px] text-muted-foreground">
@@ -437,20 +437,23 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         <>
           <div className="mx-3 border-t border-border/20" />
           <div className="flex items-center px-1 py-0.5">
-            <ReactionButton 
-              postId={post.id}
-              currentReaction={post.user_reaction}
-              reactionsCount={0}
-              variant="facebook"
-            />
+            <div className="contents" data-post-like>
+              <ReactionButton
+                postId={post.id}
+                currentReaction={post.user_reaction}
+                reactionsCount={0}
+                variant="facebook"
+              />
+            </div>
             <Button
               variant="ghost"
               size="sm"
               className="flex-1 h-11 gap-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl text-xs"
               onClick={handleCommentClick}
+              data-post-comment
             >
               <MessageCircle className="w-[18px] h-[18px]" />
-              <span className="font-medium">Commenter{post.comments_count > 0 ? ` (${post.comments_count})` : ''}</span>
+              <span className="font-medium">Commenter<span data-engagement-count>{post.comments_count > 0 ? ` (${post.comments_count})` : ''}</span></span>
             </Button>
             <ShareButton
               url={postUrl}

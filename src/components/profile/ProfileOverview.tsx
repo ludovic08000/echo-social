@@ -31,6 +31,7 @@ interface ProfileOverviewProps {
   isOwnProfile: boolean;
   isFriend: boolean;
   friendsCount: number;
+  showFriends: boolean;
   onNavigateToAbout: () => void;
 }
 
@@ -85,7 +86,7 @@ function VisibilityDropdown({
   );
 }
 
-export function ProfileOverview({ profile, isOwnProfile, isFriend, friendsCount, onNavigateToAbout }: ProfileOverviewProps) {
+export function ProfileOverview({ profile, isOwnProfile, isFriend, friendsCount, showFriends, onNavigateToAbout }: ProfileOverviewProps) {
   const { user } = useAuth();
   const updateProfile = useUpdateProfile();
   const queryClient = useQueryClient();
@@ -122,27 +123,14 @@ export function ProfileOverview({ profile, isOwnProfile, isFriend, friendsCount,
   const { data: friends } = useQuery({
     queryKey: ['profile-friends-preview', profile.user_id],
     queryFn: async () => {
-      const { data: friendships } = await supabase
-        .from('friendships')
-        .select('requester_id, addressee_id')
-        .eq('status', 'accepted')
-        .or(`requester_id.eq.${profile.user_id},addressee_id.eq.${profile.user_id}`)
-        .limit(6);
-
-      if (!friendships || friendships.length === 0) return [];
-
-      const friendIds = friendships.map(f =>
-        f.requester_id === profile.user_id ? f.addressee_id : f.requester_id
-      );
-
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, name, avatar_url')
-        .in('user_id', friendIds);
-
-      return (profiles || []) as ProfileFriend[];
+      const { data, error } = await (supabase.rpc as any)('get_visible_profile_friends', {
+        p_user_id: profile.user_id,
+        p_limit: 6,
+      });
+      if (error) throw error;
+      return (data || []) as ProfileFriend[];
     },
-    enabled: !!profile.user_id,
+    enabled: !!profile.user_id && showFriends,
   });
 
   const infoItems = [
@@ -260,7 +248,7 @@ export function ProfileOverview({ profile, isOwnProfile, isFriend, friendsCount,
       </div>
 
       {/* Friends card */}
-      <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
+      {showFriends && <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
         <div className="px-5 pt-4 pb-2 flex items-center justify-between">
           <h3 className="text-sm font-bold tracking-tight flex items-center gap-2">
             <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
@@ -305,7 +293,7 @@ export function ProfileOverview({ profile, isOwnProfile, isFriend, friendsCount,
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { isAnalyticsEnabled } from '@/lib/privacyPreferences';
 
 type Surface = 'video' | 'post' | 'live';
 type EventType =
@@ -58,7 +59,7 @@ export function trackQuality(
   value: number = 1,
   metadata: Record<string, unknown> = {}
 ) {
-  if (!contentId) return;
+  if (!contentId || !userId || !isAnalyticsEnabled(userId)) return;
   queue.push({
     user_id: userId,
     session_id: SESSION_ID,
@@ -150,6 +151,7 @@ export function useQualityTracker(opts: {
 
 /** Trace une session de retour (à appeler 1x au mount d'un écran clé). */
 export function trackReturnSession(userId: string | null) {
+  if (!userId || !isAnalyticsEnabled(userId)) return;
   try {
     const last = localStorage.getItem(RETURN_KEY);
     const now = Date.now();

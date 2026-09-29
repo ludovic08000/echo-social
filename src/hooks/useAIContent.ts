@@ -1,26 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { trackAICall } from '@/lib/aiEngine';
-
-interface ContentPrefs {
-  aiSummariesEnabled: boolean;
-  autoTranslateEnabled: boolean;
-}
-
-function getContentPrefs(): ContentPrefs {
-  try {
-    const saved = localStorage.getItem('content-prefs');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return {
-        aiSummariesEnabled: !!parsed.aiSummariesEnabled,
-        autoTranslateEnabled: !!parsed.autoTranslateEnabled,
-      };
-    }
-  } catch {}
-  return { aiSummariesEnabled: false, autoTranslateEnabled: false };
-}
+import { loadContentPrefs } from '@/lib/feedAlgorithm';
+import { CONTENT_PREFS_CHANGED_EVENT } from '@/lib/feedPreferences';
 
 function getLanguage(): string {
   return localStorage.getItem('app-locale') || 'fr';
@@ -29,8 +12,17 @@ function getLanguage(): string {
 export function useAIContent() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [translateLoading, setTranslateLoading] = useState(false);
+  const [prefs, setPrefs] = useState(loadContentPrefs);
 
-  const prefs = getContentPrefs();
+  useEffect(() => {
+    const refresh = () => setPrefs(loadContentPrefs());
+    window.addEventListener(CONTENT_PREFS_CHANGED_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(CONTENT_PREFS_CHANGED_EVENT, refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
 
   const summarize = useCallback(async (text: string): Promise<string | null> => {
     if (!text || text.length < 100) return null;

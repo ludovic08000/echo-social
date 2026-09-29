@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { isAnalyticsEnabled } from '@/lib/privacyPreferences';
 import { useAuth } from '@/lib/auth';
 
 export interface ShortVideo {
@@ -154,14 +155,16 @@ export function useRecordVideoView() {
         'dwell_medium';
 
       try {
-        await supabase.from('ml_interactions').insert({
-          user_id: user.id,
-          post_id: videoId,
-          signal_type: signalType,
-          weight: signalType === 'skip_fast' ? -1 : signalType === 'watch_complete' ? 2.2 : 1.2,
-          dwell_ms: Math.max(0, Math.round(watchTimeSeconds * 1000)),
-          scroll_depth: Math.max(0, Math.min(1, completionRate)),
-        });
+        if (isAnalyticsEnabled(user.id)) {
+          await supabase.from('ml_interactions').insert({
+            user_id: user.id,
+            post_id: videoId,
+            signal_type: signalType,
+            weight: signalType === 'skip_fast' ? -1 : signalType === 'watch_complete' ? 2.2 : 1.2,
+            dwell_ms: Math.max(0, Math.round(watchTimeSeconds * 1000)),
+            scroll_depth: Math.max(0, Math.min(1, completionRate)),
+          });
+        }
       } catch {
         // video_views remains the source of truth if an older schema rejects this row.
       }

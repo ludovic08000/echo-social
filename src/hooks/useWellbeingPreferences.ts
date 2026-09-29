@@ -7,7 +7,7 @@
  *   - the Feed minute-tick loop reads prefs without an extra round-trip,
  *   - logged-out browsing keeps the last known prefs UX.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 
@@ -34,9 +34,13 @@ export const DEFAULT_WELLBEING_PREFS: WellbeingPrefs = {
 };
 
 const LS_KEY = 'wellbeing-prefs';
+const LS_OWNER_KEY = 'wellbeing-prefs-user';
+export const WELLBEING_CHANGED_EVENT = 'forsure:wellbeing-changed';
 
-export function readLocalWellbeingPrefs(): WellbeingPrefs {
+export function readLocalWellbeingPrefs(userId?: string): WellbeingPrefs {
   try {
+    const cacheOwner = localStorage.getItem(LS_OWNER_KEY);
+    if (userId && cacheOwner && cacheOwner !== userId) return DEFAULT_WELLBEING_PREFS;
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return DEFAULT_WELLBEING_PREFS;
     return { ...DEFAULT_WELLBEING_PREFS, ...JSON.parse(raw) };
@@ -45,11 +49,30 @@ export function readLocalWellbeingPrefs(): WellbeingPrefs {
   }
 }
 
-function writeLocalCache(prefs: WellbeingPrefs) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch {}
+function writeLocalCache(prefs: WellbeingPrefs, userId?: string) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(prefs));
+    if (userId) localStorage.setItem(LS_OWNER_KEY, userId);
+  } catch {
+    // The cloud row remains authoritative when storage is unavailable.
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(WELLBEING_CHANGED_EVENT, { detail: prefs }));
+  }
 }
 
-function rowToPrefs(row: any): WellbeingPrefs {
+type WellbeingRow = {
+  daily_limit_minutes?: number | null;
+  focus_mode_enabled?: boolean | null;
+  bedtime_reminder_enabled?: boolean | null;
+  bedtime_hour?: number | null;
+  scroll_pause_enabled?: boolean | null;
+  scroll_pause_minutes?: number | null;
+  hide_like_counts?: boolean | null;
+  grayscale_after_limit?: boolean | null;
+};
+
+function rowToPrefs(row: WellbeingRow): WellbeingPrefs {
   return {
     dailyLimitMinutes: Number(row.daily_limit_minutes ?? DEFAULT_WELLBEING_PREFS.dailyLimitMinutes),
     focusModeEnabled: Boolean(row.focus_mode_enabled ?? DEFAULT_WELLBEING_PREFS.focusModeEnabled),
@@ -78,68 +101,89 @@ function prefsToRow(userId: string, prefs: WellbeingPrefs) {
 
 export function useWellbeingPreferences() {
   const { user } = useAuth();
+  const userId = user?.id;
   const [prefs, setPrefs] = useState<WellbeingPrefs>(() => readLocalWellbeingPrefs());
+  const prefsRef = useRef(prefs);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    if (!user?.id) { setLoaded(true); return; }
+    setLoaded(false);
+    if (!userId) {
+      setLoaded(true);
+      return;
+    }
     (async () => {
       const { data, error } = await supabase
         .from('wellbeing_preferences')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .maybeSingle();
       if (cancelled) return;
       if (!error && data) {
-        const remote = rowToPrefs(data);
+        const remote = rowToPrefs(data as WellbeingRow);
+        prefsRef.current = remote;
         setPrefs(remote);
-        writeLocalCache(remote);
+        writeLocalCache(remote, userId);
       } else if (!error && !data) {
         // First time — seed remote from local cache (or defaults).
-        const seed = readLocalWellbeingPrefs();
+        const seed = readLocalWellbeingPrefs(userId);
+        prefsRef.current = seed;
+        setPrefs(seed);
         await supabase
           .from('wellbeing_preferences')
-          .upsert(prefsToRow(user.id, seed), { onConflict: 'user_id' });
+          .upsert(prefsToRow(userId, seed), { onConflict: 'user_id' });
       }
-      setLoaded(true);
+      if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [userId]);
+
+  useEffect(() => {
+    const onChanged = (event: Event) => {
+      const next = (event as CustomEvent<WellbeingPrefs>).detail;
+      if (next) {
+        prefsRef.current = next;
+        setPrefs(next);
+      }
+    };
+    window.addEventListener(WELLBEING_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(WELLBEING_CHANGED_EVENT, onChanged);
+  }, []);
 
   // Realtime cross-device sync.
   useEffect(() => {
-    if (!user?.id) return;
+    if (!userId) return;
     const ch = supabase
-      .channel(`wellbeing_prefs:${user.id}`)
+      .channel(`wellbeing_prefs:${userId}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'wellbeing_preferences',
-        filter: `user_id=eq.${user.id}`,
-      }, (payload: any) => {
+        filter: `user_id=eq.${userId}`,
+      }, (payload) => {
         const next = payload.new && Object.keys(payload.new).length
-          ? rowToPrefs(payload.new)
+          ? rowToPrefs(payload.new as WellbeingRow)
           : DEFAULT_WELLBEING_PREFS;
+        prefsRef.current = next;
         setPrefs(next);
-        writeLocalCache(next);
+        writeLocalCache(next, userId);
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [user?.id]);
+  }, [userId]);
 
   const update = useCallback((patch: Partial<WellbeingPrefs>) => {
-    setPrefs(prev => {
-      const next = { ...prev, ...patch };
-      writeLocalCache(next);
-      if (user?.id) {
-        void supabase
-          .from('wellbeing_preferences')
-          .upsert(prefsToRow(user.id, next), { onConflict: 'user_id' });
-      }
-      return next;
-    });
-  }, [user?.id]);
+    const next = { ...prefsRef.current, ...patch };
+    prefsRef.current = next;
+    setPrefs(next);
+    writeLocalCache(next, userId);
+    if (userId) {
+      void supabase
+        .from('wellbeing_preferences')
+        .upsert(prefsToRow(userId, next), { onConflict: 'user_id' });
+    }
+  }, [userId]);
 
   return { prefs, update, loaded };
 }

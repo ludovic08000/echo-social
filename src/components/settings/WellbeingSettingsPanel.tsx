@@ -28,6 +28,7 @@ export function WellbeingSettingsPanel() {
   const maxWeek = Math.max(1, ...weekData);
 
   const usagePercent = Math.min(100, Math.round((todayMinutes / prefs.dailyLimitMinutes) * 100));
+  const bedtimeSliderHour = prefs.bedtimeHour < 20 ? prefs.bedtimeHour + 24 : prefs.bedtimeHour;
   const daysOfWeek = [
     t('wellbeing.mon'), t('wellbeing.tue'), t('wellbeing.wed'), t('wellbeing.thu'),
     t('wellbeing.fri'), t('wellbeing.sat'), t('wellbeing.sun'),
@@ -126,7 +127,13 @@ export function WellbeingSettingsPanel() {
 
         {prefs.bedtimeReminderEnabled && (
           <div className="px-10 pb-2">
-            <Slider value={[prefs.bedtimeHour]} onValueChange={([v]) => update({ bedtimeHour: v })} min={20} max={2} step={1} />
+            <Slider
+              value={[bedtimeSliderHour]}
+              onValueChange={([v]) => update({ bedtimeHour: v % 24 })}
+              min={20}
+              max={26}
+              step={1}
+            />
             <p className="text-[10px] text-center text-muted-foreground mt-1">
               {t('wellbeing.hour')} : {prefs.bedtimeHour}h00
             </p>

@@ -4,9 +4,11 @@ import { useAuth } from '@/lib/auth';
 
 export const PIN_MIN_LENGTH = 8;
 export const PIN_MAX_LENGTH = 12;
-export const ALLOWED_MINOR_CATEGORIES = ['education', 'sport', 'gaming', 'musique', 'art', 'humour'] as const;
+export const LEGACY_PIN_MIN_LENGTH = 4;
+export const ALLOWED_MINOR_CATEGORIES = ['general', 'education', 'sport', 'gaming', 'musique', 'art', 'humour'] as const;
 
 export const CATEGORY_LABELS: Record<string, string> = {
+  general: '🌐 Général',
   education: '📚 Éducatif',
   sport: '⚽ Sport',
   gaming: '🎮 Gaming',
@@ -22,17 +24,34 @@ export function useParentalControl() {
     queryKey: ['parental-control', user?.id],
     queryFn: async () => {
       if (!user) return null;
-      // Only fetch non-sensitive fields — pin_hash is excluded by RLS
-      const { data, error } = await supabase
-        .from('parental_controls')
-        .select('id, user_id, is_active, is_minor, allowed_categories, created_at, updated_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('get_parental_controls', {
+        p_user_id: user.id,
+      });
       if (error) throw error;
-      return data;
+      return Array.isArray(data) ? data[0] ?? null : data;
     },
     enabled: !!user,
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useDisableParentalControl() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (pin: string) => {
+      const { data, error } = await supabase.functions.invoke('verify-parental-pin', {
+        body: { action: 'disable', pin },
+      });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error || 'DISABLE_FAILED');
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['parental-control', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['is-minor', user?.id] });
+    },
   });
 }
 
@@ -40,12 +59,13 @@ export function useSetParentalPin() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ pin, allowedCategories }: { pin: string; allowedCategories?: string[] }) => {
+    mutationFn: async ({ pin, currentPin, allowedCategories }: { pin: string; currentPin?: string; allowedCategories?: string[] }) => {
       // PIN is sent to the server — hashing happens server-side only
       const { data, error } = await supabase.functions.invoke('verify-parental-pin', {
         body: {
           action: 'set',
           pin,
+          current_pin: currentPin,
           allowed_categories: allowedCategories || ALLOWED_MINOR_CATEGORIES as unknown as string[],
         },
       });

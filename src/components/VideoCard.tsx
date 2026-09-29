@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { guessVideoMime } from '@/lib/videoCompat';
 import { useQualityTracker } from '@/hooks/useQualityTracker';
+import { useAccessibilityPreferences } from '@/hooks/useAccessibilityPreferences';
 
 
 interface VideoCardProps {
@@ -35,6 +36,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
     authorId: (video as any).user_id ?? null,
     durationMs: (video.duration_seconds || 0) * 1000,
   });
+  const { autoplayVideos } = useAccessibilityPreferences();
 
   // Quality enter/leave driven by isActive
   useEffect(() => {
@@ -48,7 +50,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
     const vid = videoRef.current;
     if (!vid) return;
 
-    if (isActive) {
+    if (isActive && autoplayVideos) {
       // Force muted for autoplay policy compliance
       vid.muted = true;
       // Reset to start if needed
@@ -73,12 +75,12 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
       vid.currentTime = 0;
       setIsPlaying(false);
     }
-  }, [isActive]);
+  }, [autoplayVideos, isActive]);
 
   // Auto-start on mount if active (ensures first video plays immediately)
   useEffect(() => {
     const vid = videoRef.current;
-    if (!isActive || !vid) return;
+    if (!isActive || !autoplayVideos || !vid) return;
 
     // Small delay to let the DOM settle after mount
     const timer = setTimeout(() => {
@@ -87,7 +89,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
       setIsPlaying(true);
     }, 150);
     return () => clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoplayVideos, isActive]);
 
 
   // Track watch time
@@ -172,7 +174,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         className="w-full h-full object-cover"
         loop
         muted
-        autoPlay
+        autoPlay={autoplayVideos}
         playsInline
         // @ts-ignore – legacy iOS attribute
         webkit-playsinline=""
@@ -185,7 +187,7 @@ export function VideoCard({ video, isActive }: VideoCardProps) {
         onPause={() => setIsPlaying(false)}
         onLoadedData={() => {
           // Ensure autoplay fires once data is available
-          if (isActive && videoRef.current?.paused) {
+          if (autoplayVideos && isActive && videoRef.current?.paused) {
             videoRef.current.play().catch(() => {});
           }
         }}

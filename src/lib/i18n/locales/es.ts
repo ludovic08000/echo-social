@@ -132,7 +132,7 @@ const es = {
   'wellbeing.bedtimeDescSuffix': 'para parar',
   'wellbeing.hour': 'Hora',
   'wellbeing.focusMode': 'Modo enfoque',
-  'wellbeing.focusDesc': 'Oculta notificaciones y feed durante 25 min',
+  'wellbeing.focusDesc': 'Reduce distracciones ocultando historias, directos, sugerencias y sonidos de notificación',
   'wellbeing.hideCounts': 'Ocultar contadores',
   'wellbeing.hideCountsDesc': 'Ocultar número de likes y reacciones',
   'wellbeing.grayscale': 'Escala de grises tras límite',

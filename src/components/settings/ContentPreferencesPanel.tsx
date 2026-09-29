@@ -7,40 +7,27 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
-import { saveFeedPrefs, syncFeedPrefsFromServer } from '@/lib/feedPreferences';
+import { loadContentPrefs, loadFeedWeights, type ContentPrefs, type FeedWeights } from '@/lib/feedAlgorithm';
+import { CONTENT_PREFS_CHANGED_EVENT, saveFeedPrefs, syncFeedPrefsFromServer } from '@/lib/feedPreferences';
 import { useAuth } from '@/lib/auth';
+import { toast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
-type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
+type FeedAlgorithm = ContentPrefs['feedAlgorithm'];
 
-interface ContentPrefs {
-  feedAlgorithm: FeedAlgorithm;
-  aiSummariesEnabled: boolean;
-  autoTranslateEnabled: boolean;
-  sensitiveContentFilter: boolean;
-  mutedKeywords: string[];
-  priorityTopics: string[];
-  diversityBoost: number;
-  seenPostsHide: boolean;
-  viralContentReduce: boolean;
-}
-
-const defaultPrefs: ContentPrefs = {
-  feedAlgorithm: 'smart',
-  aiSummariesEnabled: true,
-  autoTranslateEnabled: false,
-  sensitiveContentFilter: true,
-  mutedKeywords: [],
-  priorityTopics: [],
-  diversityBoost: 50,
-  seenPostsHide: false,
-  viralContentReduce: false,
-};
-
-const topicKeys = [
-  'content.topicTech', 'content.topicSport', 'content.topicArt', 'content.topicMusic',
-  'content.topicCooking', 'content.topicTravel', 'content.topicScience', 'content.topicFashion',
-  'content.topicCinema', 'content.topicLiterature', 'content.topicGaming', 'content.topicNature',
+const topicOptions = [
+  { value: 'technology', labelKey: 'content.topicTech' },
+  { value: 'sport', labelKey: 'content.topicSport' },
+  { value: 'art', labelKey: 'content.topicArt' },
+  { value: 'music', labelKey: 'content.topicMusic' },
+  { value: 'cooking', labelKey: 'content.topicCooking' },
+  { value: 'travel', labelKey: 'content.topicTravel' },
+  { value: 'science', labelKey: 'content.topicScience' },
+  { value: 'fashion', labelKey: 'content.topicFashion' },
+  { value: 'cinema', labelKey: 'content.topicCinema' },
+  { value: 'literature', labelKey: 'content.topicLiterature' },
+  { value: 'gaming', labelKey: 'content.topicGaming' },
+  { value: 'nature', labelKey: 'content.topicNature' },
 ];
 
 export function ContentPreferencesPanel() {
@@ -52,64 +39,73 @@ export function ContentPreferencesPanel() {
     { id: 'friends_first', label: t('content.friendsFirst'), desc: t('content.friendsFirstDesc'), icon: <Users className="w-4 h-4" /> },
   ];
 
-  const [prefs, setPrefs] = useState<ContentPrefs>(() => {
-    try {
-      const saved = localStorage.getItem('content-prefs');
-      return saved ? { ...defaultPrefs, ...JSON.parse(saved) } : defaultPrefs;
-    } catch {
-      return defaultPrefs;
-    }
-  });
+  const [prefs, setPrefs] = useState<ContentPrefs>(loadContentPrefs);
   const [feedWeights, setFeedWeights] = useState<FeedWeights>(loadFeedWeights);
   const [newKeyword, setNewKeyword] = useState('');
 
   const { user } = useAuth();
+  const userId = user?.id;
+  const queryClient = useQueryClient();
   const hydratedRef = useRef(false);
 
   // Pull DB-backed prefs on mount, then re-hydrate UI from refreshed cache
   useEffect(() => {
-    if (!user) return;
+    hydratedRef.current = false;
+    if (!userId) return;
     let cancelled = false;
     (async () => {
-      await syncFeedPrefsFromServer(user.id);
+      await syncFeedPrefsFromServer(userId);
       if (cancelled) return;
       try {
-        const saved = localStorage.getItem('content-prefs');
-        if (saved) setPrefs(prev => ({ ...prev, ...JSON.parse(saved) }));
+        setPrefs(loadContentPrefs());
         const sw = localStorage.getItem('feed-weights');
         if (sw) setFeedWeights(prev => ({ ...prev, ...JSON.parse(sw) }));
-      } catch {}
+      } catch {
+        // Keep the current in-memory preferences if the cache is unavailable.
+      }
       hydratedRef.current = true;
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [userId]);
 
   // Persist server-side (debounced via effect) — local cache is updated inside saveFeedPrefs
   useEffect(() => {
     localStorage.setItem('content-prefs', JSON.stringify(prefs));
-    if (!user || !hydratedRef.current) return;
+    window.dispatchEvent(new CustomEvent(CONTENT_PREFS_CHANGED_EVENT, { detail: prefs }));
+    if (!userId || !hydratedRef.current) return;
     const t = setTimeout(() => {
-      void saveFeedPrefs(user.id, {
+      void saveFeedPrefs(userId, {
         feedAlgorithm: prefs.feedAlgorithm,
+        aiSummariesEnabled: prefs.aiSummariesEnabled,
+        autoTranslateEnabled: prefs.autoTranslateEnabled,
         diversityBoost: prefs.diversityBoost,
         mutedKeywords: prefs.mutedKeywords,
         priorityTopics: prefs.priorityTopics,
         viralContentReduce: prefs.viralContentReduce,
         sensitiveContentFilter: prefs.sensitiveContentFilter,
         seenPostsHide: prefs.seenPostsHide,
-      }).catch(() => {});
+      }).then(() => {
+        void queryClient.invalidateQueries({ queryKey: ['posts', 'friends-feed'] });
+      }).catch(() => {
+        toast({ title: 'Préférences non enregistrées', description: 'La synchronisation avec votre compte a échoué.', variant: 'destructive' });
+      });
     }, 500);
     return () => clearTimeout(t);
-  }, [prefs, user]);
+  }, [prefs, queryClient, userId]);
 
   useEffect(() => {
     localStorage.setItem('feed-weights', JSON.stringify(feedWeights));
-    if (!user || !hydratedRef.current) return;
+    window.dispatchEvent(new CustomEvent(CONTENT_PREFS_CHANGED_EVENT));
+    if (!userId || !hydratedRef.current) return;
     const t = setTimeout(() => {
-      void saveFeedPrefs(user.id, { weights: feedWeights }).catch(() => {});
+      void saveFeedPrefs(userId, { weights: feedWeights }).then(() => {
+        void queryClient.invalidateQueries({ queryKey: ['posts', 'friends-feed'] });
+      }).catch(() => {
+        toast({ title: 'Pondération non enregistrée', variant: 'destructive' });
+      });
     }, 500);
     return () => clearTimeout(t);
-  }, [feedWeights, user]);
+  }, [feedWeights, queryClient, userId]);
 
   const update = (patch: Partial<ContentPrefs>) => {
     setPrefs(prev => ({ ...prev, ...patch }));
@@ -127,11 +123,11 @@ export function ContentPreferencesPanel() {
     update({ mutedKeywords: prefs.mutedKeywords.filter(k => k !== kw) });
   };
 
-  const toggleTopic = (topicKey: string) => {
-    if (prefs.priorityTopics.includes(topicKey)) {
-      update({ priorityTopics: prefs.priorityTopics.filter(t => t !== topicKey) });
+  const toggleTopic = (topic: string) => {
+    if (prefs.priorityTopics.includes(topic)) {
+      update({ priorityTopics: prefs.priorityTopics.filter(value => value !== topic) });
     } else {
-      update({ priorityTopics: [...prefs.priorityTopics, topicKey] });
+      update({ priorityTopics: [...prefs.priorityTopics, topic] });
     }
   };
 
@@ -173,18 +169,18 @@ export function ContentPreferencesPanel() {
           {t('content.priorityTopics')}
         </h3>
         <div className="flex flex-wrap gap-1.5">
-          {topicKeys.map(topicKey => (
+          {topicOptions.map(topic => (
             <button
-              key={topicKey}
-              onClick={() => toggleTopic(topicKey)}
+              key={topic.value}
+              onClick={() => toggleTopic(topic.value)}
               className={cn(
                 "px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border",
-                prefs.priorityTopics.includes(topicKey)
+                prefs.priorityTopics.includes(topic.value)
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-secondary/30 text-muted-foreground border-border/30 hover:bg-secondary/50"
               )}
             >
-              {t(topicKey)}
+              {t(topic.labelKey)}
             </button>
           ))}
         </div>
@@ -301,6 +297,13 @@ export function ContentPreferencesPanel() {
             <p className="text-[11px] text-muted-foreground/70 mt-0.5">{t('content.sensitiveFilterDesc')}</p>
           </div>
           <Switch checked={prefs.sensitiveContentFilter} onCheckedChange={v => update({ sensitiveContentFilter: v })} />
+        </div>
+        <div className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/30 transition-colors">
+          <div>
+            <Label className="text-sm font-medium">Masquer les publications déjà vues</Label>
+            <p className="text-[11px] text-muted-foreground/70 mt-0.5">Évite de reproposer les contenus déjà consultés.</p>
+          </div>
+          <Switch checked={prefs.seenPostsHide} onCheckedChange={v => update({ seenPostsHide: v })} />
         </div>
       </div>
     </div>

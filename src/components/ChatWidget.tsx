@@ -73,6 +73,7 @@ import { ForwardMessageDialog } from '@/components/messages/ForwardMessageDialog
 import { ShareContentPicker } from '@/components/messages/ShareContentPicker';
 import { DisappearingMessagesDialog } from '@/components/messages/DisappearingMessagesDialog';
 import { ViewOnceMessage } from '@/components/messages/ViewOnceMessage';
+import { isGhostModeEnabled } from '@/lib/privacyPreferences';
 
 // ─── Utils ───────────────────────────────────────────────
 function formatMessageTime(dateStr: string) {
@@ -887,6 +888,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
 
     const markReadableMessages = () => {
       if (document.visibilityState !== 'visible') return;
+      if (isGhostModeEnabled(user.id)) return;
       const readableIncomingIds = messages
         .filter((message) =>
           message.sender_id !== user.id

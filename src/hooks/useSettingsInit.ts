@@ -7,6 +7,11 @@ import {
   reapplyAppearance,
 } from '@/hooks/useUXMode';
 import type { UXMode } from '@/hooks/useUXMode';
+import {
+  ACCESSIBILITY_CHANGED_EVENT,
+  applyAccessibilityPreferences,
+  readAccessibilityPreferences,
+} from '@/lib/accessibilityPreferences';
 
 /** Get mode-scoped key, with fallback to global */
 function modeGet(mode: UXMode, key: string): string | null {
@@ -19,34 +24,23 @@ function modeGet(mode: UXMode, key: string): string | null {
  */
 export function useSettingsInit(currentMode?: UXMode) {
   const mode: UXMode = currentMode || (localStorage.getItem('ux-mode') as UXMode) || 'focus';
-  const [animationsDisabled, setAnimationsDisabled] = useState(() => areAppearanceAnimationsDisabled(mode));
+  const [animationsDisabled, setAnimationsDisabled] = useState(() =>
+    areAppearanceAnimationsDisabled(mode) || readAccessibilityPreferences().reducedMotion
+  );
 
   useEffect(() => {
-    const root = document.documentElement;
-
     const applyRuntimeAppearance = () => {
       reapplyAppearance(mode);
-      setAnimationsDisabled(areAppearanceAnimationsDisabled(mode));
+      setAnimationsDisabled(
+        areAppearanceAnimationsDisabled(mode) || readAccessibilityPreferences().reducedMotion
+      );
     };
 
     // ── Apply theme + accent + surfaces via the single source of truth ──
     applyRuntimeAppearance();
 
     // ── Accessibility prefs ──
-    try {
-      const a11y = localStorage.getItem('accessibility-prefs');
-      if (a11y) {
-        const prefs = JSON.parse(a11y);
-        root.classList.toggle('reduced-motion', !!prefs.reducedMotion);
-        root.classList.toggle('high-contrast', !!prefs.highContrast);
-        root.classList.toggle('large-targets', !!prefs.largeClickTargets);
-        if (prefs.lineSpacing) {
-          root.style.setProperty('--line-height-factor', String(prefs.lineSpacing));
-        }
-      }
-    } catch {
-      // ignore parse errors
-    }
+    applyAccessibilityPreferences();
 
     // ── Feed customization ──
     try {
@@ -64,6 +58,10 @@ export function useSettingsInit(currentMode?: UXMode) {
     const onAppearanceChanged = (event: Event) => {
       const changedMode = (event as CustomEvent<{ mode?: UXMode }>).detail?.mode;
       if (!changedMode || changedMode === mode) applyRuntimeAppearance();
+    };
+    const onAccessibilityChanged = () => {
+      applyAccessibilityPreferences();
+      applyRuntimeAppearance();
     };
     const onStorage = (event: StorageEvent) => {
       const legacyKeys = [
@@ -85,6 +83,7 @@ export function useSettingsInit(currentMode?: UXMode) {
       media.addListener(applyRuntimeAppearance);
     }
     window.addEventListener(APPEARANCE_CHANGED_EVENT, onAppearanceChanged);
+    window.addEventListener(ACCESSIBILITY_CHANGED_EVENT, onAccessibilityChanged);
     window.addEventListener('storage', onStorage);
 
     const dynamicTimer = window.setInterval(() => {
@@ -100,6 +99,7 @@ export function useSettingsInit(currentMode?: UXMode) {
         media.removeListener(applyRuntimeAppearance);
       }
       window.removeEventListener(APPEARANCE_CHANGED_EVENT, onAppearanceChanged);
+      window.removeEventListener(ACCESSIBILITY_CHANGED_EVENT, onAccessibilityChanged);
       window.removeEventListener('storage', onStorage);
       window.clearInterval(dynamicTimer);
     };

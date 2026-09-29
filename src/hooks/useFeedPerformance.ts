@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { isAnalyticsEnabled } from '@/lib/privacyPreferences';
 
 // Unique session ID per tab
 const SESSION_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -44,7 +45,10 @@ export function useFeedPerformance() {
 
   // Flush batched metrics to DB
   const flush = useCallback(async () => {
-    if (!user || batchRef.current.length === 0) return;
+    if (!user || !isAnalyticsEnabled(user.id) || batchRef.current.length === 0) {
+      if (user && !isAnalyticsEnabled(user.id)) batchRef.current = [];
+      return;
+    }
     const items = batchRef.current.splice(0);
     try {
       await supabase.from('feed_performance_metrics').insert(
@@ -63,11 +67,12 @@ export function useFeedPerformance() {
 
   // Queue a metric (auto-flush every 30s or at 20 items)
   const track = useCallback((type: string, value: number, metadata?: Record<string, unknown>) => {
+    if (!user?.id || !isAnalyticsEnabled(user.id)) return;
     batchRef.current.push({ metric_type: type, value, metadata });
     if (batchRef.current.length >= 20) {
       flush();
     }
-  }, [flush]);
+  }, [flush, user?.id]);
 
   // RPC timings are emitted by the data hook after the response settles. Keep
   // the telemetry on this existing 30-second batch so measurement never adds

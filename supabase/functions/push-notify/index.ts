@@ -10,6 +10,10 @@ import {
   safeServerErrorMeta,
   safeServerLog,
 } from "../_shared/aegis-privacy.ts";
+import {
+  configuredServerSecretKeys,
+  isAuthorizedServerRequest,
+} from "../_shared/server-secret-auth.ts";
 
 function b64urlEncode(buf: ArrayBuffer | Uint8Array): string {
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
@@ -148,8 +152,28 @@ Deno.serve(async (req) => {
 
   try {
     const { requireAuthenticated } = await import("../_shared/auth-guard.ts");
-    const authed = await requireAuthenticated(req, headers);
+    const legacyServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const serverSecretKeys = configuredServerSecretKeys(
+      Deno.env.get("SUPABASE_SECRET_KEYS"),
+      legacyServiceRoleKey,
+    );
+    const supabaseServiceKey =
+      legacyServiceRoleKey ??
+      serverSecretKeys.find((key) => key.startsWith("sb_secret_")) ??
+      serverSecretKeys[0];
+    const serverRequest = isAuthorizedServerRequest(req.headers, serverSecretKeys);
+    const authed = serverRequest
+      ? { ok: true as const, userId: "service_role", token: supabaseServiceKey ?? "" }
+      : await requireAuthenticated(req, headers);
     if (!("userId" in authed)) return authed.response;
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return new Response(JSON.stringify({ error: "SERVER_CONFIGURATION_ERROR" }), {
+        status: 500,
+        headers: { ...headers, "Content-Type": "application/json" },
+      });
+    }
 
     const request = await req.json().catch(() => ({})) as Record<string, unknown>;
     const userId = typeof request.user_id === "string" ? request.user_id : "";
@@ -162,10 +186,10 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      supabaseUrl,
+      supabaseServiceKey,
     );
-    if (userId !== authed.userId) {
+    if (authed.userId !== "service_role" && userId !== authed.userId) {
       const { data: isAdmin } = await supabase.rpc("has_role", {
         _user_id: authed.userId,
         _role: "admin",
@@ -173,6 +197,44 @@ Deno.serve(async (req) => {
       if (isAdmin !== true) {
         return new Response(JSON.stringify({ error: "FORBIDDEN" }), {
           status: 403,
+          headers: { ...headers, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (kind !== "security_alert" && kind !== "new_device") {
+      const [{ data: settings }, { data: wellbeing }] = await Promise.all([
+        supabase
+          .from("notification_settings")
+          .select("messages_enabled,friend_requests_enabled,likes_enabled,comments_enabled,story_views_enabled,close_friends_posts_enabled")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("wellbeing_preferences")
+          .select("focus_mode_enabled")
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
+      if (kind !== "call_incoming" && wellbeing?.focus_mode_enabled === true) {
+        return new Response(JSON.stringify({ status: "ok", sent: 0, reason: "focus_mode" }), {
+          headers: { ...headers, "Content-Type": "application/json" },
+        });
+      }
+      const enabled = kind === "message" || kind === "call_incoming"
+        ? settings?.messages_enabled !== false
+        : kind === "friend_request"
+          ? settings?.friend_requests_enabled !== false
+          : kind === "like" || kind === "reaction"
+            ? settings?.likes_enabled !== false
+            : kind === "comment"
+              ? settings?.comments_enabled !== false
+              : kind === "story_view"
+                ? settings?.story_views_enabled !== false
+                : kind === "close_friend_post"
+                  ? settings?.close_friends_posts_enabled !== false
+                  : true;
+      if (!enabled) {
+        return new Response(JSON.stringify({ status: "ok", sent: 0, reason: "disabled_by_user" }), {
           headers: { ...headers, "Content-Type": "application/json" },
         });
       }

@@ -69,7 +69,7 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
     { id: 'accessibility', label: t('settings.accessibility'), desc: t('settings.accessibilityDesc'), icon: Accessibility, guestAllowed: true },
     { id: 'privacy', label: t('settings.privacy'), desc: t('settings.privacyDesc'), icon: Shield, guestAllowed: false },
     { id: 'notifications', label: t('settings.notifications'), desc: t('settings.notificationsDesc'), icon: Bell, guestAllowed: false },
-    { id: 'parental', label: 'Contrôle parental', desc: 'Code PIN et filtrage de contenu', icon: Baby, guestAllowed: true },
+    { id: 'parental', label: 'Contrôle parental', desc: 'Code PIN et filtrage de contenu', icon: Baby, guestAllowed: false },
     { id: 'devices', label: 'Appareils connectés', desc: 'Gérer et révoquer vos appareils', icon: Smartphone, guestAllowed: false },
   ];
 

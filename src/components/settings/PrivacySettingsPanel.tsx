@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { KeyBackupPanel } from '@/components/KeyBackupPanel';
 import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
-import { usePrivacySettings, useUpdatePrivacySettings } from '@/hooks/usePrivacySettings';
+import { usePrivacySettings, useUpdatePrivacySettings, type PrivacySettingsUpdate } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
 import { AccountDeletionSection, DataExportSection } from './AccountManagementSections';
 import { Label } from '@/components/ui/label';
@@ -201,9 +201,9 @@ export function PrivacySettingsPanel() {
   const { data: settings, isLoading } = usePrivacySettings();
   const updateSettings = useUpdatePrivacySettings();
 
-  const handleUpdate = async (key: string, value: string | boolean) => {
+  const saveSettings = async (updates: PrivacySettingsUpdate) => {
     try {
-      await updateSettings.mutateAsync({ [key]: value });
+      await updateSettings.mutateAsync(updates);
       toast({ title: 'Paramètre mis à jour' });
     } catch {
       toast({
@@ -212,6 +212,18 @@ export function PrivacySettingsPanel() {
         variant: 'destructive',
       });
     }
+  };
+
+  const handleUpdate = async (key: keyof PrivacySettingsUpdate, value: string | boolean) => {
+    await saveSettings({ [key]: value } as PrivacySettingsUpdate);
+  };
+
+  const handleAccountMode = async (mode: 'public' | 'friends') => {
+    await saveSettings({
+      profile_visibility: mode,
+      posts_visibility: mode,
+      friends_list_visibility: mode,
+    });
   };
 
   if (isLoading) {
@@ -265,11 +277,8 @@ export function PrivacySettingsPanel() {
         </div>
         <div className="pl-7 grid grid-cols-2 gap-3">
           <button
-            onClick={() => {
-              handleUpdate('profile_visibility', 'public');
-              handleUpdate('posts_visibility', 'public');
-              handleUpdate('friends_list_visibility', 'public');
-            }}
+            onClick={() => void handleAccountMode('public')}
+            disabled={updateSettings.isPending}
             className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all h-full ${
               settings.profile_visibility === 'public'
                 ? 'border-primary bg-primary/10 shadow-sm'
@@ -283,11 +292,8 @@ export function PrivacySettingsPanel() {
             </p>
           </button>
           <button
-            onClick={() => {
-              handleUpdate('profile_visibility', 'friends');
-              handleUpdate('posts_visibility', 'friends');
-              handleUpdate('friends_list_visibility', 'friends');
-            }}
+            onClick={() => void handleAccountMode('friends')}
+            disabled={updateSettings.isPending}
             className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all h-full ${
               settings.profile_visibility === 'friends'
                 ? 'border-primary bg-primary/10 shadow-sm'

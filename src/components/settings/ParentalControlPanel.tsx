@@ -1,31 +1,42 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Shield, Lock, Check, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/hooks/use-toast';
-import { useParentalControl, useSetParentalPin, useVerifyParentalPin, CATEGORY_LABELS, ALLOWED_MINOR_CATEGORIES, PIN_MIN_LENGTH, PIN_MAX_LENGTH } from '@/hooks/useParentalControl';
+import { useDisableParentalControl, useParentalControl, useSetParentalPin, useVerifyParentalPin, CATEGORY_LABELS, ALLOWED_MINOR_CATEGORIES, PIN_MIN_LENGTH, PIN_MAX_LENGTH, LEGACY_PIN_MIN_LENGTH } from '@/hooks/useParentalControl';
 
 export function ParentalControlPanel() {
   const { data: parentalControl, isLoading } = useParentalControl();
   const setPin = useSetParentalPin();
   const verifyPin = useVerifyParentalPin();
+  const disableControl = useDisableParentalControl();
 
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [showPin, setShowPin] = useState(false);
-  const [unlocked, setUnlocked] = useState(!parentalControl);
+  const [unlocked, setUnlocked] = useState(false);
   const [categories, setCategories] = useState<string[]>(
     parentalControl?.allowed_categories || [...ALLOWED_MINOR_CATEGORIES]
   );
+  const hydratedControlRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (isLoading) return;
+    const controlId = parentalControl?.id ?? null;
+    if (hydratedControlRef.current === controlId) return;
+    hydratedControlRef.current = controlId;
+    setUnlocked(!parentalControl || parentalControl.is_active === false);
+    setCategories(parentalControl?.allowed_categories || [...ALLOWED_MINOR_CATEGORIES]);
+  }, [isLoading, parentalControl]);
 
   const hasExistingPin = !!parentalControl;
 
   const handleUnlock = async () => {
-    if (!currentPin || currentPin.length < PIN_MIN_LENGTH) {
-      toast({ title: 'Code invalide', description: `Entrez le code PIN à ${PIN_MIN_LENGTH} chiffres minimum`, variant: 'destructive' });
+    if (!currentPin || currentPin.length < LEGACY_PIN_MIN_LENGTH) {
+      toast({ title: 'Code invalide', description: `Entrez le code PIN à ${LEGACY_PIN_MIN_LENGTH} chiffres minimum`, variant: 'destructive' });
       return;
     }
     try {
@@ -57,11 +68,37 @@ export function ParentalControlPanel() {
       return;
     }
 
-    await setPin.mutateAsync({ pin: newPin, allowedCategories: categories });
-    toast({ title: '✅ Contrôle parental activé', description: 'Le code PIN et les catégories ont été enregistrés.' });
-    setNewPin('');
-    setConfirmPin('');
-    setCurrentPin('');
+    try {
+      await setPin.mutateAsync({
+        pin: newPin,
+        currentPin: hasExistingPin ? currentPin : undefined,
+        allowedCategories: categories,
+      });
+      toast({ title: '✅ Contrôle parental activé', description: 'Le code PIN et les catégories ont été enregistrés.' });
+      setNewPin('');
+      setConfirmPin('');
+      setCurrentPin('');
+    } catch (error) {
+      toast({
+        title: 'Enregistrement impossible',
+        description: error instanceof Error ? error.message : 'Réessayez dans quelques instants.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDisable = async () => {
+    if (!currentPin || currentPin.length < LEGACY_PIN_MIN_LENGTH) {
+      toast({ title: 'Entrez le PIN parental actuel pour désactiver la protection.', variant: 'destructive' });
+      return;
+    }
+    try {
+      await disableControl.mutateAsync(currentPin);
+      toast({ title: 'Contrôle parental désactivé' });
+      setCurrentPin('');
+    } catch {
+      toast({ title: 'PIN incorrect ou désactivation impossible', variant: 'destructive' });
+    }
   };
 
   const toggleCategory = (cat: string) => {
@@ -97,7 +134,7 @@ export function ParentalControlPanel() {
             <Button variant="ghost" size="icon" onClick={() => setShowPin(!showPin)}>
               {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </Button>
-            <Button onClick={handleUnlock} disabled={currentPin.length < PIN_MIN_LENGTH}>
+            <Button onClick={handleUnlock} disabled={currentPin.length < LEGACY_PIN_MIN_LENGTH}>
               Déverrouiller
             </Button>
           </div>
@@ -184,6 +221,25 @@ export function ParentalControlPanel() {
           </>
         )}
       </Button>
+
+      {hasExistingPin && parentalControl?.is_active && (
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 space-y-3">
+          <div>
+            <Label className="text-sm font-semibold">Désactiver la protection</Label>
+            <p className="mt-1 text-xs text-muted-foreground">Saisissez le PIN parental actuel ci-dessous avant de désactiver.</p>
+          </div>
+          <Input
+            type={showPin ? 'text' : 'password'}
+            value={currentPin}
+            onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, '').slice(0, PIN_MAX_LENGTH))}
+            placeholder="PIN parental actuel"
+            inputMode="numeric"
+          />
+          <Button variant="destructive" className="w-full" onClick={handleDisable} disabled={disableControl.isPending}>
+            {disableControl.isPending ? 'Désactivation…' : 'Désactiver le contrôle parental'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

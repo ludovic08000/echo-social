@@ -2,6 +2,12 @@ export type AegisPushKind =
   | "message"
   | "call_incoming"
   | "friend_request"
+  | "like"
+  | "reaction"
+  | "comment"
+  | "story_view"
+  | "close_friend_post"
+  | "sale"
   | "security_alert"
   | "new_device"
   | "notification";
@@ -24,6 +30,42 @@ const PUSH_TEMPLATES: Record<AegisPushKind, { title: string; body: string; url: 
     body: "Une activité vous attend dans ForSure.",
     url: "/notifications",
     tag: "forsure-friend-request",
+  },
+  like: {
+    title: "Nouvelle réaction",
+    body: "Une activité vous attend dans ForSure.",
+    url: "/notifications",
+    tag: "forsure-like",
+  },
+  reaction: {
+    title: "Nouvelle réaction",
+    body: "Une activité vous attend dans ForSure.",
+    url: "/notifications",
+    tag: "forsure-reaction",
+  },
+  comment: {
+    title: "Nouveau commentaire",
+    body: "Une activité vous attend dans ForSure.",
+    url: "/notifications",
+    tag: "forsure-comment",
+  },
+  story_view: {
+    title: "Nouvelle vue",
+    body: "Une activité vous attend dans ForSure.",
+    url: "/notifications",
+    tag: "forsure-story-view",
+  },
+  close_friend_post: {
+    title: "Nouvelle publication",
+    body: "Un ami proche vient de publier dans ForSure.",
+    url: "/feed",
+    tag: "forsure-close-friend-post",
+  },
+  sale: {
+    title: "Activité Marketplace",
+    body: "Une mise à jour vous attend dans ForSure.",
+    url: "/marketplace",
+    tag: "forsure-sale",
   },
   security_alert: {
     title: "Alerte de sécurité",
