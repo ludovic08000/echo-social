@@ -263,7 +263,6 @@ export default function Feed() {
                   </div>
                 </div>
                 <CreatePost />
-                <FeedZeusCard />
               </div>
             ) : (
               <div className="space-y-5">
