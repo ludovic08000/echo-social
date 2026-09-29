@@ -160,7 +160,8 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     removeReaction.mutate(postId);
   }, [user, activeReaction, postId, removeReaction, isBusy, lockInteraction]);
 
-  // Tap always opens picker (to choose or change reaction)
+  // Un seul appui = 👍 direct ; si déjà réagi, l'appui ouvre le sélecteur
+  // pour REMPLACER la réaction (jamais en accumuler plusieurs).
   const handleTriggerClick = useCallback((e?: React.MouseEvent | React.PointerEvent) => {
     if (interactionLockRef.current || isBusy) {
       e?.preventDefault();
@@ -170,8 +171,17 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       navigate('/signup', { state: { from: window.location.pathname } });
       return;
     }
+    if (!activeReaction) {
+      // Premier appui : réaction 👍 immédiate, sans ouvrir le menu
+      setOptimisticReaction('like');
+      lockInteraction();
+      haptic('medium');
+      addReaction.mutate({ postId, reactionType: 'like' });
+      return;
+    }
+    // Déjà réagi : ouvrir le sélecteur pour changer (remplacement, pas cumul)
     setIsOpen(true);
-  }, [isBusy, user, navigate]);
+  }, [isBusy, user, navigate, activeReaction, postId, addReaction, lockInteraction]);
 
   const emojiVariants = {
     hidden: { scale: 0, y: 10 },
