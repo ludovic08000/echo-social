@@ -27,6 +27,7 @@ type AegisCommitReceipt = {
   message_id: string;
   request_digest: string;
   existing: boolean;
+  archive_durable: boolean;
   delivery_state: 'sent' | 'blocked' | 'partial';
   blocked_recipients: AegisBlockedRecipient[];
 };
@@ -53,6 +54,7 @@ export type AegisSendResult = {
   copies: FanoutCopyRow[];
   retriedStaleRoute: boolean;
   routeVersion: string;
+  archiveDurable: boolean;
   deliveryState: 'sent' | 'blocked' | 'partial' | null;
   blockedRecipients: AegisBlockedRecipient[];
 };
@@ -127,6 +129,7 @@ function parseCommitReceipt(data: unknown, expectedMessageId: string): AegisComm
     message_id?: unknown;
     request_digest?: unknown;
     existing?: unknown;
+    archive_durable?: unknown;
     delivery_state?: unknown;
     blocked_recipients?: Array<{ user_id?: unknown; reason?: unknown }>;
   };
@@ -165,6 +168,9 @@ function parseCommitReceipt(data: unknown, expectedMessageId: string): AegisComm
     message_id: value.message_id,
     request_digest: value.request_digest,
     existing: value.existing,
+    // Backward compatible with a server that predates atomic archive commit:
+    // false keeps the existing client-side durability repair enabled.
+    archive_durable: value.archive_durable === true,
     delivery_state: deliveryState,
     blocked_recipients: blockedRecipients,
   };
@@ -256,6 +262,7 @@ export async function sendMessageWithAegisRetry(
       copies: [],
       retriedStaleRoute: false,
       routeVersion,
+      archiveDurable: false,
       deliveryState: null,
       blockedRecipients: [],
     };
@@ -275,6 +282,7 @@ export async function sendMessageWithAegisRetry(
         copies,
         retriedStaleRoute,
         routeVersion,
+        archiveDurable: receipt.archive_durable,
         deliveryState: receipt.delivery_state,
         blockedRecipients: receipt.blocked_recipients,
       };
@@ -302,6 +310,7 @@ export async function sendMessageWithAegisRetry(
         copies,
         retriedStaleRoute: true,
         routeVersion,
+        archiveDurable: false,
         deliveryState: null,
         blockedRecipients: [],
       };
@@ -321,6 +330,7 @@ export async function sendMessageWithAegisRetry(
           copies,
           retriedStaleRoute,
           routeVersion,
+          archiveDurable: confirmedReceipt.archive_durable,
           deliveryState: confirmedReceipt.delivery_state,
           blockedRecipients: confirmedReceipt.blocked_recipients,
         };
@@ -335,6 +345,7 @@ export async function sendMessageWithAegisRetry(
         copies,
         retriedStaleRoute,
         routeVersion,
+        archiveDurable: false,
         deliveryState: null,
         blockedRecipients: [],
       };
@@ -347,6 +358,7 @@ export async function sendMessageWithAegisRetry(
       copies,
       retriedStaleRoute,
       routeVersion,
+      archiveDurable: false,
       deliveryState: null,
       blockedRecipients: [],
     };
@@ -361,6 +373,7 @@ export async function sendMessageWithAegisRetry(
     copies,
     retriedStaleRoute: true,
     routeVersion,
+    archiveDurable: false,
     deliveryState: null,
     blockedRecipients: [],
   };

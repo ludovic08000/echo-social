@@ -496,17 +496,25 @@ export async function sendAegisOutboundMessage(
   // IndexedDB work on resource-constrained mobile browsers.
   void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
   if (archiveRequired) {
-    const archiveDurable = await traceBlock('ARCHIVE_FINALIZE', async () => {
-      const { archiveBubbleForUser } = await import('@/lib/messaging/archive/archiveKey');
-      return archiveBubbleForUser({
-        messageId: committedId,
-        conversationId: input.conversationId,
-        userId: input.senderUserId,
-        plaintext: input.plaintext,
-        ensureParent: true,
-      });
-    })
-      .catch(() => false);
+    let archiveDurable = result.archiveDurable;
+    if (archiveDurable) {
+      // The authoritative transaction persisted both encrypted archive rows.
+      // Avoid the former SELECT/UPSERT/SELECT/RPC round-trip chain.
+      trace('ARCHIVE_DURABLE_AT_COMMIT');
+    } else {
+      // Compatibility and repair path for an older server or an older row.
+      archiveDurable = await traceBlock('ARCHIVE_FINALIZE', async () => {
+        const { archiveBubbleForUser } = await import('@/lib/messaging/archive/archiveKey');
+        return archiveBubbleForUser({
+          messageId: committedId,
+          conversationId: input.conversationId,
+          userId: input.senderUserId,
+          plaintext: input.plaintext,
+          ensureParent: true,
+        });
+      })
+        .catch(() => false);
+    }
     trace(archiveDurable ? 'ARCHIVE_DURABLE' : 'ARCHIVE_REQUIRED', {}, archiveDurable ? 'info' : 'error');
     if (!archiveDurable) {
       // Le RPC est idempotent : conserver l'outbox permet de vérifier puis

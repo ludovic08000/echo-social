@@ -36,12 +36,13 @@ const REBUILT: FanoutCopyRow[] = [{
 const INITIAL_ROUTE_VERSION = 'route-version-initial';
 const REBUILT_ROUTE_VERSION = 'route-version-rebuilt';
 
-function receipt(existing = false) {
+function receipt(existing = false, archiveDurable?: boolean) {
   return {
     state: 'committed',
     message_id: INITIAL[0].message_id,
     request_digest: 'a'.repeat(64),
     existing,
+    ...(archiveDurable === undefined ? {} : { archive_durable: archiveDurable }),
   };
 }
 
@@ -68,6 +69,25 @@ beforeEach(() => {
 });
 
 describe('sendMessageWithAegisRetry', () => {
+  it('uses the atomic archive durability proof from the commit receipt', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: receipt(false, true), error: null });
+
+    const result = await sendMessageWithAegisRetry(args());
+
+    expect(result.error).toBeNull();
+    expect(result.archiveDurable).toBe(true);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps archive repair enabled for a legacy commit receipt', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: receipt(), error: null });
+
+    const result = await sendMessageWithAegisRetry(args());
+
+    expect(result.error).toBeNull();
+    expect(result.archiveDurable).toBe(false);
+  });
+
   it('rebuilds a stale route exactly once and commits the same message id', async () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'E2EE_DEVICE_LIST_STALE' } })
