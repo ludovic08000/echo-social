@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, FileText, Video, Radio, Bell, BookOpen, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles, Megaphone, Bot, Shield } from 'lucide-react';
+import { Home, Search, User, Settings, Plus, PlusCircle, MessageCircle, Users, Video, Radio, Bell, Trophy, Heart, Gamepad2, Tv, ShoppingBag, Brain, Compass, Sparkles, Megaphone, Bot, Shield } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -97,8 +97,6 @@ export function MobileNav() {
             <div className="bg-card/95 rounded-3xl border border-border/20 shadow-[var(--shadow-xl)] p-5">
               <div className="grid grid-cols-4 gap-2">
                 {[
-                  { path: '/groups', icon: Users, label: 'Groupes' },
-                  { path: '/pages', icon: FileText, label: 'Pages' },
                   { path: '/marketplace', icon: ShoppingBag, label: 'Market' },
                   { path: '/ads', icon: Megaphone, label: 'Pub Ads' },
                   { path: '/friends', icon: Heart, label: 'Amis' },
@@ -212,9 +210,6 @@ export function DesktopSidebar() {
     { path: '/notifications', icon: Bell, label: t('nav.notifications'), badge: unreadCount },
     { path: '/messages', icon: MessageCircle, label: t('nav.messages'), badge: unreadMessages, isChat: true },
     { path: '/friends', icon: Users, label: t('nav.friends'), badge: friendRequests },
-    { path: '/journal', icon: BookOpen, label: 'Journal' },
-    { path: '/groups', icon: Users, label: t('nav.groups') },
-    { path: '/pages', icon: FileText, label: t('nav.pages') },
     { path: '/channels', icon: Tv, label: 'Canaux TV' },
     { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
     { path: '/ai-engine', icon: Brain, label: 'Moteur IA' },
