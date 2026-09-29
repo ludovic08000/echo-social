@@ -81,7 +81,6 @@ export function useAddReaction() {
     onMutate: async ({ postId, reactionType }) => {
       await Promise.all([
         queryClient.cancelQueries({ queryKey: ['posts'] }),
-        queryClient.cancelQueries({ queryKey: ['post-top-reactions', postId] }),
       ]);
 
       const previousPosts = queryClient.getQueriesData({ queryKey: ['posts'] });
@@ -98,11 +97,6 @@ export function useAddReaction() {
         })
       );
 
-      queryClient.setQueryData<ReactionType[]>(['post-top-reactions', postId], (old = []) => {
-        const next = [reactionType, ...old.filter((type) => type !== reactionType)];
-        return Array.from(new Set(next)).slice(0, 2);
-      });
-
       return { previousPosts, postId };
     },
     onError: (_err, _vars, context) => {
@@ -113,7 +107,7 @@ export function useAddReaction() {
       }
     },
     onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['post-top-reactions', variables.postId] });
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
     },
   });
 }

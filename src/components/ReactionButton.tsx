@@ -4,14 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { useAddReaction, REACTION_EMOJIS, REACTION_LABELS, ReactionType } from '@/hooks/useReactions';
 import { useAuth } from '@/lib/auth';
-import { toast } from '@/hooks/use-toast';
 
 interface ReactionButtonProps {
   postId: string;
@@ -44,6 +38,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   const navigate = useNavigate();
   const addReaction = useAddReaction();
   const interactionLockRef = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const activeReaction = selectedReaction;
   const isBusy = addReaction.isPending || interactionLockRef.current;
@@ -51,6 +46,24 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
   useEffect(() => {
     if (!interactionLockRef.current) setSelectedReaction(currentReaction ?? null);
   }, [currentReaction]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setIsOpen(false);
+    };
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeWithEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeWithEscape);
+    };
+  }, [isOpen]);
 
   const handleReaction = useCallback((reactionType: ReactionType) => {
     if (interactionLockRef.current || isBusy) return;
@@ -91,7 +104,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       navigate('/signup', { state: { from: window.location.pathname } });
       return;
     }
-    setIsOpen(true);
+    setIsOpen((open) => !open);
   }, [isBusy, user, navigate]);
 
   const emojiVariants = {
@@ -104,54 +117,44 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     hover: { scale: 1.4, y: -8, transition: { type: 'spring' as const, stiffness: 400 } },
   };
 
-  const emojiPicker = (
-    <PopoverContent
-      side="top"
-      className="w-auto rounded-full border-border/30 bg-card/95 p-1.5 shadow-2xl backdrop-blur-xl"
-      sideOffset={8}
+  const emojiPicker = isOpen ? (
+    <motion.div
+      role="menu"
+      aria-label="Choisir une réaction"
+      initial={{ opacity: 0, y: 6, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.96 }}
+      className="absolute bottom-full left-1/2 z-50 mb-2 flex -translate-x-1/2 gap-1 rounded-full border border-border bg-popover p-1.5 shadow-2xl"
     >
-      <div className="flex gap-0.5">
         {(Object.keys(REACTION_EMOJIS) as ReactionType[]).map((type, i) => (
-          <motion.button
+          <Button
             key={type}
-            custom={i}
-            variants={emojiVariants}
-            initial="hidden"
-            animate="visible"
-            whileHover={!isBusy ? 'hover' : undefined}
-            whileTap={!isBusy ? { scale: 0.8 } : undefined}
+            type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => handleReaction(type)}
             disabled={isBusy}
             className={cn(
-              'group relative rounded-full p-1.5 transition-colors',
+              'group relative h-10 w-10 shrink-0 rounded-full p-0 text-[26px] transition-transform hover:-translate-y-1 hover:bg-accent',
               isBusy && 'pointer-events-none opacity-50',
               activeReaction === type && 'bg-accent ring-2 ring-primary/50'
             )}
             title={REACTION_LABELS[type]}
+            aria-label={REACTION_LABELS[type]}
+            role="menuitem"
           >
-            <span className="block text-[26px] drop-shadow-sm">{REACTION_EMOJIS[type]}</span>
-            <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-foreground/90 px-2 py-0.5 text-[10px] font-semibold text-background opacity-0 transition-opacity group-hover:opacity-100">
-              {REACTION_LABELS[type]}
-            </span>
-          </motion.button>
+            {REACTION_EMOJIS[type]}
+          </Button>
         ))}
-      </div>
-    </PopoverContent>
-  );
+    </motion.div>
+  ) : null;
 
   const reactionColor = activeReaction ? REACTION_COLORS[activeReaction] : '';
 
   if (variant === 'facebook') {
     return (
-      <Popover
-        open={isOpen}
-        onOpenChange={(open) => {
-          if (interactionLockRef.current || isBusy) return;
-          setIsOpen(open);
-        }}
-      >
-        <div className="relative flex-1">
-          <PopoverTrigger asChild>
+        <div ref={rootRef} className="relative flex-1">
+          <AnimatePresence>{emojiPicker}</AnimatePresence>
             <Button
               variant="ghost"
               size="sm"
@@ -184,25 +187,18 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
                 {activeReaction ? REACTION_LABELS[activeReaction] : 'Réagir'}
               </motion.span>
             </Button>
-          </PopoverTrigger>
         </div>
-        {emojiPicker}
-      </Popover>
     );
   }
 
   if (variant === 'instagram') {
     return (
-      <Popover
-        open={isOpen}
-        onOpenChange={(open) => {
-          if (interactionLockRef.current || isBusy) return;
-          setIsOpen(open);
-        }}
-      >
-        <div className="relative flex items-center">
-          <PopoverTrigger asChild>
-            <button
+        <div ref={rootRef} className="relative flex items-center">
+          <AnimatePresence>{emojiPicker}</AnimatePresence>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               onClick={handleTriggerClick}
               className={cn(
                 'flex h-10 w-10 items-center justify-center select-none transition-transform active:scale-75',
@@ -222,24 +218,14 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
               ) : (
                 <Heart className="h-[22px] w-[22px] text-foreground" />
               )}
-            </button>
-          </PopoverTrigger>
+            </Button>
         </div>
-        {emojiPicker}
-      </Popover>
     );
   }
 
   return (
-    <Popover
-      open={isOpen}
-      onOpenChange={(open) => {
-        if (interactionLockRef.current || isBusy) return;
-        setIsOpen(open);
-      }}
-    >
-      <div className="relative flex items-center">
-        <PopoverTrigger asChild>
+      <div ref={rootRef} className="relative flex items-center">
+        <AnimatePresence>{emojiPicker}</AnimatePresence>
           <Button
             variant="ghost"
             size="sm"
@@ -268,9 +254,6 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             )}
             <span className="text-sm">{reactionsCount || ''}</span>
           </Button>
-        </PopoverTrigger>
       </div>
-      {emojiPicker}
-    </Popover>
   );
 }
