@@ -1,42 +1,70 @@
 import { describe, expect, it } from 'vitest';
-import { buildFeedPage, createInitialFeedCursor } from '../feedPagination';
+import {
+  buildFeedPage,
+  createInitialFeedCursor,
+  prependFeedPageItem,
+  readRankedFeedPage,
+  replaceFeedPageItems,
+} from '../feedPagination';
 
-const item = (id: string, author: string, body = '') => ({ id, user_id: author, body });
+describe('server cursor feed pagination', () => {
+  it('starts without a client-computed offset', () => {
+    expect(createInitialFeedCursor()).toBeNull();
+  });
 
-describe('feed pagination reliability', () => {
-  it('advances by source rows even when client preferences filter a post', () => {
+  it('carries the opaque server cursor without deriving ranking state', () => {
     const page = buildFeedPage(
-      [item('p1', 'a'), item('p2', 'b', 'muted'), item('p3', 'c')],
-      createInitialFeedCursor(),
-      { fetchSize: 3, include: (post) => post.body !== 'muted' },
+      [{ id: 'p1' }, { id: 'p2' }],
+      { nextCursor: '1f9a3d73-05da-4fc5-8078-aee4c90a38e2', hasMore: true },
     );
 
-    expect(page.map((post) => post.id)).toEqual(['p1', 'p3']);
-    expect(page.nextCursor.offset).toBe(3);
-    expect(page.sourceCount).toBe(3);
+    expect(page.map((post) => post.id)).toEqual(['p1', 'p2']);
+    expect(page.nextCursor).toBe('1f9a3d73-05da-4fc5-8078-aee4c90a38e2');
+    expect(page.sourceCount).toBe(2);
     expect(page.hasMore).toBe(true);
   });
 
-  it('deduplicates a post repeated by a moving server ranking', () => {
-    const page = buildFeedPage(
-      [item('p1', 'a'), item('p4', 'd')],
-      { offset: 3, seenPostIds: ['p1', 'p2', 'p3'], tailAuthorIds: ['b', 'c'] },
-      { fetchSize: 2 },
-    );
+  it('does not request another page unless the server supplies a cursor', () => {
+    const page = buildFeedPage([{ id: 'p1' }], { hasMore: true });
 
-    expect(page.map((post) => post.id)).toEqual(['p4']);
-    expect(page.nextCursor.offset).toBe(5);
-    expect(page.nextCursor.seenPostIds).toContain('p4');
+    expect(page.nextCursor).toBeNull();
+    expect(page.hasMore).toBe(false);
   });
 
-  it('carries author diversity across the page boundary', () => {
-    const page = buildFeedPage(
-      [item('p3', 'a'), item('p4', 'b'), item('p5', 'a')],
-      { offset: 2, seenPostIds: ['p1', 'p2'], tailAuthorIds: ['a', 'a'] },
-      { fetchSize: 3, maxConsecutiveSameAuthor: 2 },
+  it('validates and maps the JSON page returned by the RPC', () => {
+    const page = readRankedFeedPage(
+      {
+        items: [{ id: 'p1', user_id: 'u1' }],
+        next_cursor: null,
+        has_more: false,
+      },
+      (post) => ({ id: String(post.id), userId: String(post.user_id) }),
     );
 
-    expect(page.map((post) => post.user_id)).toEqual(['b', 'a', 'a']);
-    expect(page.nextCursor.tailAuthorIds).toEqual(['a', 'a']);
+    expect(page.map((post) => post)).toEqual([{ id: 'p1', userId: 'u1' }]);
+    expect(page.sourceCount).toBe(1);
+    expect(page.hasMore).toBe(false);
+  });
+
+  it('rejects malformed payloads instead of silently changing pagination', () => {
+    expect(() => readRankedFeedPage({ items: null }, (post) => post)).toThrow(
+      'INVALID_RANKED_FEED_ITEMS',
+    );
+  });
+
+  it('preserves the server cursor across optimistic cache updates', () => {
+    const original = buildFeedPage(
+      [{ id: 'p1' }, { id: 'p2' }],
+      { nextCursor: 'f60bb6aa-bbb9-41c9-8374-bd2db75079a1', hasMore: true },
+    );
+    const prepended = prependFeedPageItem(original, { id: 'p0' });
+    const filtered = replaceFeedPageItems(
+      prepended,
+      prepended.filter((post) => post.id !== 'p1'),
+    );
+
+    expect(filtered.map((post) => post.id)).toEqual(['p0', 'p2']);
+    expect(filtered.nextCursor).toBe('f60bb6aa-bbb9-41c9-8374-bd2db75079a1');
+    expect(filtered.hasMore).toBe(true);
   });
 });

@@ -8831,6 +8831,10 @@ export type Database = {
           user_reaction: string
         }[]
       }
+      get_ranked_feed_page: {
+        Args: { p_cursor?: string | null; p_limit?: number }
+        Returns: Json
+      }
       get_friend_suggestions: {
         Args: { limit_count?: number; target_user_id: string }
         Returns: {
