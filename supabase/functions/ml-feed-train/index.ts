@@ -16,6 +16,11 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+const EMBEDDING_MODEL = "google/gemini-embedding-2";
+const EMBEDDING_DIMENSION = 768;
+const FEATURE_MODEL = "google/gemini-3.1-flash-lite";
+const AI_REQUEST_TIMEOUT_MS = 8_000;
+const STALE_RUN_AFTER_MS = 5 * 60_000;
 
 interface InteractionRow {
   user_id: string;
@@ -44,10 +49,16 @@ function decay(createdAt: string, halfLifeDays: number): number {
   return Math.pow(0.5, ageDays / halfLifeDays);
 }
 
-// Generate a 768-dim semantic embedding via Gemini text-embedding-004
-async function generateEmbedding(text: string): Promise<number[] | null> {
-  const clean = (text || "").slice(0, 2000).trim();
-  if (!clean || clean.length < 5) return null;
+// Generate a batch of 768-dimensional semantic embeddings. The Lovable AI
+// gateway returns 3072 dimensions by default for Gemini Embedding 2, so the
+// explicit dimensions parameter is part of the storage contract.
+async function generateEmbeddingBatch(texts: string[]): Promise<Array<number[] | null>> {
+  const output = new Array<number[] | null>(texts.length).fill(null);
+  const active = texts
+    .map((text, index) => ({ index, text: (text || "").slice(0, 2000).trim() }))
+    .filter(({ text }) => text.length >= 5);
+  if (active.length === 0) return output;
+
   try {
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
       method: "POST",
@@ -56,21 +67,35 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/text-embedding-004",
-        input: clean,
+        model: EMBEDDING_MODEL,
+        input: active.map(({ text }) => text),
+        dimensions: EMBEDDING_DIMENSION,
       }),
+      signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
     });
     if (!resp.ok) {
       console.error("embedding HTTP error:", resp.status, await resp.text().catch(() => ""));
-      return null;
+      return output;
     }
     const data = await resp.json();
-    const emb = data?.data?.[0]?.embedding;
-    if (Array.isArray(emb) && emb.length === 768) return emb;
-    return null;
+    const rows = Array.isArray(data?.data) ? data.data : [];
+    rows.forEach((row: { index?: number; embedding?: unknown }, responseIndex: number) => {
+      const activeIndex = Number.isInteger(row?.index) ? Number(row.index) : responseIndex;
+      const originalIndex = active[activeIndex]?.index;
+      const embedding = row?.embedding;
+      if (
+        originalIndex !== undefined
+        && Array.isArray(embedding)
+        && embedding.length === EMBEDDING_DIMENSION
+        && embedding.every((value: unknown) => Number.isFinite(Number(value)))
+      ) {
+        output[originalIndex] = embedding.map(Number);
+      }
+    });
+    return output;
   } catch (e) {
-    console.error("generateEmbedding error:", e);
-    return null;
+    console.error("generateEmbeddingBatch error:", e);
+    return output;
   }
 }
 
@@ -142,7 +167,7 @@ async function extractFeatures(post: PostRow): Promise<{ topics: string[]; hasht
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
+        model: FEATURE_MODEL,
         messages: [
           { role: "system", content: "Extract feed post features. Return ONLY via the function." },
           { role: "user", content: text },
@@ -170,6 +195,7 @@ async function extractFeatures(post: PostRow): Promise<{ topics: string[]; hasht
         ],
         tool_choice: { type: "function", function: { name: "extract_features" } },
       }),
+      signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
     });
 
     if (!resp.ok) return fallback;
@@ -200,6 +226,40 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
   const startedAt = Date.now();
+
+  // Recover invocations that were terminated by the Edge runtime before they
+  // could close their run row, then avoid overlapping healthy hourly runs.
+  const staleCutoff = new Date(startedAt - STALE_RUN_AFTER_MS).toISOString();
+  await supabase
+    .from("ml_model_runs")
+    .update({
+      status: "failed",
+      completed_at: new Date(startedAt).toISOString(),
+      error_message: "Recovered stale hourly feed run before starting a replacement",
+    })
+    .eq("run_type", "hourly")
+    .eq("status", "running")
+    .lt("started_at", staleCutoff);
+
+  const { data: activeRun } = await supabase
+    .from("ml_model_runs")
+    .select("id, started_at")
+    .eq("run_type", "hourly")
+    .eq("status", "running")
+    .gte("started_at", staleCutoff)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (activeRun) {
+    return new Response(JSON.stringify({
+      ok: true,
+      skipped: "RUN_ALREADY_ACTIVE",
+      active_run_id: activeRun.id,
+    }), {
+      status: 202,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   // Insert run record
   const { data: runRow } = await supabase
@@ -276,6 +336,8 @@ Deno.serve(async (req) => {
     let postsProcessed = 0;
     let featureRowsCreated = 0;
     let semanticEmbeddingsCreated = 0;
+    let semanticEmbeddingAttempts = 0;
+    let semanticEmbeddingFailures = 0;
     const postEmbeddings = new Map<string, number[]>();
     // Cache for freshly extracted features so we can build the user-profile phase without re-querying
     const freshFeatures = new Map<string, { topics: string[]; hashtags: string[] }>();
@@ -284,30 +346,46 @@ Deno.serve(async (req) => {
     const EXTRACT_CONCURRENCY = 5;
     for (let i = 0; i < toExtract.length; i += EXTRACT_CONCURRENCY) {
       const chunk = toExtract.slice(i, i + EXTRACT_CONCURRENCY);
-      const results = await Promise.all(chunk.map(async (post) => {
-        const current = existingMap.get(post.id);
-        const hasExtractedMetadata = !!current && (
-          current.topics.length > 0
-          || current.hashtags.length > 0
-          || current.language !== "und"
-        );
-        const f = hasExtractedMetadata
-          ? {
-              topics: current.topics,
-              hashtags: current.hashtags,
-              sentiment: current.sentiment,
-              quality: current.quality,
-              language: current.language,
-            }
-          : await extractFeatures(post);
-        const embText = [
+      const embeddingTexts = chunk.map((post) => {
+        const cached = existingMap.get(post.id);
+        return [
           post.body || (post.image_url ? "media image" : "post"),
-          f.topics.join(" "),
-          f.hashtags.map((h) => "#" + h).join(" "),
+          (cached?.topics || []).join(" "),
+          (cached?.hashtags || []).map((hashtag) => "#" + hashtag).join(" "),
         ].filter(Boolean).join("\n").slice(0, 2000);
-        const emb = await generateEmbedding(embText);
-        return { post, f, emb, embText };
+      });
+      const [features, embeddings] = await Promise.all([
+        Promise.all(chunk.map(async (post) => {
+          const current = existingMap.get(post.id);
+          const hasExtractedMetadata = !!current && (
+            current.topics.length > 0
+            || current.hashtags.length > 0
+            || current.language !== "und"
+          );
+          const f = hasExtractedMetadata
+            ? {
+                topics: current.topics,
+                hashtags: current.hashtags,
+                sentiment: current.sentiment,
+                quality: current.quality,
+                language: current.language,
+              }
+            : await extractFeatures(post);
+          return f;
+        })),
+        generateEmbeddingBatch(embeddingTexts),
+      ]);
+      const results = chunk.map((post, index) => ({
+        post,
+        f: features[index],
+        emb: embeddings[index],
+        embText: embeddingTexts[index],
       }));
+
+      semanticEmbeddingAttempts += embeddingTexts.filter((text) => text.trim().length >= 5).length;
+      semanticEmbeddingFailures += embeddings.filter((embedding, index) => (
+        embeddingTexts[index].trim().length >= 5 && !embedding
+      )).length;
 
       for (const { post, f, emb, embText } of results) {
         const current = existingMap.get(post.id);
@@ -327,7 +405,7 @@ Deno.serve(async (req) => {
           updated_at: new Date().toISOString(),
           ...(emb ? {
             embedding: toPgVector(emb),
-            embedding_source: "google/text-embedding-004",
+            embedding_source: `${EMBEDDING_MODEL}:${EMBEDDING_DIMENSION}`,
             embedding_updated_at: new Date().toISOString(),
           } : {}),
         });
@@ -618,6 +696,8 @@ Deno.serve(async (req) => {
           avg_dwell_ms: 0,
           users_with_embedding: usersWithEmbedding,
           posts_with_new_embedding: semanticEmbeddingsCreated,
+          semantic_embedding_attempts: semanticEmbeddingAttempts,
+          semantic_embedding_failures: semanticEmbeddingFailures,
           semantic_seed_rows_created: semanticSeedRows.length,
           creators_refreshed: creatorsRefreshed,
           coverage_snapshot_id: coverageSnapshotId,
@@ -636,6 +716,8 @@ Deno.serve(async (req) => {
         posts_processed: postsProcessed,
         interactions: allInter.length,
         global_ctr: globalCTR,
+        semantic_embedding_attempts: semanticEmbeddingAttempts,
+        semantic_embedding_failures: semanticEmbeddingFailures,
         semantic_seed_rows_created: semanticSeedRows.length,
         creators_refreshed: creatorsRefreshed,
         coverage_snapshot_id: coverageSnapshotId,
