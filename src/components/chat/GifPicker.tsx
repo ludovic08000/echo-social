@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Search, X, Loader2, RefreshCw } from 'lucide-react';
 
-const GIPHY_API_KEY = String(import.meta.env.VITE_GIPHY_API_KEY || '').trim();
+const GIPHY_API_KEY = (import.meta.env.VITE_GIPHY_API_KEY || 'O9bC3d0aKxZHD5RQNNUFDgH60cQfgLH5').trim();
 
 interface GifResult {
   id: string;
