@@ -9,6 +9,14 @@ import { logAIEvent, zeusModuleId } from "../_shared/aiEngineLog.ts";
 // ═══════════════════════════════════════════════════════════════
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const CONTENT_AI_MODEL = "google/gemini-3.1-flash-lite";
+
+function safeGatewayErrorPreview(raw: string): string {
+  return raw
+    .replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]")
+    .replace(/((?:api[_-]?key|token|authorization)["'\s:=]+)[^,}\s]+/gi, "$1[redacted]")
+    .slice(0, 500);
+}
 
 // ── Rate limiting ──
 const rateLimiter = new Map<string, { count: number; resetAt: number }>();
@@ -114,13 +122,49 @@ async function handleContent(apiKey: string, body: any, cors: Record<string, str
     systemPrompt = `Improve this message. Make it ${toneMap[tone] || "better"}. Keep same language. Only output improved text.`;
   }
 
-  const model = ["correct", "translate"].includes(action) ? "google/gemini-2.5-flash-lite" : "google/gemini-3-flash-preview";
-  const resp = await callAI(apiKey, { model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }] });
-  const errResp = aiError(resp.status, cors);
-  if (errResp) return errResp;
-  if (!resp.ok) return new Response(JSON.stringify({ error: "Erreur IA" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+  const model = CONTENT_AI_MODEL;
+  let resp: Response;
+  try {
+    resp = await callAI(apiKey, { model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: text }] });
+  } catch (error) {
+    console.error("[zeus.content] AI gateway fetch failed", {
+      action,
+      model,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return new Response(JSON.stringify({ error: "Service IA temporairement indisponible. Réessayez." }), {
+      status: 503,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
+  if (!resp.ok) {
+    const gatewayError = await resp.text().catch(() => "");
+    console.error("[zeus.content] AI gateway rejected request", {
+      action,
+      model,
+      status: resp.status,
+      requestId: resp.headers.get("x-request-id") ?? resp.headers.get("cf-ray"),
+      detail: safeGatewayErrorPreview(gatewayError),
+    });
+    const errResp = aiError(resp.status, cors);
+    if (errResp) return errResp;
+    return new Response(JSON.stringify({ error: "Le service IA a refusé la requête. Réessayez." }), {
+      status: 502,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
   const data = await resp.json();
-  return new Response(JSON.stringify({ result: data.choices?.[0]?.message?.content || "" }), { headers: { ...cors, "Content-Type": "application/json" } });
+  const result = data.choices?.[0]?.message?.content;
+  if (typeof result !== "string" || !result.trim()) {
+    console.error("[zeus.content] AI gateway returned an empty result", { action, model });
+    return new Response(JSON.stringify({ error: "Le service IA n'a renvoyé aucun texte. Réessayez." }), {
+      status: 502,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+  return new Response(JSON.stringify({ result }), { headers: { ...cors, "Content-Type": "application/json" } });
 }
 
 // ── POST ASSISTANT: improve, formal, casual, shorter, longer ──
