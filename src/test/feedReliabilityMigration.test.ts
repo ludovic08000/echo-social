@@ -7,6 +7,8 @@ const candidateFixPath =
   'supabase/migrations/20260929213042_qualify_blocked_post_reference.sql';
 const feedFunctionFixPath =
   'supabase/migrations/20260929214555_qualify_feed_user_reference.sql';
+const reactionTypeFixPath =
+  'supabase/migrations/20260929215526_cast_feed_reaction_type.sql';
 
 const rawSql = readFileSync(migrationPath, 'utf8');
 const sql = rawSql.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -15,6 +17,10 @@ const candidateFixSql = readFileSync(candidateFixPath, 'utf8')
   .replace(/\s+/g, ' ')
   .trim();
 const feedFunctionFixSql = readFileSync(feedFunctionFixPath, 'utf8')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+const reactionTypeFixSql = readFileSync(reactionTypeFixPath, 'utf8')
   .toLowerCase()
   .replace(/\s+/g, ' ')
   .trim();
@@ -92,6 +98,19 @@ describe('feed reliability migration', () => {
     expect(feedFunctionFixSql).not.toContain('or user_id = v_user_id');
     expect(feedFunctionFixSql).not.toContain('update public.ml_feed_experiments');
     expect(feedFunctionFixSql).not.toContain('insert into public.ml_feed_experiments');
+  });
+
+  it('casts only the feed reaction enum to the public text contract', () => {
+    expect(reactionTypeFixSql).toContain(
+      "'l.reaction_type as user_reaction', 'l.reaction_type::text as user_reaction'",
+    );
+    expect(reactionTypeFixSql).toContain(
+      "'expected get_feed_posts_v8 reaction_type projection was not found'",
+    );
+    expect(reactionTypeFixSql).not.toContain('update public.ml_feed_experiments');
+    expect(reactionTypeFixSql).not.toContain('insert into public.ml_feed_experiments');
+    expect(reactionTypeFixSql).not.toContain('retrieval_weight');
+    expect(reactionTypeFixSql).not.toContain('exploration_weight');
   });
 
 });
