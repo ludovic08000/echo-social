@@ -7,6 +7,7 @@ const migrationPath =
 const rawSql = readFileSync(migrationPath, 'utf8');
 const sql = rawSql.toLowerCase().replace(/\s+/g, ' ').trim();
 const trainerSource = readFileSync('supabase/functions/ml-feed-train/index.ts', 'utf8');
+const deployWorkflow = readFileSync('.github/workflows/deploy-ml-feed-train.yml', 'utf8');
 
 describe('feed reliability migration', () => {
   it('repairs A/B ordinality and rejects invalid post references per row', () => {
@@ -55,5 +56,12 @@ describe('feed reliability migration', () => {
     expect(trainerSource).toContain('dimensions: EMBEDDING_DIMENSION');
     expect(trainerSource).toContain('signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS)');
     expect(trainerSource).toContain('skipped: "RUN_ALREADY_ACTIVE"');
+  });
+
+  it('deploys the trainer from main while preserving JWT verification', () => {
+    expect(deployWorkflow).toContain('supabase functions deploy ml-feed-train');
+    expect(deployWorkflow).toContain('SUPABASE_PROJECT_REF: vkpmoqfzrihcijjochks');
+    expect(deployWorkflow).toContain('- main');
+    expect(deployWorkflow).not.toContain('--no-verify-jwt');
   });
 });
