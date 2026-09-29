@@ -8038,6 +8038,38 @@ export type Database = {
         Args: { p_conv_id: string; p_member_ids: string[] }
         Returns: number
       }
+      admin_list_profiles: {
+        Args: { p_limit?: number; p_search?: string; p_user_ids?: string[] }
+        Returns: {
+          avatar_url: string
+          bio: string
+          city: string
+          created_at: string
+          id: string
+          name: string
+          profile_type: string
+          user_id: string
+        }[]
+      }
+      admin_update_identity_verification: {
+        Args: {
+          p_admin_note?: string
+          p_auto_deleted?: boolean
+          p_status: string
+          p_verification_id: string
+        }
+        Returns: boolean
+      }
+      admin_update_profile: {
+        Args: {
+          p_bio: string
+          p_city: string
+          p_name: string
+          p_profile_type: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       advance_onboarding_step: {
         Args: { _expected_step: number; _user_id: string }
         Returns: number
@@ -8439,6 +8471,7 @@ export type Database = {
         Returns: Json
       }
       ddos_cleanup: { Args: never; Returns: undefined }
+      deactivate_own_creator_profile: { Args: never; Returns: boolean }
       decrement_product_stock: {
         Args: { p_product_id: string; p_quantity: number }
         Returns: boolean
@@ -8655,6 +8688,7 @@ export type Database = {
           avatar_url: string
           bio: string
           city: string
+          created_at: string
           mutual_friends_count: number
           name: string
           profile_type: string
@@ -8693,6 +8727,7 @@ export type Database = {
           requester_user_id: string
         }[]
       }
+      get_profile_for_viewer: { Args: { p_user_id: string }; Returns: Json }
       get_public_profile: {
         Args: { profile_user_id: string }
         Returns: {
@@ -8779,6 +8814,10 @@ export type Database = {
       }
       is_restricted_by: {
         Args: { p_owner_id: string; p_viewer_id: string }
+        Returns: boolean
+      }
+      is_supported_aegis_archive: {
+        Args: { p_archive_body: string; p_message_id: string }
         Returns: boolean
       }
       is_supported_aegis_device_copy: {
@@ -8940,6 +8979,13 @@ export type Database = {
       }
       ml_pareto_score_batch: {
         Args: { p_post_ids: string[]; p_user_id: string }
+        Returns: {
+          post_id: string
+          score: number
+        }[]
+      }
+      ml_pareto_score_batch_for_current_user: {
+        Args: { p_post_ids: string[] }
         Returns: {
           post_id: string
           score: number
@@ -9152,6 +9198,10 @@ export type Database = {
         Args: { p_event_id: string; p_event_type: string }
         Returns: boolean
       }
+      submit_own_identity_document: {
+        Args: { p_document_path: string }
+        Returns: boolean
+      }
       threat_shield_active_model: {
         Args: never
         Returns: {
@@ -9205,6 +9255,7 @@ export type Database = {
           locked_until: string
         }[]
       }
+      update_own_profile: { Args: { p_updates: Json }; Returns: Json }
       video_score_batch: {
         Args: { p_user_id: string; p_video_ids: string[] }
         Returns: {
