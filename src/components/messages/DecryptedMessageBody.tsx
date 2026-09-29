@@ -15,6 +15,7 @@ import { isImageMediaLabel, isVideoMediaLabel } from '@/lib/crypto/mediaEncrypt'
 import type { DecryptResult } from '@/hooks/useE2EE';
 import { scheduleBubbleRecovery } from '@/lib/messaging/bubbleRecoveryScheduler';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { sanitizeUrl } from '@/lib/sanitizeUrl';
 
 function parseVoiceMessage(text: string): { url: string; duration: number } | null {
   const m1 = text.match(/^🎙️\s*(?:vocal|voice):(.+)\|(\d+)$/);
@@ -304,14 +305,17 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  const gifUrl = parseGifMessage(text);
-  if (gifUrl) {
+  const parsedGifUrl = parseGifMessage(text);
+  const gifUrl = parsedGifUrl ? sanitizeUrl(parsedGifUrl) : '#';
+  if (gifUrl !== '#') {
     return (
       <img
         src={gifUrl}
         alt="GIF"
         className="rounded-lg max-w-[220px] max-h-[200px] object-contain"
         loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
       />
     );
   }

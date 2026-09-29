@@ -222,7 +222,7 @@ export function CommentsList({ postId }: CommentsListProps) {
             {mediaType === 'video' ? (
               <video src={attachedMedia} className="max-h-32 rounded-xl" controls />
             ) : (
-              <img src={attachedMedia} alt="Pièce jointe" className="max-h-32 rounded-xl object-cover" />
+              <img src={attachedMedia} alt="Pièce jointe" className="max-h-32 rounded-xl object-cover" referrerPolicy="no-referrer" />
             )}
             <button
               onClick={() => { setAttachedMedia(null); setMediaType(null); }}
@@ -475,7 +475,7 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
         {mediaUrl && (
           <div className="mt-1.5 rounded-xl overflow-hidden inline-block max-w-[280px]">
             {isGif || isImage ? (
-              <img src={mediaUrl} alt="" className="max-h-48 rounded-xl object-cover" loading="lazy" />
+              <img src={mediaUrl} alt="" className="max-h-48 rounded-xl object-cover" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
             ) : isVideo ? (
               <video src={mediaUrl} className="max-h-48 rounded-xl" controls preload="metadata" />
             ) : null}
