@@ -9,7 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { useAddReaction, useRemoveReaction, REACTION_EMOJIS, REACTION_LABELS, ReactionType } from '@/hooks/useReactions';
+import { useAddReaction, REACTION_EMOJIS, REACTION_LABELS, ReactionType } from '@/hooks/useReactions';
 import { useAuth } from '@/lib/auth';
 import { toast } from '@/hooks/use-toast';
 
@@ -18,48 +18,6 @@ interface ReactionButtonProps {
   currentReaction?: ReactionType | null;
   reactionsCount: number;
   variant?: 'default' | 'facebook' | 'instagram';
-}
-
-function ReactionParticles({ emoji, onDone }: { emoji: string; onDone: () => void }) {
-  const particles = Array.from({ length: 6 }, (_, i) => {
-    const angle = (i / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
-    const distance = 30 + Math.random() * 25;
-    return {
-      id: i,
-      x: Math.cos(angle) * distance,
-      y: Math.sin(angle) * distance,
-      rotate: Math.random() * 360,
-      scale: 0.5 + Math.random() * 0.6,
-      delay: i * 0.03,
-    };
-  });
-
-  useEffect(() => {
-    const t = setTimeout(onDone, 700);
-    return () => clearTimeout(t);
-  }, [onDone]);
-
-  return (
-    <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center">
-      {particles.map((p) => (
-        <motion.span
-          key={p.id}
-          className="absolute text-sm"
-          initial={{ x: 0, y: 0, scale: 0, opacity: 1, rotate: 0 }}
-          animate={{
-            x: p.x,
-            y: p.y,
-            scale: [0, p.scale, 0],
-            opacity: [0, 1, 0],
-            rotate: p.rotate,
-          }}
-          transition={{ duration: 0.6, delay: p.delay, ease: 'easeOut' }}
-        >
-          {emoji}
-        </motion.span>
-      ))}
-    </div>
-  );
 }
 
 function haptic(style: 'light' | 'medium' | 'heavy' = 'light') {
@@ -81,52 +39,18 @@ const REACTION_COLORS: Record<ReactionType, string> = {
 
 export function ReactionButton({ postId, currentReaction, reactionsCount, variant = 'default' }: ReactionButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [showParticles, setShowParticles] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(false);
-  const [optimisticReaction, setOptimisticReaction] = useState<ReactionType | null>(null);
+  const [selectedReaction, setSelectedReaction] = useState<ReactionType | null>(currentReaction ?? null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const addReaction = useAddReaction();
-  const removeReaction = useRemoveReaction();
   const interactionLockRef = useRef(false);
 
-  const activeReaction = currentReaction ?? optimisticReaction;
-  const isBusy = addReaction.isPending || removeReaction.isPending || cooldown;
+  const activeReaction = selectedReaction;
+  const isBusy = addReaction.isPending || interactionLockRef.current;
 
   useEffect(() => {
-    if (currentReaction) {
-      setOptimisticReaction(null);
-    }
+    if (!interactionLockRef.current) setSelectedReaction(currentReaction ?? null);
   }, [currentReaction]);
-
-  useEffect(() => {
-    if (addReaction.isError) {
-      interactionLockRef.current = false;
-      setCooldown(false);
-      setOptimisticReaction(null);
-    }
-  }, [addReaction.isError]);
-
-  useEffect(() => {
-    if (removeReaction.isError) {
-      interactionLockRef.current = false;
-      setCooldown(false);
-    }
-  }, [removeReaction.isError]);
-
-  const startCooldown = useCallback(() => {
-    setCooldown(true);
-    window.setTimeout(() => {
-      interactionLockRef.current = false;
-      setCooldown(false);
-    }, 600);
-  }, []);
-
-  const lockInteraction = useCallback(() => {
-    interactionLockRef.current = true;
-    setIsOpen(false);
-    startCooldown();
-  }, [startCooldown]);
 
   const handleReaction = useCallback((reactionType: ReactionType) => {
     if (interactionLockRef.current || isBusy) return;
@@ -136,32 +60,28 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     }
 
     if (activeReaction === reactionType) {
-      // Same emoji → remove
-      setOptimisticReaction(null);
-      lockInteraction();
-      haptic('light');
-      removeReaction.mutate(postId);
-    } else {
-      // New or different emoji → add/change
-      setOptimisticReaction(reactionType);
-      lockInteraction();
-      haptic('medium');
-      addReaction.mutate({ postId, reactionType });
+      setIsOpen(false);
+      return;
     }
-  }, [user, activeReaction, postId, addReaction, removeReaction, isBusy, lockInteraction]);
 
-  const handleRemoveReaction = useCallback(() => {
-    if (interactionLockRef.current || isBusy || !activeReaction) return;
-    if (!user) return;
+    const previousReaction = activeReaction;
+    interactionLockRef.current = true;
+    setSelectedReaction(reactionType);
+    setIsOpen(false);
+    haptic('medium');
+    addReaction.mutate(
+      { postId, reactionType },
+      {
+        onError: () => setSelectedReaction(previousReaction),
+        onSettled: () => {
+          interactionLockRef.current = false;
+        },
+      },
+    );
+  }, [user, activeReaction, postId, addReaction, isBusy, navigate]);
 
-    setOptimisticReaction(null);
-    lockInteraction();
-    haptic('light');
-    removeReaction.mutate(postId);
-  }, [user, activeReaction, postId, removeReaction, isBusy, lockInteraction]);
-
-  // Un seul appui = 👍 direct ; si déjà réagi, l'appui ouvre le sélecteur
-  // pour REMPLACER la réaction (jamais en accumuler plusieurs).
+  // Le bouton ne crée jamais une réaction : il ouvre seulement le choix.
+  // Une réaction déjà choisie reste verrouillée jusqu'à son remplacement.
   const handleTriggerClick = useCallback((e?: React.MouseEvent | React.PointerEvent) => {
     if (interactionLockRef.current || isBusy) {
       e?.preventDefault();
@@ -171,17 +91,8 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       navigate('/signup', { state: { from: window.location.pathname } });
       return;
     }
-    if (!activeReaction) {
-      // Premier appui : réaction 👍 immédiate, sans ouvrir le menu
-      setOptimisticReaction('like');
-      lockInteraction();
-      haptic('medium');
-      addReaction.mutate({ postId, reactionType: 'like' });
-      return;
-    }
-    // Déjà réagi : ouvrir le sélecteur pour changer (remplacement, pas cumul)
     setIsOpen(true);
-  }, [isBusy, user, navigate, activeReaction, postId, addReaction, lockInteraction]);
+  }, [isBusy, user, navigate]);
 
   const emojiVariants = {
     hidden: { scale: 0, y: 10 },
@@ -240,11 +151,6 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
         }}
       >
         <div className="relative flex-1">
-          <AnimatePresence>
-            {showParticles && (
-              <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
-            )}
-          </AnimatePresence>
           <PopoverTrigger asChild>
             <Button
               variant="ghost"
@@ -295,11 +201,6 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
         }}
       >
         <div className="relative flex items-center">
-          <AnimatePresence>
-            {showParticles && (
-              <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
-            )}
-          </AnimatePresence>
           <PopoverTrigger asChild>
             <button
               onClick={handleTriggerClick}
@@ -338,11 +239,6 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       }}
     >
       <div className="relative flex items-center">
-        <AnimatePresence>
-          {showParticles && (
-            <ReactionParticles emoji={showParticles} onDone={() => setShowParticles(null)} />
-          )}
-        </AnimatePresence>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
