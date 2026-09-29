@@ -102,23 +102,6 @@ export default function Settings() {
           </div>
         )}
 
-        {activeTab === 'groups' && (
-          <div className="animate-fade-in">
-            <section className="premium-card p-5">
-              <h2 className="text-sm font-semibold mb-4">{t('settings.myGroups')}</h2>
-              <MyGroupsList />
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'pages' && (
-          <div className="animate-fade-in">
-            <section className="premium-card p-5">
-              <h2 className="text-sm font-semibold mb-4">{t('settings.myPages')}</h2>
-              <MyPagesList />
-            </section>
-          </div>
-        )}
 
         {activeTab === 'privacy' && (
           <div className="animate-fade-in">
