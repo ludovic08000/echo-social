@@ -172,6 +172,8 @@ Deno.serve(async (req) => {
         post_id: pid,
         embedding: toPgVector(l2Normalize(vec)),
         training_samples: postSampleCount.get(pid) || 0,
+        embedding_source: "two_tower",
+        semantic_seeded_at: null,
         last_trained_at: nowIso,
         updated_at: nowIso,
       });
