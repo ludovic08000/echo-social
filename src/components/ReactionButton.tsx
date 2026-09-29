@@ -19,7 +19,9 @@ function haptic(style: 'light' | 'medium' | 'heavy' = 'light') {
     if ('vibrate' in navigator) {
       navigator.vibrate(style === 'heavy' ? 30 : style === 'medium' ? 15 : 8);
     }
-  } catch {}
+  } catch {
+    // Haptic feedback is optional and unsupported browsers may reject it.
+  }
 }
 
 const REACTION_COLORS: Record<ReactionType, string> = {
@@ -83,7 +85,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
     setIsOpen(false);
     haptic('medium');
     addReaction.mutate(
-      { postId, reactionType },
+      { postId, reactionType, previousReaction },
       {
         onError: () => setSelectedReaction(previousReaction),
         onSettled: () => {
@@ -123,7 +125,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             variant="ghost"
             size="icon"
             onClick={() => handleReaction(type)}
-            disabled={isBusy}
+            disabled={isBusy || activeReaction === type}
             className={cn(
               'group relative h-10 w-10 shrink-0 rounded-full p-0 text-[26px] transition-transform hover:-translate-y-1 hover:bg-accent',
               isBusy && 'pointer-events-none opacity-50',
@@ -131,7 +133,8 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             )}
             title={REACTION_LABELS[type]}
             aria-label={REACTION_LABELS[type]}
-            role="menuitem"
+            aria-checked={activeReaction === type}
+            role="menuitemradio"
           >
             {REACTION_EMOJIS[type]}
           </Button>
@@ -146,9 +149,17 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
         <div ref={rootRef} className="relative flex-1">
           <AnimatePresence>{emojiPicker}</AnimatePresence>
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               onClick={handleTriggerClick}
+              disabled={isBusy}
+              aria-expanded={isOpen}
+              aria-haspopup="menu"
+              aria-pressed={Boolean(activeReaction)}
+              aria-label={activeReaction
+                ? `Réaction actuelle : ${REACTION_LABELS[activeReaction]}. Cliquer pour modifier`
+                : 'Ajouter une réaction'}
               className={cn(
                 'h-11 w-full gap-1.5 rounded-xl text-xs text-muted-foreground transition-all select-none hover:bg-secondary/50 hover:text-foreground',
                 activeReaction && reactionColor,
@@ -157,7 +168,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
             >
               {activeReaction ? (
                 <motion.span
-                  key={activeReaction}
+                  key={`emoji-${activeReaction}`}
                   initial={{ scale: 0, rotate: -30 }}
                   animate={{ scale: 1, rotate: 0 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 12 }}
@@ -169,7 +180,7 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
                 <ThumbsUp className="h-[18px] w-[18px]" />
               )}
               <motion.span
-                key={activeReaction || 'none'}
+                key={`label-${activeReaction || 'none'}`}
                 initial={{ y: 5, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 className="font-semibold"
@@ -190,6 +201,13 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
               variant="ghost"
               size="icon"
               onClick={handleTriggerClick}
+              disabled={isBusy}
+              aria-expanded={isOpen}
+              aria-haspopup="menu"
+              aria-pressed={Boolean(activeReaction)}
+              aria-label={activeReaction
+                ? `Réaction actuelle : ${REACTION_LABELS[activeReaction]}. Cliquer pour modifier`
+                : 'Ajouter une réaction'}
               className={cn(
                 'flex h-10 w-10 items-center justify-center select-none transition-transform active:scale-75',
                 isBusy && 'pointer-events-none opacity-60'
@@ -217,9 +235,17 @@ export function ReactionButton({ postId, currentReaction, reactionsCount, varian
       <div ref={rootRef} className="relative flex items-center">
         <AnimatePresence>{emojiPicker}</AnimatePresence>
           <Button
+            type="button"
             variant="ghost"
             size="sm"
             onClick={handleTriggerClick}
+            disabled={isBusy}
+            aria-expanded={isOpen}
+            aria-haspopup="menu"
+            aria-pressed={Boolean(activeReaction)}
+            aria-label={activeReaction
+              ? `Réaction actuelle : ${REACTION_LABELS[activeReaction]}. Cliquer pour modifier`
+              : 'Ajouter une réaction'}
             className={cn(
               'h-9 gap-2 px-3 text-muted-foreground hover:bg-accent hover:text-primary',
               activeReaction && reactionColor,
