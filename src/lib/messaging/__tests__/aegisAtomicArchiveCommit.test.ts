@@ -10,6 +10,14 @@ const sql = readFileSync(
   'utf8',
 ).toLowerCase();
 
+const validatorHotfixSql = readFileSync(
+  resolve(
+    process.cwd(),
+    'supabase/migrations/20260929144054_restore_aegis_archive_validator.sql',
+  ),
+  'utf8',
+).toLowerCase();
+
 describe('Aegis atomic archive commit', () => {
   it('persists only the sender opaque archive in the message transaction', () => {
     expect(sql).toContain('create trigger persist_aegis_sender_message_archive');
@@ -36,5 +44,18 @@ describe('Aegis atomic archive commit', () => {
       'revoke all on function public.persist_aegis_sender_message_archive()',
     );
     expect(sql).toContain('from public, anon, authenticated');
+  });
+
+  it('restores the validator dependency in partially migrated environments', () => {
+    expect(validatorHotfixSql).toContain(
+      'create or replace function public.is_supported_aegis_archive',
+    );
+    expect(validatorHotfixSql).toContain('p_archive_body text');
+    expect(validatorHotfixSql).toContain('p_message_id uuid');
+    expect(validatorHotfixSql).toContain("set search_path = ''");
+    expect(validatorHotfixSql).toContain("v_payload ->> 'context'");
+    expect(validatorHotfixSql).toContain('p_message_id::text');
+    expect(validatorHotfixSql).toContain('aegis_archive_validator_restore_failed');
+    expect(validatorHotfixSql).not.toContain('security definer');
   });
 });
