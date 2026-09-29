@@ -5,10 +5,16 @@ const migrationPath =
   'supabase/migrations/20260929155548_repair_feed_telemetry_coverage_mmr.sql';
 const candidateFixPath =
   'supabase/migrations/20260929213042_qualify_blocked_post_reference.sql';
+const feedFunctionFixPath =
+  'supabase/migrations/20260929214555_qualify_feed_user_reference.sql';
 
 const rawSql = readFileSync(migrationPath, 'utf8');
 const sql = rawSql.toLowerCase().replace(/\s+/g, ' ').trim();
 const candidateFixSql = readFileSync(candidateFixPath, 'utf8')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+const feedFunctionFixSql = readFileSync(feedFunctionFixPath, 'utf8')
   .toLowerCase()
   .replace(/\s+/g, ' ')
   .trim();
@@ -76,6 +82,16 @@ describe('feed reliability migration', () => {
     expect(candidateFixSql).not.toContain('exploration_weight');
     expect(candidateFixSql).not.toContain('new_creator_boost');
     expect(candidateFixSql).not.toContain('diversity_author_cap');
+  });
+
+  it('qualifies the filtered feed user without changing ranking or A/B weights', () => {
+    expect(feedFunctionFixSql).toContain('from scored as scored_post');
+    expect(feedFunctionFixSql).toContain(
+      'where scored_post.author_rank <= coalesce(v_assignment.diversity_author_cap, 2) or scored_post.user_id = v_user_id',
+    );
+    expect(feedFunctionFixSql).not.toContain('or user_id = v_user_id');
+    expect(feedFunctionFixSql).not.toContain('update public.ml_feed_experiments');
+    expect(feedFunctionFixSql).not.toContain('insert into public.ml_feed_experiments');
   });
 
 });
