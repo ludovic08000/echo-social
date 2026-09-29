@@ -3,9 +3,15 @@ import { describe, expect, it } from 'vitest';
 
 const migrationPath =
   'supabase/migrations/20260929155548_repair_feed_telemetry_coverage_mmr.sql';
+const candidateFixPath =
+  'supabase/migrations/20260929213042_qualify_blocked_post_reference.sql';
 
 const rawSql = readFileSync(migrationPath, 'utf8');
 const sql = rawSql.toLowerCase().replace(/\s+/g, ' ').trim();
+const candidateFixSql = readFileSync(candidateFixPath, 'utf8')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
 const trainerSource = readFileSync('supabase/functions/ml-feed-train/index.ts', 'utf8');
 
 describe('feed reliability migration', () => {
@@ -55,6 +61,21 @@ describe('feed reliability migration', () => {
     expect(trainerSource).toContain('dimensions: EMBEDDING_DIMENSION');
     expect(trainerSource).toContain('signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS)');
     expect(trainerSource).toContain('skipped: "RUN_ALREADY_ACTIVE"');
+  });
+
+  it('qualifies every blocked-post reference without changing ranking or A/B weights', () => {
+    expect(candidateFixSql).not.toContain('select post_id from blocked');
+    expect(
+      candidateFixSql.match(
+        /select blocked_post\.post_id from blocked as blocked_post/g,
+      ),
+    ).toHaveLength(6);
+    expect(candidateFixSql).not.toContain('update public.ml_feed_experiments');
+    expect(candidateFixSql).not.toContain('insert into public.ml_feed_experiments');
+    expect(candidateFixSql).not.toContain('retrieval_weight');
+    expect(candidateFixSql).not.toContain('exploration_weight');
+    expect(candidateFixSql).not.toContain('new_creator_boost');
+    expect(candidateFixSql).not.toContain('diversity_author_cap');
   });
 
 });
