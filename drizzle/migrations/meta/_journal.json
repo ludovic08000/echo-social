@@ -57,6 +57,13 @@
       "when": 1790712122046,
       "tag": "0007_cast_feed_reaction_type",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790713865575,
+      "tag": "0008_optimize_feed_latency",
+      "breakpoints": true
     }
   ]
 }
