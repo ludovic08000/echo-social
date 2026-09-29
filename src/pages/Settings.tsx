@@ -8,8 +8,6 @@ import { SettingsMenuGrid } from '@/components/settings/SettingsMenuGrid';
 import { SettingsProfileTab } from '@/components/settings/SettingsProfileTab';
 import { NotificationSettingsPanel } from '@/components/NotificationSettingsPanel';
 import { PrivacySettingsPanel } from '@/components/settings/PrivacySettingsPanel';
-import { MyGroupsList } from '@/components/settings/MyGroupsList';
-import { MyPagesList } from '@/components/settings/MyPagesList';
 import { AppearanceSettingsPanel } from '@/components/settings/AppearanceSettingsPanel';
 import { WellbeingSettingsPanel } from '@/components/settings/WellbeingSettingsPanel';
 import { ContentPreferencesPanel } from '@/components/settings/ContentPreferencesPanel';

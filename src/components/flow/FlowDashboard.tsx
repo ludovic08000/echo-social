@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Radio, Bot, Heart, Users, BookOpen, Megaphone } from 'lucide-react';
+import { MessageCircle, Radio, Bot, Heart, Megaphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
