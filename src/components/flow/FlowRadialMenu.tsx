@@ -9,7 +9,6 @@ const MENU_ITEMS = [
   { icon: Heart, label: 'Amis', path: '/friends', color: 'from-pink-400 to-rose-500' },
   { icon: Radio, label: 'Live', path: '/live', color: 'from-red-400 to-red-600' },
   { icon: Bot, label: 'Zeus', path: '#zeus', color: 'from-amber-400 to-orange-500' },
-  { icon: Users, label: 'Groupes', path: '/groups', color: 'from-cyan-400 to-cyan-600' },
   { icon: Settings, label: 'Réglages', path: '/settings', color: 'from-gray-400 to-gray-600' },
 ];
 

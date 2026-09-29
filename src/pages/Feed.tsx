@@ -237,9 +237,6 @@ export default function Feed() {
                       <Button size="sm" variant="outline" className="text-xs rounded-xl" onClick={dismissPause}>
                         Continuer
                       </Button>
-                      <Button size="sm" className="text-xs rounded-xl premium-button" onClick={() => navigate('/journal')}>
-                        Écrire dans le journal
-                      </Button>
                     </div>
                   </div>
                 </motion.div>

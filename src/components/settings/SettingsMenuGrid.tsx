@@ -31,7 +31,6 @@ const quickLinks = [
   { path: '/friends', icon: Users, label: 'Amis', color: 'bg-sky-500/10 text-sky-500' },
   { path: '/search', icon: Search, label: 'Rechercher', color: 'bg-violet-500/10 text-violet-500' },
   { path: '/messages', icon: MessageCircle, label: 'Messages', color: 'bg-primary/10 text-primary' },
-  { path: '/journal', icon: BookOpen, label: 'Journal', color: 'bg-rose-500/10 text-rose-500' },
   { path: '/channels', icon: Tv, label: 'Canaux TV', color: 'bg-purple-500/10 text-purple-500' },
 ];
 

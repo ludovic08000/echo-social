@@ -252,8 +252,6 @@ export const PROTECTED_ROUTES = [
   '/settings',
   '/create',
   '/friends',
-  '/groups',
-  '/pages',
   '/videos',
   '/lives',
   '/live',

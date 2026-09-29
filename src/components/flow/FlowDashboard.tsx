@@ -9,9 +9,7 @@ const WIDGETS = [
   { icon: MessageCircle, label: 'Messages', path: '/messages', gradient: 'from-blue-500/20 to-blue-600/10', iconColor: 'text-blue-400', badgeKey: 'messages' },
   { icon: Heart, label: 'Amis', path: '/friends', gradient: 'from-pink-500/20 to-rose-500/10', iconColor: 'text-pink-400' },
   { icon: Radio, label: 'Lives', path: '/live', gradient: 'from-red-500/20 to-red-600/10', iconColor: 'text-red-400' },
-  { icon: Users, label: 'Groupes', path: '/groups', gradient: 'from-cyan-500/20 to-cyan-600/10', iconColor: 'text-cyan-400' },
   { icon: Bot, label: 'Zeus IA', path: '#zeus', gradient: 'from-orange-500/20 to-amber-600/10', iconColor: 'text-orange-400' },
-  { icon: BookOpen, label: 'Journal', path: '/journal', gradient: 'from-teal-500/20 to-emerald-600/10', iconColor: 'text-teal-400' },
   { icon: Megaphone, label: 'Pub Ads', path: '/ads', gradient: 'from-rose-500/20 to-pink-600/10', iconColor: 'text-rose-400' },
 ];
 
