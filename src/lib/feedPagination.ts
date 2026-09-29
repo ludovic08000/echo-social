@@ -1,10 +1,4 @@
-import { enforceDiversity } from '@/lib/feedDiversity';
-
-export interface FeedCursor {
-  offset: number;
-  seenPostIds: string[];
-  tailAuthorIds: string[];
-}
+export type FeedCursor = string | null;
 
 export type FeedPage<T> = T[] & {
   nextCursor: FeedCursor;
@@ -12,67 +6,82 @@ export type FeedPage<T> = T[] & {
   sourceCount: number;
 };
 
-interface FeedPageItem {
-  id: string;
-  user_id: string;
+export interface RankedFeedPagePayload {
+  items?: unknown;
+  next_cursor?: unknown;
+  has_more?: unknown;
+  snapshot_expires_at?: unknown;
 }
 
-interface BuildFeedPageOptions<T> {
-  fetchSize: number;
-  pageSize?: number;
-  include?: (item: T) => boolean;
-  maxConsecutiveSameAuthor?: number;
-  maxRememberedPostIds?: number;
+interface BuildFeedPageOptions {
+  nextCursor?: unknown;
+  hasMore?: unknown;
 }
 
 export function createInitialFeedCursor(): FeedCursor {
-  return { offset: 0, seenPostIds: [], tailAuthorIds: [] };
+  return null;
 }
 
 /**
- * Turns one server batch into an array page while carrying source progress,
- * deduplication state and the preceding author tail to the next page. Advancing
- * by sourceCount (not the number left after filters) prevents offset overlap.
+ * Adapts the server-owned snapshot page to React Query's array page shape.
+ * The cursor stays opaque: the browser neither calculates an offset nor
+ * carries post IDs, ranking state or author-diversity state between pages.
  */
-export function buildFeedPage<T extends FeedPageItem>(
+export function buildFeedPage<T>(
   sourceItems: T[],
-  cursor: FeedCursor,
-  options: BuildFeedPageOptions<T>,
+  options: BuildFeedPageOptions = {},
 ): FeedPage<T> {
-  const {
-    fetchSize,
-    pageSize = fetchSize,
-    include = () => true,
-    maxConsecutiveSameAuthor = 2,
-    maxRememberedPostIds = 500,
-  } = options;
-  const knownIds = new Set(cursor.seenPostIds);
-  const pageBatchIds: string[] = [];
-  const candidates: T[] = [];
+  const nextCursor = typeof options.nextCursor === 'string' && options.nextCursor.length > 0
+    ? options.nextCursor
+    : null;
+  const hasMore = options.hasMore === true && nextCursor !== null;
 
-  for (const item of sourceItems) {
-    if (!item?.id || knownIds.has(item.id)) continue;
-    knownIds.add(item.id);
-    pageBatchIds.push(item.id);
-    if (include(item)) candidates.push(item);
+  return Object.assign([...sourceItems], {
+    nextCursor,
+    hasMore,
+    sourceCount: sourceItems.length,
+  });
+}
+
+export function replaceFeedPageItems<T>(
+  page: FeedPage<T>,
+  items: T[],
+): FeedPage<T> {
+  return buildFeedPage(items, {
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+  });
+}
+
+export function prependFeedPageItem<T>(
+  page: FeedPage<T>,
+  item: T,
+): FeedPage<T> {
+  return replaceFeedPageItems(page, [item, ...page]);
+}
+
+export function readRankedFeedPage<T>(
+  payload: unknown,
+  mapItem: (item: Record<string, unknown>) => T,
+): FeedPage<T> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('INVALID_RANKED_FEED_PAGE');
   }
 
-  const diversified = enforceDiversity(
-    candidates,
-    maxConsecutiveSameAuthor,
-    cursor.tailAuthorIds,
-  ).slice(0, pageSize);
-  const rememberedIds = [...cursor.seenPostIds, ...pageBatchIds].slice(-maxRememberedPostIds);
-  const tailAuthorIds = [...cursor.tailAuthorIds, ...diversified.map((item) => item.user_id)]
-    .slice(-maxConsecutiveSameAuthor);
+  const page = payload as RankedFeedPagePayload;
+  if (!Array.isArray(page.items)) {
+    throw new Error('INVALID_RANKED_FEED_ITEMS');
+  }
 
-  return Object.assign(diversified, {
-    nextCursor: {
-      offset: cursor.offset + sourceItems.length,
-      seenPostIds: rememberedIds,
-      tailAuthorIds,
-    },
-    hasMore: sourceItems.length >= fetchSize,
-    sourceCount: sourceItems.length,
+  const mappedItems = page.items.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error('INVALID_RANKED_FEED_ITEM');
+    }
+    return mapItem(item as Record<string, unknown>);
+  });
+
+  return buildFeedPage(mappedItems, {
+    nextCursor: page.next_cursor,
+    hasMore: page.has_more,
   });
 }

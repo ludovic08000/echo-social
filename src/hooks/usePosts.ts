@@ -2,11 +2,15 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
-import { loadContentPrefs, containsMutedKeyword } from '@/lib/feedAlgorithm';
-import { getSessionAdjustment } from '@/lib/feedDiversity';
 import { syncFeedPrefsFromServer } from '@/lib/feedPreferences';
-import { mapFeedRpcRow } from '@/lib/recsysV8';
-import { buildFeedPage, createInitialFeedCursor, type FeedCursor } from '@/lib/feedPagination';
+import { mapFeedRpcRow, type FeedRpcRow } from '@/lib/recsysV8';
+import {
+  createInitialFeedCursor,
+  prependFeedPageItem,
+  readRankedFeedPage,
+  replaceFeedPageItems,
+  type FeedCursor,
+} from '@/lib/feedPagination';
 import { emitFeedPerformanceMetric } from '@/hooks/useFeedPerformance';
 
 // One-shot sync per user. Pages await the same promise so the first request
@@ -46,7 +50,7 @@ export interface Post {
 const PAGE_SIZE = 25;
 
 type FeedRpcResponse = {
-  data?: unknown[] | null;
+  data?: unknown;
   error?: unknown;
 };
 
@@ -55,25 +59,27 @@ function feedClockNow(): number {
 }
 
 async function runTimedFeedRpc<T extends FeedRpcResponse>(
-  source: 'get_feed_posts_v8' | 'get_feed_posts',
-  offset: number,
+  cursor: FeedCursor,
   request: () => PromiseLike<T>,
 ): Promise<T> {
   const startedAt = feedClockNow();
   try {
     const result = await request();
+    const payload = result.data && typeof result.data === 'object' && !Array.isArray(result.data)
+      ? result.data as { items?: unknown }
+      : null;
     emitFeedPerformanceMetric('rpc_latency', feedClockNow() - startedAt, {
-      source,
-      page: offset === 0 ? 'initial' : 'next',
+      source: 'get_ranked_feed_page',
+      page: cursor === null ? 'initial' : 'next',
       outcome: result.error ? 'error' : 'success',
-      row_count: Array.isArray(result.data) ? result.data.length : 0,
+      row_count: Array.isArray(payload?.items) ? payload.items.length : 0,
       target_max_ms: 350,
     });
     return result;
   } catch (error) {
     emitFeedPerformanceMetric('rpc_latency', feedClockNow() - startedAt, {
-      source,
-      page: offset === 0 ? 'initial' : 'next',
+      source: 'get_ranked_feed_page',
+      page: cursor === null ? 'initial' : 'next',
       outcome: 'exception',
       target_max_ms: 350,
     });
@@ -88,108 +94,29 @@ export function usePosts() {
     queryKey: ['posts', 'friends-feed', loading ? 'loading' : user?.id ?? 'guest'],
     queryFn: async ({ pageParam }: { pageParam: FeedCursor }) => {
       const cursor = pageParam;
-      const offset = cursor.offset;
+      const preferencesReady = user
+        ? ensureFeedPrefsSynced(user.id).catch(() => undefined)
+        : Promise.resolve();
+      const pagePromise = runTimedFeedRpc(cursor, () =>
+        supabase.rpc('get_ranked_feed_page', {
+          p_limit: PAGE_SIZE,
+          p_cursor: cursor,
+        }),
+      );
+      const [result] = await Promise.all([pagePromise, preferencesReady]);
 
-      // ── Guest mode: simple chronological feed (no personalization) ──
-      if (!user) {
-        const v8 = await runTimedFeedRpc('get_feed_posts_v8', offset, () =>
-          (supabase.rpc as any)('get_feed_posts_v8', {
-            p_user_id: null,
-            p_limit: PAGE_SIZE,
-            p_offset: offset,
-          }),
-        );
+      if (result.error) throw result.error;
 
-        const legacy = v8.error
-          ? await runTimedFeedRpc('get_feed_posts', offset, () =>
-              supabase.rpc('get_feed_posts', {
-                p_user_id: null,
-                p_limit: PAGE_SIZE,
-                p_offset: offset,
-              }),
-            )
-          : { data: v8.data, error: null };
-
-        const { data: guestPosts, error } = legacy;
-
-        if (error) throw error;
-        const mapped = (guestPosts || []).map((post: any) => ({
-          ...(mapFeedRpcRow(post) as Post),
-          is_liked: false,
-          user_reaction: null,
-        }));
-        return buildFeedPage<Post>(mapped, cursor, { fetchSize: PAGE_SIZE });
-      }
-
-      // ── Authenticated feed: server-side scoring (anti-cheat) ──
-      const prefsSyncPromise = ensureFeedPrefsSynced(user.id).catch(() => undefined);
-
-      // ── Strategy 1: one ranked RPC, while preference hydration runs in
-      // parallel. The server already reads the authoritative preference row;
-      // awaiting both only ensures the local muted-keyword cache is fresh
-      // before rendering, without paying two sequential network round-trips.
-      try {
-        const v8Promise = runTimedFeedRpc('get_feed_posts_v8', offset, () =>
-          (supabase.rpc as any)('get_feed_posts_v8', {
-            p_user_id: user.id,
-            p_limit: PAGE_SIZE,
-            p_offset: offset,
-          }),
-        );
-        const [v8] = await Promise.all([v8Promise, prefsSyncPromise]);
-        const prefs = loadContentPrefs();
-
-        const legacy = v8.error
-          ? await runTimedFeedRpc('get_feed_posts', offset, () =>
-              supabase.rpc('get_feed_posts', {
-                p_user_id: user.id,
-                p_limit: PAGE_SIZE,
-                p_offset: offset,
-              }),
-            )
-          : { data: v8.data, error: null };
-
-        const { data: rpcPosts, error: rpcError } = legacy;
-
-        if (!rpcError) {
-          const mapped = (rpcPosts || []).map((post: any) => mapFeedRpcRow(post) as Post);
-          return buildFeedPage<Post>(mapped, cursor, {
-            fetchSize: PAGE_SIZE,
-            include: (post) => !containsMutedKeyword(post.body, prefs.mutedKeywords),
-            maxConsecutiveSameAuthor: 2,
-          });
-        }
-      } catch {
-        // Fall through to legacy fallback
-      }
-
-      await prefsSyncPromise;
-      const prefs = loadContentPrefs();
-
-      // ── Fallback: direct query + enrichment ──
-      const now = new Date().toISOString();
-      const query = supabase
-        .from('posts')
-        .select('id, user_id, body, image_url, created_at, expires_at, likes_count, comments_count')
-        .or(`expires_at.is.null,expires_at.gt.${now}`)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
-
-      const { data: posts, error } = await query as { data: any[] | null; error: any };
-      if (error) throw error;
-      if (!posts || posts.length === 0) {
-        return buildFeedPage<Post>([], cursor, { fetchSize: PAGE_SIZE });
-      }
-
-      const enriched = await enrichPosts(posts, user.id);
-      const ranked = await serverRankPosts(enriched, user.id, prefs.feedAlgorithm);
-      return buildFeedPage<Post>(ranked, cursor, {
-        fetchSize: PAGE_SIZE,
-        include: (post) => !containsMutedKeyword(post.body, prefs.mutedKeywords),
-        maxConsecutiveSameAuthor: 2,
+      return readRankedFeedPage<Post>(result.data, (post) => {
+        const mapped = mapFeedRpcRow(post as unknown as FeedRpcRow) as Post;
+        return user
+          ? mapped
+          : { ...mapped, is_liked: false, user_reaction: null };
       });
     },
-    getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.nextCursor : undefined,
+    getNextPageParam: (lastPage) => (
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined
+    ),
     initialPageParam: createInitialFeedCursor(),
     enabled: !loading,
     // Stabilize cache: avoid feed reshuffling on every focus / interval.
@@ -200,94 +127,6 @@ export function usePosts() {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
-  });
-}
-
-/**
- * Server-side ranking via `feed_score_batch` RPC (Phase A anti-cheat).
- * All scoring weights, ML blend, recency, friend boost, late-night dampener
- * live in Postgres — the client only renders the order received.
- * Light client polish kept: session adjustment (current-session signals)
- * and author diversity (max 2 consecutive posts from same author).
- */
-async function serverRankPosts(
-  posts: Post[],
-  userId: string,
-  algo: 'smart' | 'chronological' | 'friends_first',
-): Promise<Post[]> {
-  if (!posts.length) return posts;
-
-  // Chronological: skip RPC, server already ordered by created_at desc
-  if (algo === 'chronological') {
-    return posts;
-  }
-
-  try {
-    const postIds = posts.map((p) => p.id);
-    const { data, error } = await supabase.rpc('feed_score_batch' as any, {
-      p_user_id: userId,
-      p_post_ids: postIds,
-      p_algo: algo,
-    });
-
-    if (error || !Array.isArray(data) || data.length === 0) {
-      return posts;
-    }
-
-    const scoreMap = new Map<string, number>();
-    for (const row of data as Array<{ post_id: string; final_score: number }>) {
-      scoreMap.set(row.post_id, Number(row.final_score) || 0);
-    }
-
-    const scored = posts.map((p) => {
-      const base = scoreMap.get(p.id) ?? 0;
-      // Live session adjustment (±0.15) — small client tie-break, not gameable for global ranking
-      return { post: p, finalScore: base + getSessionAdjustment(p.user_id) * 5 };
-    });
-
-    const sorted = scored.sort((a, b) => b.finalScore - a.finalScore).map((s) => s.post);
-    return sorted;
-  } catch {
-    return posts;
-  }
-}
-
-/** Enrich posts with profiles and user reactions — shared between strategies */
-async function enrichPosts(posts: any[], userId: string): Promise<Post[]> {
-  const userIds = [...new Set(posts.map(p => p.user_id))];
-  const postIds = posts.map(p => p.id);
-
-  const [profilesRes, userLikesRes] = await Promise.all([
-    supabase.from('profiles').select('user_id, name, avatar_url, mood_emoji').in('user_id', userIds),
-    supabase.from('likes').select('post_id, reaction_type').eq('user_id', userId).in('post_id', postIds),
-  ]);
-
-  const profileMap = new Map(profilesRes.data?.map(p => [p.user_id, p]) || []);
-  const userReactions = new Map<string, ReactionType>();
-  userLikesRes.data?.forEach((l: { post_id: string; reaction_type: ReactionType }) => {
-    userReactions.set(l.post_id, l.reaction_type);
-  });
-
-  return posts.map(post => {
-    const profile = profileMap.get(post.user_id);
-    const userReaction = userReactions.get(post.id);
-    return {
-      id: post.id,
-      user_id: post.user_id,
-      body: post.body,
-      image_url: post.image_url,
-      created_at: post.created_at,
-      expires_at: post.expires_at || null,
-      profile: {
-        name: profile?.name || 'Unknown',
-        avatar_url: profile?.avatar_url || null,
-        mood_emoji: (profile as any)?.mood_emoji || null,
-      },
-      likes_count: post.likes_count || 0,
-      comments_count: post.comments_count || 0,
-      is_liked: !!userReaction,
-      user_reaction: userReaction || null,
-    };
   });
 }
 
@@ -414,7 +253,7 @@ export function useCreatePost() {
           return {
             ...old,
             pages: [
-              [optimisticPost, ...old.pages[0]],
+              prependFeedPageItem(old.pages[0], optimisticPost),
               ...old.pages.slice(1),
             ],
           };
@@ -463,7 +302,7 @@ export function useDeletePost() {
           return {
             ...old,
             pages: old.pages.map((page: any[]) =>
-              page.filter((p: any) => p.id !== postId)
+              replaceFeedPageItems(page as any, page.filter((p: any) => p.id !== postId))
             ),
           };
         }
@@ -544,15 +383,18 @@ export function useToggleLike() {
         return {
           ...old,
           pages: old.pages.map((page: any[]) =>
-            page.map((p: any) =>
-              p.id === postId
-                ? {
-                    ...p,
-                    is_liked: !isLiked,
-                    user_reaction: isLiked ? null : 'like',
-                    likes_count: isLiked ? Math.max(0, (p.likes_count || 0) - 1) : (p.likes_count || 0) + 1,
-                  }
-                : p
+            replaceFeedPageItems(
+              page as any,
+              page.map((p: any) =>
+                p.id === postId
+                  ? {
+                      ...p,
+                      is_liked: !isLiked,
+                      user_reaction: isLiked ? null : 'like',
+                      likes_count: isLiked ? Math.max(0, (p.likes_count || 0) - 1) : (p.likes_count || 0) + 1,
+                    }
+                  : p
+              ),
             )
           ),
         };
