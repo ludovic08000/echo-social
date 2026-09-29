@@ -11,7 +11,7 @@ import { FeedLeftSidebar } from '@/components/feed/FeedLeftSidebar';
 import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
-import { Coffee, X, Sparkles, Lock, Shield, Radio } from 'lucide-react';
+import { Coffee, X, Sparkles, Lock, Shield } from 'lucide-react';
 import { FeedZeusCard } from '@/components/feed/FeedZeusCard';
 import { FeedProfileHeader } from '@/components/feed/FeedProfileHeader';
 import { ProfileFeedView } from '@/components/feed/ProfileFeedView';
