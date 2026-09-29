@@ -173,6 +173,36 @@ describe('canonical Aegis outbound transaction engine', () => {
     }));
   });
 
+  it('does not wait for archive network repair after an atomic durable commit', async () => {
+    mocks.sendRpc.mockResolvedValueOnce({
+      data: COPY.message_id,
+      error: null,
+      copies: [COPY],
+      retriedStaleRoute: false,
+      routeVersion: 'route-version-1',
+      archiveDurable: true,
+      deliveryState: 'sent',
+      blockedRecipients: [],
+    });
+
+    await expect(sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message instantané',
+      localId: 'local-atomic-archive',
+      traceId: 'trace-atomic-archive',
+      messageId: COPY.message_id,
+    })).resolves.toMatchObject({ id: COPY.message_id });
+
+    expect(mocks.archiveBubbleForUser).not.toHaveBeenCalled();
+    expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-atomic-archive');
+    expect(readE2EETrace()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        stage: 'ARCHIVE_DURABLE_AT_COMMIT',
+      }),
+    ]));
+  });
+
   it('keeps the canonical send successful when the anonymous relay is unavailable', async () => {
     mocks.publishSealedSender.mockRejectedValueOnce(new Error('relay offline'));
 
