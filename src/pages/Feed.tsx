@@ -12,7 +12,6 @@ import { FeedRightSidebar } from '@/components/feed/FeedRightSidebar';
 import { FeedLiveSection } from '@/components/feed/FeedLiveSection';
 import { SponsoredPostCard } from '@/components/feed/SponsoredPostCard';
 import { Coffee, X, Sparkles, Lock, Shield } from 'lucide-react';
-import { FeedZeusCard } from '@/components/feed/FeedZeusCard';
 import { FeedProfileHeader } from '@/components/feed/FeedProfileHeader';
 import { ProfileFeedView } from '@/components/feed/ProfileFeedView';
 import { LazyMount } from '@/components/feed/LazyMount';
@@ -263,7 +262,6 @@ export default function Feed() {
                   </div>
                 </div>
                 <CreatePost />
-                <FeedZeusCard />
               </div>
             ) : (
               <div className="space-y-5">
@@ -281,7 +279,6 @@ export default function Feed() {
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }} className="px-4">
                   <CreatePost />
                 </motion.div>
-                <FeedZeusCard />
               </div>
             )}
 
