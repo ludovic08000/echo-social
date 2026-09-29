@@ -11,6 +11,8 @@ const reactionTypeFixPath =
   'supabase/migrations/20260929215526_cast_feed_reaction_type.sql';
 const feedLatencyPath =
   'supabase/migrations/20260929233000_optimize_feed_latency.sql';
+const feedScoringPath =
+  'supabase/migrations/20260929235000_vectorize_feed_scoring.sql';
 
 const rawSql = readFileSync(migrationPath, 'utf8');
 const sql = rawSql.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -27,6 +29,10 @@ const reactionTypeFixSql = readFileSync(reactionTypeFixPath, 'utf8')
   .replace(/\s+/g, ' ')
   .trim();
 const feedLatencySql = readFileSync(feedLatencyPath, 'utf8')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+const feedScoringSql = readFileSync(feedScoringPath, 'utf8')
   .toLowerCase()
   .replace(/\s+/g, ' ')
   .trim();
@@ -144,6 +150,37 @@ describe('feed reliability migration', () => {
     expect(feedLatencySql).not.toContain('insert into public.ml_feed_experiments');
     expect(feedLatencySql).not.toContain('update public.ml_model_config');
     expect(feedLatencySql).not.toContain('insert into public.ml_model_config');
+  });
+
+  it('loads request-scoped retrieval state once and deduplicates candidates deterministically', () => {
+    expect(feedScoringSql).toContain('into v_blocked_ids');
+    expect(feedScoringSql).toContain('into v_friend_ids');
+    expect(feedScoringSql).toContain('post.user_id = any(v_friend_ids)');
+    expect(feedScoringSql).toContain('not (post.id = any(v_blocked_ids))');
+    expect(feedScoringSql).toContain('select distinct on (candidate.post_id)');
+    expect(feedScoringSql).toContain('candidate.source_priority');
+  });
+
+  it('scores the bounded feed batch set-wise while retaining a legacy fallback', () => {
+    expect(feedScoringSql).toContain('select profile.* into v_profile');
+    expect(feedScoringSql).toContain(
+      'from unnest(p_post_ids) with ordinality as input(post_id, ordinality)',
+    );
+    expect(feedScoringSql).toContain('interaction_rollup as materialized');
+    expect(feedScoringSql).toContain(
+      'where interaction.post_id = any(p_post_ids)',
+    );
+    expect(feedScoringSql).toContain(
+      'v_score := public.ml_score_post_v5(v_user_id, v_post_id)',
+    );
+    expect(feedScoringSql).toContain('order by component.ordinality');
+  });
+
+  it('does not change ranking weights or active experiments while vectorizing scoring', () => {
+    expect(feedScoringSql).not.toContain('update public.ml_feed_experiments');
+    expect(feedScoringSql).not.toContain('insert into public.ml_feed_experiments');
+    expect(feedScoringSql).not.toContain('update public.ml_model_config');
+    expect(feedScoringSql).not.toContain('insert into public.ml_model_config');
   });
 
 });
