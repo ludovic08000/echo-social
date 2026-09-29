@@ -76,6 +76,7 @@ import { AEGIS_MESSAGE_PROTOCOL, parseAegisKeyCapsule } from '@/lib/messaging/ae
 import {
   isMultiDeviceEnvelopeBody,
 } from '@/lib/messaging/messageCompatibility';
+import { clearE2EETrace, readE2EETrace } from '@/lib/messaging/e2eeTrace';
 import { VALID_RATCHET_COPY } from '@/test/aegisWireFixtures';
 
 const COPY = {
@@ -89,6 +90,7 @@ const COPY = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearE2EETrace();
   mocks.ensureDeviceReady.mockResolvedValue({
     deviceId: 'sender-device',
     userId: COPY.sender_user_id,
@@ -184,6 +186,61 @@ describe('canonical Aegis outbound transaction engine', () => {
 
     expect(mocks.sendRpc).toHaveBeenCalledTimes(1);
     expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-sealed-fallback');
+  });
+
+  it('does not keep an authoritative send waiting for the sealed-sender wakeup', async () => {
+    let releaseWakeup!: (value: { attempted: number; relayed: number; failed: number }) => void;
+    mocks.publishSealedSender.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseWakeup = resolve;
+    }));
+
+    const sending = sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext: 'message instantané',
+      localId: 'local-wakeup-background',
+      messageId: COPY.message_id,
+    });
+
+    await expect(sending).resolves.toMatchObject({ id: COPY.message_id });
+    expect(mocks.archiveBubbleForUser).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteOutbox).toHaveBeenCalledWith('local-wakeup-background');
+
+    releaseWakeup({ attempted: 1, relayed: 1, failed: 0 });
+    await Promise.resolve();
+  });
+
+  it('records latency blocks without retaining plaintext or raw identifiers', async () => {
+    const plaintext = 'secret à ne jamais journaliser';
+    await sendAegisOutboundMessage({
+      conversationId: '44444444-4444-4444-8444-444444444444',
+      senderUserId: COPY.sender_user_id,
+      plaintext,
+      localId: 'local-latency-trace',
+      traceId: 'trace-latency',
+      messageId: COPY.message_id,
+    });
+
+    const events = readE2EETrace().filter((event) => event.component === 'outbound_engine');
+    const completedBlocks = events
+      .filter((event) => event.outcome === 'ok')
+      .map((event) => event.stage);
+
+    expect(completedBlocks).toEqual(expect.arrayContaining([
+      'DEVICE_READINESS',
+      'LIBSIGNAL_PROVISION',
+      'OUTBOX_DURABLE_WRITE',
+      'TRUST_VERIFY',
+      'ARCHIVE_PREPARE',
+      'PARENT_ENCRYPT',
+      'FANOUT_BUILD',
+      'SERVER_RPC',
+      'ARCHIVE_FINALIZE',
+      'OUTBOX_DELETE',
+    ]));
+    const serialized = JSON.stringify(events);
+    expect(serialized).not.toContain(plaintext);
+    expect(serialized).not.toContain(COPY.message_id);
   });
 
   it('stops before fanout when libsignal provisioning fails', async () => {

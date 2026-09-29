@@ -2287,10 +2287,19 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
               onChange={e => {
                 const v = e.target.value;
                 setNewMessage(v);
-                if (v.trim()) notifyTyping(); else notifyStopped();
+                if (v.trim()) {
+                  void queue.prewarmSendPath().catch(() => undefined);
+                  notifyTyping();
+                } else {
+                  notifyStopped();
+                }
               }}
               onBlur={notifyStopped}
-              onFocus={() => { setShowEmojis(false); setShowGifs(false); }}
+              onFocus={() => {
+                setShowEmojis(false);
+                setShowGifs(false);
+                void queue.prewarmSendPath().catch(() => undefined);
+              }}
               placeholder="Aa"
               className="flex-1 bg-secondary/60 rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
