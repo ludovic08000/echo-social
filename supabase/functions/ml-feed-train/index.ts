@@ -306,10 +306,10 @@ Deno.serve(async (req) => {
           f.hashtags.map((h) => "#" + h).join(" "),
         ].filter(Boolean).join("\n").slice(0, 2000);
         const emb = await generateEmbedding(embText);
-        return { post, f, emb };
+        return { post, f, emb, embText };
       }));
 
-      for (const { post, f, emb } of results) {
+      for (const { post, f, emb, embText } of results) {
         const hadFeatureRow = existingMap.has(post.id);
         if (emb) postEmbeddings.set(post.id, emb);
         freshFeatures.set(post.id, { topics: f.topics, hashtags: f.hashtags });

@@ -6,6 +6,7 @@ const migrationPath =
 
 const rawSql = readFileSync(migrationPath, 'utf8');
 const sql = rawSql.toLowerCase().replace(/\s+/g, ' ').trim();
+const trainerSource = readFileSync('supabase/functions/ml-feed-train/index.ts', 'utf8');
 
 describe('feed reliability migration', () => {
   it('repairs A/B ordinality and rejects invalid post references per row', () => {
@@ -39,5 +40,11 @@ describe('feed reliability migration', () => {
     expect(sql).toContain("where secret.name = 'email_queue_service_role_key'");
     expect(sql).toContain("'forsure-ml-feed-train-hourly'");
     expect(sql).toContain('select public.ml_backfill_feed_feature_shells();');
+  });
+
+  it('carries embedding text from the async extraction batch into persistence', () => {
+    expect(trainerSource).toContain('return { post, f, emb, embText };');
+    expect(trainerSource).toContain('for (const { post, f, emb, embText } of results)');
+    expect(trainerSource).not.toContain('return { post, f, emb };');
   });
 });
