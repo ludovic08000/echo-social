@@ -261,13 +261,18 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: hsl(var(--bleu) / 0.3);
+    background: hsl(var(--foreground) / 0.55);
     border-radius: 4px;
+    min-height: 40px;
     transition: background 0.2s;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--bleu) / 0.5);
+    background: hsl(var(--foreground) / 0.75);
+  }
+
+  html {
+    scrollbar-color: hsl(var(--foreground) / 0.55) transparent;
   }
 }
 
