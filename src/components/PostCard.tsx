@@ -15,7 +15,7 @@ import { useIsCreator } from '@/hooks/useCreator';
 import { Button } from '@/components/ui/button';
 import { ReactionButton } from './ReactionButton';
 import { cn } from '@/lib/utils';
-import { ReactionType, REACTION_EMOJIS } from '@/hooks/useReactions';
+import { ReactionType } from '@/hooks/useReactions';
 import { ShareButton } from './ShareButton';
 import { generatePostUrl } from '@/lib/urlUtils';
 import { useAIContent } from '@/hooks/useAIContent';
@@ -413,16 +413,11 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
       {/* Engagement summary — Facebook style */}
       {showActions && (
         <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
-          {/* Une seule icône résume les réactions : jamais de pile visuelle. */}
+          {/* Le compteur reste textuel : l'unique emoji choisi apparaît seulement sur le bouton. */}
           {post.likes_count > 0 ? (
-            <div className="flex items-center gap-1.5">
-              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-primary/10 text-[11px]">
-                {post.user_reaction ? REACTION_EMOJIS[post.user_reaction] : '👍'}
-              </span>
-              <span className="text-[13px] text-muted-foreground">
-                {post.likes_count}
-              </span>
-            </div>
+            <span className="text-[13px] text-muted-foreground">
+              {post.likes_count} réaction{post.likes_count !== 1 ? 's' : ''}
+            </span>
           ) : <div />}
           
           {/* Right: comment count — always visible */}
