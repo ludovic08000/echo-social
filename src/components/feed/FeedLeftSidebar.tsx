@@ -2,9 +2,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   Home, Users, Search, 
   Bell, MessageCircle, Settings,
-  PlusCircle, BookOpen,
-  BarChart3, Bot, Megaphone, Store, Sparkles, Radio,
-  FileText, UsersRound
+  PlusCircle,
+  BarChart3, Bot, Megaphone, Store, Sparkles, Radio
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/hooks/useProfile';
