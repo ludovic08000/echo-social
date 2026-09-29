@@ -26,7 +26,7 @@ import {
   type OutboxStatus,
 } from '@/lib/messaging/outboxVault';
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
-import { traceE2EE } from '@/lib/messaging/e2eeTrace';
+import { traceE2EE, traceE2EEBlock } from '@/lib/messaging/e2eeTrace';
 import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import { supabase } from '@/integrations/supabase/client';
 import { publishSealedSenderWakeups } from '@/lib/messaging/sealedSenderTransport';
@@ -182,10 +182,24 @@ export async function sendAegisOutboundMessage(
     elapsedMs: Date.now() - traceStartedAt,
     ...details,
   }, level);
+  const traceBlock = <T>(stage: string, operation: () => Promise<T>) => traceE2EEBlock({
+    direction: 'send',
+    component: 'outbound_engine',
+    stage,
+    traceId,
+    messageId,
+    conversationId: input.conversationId,
+  }, operation);
   trace(resumed ? 'SEND_RESUME' : 'SEND_CREATED');
-  const readyDevice = await ensureAegisDeviceReady(input.senderUserId);
+  const readyDevice = await traceBlock(
+    'DEVICE_READINESS',
+    () => ensureAegisDeviceReady(input.senderUserId),
+  );
   // Invariant : publier les préclés du même moteur et du même appareil que le fanout.
-  await provisionLibsignalDevice(input.senderUserId, readyDevice.deviceId);
+  await traceBlock(
+    'LIBSIGNAL_PROVISION',
+    () => provisionLibsignalDevice(input.senderUserId, readyDevice.deviceId),
+  );
   trace('DEVICE_READY', { deviceId: readyDevice.deviceId });
   let transportPlaintext = resumed?.transportPlaintext ?? input.plaintext;
   let parentBody = isMultiDeviceEnvelopeBody(resumed?.encryptedBody) && resumed?.keyCapsule
@@ -232,35 +246,41 @@ export async function sendAegisOutboundMessage(
     await input.onState?.(snapshot);
   };
 
-  await Promise.all([
+  await traceBlock('OUTBOX_DURABLE_WRITE', () => Promise.all([
     persist(),
     savePlaintext(messageId, input.plaintext),
-  ]);
+  ]).then(() => undefined));
   trace('OUTBOX_DURABLE');
 
   // Une seule tentative par conversation ; les copies scellées survivent aux
   // refus réseau sans restaurer un ancien état du ratchet Libsignal.
+  const lockQueuedAt = Date.now();
   try {
     return await runAegisConversationJob(
       `${input.senderUserId}:${input.conversationId}:aegis-outbound`,
       async () => {
-  trace('SEND_LOCK_ACQUIRED');
+  trace('SEND_LOCK_ACQUIRED', {
+    outcome: 'ok',
+    blockMs: Date.now() - lockQueuedAt,
+  });
   // Re-check on every attempt, including a retry with durable ciphertext and
   // copies. Otherwise an identity rotation between preparation and retry could
   // bypass the transport gate.
-  await assertConversationFingerprintsTrusted(
+  await traceBlock('TRUST_VERIFY', () => assertConversationFingerprintsTrusted(
     input.senderUserId,
     input.conversationId,
-  );
+  ));
 
   if (archiveRequired && !archiveBody) {
-    const { encryptArchive } = await import('@/lib/messaging/archive/archiveKey');
-    archiveBody = await encryptArchive(
-      input.plaintext,
-      input.conversationId,
-      input.senderUserId,
-      messageId,
-    );
+    archiveBody = await traceBlock('ARCHIVE_PREPARE', async () => {
+      const { encryptArchive } = await import('@/lib/messaging/archive/archiveKey');
+      return encryptArchive(
+        input.plaintext,
+        input.conversationId,
+        input.senderUserId,
+        messageId,
+      );
+    });
     // Invariant : un message ordinaire ne quitte jamais le navigateur sans sa
     // copie de récupération chiffrée par la Master Key du compte.
     if (!archiveBody) {
@@ -284,7 +304,7 @@ export async function sendAegisOutboundMessage(
     }
 
     try {
-      const preparedMessage = await createAegisMessage({
+      const preparedMessage = await traceBlock('PARENT_ENCRYPT', () => createAegisMessage({
         messageId,
         conversationId: input.conversationId,
         senderId: input.senderUserId,
@@ -292,7 +312,7 @@ export async function sendAegisOutboundMessage(
         localId,
         traceId,
         createdAt: now,
-      });
+      }));
       parentBody = preparedMessage.body;
       keyCapsule = preparedMessage.keyCapsule;
       await savePlaintext(`aegis-capsule:${messageId}`, keyCapsule);
@@ -326,12 +346,12 @@ export async function sendAegisOutboundMessage(
 
   const buildCopies = async (): Promise<{ copies: FanoutCopyRow[]; routeVersion: string }> => {
     trace('FANOUT_START');
-    const built = await buildFanoutCopies({
+    const built = await traceBlock('FANOUT_BUILD', () => buildFanoutCopies({
       messageId,
       conversationId: input.conversationId,
       senderUserId: input.senderUserId,
       plaintext: keyCapsule!,
-    });
+    }));
     if (!built.hasTargets || (built.rows.length === 0 && built.allRecipientsBlocked !== true)) {
       throw new Error('E2EE_DEVICE_COPIES_UNAVAILABLE');
     }
@@ -377,7 +397,7 @@ export async function sendAegisOutboundMessage(
   let result: Awaited<ReturnType<typeof sendMessageWithAegisRetry>>;
   try {
     trace('SERVER_SEND_START', { copyCount: copies.length });
-    result = await sendMessageWithAegisRetry({
+    result = await traceBlock('SERVER_RPC', () => sendMessageWithAegisRetry({
       messageId,
       conversationId: input.conversationId,
       body: parentBody,
@@ -392,7 +412,7 @@ export async function sendAegisOutboundMessage(
       initialCopies: copies,
       routeVersion,
       rebuildCopies: buildCopies,
-    });
+    }));
   } catch (error) {
     copies = [];
     await persist({
@@ -452,30 +472,40 @@ export async function sendAegisOutboundMessage(
   const wakeupCopies = copies.filter(
     (copy) => !blockedRecipientIds.has(copy.recipient_user_id),
   );
-  const sealedSender = await publishSealedSenderWakeups({
+  // The canonical row and device copies are already committed. Sealed Sender
+  // is a metadata-minimised wakeup only; realtime + polling remain the durable
+  // delivery path. Run it beside archive finalisation so its 8 s network budget
+  // can never keep the sender bubble spinning after an authoritative receipt.
+  const sealedSenderTask = traceBlock('SEALED_SENDER_WAKEUP', () => publishSealedSenderWakeups({
     messageId: committedId,
     conversationId: input.conversationId,
     senderUserId: input.senderUserId,
     copies: wakeupCopies,
-  }).catch(() => ({ attempted: 0, relayed: 0, failed: 1 }));
-  trace(
-    sealedSender.failed === 0 ? 'SEALED_SENDER_RELAYED' : 'SEALED_SENDER_DEFERRED',
-    { targetCount: sealedSender.attempted, copyCount: sealedSender.relayed },
-    sealedSender.failed === 0 ? 'info' : 'warn',
-  );
+  }))
+    .catch(() => ({ attempted: 0, relayed: 0, failed: 1 }))
+    .then((sealedSender) => {
+      trace(
+        sealedSender.failed === 0 ? 'SEALED_SENDER_RELAYED' : 'SEALED_SENDER_DEFERRED',
+        { targetCount: sealedSender.attempted, copyCount: sealedSender.relayed },
+        sealedSender.failed === 0 ? 'info' : 'warn',
+      );
+    });
+  void sealedSenderTask;
   // The stable message UUID was cached before the transaction. Only add the
   // ciphertext index after commit; writing the same plaintext row twice wastes
   // IndexedDB work on resource-constrained mobile browsers.
   void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
   if (archiveRequired) {
-    const archiveDurable = await import('@/lib/messaging/archive/archiveKey')
-      .then(({ archiveBubbleForUser }) => archiveBubbleForUser({
+    const archiveDurable = await traceBlock('ARCHIVE_FINALIZE', async () => {
+      const { archiveBubbleForUser } = await import('@/lib/messaging/archive/archiveKey');
+      return archiveBubbleForUser({
         messageId: committedId,
         conversationId: input.conversationId,
         userId: input.senderUserId,
         plaintext: input.plaintext,
         ensureParent: true,
-      }))
+      });
+    })
       .catch(() => false);
     trace(archiveDurable ? 'ARCHIVE_DURABLE' : 'ARCHIVE_REQUIRED', {}, archiveDurable ? 'info' : 'error');
     if (!archiveDurable) {
@@ -484,7 +514,7 @@ export async function sendAegisOutboundMessage(
       throw new Error('AEGIS_ARCHIVE_DURABILITY_REQUIRED');
     }
   }
-  await deleteOutboxPayload(localId).catch(() => undefined);
+  await traceBlock('OUTBOX_DELETE', () => deleteOutboxPayload(localId)).catch(() => undefined);
   trace('SEND_COMPLETE', { copyCount: copies.length });
 
   return {

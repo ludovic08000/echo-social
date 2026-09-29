@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
-import { ensureUserE2EEIdentity } from '@/lib/crypto/identityBootstrap';
-import { listFanoutTargets } from '@/e2ee-session/deviceRegistry';
+import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
 import {
   cancelAegisRetry,
   isRetryableOutboundStatus,
   scheduleAegisRetry,
 } from '@/lib/messaging/aegisConversationQueue';
+import { traceE2EEBlock } from '@/lib/messaging/e2eeTrace';
+import { warmFanoutRoute } from '@/lib/messaging/fanoutRouteCache';
 import {
   useAegisMessageQueue,
   selectInitialDeliveryMode,
@@ -25,9 +26,81 @@ type SendExtra = {
   document_size_bytes?: number | null;
 };
 
-const PREWARM_TTL_MS = 60_000;
+// Keep this below the canonical route cache TTL (20 s). Composer focus/input
+// can therefore refresh a route before Send without polling in the background.
+const PREWARM_TTL_MS = 15_000;
+const PREWARM_RETRY_MS = 2_000;
 const prewarmCompletedAt = new Map<string, number>();
+const prewarmAttemptedAt = new Map<string, number>();
 const prewarmInflight = new Map<string, Promise<void>>();
+let sessionPrewarmInflight: Promise<void> | null = null;
+
+function prewarmSession(): Promise<void> {
+  if (sessionPrewarmInflight) return sessionPrewarmInflight;
+  const work = supabase.auth.getSession()
+    .then(({ error }) => {
+      if (error) throw error;
+    })
+    .finally(() => {
+      if (sessionPrewarmInflight === work) sessionPrewarmInflight = null;
+    });
+  sessionPrewarmInflight = work;
+  return work;
+}
+
+/**
+ * Warms only authenticated, stable-device and public route metadata. It never
+ * claims a prekey, creates ciphertext or advances a Libsignal ratchet.
+ */
+export function prewarmAegisSendPath(
+  userId: string,
+  conversationId: string,
+): Promise<void> {
+  if (!userId || !conversationId) return Promise.resolve();
+  const prewarmKey = `${userId}:${conversationId}`;
+  const lastCompletedAt = prewarmCompletedAt.get(prewarmKey) ?? 0;
+  if (Date.now() - lastCompletedAt < PREWARM_TTL_MS) return Promise.resolve();
+
+  const active = prewarmInflight.get(prewarmKey);
+  if (active) return active;
+  const lastAttemptedAt = prewarmAttemptedAt.get(prewarmKey) ?? 0;
+  if (Date.now() - lastAttemptedAt < PREWARM_RETRY_MS) return Promise.resolve();
+  prewarmAttemptedAt.set(prewarmKey, Date.now());
+
+  const block = <T>(stage: string, operation: () => Promise<T>) => traceE2EEBlock({
+    direction: 'send',
+    component: 'send_prewarm',
+    stage,
+    conversationId,
+  }, operation);
+
+  const task = (async () => {
+    const [session, device] = await Promise.allSettled([
+      block('PREWARM_SESSION', prewarmSession),
+      block('PREWARM_DEVICE', () => ensureAegisDeviceReady(userId)),
+    ]);
+    if (session.status !== 'fulfilled' || device.status !== 'fulfilled') return;
+
+    await block('PREWARM_ROUTE', () => warmFanoutRoute(conversationId, userId));
+    prewarmCompletedAt.set(prewarmKey, Date.now());
+  })().finally(() => {
+    if (prewarmInflight.get(prewarmKey) === task) prewarmInflight.delete(prewarmKey);
+  });
+
+  prewarmInflight.set(prewarmKey, task);
+  return task;
+}
+
+export const __prewarmTest = {
+  ttlMs: PREWARM_TTL_MS,
+  retryMs: PREWARM_RETRY_MS,
+  reset(): void {
+    prewarmCompletedAt.clear();
+    prewarmAttemptedAt.clear();
+    prewarmInflight.clear();
+    sessionPrewarmInflight = null;
+  },
+};
 
 export function useMessageQueue(
   conversationId: string,
@@ -50,41 +123,9 @@ export function useMessageQueue(
   useEffect(() => {
     if (!user?.id || !conversationId || allowPlaintext || !isEncryptionActive) return;
 
-    let cancelled = false;
-    const prewarmKey = `${user.id}:${conversationId}`;
-
     const prewarm = () => {
-      if (cancelled || document.visibilityState === 'hidden') return;
-      const lastCompletedAt = prewarmCompletedAt.get(prewarmKey) ?? 0;
-      if (Date.now() - lastCompletedAt < PREWARM_TTL_MS) return;
-      if (prewarmInflight.has(prewarmKey)) return;
-
-      const task = (async () => {
-        await Promise.allSettled([
-          supabase.auth.getSession(),
-          ensureUserE2EEIdentity(user.id, { waitForMaintenance: false }),
-          (async () => {
-            const { data, error } = await supabase
-              .from('conversation_participants')
-              .select('user_id')
-              .eq('conversation_id', conversationId);
-            if (error || cancelled) return;
-
-            const recipientUserIds = Array.from(new Set(
-              (data ?? [])
-                .map((row) => row.user_id)
-                .filter((id): id is string => typeof id === 'string' && id.length > 0),
-            ));
-
-            await listFanoutTargets(user.id, recipientUserIds);
-          })(),
-        ]);
-        if (!cancelled) prewarmCompletedAt.set(prewarmKey, Date.now());
-      })().finally(() => {
-        if (prewarmInflight.get(prewarmKey) === task) prewarmInflight.delete(prewarmKey);
-      });
-
-      prewarmInflight.set(prewarmKey, task);
+      if (document.visibilityState === 'hidden') return;
+      void prewarmAegisSendPath(user.id, conversationId).catch(() => undefined);
     };
 
     prewarm();
@@ -92,7 +133,6 @@ export function useMessageQueue(
     window.addEventListener('online', prewarm);
 
     return () => {
-      cancelled = true;
       window.removeEventListener('focus', prewarm);
       window.removeEventListener('online', prewarm);
     };
@@ -199,12 +239,23 @@ export function useMessageQueue(
       // Do not lock the whole send. The underlying hook immediately creates the
       // optimistic bubble and persists the durable job, then queuedEncrypt
       // serializes only the ratchet state transition.
+      if (user?.id && !allowPlaintext && isEncryptionActive) {
+        // Starting this without awaiting it lets the canonical fanout resolver
+        // share the same in-flight route while the durable outbox is written.
+        void prewarmAegisSendPath(user.id, conversationId).catch(() => undefined);
+      }
       await queue.sendMessage(body, imageUrl, extra);
-    }, [queue],
+    }, [allowPlaintext, conversationId, isEncryptionActive, queue, user?.id],
   );
+
+  const prewarmSendPath = useCallback(() => {
+    if (!user?.id || allowPlaintext || !isEncryptionActive) return Promise.resolve();
+    return prewarmAegisSendPath(user.id, conversationId);
+  }, [allowPlaintext, conversationId, isEncryptionActive, user?.id]);
 
   return {
     ...queue,
     sendMessage,
+    prewarmSendPath,
   };
 }

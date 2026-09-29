@@ -3,6 +3,7 @@ import type { DeviceDescriptor } from '@/e2ee-session/types';
 
 const mocks = vi.hoisted(() => ({
   invalidateVerifiedDeviceCache: vi.fn(),
+  resolveConversationRoute: vi.fn(),
 }));
 
 vi.mock('@/e2ee-session/deviceRegistry', () => ({
@@ -10,7 +11,22 @@ vi.mock('@/e2ee-session/deviceRegistry', () => ({
   invalidateVerifiedDeviceCache: mocks.invalidateVerifiedDeviceCache,
 }));
 
-import { __test__, invalidateAllFanoutRoutes, invalidateFanoutRoute } from '../fanoutRouteCache';
+vi.mock('@/lib/messaging/currentDevice', () => ({
+  getCurrentDeviceId: vi.fn(() => 'sender-device-stable'),
+  isDeviceIdTemporary: vi.fn(() => false),
+}));
+
+vi.mock('@/lib/messaging/aegisRouteResolver', () => ({
+  resolveConversationRoute: mocks.resolveConversationRoute,
+}));
+
+import {
+  __test__,
+  invalidateAllFanoutRoutes,
+  invalidateFanoutRoute,
+  resolveFanoutRouteSnapshot,
+  warmFanoutRoute,
+} from '../fanoutRouteCache';
 import type { FanoutRouteSnapshot } from '../fanoutRouteCache';
 
 const TARGETS: DeviceDescriptor[] = [{
@@ -24,6 +40,26 @@ describe('fanoutRouteCache', () => {
   beforeEach(() => {
     __test__.reset();
     vi.clearAllMocks();
+    mocks.resolveConversationRoute.mockResolvedValue({
+      version: SNAPSHOT.version,
+      targets: TARGETS,
+      senderDeviceRoutable: true,
+      unroutableUserIds: [],
+      blockedRecipients: [],
+    });
+  });
+
+  it('warms the exact canonical snapshot reused by the next send', async () => {
+    await warmFanoutRoute('conversation-warm', 'sender-warm');
+    await expect(resolveFanoutRouteSnapshot('conversation-warm', 'sender-warm'))
+      .resolves.toMatchObject(SNAPSHOT);
+
+    expect(mocks.resolveConversationRoute).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveConversationRoute).toHaveBeenCalledWith(
+      'conversation-warm',
+      'sender-warm',
+      'sender-device-stable',
+    );
   });
 
   it('coalesces and reuses a route inside the ttl', async () => {
