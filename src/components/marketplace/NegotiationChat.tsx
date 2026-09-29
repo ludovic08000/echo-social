@@ -4,6 +4,7 @@ import { useMessages, useSendMessage, useCreateConversation, useConversations } 
 import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, type Negotiation } from '@/hooks/useNegotiations';
 import { supabase } from '@/integrations/supabase/client';
 import { trackAICall } from '@/lib/aiEngine';
+import { edgeFunctionErrorMessage } from '@/lib/edgeFunctionError';
 import { UserAvatar } from '@/components/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -137,9 +138,14 @@ export function NegotiationChat({ open, onOpenChange, product }: NegotiationChat
       if (tone) reqBody.tone = tone;
       const { data, error } = await supabase.functions.invoke('zeus', { body: { domain: 'content', ...reqBody } });
       trackAICall(`nego-${action}`, Math.round(performance.now() - start), !error && !data?.error);
-      if (error || data?.error) { toast.error(data?.error || 'Erreur IA'); return; }
+      if (error || data?.error) {
+        toast.error(data?.error || await edgeFunctionErrorMessage(error));
+        return;
+      }
       if (data?.result) setAiSuggestion(data.result);
-    } catch { toast.error('Erreur IA'); } finally { setAiLoading(false); }
+    } catch (error) {
+      toast.error(await edgeFunctionErrorMessage(error));
+    } finally { setAiLoading(false); }
   };
 
   const handleMakeOffer = async () => {

@@ -30,6 +30,7 @@ import { useFriendships } from '@/hooks/useFriendships';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { trackAICall } from '@/lib/aiEngine';
+import { edgeFunctionErrorMessage } from '@/lib/edgeFunctionError';
 import { cn } from '@/lib/utils';
 import { useChatWidget } from './ChatWidgetContext';
 import { useImageUpload } from '@/hooks/useImageUpload';
@@ -979,9 +980,14 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       if (tone) reqBody.tone = tone;
       const { data, error } = await supabase.functions.invoke('zeus', { body: { domain: 'content', ...reqBody } });
       trackAICall(`chat-${action}`, Math.round(performance.now() - start), !error && !data?.error);
-      if (error || data?.error) { toast.error(data?.error || 'Erreur IA'); return; }
+      if (error || data?.error) {
+        toast.error(data?.error || await edgeFunctionErrorMessage(error));
+        return;
+      }
       if (data?.result) setAiSuggestion(data.result);
-    } catch { toast.error('Erreur IA'); } finally { setAiLoading(false); }
+    } catch (error) {
+      toast.error(await edgeFunctionErrorMessage(error));
+    } finally { setAiLoading(false); }
   };
 
   const messageIds = useMemo(() => (messages || []).map(m => m.id), [messages]);
