@@ -3991,6 +3991,8 @@ export type Database = {
           avg_watch_time_ms: number
           creator_id: string
           embedding: string | null
+          embedding_post_count: number
+          embedding_updated_at: string | null
           fatigue_score: number
           negative_feedback_rate: number
           novelty_score: number
@@ -4002,6 +4004,8 @@ export type Database = {
           avg_watch_time_ms?: number
           creator_id: string
           embedding?: string | null
+          embedding_post_count?: number
+          embedding_updated_at?: string | null
           fatigue_score?: number
           negative_feedback_rate?: number
           novelty_score?: number
@@ -4013,6 +4017,8 @@ export type Database = {
           avg_watch_time_ms?: number
           creator_id?: string
           embedding?: string | null
+          embedding_post_count?: number
+          embedding_updated_at?: string | null
           fatigue_score?: number
           negative_feedback_rate?: number
           novelty_score?: number
@@ -4061,6 +4067,75 @@ export type Database = {
           target_id?: string
           target_type?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      ml_feed_coverage_snapshots: {
+        Row: {
+          ab_events_24h: number
+          ab_events_7d: number
+          captured_at: string
+          creator_embedding_coverage_pct: number
+          creator_embeddings: number
+          creator_feature_coverage_pct: number
+          creator_feature_rows: number
+          id: number
+          multi_objective_ready: boolean
+          post_feature_coverage_pct: number
+          post_feature_rows: number
+          readiness_requirements: Json
+          semantic_embedding_coverage_pct: number
+          semantic_post_embeddings: number
+          total_active_creators: number
+          total_active_posts: number
+          tower_embedding_coverage_pct: number
+          tower_post_embeddings: number
+          variant_a_events_7d: number
+          variant_b_events_7d: number
+        }
+        Insert: {
+          ab_events_24h: number
+          ab_events_7d: number
+          captured_at?: string
+          creator_embedding_coverage_pct: number
+          creator_embeddings: number
+          creator_feature_coverage_pct: number
+          creator_feature_rows: number
+          id?: number
+          multi_objective_ready?: boolean
+          post_feature_coverage_pct: number
+          post_feature_rows: number
+          readiness_requirements?: Json
+          semantic_embedding_coverage_pct: number
+          semantic_post_embeddings: number
+          total_active_creators: number
+          total_active_posts: number
+          tower_embedding_coverage_pct: number
+          tower_post_embeddings: number
+          variant_a_events_7d: number
+          variant_b_events_7d: number
+        }
+        Update: {
+          ab_events_24h?: number
+          ab_events_7d?: number
+          captured_at?: string
+          creator_embedding_coverage_pct?: number
+          creator_embeddings?: number
+          creator_feature_coverage_pct?: number
+          creator_feature_rows?: number
+          id?: number
+          multi_objective_ready?: boolean
+          post_feature_coverage_pct?: number
+          post_feature_rows?: number
+          readiness_requirements?: Json
+          semantic_embedding_coverage_pct?: number
+          semantic_post_embeddings?: number
+          total_active_creators?: number
+          total_active_posts?: number
+          tower_embedding_coverage_pct?: number
+          tower_post_embeddings?: number
+          variant_a_events_7d?: number
+          variant_b_events_7d?: number
         }
         Relationships: []
       }
@@ -4153,6 +4228,74 @@ export type Database = {
           variant_b?: Json
         }
         Relationships: []
+      }
+      ml_feed_mmr_shadow_runs: {
+        Row: {
+          baseline_distinct_author_ratio: number | null
+          baseline_pairwise_similarity: number | null
+          candidates_evaluated: number
+          completed_at: string | null
+          id: number
+          lambda: number
+          mean_relevance_delta: number | null
+          metadata: Json
+          mmr_distinct_author_ratio: number | null
+          mmr_pairwise_similarity: number | null
+          model_run_id: string | null
+          sampled_users: number
+          semantic_coverage_pct: number
+          started_at: string
+          status: string
+          top_k: number
+          top_k_overlap_pct: number | null
+        }
+        Insert: {
+          baseline_distinct_author_ratio?: number | null
+          baseline_pairwise_similarity?: number | null
+          candidates_evaluated?: number
+          completed_at?: string | null
+          id?: number
+          lambda?: number
+          mean_relevance_delta?: number | null
+          metadata?: Json
+          mmr_distinct_author_ratio?: number | null
+          mmr_pairwise_similarity?: number | null
+          model_run_id?: string | null
+          sampled_users?: number
+          semantic_coverage_pct?: number
+          started_at?: string
+          status?: string
+          top_k?: number
+          top_k_overlap_pct?: number | null
+        }
+        Update: {
+          baseline_distinct_author_ratio?: number | null
+          baseline_pairwise_similarity?: number | null
+          candidates_evaluated?: number
+          completed_at?: string | null
+          id?: number
+          lambda?: number
+          mean_relevance_delta?: number | null
+          metadata?: Json
+          mmr_distinct_author_ratio?: number | null
+          mmr_pairwise_similarity?: number | null
+          model_run_id?: string | null
+          sampled_users?: number
+          semantic_coverage_pct?: number
+          started_at?: string
+          status?: string
+          top_k?: number
+          top_k_overlap_pct?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_feed_mmr_shadow_runs_model_run_id_fkey"
+            columns: ["model_run_id"]
+            isOneToOne: false
+            referencedRelation: "ml_model_runs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_fraud_signals: {
         Row: {
@@ -4359,24 +4502,30 @@ export type Database = {
         Row: {
           created_at: string
           embedding: string | null
+          embedding_source: string
           last_trained_at: string
           post_id: string
+          semantic_seeded_at: string | null
           training_samples: number
           updated_at: string
         }
         Insert: {
           created_at?: string
           embedding?: string | null
+          embedding_source?: string
           last_trained_at?: string
           post_id: string
+          semantic_seeded_at?: string | null
           training_samples?: number
           updated_at?: string
         }
         Update: {
           created_at?: string
           embedding?: string | null
+          embedding_source?: string
           last_trained_at?: string
           post_id?: string
+          semantic_seeded_at?: string | null
           training_samples?: number
           updated_at?: string
         }
@@ -8939,6 +9088,7 @@ export type Database = {
               user_id: string
             }[]
           }
+      ml_backfill_feed_feature_shells: { Args: never; Returns: Json }
       ml_build_post_embedding_text: {
         Args: { p_post_id: string }
         Returns: string
@@ -8947,6 +9097,7 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: string
       }
+      ml_capture_feed_coverage_snapshot: { Args: never; Returns: number }
       ml_cold_start_feed: {
         Args: { p_limit?: number; p_user_id: string }
         Returns: {
@@ -8959,6 +9110,7 @@ export type Database = {
         Returns: undefined
       }
       ml_embeddings_cron_tick: { Args: never; Returns: undefined }
+      ml_feed_train_cron_tick: { Args: never; Returns: undefined }
       ml_find_similar_posts: {
         Args: { p_limit?: number; p_user_id: string }
         Returns: {
