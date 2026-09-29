@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, X, Home, Users, FileText, Settings, MessageCircle, Bot, BookOpen, Heart, Megaphone, Bell, Radio } from 'lucide-react';
+import { Search, X, Home, Users, Settings, MessageCircle, Bot, Heart, Megaphone, Bell, Radio } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
