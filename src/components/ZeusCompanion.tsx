@@ -736,9 +736,9 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
   return (
     <>
-      {/* FAB Button (mobile only when not inline) */}
+      {/* FAB Button (mobile only when not inline) — retiré à la demande du propriétaire */}
       <AnimatePresence>
-        {!open && !inline && (
+        {false && !open && !inline && (
           <motion.button
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
