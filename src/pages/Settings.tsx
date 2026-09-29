@@ -8,8 +8,6 @@ import { SettingsMenuGrid } from '@/components/settings/SettingsMenuGrid';
 import { SettingsProfileTab } from '@/components/settings/SettingsProfileTab';
 import { NotificationSettingsPanel } from '@/components/NotificationSettingsPanel';
 import { PrivacySettingsPanel } from '@/components/settings/PrivacySettingsPanel';
-import { MyGroupsList } from '@/components/settings/MyGroupsList';
-import { MyPagesList } from '@/components/settings/MyPagesList';
 import { AppearanceSettingsPanel } from '@/components/settings/AppearanceSettingsPanel';
 import { WellbeingSettingsPanel } from '@/components/settings/WellbeingSettingsPanel';
 import { ContentPreferencesPanel } from '@/components/settings/ContentPreferencesPanel';
@@ -102,23 +100,6 @@ export default function Settings() {
           </div>
         )}
 
-        {activeTab === 'groups' && (
-          <div className="animate-fade-in">
-            <section className="premium-card p-5">
-              <h2 className="text-sm font-semibold mb-4">{t('settings.myGroups')}</h2>
-              <MyGroupsList />
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'pages' && (
-          <div className="animate-fade-in">
-            <section className="premium-card p-5">
-              <h2 className="text-sm font-semibold mb-4">{t('settings.myPages')}</h2>
-              <MyPagesList />
-            </section>
-          </div>
-        )}
 
         {activeTab === 'privacy' && (
           <div className="animate-fade-in">

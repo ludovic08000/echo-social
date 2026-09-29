@@ -1,4 +1,4 @@
-import { User, Palette, Heart, Brain, Accessibility, Users, FileText, Shield, Bell, ChevronRight, LogOut, Gamepad2, Trophy, BookOpen, Search, MessageCircle, Tv, Baby, Smartphone } from 'lucide-react';
+import { User, Palette, Heart, Brain, Accessibility, Users, Shield, Bell, ChevronRight, LogOut, Gamepad2, Trophy, Search, MessageCircle, Tv, Baby, Smartphone } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
 import { Link, useNavigate } from 'react-router-dom';
@@ -31,7 +31,6 @@ const quickLinks = [
   { path: '/friends', icon: Users, label: 'Amis', color: 'bg-sky-500/10 text-sky-500' },
   { path: '/search', icon: Search, label: 'Rechercher', color: 'bg-violet-500/10 text-violet-500' },
   { path: '/messages', icon: MessageCircle, label: 'Messages', color: 'bg-primary/10 text-primary' },
-  { path: '/journal', icon: BookOpen, label: 'Journal', color: 'bg-rose-500/10 text-rose-500' },
   { path: '/channels', icon: Tv, label: 'Canaux TV', color: 'bg-purple-500/10 text-purple-500' },
 ];
 
@@ -68,8 +67,6 @@ export function SettingsMenuGrid({ activeTab, onTabChange }: SettingsMenuGridPro
     { id: 'wellbeing', label: t('settings.wellbeing'), desc: t('settings.wellbeingDesc'), icon: Heart, guestAllowed: true },
     { id: 'content', label: t('settings.content'), desc: t('settings.contentDesc'), icon: Brain, guestAllowed: true },
     { id: 'accessibility', label: t('settings.accessibility'), desc: t('settings.accessibilityDesc'), icon: Accessibility, guestAllowed: true },
-    { id: 'groups', label: t('settings.groups'), desc: t('settings.groupsDesc'), icon: Users, guestAllowed: false },
-    { id: 'pages', label: t('settings.pages'), desc: t('settings.pagesDesc'), icon: FileText, guestAllowed: false },
     { id: 'privacy', label: t('settings.privacy'), desc: t('settings.privacyDesc'), icon: Shield, guestAllowed: false },
     { id: 'notifications', label: t('settings.notifications'), desc: t('settings.notificationsDesc'), icon: Bell, guestAllowed: false },
     { id: 'parental', label: 'Contrôle parental', desc: 'Code PIN et filtrage de contenu', icon: Baby, guestAllowed: true },

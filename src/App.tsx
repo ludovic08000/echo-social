@@ -83,15 +83,10 @@ const Notifications = lazyWithOneRetry(() => import("./pages/Notifications"), 'r
 const Settings = lazyWithOneRetry(() => import("./pages/Settings"), 'r-settings');
 const Messages = lazyWithOneRetry(() => import("./pages/Messages"), 'r-messages');
 const Friends = lazyWithOneRetry(() => import("./pages/Friends"), 'r-friends');
-const Groups = lazyWithOneRetry(() => import("./pages/Groups"), 'r-groups');
-const GroupDetail = lazyWithOneRetry(() => import("./pages/GroupDetail"), 'r-groupd');
-const Pages = lazyWithOneRetry(() => import("./pages/Pages"), 'r-pages');
-const PageDetail = lazyWithOneRetry(() => import("./pages/PageDetail"), 'r-paged');
 const Videos = lazyWithOneRetry(() => import("./pages/Videos"), 'r-videos');
 const Lives = lazyWithOneRetry(() => import("./pages/Lives"), 'r-lives');
 const LiveWatch = lazyWithOneRetry(() => import("./pages/LiveWatch"), 'r-livew');
 const LiveScreen = lazyWithOneRetry(() => import("./pages/LiveScreen"), 'r-lives2');
-const Journal = lazyWithOneRetry(() => import("./pages/Journal"), 'r-journal');
 const Channels = lazyWithOneRetry(() => import("./pages/Channels"), 'r-channels');
 const Marketplace = lazyWithOneRetry(() => import("./pages/Marketplace"), 'r-market');
 const ProductDetailPage = lazyWithOneRetry(() => import("./pages/ProductDetail"), 'r-product');
@@ -288,12 +283,6 @@ function AppContent() {
                     <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
                     <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
                     <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
-                    <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
-                    <Route path="/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
-                    <Route path="/pages" element={<ProtectedRoute><Pages /></ProtectedRoute>} />
-                    <Route path="/pages/:id" element={<ProtectedRoute><PageDetail /></ProtectedRoute>} />
-                    <Route path="/live" element={<ProtectedRoute><LiveScreen /></ProtectedRoute>} />
-                    <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
                     <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
                     <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
                     <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
