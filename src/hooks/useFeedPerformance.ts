@@ -11,6 +11,23 @@ interface MetricBatch {
   metadata?: Record<string, unknown>;
 }
 
+export const FEED_PERFORMANCE_EVENT = 'forsure:feed-performance';
+
+export function emitFeedPerformanceMetric(
+  metricType: string,
+  value: number,
+  metadata?: Record<string, unknown>,
+) {
+  if (typeof window === 'undefined' || !Number.isFinite(value)) return;
+  window.dispatchEvent(new CustomEvent(FEED_PERFORMANCE_EVENT, {
+    detail: {
+      metric_type: metricType,
+      value: Math.max(0, Math.round(value)),
+      metadata: metadata ?? {},
+    } satisfies MetricBatch,
+  }));
+}
+
 /**
  * Feed performance collector — Level 1: Observer
  * Tracks load time, scroll depth, posts rendered, engagement, abandonment, FPS
@@ -51,6 +68,19 @@ export function useFeedPerformance() {
       flush();
     }
   }, [flush]);
+
+  // RPC timings are emitted by the data hook after the response settles. Keep
+  // the telemetry on this existing 30-second batch so measurement never adds
+  // another request to the feed's critical path.
+  useEffect(() => {
+    const onMetric = (event: Event) => {
+      const detail = (event as CustomEvent<MetricBatch>).detail;
+      if (!detail || !Number.isFinite(detail.value)) return;
+      track(detail.metric_type, detail.value, detail.metadata);
+    };
+    window.addEventListener(FEED_PERFORMANCE_EVENT, onMetric);
+    return () => window.removeEventListener(FEED_PERFORMANCE_EVENT, onMetric);
+  }, [track]);
 
   // Auto-flush timer
   useEffect(() => {

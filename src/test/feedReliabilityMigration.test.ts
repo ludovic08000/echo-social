@@ -9,6 +9,8 @@ const feedFunctionFixPath =
   'supabase/migrations/20260929214555_qualify_feed_user_reference.sql';
 const reactionTypeFixPath =
   'supabase/migrations/20260929215526_cast_feed_reaction_type.sql';
+const feedLatencyPath =
+  'supabase/migrations/20260929233000_optimize_feed_latency.sql';
 
 const rawSql = readFileSync(migrationPath, 'utf8');
 const sql = rawSql.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -21,6 +23,10 @@ const feedFunctionFixSql = readFileSync(feedFunctionFixPath, 'utf8')
   .replace(/\s+/g, ' ')
   .trim();
 const reactionTypeFixSql = readFileSync(reactionTypeFixPath, 'utf8')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+const feedLatencySql = readFileSync(feedLatencyPath, 'utf8')
   .toLowerCase()
   .replace(/\s+/g, ' ')
   .trim();
@@ -111,6 +117,33 @@ describe('feed reliability migration', () => {
     expect(reactionTypeFixSql).not.toContain('insert into public.ml_feed_experiments');
     expect(reactionTypeFixSql).not.toContain('retrieval_weight');
     expect(reactionTypeFixSql).not.toContain('exploration_weight');
+  });
+
+  it('retrieves feed candidates once and reuses the bounded scoring set', () => {
+    expect(
+      feedLatencySql.match(
+        /ml_retrieve_feed_candidates_v8\(v_user_id, 500\)/g,
+      ),
+    ).toHaveLength(1);
+    expect(feedLatencySql).toContain(
+      'into v_candidate_ids, v_candidate_sources, v_candidate_scores',
+    );
+    expect(feedLatencySql).toContain(
+      'from unnest(v_candidate_ids, v_candidate_sources, v_candidate_scores)',
+    );
+    expect(feedLatencySql).toContain(
+      'v_scoring_ids := v_candidate_ids[1:least(200, cardinality(v_candidate_ids))]',
+    );
+    expect(feedLatencySql).toContain(
+      "from public.feed_score_batch(v_user_id, v_scoring_ids, 'smart')",
+    );
+  });
+
+  it('keeps feed latency work independent from ranking configuration', () => {
+    expect(feedLatencySql).not.toContain('update public.ml_feed_experiments');
+    expect(feedLatencySql).not.toContain('insert into public.ml_feed_experiments');
+    expect(feedLatencySql).not.toContain('update public.ml_model_config');
+    expect(feedLatencySql).not.toContain('insert into public.ml_model_config');
   });
 
 });

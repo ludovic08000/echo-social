@@ -7,6 +7,7 @@ import { getSessionAdjustment } from '@/lib/feedDiversity';
 import { syncFeedPrefsFromServer } from '@/lib/feedPreferences';
 import { mapFeedRpcRow } from '@/lib/recsysV8';
 import { buildFeedPage, createInitialFeedCursor, type FeedCursor } from '@/lib/feedPagination';
+import { emitFeedPerformanceMetric } from '@/hooks/useFeedPerformance';
 
 // One-shot sync per user. Pages await the same promise so the first request
 // cannot race against stale local preferences.
@@ -44,6 +45,42 @@ export interface Post {
 
 const PAGE_SIZE = 25;
 
+type FeedRpcResponse = {
+  data?: unknown[] | null;
+  error?: unknown;
+};
+
+function feedClockNow(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+async function runTimedFeedRpc<T extends FeedRpcResponse>(
+  source: 'get_feed_posts_v8' | 'get_feed_posts',
+  offset: number,
+  request: () => PromiseLike<T>,
+): Promise<T> {
+  const startedAt = feedClockNow();
+  try {
+    const result = await request();
+    emitFeedPerformanceMetric('rpc_latency', feedClockNow() - startedAt, {
+      source,
+      page: offset === 0 ? 'initial' : 'next',
+      outcome: result.error ? 'error' : 'success',
+      row_count: Array.isArray(result.data) ? result.data.length : 0,
+      target_max_ms: 350,
+    });
+    return result;
+  } catch (error) {
+    emitFeedPerformanceMetric('rpc_latency', feedClockNow() - startedAt, {
+      source,
+      page: offset === 0 ? 'initial' : 'next',
+      outcome: 'exception',
+      target_max_ms: 350,
+    });
+    throw error;
+  }
+}
+
 export function usePosts() {
   const { user, loading } = useAuth();
 
@@ -55,18 +92,22 @@ export function usePosts() {
 
       // ── Guest mode: simple chronological feed (no personalization) ──
       if (!user) {
-        const v8 = await (supabase.rpc as any)('get_feed_posts_v8', {
-          p_user_id: null,
-          p_limit: PAGE_SIZE,
-          p_offset: offset,
-        });
+        const v8 = await runTimedFeedRpc('get_feed_posts_v8', offset, () =>
+          (supabase.rpc as any)('get_feed_posts_v8', {
+            p_user_id: null,
+            p_limit: PAGE_SIZE,
+            p_offset: offset,
+          }),
+        );
 
         const legacy = v8.error
-          ? await supabase.rpc('get_feed_posts', {
-              p_user_id: null,
-              p_limit: PAGE_SIZE,
-              p_offset: offset,
-            })
+          ? await runTimedFeedRpc('get_feed_posts', offset, () =>
+              supabase.rpc('get_feed_posts', {
+                p_user_id: null,
+                p_limit: PAGE_SIZE,
+                p_offset: offset,
+              }),
+            )
           : { data: v8.data, error: null };
 
         const { data: guestPosts, error } = legacy;
@@ -81,27 +122,31 @@ export function usePosts() {
       }
 
       // ── Authenticated feed: server-side scoring (anti-cheat) ──
-      try {
-        await ensureFeedPrefsSynced(user.id);
-      } catch {
-        // Local preferences remain a safe fallback when sync is unavailable.
-      }
-      const prefs = loadContentPrefs();
+      const prefsSyncPromise = ensureFeedPrefsSynced(user.id).catch(() => undefined);
 
-      // ── Strategy 1: Single RPC call ──
+      // ── Strategy 1: one ranked RPC, while preference hydration runs in
+      // parallel. The server already reads the authoritative preference row;
+      // awaiting both only ensures the local muted-keyword cache is fresh
+      // before rendering, without paying two sequential network round-trips.
       try {
-        const v8 = await (supabase.rpc as any)('get_feed_posts_v8', {
-          p_user_id: user.id,
-          p_limit: PAGE_SIZE,
-          p_offset: offset,
-        });
+        const v8Promise = runTimedFeedRpc('get_feed_posts_v8', offset, () =>
+          (supabase.rpc as any)('get_feed_posts_v8', {
+            p_user_id: user.id,
+            p_limit: PAGE_SIZE,
+            p_offset: offset,
+          }),
+        );
+        const [v8] = await Promise.all([v8Promise, prefsSyncPromise]);
+        const prefs = loadContentPrefs();
 
         const legacy = v8.error
-          ? await supabase.rpc('get_feed_posts', {
-              p_user_id: user.id,
-              p_limit: PAGE_SIZE,
-              p_offset: offset,
-            })
+          ? await runTimedFeedRpc('get_feed_posts', offset, () =>
+              supabase.rpc('get_feed_posts', {
+                p_user_id: user.id,
+                p_limit: PAGE_SIZE,
+                p_offset: offset,
+              }),
+            )
           : { data: v8.data, error: null };
 
         const { data: rpcPosts, error: rpcError } = legacy;
@@ -117,6 +162,9 @@ export function usePosts() {
       } catch {
         // Fall through to legacy fallback
       }
+
+      await prefsSyncPromise;
+      const prefs = loadContentPrefs();
 
       // ── Fallback: direct query + enrichment ──
       const now = new Date().toISOString();
