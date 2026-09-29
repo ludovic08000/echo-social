@@ -3,9 +3,8 @@ import { Upload, Check, X, Image, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/lib/auth';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { BACKGROUND_ACCEPT, validateBackgroundFile } from '@/lib/appearance/backgroundValidation';
 
 const PREDEFINED_BACKGROUNDS = [
   { id: 'none', label: 'Aucun', preview: 'bg-background', url: '' },
@@ -22,7 +21,7 @@ const PREDEFINED_BACKGROUNDS = [
 interface BackgroundPickerProps {
   type: 'profile' | 'feed';
   currentUrl: string | null;
-  onUpdate: (url: string | null) => void;
+  onUpdate: (url: string | null) => Promise<unknown>;
   isUpdating: boolean;
 }
 
@@ -46,29 +45,52 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      toast.error('Format non supporté');
+    const validationError = validateBackgroundFile(file);
+    if (validationError) {
+      toast.error(validationError);
+      e.target.value = '';
       return;
     }
 
     setUploading(true);
+    let uploadedPath: string | null = null;
     try {
       const { uploadToR2 } = await import('@/lib/r2');
-      const { url } = await uploadToR2(file, 'backgrounds');
-      onUpdate(url);
+      const { url, path } = await uploadToR2(file, 'backgrounds');
+      uploadedPath = path;
+      await onUpdate(url);
       toast.success(`Fond ${label} mis à jour !`);
     } catch (err) {
       console.error('Background upload error:', err);
-      toast.error('Erreur lors de l\'upload');
+      if (uploadedPath) {
+        const { deleteFromR2 } = await import('@/lib/r2');
+        await deleteFromR2(uploadedPath).catch(() => undefined);
+      }
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de l\'upload');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleSelect = (bg: typeof PREDEFINED_BACKGROUNDS[0]) => {
-    onUpdate(bg.url || null);
-    if (bg.url) toast.success(`Fond "${bg.label}" appliqué`);
+  const handleSelect = async (bg: typeof PREDEFINED_BACKGROUNDS[0]) => {
+    try {
+      await onUpdate(bg.url || null);
+      toast.success(bg.url ? `Fond "${bg.label}" appliqué` : `Fond ${label} retiré`);
+    } catch (error) {
+      console.error('Background selection error:', error);
+      toast.error(`Impossible de modifier le fond ${label}`);
+    }
+  };
+
+  const handleRemove = async () => {
+    try {
+      await onUpdate(null);
+      toast.success(`Fond ${label} retiré`);
+    } catch (error) {
+      console.error('Background removal error:', error);
+      toast.error(`Impossible de retirer le fond ${label}`);
+    }
   };
 
   const isSelected = (bg: typeof PREDEFINED_BACKGROUNDS[0]) => {
@@ -87,7 +109,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
         {PREDEFINED_BACKGROUNDS.map(bg => (
           <button
             key={bg.id}
-            onClick={() => handleSelect(bg)}
+            onClick={() => void handleSelect(bg)}
             disabled={isUpdating}
             className={cn(
               "aspect-[3/4] rounded-xl border-2 transition-all duration-200 relative overflow-hidden",
@@ -136,7 +158,9 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
             ☁️ R2
           </div>
           <button
-            onClick={() => onUpdate(null)}
+            onClick={() => void handleRemove()}
+            disabled={isUpdating}
+            aria-label={`Retirer le fond ${label}`}
             className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-destructive transition-colors"
           >
             <X className="w-3 h-3" />
@@ -147,7 +171,7 @@ function BackgroundPicker({ type, currentUrl, onUpdate, isUpdating }: Background
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={BACKGROUND_ACCEPT}
         onChange={handleUpload}
         className="hidden"
       />
@@ -174,14 +198,14 @@ export function BackgroundSettingsSection() {
       <BackgroundPicker
         type="profile"
         currentUrl={profile.profile_bg_url}
-        onUpdate={(url) => updateProfile.mutate({ profile_bg_url: url })}
+        onUpdate={(url) => updateProfile.mutateAsync({ profile_bg_url: url })}
         isUpdating={updateProfile.isPending}
       />
 
       <BackgroundPicker
         type="feed"
         currentUrl={profile.feed_bg_url}
-        onUpdate={(url) => updateProfile.mutate({ feed_bg_url: url })}
+        onUpdate={(url) => updateProfile.mutateAsync({ feed_bg_url: url })}
         isUpdating={updateProfile.isPending}
       />
     </div>

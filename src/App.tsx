@@ -17,6 +17,7 @@ import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
 import { Suspense, lazy, useCallback, useEffect, useRef } from "react";
+import { MotionConfig } from "framer-motion";
 import { useAccountKeyWatchdog } from "@/hooks/useAccountKeyWatchdog";
 import { useCryptoMaintenance } from "@/hooks/useCryptoMaintenance";
 import { useDeviceLifecycle } from "@/hooks/useDeviceLifecycle";
@@ -24,7 +25,7 @@ import { useDeviceCopyRetryWorker } from "@/hooks/useDeviceCopyRetryWorker";
 import { messagingApi } from "@/lib/api/messagingApi";
 import { toast } from "sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { UXModeContext, useUXModeProvider } from "@/hooks/useUXMode";
+import { UXModeContext, useUXMode, useUXModeProvider } from "@/hooks/useUXMode";
 import { PushAutoSubscribe } from "@/components/push/PushAutoSubscribe";
 import { ContactVerificationDialog } from "@/components/messages/ContactVerificationDialog";
 import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
@@ -227,21 +228,26 @@ function RoutedErrorBoundary({ children }: { children: React.ReactNode }) {
 }
 
 function AppContent() {
-  useSettingsInit();
+  const { mode } = useUXMode();
+  const { animationsDisabled } = useSettingsInit(mode);
   useVersionWatcher();
   return (
-    <AuthProvider>
-      <ParentalGateProvider>
-        <ChatWidgetProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <RecoveryFlowGuard />
-              <AccountKeySyncRunner />
-              <RoutedErrorBoundary>
-                <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
-                  <Routes>
+    <MotionConfig
+      reducedMotion={animationsDisabled ? "always" : "user"}
+      transition={animationsDisabled ? { duration: 0 } : undefined}
+    >
+      <AuthProvider>
+        <ParentalGateProvider>
+          <ChatWidgetProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <RecoveryFlowGuard />
+                <AccountKeySyncRunner />
+                <RoutedErrorBoundary>
+                  <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
+                    <Routes>
                     <Route path="/" element={<Navigate to="/feed" replace />} />
                     <Route path="/landing" element={<Landing />} />
                     <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
@@ -295,17 +301,18 @@ function AppContent() {
                     <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                     <Route path="/unsubscribe" element={<Unsubscribe />} />
                     <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </Suspense>
-              </RoutedErrorBoundary>
-              <ChatWidget />
-              <ContactVerificationDialog />
-              <CookieConsentBanner />
-            </BrowserRouter>
-          </TooltipProvider>
-        </ChatWidgetProvider>
-      </ParentalGateProvider>
-    </AuthProvider>
+                    </Routes>
+                  </Suspense>
+                </RoutedErrorBoundary>
+                <ChatWidget />
+                <ContactVerificationDialog />
+                <CookieConsentBanner />
+              </BrowserRouter>
+            </TooltipProvider>
+          </ChatWidgetProvider>
+        </ParentalGateProvider>
+      </AuthProvider>
+    </MotionConfig>
   );
 }
 

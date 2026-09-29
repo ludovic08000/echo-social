@@ -20,13 +20,30 @@ export function useUXMode() {
   return useContext(UXModeContext);
 }
 
+export const APPEARANCE_CHANGED_EVENT = 'forsure:appearance-changed';
+
+export function getAppearanceSetting(mode: UXMode, key: string): string | null {
+  return localStorage.getItem(`${mode}-${key}`) ?? localStorage.getItem(key);
+}
+
+export function areAppearanceAnimationsDisabled(mode: UXMode): boolean {
+  return getAppearanceSetting(mode, 'animations-disabled') === 'true';
+}
+
+export function notifyAppearanceChanged(mode: UXMode) {
+  window.dispatchEvent(new CustomEvent(APPEARANCE_CHANGED_EVENT, { detail: { mode } }));
+}
+
 /** Reapply mode-scoped appearance settings to the DOM */
 export function reapplyAppearance(mode: UXMode) {
   const root = document.documentElement;
-  const get = (key: string) => localStorage.getItem(`${mode}-${key}`) ?? localStorage.getItem(key);
+  const get = (key: string) => getAppearanceSetting(mode, key);
 
   // Theme
-  const themeMode = get('theme-mode') || 'dark';
+  const savedThemeMode = get('theme-mode') || 'dark';
+  const dynamicTheme = get('dynamic-theme') === 'true';
+  const hour = new Date().getHours();
+  const themeMode = dynamicTheme ? (hour >= 6 && hour < 18 ? 'light' : 'dark') : savedThemeMode;
   if (themeMode === 'system') {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     root.classList.toggle('dark', prefersDark);
@@ -84,17 +101,18 @@ export function reapplyAppearance(mode: UXMode) {
       root.style.setProperty('--input', `${surfaceH} ${Math.max(surfaceS - 4, 6)}% ${borderL}%`);
 
       if (isFlow) {
-        // Pink glow Barbie — same hue as light (340°)
-        const glowH = 340;
-        const glowS = 82;
-        const glowL = 62;
+        const glowH = h;
+        const glowS = Math.max(s, 65);
+        const glowL = Math.max(l, 58);
+        const middleH = (h + 20) % 360;
+        const endH = (h + 40) % 360;
         root.style.setProperty('--primary', `${glowH} ${glowS}% ${glowL}%`);
         root.style.setProperty('--primary-foreground', '0 0% 100%');
         root.style.setProperty('--ring', `${glowH} ${glowS}% ${glowL}%`);
         root.style.setProperty('--flow-glow', `${glowH} ${glowS}% ${glowL}%`);
-        root.style.setProperty('--flow-warm', `345 78% 66%`);
-        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(340 85% 60%) 0%, hsl(320 68% 55%) 50%, hsl(300 55% 56%) 100%)`);
-        root.style.setProperty('--shadow-glow', `0 0 60px hsl(${glowH} ${glowS}% ${glowL}% / 0.35), 0 0 120px hsl(325 65% 55% / 0.15)`);
+        root.style.setProperty('--flow-warm', `${(h + 10) % 360} ${Math.max(s, 60)}% ${Math.min(glowL + 4, 72)}%`);
+        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${glowH} ${glowS}% ${glowL}%) 0%, hsl(${middleH} ${Math.max(glowS - 12, 45)}% ${Math.max(glowL - 5, 45)}%) 50%, hsl(${endH} ${Math.max(glowS - 22, 40)}% ${Math.max(glowL - 3, 45)}%) 100%)`);
+        root.style.setProperty('--shadow-glow', `0 0 60px hsl(${glowH} ${glowS}% ${glowL}% / 0.35), 0 0 120px hsl(${middleH} ${Math.max(glowS - 15, 45)}% ${Math.max(glowL - 7, 45)}% / 0.15)`);
         root.style.setProperty('--shadow-gold', `0 4px 35px -4px hsl(${glowH} ${glowS}% ${glowL}% / 0.42)`);
       }
     } else {
@@ -115,14 +133,18 @@ export function reapplyAppearance(mode: UXMode) {
       root.style.setProperty('--input', `${flowLight ? 330 : h} ${flowLight ? 35 : Math.max(s - 40, 10)}% ${flowLight ? 92 : 82}%`);
 
       if (flowLight) {
-        const glowH = 340;
-        const glowS = 82;
-        const glowL = 58;
+        const glowH = h;
+        const glowS = Math.max(s, 65);
+        const glowL = Math.max(l, 55);
+        const middleH = (h + 20) % 360;
+        const endH = (h + 40) % 360;
         root.style.setProperty('--primary', `${glowH} ${glowS}% ${glowL}%`);
         root.style.setProperty('--primary-foreground', '0 0% 100%');
         root.style.setProperty('--ring', `${glowH} ${glowS}% ${glowL}%`);
-        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(340 85% 58%) 0%, hsl(310 60% 55%) 50%, hsl(285 55% 58%) 100%)`);
-        root.style.setProperty('--shadow-glow', `0 0 50px hsl(${glowH} ${glowS}% ${glowL}% / 0.25), 0 0 100px hsl(310 60% 55% / 0.1)`);
+        root.style.setProperty('--flow-glow', `${glowH} ${glowS}% ${glowL}%`);
+        root.style.setProperty('--flow-warm', `${(h + 10) % 360} ${Math.max(s, 60)}% ${Math.min(glowL + 6, 72)}%`);
+        root.style.setProperty('--premium-gradient', `linear-gradient(135deg, hsl(${glowH} ${glowS}% ${glowL}%) 0%, hsl(${middleH} ${Math.max(glowS - 12, 45)}% ${Math.max(glowL - 3, 45)}%) 50%, hsl(${endH} ${Math.max(glowS - 20, 40)}% ${Math.min(glowL + 2, 68)}%) 100%)`);
+        root.style.setProperty('--shadow-glow', `0 0 50px hsl(${glowH} ${glowS}% ${glowL}% / 0.25), 0 0 100px hsl(${middleH} ${Math.max(glowS - 15, 45)}% ${Math.max(glowL - 5, 45)}% / 0.1)`);
         root.style.setProperty('--shadow-gold', `0 4px 28px -4px hsl(${glowH} ${glowS}% ${glowL}% / 0.3)`);
       }
     }
@@ -156,6 +178,8 @@ export function useUXModeProvider() {
 
   useEffect(() => {
     applyMode(mode);
+    reapplyAppearance(mode);
+    notifyAppearanceChanged(mode);
   }, [mode, applyMode]);
 
   const setMode = useCallback((m: UXMode) => {
@@ -164,6 +188,7 @@ export function useUXModeProvider() {
     // Apply class immediately so reapplyAppearance sees the correct state
     applyMode(m);
     reapplyAppearance(m);
+    notifyAppearanceChanged(m);
   }, [applyMode]);
 
   const toggleMode = useCallback(() => {

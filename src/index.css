@@ -807,6 +807,14 @@ body.ux-flow {
   }
 }
 /* ── Appearance: compact mode ── */
+.feed-custom-text {
+  color: var(--feed-text-color);
+}
+
+.feed-custom-text .text-foreground {
+  color: var(--feed-text-color) !important;
+}
+
 .compact-mode {
   --compact-scale: 0.85;
 }

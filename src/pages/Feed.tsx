@@ -55,7 +55,7 @@ export default function Feed() {
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const { data: activeAds } = useActiveAds();
-  const feedBgStyle = useCustomBackground('feed');
+  const feedBgStyle = useCustomBackground(profileId ? 'profile' : 'feed', profileId);
   const { feedStyle: feedCustomStyle } = useFeedCustomization();
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
@@ -195,13 +195,21 @@ export default function Feed() {
         jsonLd={feedMeta.jsonLd}
       />
       <h1 className="sr-only">Fil d'actualité Forsure</h1>
-      {feedBgStyle && (
-        <div className="fixed inset-0 -z-10 opacity-30" style={feedBgStyle} />
-      )}
       {feedCustomStyle.backgroundColor && (
-        <div className="fixed inset-0 -z-10" style={{ backgroundColor: feedCustomStyle.backgroundColor }} />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0"
+          style={{ backgroundColor: feedCustomStyle.backgroundColor }}
+        />
       )}
-      <div className="flex justify-center" style={{
+      {feedBgStyle && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0 opacity-30"
+          style={feedBgStyle}
+        />
+      )}
+      <div className={`relative z-10 flex justify-center${feedCustomStyle.color ? ' feed-custom-text' : ''}`} style={{
         fontFamily: feedCustomStyle.fontFamily,
         color: feedCustomStyle.color,
       }}>

@@ -166,7 +166,7 @@ export default function Profile() {
   const { data: currentUserIsMinor } = useIsMinor(user?.id);
   const updateProfile = useUpdateProfile();
   const createConversation = useCreateConversation();
-  const profileBgStyle = useCustomBackground('profile');
+  const profileBgStyle = useCustomBackground('profile', userId);
 
   const isFriend = friendshipData?.status === 'accepted';
 
@@ -503,9 +503,13 @@ export default function Profile() {
       })()}
       {isPrivateProfile && <NoIndexMeta />}
       {profileBgStyle && (
-        <div className="fixed inset-0 -z-10 opacity-30" style={profileBgStyle} />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0 opacity-30"
+          style={profileBgStyle}
+        />
       )}
-      <div className="w-full px-2 md:px-6">
+      <div className="relative z-10 w-full px-2 md:px-6">
       <div className="-mt-2">
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
         <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverChange} className="hidden" />
