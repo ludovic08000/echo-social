@@ -67,6 +67,15 @@ describe('risk-based login security architecture', () => {
     expect(boundary).toContain("loginSecurity.status === 'approved'");
   });
 
+  it('revalidates approved token refreshes without reopening the full-screen connection check', () => {
+    expect(auth).toContain("approvedServicesTokenRef.current === token && alreadyApproved");
+    expect(auth).toContain('if (!alreadyApproved)');
+    expect(auth).toContain("updateLoginSecurity({ status: 'checking', session: currentSecurity.session })");
+    expect(auth).toContain("updateLoginSecurity({ status: 'checking', session: null })");
+    expect(boundary).not.toContain('Vérification de la connexion');
+    expect(boundary).toContain('Ouverture de ForSure');
+  });
+
   it('supports both single-use email decisions and a trusted-device inbox', () => {
     expect(edge).toContain("subject: 'Confirmez votre nouvelle connexion ForSure'");
     expect(edge).toContain("purpose: 'transactional'");

@@ -307,7 +307,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = authenticatedSession.access_token;
     if (assessmentRef.current?.token === token) return assessmentRef.current.promise;
 
-    updateLoginSecurity({ status: 'checking', session: loginSecurityRef.current.session });
+    const currentSecurity = loginSecurityRef.current;
+    const alreadyApproved = currentSecurity.status === 'approved'
+      && currentSecurity.session?.status === 'approved';
+
+    // Supabase may emit SIGNED_IN more than once for the same token. The exact
+    // auth session has already been approved, so repeating the assessment would
+    // only flash the full-screen security boundary.
+    if (approvedServicesTokenRef.current === token && alreadyApproved) {
+      return currentSecurity.session;
+    }
+
+    // A refreshed access token keeps the same auth session. Revalidate it with
+    // the server, but keep an already-approved application usable while that
+    // background request completes. New, pending and denied sessions still
+    // enter the blocking state below.
+    if (!alreadyApproved) {
+      updateLoginSecurity({ status: 'checking', session: currentSecurity.session });
+    }
     setCurrentDeviceUserScope(authenticatedSession.user.id);
 
     const promise = (async () => {
@@ -365,8 +382,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const applySessionState = (nextSession: Session | null) => {
       const nextUserId = nextSession?.user?.id ?? null;
       const previousUserId = activeUserIdRef.current;
+      const switchedUser = Boolean(previousUserId && nextUserId && previousUserId !== nextUserId);
       if (previousUserId && previousUserId !== nextUserId) {
         clearMessagingSession(previousUserId);
+      }
+      if (switchedUser) {
+        assessmentRef.current = null;
+        approvedServicesTokenRef.current = null;
+        updateLoginSecurity({ status: 'checking', session: null });
       }
       activeUserIdRef.current = nextUserId;
       primeAuthUserId(nextUserId);

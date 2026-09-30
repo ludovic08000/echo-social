@@ -77,7 +77,7 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
           </div>
           <CardTitle>
             {cryptoRestoring ? 'Restauration sécurisée du compte'
-              : checking ? 'Vérification de la connexion'
+              : checking ? 'Ouverture de ForSure'
               : denied ? 'Connexion bloquée'
               : failed ? 'Vérification indisponible'
               : 'Confirmez cette connexion'}
@@ -90,7 +90,7 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
                 : failed
                   ? 'Par sécurité, le compte et les clés restent verrouillés tant que le serveur ne peut pas confirmer la session.'
                   : checking
-                    ? 'ForSure vérifie l’appareil et le contexte de connexion avant de déverrouiller Aegis.'
+                    ? 'Préparation de votre espace sécurisé.'
                     : 'Cet appareil ou cette zone ne correspond pas à vos connexions habituelles. Un e-mail de confirmation ForSure a été envoyé.'}
           </CardDescription>
         </CardHeader>
