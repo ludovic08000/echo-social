@@ -1,6 +1,8 @@
 -- A post reaction is mutable state, not an append-only event: one user owns
 -- exactly one reaction row per post and may only change its reaction_type.
 
+BEGIN;
+
 LOCK TABLE public.likes IN SHARE ROW EXCLUSIVE MODE;
 
 DO $integrity$
@@ -86,3 +88,5 @@ CREATE TRIGGER guard_post_reaction_identity
 BEFORE UPDATE ON public.likes
 FOR EACH ROW
 EXECUTE FUNCTION public.guard_post_reaction_identity();
+
+COMMIT;
