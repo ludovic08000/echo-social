@@ -133,6 +133,8 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    const authHeader = req.headers.get("Authorization");
+
     const { action, text, post_id, feedback } = await req.json();
 
     // metrics action leaks model accuracy/confidence — admin only.

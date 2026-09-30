@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       }
 
       for (const row of data || []) {
-        const val = (row as Record<string, string>)[column];
+        const val = (row as unknown as Record<string, string>)[column];
         if (val && typeof val === "string" && val.includes(r2PublicUrl)) {
           referencedUrls.add(val);
         }

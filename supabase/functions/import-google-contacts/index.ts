@@ -205,7 +205,7 @@ async function fetchMicrosoftContacts(
     "https://graph.microsoft.com/v1.0/me/contacts?$top=500&$select=displayName,emailAddresses,mobilePhone,homePhones,businessPhones";
 
   do {
-    const res = await fetch(nextLink!, {
+    const res: Response = await fetch(nextLink!, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -215,7 +215,7 @@ async function fetchMicrosoftContacts(
       throw new Error(`Microsoft API error ${res.status}: ${errorBody}`);
     }
 
-    const data = await res.json();
+    const data: any = await res.json();
     const items = data.value || [];
 
     for (const contact of items) {

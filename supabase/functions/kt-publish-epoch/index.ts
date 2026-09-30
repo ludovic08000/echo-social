@@ -90,7 +90,7 @@ function signedHeadBytes(
   root: string,
   leafCount: number,
   prevEpoch: number | null,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   return enc(
     JSON.stringify({
       epoch: String(epoch),
