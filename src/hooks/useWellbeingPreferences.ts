@@ -37,6 +37,14 @@ const LS_KEY = 'wellbeing-prefs';
 const LS_OWNER_KEY = 'wellbeing-prefs-user';
 export const WELLBEING_CHANGED_EVENT = 'forsure:wellbeing-changed';
 
+type WellbeingRealtimeEntry = {
+  channel: ReturnType<typeof supabase.channel>;
+  consumers: number;
+};
+
+const wellbeingRealtimeEntries = new Map<string, WellbeingRealtimeEntry>();
+let wellbeingRealtimeGeneration = 0;
+
 export function readLocalWellbeingPrefs(userId?: string): WellbeingPrefs {
   try {
     const cacheOwner = localStorage.getItem(LS_OWNER_KEY);
@@ -99,6 +107,58 @@ function prefsToRow(userId: string, prefs: WellbeingPrefs) {
   };
 }
 
+function acquireWellbeingRealtime(userId: string): () => void {
+  const existing = wellbeingRealtimeEntries.get(userId);
+  if (existing) {
+    existing.consumers += 1;
+    return createWellbeingRealtimeRelease(userId, existing);
+  }
+
+  // Realtime JS reuses channels by topic. A generation suffix prevents an
+  // immediate StrictMode remount from receiving a channel that is still
+  // asynchronously unsubscribing after the previous consumer disappeared.
+  wellbeingRealtimeGeneration += 1;
+  const channelName = `wellbeing_prefs:${userId}:${Date.now().toString(36)}:${wellbeingRealtimeGeneration}`;
+  const channel = supabase
+    .channel(channelName)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'wellbeing_preferences',
+      filter: `user_id=eq.${userId}`,
+    }, (payload) => {
+      const next = payload.new && Object.keys(payload.new).length
+        ? rowToPrefs(payload.new as WellbeingRow)
+        : DEFAULT_WELLBEING_PREFS;
+      writeLocalCache(next, userId);
+    })
+    .subscribe();
+
+  const entry: WellbeingRealtimeEntry = { channel, consumers: 1 };
+  wellbeingRealtimeEntries.set(userId, entry);
+  return createWellbeingRealtimeRelease(userId, entry);
+}
+
+function createWellbeingRealtimeRelease(
+  userId: string,
+  entry: WellbeingRealtimeEntry,
+): () => void {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+
+    const current = wellbeingRealtimeEntries.get(userId);
+    if (current !== entry) return;
+
+    current.consumers -= 1;
+    if (current.consumers > 0) return;
+
+    wellbeingRealtimeEntries.delete(userId);
+    void supabase.removeChannel(current.channel);
+  };
+}
+
 export function useWellbeingPreferences() {
   const { user } = useAuth();
   const userId = user?.id;
@@ -154,23 +214,7 @@ export function useWellbeingPreferences() {
   // Realtime cross-device sync.
   useEffect(() => {
     if (!userId) return;
-    const ch = supabase
-      .channel(`wellbeing_prefs:${userId}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'wellbeing_preferences',
-        filter: `user_id=eq.${userId}`,
-      }, (payload) => {
-        const next = payload.new && Object.keys(payload.new).length
-          ? rowToPrefs(payload.new as WellbeingRow)
-          : DEFAULT_WELLBEING_PREFS;
-        prefsRef.current = next;
-        setPrefs(next);
-        writeLocalCache(next, userId);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return acquireWellbeingRealtime(userId);
   }, [userId]);
 
   const update = useCallback((patch: Partial<WellbeingPrefs>) => {
