@@ -164,6 +164,12 @@ export function classifyOutboundFailure(error: unknown): {
     'cle de securite du contact modifiee',
     'pin unlock required',
     'identity_lost_backup_available',
+    'message_request_pending',
+    'message_request_unavailable',
+    'message_request_text_only',
+    'message_request_rate_limited',
+    'message_request_acceptance_required',
+    'message_request_client_update_required',
   ].some(marker => text.includes(marker));
   const routeUnavailable = [
     'e2ee_sender_device_not_trusted',
@@ -179,21 +185,39 @@ export function classifyOutboundFailure(error: unknown): {
     'libsignal_bundle_required',
     'device_route_not_ready',
   ].some(marker => text.includes(marker));
+  const requestMessage = text.includes('message_request_pending')
+    ? 'Votre demande de message est déjà en attente.'
+    : text.includes('message_request_text_only')
+      ? 'Le premier message doit contenir uniquement du texte.'
+      : text.includes('message_request_rate_limited')
+        ? 'Trop de nouvelles demandes envoyées. Réessayez plus tard.'
+        : text.includes('message_request_acceptance_required')
+          ? 'Cette personne doit accepter votre demande avant cet envoi.'
+          : text.includes('message_request_client_update_required')
+            ? 'Actualisez ForSure avant d’envoyer une nouvelle demande.'
+          : text.includes('message_request_unavailable')
+              ? 'Cette demande de message n’est plus disponible.'
+              : null;
   return {
     status: permanent
       ? 'failed_visible'
       : routeUnavailable
         ? 'waiting_secure_channel'
         : 'retry_pending',
-    message: isAuthenticationError(error)
+    message: requestMessage ?? (isAuthenticationError(error)
       ? 'Session expirée — reconnectez-vous pour envoyer.'
-      : raw || 'Échec de l’envoi chiffré.',
+      : raw || 'Échec de l’envoi chiffré.'),
   };
 }
 
 function isAmbiguousTransportError(error: unknown): boolean {
   const text = normalizedErrorText(error);
-  if (text.includes('e2ee_') || text.includes('not_authenticated') || text.includes('permission denied')) return false;
+  if (
+    text.includes('e2ee_') ||
+    text.includes('message_request_') ||
+    text.includes('not_authenticated') ||
+    text.includes('permission denied')
+  ) return false;
   return (
     !asSupabaseErrorLike(error).code ||
     text.includes('failed to fetch') ||

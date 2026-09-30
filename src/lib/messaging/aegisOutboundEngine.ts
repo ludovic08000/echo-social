@@ -2,6 +2,7 @@ import { safeUUID } from '@/e2ee-session';
 import { assertConversationFingerprintsTrusted } from '@/lib/crypto/fingerprintTracker';
 import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
 import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
+import { classifyAegisContentKind } from '@/lib/messaging/messageContentKind';
 import {
   isAegisAmbiguousTransportFailure,
   sendMessageWithAegisRetry,
@@ -73,7 +74,8 @@ function failureStatus(error: unknown): OutboxStatus {
     text.includes('pin unlock required') ||
     text.includes('verification obligatoire') ||
     text.includes('fingerprint changed') ||
-    text.includes('fingerprint_changed')
+    text.includes('fingerprint_changed') ||
+    text.includes('message_request_')
   ) {
     return 'failed_visible';
   }
@@ -204,6 +206,11 @@ export async function sendAegisOutboundMessage(
     : null;
   let keyCapsule = parentBody ? resumed?.keyCapsule ?? null : null;
   const messageExtra = input.extra ?? resumed?.extra;
+  const contentKind = classifyAegisContentKind({
+    plaintext: input.plaintext,
+    imageUrl: input.imageUrl ?? resumed?.imageUrl ?? null,
+    extra: messageExtra,
+  });
   const archiveRequired = messageExtra?.view_once !== true;
   let archiveBody = archiveRequired ? resumed?.archiveBody ?? null : null;
   let copies = parentBody
@@ -306,6 +313,7 @@ export async function sendAegisOutboundMessage(
         conversationId: input.conversationId,
         senderId: input.senderUserId,
         plaintext: transportPlaintext,
+        contentKind,
         localId,
         traceId,
         createdAt: now,

@@ -57,7 +57,7 @@ describe('Aegis UI and final schema compatibility', () => {
       'const { mutate: markConversationRead } = useMarkConversationRead();',
     );
     expect(source).toContain(
-      '[conversationId, messages, user?.id, cacheVersion, markConversationRead]',
+      '[conversationId, messages, user?.id, cacheVersion, isIncomingRequest, markConversationRead]',
     );
     expect(source).not.toContain('[conversationId, markRead]');
   });
@@ -87,7 +87,8 @@ describe('Aegis UI and final schema compatibility', () => {
     expect(source).toContain("if (document.visibilityState !== 'visible') return;");
     expect(source).toContain('decryptedCacheRef.current.has(message.id)');
     expect(source).toContain('void acknowledgeAegisMessages(user.id, readableIncomingIds, true)');
-    expect(source).toContain('[conversationId, messages, user?.id, cacheVersion, markConversationRead]');
+    expect(source).toContain('|| isIncomingRequest) return;');
+    expect(source).toContain('[conversationId, messages, user?.id, cacheVersion, isIncomingRequest, markConversationRead]');
   });
 
   it('isolates inbox synchronization by authenticated user and device', () => {

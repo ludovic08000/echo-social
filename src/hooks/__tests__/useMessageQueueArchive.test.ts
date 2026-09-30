@@ -53,6 +53,25 @@ describe('useMessageQueue Aegis transport', () => {
     });
   });
 
+  it('does not retry request-policy failures in the background', () => {
+    expect(classifyOutboundFailure(new Error('MESSAGE_REQUEST_PENDING'))).toEqual({
+      status: 'failed_visible',
+      message: 'Votre demande de message est déjà en attente.',
+    });
+    expect(classifyOutboundFailure(new Error('MESSAGE_REQUEST_TEXT_ONLY'))).toEqual({
+      status: 'failed_visible',
+      message: 'Le premier message doit contenir uniquement du texte.',
+    });
+    expect(classifyOutboundFailure(new Error('MESSAGE_REQUEST_RATE_LIMITED'))).toEqual({
+      status: 'failed_visible',
+      message: 'Trop de nouvelles demandes envoyées. Réessayez plus tard.',
+    });
+    expect(classifyOutboundFailure(new Error('MESSAGE_REQUEST_CLIENT_UPDATE_REQUIRED'))).toEqual({
+      status: 'failed_visible',
+      message: 'Actualisez ForSure avant d’envoyer une nouvelle demande.',
+    });
+  });
+
   it('builds a valid encrypted-only Aegis parent envelope', async () => {
     const created = await createAegisMessage({
       messageId: '11111111-1111-4111-8111-111111111111',

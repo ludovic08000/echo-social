@@ -21,6 +21,7 @@ describe('Aegis message envelope v1', () => {
     expect(created.body).not.toContain('message secret');
     expect(created.keyCapsule).not.toContain('message secret');
     expect(parseAegisMessageEnvelope(created.body)?.protocol).toBe(AEGIS_MESSAGE_PROTOCOL);
+    expect(parseAegisMessageEnvelope(created.body)?.contentKind).toBe('text');
     expect(parseAegisKeyCapsule(created.keyCapsule)?.protocol).toBe(AEGIS_KEY_PROTOCOL);
     await expect(openAegisMessage(created.body, created.keyCapsule, ids))
       .resolves.toBe('message secret');
@@ -53,5 +54,29 @@ describe('Aegis message envelope v1', () => {
 
     await expect(openAegisMessage(JSON.stringify(parsed), created.keyCapsule, ids))
       .resolves.toBeNull();
+  });
+
+  it('authenticates the public content category without exposing plaintext', async () => {
+    const created = await createAegisMessage({
+      ...ids,
+      plaintext: 'message vocal chiffré',
+      contentKind: 'voice',
+    });
+    const parsed = JSON.parse(created.body);
+
+    expect(parsed.contentKind).toBe('voice');
+    expect(created.body).not.toContain('message vocal chiffré');
+    parsed.contentKind = 'text';
+
+    await expect(openAegisMessage(JSON.stringify(parsed), created.keyCapsule, ids))
+      .resolves.toBeNull();
+  });
+
+  it('rejects unknown routing categories', async () => {
+    const created = await createAegisMessage({ ...ids, plaintext: 'secret' });
+    const parsed = JSON.parse(created.body);
+    parsed.contentKind = 'executable';
+
+    expect(parseAegisMessageEnvelope(JSON.stringify(parsed))).toBeNull();
   });
 });

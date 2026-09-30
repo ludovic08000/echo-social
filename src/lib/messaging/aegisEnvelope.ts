@@ -5,6 +5,20 @@ export const AEGIS_MESSAGE_PROTOCOL = 'forsure-aegis-message';
 export const AEGIS_KEY_PROTOCOL = 'forsure-aegis-key';
 export const AEGIS_WIRE_VERSION = 1;
 
+export const AEGIS_CONTENT_KINDS = [
+  'text',
+  'image',
+  'video',
+  'gif',
+  'voice',
+  'document',
+  'call_event',
+  'shared_content',
+  'commerce',
+] as const;
+
+export type AegisContentKind = typeof AEGIS_CONTENT_KINDS[number];
+
 const CONTENT_KEY_BYTES = 32;
 const IV_BYTES = 12;
 const AAD_PREFIX = 'FORSURE-AEGIS-MESSAGE-v1|';
@@ -18,6 +32,8 @@ export interface AegisMessageEnvelope {
   messageId: string;
   conversationId: string;
   senderId: string;
+  /** Authenticated routing metadata. Legacy v1 envelopes may omit it. */
+  contentKind?: AegisContentKind;
   iv: string;
   ciphertext: string;
   digest: string;
@@ -41,6 +57,7 @@ export interface CreateAegisMessageInput {
   conversationId: string;
   senderId: string;
   plaintext: string;
+  contentKind?: AegisContentKind;
   localId?: string;
   traceId?: string;
   createdAt?: number;
@@ -56,9 +73,14 @@ function exactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
-function aadFor(messageId: string, conversationId: string, senderId: string): Uint8Array {
+function aadFor(
+  messageId: string,
+  conversationId: string,
+  senderId: string,
+  contentKind?: AegisContentKind,
+): Uint8Array {
   return new hardGlobals.TextEncoder().encode(
-    `${AAD_PREFIX}${messageId}|${conversationId}|${senderId}`,
+    `${AAD_PREFIX}${messageId}|${conversationId}|${senderId}${contentKind ? `|kind:${contentKind}` : ''}`,
   );
 }
 
@@ -73,6 +95,11 @@ async function digestPayload(iv: Uint8Array, ciphertext: ArrayBuffer): Promise<s
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function isAegisContentKind(value: unknown): value is AegisContentKind {
+  return typeof value === 'string' &&
+    (AEGIS_CONTENT_KINDS as readonly string[]).includes(value);
 }
 
 export function parseAegisMessageEnvelope(
@@ -93,6 +120,7 @@ export function parseAegisMessageEnvelope(
       !isNonEmptyString(parsed.iv) ||
       !isNonEmptyString(parsed.ciphertext) ||
       !isNonEmptyString(parsed.digest) ||
+      (parsed.contentKind !== undefined && !isAegisContentKind(parsed.contentKind)) ||
       typeof parsed.createdAt !== 'number' ||
       !Number.isFinite(parsed.createdAt)
     ) {
@@ -144,7 +172,8 @@ export async function createAegisMessage(
       false,
       ['encrypt'],
     );
-    const aad = aadFor(input.messageId, input.conversationId, input.senderId);
+    const contentKind = input.contentKind ?? 'text';
+    const aad = aadFor(input.messageId, input.conversationId, input.senderId, contentKind);
     const ciphertext = await hardCrypto.encrypt(
       {
         name: 'AES-GCM',
@@ -165,6 +194,7 @@ export async function createAegisMessage(
       messageId: input.messageId,
       conversationId: input.conversationId,
       senderId: input.senderId,
+      contentKind,
       iv: bufferToBase64(exactArrayBuffer(iv)),
       ciphertext: bufferToBase64(ciphertext),
       digest,
@@ -229,7 +259,12 @@ export async function openAegisMessage(
         false,
         ['decrypt'],
       );
-      const aad = aadFor(envelope.messageId, envelope.conversationId, envelope.senderId);
+      const aad = aadFor(
+        envelope.messageId,
+        envelope.conversationId,
+        envelope.senderId,
+        envelope.contentKind,
+      );
       const plaintext = await hardCrypto.decrypt(
         {
           name: 'AES-GCM',

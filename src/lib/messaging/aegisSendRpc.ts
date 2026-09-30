@@ -83,6 +83,7 @@ function isExplicitProtocolFailure(error: RpcError): boolean {
     text.includes('not_authenticated') ||
     text.includes('sender_not_conversation_participant') ||
     text.includes('message_id_conflict') ||
+    text.includes('message_request_') ||
     text.includes('permission denied') ||
     text.includes('row-level security')
   );

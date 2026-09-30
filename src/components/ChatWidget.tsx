@@ -83,6 +83,10 @@ import { ShareContentPicker } from '@/components/messages/ShareContentPicker';
 import { DisappearingMessagesDialog } from '@/components/messages/DisappearingMessagesDialog';
 import { ViewOnceMessage } from '@/components/messages/ViewOnceMessage';
 import { isGhostModeEnabled } from '@/lib/privacyPreferences';
+import {
+  useDirectMessageRequestAction,
+  type DirectMessageRequestAction,
+} from '@/hooks/useDirectMessageRequests';
 
 // ─── Utils ───────────────────────────────────────────────
 function formatMessageTime(dateStr: string) {
@@ -207,31 +211,99 @@ function getCallData(body: string): { status: 'missed' | 'ended'; callType: 'aud
 }
 
 // ─── New Conversation Dialog ─────────────────────────────
+interface ChatUserSearchResult {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  isFriend: boolean;
+}
+
 function NewConversationDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<ChatUserSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const { user } = useAuth();
   const { data: friendsData, isLoading } = useFriendships();
   const createConversation = useCreateConversation();
   const { openConversation } = useChatWidget();
 
-  const filtered = useMemo(() => {
-    const friends = friendsData?.friends ?? [];
+  const friends = useMemo<ChatUserSearchResult[]>(() => {
+    return (friendsData?.friends ?? []).map((friend) => ({
+      userId: friend.profile.user_id,
+      name: friend.profile.name,
+      avatarUrl: friend.profile.avatar_url,
+      isFriend: true,
+    }));
+  }, [friendsData?.friends]);
+
+  useEffect(() => {
+    const query = search.trim();
+    if (!open || !query) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSearching(true);
+    const timer = window.setTimeout(async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_id, name, avatar_url')
+        .ilike('name', `%${query}%`)
+        .neq('user_id', user?.id ?? '')
+        .limit(30);
+      if (cancelled) return;
+      setIsSearching(false);
+      if (error) {
+        console.warn('[messaging] global user search failed', { code: error.code });
+        setSearchResults([]);
+        return;
+      }
+      const friendIds = new Set(friends.map((friend) => friend.userId));
+      setSearchResults((data ?? []).map((profile) => ({
+        userId: profile.user_id,
+        name: profile.name || 'Utilisateur',
+        avatarUrl: profile.avatar_url,
+        isFriend: friendIds.has(profile.user_id),
+      })));
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [friends, open, search, user?.id]);
+
+  const displayedUsers = useMemo(() => {
     if (!search.trim()) return friends;
     const q = search.toLowerCase();
-    return friends.filter(f => f.profile.name.toLowerCase().includes(q));
-  }, [friendsData?.friends, search]);
+    const matchingFriends = friends.filter((friend) => friend.name.toLowerCase().includes(q));
+    const friendIds = new Set(matchingFriends.map((friend) => friend.userId));
+    return [...matchingFriends, ...searchResults.filter((result) => !friendIds.has(result.userId))];
+  }, [friends, search, searchResults]);
 
-  const handleSelect = async (friendUserId: string) => {
+  const handleSelect = async (otherUserId: string) => {
     try {
-      const conv = await createConversation.mutateAsync(friendUserId);
+      const conv = await createConversation.mutateAsync(otherUserId);
       onOpenChange(false);
       openConversation(conv.id);
     } catch (e) {
       console.error('Failed to create conversation:', e);
+      toast.error(e instanceof Error ? e.message : 'Impossible de créer la conversation');
     }
   };
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setSearch('');
+      setSearchResults([]);
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-sm max-h-[60vh] flex flex-col p-0 gap-0 rounded-2xl">
         <DialogHeader className="p-3 pb-0">
           <DialogTitle className="text-sm font-bold">Nouvelle conversation</DialogTitle>
@@ -242,29 +314,34 @@ function NewConversationDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Rechercher un ami…"
+              placeholder="Rechercher n’importe qui…"
               className="w-full bg-secondary/60 rounded-xl pl-8 pr-3 py-2 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors"
               autoFocus
             />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-1.5 pb-3">
-          {isLoading ? (
+          {(isLoading && !search) || isSearching ? (
             <div className="py-6 text-center text-xs text-muted-foreground">Chargement…</div>
-          ) : filtered.length === 0 ? (
+          ) : displayedUsers.length === 0 ? (
             <div className="py-6 text-center text-xs text-muted-foreground">
-              {search ? 'Aucun ami trouvé' : 'Ajoutez des amis pour discuter'}
+              {search ? 'Aucun utilisateur trouvé' : 'Recherchez une personne ou choisissez un ami'}
             </div>
           ) : (
-            filtered.map(friend => (
+            displayedUsers.map((profile) => (
               <button
-                key={friend.id}
-                onClick={() => handleSelect(friend.profile.user_id)}
+                key={profile.userId}
+                onClick={() => handleSelect(profile.userId)}
                 disabled={createConversation.isPending}
                 className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-secondary/60 transition-all text-left"
               >
-                <UserAvatar src={friend.profile.avatar_url} alt={friend.profile.name} size="sm" />
-                <span className="text-xs font-medium truncate">{friend.profile.name}</span>
+                <UserAvatar src={profile.avatarUrl} alt={profile.name} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <span className="block text-xs font-medium truncate">{profile.name}</span>
+                  {!profile.isFriend && (
+                    <span className="block text-[9px] text-muted-foreground">Votre premier message passera par ses demandes</span>
+                  )}
+                </div>
               </button>
             ))
           )}
@@ -277,15 +354,34 @@ function NewConversationDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 // ─── Conversation List (inside widget) ───────────────────
 function WidgetConversationList() {
   const { data: conversations, isLoading } = useConversations();
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
+  const [inboxTab, setInboxTab] = useState<'primary' | 'requests' | 'spam'>('primary');
   const [showNewChat, setShowNewChat] = useState(false);
   const { closeChat, minimizeChat, openConversation } = useChatWidget();
 
   const filtered = useMemo(() => {
-    if (!search.trim() || !conversations) return conversations;
+    if (!conversations) return conversations;
+    const categories = inboxTab === 'primary'
+      ? new Set(['primary', 'draft_request', 'outgoing_pending'])
+      : new Set([inboxTab]);
+    const inTab = conversations.filter((conversation) => {
+      if (!categories.has(conversation.inbox_category)) return false;
+      // Creating a DM adds both participants immediately. Do not surface that
+      // empty shell to the peer until an encrypted first message is committed.
+      if (
+        conversation.inbox_category === 'draft_request'
+        && conversation.created_by !== user?.id
+      ) return false;
+      return true;
+    });
+    if (!search.trim()) return inTab;
     const q = search.toLowerCase();
-    return conversations.filter(c => c.participant.name.toLowerCase().includes(q));
-  }, [conversations, search]);
+    return inTab.filter(c => c.participant.name.toLowerCase().includes(q));
+  }, [conversations, inboxTab, search, user?.id]);
+
+  const requestCount = conversations?.filter((conversation) => conversation.inbox_category === 'requests').length ?? 0;
+  const spamCount = conversations?.filter((conversation) => conversation.inbox_category === 'spam').length ?? 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -316,6 +412,25 @@ function WidgetConversationList() {
             className="w-full bg-secondary/60 rounded-full pl-8 pr-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors"
           />
         </div>
+        <div className="mt-2 grid grid-cols-3 gap-1 rounded-xl bg-secondary/50 p-1">
+          {([
+            ['primary', 'Principal', 0],
+            ['requests', 'Demandes', requestCount],
+            ['spam', 'Spam', spamCount],
+          ] as const).map(([value, label, count]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setInboxTab(value)}
+              className={cn(
+                'rounded-lg px-2 py-1.5 text-[10px] font-medium transition-colors',
+                inboxTab === value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {label}{count > 0 ? ` (${count})` : ''}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Conversations */}
@@ -335,8 +450,10 @@ function WidgetConversationList() {
         ) : !filtered?.length ? (
           <div className="flex flex-col items-center justify-center py-8 gap-2">
             <Send className="w-6 h-6 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">{search ? 'Aucun résultat' : 'Aucune conversation'}</p>
-            {!search && (
+            <p className="text-xs text-muted-foreground">
+              {search ? 'Aucun résultat' : inboxTab === 'requests' ? 'Aucune demande' : inboxTab === 'spam' ? 'Aucun spam' : 'Aucune conversation'}
+            </p>
+            {!search && inboxTab === 'primary' && (
               <button
                 onClick={() => setShowNewChat(true)}
                 className="text-xs text-primary font-medium hover:underline"
@@ -364,6 +481,15 @@ function WidgetConversationList() {
                   <span className={cn("text-xs truncate", conv.unread_count > 0 ? "font-bold" : "font-medium")}>
                     {conv.participant.name}
                   </span>
+                  {conv.inbox_category === 'outgoing_pending' && (
+                    <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-medium text-amber-600">En attente</span>
+                  )}
+                  {conv.inbox_category === 'requests' && (
+                    <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[8px] font-medium text-primary">Demande</span>
+                  )}
+                  {conv.inbox_category === 'spam' && (
+                    <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-[8px] font-medium text-destructive">Spam</span>
+                  )}
                   {conv.last_message && (
                     <span className="text-[9px] text-muted-foreground flex-shrink-0">
                       {formatMessageTime(conv.last_message.created_at)}
@@ -455,6 +581,8 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const messageBlock = useMessageBlock(conversationId, peerUserId);
+  const requestAction = useDirectMessageRequestAction(conversationId);
+  const [requestSubmittedLocally, setRequestSubmittedLocally] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
   const negotiationProduct = chatState.negotiationProduct;
 
@@ -463,6 +591,63 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   // Policy, not readiness: every human conversation is always Aegis. During
   // cold key hydration the outbox waits; it must never fall back to plaintext.
   const isEncryptionActive = !isZeusConversation;
+  const isIncomingRequest = conversation?.request_role === 'recipient' &&
+    (conversation.request_status === 'pending' || conversation.request_status === 'spam');
+  const isOutgoingRequest = conversation?.request_role === 'sender' &&
+    conversation.request_status === 'pending';
+  const isDraftRequest = conversation?.inbox_category === 'draft_request';
+  const canSendText = isZeusConversation || Boolean(
+    conversation?.can_send_text && !(isDraftRequest && requestSubmittedLocally),
+  );
+  const canSendMedia = isZeusConversation || conversation?.can_send_media === true;
+  const canCall = conversation?.can_call === true;
+  const canSharePresence = isZeusConversation || conversation?.request_status === 'accepted';
+  const cryptoSendBlocked = !isZeusConversation && (
+    messageBlock.isBlockedByMe ||
+    e2ee.fingerprintChanged ||
+    e2ee.initError === 'fingerprint_changed' ||
+    e2ee.peerKeyMissing ||
+    e2ee.initError === 'pin_unlock_required' ||
+    e2ee.initError === 'identity_lost_backup_available'
+  );
+  const sendBlocked = !canSendText || cryptoSendBlocked;
+  const mediaSendBlocked = !canSendMedia || cryptoSendBlocked;
+
+  useEffect(() => {
+    setRequestSubmittedLocally(false);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (canSendMedia) return;
+    setShowGifs(false);
+    setShowVoiceRecorder(false);
+    setVoiceStreamRequest(null);
+    setShowSharePicker(false);
+    setViewOnceArmed(false);
+    setShowDisappearing(false);
+    setShowGroupCallSheet(false);
+  }, [canSendMedia]);
+
+  const handleRequestAction = useCallback(async (action: DirectMessageRequestAction) => {
+    try {
+      await requestAction.mutateAsync(action);
+      if (action === 'accept') {
+        toast.success('Demande acceptée. La conversation est maintenant ouverte.');
+        return;
+      }
+      toast.success(
+        action === 'report_spam'
+          ? 'Message déplacé dans les spams.'
+          : action === 'block'
+            ? 'Utilisateur bloqué.'
+            : 'Demande supprimée.',
+      );
+      goBack();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Impossible de traiter cette demande.');
+    }
+  }, [goBack, requestAction]);
+
   const { peerTyping, notifyTyping, notifyStopped } = useTypingPresence(
     conversationId,
     user?.id,
@@ -575,6 +760,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   );
 
   const handleMakeOffer = async () => {
+    if (!canSendMedia) {
+      toast.error('Acceptez d’abord la demande avant d’envoyer une offre.');
+      return;
+    }
     const price = parseFloat(offerPrice);
     if (!negotiationProduct || !seller) return;
     if (isNaN(price) || price <= 0) { toast.error('Prix invalide'); return; }
@@ -595,6 +784,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   };
 
   const handleSellerRespond = (neg: Negotiation, action: 'accepted' | 'rejected') => {
+    if (!canSendMedia) {
+      toast.error('Acceptez d’abord la demande avant de répondre à une offre.');
+      return;
+    }
     respondNeg.mutate({ negotiationId: neg.id, action }, {
       onSuccess: () => {
         const msg = action === 'accepted'
@@ -606,6 +799,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   };
 
   const handleCounterOffer = (neg: Negotiation, counterPrice: number) => {
+    if (!canSendMedia) {
+      toast.error('Acceptez d’abord la demande avant d’envoyer une contre-offre.');
+      return;
+    }
     respondNeg.mutate({ negotiationId: neg.id, action: 'counter', counterPrice }, {
       onSuccess: () => {
         sendMessage.mutate({ conversationId, body: `🔄 CONTRE-OFFRE: ${counterPrice.toFixed(2)} € pour "${negotiationProduct?.title}"` });
@@ -631,6 +828,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   };
 
   const handlePayNegotiated = async () => {
+    if (!canSendMedia) {
+      toast.error('Acceptez d’abord la demande avant de poursuivre cet achat.');
+      return;
+    }
     if (!acceptedNeg) return;
     setNegPayLoading(true);
     try {
@@ -725,6 +926,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
 
   // Wrap upload: encrypt media before upload when E2EE is active
   const handleMediaFile = useCallback(async (file: File) => {
+    if (!canSendMedia) {
+      toast.error('Cette personne doit accepter la demande avant l’envoi de médias.');
+      return;
+    }
     if (!file || file.size === 0) {
       toast.error('Fichier invalide ou vide');
       return;
@@ -834,7 +1039,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       logCryptoException('media', err, { severity: 'error', conversationId, metadata: { stage: 'encrypt_upload', sizeBytes: file.size, mime: file.type } });
       toast.error(err instanceof Error ? `Erreur : ${err.message}` : 'Erreur de chiffrement du média');
     }
-  }, [isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.peerKeyMissing, viewOnceArmed]);
+  }, [canSendMedia, isZeusConversation, rawUpload, conversationId, sendMessage, queue, e2ee.peerKeyMissing, viewOnceArmed]);
 
   useEffect(() => {
     lastScrollSigRef.current = '';
@@ -894,7 +1099,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   }, [messages, bumpCache]);
 
   useEffect(() => {
-    if (!conversationId || !user?.id || !messages?.length) return;
+    if (!conversationId || !user?.id || !messages?.length || isIncomingRequest) return;
 
     const markReadableMessages = () => {
       if (document.visibilityState !== 'visible') return;
@@ -922,7 +1127,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
     markReadableMessages();
     document.addEventListener('visibilitychange', markReadableMessages);
     return () => document.removeEventListener('visibilitychange', markReadableMessages);
-  }, [conversationId, messages, user?.id, cacheVersion, markConversationRead]);
+  }, [conversationId, messages, user?.id, cacheVersion, isIncomingRequest, markConversationRead]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -931,7 +1136,11 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
     // Show explicit reason if E2EE is not ready (especially on iOS Safari where
     // IndexedDB takes a moment to hydrate after login).
     if (sendBlocked) {
-      if (messageBlock.isBlockedByMe) {
+      if (!canSendText) {
+        toast.error(isIncomingRequest
+          ? 'Acceptez cette demande avant de répondre.'
+          : 'Votre demande est en attente de réponse.');
+      } else if (messageBlock.isBlockedByMe) {
         toast.error("Débloque ce contact avant de lui envoyer un message.");
       } else if (e2ee.peerKeyMissing) {
         toast.error("Clés du contact indisponibles. Réessaie dans quelques secondes.");
@@ -954,6 +1163,8 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       ? `↩️ ${replyTo.profile.name}: "${(replyText || '').slice(0, 40)}…"\n\n${newMessage.trim()}`
       : newMessage.trim();
 
+    if (isDraftRequest) setRequestSubmittedLocally(true);
+
     // Clear input IMMEDIATELY for instant UX
     setNewMessage('');
     setReplyTo(null);
@@ -967,19 +1178,11 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
     } else {
       // Fire-and-forget: queue handles retry/encryption in background
       queue.sendMessage(body).catch(err => {
+        if (isDraftRequest) setRequestSubmittedLocally(false);
         toast.error(err instanceof Error ? err.message : 'Erreur envoi');
       });
     }
   };
-
-  const sendBlocked = !isZeusConversation && (
-    messageBlock.isBlockedByMe ||
-    e2ee.fingerprintChanged ||
-    e2ee.initError === 'fingerprint_changed' ||
-    e2ee.peerKeyMissing ||
-    e2ee.initError === 'pin_unlock_required' ||
-    e2ee.initError === 'identity_lost_backup_available'
-  );
 
   const handleAI = async (action: 'correct' | 'improve' | 'translate', tone?: string) => {
     if (!newMessage.trim() || aiLoading) return;
@@ -1006,6 +1209,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const { reactions: reactionsByMessage, toggleReaction } = useMessageReactions(conversationId, messageIds);
 
   const handleReact = (msgId: string, emoji: string) => {
+    if (!canSendMedia) {
+      toast.error('Acceptez d’abord la demande pour réagir au message.');
+      return;
+    }
     void toggleReaction(msgId, emoji);
     setActiveMessageId(null);
   };
@@ -1056,6 +1263,10 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
             onClose={() => setShowCallHistory(false)}
             onCallBack={async (peerId, type) => {
               if (!user?.id) return;
+              if (!canCall) {
+                toast.error('Cette personne doit accepter la demande avant un appel.');
+                return;
+              }
               if (call.callState !== 'idle') {
                 toast.error(callErrorUserMessage('CALL_ALREADY_ACTIVE'));
                 return;
@@ -1120,11 +1331,21 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
         open={!!forwardMsg}
         onOpenChange={(v) => { if (!v) setForwardMsg(null); }}
         messageBody={forwardMsg?.plaintext || ''}
-        onForward={(targetConvId) => {
+        onForward={async (targetConvId) => {
           if (forwardMsg) {
             const forwardBody = `↪️ Message transféré:\n"${forwardMsg.plaintext}"`;
-            sendMessage.mutate({ conversationId: targetConvId, body: forwardBody });
-            toast.success('Message transféré');
+            const target = conversations?.find((candidate) => candidate.id === targetConvId);
+            if (target && !target.can_send_media) {
+              toast.error('Le transfert sera disponible après acceptation de la demande.');
+              return;
+            }
+            try {
+              await sendMessage.mutateAsync({ conversationId: targetConvId, body: forwardBody });
+              toast.success('Message transféré');
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : 'Impossible de transférer ce message.');
+              return;
+            }
           }
           setForwardMsg(null);
         }}
@@ -1151,20 +1372,26 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
             <Link
               to={`/profile/${conversation.participant.user_id}`}
               className="relative flex-shrink-0 group"
-              title={`${conversation.participant.name} • En ligne`}
+              title={canSharePresence ? `${conversation.participant.name} • En ligne` : conversation.participant.name}
               aria-label={conversation.participant.name}
             >
               <div className="rounded-full ring-2 ring-primary-foreground/40 group-hover:ring-primary-foreground/80 transition-all">
                 <UserAvatar src={conversation.participant.avatar_url} alt={conversation.participant.name} size="sm" />
               </div>
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-primary shadow-sm" />
+              {canSharePresence && (
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-primary shadow-sm" />
+              )}
             </Link>
           )}
         </div>
         <div className="flex items-center gap-1">
           <button
-            disabled={isStartingCall}
+            disabled={isStartingCall || !canCall}
             onClick={async () => {
+              if (!canCall) {
+                toast.error('Cette personne doit accepter la demande avant un appel.');
+                return;
+              }
               const participantId = conversation?.participant?.user_id;
               if (!participantId || !user?.id) {
                 toast.error("Aucun contact à appeler dans cette conversation.");
@@ -1200,8 +1427,12 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
             <Phone className={`w-4 h-4 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
           <button
-            disabled={isStartingCall}
+            disabled={isStartingCall || !canCall}
             onClick={async () => {
+              if (!canCall) {
+                toast.error('Cette personne doit accepter la demande avant un appel.');
+                return;
+              }
               const participantId = conversation?.participant?.user_id;
               if (!participantId || !user?.id) {
                 toast.error("Aucun contact à appeler dans cette conversation.");
@@ -1237,8 +1468,9 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
             <Video className={`w-4 h-4 ${isStartingCall ? 'animate-pulse' : ''}`} />
           </button>
           <button
+            disabled={!canCall}
             onClick={() => setShowGroupCallSheet(true)}
-            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
+            className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
             title="Appel de groupe"
           >
             <Users className="w-4 h-4" />
@@ -1250,7 +1482,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
           >
             <PhoneMissed className="w-4 h-4" />
           </button>
-          {!isZeusConversation && (
+          {!isZeusConversation && canSendMedia && (
             <button
               onClick={() => setShowDisappearing(true)}
               className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
@@ -1353,6 +1585,73 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
         />
       )}
 
+      {isIncomingRequest && (
+        <div className={cn(
+          'border-b px-3 py-2.5',
+          conversation?.request_status === 'spam'
+            ? 'border-destructive/20 bg-destructive/5'
+            : 'border-primary/20 bg-primary/5',
+        )}>
+          <p className="text-[11px] font-semibold">
+            {conversation?.request_status === 'spam' ? 'Message classé comme spam' : 'Demande de message'}
+          </p>
+          <p className="mt-0.5 text-[9px] leading-relaxed text-muted-foreground">
+            Vous pouvez lire ce premier message sans envoyer d’accusé de lecture. Acceptez pour répondre, appeler ou recevoir des médias.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Button
+              size="sm"
+              className="h-7 rounded-full px-3 text-[10px]"
+              disabled={requestAction.isPending}
+              onClick={() => void handleRequestAction('accept')}
+            >
+              <Check className="mr-1 h-3 w-3" /> Accepter
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 rounded-full px-3 text-[10px]"
+              disabled={requestAction.isPending}
+              onClick={() => void handleRequestAction('dismiss')}
+            >
+              <Trash2 className="mr-1 h-3 w-3" /> Supprimer
+            </Button>
+            {conversation?.request_status !== 'spam' && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 rounded-full px-3 text-[10px]"
+                disabled={requestAction.isPending}
+                onClick={() => void handleRequestAction('report_spam')}
+              >
+                <Flag className="mr-1 h-3 w-3" /> Spam
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 rounded-full px-3 text-[10px]"
+              disabled={requestAction.isPending}
+              onClick={() => void handleRequestAction('block')}
+            >
+              <Ban className="mr-1 h-3 w-3" /> Bloquer
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {(isOutgoingRequest || (isDraftRequest && requestSubmittedLocally)) && (
+        <div className="border-b border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[10px] text-muted-foreground">
+          Demande envoyée. Les médias, appels et nouveaux messages seront disponibles après acceptation.
+        </div>
+      )}
+
+      {isDraftRequest && !requestSubmittedLocally && (
+        <div className="border-b border-primary/15 bg-primary/5 px-3 py-2 text-[10px] text-muted-foreground">
+          Votre premier message sera une demande chiffrée. Texte uniquement jusqu’à son acceptation.
+        </div>
+      )}
+
       {/* Identity and route preparation stay silent. Aegis retries its
           encrypted device-copy outbox when peer keys become available. */}
 
@@ -1377,15 +1676,23 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                   key={s}
                   onClick={async () => {
                     if (sendBlocked) {
-                      toast.error(messageBlock.isBlockedByMe
-                        ? 'Débloque ce contact avant de lui écrire.'
-                        : 'Messagerie sécurisée pas encore prête.');
+                      toast.error(!canSendText
+                        ? 'Cette demande ne permet pas encore de répondre.'
+                        : messageBlock.isBlockedByMe
+                          ? 'Débloque ce contact avant de lui écrire.'
+                          : 'Messagerie sécurisée pas encore prête.');
                       return;
                     }
+                    if (isDraftRequest) setRequestSubmittedLocally(true);
                     if (isZeusConversation) {
                       sendMessage.mutate({ conversationId, body: s });
                     } else {
-                      try { await queue.sendMessage(s); } catch { toast.error('Erreur envoi'); }
+                      try {
+                        await queue.sendMessage(s);
+                      } catch {
+                        if (isDraftRequest) setRequestSubmittedLocally(false);
+                        toast.error('Erreur envoi');
+                      }
                     }
                   }}
                   className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-medium hover:bg-primary/20 transition-all"
@@ -1456,7 +1763,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                       </div>
                       <div className="max-w-[80%] flex flex-col items-start">
                         {/* Reactions on hover */}
-                        {activeMessageId === msg.id && !deleteMenuMsgId && (
+                        {activeMessageId === msg.id && !deleteMenuMsgId && !isIncomingRequest && (
                           <>
                             <div className="fixed inset-0 z-50" onClick={() => setActiveMessageId(null)} />
                             <div className="absolute z-50 left-6 -top-8 flex items-center gap-0 px-1 py-0.5 rounded-full bg-background shadow-lg border border-border/40">
@@ -1591,7 +1898,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                         {(() => {
                           const resolvedBody = decryptedCacheRef.current.get(msg.id) ?? msg.body;
                           const docParsed = parseDocumentBody(resolvedBody);
-                          if (docParsed && msg.image_url) {
+                          if (!isIncomingRequest && docParsed && msg.image_url) {
                             return (
                               <DocumentBubble
                                 encryptedUrl={msg.image_url}
@@ -1603,7 +1910,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                           return null;
                         })()}
 
-                        {msg.image_url && !parseDocumentBody(
+                        {!isIncomingRequest && msg.image_url && !parseDocumentBody(
                           decryptedCacheRef.current.get(msg.id) ?? msg.body,
                         ) && (
                           <button
@@ -1624,7 +1931,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                         )}
 
                         {/* Skip text bubble when message is purely a media attachment */}
-                        {msg.image_url && !isCallMessage(msg.body) ? null :
+                        {!isIncomingRequest && msg.image_url && !isCallMessage(msg.body) ? null :
                         /* Call event message */
                         isCallMessage(msg.body) ? (() => {
                           const cd = getCallData(msg.body);
@@ -1714,12 +2021,13 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                               senderId={msg.sender_id}
                               archiveBody={msg.archive_body}
                               hasMedia={!!msg.image_url}
+                              allowRichContent={!isIncomingRequest}
                             />
                           </div>
                         )}
 
 
-                        {reactions.length > 0 && (
+                        {reactions.length > 0 && !isIncomingRequest && (
                           <div className="flex items-center -mt-1 px-0.5">
                             <div className="flex items-center gap-0.5 bg-background border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm">
                               {Object.entries(
@@ -1841,7 +2149,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
           ))}
           </>
         )}
-        {peerTyping && conversation && !conversation.is_group && (
+        {peerTyping && canSharePresence && conversation && !conversation.is_group && (
           <TypingIndicator name={conversation.participant.name} />
         )}
         <div ref={messagesEndRef} />
@@ -1889,7 +2197,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       )}
 
       {/* Negotiation product banner - bottom */}
-      {negotiationProduct && (
+      {negotiationProduct && canSendMedia && (
         <div className="mx-2 mt-1 mb-1 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
           <div className="flex items-center gap-2">
             {negotiationProduct.thumbnail_url && (
@@ -2115,7 +2423,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       )}
 
       {/* GIF picker */}
-      {showGifs && !showVoiceRecorder && (
+      {showGifs && canSendMedia && !showVoiceRecorder && (
         <GifPicker
           onSelect={async (gifUrl) => {
             const body = `GIF:${gifUrl}`;
@@ -2131,7 +2439,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       )}
 
       {/* Voicemail prompt after missed call */}
-      {showVoicemailPrompt && !showVoiceRecorder && (
+      {showVoicemailPrompt && canSendMedia && !showVoiceRecorder && (
         <div className="mx-2 mb-1 bg-destructive/5 border border-destructive/20 rounded-xl px-3 py-2 flex items-center gap-2">
           <PhoneMissed className="w-4 h-4 text-destructive flex-shrink-0" />
           <div className="flex-1 min-w-0">
@@ -2152,7 +2460,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       )}
 
       {/* Voice recorder */}
-      {showVoiceRecorder && (
+      {showVoiceRecorder && canSendMedia && (
         <VoiceRecorder
           initialStreamRequest={voiceStreamRequest}
           onSend={async (audioUrl, duration, encryptedBody) => {
@@ -2250,7 +2558,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
         </div>
       )}
 
-      {showSharePicker && (
+      {showSharePicker && canSendMedia && (
         <ShareContentPicker
           onShare={(shareText) => {
             if (isZeusConversation) {
@@ -2265,62 +2573,70 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       )}
 
       {/* Input bar */}
-      {!showVoiceRecorder && (
+      {!showVoiceRecorder && canSendText && (
         <div className="border-t border-border/30 bg-background">
           <form onSubmit={handleSend} className="flex items-center gap-1.5 px-3 py-2.5">
             <div className="flex items-center gap-0">
-              <button
-                type="button"
-                onClick={() => {
-                  if (sendBlocked) {
-                    if (e2ee.peerKeyMissing) {
-                      toast.error('Clés du contact indisponibles — impossible d’envoyer une photo pour le moment.');
-                    } else if (e2ee.initError === 'pin_unlock_required') {
-                      toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer une photo.');
-                    } else if (e2ee.initError === 'identity_lost_backup_available') {
-                      toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer une photo.');
-                    }
-                    return;
-                  }
+              {canSendMedia && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (mediaSendBlocked) {
+                        if (!canSendMedia) {
+                          toast.error('Cette personne doit accepter la demande avant l’envoi de médias.');
+                        } else if (e2ee.peerKeyMissing) {
+                          toast.error('Clés du contact indisponibles — impossible d’envoyer une photo pour le moment.');
+                        } else if (e2ee.initError === 'pin_unlock_required') {
+                          toast.error('Déverrouille d’abord la messagerie sécurisée pour envoyer une photo.');
+                        } else if (e2ee.initError === 'identity_lost_backup_available') {
+                          toast.error('Restaure d’abord ton identité sécurisée avant d’envoyer une photo.');
+                        }
+                        return;
+                      }
 
-                  fileInputRef.current?.click();
-                }}
-                disabled={isUploading || sendBlocked}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:pointer-events-none"
-              >
-                {isUploading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-5 h-5" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setViewOnceArmed(v => !v);
-                  if (!viewOnceArmed) toast.success('Vue Unique armée pour le prochain média 🔥');
-                }}
-                title="Vue unique"
-                className={cn(
-                  "w-9 h-9 rounded-full flex items-center justify-center transition-colors",
-                  viewOnceArmed ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-primary"
-                )}
-              >
-                <Eye className="w-5 h-5" />
-              </button>
-              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors text-[12px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
-                GIF
-              </button>
+                      fileInputRef.current?.click();
+                    }}
+                    disabled={isUploading || mediaSendBlocked}
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {isUploading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Camera className="w-5 h-5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewOnceArmed(v => !v);
+                      if (!viewOnceArmed) toast.success('Vue Unique armée pour le prochain média 🔥');
+                    }}
+                    title="Vue unique"
+                    className={cn(
+                      "w-9 h-9 rounded-full flex items-center justify-center transition-colors",
+                      viewOnceArmed ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-primary"
+                    )}
+                  >
+                    <Eye className="w-5 h-5" />
+                  </button>
+                  <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors text-[12px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+                    GIF
+                  </button>
+                </>
+              )}
               <button type="button" onClick={() => { setShowEmojis(v => !v); setShowGifs(false); setShowAIMenu(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 <Smile className="w-5 h-5" />
               </button>
               <button type="button" onClick={() => { setShowAIMenu(v => !v); setShowEmojis(false); setShowGifs(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showAIMenu ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 {aiLoading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Wand2 className="w-5 h-5" />}
               </button>
-              <button
-                type="button"
-                onClick={() => { setShowSharePicker(v => !v); setShowEmojis(false); setShowGifs(false); setShowAIMenu(false); }}
-                title="Partager du contenu"
-                className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showSharePicker ? "text-primary" : "text-muted-foreground hover:text-primary")}
-              >
-                <Share2 className="w-5 h-5" />
-              </button>
+              {canSendMedia && (
+                <button
+                  type="button"
+                  onClick={() => { setShowSharePicker(v => !v); setShowEmojis(false); setShowGifs(false); setShowAIMenu(false); }}
+                  title="Partager du contenu"
+                  className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showSharePicker ? "text-primary" : "text-muted-foreground hover:text-primary")}
+                >
+                  <Share2 className="w-5 h-5" />
+                </button>
+              )}
             </div>
 
             <input
@@ -2331,7 +2647,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                 setNewMessage(v);
                 if (v.trim()) {
                   void queue.prewarmSendPath().catch(() => undefined);
-                  notifyTyping();
+                  if (canSharePresence) notifyTyping();
                 } else {
                   notifyStopped();
                 }
@@ -2346,11 +2662,11 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
               className="flex-1 bg-secondary/60 rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:bg-secondary transition-colors min-w-0"
             />
             {newMessage.trim() ? (
-              <button type="submit" disabled={sendMessage.isPending} className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
+              <button type="submit" disabled={sendMessage.isPending || sendBlocked} className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-4 h-4" />
               </button>
             ) : (
-              <div className="flex items-center gap-0">
+              canSendMedia ? <div className="flex items-center gap-0">
                 <button
                   type="button"
                   onClick={openVoiceRecorder}
@@ -2361,9 +2677,16 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                 <button type="button" className="w-9 h-9 rounded-full flex items-center justify-center text-primary flex-shrink-0 hover:bg-primary/10 transition-colors">
                   <ThumbsUp className="w-5 h-5" fill="currentColor" />
                 </button>
-              </div>
+              </div> : null
             )}
           </form>
+        </div>
+      )}
+      {!showVoiceRecorder && !canSendText && (
+        <div className="border-t border-border/30 bg-background px-4 py-3 text-center text-[10px] text-muted-foreground">
+          {isIncomingRequest
+            ? 'Acceptez ou refusez cette demande avant de répondre.'
+            : 'En attente de l’acceptation de votre demande.'}
         </div>
       )}
     </div>

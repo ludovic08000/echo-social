@@ -41,6 +41,8 @@ interface DecryptedMessageBodyProps {
   senderId?: string | null;
   archiveBody?: string | null;
   hasMedia?: boolean;
+  /** Message requests render decrypted text without loading remote rich media. */
+  allowRichContent?: boolean;
 }
 
 const SILENT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000, 8_000];
@@ -91,6 +93,7 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   senderId,
   archiveBody,
   hasMedia,
+  allowRichContent = true,
 }: DecryptedMessageBodyProps) {
   const initial = initialOutcomeFor(body, messageId, cachedPlaintext);
   const logBubble = (stage: string, outcome: 'start' | 'ok' | 'retry' | 'skip' | 'error', errorCode?: string) =>
@@ -293,6 +296,12 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
   }
 
   const voice = parseVoiceMessage(text);
+  const gifUrl = parseGifMessage(text);
+
+  if (!allowRichContent && (voice || gifUrl || mediaKeyB64)) {
+    return <span>Contenu multimédia masqué jusqu’à l’acceptation.</span>;
+  }
+
   if (voice) {
     return (
       <VoiceMessagePlayer
@@ -304,7 +313,6 @@ export const DecryptedMessageBody = memo(function DecryptedMessageBody({
     );
   }
 
-  const gifUrl = parseGifMessage(text);
   if (gifUrl) {
     return (
       <img
