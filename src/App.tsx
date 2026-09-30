@@ -33,6 +33,7 @@ import { callErrorUserMessage } from "@/lib/calls/callDiagnostics";
 import { SettingsRuntime } from "@/components/settings/SettingsRuntime";
 import { LoginSecurityBoundary } from "@/components/security/LoginSecurityBoundary";
 import { LoginApprovalInbox } from "@/components/security/LoginApprovalInbox";
+import { LoginSecurityEmailDecisionBridge } from "@/components/security/LoginSecurityEmailDecisionBridge";
 
 const isChunkLoadError = (e: unknown): boolean => {
   const msg = (e as Error)?.message || '';
@@ -252,6 +253,7 @@ function AppContent() {
               <Toaster />
               <Sonner />
               <BrowserRouter>
+                <LoginSecurityEmailDecisionBridge />
                 <LoginSecurityBoundary>
                   <RecoveryFlowGuard />
                   <SettingsRuntime />

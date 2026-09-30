@@ -34,27 +34,6 @@ function redirect(location: string): Response {
   });
 }
 
-function htmlPage(status: number, body: string, scriptNonce?: string): Response {
-  const contentSecurityPolicy = [
-    "default-src 'none'",
-    "style-src 'unsafe-inline'",
-    "form-action 'self'",
-    "base-uri 'none'",
-    "frame-ancestors 'none'",
-    scriptNonce ? `script-src 'nonce-${scriptNonce}'` : '',
-  ].filter(Boolean).join('; ');
-  return new Response(body, {
-    status,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'Referrer-Policy': 'no-referrer',
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': contentSecurityPolicy,
-    },
-  });
-}
-
 function stringField(input: JsonObject, field: string, max = 512): string {
   const value = input[field];
   if (typeof value !== 'string') return '';
@@ -338,11 +317,27 @@ serve(async (req) => {
     });
     if (tokenError) return false;
 
+    // A resend must renew the pending session for the same duration as the new
+    // token. Otherwise a fresh 15-minute e-mail can point at a session that is
+    // only seconds away from expiry, making a valid click impossible to apply.
+    const { data: renewedSession, error: renewError } = await admin
+      .from('login_security_sessions')
+      .update({ expires_at: expiresAt, updated_at: now.toISOString() })
+      .eq('user_id', args.userId)
+      .eq('session_id', args.sessionId)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
+    if (renewError || !renewedSession) return false;
+
     const endpoint = `${supabaseUrl}/functions/v1/login-security`;
-    // Keep the one-time token in the URL fragment. Fragments are not sent by
-    // HTTP clients, so ordinary mail previews cannot consume or apply it.
-    const approveUrl = `${endpoint}#token=${encodeURIComponent(token)}&decision=approve`;
-    const denyUrl = `${endpoint}#token=${encodeURIComponent(token)}&decision=deny`;
+    // Mail providers such as Yahoo may rewrite links and discard fragments.
+    // Keep the first hop read-only and use query parameters only to reach this
+    // function. The GET below immediately moves the secret into a ForSure URL
+    // fragment, so previews cannot apply a decision and the token is not sent
+    // to the application host.
+    const approveUrl = `${endpoint}?token=${encodeURIComponent(token)}&decision=approve`;
+    const denyUrl = `${endpoint}?token=${encodeURIComponent(token)}&decision=deny`;
     const location = [args.city, args.region, args.country].filter(Boolean).join(', ') || 'Localisation indisponible';
     const safeDevice = escapeHtml(args.device);
     const safeLocation = escapeHtml(location);
@@ -397,24 +392,25 @@ serve(async (req) => {
     return true;
   };
 
-  // Email links intentionally work without a bearer token. The token and the
-  // decision live in the URL fragment, which is not included in the GET. Mail
-  // previews therefore receive only this read-only shell; a real browser turns
-  // the fragment into the explicit form POST that applies the user's decision.
+  // Email links intentionally work without a bearer token. This GET is always
+  // read-only: it only transfers a syntactically valid token and decision into
+  // a fragment on the trusted ForSure origin. The web application then performs
+  // the explicit form POST. This survives provider link rewriting while keeping
+  // ordinary HTTP previews unable to approve or deny a login.
   if (req.method === 'GET') {
     const requestUrl = new URL(req.url);
-    const legacyToken = requestUrl.searchParams.get('token') || '';
-    if (legacyToken) {
-      if (!/^[a-f0-9]{64}$/.test(legacyToken)) {
-        return redirect(`${SITE_URL}/login?loginSecurity=invalid`);
-      }
-      const endpoint = `${requestUrl.origin}${requestUrl.pathname}`;
-      return redirect(`${endpoint}#token=${encodeURIComponent(legacyToken)}&decision=approve`);
+    const token = requestUrl.searchParams.get('token') || '';
+    const decision = requestUrl.searchParams.get('decision') as Decision | null;
+    if (!/^[a-f0-9]{64}$/.test(token) || !decision || !['approve', 'deny'].includes(decision)) {
+      return redirect(`${SITE_URL}/login?loginSecurity=invalid`);
     }
 
-    const scriptNonce = randomToken();
-    const invalidUrl = JSON.stringify(`${SITE_URL}/login?loginSecurity=invalid`).replace(/</g, '\\u003c');
-    return htmlPage(200, `<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connexion ForSure</title></head><body style="font-family:Arial,sans-serif;background:#f5f7fb;color:#172033;padding:24px"><main style="max-width:520px;margin:8vh auto;background:#fff;border-radius:18px;padding:28px;box-shadow:0 12px 40px rgba(15,23,42,.12)"><h1>Validation de votre identité…</h1><p>ForSure applique votre décision et sécurise la connexion.</p><noscript><p>JavaScript doit être activé pour utiliser ce lien sécurisé.</p></noscript></main><script nonce="${scriptNonce}">(() => { const invalidUrl = ${invalidUrl}; const fail = () => window.location.replace(invalidUrl); const params = new URLSearchParams(window.location.hash.slice(1)); const token = params.get('token') || ''; const decision = params.get('decision') || ''; try { window.history.replaceState(null, '', window.location.pathname); } catch { /* Ignore unavailable history state. */ } if (!/^[a-f0-9]{64}$/.test(token) || !['approve', 'deny'].includes(decision)) { fail(); return; } const form = document.createElement('form'); form.method = 'post'; form.action = window.location.pathname; const fields = { action: 'email_decision', token, decision }; Object.entries(fields).forEach(([name, value]) => { const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.appendChild(input); }); document.body.appendChild(form); form.submit(); })();</script></body></html>`, scriptNonce);
+    const bridgeUrl = new URL('/feed', `${SITE_URL}/`);
+    bridgeUrl.hash = new URLSearchParams({
+      loginSecurityToken: token,
+      loginSecurityDecision: decision,
+    }).toString();
+    return redirect(bridgeUrl.toString());
   }
 
   const contentType = req.headers.get('content-type') || '';
