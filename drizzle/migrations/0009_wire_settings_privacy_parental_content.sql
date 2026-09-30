@@ -869,10 +869,6 @@ USING (EXISTS (SELECT 1 FROM public.posts AS post WHERE post.id = comments.post_
 -- Push dispatch is server-authenticated and content blind. Database events send
 -- only a recipient id and a fixed event kind; the Edge Function builds the
 -- privacy-safe title/body/route.
--- DEVIATION (agent): the vault-backed secret lookup from main cannot be applied
--- by the agent tool (vault access is forbidden to agents). This stub keeps the
--- same signature and best-effort contract; the owner must re-apply the exact
--- vault-reading body from supabase/migrations/20260930120000 manually.
 CREATE OR REPLACE FUNCTION public.dispatch_aegis_push(
   p_user_id uuid,
   p_kind text,
@@ -883,10 +879,42 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $function$
+DECLARE
+  v_service_secret text;
 BEGIN
+  IF p_user_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT secret.decrypted_secret
+  INTO v_service_secret
+  FROM vault.decrypted_secrets AS secret
+  WHERE secret.name IN ('email_queue_service_role_key', 'service_role_key')
+  ORDER BY CASE WHEN secret.name = 'email_queue_service_role_key' THEN 0 ELSE 1 END
+  LIMIT 1;
+
+  IF v_service_secret IS NULL OR pg_catalog.length(v_service_secret) = 0 THEN
+    RAISE NOTICE 'Vault service credential missing; skipping privacy-safe push';
+    RETURN;
+  END IF;
+
+  PERFORM net.http_post(
+    url := 'https://vkpmoqfzrihcijjochks.supabase.co/functions/v1/push-notify',
+    headers := pg_catalog.jsonb_build_object(
+      'Authorization', 'Bearer ' || v_service_secret,
+      'apikey', v_service_secret,
+      'Content-Type', 'application/json'
+    ),
+    body := pg_catalog.jsonb_build_object(
+      'user_id', p_user_id,
+      'kind', p_kind,
+      'requireInteraction', p_require_interaction
+    ),
+    timeout_milliseconds := 5000
+  );
+EXCEPTION WHEN OTHERS THEN
   -- Push delivery is best-effort and must never roll back the source event.
-  RAISE NOTICE 'Push dispatch stubbed: vault credential lookup not applied by agent';
-  RETURN;
+  RAISE NOTICE 'Privacy-safe push dispatch failed';
 END;
 $function$;
 

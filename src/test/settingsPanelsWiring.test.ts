@@ -63,6 +63,7 @@ describe('settings panels end-to-end wiring', () => {
 
   it('dispatches notification preferences through realtime, push and email', () => {
     const migration = readSource('supabase/migrations/20260930120000_wire_settings_privacy_parental_content.sql');
+    const generatedMigration = readSource('drizzle/migrations/0009_wire_settings_privacy_parental_content.sql');
     const groupMigration = readSource('supabase/migrations/20260930120100_friend_group_post_notifications.sql');
     const panel = readSource('src/components/NotificationSettingsPanel.tsx');
     const push = readSource('supabase/functions/push-notify/index.ts');
@@ -70,6 +71,9 @@ describe('settings panels end-to-end wiring', () => {
 
     expect(migration).toContain('CREATE TRIGGER trg_dispatch_notification_push');
     expect(migration).toContain('CREATE OR REPLACE FUNCTION public.enqueue_notification_email_digests');
+    expect(generatedMigration).toContain("url := 'https://vkpmoqfzrihcijjochks.supabase.co/functions/v1/push-notify'");
+    expect(generatedMigration).toContain("secret.name IN ('email_queue_service_role_key', 'service_role_key')");
+    expect(generatedMigration).not.toContain('Push dispatch stubbed');
     expect(push).toContain('close_friends_posts_enabled');
     expect(email).toContain("payload.preference_key === 'notification_digest'");
     expect(groupMigration).toContain('CREATE TRIGGER trg_notify_friend_group_post');

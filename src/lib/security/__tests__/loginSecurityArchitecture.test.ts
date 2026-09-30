@@ -85,11 +85,13 @@ describe('risk-based login security architecture', () => {
     expect(emailWorkerMigration).toContain('/functions/v1/process-email-queue');
     expect(emailWorkerMigration).toContain("'Authorization', 'Bearer ' || v_service_secret");
     expect(emailWorkerMigration).toContain("'apikey', v_service_secret");
-    expect(emailWorkerMigration).toContain("'process-email-queue',\n    '5 seconds'");
-    expect(emailWorkerMigration).toContain(
-      'REVOKE ALL ON FUNCTION public.process_email_queue_cron_tick()\nFROM PUBLIC, anon, authenticated',
+    expect(emailWorkerMigration).toMatch(/'process-email-queue',\r?\n\s+'5 seconds'/);
+    expect(emailWorkerMigration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.process_email_queue_cron_tick\(\)\r?\nFROM PUBLIC, anon, authenticated/,
     );
-    expect(emailWorkerMigration).not.toContain('GRANT EXECUTE ON FUNCTION public.process_email_queue_cron_tick()\nTO authenticated');
+    expect(emailWorkerMigration).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.process_email_queue_cron_tick\(\)\r?\nTO authenticated/,
+    );
   });
 
   it('keeps email link previews read-only and requires an explicit form POST', () => {
