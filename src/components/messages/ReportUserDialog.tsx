@@ -23,7 +23,7 @@ interface Props {
   reportedUserId: string;
   reportedName?: string;
   /** Action de blocage fournie par l’appelant (ex. useMessageBlock.setBlocked). */
-  onBlock?: () => Promise<void> | void;
+  onBlock?: () => Promise<unknown> | void;
 }
 
 export function ReportUserDialog({ open, onOpenChange, reportedUserId, reportedName, onBlock }: Props) {
