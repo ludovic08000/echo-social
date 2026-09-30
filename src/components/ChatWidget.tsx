@@ -32,7 +32,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Flag } from 'lucide-react';
 import { ReportUserDialog } from '@/components/messages/ReportUserDialog';
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, type Message } from '@/hooks/useMessages';
 import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, useNegotiationsByConversation, type Negotiation } from '@/hooks/useNegotiations';
