@@ -24,6 +24,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu as DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ReportUserDialog } from '@/components/messages/ReportUserDialog';
 import { useConversations, useMessages, useSendMessage, useMarkConversationRead, useCreateConversation, useDeleteMessageForMe, useDeleteMessageForEveryone, type Message } from '@/hooks/useMessages';
 import { useNegotiations, useCreateNegotiation, useRespondNegotiation, useAcceptCounterOffer, useNegotiationsByConversation, type Negotiation } from '@/hooks/useNegotiations';
 import { useFriendships } from '@/hooks/useFriendships';
@@ -446,6 +455,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
   const messageBlock = useMessageBlock(conversationId, peerUserId);
+  const [showReportDialog, setShowReportDialog] = useState(false);
   const negotiationProduct = chatState.negotiationProduct;
 
   // E2EE integration — STRICT: plaintext allowed only for the Zeus bot.
@@ -1250,21 +1260,36 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
             </button>
           )}
           {!isZeusConversation && !conversation?.is_group && peerUserId && (
-            <button
-              type="button"
-              onClick={() => setShowBlockDialog(true)}
-              disabled={messageBlock.isLoading || messageBlock.isChanging}
-              className={cn(
-                'w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm',
-                messageBlock.isBlockedByMe
-                  ? 'bg-destructive/80 hover:bg-destructive'
-                  : 'bg-primary-foreground/10 hover:bg-primary-foreground/25',
-              )}
-              title={messageBlock.isBlockedByMe ? 'Débloquer ce contact' : 'Bloquer ce contact'}
-              aria-label={messageBlock.isBlockedByMe ? 'Débloquer ce contact' : 'Bloquer ce contact'}
-            >
-              <Ban className="w-4 h-4" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm"
+                  title="Paramètres de la conversation"
+                  aria-label="Paramètres de la conversation"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="z-[10000] w-56">
+                <DropdownMenuLabel>Paramètres</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={messageBlock.isLoading || messageBlock.isChanging}
+                  onSelect={() => setShowBlockDialog(true)}
+                >
+                  <Ban className="w-4 h-4 mr-2" />
+                  {messageBlock.isBlockedByMe ? 'Débloquer ce contact' : 'Bloquer ce contact'}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => setShowReportDialog(true)}
+                >
+                  <Flag className="w-4 h-4 mr-2" />
+                  Signaler cette personne
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           <button onClick={minimizeChat} className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all backdrop-blur-sm" title="Réduire">
             <Minus className="w-4 h-4" />
@@ -1307,6 +1332,14 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {peerUserId && (
+        <ReportUserDialog
+          open={showReportDialog}
+          onOpenChange={setShowReportDialog}
+          reportedUserId={peerUserId}
+        />
+      )}
 
       {/* E2EE Status bar removed per user request — encryption is silent */}
 
