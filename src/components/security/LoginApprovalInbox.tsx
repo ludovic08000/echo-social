@@ -6,6 +6,7 @@ import {
   listPendingLoginSecuritySessions,
   type PendingLoginSecuritySession,
 } from '@/lib/security/loginSecurity';
+import { formatLoginLocation } from '@/lib/security/loginLocation';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,11 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-
-function locationLabel(session: PendingLoginSecuritySession): string {
-  return [session.city, session.region, session.countryCode].filter(Boolean).join(', ')
-    || 'Localisation indisponible';
-}
 
 export function LoginApprovalInbox() {
   const { user, loginSecurity } = useAuth();
@@ -90,7 +86,7 @@ export function LoginApprovalInbox() {
             </div>
             <div className="flex items-center gap-3">
               <MapPin className="h-4 w-4 text-primary" />
-              <span>{locationLabel(pending)}</span>
+              <span>{formatLoginLocation(pending)}</span>
             </div>
             {pending.createdAt && (
               <p className="text-xs text-muted-foreground">

@@ -1,14 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Loader2, LockKeyhole, Mail, MapPin, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { formatLoginLocation } from '@/lib/security/loginLocation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-
-function locationLabel(session: ReturnType<typeof useAuth>['loginSecurity']['session']): string {
-  if (!session) return 'Localisation indisponible';
-  return [session.city, session.region, session.countryCode].filter(Boolean).join(', ')
-    || 'Localisation indisponible';
-}
 
 export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
   const {
@@ -124,7 +119,7 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
               </div>
               <div className="flex items-center gap-3">
                 <MapPin className="h-4 w-4 text-primary" />
-                <span>{locationLabel(loginSecurity.session)}</span>
+                <span>{formatLoginLocation(loginSecurity.session)}</span>
               </div>
               <div className="flex items-center gap-3">
                 <Mail className="h-4 w-4 text-primary" />

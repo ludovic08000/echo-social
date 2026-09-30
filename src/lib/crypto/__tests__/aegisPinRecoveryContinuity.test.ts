@@ -51,10 +51,11 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(auth).toContain("status: 'restored_from_password_sign_in'");
   });
 
-  it('finishes password-based crypto restoration before exposing private routes', () => {
+  it('restores crypto behind the feed while keeping the messaging runtime gated', () => {
     const auth = source('src/lib/auth.tsx');
     const routes = source('src/components/ProtectedRoute.tsx');
     const boundary = source('src/components/security/LoginSecurityBoundary.tsx');
+    const app = source('src/App.tsx');
     const assessment = auth.indexOf('const security = await ensureLoginSecurity(data.session)');
     const restoration = auth.indexOf('await completePendingPasswordSetup(data.user.id)', assessment);
 
@@ -63,8 +64,10 @@ describe('Aegis PIN recovery and identity continuity', () => {
     expect(restoration).toBeGreaterThan(assessment);
     expect(auth).toContain('runPostSignInSetup(pending.password, userId)');
     expect(boundary).toContain("loginSecurity.status === 'approved'");
-    expect(routes).toContain('loading || cryptoRestoring');
-    expect(routes).toContain('Restauration du coffre chiffré');
+    expect(routes).not.toContain('loading || cryptoRestoring');
+    expect(routes).not.toContain('Restauration du coffre chiffré');
+    expect(app).toContain("loginSecurity.status !== 'approved' || cryptoRestoring");
+    expect(app).toContain('if (!lifecycle.canRunCryptoRuntime) return null');
   });
 
   it('commits an explicit safety-number acknowledgement before enabling sending', () => {

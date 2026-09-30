@@ -26,6 +26,7 @@ export interface LoginSecuritySession {
   countryCode?: string | null;
   region?: string | null;
   city?: string | null;
+  timezone?: string | null;
   device?: string | null;
   createdAt?: string;
   emailSentAt?: string | null;
@@ -89,6 +90,7 @@ function normalizeSession(value: unknown): LoginSecuritySession {
     countryCode: typeof row.countryCode === 'string' ? row.countryCode : null,
     region: typeof row.region === 'string' ? row.region : null,
     city: typeof row.city === 'string' ? row.city : null,
+    timezone: typeof row.timezone === 'string' ? row.timezone : null,
     device: typeof row.device === 'string' ? row.device : null,
     createdAt: typeof row.createdAt === 'string' ? row.createdAt : undefined,
     emailSentAt: typeof row.emailSentAt === 'string' ? row.emailSentAt : null,
@@ -143,6 +145,18 @@ export async function assessCurrentLoginSession(userId: string): Promise<LoginSe
 
 export async function readCurrentLoginSecuritySession(): Promise<LoginSecuritySession> {
   const result = await invoke({ action: 'status' });
+  return normalizeSession(result.session);
+}
+
+/**
+ * Associates the exact approved auth session with the exact approved Aegis
+ * device after an Ed25519 possession challenge. This repairs email-approved
+ * first-device sessions without granting approval to an unknown device.
+ */
+export async function bindCurrentLoginSessionToApprovedDevice(userId: string): Promise<LoginSecuritySession> {
+  const proof = await createDeviceProof(userId, 'assess');
+  if (!proof) throw new Error('APPROVED_DEVICE_PROOF_REQUIRED');
+  const result = await invoke({ action: 'bind_device', ...proof });
   return normalizeSession(result.session);
 }
 

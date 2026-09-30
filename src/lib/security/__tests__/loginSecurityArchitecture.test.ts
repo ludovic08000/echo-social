@@ -16,6 +16,7 @@ const app = source('src/App.tsx');
 const boundary = source('src/components/security/LoginSecurityBoundary.tsx');
 const inbox = source('src/components/security/LoginApprovalInbox.tsx');
 const emailDecisionBridge = source('src/components/security/LoginSecurityEmailDecisionBridge.tsx');
+const networkContext = source('supabase/functions/login-security/networkContext.ts');
 
 describe('risk-based login security architecture', () => {
   it('creates private session, challenge, token, and audit stores with staged enforcement', () => {
@@ -40,6 +41,10 @@ describe('risk-based login security architecture', () => {
 
   it('stores only hashed network identifiers and one-time email tokens', () => {
     expect(edge).toContain('hmacSha256(serviceRoleKey, context.ip)');
+    expect(edge).toContain('resolveLoginNetworkContext(req');
+    expect(networkContext).toContain("headers.get('x-real-ip')");
+    expect(networkContext).toContain("headers.get('x-forwarded-for')");
+    expect(edge).toContain("Deno.env.get('IPINFO_TOKEN')");
     expect(edge).toContain('const tokenHash = await sha256(token)');
     expect(edge).toContain(".eq('token_hash', tokenHash)");
     expect(edge).toContain(".is('consumed_at', null)");
@@ -94,6 +99,18 @@ describe('risk-based login security architecture', () => {
     expect(inbox).toContain("void decide('approve')");
   });
 
+  it('binds an email-approved session only after proof from an approved device', () => {
+    expect(client).toContain('bindCurrentLoginSessionToApprovedDevice');
+    expect(client).toContain("action: 'bind_device'");
+    expect(app).toContain('bindCurrentLoginSessionToApprovedDevice(user.id)');
+    expect(edge).toContain("if (action === 'bind_device')");
+    expect(edge).toContain("const proof = await consumeTrustedDeviceProof('assess')");
+    expect(edge).toContain('device_id: proof.deviceId');
+    expect(edge).toContain('known_device: true');
+    expect(edge).toContain(".eq('status', 'approved')");
+    expect(edge).not.toContain("approval_status: 'approved'");
+  });
+
   it('dispatches queued approval e-mails through a private Vault-authenticated worker', () => {
     expect(emailWorkerMigration).toContain("pgmq.metrics('auth_emails')");
     expect(emailWorkerMigration).toContain("pgmq.metrics('transactional_emails')");
@@ -121,6 +138,7 @@ describe('risk-based login security architecture', () => {
     expect(emailDecisionBridge).toContain('formRef.current?.submit()');
     expect(emailDecisionBridge).toContain('method="post"');
     expect(emailDecisionBridge).toContain('name="action" value="email_decision"');
+    expect(edge).toContain('redirect(`${SITE_URL}/feed?loginSecurity=approved`)');
     expect(edge).toContain("contentType.includes('application/x-www-form-urlencoded')");
     const getBranch = edge.indexOf("if (req.method === 'GET')");
     const formBranch = edge.indexOf("contentType.includes('application/x-www-form-urlencoded')");

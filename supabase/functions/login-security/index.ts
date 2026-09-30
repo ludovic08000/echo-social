@@ -6,6 +6,7 @@ import {
   effectiveLoginSecurityStatus,
   loginDecisionMutation,
 } from './risk.ts';
+import { resolveLoginNetworkContext } from './networkContext.ts';
 
 type JsonObject = Record<string, unknown>;
 type Decision = 'approve' | 'deny';
@@ -125,17 +126,16 @@ function cleanHeader(value: string | null, max: number): string | null {
   return normalized && normalized.length <= max ? normalized : null;
 }
 
-function requestContext(req: Request) {
-  // Supabase's gateway records these Cloudflare-provided headers as the
-  // requester's network context. Never fall back to client-selectable
-  // x-country/x-vercel headers: a cloned client could spoof them to imitate
-  // the user's habitual country.
-  const ip = cleanHeader(req.headers.get('cf-connecting-ip'), 64);
-  const country = cleanHeader(req.headers.get('cf-ipcountry'), 2)?.toUpperCase() || null;
-  const region = null;
-  const city = null;
+async function requestContext(req: Request) {
+  // The gateway country is used immediately. City/region are resolved from the
+  // trusted proxy IP only when the deployment provides IPINFO_TOKEN. The raw
+  // IP is never persisted: the caller stores an HMAC and discards this value.
+  const location = await resolveLoginNetworkContext(req, {
+    ipinfoToken: Deno.env.get('IPINFO_TOKEN') || null,
+    timeoutMs: 900,
+  });
   const userAgent = cleanHeader(req.headers.get('user-agent'), 1024) || 'unknown';
-  return { ip, country: country && /^[A-Z]{2}$/.test(country) ? country : null, region, city, userAgent };
+  return { ...location, userAgent };
 }
 
 function summarizeUserAgent(userAgent: string): string {
@@ -198,6 +198,7 @@ function sessionView(row: JsonObject | null): JsonObject {
     countryCode: row.country_code,
     region: row.region,
     city: row.city,
+    timezone: row.timezone,
     device: row.user_agent_summary,
     createdAt: row.created_at,
     emailSentAt: row.email_sent_at,
@@ -277,6 +278,7 @@ serve(async (req) => {
     country: string | null;
     region: string | null;
     city: string | null;
+    timezone: string | null;
     device: string;
   }): Promise<boolean> => {
     const normalizedEmail = args.email.trim().toLowerCase();
@@ -345,7 +347,8 @@ serve(async (req) => {
     // to the application host.
     const approveUrl = `${endpoint}?token=${encodeURIComponent(token)}&decision=approve`;
     const denyUrl = `${endpoint}?token=${encodeURIComponent(token)}&decision=deny`;
-    const location = [args.city, args.region, args.country].filter(Boolean).join(', ') || 'Localisation indisponible';
+    const location = [args.city, args.region, args.country].filter(Boolean).join(', ')
+      || (args.timezone ? `Fuseau ${args.timezone.replace(/_/g, ' ')}` : 'Localisation réseau indisponible');
     const safeDevice = escapeHtml(args.device);
     const safeLocation = escapeHtml(location);
     const html = `<!doctype html><html lang="fr"><body style="font-family:Arial,sans-serif;background:#f5f7fb;color:#172033;padding:24px"><div style="max-width:600px;margin:auto;background:#fff;border-radius:18px;padding:28px"><h1 style="margin-top:0">Nouvelle connexion ForSure</h1><p>Une connexion demande l’accès à votre compte.</p><p><strong>Appareil :</strong> ${safeDevice}<br><strong>Zone :</strong> ${safeLocation}<br><strong>Heure :</strong> ${escapeHtml(now.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }))}</p><p style="margin:28px 0"><a href="${escapeHtml(approveUrl)}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold">C’était bien moi</a></p><p style="margin:20px 0"><a href="${escapeHtml(denyUrl)}" style="color:#b91c1c;font-weight:bold">Ce n’était pas moi — bloquer cette connexion</a></p><p style="color:#667085;font-size:13px">Le bouton choisi applique directement votre décision. Chaque lien est à usage unique et expire dans 15 minutes. ForSure ne vous demandera jamais votre mot de passe par e-mail.</p></div></body></html>`;
@@ -471,8 +474,9 @@ serve(async (req) => {
       );
     }
 
-    const next = decision === 'approve' ? '&next=%2Ffeed' : '';
-    return redirect(`${SITE_URL}/login?loginSecurity=${decision === 'approve' ? 'approved' : 'denied'}${next}`);
+    return decision === 'approve'
+      ? redirect(`${SITE_URL}/feed?loginSecurity=approved`)
+      : redirect(`${SITE_URL}/login?loginSecurity=denied`);
   }
 
   if (req.method !== 'POST') return json(req, 405, { ok: false, code: 'METHOD_NOT_ALLOWED' });
@@ -614,6 +618,41 @@ serve(async (req) => {
     return json(req, 200, { ok: true, session: sessionView(await loadCurrentSession()) });
   }
 
+  if (action === 'bind_device') {
+    const current = await loadCurrentSession();
+    if (!current || current.status !== 'approved'
+      || new Date(String(current.expires_at)).getTime() <= Date.now()) {
+      return json(req, 403, { ok: false, code: 'APPROVED_SESSION_REQUIRED' });
+    }
+    const proof = await consumeTrustedDeviceProof('assess');
+    if (!proof) {
+      return json(req, 403, { ok: false, code: 'APPROVED_DEVICE_PROOF_REQUIRED' });
+    }
+    const now = new Date().toISOString();
+    const { data: bound, error: bindError } = await admin
+      .from('login_security_sessions')
+      .update({
+        device_id: proof.deviceId,
+        known_device: true,
+        device_proof_verified_at: now,
+        last_seen_at: now,
+        updated_at: now,
+      })
+      .eq('user_id', user.id)
+      .eq('session_id', sessionId)
+      .eq('status', 'approved')
+      .gt('expires_at', now)
+      .select('*')
+      .maybeSingle();
+    if (bindError || !bound) {
+      return json(req, 409, { ok: false, code: 'LOGIN_DEVICE_BINDING_NOT_APPLIED' });
+    }
+    await recordEvent(user.id, sessionId, 'login_device_binding', 'success', {
+      device_id: proof.deviceId,
+    });
+    return json(req, 200, { ok: true, session: sessionView(bound as JsonObject) });
+  }
+
   if (action === 'assess') {
     const existing = await loadCurrentSession();
     if (existing?.status === 'approved' && new Date(String(existing.expires_at)).getTime() > Date.now()) {
@@ -640,7 +679,7 @@ serve(async (req) => {
     }
 
     const proof = await consumeTrustedDeviceProof('assess');
-    const context = requestContext(req);
+    const context = await requestContext(req);
     const timezone = stringField(body, 'timezone', 80) || null;
     const language = stringField(body, 'language', 32) || null;
     const { data: previous } = await admin
@@ -727,6 +766,7 @@ serve(async (req) => {
         country: context.country,
         region: context.region,
         city: context.city,
+        timezone,
         device: summarizeUserAgent(context.userAgent),
       });
       if (!queued) {
@@ -755,6 +795,7 @@ serve(async (req) => {
       country: typeof current.country_code === 'string' ? current.country_code : null,
       region: typeof current.region === 'string' ? current.region : null,
       city: typeof current.city === 'string' ? current.city : null,
+      timezone: typeof current.timezone === 'string' ? current.timezone : null,
       device: typeof current.user_agent_summary === 'string' ? current.user_agent_summary : 'Appareil inconnu',
     });
     return queued

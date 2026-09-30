@@ -34,6 +34,7 @@ import { SettingsRuntime } from "@/components/settings/SettingsRuntime";
 import { LoginSecurityBoundary } from "@/components/security/LoginSecurityBoundary";
 import { LoginApprovalInbox } from "@/components/security/LoginApprovalInbox";
 import { LoginSecurityEmailDecisionBridge } from "@/components/security/LoginSecurityEmailDecisionBridge";
+import { bindCurrentLoginSessionToApprovedDevice } from "@/lib/security/loginSecurity";
 
 const isChunkLoadError = (e: unknown): boolean => {
   const msg = (e as Error)?.message || '';
@@ -211,7 +212,9 @@ function MessagingRuntimeRunner() {
 }
 
 function ApprovedAccountKeySyncRunner() {
+  const { user, loginSecurity, refreshLoginSecurity } = useAuth();
   const lifecycle = useDeviceLifecycle();
+  const boundSessionDeviceRef = useRef<string | null>(null);
 
   useEffect(() => {
     const onRestoreNeeded = (e: Event) => {
@@ -221,6 +224,42 @@ function ApprovedAccountKeySyncRunner() {
     window.addEventListener('forsure:device-kx-restore-required', onRestoreNeeded);
     return () => window.removeEventListener('forsure:device-kx-restore-required', onRestoreNeeded);
   }, []);
+
+  useEffect(() => {
+    const record = lifecycle.record;
+    const sessionId = loginSecurity.session?.sessionId;
+    if (!user?.id || loginSecurity.status !== 'approved' || !sessionId || !record
+      || record.approvalStatus !== 'approved' || record.isActive !== true || record.revokedAt
+      || loginSecurity.session?.deviceId === record.deviceId) return;
+
+    const bindingKey = `${sessionId}:${record.deviceId}`;
+    if (boundSessionDeviceRef.current === bindingKey) return;
+    boundSessionDeviceRef.current = bindingKey;
+
+    void (async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await bindCurrentLoginSessionToApprovedDevice(user.id);
+          await refreshLoginSecurity();
+          return;
+        } catch (error) {
+          if (attempt === 2) {
+            console.warn('[LOGIN_SECURITY] approved device binding deferred', error);
+            boundSessionDeviceRef.current = null;
+            return;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 750 * (attempt + 1)));
+        }
+      }
+    })();
+  }, [
+    lifecycle.record,
+    loginSecurity.session?.deviceId,
+    loginSecurity.session?.sessionId,
+    loginSecurity.status,
+    refreshLoginSecurity,
+    user?.id,
+  ]);
 
   if (!lifecycle.canRunCryptoRuntime) return null;
   return <MessagingRuntimeRunner />;
