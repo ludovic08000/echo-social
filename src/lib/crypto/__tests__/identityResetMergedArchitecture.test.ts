@@ -10,6 +10,17 @@ const resetSource = readFileSync(
   resolve(process.cwd(), 'src/lib/crypto/explicitIdentityReset.ts'),
   'utf8',
 );
+const resetEdgeSource = readFileSync(
+  resolve(process.cwd(), 'supabase/functions/identity-reset/index.ts'),
+  'utf8',
+);
+const hardeningMigrationSource = readFileSync(
+  resolve(
+    process.cwd(),
+    'supabase/migrations/20260930002834_harden_identity_and_device_enrollment.sql',
+  ),
+  'utf8',
+);
 const gateSource = readFileSync(
   resolve(process.cwd(), 'src/components/messaging/IdentityRecoveryGate.tsx'),
   'utf8',
@@ -33,18 +44,29 @@ describe('merged explicit identity reset architecture', () => {
   it('permits reset only for an unrecoverable server identity', () => {
     expect(resetSource).toContain("before.state !== 'UNRECOVERABLE_SERVER_IDENTITY'");
     expect(resetSource).toContain('before.hasRestorableBackup');
-    expect(resetSource).toContain('signInWithPassword');
+    expect(resetSource).toContain("functions.invoke('identity-reset'");
+    expect(resetEdgeSource).toContain('signInWithPassword');
+    expect(resetEdgeSource).toContain('passwordData.user?.id !== caller.id');
   });
 
   it('generates private identity material only on the client', () => {
     expect(resetSource).toContain('generateIdentityKeys()');
     expect(resetSource).not.toContain("rpc('generate");
-    expect(resetSource).not.toContain('functions.invoke');
+    expect(resetEdgeSource).not.toContain('generateIdentityKeys');
+    expect(resetEdgeSource).not.toContain('saveIdentityKeys');
   });
 
   it('swaps the public identity atomically server-side and never deletes it', () => {
-    expect(resetSource).toContain("rpc('replace_own_identity_key'");
+    expect(resetEdgeSource).toContain("rpc('replace_unrecoverable_identity_v2'");
+    expect(hardeningMigrationSource).toContain('create or replace function public.replace_unrecoverable_identity_v2');
     expect(resetSource).not.toContain(".delete()");
+  });
+
+  it('removes browser writes and the bearer-token-only legacy reset path', () => {
+    expect(hardeningMigrationSource).toContain('revoke insert, update, delete, truncate');
+    expect(hardeningMigrationSource).toContain('aegis_guard_account_identity_mutation_v2');
+    expect(hardeningMigrationSource).toContain('from public, anon, authenticated, service_role');
+    expect(resetSource).not.toContain("rpc('replace_own_identity_key'");
   });
 
   it('requires backup creation and a READY reinspection before success', () => {

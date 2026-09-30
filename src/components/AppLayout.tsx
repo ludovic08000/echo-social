@@ -119,7 +119,7 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative isolate min-h-screen bg-background">
       {!user && <GuestBanner />}
       <MobileHeader />
 

@@ -34,7 +34,7 @@ export function useNotificationSettings() {
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['notification-settings'],
+    queryKey: ['notification-settings', user?.id],
     queryFn: async () => {
       if (!user) return null;
 
@@ -76,8 +76,7 @@ export function useUpdateNotificationSettings() {
 
       const { data, error } = await supabase
         .from('notification_settings')
-        .update(updates)
-        .eq('user_id', user.id)
+        .upsert({ user_id: user.id, ...updates }, { onConflict: 'user_id' })
         .select()
         .single();
 
@@ -85,7 +84,7 @@ export function useUpdateNotificationSettings() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notification-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['notification-settings', user?.id] });
     },
   });
 }

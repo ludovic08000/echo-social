@@ -15,7 +15,8 @@ import { Coffee, X, Sparkles, Lock, Shield } from 'lucide-react';
 import { FeedProfileHeader } from '@/components/feed/FeedProfileHeader';
 import { ProfileFeedView } from '@/components/feed/ProfileFeedView';
 import { LazyMount } from '@/components/feed/LazyMount';
-import { trackMinute, getTodayMinutes, getSessionMinutes } from '@/lib/feedAlgorithm';
+import { trackMinute, getSessionMinutes, loadFeedWeights } from '@/lib/feedAlgorithm';
+import { CONTENT_PREFS_CHANGED_EVENT } from '@/lib/feedPreferences';
 import { Button } from '@/components/ui/button';
 import { useActiveAds } from '@/hooks/useAdCampaigns';
 import { useCustomBackground } from '@/hooks/useCustomBackground';
@@ -41,7 +42,6 @@ const FeedMediaSection = lazy(() => import('@/components/feed/FeedMediaSection')
 const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
   3: 'media',
   6: 'suggestions_city',
-  10: 'marketplace',
   15: 'suggestions',
   20: 'reels',
   28: 'suggestions',
@@ -54,8 +54,9 @@ export default function Feed() {
   
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
+  const [feedWeights, setFeedWeights] = useState(loadFeedWeights);
   const { data: activeAds } = useActiveAds();
-  const feedBgStyle = useCustomBackground('feed');
+  const feedBgStyle = useCustomBackground(profileId ? 'profile' : 'feed', profileId);
   const { feedStyle: feedCustomStyle } = useFeedCustomization();
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
@@ -63,6 +64,16 @@ export default function Feed() {
   useFeedScrollMemory('feed-main-scroll');
   const feedPerf = useFeedPerformance();
   const { isFlow } = useUXMode();
+
+  useEffect(() => {
+    const refreshWeights = () => setFeedWeights(loadFeedWeights());
+    window.addEventListener(CONTENT_PREFS_CHANGED_EVENT, refreshWeights);
+    window.addEventListener('storage', refreshWeights);
+    return () => {
+      window.removeEventListener(CONTENT_PREFS_CHANGED_EVENT, refreshWeights);
+      window.removeEventListener('storage', refreshWeights);
+    };
+  }, []);
 
   // Infinite scroll sentinel
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -103,7 +114,7 @@ export default function Feed() {
 
   // P5: hydrate cloud-synced wellbeing prefs into the localStorage cache that
   // the minute-tick loop below reads synchronously.
-  useWellbeingPreferences();
+  const { prefs: wellbeingPrefs } = useWellbeingPreferences();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -117,18 +128,9 @@ export default function Feed() {
             setShowPauseReminder(true);
           }
         }
-        if (wellbeingPrefs.dailyLimitMinutes) {
-          const todayMin = getTodayMinutes();
-          if (todayMin >= wellbeingPrefs.dailyLimitMinutes && wellbeingPrefs.grayscaleAfterLimit) {
-            document.documentElement.style.filter = 'grayscale(100%)';
-          }
-        }
       } catch {}
     }, 60000);
-    return () => {
-      clearInterval(interval);
-      document.documentElement.style.filter = '';
-    };
+    return () => clearInterval(interval);
   }, [pauseDismissed]);
 
   // Infinite scroll via IntersectionObserver (replaces buggy virtualizer)
@@ -148,7 +150,13 @@ export default function Feed() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const renderInjection = useCallback((index: number) => {
-    const type = INJECTION_MAP[index];
+    let type = INJECTION_MAP[index];
+    const marketplaceCadence = feedWeights.marketplace > 0
+      ? Math.max(5, Math.round(15 - feedWeights.marketplace / 10))
+      : 0;
+    if (!type && marketplaceCadence > 0 && index > 0 && index % marketplaceCadence === 0) {
+      type = 'marketplace';
+    }
 
     if (!isMobile && activeAds?.length && index > 0 && index % 6 === 0) {
       const adIndex = Math.floor(index / 6) % activeAds.length;
@@ -175,7 +183,7 @@ export default function Feed() {
         </Suspense>
       </LazyMount>
     );
-  }, [isMobile, activeAds]);
+  }, [isMobile, activeAds, feedWeights.marketplace]);
 
   const dismissPause = () => {
     setShowPauseReminder(false);
@@ -195,13 +203,21 @@ export default function Feed() {
         jsonLd={feedMeta.jsonLd}
       />
       <h1 className="sr-only">Fil d'actualité Forsure</h1>
-      {feedBgStyle && (
-        <div className="fixed inset-0 -z-10 opacity-30" style={feedBgStyle} />
-      )}
       {feedCustomStyle.backgroundColor && (
-        <div className="fixed inset-0 -z-10" style={{ backgroundColor: feedCustomStyle.backgroundColor }} />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0"
+          style={{ backgroundColor: feedCustomStyle.backgroundColor }}
+        />
       )}
-      <div className="flex justify-center" style={{
+      {feedBgStyle && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0 opacity-30"
+          style={feedBgStyle}
+        />
+      )}
+      <div className={`relative z-10 flex justify-center${feedCustomStyle.color ? ' feed-custom-text' : ''}`} style={{
         fontFamily: feedCustomStyle.fontFamily,
         color: feedCustomStyle.color,
       }}>
@@ -252,10 +268,10 @@ export default function Feed() {
                 <FeedProfileHeader userId={profileId} />
                 <div className="mx-2 rounded-[28px] border border-border/30 bg-card/80 backdrop-blur-sm overflow-hidden shadow-[0_12px_40px_-18px_hsl(var(--foreground)/0.18)]">
                   <div className="px-2 pt-2 pb-1">
-                    <StoriesBar />
+                    {!wellbeingPrefs.focusModeEnabled && <StoriesBar />}
                   </div>
                   <div className="px-2 pb-2">
-                    <FeedLiveSection />
+                    {!wellbeingPrefs.focusModeEnabled && <FeedLiveSection />}
                   </div>
                 </div>
                 <CreatePost />
@@ -266,10 +282,10 @@ export default function Feed() {
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="px-4">
                   <div className="rounded-[30px] border border-border/30 bg-card/80 backdrop-blur-sm overflow-hidden shadow-[0_18px_50px_-24px_hsl(var(--foreground)/0.18)]">
                     <div className="px-2 pt-2 pb-1">
-                      <StoriesBar />
+                      {!wellbeingPrefs.focusModeEnabled && <StoriesBar />}
                     </div>
                     <div className="px-2 pb-2">
-                      <FeedLiveSection />
+                      {!wellbeingPrefs.focusModeEnabled && <FeedLiveSection />}
                     </div>
                   </div>
                 </motion.div>
@@ -361,7 +377,7 @@ export default function Feed() {
                       } as React.CSSProperties}
                     >
                       <PostCard post={post} />
-                      {renderInjection(index)}
+                      {!wellbeingPrefs.focusModeEnabled && renderInjection(index)}
                     </div>
                   ))}
                 </div>

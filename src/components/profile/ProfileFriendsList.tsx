@@ -17,27 +17,12 @@ export function ProfileFriendsList({ userId }: { userId: string }) {
   const { data: friends, isLoading } = useQuery({
     queryKey: ['profile-friends', userId],
     queryFn: async () => {
-      // Get accepted friendships for this user
-      const { data: friendships, error } = await supabase
-        .from('friendships')
-        .select('requester_id, addressee_id')
-        .eq('status', 'accepted')
-        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
-        .limit(6);
-
+      const { data, error } = await (supabase.rpc as any)('get_visible_profile_friends', {
+        p_user_id: userId,
+        p_limit: 60,
+      });
       if (error) throw error;
-      if (!friendships || friendships.length === 0) return [];
-
-      const friendIds = friendships.map(f =>
-        f.requester_id === userId ? f.addressee_id : f.requester_id
-      );
-
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, name, avatar_url')
-        .in('user_id', friendIds);
-
-      return (profiles || []) as ProfileFriend[];
+      return (data || []) as ProfileFriend[];
     },
     enabled: !!userId,
   });
@@ -69,9 +54,11 @@ export function ProfileFriendsList({ userId }: { userId: string }) {
     <div className="premium-card p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-sm">Amis</h3>
-        <Link to="/friends" className="text-xs text-primary font-medium hover:underline">
-          Voir tous
-        </Link>
+        {user?.id === userId && (
+          <Link to="/friends" className="text-xs text-primary font-medium hover:underline">
+            Gérer
+          </Link>
+        )}
       </div>
       <div className="grid grid-cols-3 gap-3">
         {friends.map(friend => (

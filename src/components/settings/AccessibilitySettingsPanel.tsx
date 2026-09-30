@@ -6,32 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslation, type SupportedLocale } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-
-interface AccessibilityPrefs {
-  reducedMotion: boolean;
-  highContrast: boolean;
-  screenReaderOptimized: boolean;
-  largeClickTargets: boolean;
-  keyboardNavigation: boolean;
-  autoplayVideos: boolean;
-  captionsEnabled: boolean;
-  colorBlindMode: string;
-  language: string;
-  lineSpacing: number;
-}
-
-const defaultPrefs: AccessibilityPrefs = {
-  reducedMotion: false,
-  highContrast: false,
-  screenReaderOptimized: false,
-  largeClickTargets: false,
-  keyboardNavigation: false,
-  autoplayVideos: true,
-  captionsEnabled: false,
-  colorBlindMode: 'none',
-  language: 'fr',
-  lineSpacing: 1.5,
-};
+import {
+  readAccessibilityPreferences,
+  saveAccessibilityPreferences,
+  type AccessibilityPreferences,
+} from '@/lib/accessibilityPreferences';
 
 const languageOptions = [
   { value: 'fr', label: '🇫🇷 Français' },
@@ -42,14 +21,7 @@ const languageOptions = [
 
 export function AccessibilitySettingsPanel() {
   const { locale, setLocale, t } = useTranslation();
-  const [prefs, setPrefs] = useState<AccessibilityPrefs>(() => {
-    try {
-      const saved = localStorage.getItem('accessibility-prefs');
-      return saved ? { ...defaultPrefs, ...JSON.parse(saved) } : defaultPrefs;
-    } catch {
-      return defaultPrefs;
-    }
-  });
+  const [prefs, setPrefs] = useState<AccessibilityPreferences>(readAccessibilityPreferences);
 
   const colorBlindOptions = [
     { value: 'none', label: t('access.colorBlindNone') },
@@ -73,15 +45,10 @@ export function AccessibilitySettingsPanel() {
   ];
 
   useEffect(() => {
-    localStorage.setItem('accessibility-prefs', JSON.stringify({ ...prefs, language: locale }));
-    const root = document.documentElement;
-    root.classList.toggle('reduced-motion', prefs.reducedMotion);
-    root.classList.toggle('high-contrast', prefs.highContrast);
-    root.classList.toggle('large-targets', prefs.largeClickTargets);
-    root.style.setProperty('--line-height-factor', String(prefs.lineSpacing));
+    saveAccessibilityPreferences({ ...prefs, language: locale });
   }, [prefs, locale]);
 
-  const update = (patch: Partial<AccessibilityPrefs>) => {
+  const update = (patch: Partial<AccessibilityPreferences>) => {
     setPrefs(prev => ({ ...prev, ...patch }));
   };
 
@@ -130,7 +97,7 @@ export function AccessibilitySettingsPanel() {
         </div>
         <div className="space-y-2 p-3">
           <Label className="text-sm font-medium">{t('access.colorBlind')}</Label>
-          <Select value={prefs.colorBlindMode} onValueChange={v => update({ colorBlindMode: v })}>
+          <Select value={prefs.colorBlindMode} onValueChange={v => update({ colorBlindMode: v as AccessibilityPreferences['colorBlindMode'] })}>
             <SelectTrigger className="rounded-xl h-9 text-sm bg-secondary/40 border-border/30">
               <SelectValue />
             </SelectTrigger>

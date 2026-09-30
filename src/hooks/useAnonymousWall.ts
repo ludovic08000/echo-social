@@ -4,7 +4,6 @@ import { useAuth } from '@/lib/auth';
 
 export interface WallMessage {
   id: string;
-  author_id: string;
   target_user_id: string;
   message: string;
   is_approved: boolean;
@@ -17,7 +16,7 @@ export function useAnonymousWall(targetUserId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('anonymous_wall_messages')
-        .select('*')
+        .select('id, target_user_id, message, is_approved, created_at')
         .eq('target_user_id', targetUserId)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -37,7 +36,7 @@ export function usePostWallMessage() {
       const { data, error } = await supabase
         .from('anonymous_wall_messages')
         .insert({ author_id: user.id, target_user_id: targetUserId, message })
-        .select()
+        .select('id, target_user_id, message, is_approved, created_at')
         .single();
       if (error) throw error;
       return data;

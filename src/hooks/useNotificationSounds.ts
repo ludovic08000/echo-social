@@ -1,6 +1,7 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 import { useVoiceSettings, shouldSpeak } from '@/hooks/useVoiceSettings';
+import { readLocalWellbeingPrefs } from '@/hooks/useWellbeingPreferences';
 
 // Simple tone generator using Web Audio API
 const audioCtxRef: { current: AudioContext | null } = { current: null };
@@ -194,13 +195,16 @@ function isTabActive(): boolean {
 export function useNotificationSound() {
   const { data: settings } = useNotificationSettings();
 
-  const playNotificationSound = useCallback((category?: 'message' | 'like' | 'comment' | 'friend_request') => {
+  const playNotificationSound = useCallback((category?: string) => {
+    if (readLocalWellbeingPrefs().focusModeEnabled) return;
     if (!settings?.sound_enabled) return;
 
     if (category === 'message' && !settings.messages_enabled) return;
     if (category === 'like' && !settings.likes_enabled) return;
     if (category === 'comment' && !settings.comments_enabled) return;
     if (category === 'friend_request' && !settings.friend_requests_enabled) return;
+    if (category === 'story_view' && !settings.story_views_enabled) return;
+    if (category === 'close_friend_post' && !settings.close_friends_posts_enabled) return;
 
     playTone((settings.sound_type as SoundType) || 'default');
   }, [settings]);
@@ -235,6 +239,7 @@ export function useRealtimeNotificationSound() {
     pendingRef.current = [];
     flushTimerRef.current = null;
     if (items.length === 0) return;
+    if (readLocalWellbeingPrefs().focusModeEnabled) return;
 
     // Group by category
     const groups = new Map<string, PendingNotif[]>();
@@ -246,7 +251,7 @@ export function useRealtimeNotificationSound() {
     }
 
     // Play sound once
-    const firstCat = items[0].category as 'message' | 'like' | 'comment' | 'friend_request' | undefined;
+    const firstCat = items[0].category;
     playNotificationSound(firstCat);
 
     // Speak only if tab is NOT active (or sound is enabled and voice is on)
@@ -255,7 +260,9 @@ export function useRealtimeNotificationSound() {
         // Announce each category group
         for (const [cat, group] of groups) {
           const count = group.length;
-          const senderName = count === 1 ? group[0].senderName : undefined;
+          const senderName = count === 1 && !voiceSettings.voice_never_read_private
+            ? group[0].senderName
+            : undefined;
           if (shouldSpeak(voiceSettings, cat)) {
             speakNotification(cat, {
               volume: voiceSettings.voice_volume,
@@ -271,6 +278,7 @@ export function useRealtimeNotificationSound() {
   }, [playNotificationSound, settings, voiceSettings]);
 
   const enqueue = useCallback((category?: string, senderName?: string) => {
+    if (readLocalWellbeingPrefs().focusModeEnabled) return;
     const now = Date.now();
 
     pendingRef.current.push({ category: category || 'default', senderName });

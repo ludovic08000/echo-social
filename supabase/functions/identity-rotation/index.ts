@@ -231,6 +231,7 @@ serve(async (req) => {
   const token = authorization.slice('Bearer '.length).trim();
   const authClient = createClient(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const admin = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -239,6 +240,12 @@ serve(async (req) => {
   const { data: userData, error: userError } = await authClient.auth.getUser(token);
   const user = userData.user;
   if (userError || !user) return respond(req, 401, { ok: false, code: 'NOT_AUTHENTICATED' });
+
+  const { data: loginApproved, error: loginApprovalError } = await authClient
+    .rpc('is_current_login_session_approved');
+  if (loginApprovalError || loginApproved !== true) {
+    return respond(req, 403, { ok: false, code: 'LOGIN_SECURITY_APPROVAL_REQUIRED' });
+  }
 
   let input: JsonObject;
   try {

@@ -309,7 +309,7 @@ export default function Onboarding() {
           body: {
             action: 'set',
             pin: verified.parentalPin,
-            allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
+            allowed_categories: ['general', 'education', 'sport', 'gaming', 'musique', 'art', 'humour'],
           },
         }).catch(() => {});
       }

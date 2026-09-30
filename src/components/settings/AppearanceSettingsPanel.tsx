@@ -7,9 +7,14 @@ import { Label } from '@/components/ui/label';
 import { useTranslation } from '@/lib/i18n';
 import { BackgroundSettingsSection } from './BackgroundSettingsSection';
 import { FeedCustomizationSection } from './FeedCustomizationSection';
-import { useUXMode, reapplyAppearance } from '@/hooks/useUXMode';
+import { useAuth } from '@/lib/auth';
+import { useUpdateProfile } from '@/hooks/useProfile';
+import { notifyAppearanceChanged, useUXMode, reapplyAppearance } from '@/hooks/useUXMode';
+import { toast } from 'sonner';
 
 type ThemeMode = 'light' | 'dark' | 'system';
+
+const appearanceModeKey = (mode: string, key: string) => `${mode}-${key}`;
 
 const accentColors = [
   { id: 'bleu', labelKey: 'appearance.colorBlue', fallback: 'Bleu Français', hsl: '220 70% 50%', preview: 'bg-[hsl(220,70%,50%)]' },
@@ -23,9 +28,9 @@ const accentColors = [
 export function AppearanceSettingsPanel() {
   const { t } = useTranslation();
   const { mode: uxMode } = useUXMode();
-
-  // Helper: mode-scoped localStorage key
-  const modeKey = (key: string) => `${uxMode}-${key}`;
+  const { user } = useAuth();
+  const updateProfile = useUpdateProfile();
+  const [isResetting, setIsResetting] = useState(false);
 
   const themeModes: { id: ThemeMode; label: string; icon: React.ReactNode }[] = [
     { id: 'light', label: t('appearance.light'), icon: <Sun className="w-4 h-4" /> },
@@ -34,70 +39,73 @@ export function AppearanceSettingsPanel() {
   ];
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    return (localStorage.getItem(modeKey('theme-mode')) as ThemeMode) || (localStorage.getItem('theme-mode') as ThemeMode) || 'dark';
+    return (localStorage.getItem(appearanceModeKey(uxMode, 'theme-mode')) as ThemeMode) || (localStorage.getItem('theme-mode') as ThemeMode) || 'dark';
   });
   const [accentColor, setAccentColor] = useState(() => {
-    return localStorage.getItem(modeKey('accent-color')) || localStorage.getItem('accent-color') || 'bleu';
+    return localStorage.getItem(appearanceModeKey(uxMode, 'accent-color')) || localStorage.getItem('accent-color') || 'bleu';
   });
   const [fontSize, setFontSize] = useState(() => {
-    return parseInt(localStorage.getItem(modeKey('font-size')) || localStorage.getItem('font-size') || '16', 10);
+    return parseInt(localStorage.getItem(appearanceModeKey(uxMode, 'font-size')) || localStorage.getItem('font-size') || '16', 10);
   });
   const [compactMode, setCompactMode] = useState(() => {
-    return localStorage.getItem(modeKey('compact-mode')) === 'true';
+    return (localStorage.getItem(appearanceModeKey(uxMode, 'compact-mode')) ?? localStorage.getItem('compact-mode')) === 'true';
   });
   const [animationsEnabled, setAnimationsEnabled] = useState(() => {
-    return localStorage.getItem(modeKey('animations-disabled')) !== 'true';
+    return (localStorage.getItem(appearanceModeKey(uxMode, 'animations-disabled')) ?? localStorage.getItem('animations-disabled')) !== 'true';
   });
   const [dynamicTheme, setDynamicTheme] = useState(() => {
-    return localStorage.getItem(modeKey('dynamic-theme')) === 'true';
+    return (localStorage.getItem(appearanceModeKey(uxMode, 'dynamic-theme')) ?? localStorage.getItem('dynamic-theme')) === 'true';
   });
 
   // Save theme + accent to localStorage, then let reapplyAppearance handle ALL CSS vars
   useEffect(() => {
-    localStorage.setItem(modeKey('theme-mode'), themeMode);
-    localStorage.setItem('theme-mode', themeMode);
+    localStorage.setItem(appearanceModeKey(uxMode, 'theme-mode'), themeMode);
     reapplyAppearance(uxMode);
+    notifyAppearanceChanged(uxMode);
   }, [themeMode, uxMode]);
 
   useEffect(() => {
-    localStorage.setItem(modeKey('accent-color'), accentColor);
+    localStorage.setItem(appearanceModeKey(uxMode, 'accent-color'), accentColor);
     reapplyAppearance(uxMode);
-  }, [accentColor, themeMode, uxMode]);
+    notifyAppearanceChanged(uxMode);
+  }, [accentColor, uxMode]);
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
-    localStorage.setItem(modeKey('font-size'), String(fontSize));
+    localStorage.setItem(appearanceModeKey(uxMode, 'font-size'), String(fontSize));
+    notifyAppearanceChanged(uxMode);
   }, [fontSize, uxMode]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('compact-mode', compactMode);
-    localStorage.setItem(modeKey('compact-mode'), String(compactMode));
+    localStorage.setItem(appearanceModeKey(uxMode, 'compact-mode'), String(compactMode));
+    notifyAppearanceChanged(uxMode);
   }, [compactMode, uxMode]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('no-animations', !animationsEnabled);
-    localStorage.setItem(modeKey('animations-disabled'), String(!animationsEnabled));
+    localStorage.setItem(appearanceModeKey(uxMode, 'animations-disabled'), String(!animationsEnabled));
+    notifyAppearanceChanged(uxMode);
   }, [animationsEnabled, uxMode]);
 
-  // Dynamic theme - auto switch based on time of day
+  // The app-level appearance runtime owns the clock, so this remains active
+  // after the settings panel is closed.
   useEffect(() => {
-    localStorage.setItem(modeKey('dynamic-theme'), String(dynamicTheme));
-    localStorage.setItem('dynamic-theme', String(dynamicTheme));
-    if (!dynamicTheme) return;
-
-    const applyDynamicTheme = () => {
-      const hour = new Date().getHours();
-      const next: ThemeMode = hour >= 6 && hour < 18 ? 'light' : 'dark';
-      setThemeMode(prev => (prev === next ? prev : next));
-    };
-
-    applyDynamicTheme();
-    const interval = setInterval(applyDynamicTheme, 60000); // check every minute
-    return () => clearInterval(interval);
+    localStorage.setItem(appearanceModeKey(uxMode, 'dynamic-theme'), String(dynamicTheme));
+    reapplyAppearance(uxMode);
+    notifyAppearanceChanged(uxMode);
   }, [dynamicTheme, uxMode]);
 
   const handleDynamicThemeToggle = (enabled: boolean) => {
     setDynamicTheme(enabled);
+  };
+
+  const handleThemeModeChange = (nextTheme: ThemeMode) => {
+    if (dynamicTheme) {
+      localStorage.setItem(appearanceModeKey(uxMode, 'dynamic-theme'), 'false');
+      setDynamicTheme(false);
+    }
+    setThemeMode(nextTheme);
   };
 
   const { setMode: setUXMode } = useUXMode();
@@ -107,41 +115,54 @@ export function AppearanceSettingsPanel() {
     { id: 'flow' as const, label: 'Flow', icon: <Waves className="w-4 h-4" />, desc: 'Chaleureux, fluide, immersif' },
   ];
 
-  const resetToDefaults = useCallback(() => {
-    // Clear mode-scoped keys first
-    const keys = ['theme-mode', 'accent-color', 'font-size', 'compact-mode', 'animations-disabled', 'dynamic-theme', 'feed-customization', 'custom-bg-url'];
-    keys.forEach(k => {
-      localStorage.removeItem(modeKey(k));
-      localStorage.removeItem(k);
-    });
+  const resetToDefaults = useCallback(async () => {
+    setIsResetting(true);
+    try {
+      // Backgrounds are account settings, not browser-only preferences.
+      if (user) {
+        await updateProfile.mutateAsync({ profile_bg_url: null, feed_bg_url: null });
+      }
 
-    // Reset inline styles then re-apply defaults
-    const root = document.documentElement;
-    root.removeAttribute('style');
-    root.classList.remove('compact-mode', 'no-animations');
+      const keys = ['theme-mode', 'accent-color', 'font-size', 'compact-mode', 'animations-disabled', 'dynamic-theme', 'feed-customization', 'custom-bg-url'];
+      keys.forEach(k => {
+        localStorage.removeItem(appearanceModeKey(uxMode, k));
+        localStorage.removeItem(k);
+      });
 
-    // Reset state (effects will persist defaults + re-apply CSS vars)
-    setThemeMode('dark');
-    setAccentColor('bleu');
-    setFontSize(16);
-    setCompactMode(false);
-    setAnimationsEnabled(true);
-    setDynamicTheme(false);
+      // Preserve unrelated root styles (for example the wellbeing grayscale).
+      const root = document.documentElement;
+      root.classList.remove('compact-mode', 'no-animations');
 
-    reapplyAppearance(uxMode);
-    window.dispatchEvent(new Event('forsure:appearance-reset'));
-  }, [uxMode]);
+      setThemeMode('dark');
+      setAccentColor('bleu');
+      setFontSize(16);
+      setCompactMode(false);
+      setAnimationsEnabled(true);
+      setDynamicTheme(false);
+
+      reapplyAppearance(uxMode);
+      notifyAppearanceChanged(uxMode);
+      window.dispatchEvent(new Event('forsure:appearance-reset'));
+      toast.success('Apparence réinitialisée');
+    } catch (error) {
+      console.error('Appearance reset failed:', error);
+      toast.error('Impossible de réinitialiser les fonds du compte');
+    } finally {
+      setIsResetting(false);
+    }
+  }, [updateProfile, user, uxMode]);
 
 
   return (
     <div className="space-y-6">
       {/* Reset button */}
       <button
-        onClick={resetToDefaults}
+        onClick={() => void resetToDefaults()}
+        disabled={isResetting}
         className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl border border-border/40 bg-secondary/30 hover:bg-destructive/10 hover:border-destructive/30 text-muted-foreground hover:text-destructive transition-all duration-200 text-sm font-medium"
       >
         <RotateCcw className="w-4 h-4" />
-        Réinitialiser par défaut
+        {isResetting ? 'Réinitialisation…' : 'Réinitialiser par défaut'}
       </button>
       <div className="space-y-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Expérience</h3>
@@ -177,7 +198,7 @@ export function AppearanceSettingsPanel() {
           {themeModes.map(mode => (
             <button
               key={mode.id}
-              onClick={() => setThemeMode(mode.id)}
+              onClick={() => handleThemeModeChange(mode.id)}
               className={cn(
                 "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200",
                 themeMode === mode.id

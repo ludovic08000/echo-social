@@ -1,6 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from '@/lib/crypto/cryptoIntegrity';
-import { loadDeviceIdentity } from '@/lib/crypto/deviceIdentity';
+import {
+  loadDeviceIdentity,
+  prepareDeviceAuthorization,
+} from '@/lib/crypto/deviceIdentity';
 import { bufferToBase64, encodeString } from '@/lib/crypto/utils';
 import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 
@@ -58,6 +61,34 @@ export async function submitAutomaticDeviceApproval(args: {
     throw new Error('DEVICE_AUTO_APPROVAL_LOCAL_IDENTITY_INVALID');
   }
 
+  // Le serveur est l'unique autorité pour décider si ce device est réellement
+  // le premier. Un ancien client ne peut plus forcer le bootstrap en envoyant
+  // `true`. Pour un appareil secondaire, la clé racine Aegis doit en plus
+  // autoriser explicitement les deux clés publiques de l'appareil.
+  const { data: modeData, error: modeError } = await runDeviceRpcWithTimeout(
+    'DEVICE_APPROVAL_MODE_FAILED',
+    (signal) => supabase.rpc('get_device_enrollment_approval_mode' as never, {
+      p_device_id: args.target.deviceId,
+    } as never).abortSignal(signal),
+  );
+  if (modeError) throw new Error(`DEVICE_APPROVAL_MODE_FAILED:${modeError.message}`);
+  const mode = modeData as Record<string, unknown> | null;
+  if (!mode || mode.ok !== true || typeof mode.bootstrap_primary !== 'boolean') {
+    throw new Error(typeof mode?.code === 'string' ? mode.code : 'DEVICE_APPROVAL_MODE_REJECTED');
+  }
+
+  let deviceAuthorizationSignature: string | null = null;
+  if (!mode.bootstrap_primary) {
+    const authorization = await prepareDeviceAuthorization(args.userId, args.target.deviceId);
+    if (
+      authorization.deviceSigning.publicB64 !== args.target.deviceSigningKey
+      || authorization.deviceKx.publicB64 !== args.target.devicePublicKey
+    ) {
+      throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
+    }
+    deviceAuthorizationSignature = authorization.authorizationSignature;
+  }
+
   const signature = bufferToBase64(await hardCrypto.sign(
     'Ed25519',
     identity.privateKey,
@@ -73,12 +104,12 @@ export async function submitAutomaticDeviceApproval(args: {
     'DEVICE_APPROVAL_RPC_FAILED',
     (signal) => supabase.rpc('approve_device_enrollment_decision' as never, {
       p_decision: 'approve',
-      p_bootstrap_primary: true,
+      p_bootstrap_primary: mode.bootstrap_primary,
       p_approver_device_id: args.target.deviceId,
       p_device_id: args.target.deviceId,
       p_challenge_id: args.target.challengeId,
       p_signature: signature,
-      p_device_authorization_signature: null,
+      p_device_authorization_signature: deviceAuthorizationSignature,
     } as never).abortSignal(signal),
   );
 

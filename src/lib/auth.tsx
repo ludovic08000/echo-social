@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { generateFingerprint } from '@/hooks/useTrustAndSafety';
@@ -27,6 +27,15 @@ import { getOrCreateIdentityKeys } from '@/lib/crypto/keyManagerSafe';
 import { resetAccountSynchronization } from '@/lib/messaging/accountSyncBarrier';
 import { invalidateAegisDeviceRuntime } from '@/lib/messaging/aegisDeviceRuntime';
 import { clearPinUnlockedSession } from '@/lib/device-manager/pinUnlockSignal';
+import { setCurrentDeviceUserScope } from '@/lib/messaging/currentDevice';
+import {
+  assessCurrentLoginSession,
+  isLoginSecurityServerGateOpen,
+  readCurrentLoginSecuritySession,
+  resendLoginSecurityEmail,
+  type LoginSecuritySession,
+  type LoginSecurityState,
+} from '@/lib/security/loginSecurity';
 
 function clearMessagingSession(userId?: string | null): void {
   clearPinUnlockedSession(userId);
@@ -91,9 +100,37 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   cryptoRestoring: boolean;
+  loginSecurity: LoginSecurityState;
   signUp: (email: string, password: string, name: string, dateOfBirth?: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  refreshLoginSecurity: () => Promise<void>;
+  resendLoginApprovalEmail: () => Promise<void>;
+}
+
+async function checkLoginRateLimit(email: string): Promise<Error | null> {
+  try {
+    const result = await withTimeout(
+      supabase.functions.invoke('login-rate-limit', {
+        body: { action: 'check', email },
+      }),
+      3_500,
+    );
+    const data = result?.data as { allowed?: boolean; retry_after_seconds?: number } | undefined;
+    if (data?.allowed === false) {
+      const wait = Math.max(1, Math.ceil((data.retry_after_seconds || 60) / 60));
+      return new Error(`Trop de tentatives. Réessayez dans ${wait} minute${wait > 1 ? 's' : ''}.`);
+    }
+  } catch {
+    // The rate-limit service is additive and must not create an auth outage.
+  }
+  return null;
+}
+
+async function recordLoginAttempt(email: string, success: boolean): Promise<void> {
+  await supabase.functions.invoke('login-rate-limit', {
+    body: { action: 'record', email, success },
+  }).catch(() => undefined);
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -224,7 +261,103 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [cryptoRestoring, setCryptoRestoring] = useState(false);
+  const [loginSecurity, setLoginSecurity] = useState<LoginSecurityState>({
+    status: 'signed_out',
+    session: null,
+  });
   const activeUserIdRef = useRef<string | null>(null);
+  const loginSecurityRef = useRef<LoginSecurityState>({ status: 'signed_out', session: null });
+  const assessmentRef = useRef<{ token: string; promise: Promise<LoginSecuritySession> } | null>(null);
+  const pendingPasswordRef = useRef<{ userId: string; password: string } | null>(null);
+  const postSignInSetupRef = useRef<Promise<void> | null>(null);
+  const approvedServicesTokenRef = useRef<string | null>(null);
+
+  const updateLoginSecurity = useCallback((next: LoginSecurityState) => {
+    loginSecurityRef.current = next;
+    setLoginSecurity(next);
+  }, []);
+
+  const startApprovedSessionServices = useCallback((approvedSession: Session) => {
+    if (approvedServicesTokenRef.current === approvedSession.access_token) return;
+    approvedServicesTokenRef.current = approvedSession.access_token;
+    startSessionGuard();
+    void inspectCryptoReadiness(approvedSession.user.id, 'session_restored');
+
+    setTimeout(() => {
+      const fp = generateFingerprint();
+      supabase.functions.invoke('anti-abuse', {
+        body: {
+          action: 'register_fingerprint',
+          fingerprintHash: fp,
+          screenResolution: `${screen.width}x${screen.height}`,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          language: navigator.language,
+        },
+      }).catch(() => {});
+
+      supabase.functions.invoke('trust-score', {
+        body: { action: 'compute' },
+      }).catch(() => {});
+    }, 2000);
+  }, []);
+
+  const ensureLoginSecurity = useCallback(async (
+    authenticatedSession: Session,
+  ): Promise<LoginSecuritySession> => {
+    const token = authenticatedSession.access_token;
+    if (assessmentRef.current?.token === token) return assessmentRef.current.promise;
+
+    updateLoginSecurity({ status: 'checking', session: loginSecurityRef.current.session });
+    setCurrentDeviceUserScope(authenticatedSession.user.id);
+
+    const promise = (async () => {
+      try {
+        const assessed = await assessCurrentLoginSession(authenticatedSession.user.id);
+        const status = assessed.status === 'expired' ? 'pending' : assessed.status;
+        updateLoginSecurity({ status, session: assessed });
+        if (status === 'approved') startApprovedSessionServices(authenticatedSession);
+        return assessed;
+      } catch (error) {
+        // During the staged rollout the database gate is intentionally open.
+        // Once enforcement is enabled this fallback succeeds only for a session
+        // already approved server-side, so an outage fails closed.
+        if (await isLoginSecurityServerGateOpen()) {
+          const rolloutSession: LoginSecuritySession = {
+            status: 'approved',
+            riskLevel: 'low',
+            approvedVia: 'server_gate',
+          };
+          updateLoginSecurity({ status: 'approved', session: rolloutSession });
+          startApprovedSessionServices(authenticatedSession);
+          return rolloutSession;
+        }
+        const errorCode = error instanceof Error ? error.message : 'LOGIN_SECURITY_REQUEST_FAILED';
+        updateLoginSecurity({ status: 'error', session: null, errorCode });
+        throw error;
+      }
+    })().finally(() => {
+      if (assessmentRef.current?.promise === promise) assessmentRef.current = null;
+    });
+
+    assessmentRef.current = { token, promise };
+    return promise;
+  }, [startApprovedSessionServices, updateLoginSecurity]);
+
+  const completePendingPasswordSetup = useCallback(async (userId: string): Promise<void> => {
+    const pending = pendingPasswordRef.current;
+    if (!pending || pending.userId !== userId) return;
+    if (postSignInSetupRef.current) return postSignInSetupRef.current;
+
+    pendingPasswordRef.current = null;
+    setCryptoRestoring(true);
+    const job = runPostSignInSetup(pending.password, userId)
+      .finally(() => {
+        if (postSignInSetupRef.current === job) postSignInSetupRef.current = null;
+        setCryptoRestoring(false);
+      });
+    postSignInSetupRef.current = job;
+    return job;
+  }, []);
 
   useEffect(() => {
     const isResetRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
@@ -237,16 +370,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       activeUserIdRef.current = nextUserId;
       primeAuthUserId(nextUserId);
+      setCurrentDeviceUserScope(nextUserId);
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
+      if (!nextSession) updateLoginSecurity({ status: 'signed_out', session: null });
       setLoading(false);
     };
 
     const clearSessionState = () => {
       const previousUserId = activeUserIdRef.current;
       activeUserIdRef.current = null;
+      assessmentRef.current = null;
+      pendingPasswordRef.current = null;
+      approvedServicesTokenRef.current = null;
       clearMessagingSession(previousUserId);
       primeAuthUserId(null);
+      setCurrentDeviceUserScope(null);
       stopSessionGuard();
       clearArchiveMasterKeySession();
       clearAccountKeySession();
@@ -254,6 +393,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setLoading(false);
       setCryptoRestoring(false);
+      updateLoginSecurity({ status: 'signed_out', session: null });
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -277,31 +417,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         applySessionState(session);
 
-        if (session?.user) {
-          void inspectCryptoReadiness(session.user.id, event === 'SIGNED_IN' ? 'signed_in' : 'session_restored');
-        }
-
-        if (event === 'SIGNED_IN' && session?.user) {
-          if (isRecoveryPending()) return;
-
-          startSessionGuard();
-
-          setTimeout(() => {
-            const fp = generateFingerprint();
-            supabase.functions.invoke('anti-abuse', {
-              body: {
-                action: 'register_fingerprint',
-                fingerprintHash: fp,
-                screenResolution: `${screen.width}x${screen.height}`,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                language: navigator.language,
-              },
-            }).catch(() => {});
-
-            supabase.functions.invoke('trust-score', {
-              body: { action: 'compute' },
-            }).catch(() => {});
-          }, 2000);
+        if (session?.user && !isRecoveryPending()) {
+          void ensureLoginSecurity(session).catch(() => undefined);
         }
       }
     );
@@ -319,14 +436,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: current, error: currentError } = await supabase.auth.getSession();
         if (!currentError && current.session) {
           applySessionState(current.session);
-          if (current.session.user) void inspectCryptoReadiness(current.session.user.id, 'session_restored');
+          await ensureLoginSecurity(current.session).catch(() => undefined);
           return;
         }
 
         // Refresh only when no usable persisted session exists.
         const { data: refreshed } = await supabase.auth.refreshSession();
         applySessionState(refreshed.session);
-        if (refreshed.session?.user) void inspectCryptoReadiness(refreshed.session.user.id, 'session_restored');
+        if (refreshed.session) await ensureLoginSecurity(refreshed.session).catch(() => undefined);
       } catch {
         // An auth-lock AbortError is transient. onAuthStateChange will deliver
         // the restored session without starting another competing operation.
@@ -336,7 +453,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void initAuth();
     return () => subscription.unsubscribe();
-  }, []);
+  }, [ensureLoginSecurity, updateLoginSecurity]);
 
   const signUp = async (email: string, password: string, name: string, dateOfBirth?: string) => {
     const normalizedEmail = email.trim();
@@ -362,6 +479,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const normalizedEmail = email.trim();
     const threatError = await inspectAuthThreat('auth.signin', normalizedEmail);
     if (threatError) return { error: threatError };
+    const rateLimitError = await checkLoginRateLimit(normalizedEmail);
+    if (rateLimitError) return { error: rateLimitError };
 
     setCryptoRestoring(true);
     try {
@@ -369,15 +488,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: normalizedEmail,
         password,
       });
+      void recordLoginAttempt(normalizedEmail, !error && Boolean(data.user));
 
-      if (!error && data.user) {
-        // Invariant : après un navigateur vierge, aucune route privée ne
-        // démarre avant la restauration de la Master Key du compte.
-        await runPostSignInSetup(password, data.user.id);
+      if (!error && data.user && data.session) {
+        // The password is kept in memory only. A suspicious login must be
+        // approved before it can restore the account Master Key or enroll a
+        // device. If approval arrives while this tab remains open, setup
+        // resumes automatically; after a reload the user re-enters the password.
+        pendingPasswordRef.current = { userId: data.user.id, password };
+        const security = await ensureLoginSecurity(data.session);
+        if (security.status === 'approved') {
+          await completePendingPasswordSetup(data.user.id);
+        }
       }
 
       return { error };
     } catch (error) {
+      pendingPasswordRef.current = null;
       return { error: error instanceof Error ? error : new Error(String(error)) };
     } finally {
       setCryptoRestoring(false);
@@ -390,6 +517,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAccountKeySession();
     clearMessagingSession(activeUserIdRef.current ?? user?.id ?? null);
     activeUserIdRef.current = null;
+    pendingPasswordRef.current = null;
+    assessmentRef.current = null;
+    approvedServicesTokenRef.current = null;
+    updateLoginSecurity({ status: 'signed_out', session: null });
     setSession(null);
     setUser(null);
 
@@ -418,8 +549,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch { /* storage can be unavailable in private browsing */ }
   };
 
+  const refreshLoginSecurity = useCallback(async (): Promise<void> => {
+    const currentSession = session;
+    if (!currentSession?.user) {
+      updateLoginSecurity({ status: 'signed_out', session: null });
+      return;
+    }
+
+    try {
+      let security = await readCurrentLoginSecuritySession();
+      if (security.status === 'unassessed' || security.status === 'expired') {
+        security = await ensureLoginSecurity(currentSession);
+      } else {
+        updateLoginSecurity({ status: security.status, session: security });
+      }
+      if (security.status === 'approved') {
+        startApprovedSessionServices(currentSession);
+        await completePendingPasswordSetup(currentSession.user.id);
+      }
+    } catch (error) {
+      if (await isLoginSecurityServerGateOpen()) {
+        const rolloutSession: LoginSecuritySession = {
+          status: 'approved',
+          riskLevel: 'low',
+          approvedVia: 'server_gate',
+        };
+        updateLoginSecurity({ status: 'approved', session: rolloutSession });
+        startApprovedSessionServices(currentSession);
+        await completePendingPasswordSetup(currentSession.user.id);
+        return;
+      }
+      updateLoginSecurity({
+        status: 'error',
+        session: loginSecurityRef.current.session,
+        errorCode: error instanceof Error ? error.message : 'LOGIN_SECURITY_REQUEST_FAILED',
+      });
+      throw error;
+    }
+  }, [
+    completePendingPasswordSetup,
+    ensureLoginSecurity,
+    session,
+    startApprovedSessionServices,
+    updateLoginSecurity,
+  ]);
+
+  const resendLoginApprovalEmail = useCallback(async (): Promise<void> => {
+    await resendLoginSecurityEmail();
+    await refreshLoginSecurity();
+  }, [refreshLoginSecurity]);
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, cryptoRestoring, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{
+      user,
+      session,
+      loading,
+      cryptoRestoring,
+      loginSecurity,
+      signUp,
+      signIn,
+      signOut,
+      refreshLoginSecurity,
+      resendLoginApprovalEmail,
+    }}>
       {children}
     </AuthContext.Provider>
   );

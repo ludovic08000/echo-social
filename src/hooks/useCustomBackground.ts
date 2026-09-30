@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 
 const GRADIENT_MAP: Record<string, string> = {
@@ -9,7 +9,7 @@ const GRADIENT_MAP: Record<string, string> = {
   'gradient:from-rose-300,via-pink-400,to-fuchsia-500': 'linear-gradient(135deg, #fda4af, #f472b6, #d946ef)',
   'gradient:from-green-300,via-cyan-400,to-purple-500': 'linear-gradient(135deg, #86efac, #22d3ee, #a855f7)',
   'gradient:from-amber-300,via-orange-400,to-red-500': 'linear-gradient(135deg, #fcd34d, #fb923c, #ef4444)',
-  'gradient:from-gray-100,via-gray-200,to-gray-300': 'linear-gradient(135deg, #f3f4f6, #e5e7eb, #d1d5db)',
+  'gradient:from-gray-100,via-gray-200,to-gray-300': 'linear-gradient(135deg, hsl(var(--muted)), hsl(var(--secondary)), hsl(var(--background)))',
 };
 
 export function getBackgroundStyle(url: string | null | undefined): React.CSSProperties | undefined {
@@ -29,14 +29,8 @@ export function getBackgroundStyle(url: string | null | undefined): React.CSSPro
   };
 }
 
-export function useCustomBackground(type: 'profile' | 'feed') {
-  const { data: profile } = useProfile();
+export function useCustomBackground(type: 'profile' | 'feed', userId?: string) {
+  const { data: profile } = useProfile(userId);
   const url = type === 'profile' ? profile?.profile_bg_url : profile?.feed_bg_url;
-  const [resolvedStyle, setResolvedStyle] = useState<React.CSSProperties | undefined>(undefined);
-
-  useEffect(() => {
-    setResolvedStyle(getBackgroundStyle(url));
-  }, [url]);
-
-  return resolvedStyle;
+  return useMemo(() => getBackgroundStyle(url), [url]);
 }

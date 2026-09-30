@@ -184,6 +184,8 @@ jobs:
           deno check --no-config supabase/functions/sealed-relay/index.ts
           deno check --no-config supabase/functions/identity-rotation/index.ts
           deno check --no-config supabase/functions/identity-rotation-recovery/index.ts
+          deno check --no-config supabase/functions/identity-reset/index.ts
+          deno check --no-config supabase/functions/login-security/index.ts
           deno check --no-config supabase/functions/zeus/index.ts
           deno check --no-config supabase/functions/ml-feed-train/index.ts
 

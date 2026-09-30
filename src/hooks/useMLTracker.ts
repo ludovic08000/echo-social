@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { recordSessionSignal } from "@/lib/feedDiversity";
 import { buildFeedExperimentEvent, capExperimentEventBatch } from "@/lib/recsysV8";
+import { isAnalyticsEnabled } from "@/lib/privacyPreferences";
 
 type SignalType =
   | "view"
@@ -156,7 +157,7 @@ export function trackMLSignal(
   signal: SignalType,
   extra?: { dwell_ms?: number; scroll_depth?: number }
 ) {
-  if (!userId || !postId) return;
+  if (!userId || !postId || !isAnalyticsEnabled(userId)) return;
   queue.push({
     user_id: userId,
     post_id: postId,

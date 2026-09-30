@@ -54,10 +54,15 @@ describe('Aegis PIN recovery and identity continuity', () => {
   it('finishes password-based crypto restoration before exposing private routes', () => {
     const auth = source('src/lib/auth.tsx');
     const routes = source('src/components/ProtectedRoute.tsx');
+    const boundary = source('src/components/security/LoginSecurityBoundary.tsx');
+    const assessment = auth.indexOf('const security = await ensureLoginSecurity(data.session)');
+    const restoration = auth.indexOf('await completePendingPasswordSetup(data.user.id)', assessment);
 
     expect(auth).toContain('setCryptoRestoring(true)');
-    expect(auth).toContain('await runPostSignInSetup(password, data.user.id)');
-    expect(auth).not.toContain('void runPostSignInSetup(password, data.user.id)');
+    expect(assessment).toBeGreaterThan(-1);
+    expect(restoration).toBeGreaterThan(assessment);
+    expect(auth).toContain('runPostSignInSetup(pending.password, userId)');
+    expect(boundary).toContain("loginSecurity.status === 'approved'");
     expect(routes).toContain('loading || cryptoRestoring');
     expect(routes).toContain('Restauration du coffre chiffré');
   });

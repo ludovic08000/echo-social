@@ -7297,6 +7297,8 @@ export type Database = {
       }
       user_feed_preferences: {
         Row: {
+          ai_summaries_enabled: boolean
+          auto_translate_enabled: boolean
           created_at: string
           diversity_boost: number
           feed_algorithm: string
@@ -7312,6 +7314,8 @@ export type Database = {
           weight_marketplace: number
         }
         Insert: {
+          ai_summaries_enabled?: boolean
+          auto_translate_enabled?: boolean
           created_at?: string
           diversity_boost?: number
           feed_algorithm?: string
@@ -7327,6 +7331,8 @@ export type Database = {
           weight_marketplace?: number
         }
         Update: {
+          ai_summaries_enabled?: boolean
+          auto_translate_enabled?: boolean
           created_at?: string
           diversity_boost?: number
           feed_algorithm?: string
@@ -7502,6 +7508,21 @@ export type Database = {
           blocked_user_id?: string
           blocker_user_id?: string
           created_at?: string
+        }
+        Relationships: []
+      }
+      user_online_presence: {
+        Row: {
+          last_seen_at: string
+          user_id: string
+        }
+        Insert: {
+          last_seen_at?: string
+          user_id: string
+        }
+        Update: {
+          last_seen_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -9445,6 +9466,7 @@ export type Database = {
         | "friend_accepted"
         | "message"
         | "story_view"
+        | "close_friend_post"
         | "sale"
         | "new_device"
       order_status:
@@ -9594,6 +9616,7 @@ export const Constants = {
         "friend_accepted",
         "message",
         "story_view",
+        "close_friend_post",
         "sale",
         "new_device",
       ],

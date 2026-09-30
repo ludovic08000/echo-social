@@ -6,7 +6,7 @@ import { groupNotifications, type GroupedNotification } from '@/lib/feedAlgorith
 export interface Notification {
   id: string;
   user_id: string;
-  type: 'like' | 'comment' | 'sale' | 'friend_request' | 'friend_accepted' | 'message' | 'reaction' | 'story_view' | 'new_device';
+  type: 'like' | 'comment' | 'sale' | 'friend_request' | 'friend_accepted' | 'message' | 'reaction' | 'story_view' | 'close_friend_post' | 'new_device';
   actor_id: string;
   post_id: string | null;
   read_at: string | null;
@@ -21,7 +21,7 @@ export function useNotifications() {
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['notifications'],
+    queryKey: ['notifications', user?.id, 'list'],
     queryFn: async () => {
       if (!user) return [];
 
@@ -79,7 +79,7 @@ export function useUnreadCount() {
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['notifications', 'unread-count'],
+    queryKey: ['notifications', user?.id, 'unread-count'],
     queryFn: async () => {
       if (!user) return 0;
 

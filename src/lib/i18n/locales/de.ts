@@ -132,7 +132,7 @@ const de = {
   'wellbeing.bedtimeDescSuffix': 'Uhr zum Aufhören',
   'wellbeing.hour': 'Uhrzeit',
   'wellbeing.focusMode': 'Fokusmodus',
-  'wellbeing.focusDesc': 'Versteckt Benachrichtigungen und Feed für 25 Min',
+  'wellbeing.focusDesc': 'Reduziert Ablenkungen durch Ausblenden von Stories, Lives, Vorschlägen und Hinweistönen',
   'wellbeing.hideCounts': 'Zähler ausblenden',
   'wellbeing.hideCountsDesc': 'Anzahl der Likes und Reaktionen ausblenden',
   'wellbeing.grayscale': 'Graustufen nach Limit',

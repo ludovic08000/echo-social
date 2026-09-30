@@ -10,13 +10,11 @@ export function useIsMinor(userId: string | undefined) {
     queryKey: ['is-minor', userId],
     queryFn: async () => {
       if (!userId) return false;
-      const { data } = await supabase
-        .from('parental_controls')
-        .select('is_active')
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .maybeSingle();
-      return !!data;
+      const { data, error } = await supabase.rpc('is_user_protected_minor' as any, {
+        p_user_id: userId,
+      } as any);
+      if (error) return false;
+      return data === true;
     },
     enabled: !!userId,
     staleTime: 5 * 60_000,
@@ -34,14 +32,11 @@ export function useCurrentUserIsMinor() {
     queryFn: async () => {
       if (!user?.id) return false;
 
-      const { data } = await supabase
-        .from('parental_controls')
-        .select('is_active')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      return !!data;
+      const { data, error } = await supabase.rpc('is_user_protected_minor' as any, {
+        p_user_id: user.id,
+      } as any);
+      if (error) return false;
+      return data === true;
     },
     enabled: !!user?.id && !loading,
     staleTime: 5 * 60_000,
@@ -61,14 +56,10 @@ export function useCanMessageUser(targetUserId: string | undefined) {
       if (!user || !targetUserId || user.id === targetUserId) return { canMessage: true, reason: '' };
 
       // Check if target is a minor
-      const { data: targetParental } = await supabase
-        .from('parental_controls')
-        .select('is_active')
-        .eq('user_id', targetUserId)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (!targetParental) return { canMessage: true, reason: '' };
+      const { data: targetIsMinor, error: minorError } = await supabase.rpc('is_user_protected_minor' as any, {
+        p_user_id: targetUserId,
+      } as any);
+      if (minorError || targetIsMinor !== true) return { canMessage: true, reason: '' };
 
       // Target is a minor - check friendship
       const { data: friendship } = await supabase

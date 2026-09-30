@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { writeRuntimePrivacyPreferences } from '@/lib/privacyPreferences';
 
 export interface PrivacySettings {
   id: string;
@@ -22,6 +23,19 @@ export interface PrivacySettings {
   ai_data_sharing_enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export type PrivacySettingsUpdate = Partial<Omit<
+  PrivacySettings,
+  'id' | 'user_id' | 'created_at' | 'updated_at'
+>>;
+
+function updateRuntimeCache(settings: PrivacySettings) {
+  writeRuntimePrivacyPreferences(settings.user_id, {
+    ghostMode: settings.ghost_mode,
+    analyticsEnabled: settings.analytics_enabled,
+    onlineStatusVisibility: settings.online_status_visibility,
+  });
 }
 
 export function usePrivacySettings() {
@@ -49,10 +63,14 @@ export function usePrivacySettings() {
           .single();
 
         if (insertError) throw insertError;
-        return newSettings as PrivacySettings;
+        const created = newSettings as PrivacySettings;
+        updateRuntimeCache(created);
+        return created;
       }
 
-      return data as PrivacySettings;
+      const settings = data as PrivacySettings;
+      updateRuntimeCache(settings);
+      return settings;
     },
     enabled: !!user,
   });
@@ -63,20 +81,22 @@ export function useUpdatePrivacySettings() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (updates: Partial<Omit<PrivacySettings, 'id' | 'user_id' | 'created_at' | 'updated_at'>>) => {
+    mutationFn: async (updates: PrivacySettingsUpdate) => {
       if (!user) throw new Error('Not authenticated');
 
       const { data, error } = await supabase
         .from('privacy_settings')
-        .update(updates)
-        .eq('user_id', user.id)
+        .upsert({ user_id: user.id, ...updates }, { onConflict: 'user_id' })
         .select()
         .single();
 
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      const settings = data as PrivacySettings;
+      updateRuntimeCache(settings);
+      queryClient.setQueryData(['privacy-settings', user?.id], settings);
       queryClient.invalidateQueries({ queryKey: ['privacy-settings', user?.id] });
     },
   });

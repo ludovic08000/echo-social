@@ -11,9 +11,13 @@ import type { ContentPrefs, FeedWeights } from '@/lib/feedAlgorithm';
 
 const PREFS_KEY = 'content-prefs';
 const WEIGHTS_KEY = 'feed-weights';
+const CACHE_OWNER_KEY = 'feed-prefs-user';
+export const CONTENT_PREFS_CHANGED_EVENT = 'forsure:content-prefs-changed';
 
 const DEFAULT_PREFS: ContentPrefs = {
   feedAlgorithm: 'smart',
+  aiSummariesEnabled: true,
+  autoTranslateEnabled: false,
   diversityBoost: 50,
   mutedKeywords: [],
   priorityTopics: [],
@@ -30,6 +34,8 @@ const DEFAULT_WEIGHTS: FeedWeights = {
 
 type Row = {
   feed_algorithm: 'smart' | 'chronological' | 'friends_first';
+  ai_summaries_enabled?: boolean;
+  auto_translate_enabled?: boolean;
   diversity_boost: number;
   muted_keywords: string[];
   priority_topics: string[];
@@ -45,6 +51,8 @@ function rowToPrefs(row: Row): { prefs: ContentPrefs; weights: FeedWeights } {
   return {
     prefs: {
       feedAlgorithm: row.feed_algorithm,
+      aiSummariesEnabled: row.ai_summaries_enabled ?? true,
+      autoTranslateEnabled: row.auto_translate_enabled ?? false,
       diversityBoost: row.diversity_boost,
       mutedKeywords: row.muted_keywords ?? [],
       priorityTopics: row.priority_topics ?? [],
@@ -60,11 +68,15 @@ function rowToPrefs(row: Row): { prefs: ContentPrefs; weights: FeedWeights } {
   };
 }
 
-function writeCache(prefs: ContentPrefs, weights: FeedWeights) {
+function writeCache(prefs: ContentPrefs, weights: FeedWeights, userId?: string) {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     localStorage.setItem(WEIGHTS_KEY, JSON.stringify(weights));
-  } catch {}
+    if (userId) localStorage.setItem(CACHE_OWNER_KEY, userId);
+    window.dispatchEvent(new CustomEvent(CONTENT_PREFS_CHANGED_EVENT, { detail: prefs }));
+  } catch {
+    // Server persistence still works when local cache storage is unavailable.
+  }
 }
 
 /**
@@ -75,7 +87,7 @@ function writeCache(prefs: ContentPrefs, weights: FeedWeights) {
 export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
   try {
     const { data, error } = await supabase
-      .from('user_feed_preferences' as any)
+      .from('user_feed_preferences')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
@@ -84,7 +96,7 @@ export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
 
     if (data) {
       const { prefs, weights } = rowToPrefs(data as unknown as Row);
-      writeCache(prefs, weights);
+      writeCache(prefs, weights, userId);
       return;
     }
 
@@ -92,15 +104,23 @@ export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
     let localPrefs = DEFAULT_PREFS;
     let localWeights = DEFAULT_WEIGHTS;
     try {
-      const sp = localStorage.getItem(PREFS_KEY);
-      if (sp) localPrefs = { ...DEFAULT_PREFS, ...JSON.parse(sp) };
-      const sw = localStorage.getItem(WEIGHTS_KEY);
-      if (sw) localWeights = { ...DEFAULT_WEIGHTS, ...JSON.parse(sw) };
-    } catch {}
+      const cacheOwner = localStorage.getItem(CACHE_OWNER_KEY);
+      const canMigrateCache = !cacheOwner || cacheOwner === userId;
+      if (canMigrateCache) {
+        const sp = localStorage.getItem(PREFS_KEY);
+        if (sp) localPrefs = { ...DEFAULT_PREFS, ...JSON.parse(sp) };
+        const sw = localStorage.getItem(WEIGHTS_KEY);
+        if (sw) localWeights = { ...DEFAULT_WEIGHTS, ...JSON.parse(sw) };
+      }
+    } catch {
+      // Fall back to defaults when the legacy cache cannot be read.
+    }
 
-    await supabase.from('user_feed_preferences' as any).upsert({
+    await supabase.from('user_feed_preferences').upsert({
       user_id: userId,
       feed_algorithm: localPrefs.feedAlgorithm,
+      ai_summaries_enabled: localPrefs.aiSummariesEnabled,
+      auto_translate_enabled: localPrefs.autoTranslateEnabled,
       diversity_boost: localPrefs.diversityBoost,
       muted_keywords: localPrefs.mutedKeywords,
       priority_topics: localPrefs.priorityTopics,
@@ -112,7 +132,7 @@ export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
       weight_marketplace: localWeights.marketplace,
     });
 
-    writeCache(localPrefs, localWeights);
+    writeCache(localPrefs, localWeights, userId);
   } catch {
     // Network/offline: keep current cache
   }
@@ -135,16 +155,20 @@ export async function saveFeedPrefs(
     if (sp) currentPrefs = { ...DEFAULT_PREFS, ...JSON.parse(sp) };
     const sw = localStorage.getItem(WEIGHTS_KEY);
     if (sw) currentWeights = { ...DEFAULT_WEIGHTS, ...JSON.parse(sw) };
-  } catch {}
+  } catch {
+    // The server row remains authoritative when local cache is unavailable.
+  }
 
   const nextPrefs: ContentPrefs = { ...currentPrefs, ...patch };
   const nextWeights: FeedWeights = patch.weights ? { ...currentWeights, ...patch.weights } : currentWeights;
 
   const { data, error } = await supabase
-    .from('user_feed_preferences' as any)
+    .from('user_feed_preferences')
     .upsert({
       user_id: userId,
       feed_algorithm: nextPrefs.feedAlgorithm,
+      ai_summaries_enabled: nextPrefs.aiSummariesEnabled,
+      auto_translate_enabled: nextPrefs.autoTranslateEnabled,
       diversity_boost: nextPrefs.diversityBoost,
       muted_keywords: nextPrefs.mutedKeywords,
       priority_topics: nextPrefs.priorityTopics,
@@ -163,8 +187,8 @@ export async function saveFeedPrefs(
   // Use the server-validated row (it may have clamped values)
   if (data) {
     const { prefs, weights } = rowToPrefs(data as unknown as Row);
-    writeCache(prefs, weights);
+    writeCache(prefs, weights, userId);
   } else {
-    writeCache(nextPrefs, nextWeights);
+    writeCache(nextPrefs, nextWeights, userId);
   }
 }

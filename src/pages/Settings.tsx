@@ -1,7 +1,6 @@
-import { useState } from 'react';
 import { useUXMode } from '@/hooks/useUXMode';
 import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby, Smartphone } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from '@/lib/i18n';
 import { AppLayout } from '@/components/AppLayout';
 import { SettingsMenuGrid } from '@/components/settings/SettingsMenuGrid';
@@ -20,9 +19,22 @@ import { Button } from '@/components/ui/button';
 
 export default function Settings() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<string | null>(null);
   const { mode: uxMode } = useUXMode();
+  const requestedTab = searchParams.get('tab');
+  const validTabs = new Set([
+    'profile', 'appearance', 'wellbeing', 'content', 'accessibility',
+    'privacy', 'notifications', 'parental', 'devices',
+  ]);
+  const activeTab = requestedTab && validTabs.has(requestedTab) ? requestedTab : null;
+
+  const setActiveTab = (tab: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (tab) next.set('tab', tab);
+    else next.delete('tab');
+    setSearchParams(next);
+  };
 
   const handleBack = () => {
     if (activeTab) {

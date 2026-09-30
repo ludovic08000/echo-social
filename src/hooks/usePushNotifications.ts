@@ -30,10 +30,35 @@ export function usePushNotifications() {
     typeof Notification !== 'undefined' ? Notification.permission : 'denied'
   );
   const [isSupported, setIsSupported] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
 
   useEffect(() => {
     setIsSupported('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
   }, []);
+
+  const refreshSubscription = useCallback(async () => {
+    if (!isSupported || !user) {
+      setIsSubscribed(false);
+      return;
+    }
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      setIsSubscribed(!!subscription);
+      setPermission(Notification.permission);
+    } catch {
+      setIsSubscribed(false);
+    }
+  }, [isSupported, user]);
+
+  useEffect(() => {
+    void refreshSubscription();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void refreshSubscription();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [refreshSubscription]);
 
   const subscribe = useCallback(async () => {
     if (!user || !isSupported) return false;
@@ -49,28 +74,30 @@ export function usePushNotifications() {
       if (!subscription) {
         const vapidKey = await getVapidPublicKey();
         if (!vapidKey) {
-          console.warn('[Push] VAPID public key unavailable, falling back to local notifications');
-        } else {
-          try {
-            subscription = await registration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
-            });
-          } catch (e) {
-            console.error('[Push] pushManager.subscribe failed:', e);
-          }
+          console.warn('[Push] VAPID public key unavailable');
+          return false;
+        }
+        try {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
+          });
+        } catch (e) {
+          console.error('[Push] pushManager.subscribe failed:', e);
+          return false;
         }
       }
 
-      const subData = subscription ? JSON.parse(JSON.stringify(subscription)) : null;
+      const subData = JSON.parse(JSON.stringify(subscription));
 
       await supabase.from('push_subscriptions').upsert({
         user_id: user.id,
-        endpoint: subData?.endpoint || `local-${navigator.userAgent.slice(0, 32)}`,
-        p256dh: subData?.keys?.p256dh || 'pending',
-        auth: subData?.keys?.auth || 'pending',
+        endpoint: subData.endpoint,
+        p256dh: subData.keys.p256dh,
+        auth: subData.keys.auth,
       }, { onConflict: 'user_id,endpoint' });
 
+      setIsSubscribed(true);
       return true;
     } catch (err) {
       console.error('[Push] Subscribe error:', err);
@@ -79,7 +106,7 @@ export function usePushNotifications() {
   }, [user, isSupported]);
 
   const unsubscribe = useCallback(async () => {
-    if (!user) return;
+    if (!user) return false;
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
@@ -90,10 +117,13 @@ export function usePushNotifications() {
       } else {
         await supabase.from('push_subscriptions').delete().eq('user_id', user.id);
       }
+      setIsSubscribed(false);
+      return true;
     } catch (err) {
       console.error('[Push] Unsubscribe error:', err);
+      return false;
     }
   }, [user]);
 
-  return { isSupported, permission, subscribe, unsubscribe };
+  return { isSupported, isSubscribed, permission, subscribe, unsubscribe, refreshSubscription };
 }

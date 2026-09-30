@@ -8,6 +8,9 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { SOUND_OPTIONS } from '@/hooks/useNotificationSounds';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
+import type { NotificationSettings } from '@/hooks/useNotificationSettings';
+import { FriendGroupsManager } from '@/components/FriendGroupsManager';
 
 interface SettingItemProps {
   icon: React.ElementType;
@@ -61,15 +64,18 @@ function previewSound(soundType: string) {
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + c.dur);
-  } catch {}
+  } catch {
+    // Audio previews are optional when the browser blocks Web Audio.
+  }
 }
 
 export function NotificationSettingsPanel() {
   const { data: settings, isLoading } = useNotificationSettings();
   const updateSettings = useUpdateNotificationSettings();
   const { voiceSettings, updateVoiceSettings } = useVoiceSettings();
+  const push = usePushNotifications();
 
-  const handleToggle = async (key: keyof typeof settings, value: boolean) => {
+  const handleToggle = async (key: keyof NotificationSettings, value: boolean) => {
     try {
       await updateSettings.mutateAsync({ [key]: value });
     } catch (error) {
@@ -96,6 +102,42 @@ export function NotificationSettingsPanel() {
 
   return (
     <div className="space-y-6">
+      <div>
+        <h3 className="font-display text-lg font-semibold mb-4">🔔 Notifications du navigateur</h3>
+        <div className="rounded-xl border border-border/50 bg-secondary/20 p-4">
+          {!push.isSupported ? (
+            <p className="text-sm text-muted-foreground">Ce navigateur ne prend pas en charge les notifications push.</p>
+          ) : push.permission === 'denied' ? (
+            <div className="space-y-2">
+              <p className="font-medium text-sm">Notifications bloquées par le navigateur</p>
+              <p className="text-xs text-muted-foreground">Autorisez les notifications pour forsure.fans dans les réglages du navigateur, puis revenez ici.</p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="font-medium text-sm">{push.isSubscribed ? 'Activées sur cet appareil' : 'Désactivées sur cet appareil'}</p>
+                <p className="text-xs text-muted-foreground mt-1">Recevez les messages et alertes importantes même quand ForSure est fermé.</p>
+              </div>
+              <Button
+                variant={push.isSubscribed ? 'outline' : 'default'}
+                onClick={async () => {
+                  const ok = push.isSubscribed
+                    ? await push.unsubscribe()
+                    : await push.subscribe();
+                  toast(ok
+                    ? { title: push.isSubscribed ? 'Notifications désactivées' : 'Notifications activées' }
+                    : { title: 'Activation impossible', description: 'Vérifiez les autorisations du navigateur.', variant: 'destructive' });
+                }}
+              >
+                {push.isSubscribed ? 'Désactiver' : 'Activer'}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="premium-divider" />
+
       {/* Sound settings */}
       <div>
         <h3 className="font-display text-lg font-semibold mb-4">🔊 Sons de notification</h3>
@@ -121,7 +163,11 @@ export function NotificationSettingsPanel() {
                     value={settings.sound_type || 'default'}
                     onValueChange={async (v) => {
                       previewSound(v);
-                      try { await updateSettings.mutateAsync({ sound_type: v }); } catch {}
+                      try {
+                        await updateSettings.mutateAsync({ sound_type: v });
+                      } catch {
+                        toast({ title: 'Son non enregistré', variant: 'destructive' });
+                      }
                     }}
                   >
                     <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
@@ -313,12 +359,20 @@ export function NotificationSettingsPanel() {
           />
           <SettingItem
             icon={Users}
-            label="Posts des amis proches"
-            description="Quand un ami proche publie quelque chose"
+            label="Posts des groupes d'amis"
+            description="Quand un membre de l'un de vos groupes publie quelque chose"
             checked={settings.close_friends_posts_enabled}
             onCheckedChange={(v) => handleToggle('close_friends_posts_enabled', v)}
             disabled={updateSettings.isPending}
           />
+          {settings.close_friends_posts_enabled && (
+            <div className="py-4">
+              <p className="mb-4 text-sm text-muted-foreground">
+                Seuls les amis ajoutés à un groupe ci-dessous déclenchent cette notification.
+              </p>
+              <FriendGroupsManager />
+            </div>
+          )}
         </div>
       </div>
 

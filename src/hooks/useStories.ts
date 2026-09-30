@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { isGhostModeEnabled } from '@/lib/privacyPreferences';
 
 export interface Story {
   id: string;
@@ -178,6 +179,7 @@ export function useViewStory() {
   return useMutation({
     mutationFn: async (storyId: string) => {
       if (!user) return;
+      if (isGhostModeEnabled(user.id)) return;
 
       const { error } = await supabase
         .from('story_views')
