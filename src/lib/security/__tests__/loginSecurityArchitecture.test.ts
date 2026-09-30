@@ -7,6 +7,7 @@ function source(path: string): string {
 }
 
 const migration = source('supabase/migrations/20260930011500_login_security_step_up.sql');
+const emailWorkerMigration = source('supabase/migrations/20260930120300_schedule_email_queue_worker.sql');
 const edge = source('supabase/functions/login-security/index.ts');
 const riskPolicy = source('supabase/functions/login-security/risk.ts');
 const client = source('src/lib/security/loginSecurity.ts');
@@ -68,6 +69,10 @@ describe('risk-based login security architecture', () => {
 
   it('supports both single-use email decisions and a trusted-device inbox', () => {
     expect(edge).toContain("subject: 'Confirmez votre nouvelle connexion ForSure'");
+    expect(edge).toContain("purpose: 'transactional'");
+    expect(edge).not.toContain("purpose: 'authentication'");
+    expect(edge).toContain(".from('email_unsubscribe_tokens')");
+    expect(edge).toContain('unsubscribe_token: unsubscribeToken');
     expect(edge).toContain('if (mutation.revokeAuthSession)');
     expect(riskPolicy).toContain('revokeAuthSession: true');
     expect(edge).toContain("approved_via: status === 'approved' ? 'trusted_device' : null");
@@ -75,6 +80,22 @@ describe('risk-based login security architecture', () => {
     expect(inbox).toContain('decidePendingLoginSecuritySession');
     expect(inbox).toContain("void decide('deny')");
     expect(inbox).toContain("void decide('approve')");
+  });
+
+  it('dispatches queued approval e-mails through a private Vault-authenticated worker', () => {
+    expect(emailWorkerMigration).toContain("pgmq.metrics('auth_emails')");
+    expect(emailWorkerMigration).toContain("pgmq.metrics('transactional_emails')");
+    expect(emailWorkerMigration).toContain("secret.name = 'email_queue_service_role_key'");
+    expect(emailWorkerMigration).toContain('/functions/v1/process-email-queue');
+    expect(emailWorkerMigration).toContain("'Authorization', 'Bearer ' || v_service_secret");
+    expect(emailWorkerMigration).toContain("'apikey', v_service_secret");
+    expect(emailWorkerMigration).toMatch(/'process-email-queue',\r?\n\s+'5 seconds'/);
+    expect(emailWorkerMigration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.process_email_queue_cron_tick\(\)\r?\nFROM PUBLIC, anon, authenticated/,
+    );
+    expect(emailWorkerMigration).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.process_email_queue_cron_tick\(\)\r?\nTO authenticated/,
+    );
   });
 
   it('keeps email link previews read-only and requires an explicit form POST', () => {
