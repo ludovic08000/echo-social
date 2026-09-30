@@ -36,6 +36,8 @@ Deno.serve(async (req) => {
     }
 
     const authedUserId = user.id;
+
+    const body = await req.json();
     const { action, pin, current_pin, allowed_categories } = body;
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -91,7 +93,7 @@ Deno.serve(async (req) => {
     }
 
     async function matchesStoredPin(rawPin: string, storedHash: string) {
-      const currentHash = await hashPinServer(rawPin, user.id);
+      const currentHash = await hashPinServer(rawPin, authedUserId);
       if (currentHash === storedHash) return { ok: true, legacy: false, currentHash };
 
       const legacyData = new TextEncoder().encode(rawPin + "forsure-parental-salt");
