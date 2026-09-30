@@ -7,6 +7,7 @@ function source(path: string): string {
 }
 
 const migration = source('supabase/migrations/20260930011500_login_security_step_up.sql');
+const emailWorkerMigration = source('supabase/migrations/20260930120300_schedule_email_queue_worker.sql');
 const edge = source('supabase/functions/login-security/index.ts');
 const riskPolicy = source('supabase/functions/login-security/risk.ts');
 const client = source('src/lib/security/loginSecurity.ts');
@@ -75,6 +76,20 @@ describe('risk-based login security architecture', () => {
     expect(inbox).toContain('decidePendingLoginSecuritySession');
     expect(inbox).toContain("void decide('deny')");
     expect(inbox).toContain("void decide('approve')");
+  });
+
+  it('dispatches queued approval e-mails through a private Vault-authenticated worker', () => {
+    expect(emailWorkerMigration).toContain("pgmq.metrics('auth_emails')");
+    expect(emailWorkerMigration).toContain("pgmq.metrics('transactional_emails')");
+    expect(emailWorkerMigration).toContain("secret.name = 'email_queue_service_role_key'");
+    expect(emailWorkerMigration).toContain('/functions/v1/process-email-queue');
+    expect(emailWorkerMigration).toContain("'Authorization', 'Bearer ' || v_service_secret");
+    expect(emailWorkerMigration).toContain("'apikey', v_service_secret");
+    expect(emailWorkerMigration).toContain("'process-email-queue',\n    '5 seconds'");
+    expect(emailWorkerMigration).toContain(
+      'REVOKE ALL ON FUNCTION public.process_email_queue_cron_tick()\nFROM PUBLIC, anon, authenticated',
+    );
+    expect(emailWorkerMigration).not.toContain('GRANT EXECUTE ON FUNCTION public.process_email_queue_cron_tick()\nTO authenticated');
   });
 
   it('keeps email link previews read-only and requires an explicit form POST', () => {
