@@ -14,7 +14,6 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
   const {
     user,
     loading,
-    cryptoRestoring,
     loginSecurity,
     refreshLoginSecurity,
     resendLoginApprovalEmail,
@@ -50,7 +49,17 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
     };
   }, [loginSecurity.status, refreshLoginSecurity, user]);
 
-  if (!user || (loginSecurity.status === 'approved' && !cryptoRestoring)) return <>{children}</>;
+  // A valid auth session can render the application while the short login
+  // assessment and the approved account restoration continue in background.
+  // Security-sensitive services remain gated separately until both steps are
+  // complete. Pending approval, denial and verification failures still block.
+  if (
+    !user
+    || loginSecurity.status === 'checking'
+    || loginSecurity.status === 'approved'
+  ) {
+    return <>{children}</>;
+  }
   if (loading) return null;
 
   const refresh = async () => {
@@ -81,7 +90,6 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
     }
   };
 
-  const checking = loginSecurity.status === 'checking' || cryptoRestoring;
   const denied = loginSecurity.status === 'denied';
   const failed = loginSecurity.status === 'error';
 
@@ -90,32 +98,25 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
       <Card className="w-full max-w-lg border-border/60 shadow-xl">
         <CardHeader className="text-center items-center">
           <div className={`mb-2 flex h-14 w-14 items-center justify-center rounded-2xl ${denied || failed ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
-            {checking ? <Loader2 className="h-7 w-7 animate-spin" />
-              : denied || failed ? <ShieldAlert className="h-7 w-7" />
+            {denied || failed ? <ShieldAlert className="h-7 w-7" />
               : <LockKeyhole className="h-7 w-7" />}
           </div>
           <CardTitle>
-            {cryptoRestoring ? 'Restauration sécurisée du compte'
-              : checking ? 'Ouverture de ForSure'
-              : denied ? 'Connexion bloquée'
+            {denied ? 'Connexion bloquée'
               : failed ? 'Vérification indisponible'
               : 'Confirmez cette connexion'}
           </CardTitle>
           <CardDescription>
-            {cryptoRestoring
-              ? 'Votre connexion est approuvée. ForSure restaure maintenant votre coffre chiffré.'
-              : denied
-                ? 'Cette session a été refusée et ne peut pas accéder au coffre Aegis.'
-                : failed
-                  ? 'Par sécurité, le compte et les clés restent verrouillés tant que le serveur ne peut pas confirmer la session.'
-                  : checking
-                    ? 'Préparation de votre espace sécurisé.'
-                    : 'Cet appareil ou cette zone ne correspond pas à vos connexions habituelles. Un e-mail de confirmation ForSure a été envoyé.'}
+            {denied
+              ? 'Cette session a été refusée et ne peut pas accéder au coffre Aegis.'
+              : failed
+                ? 'Par sécurité, le compte et les clés restent verrouillés tant que le serveur ne peut pas confirmer la session.'
+                : 'Cet appareil ou cette zone ne correspond pas à vos connexions habituelles. Un e-mail de confirmation ForSure a été envoyé.'}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {!checking && !denied && !failed && (
+          {!denied && !failed && (
             <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 text-sm space-y-3">
               <div className="flex items-center gap-3">
                 <ShieldCheck className="h-4 w-4 text-primary" />
@@ -136,7 +137,7 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
 
           <div className="grid gap-3 sm:grid-cols-2">
             {!denied && (
-              <Button onClick={refresh} disabled={busy || checking}>
+              <Button onClick={refresh} disabled={busy}>
                 {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
                 Vérifier à nouveau
               </Button>
@@ -153,7 +154,7 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
             )}
           </div>
 
-          {!checking && !denied && !failed && (
+          {!denied && !failed && (
             <p className="text-xs text-center text-muted-foreground">
               Vous pouvez aussi approuver cette demande depuis un autre appareil ForSure déjà fiable.
             </p>

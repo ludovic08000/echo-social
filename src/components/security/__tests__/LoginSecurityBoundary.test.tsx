@@ -29,7 +29,7 @@ describe('LoginSecurityBoundary', () => {
     authHarness.useAuth.mockReset();
   });
 
-  it('keeps a first unknown session blocked without showing the old connection message', () => {
+  it('renders the application while a first session is assessed in background', () => {
     authHarness.useAuth.mockReturnValue(authState());
 
     render(
@@ -38,9 +38,9 @@ describe('LoginSecurityBoundary', () => {
       </LoginSecurityBoundary>,
     );
 
-    expect(screen.queryByText('Espace privé')).not.toBeInTheDocument();
-    expect(screen.getByText('Ouverture de ForSure')).toBeInTheDocument();
-    expect(screen.queryByText('Vérification de la connexion')).not.toBeInTheDocument();
+    expect(screen.getByText('Espace privé')).toBeInTheDocument();
+    expect(screen.queryByText('Ouverture de ForSure')).not.toBeInTheDocument();
+    expect(screen.queryByText('Vérifier à nouveau')).not.toBeInTheDocument();
   });
 
   it('renders the application once the exact login session is approved', () => {
@@ -59,6 +59,45 @@ describe('LoginSecurityBoundary', () => {
 
     expect(screen.getByText('Espace privé')).toBeInTheDocument();
     expect(screen.queryByText('Ouverture de ForSure')).not.toBeInTheDocument();
+  });
+
+  it('keeps the application visible while an approved account restores its crypto state', () => {
+    authHarness.useAuth.mockReturnValue(authState({
+      cryptoRestoring: true,
+      loginSecurity: {
+        status: 'approved',
+        session: { status: 'approved', sessionId: 'session-1' },
+      },
+    }));
+
+    render(
+      <LoginSecurityBoundary>
+        <div>Espace privé</div>
+      </LoginSecurityBoundary>,
+    );
+
+    expect(screen.getByText('Espace privé')).toBeInTheDocument();
+    expect(screen.queryByText('Restauration sécurisée du compte')).not.toBeInTheDocument();
+  });
+
+  it('still blocks a session that requires explicit approval', () => {
+    authHarness.useAuth.mockReturnValue(authState({
+      cryptoRestoring: true,
+      refreshLoginSecurity: vi.fn().mockResolvedValue(undefined),
+      loginSecurity: {
+        status: 'pending',
+        session: { status: 'pending', sessionId: 'session-1' },
+      },
+    }));
+
+    render(
+      <LoginSecurityBoundary>
+        <div>Espace privé</div>
+      </LoginSecurityBoundary>,
+    );
+
+    expect(screen.queryByText('Espace privé')).not.toBeInTheDocument();
+    expect(screen.getByText('Confirmez cette connexion')).toBeInTheDocument();
   });
 
   it('refreshes a pending approval immediately and when the tab regains focus', async () => {

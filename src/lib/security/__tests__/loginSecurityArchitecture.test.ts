@@ -74,7 +74,9 @@ describe('risk-based login security architecture', () => {
     expect(auth).toContain("updateLoginSecurity({ status: 'checking', session: currentSecurity.session })");
     expect(auth).toContain("updateLoginSecurity({ status: 'checking', session: null })");
     expect(boundary).not.toContain('Vérification de la connexion');
-    expect(boundary).toContain('Ouverture de ForSure');
+    expect(boundary).not.toContain('Ouverture de ForSure');
+    expect(boundary).not.toContain('Restauration sécurisée du compte');
+    expect(boundary).toContain("loginSecurity.status === 'checking'");
   });
 
   it('supports both single-use email decisions and a trusted-device inbox', () => {

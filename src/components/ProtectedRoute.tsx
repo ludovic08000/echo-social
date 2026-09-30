@@ -68,30 +68,30 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 }
 
 export function PublicOnlyRoute({ children }: ProtectedRouteProps) {
-  const { user, loading, cryptoRestoring } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
 
   if (isRecoveryPending() || detectAndStoreRecoveryFromHash()) {
     return <Navigate to="/reset-password" replace />;
   }
 
-  if (loading || cryptoRestoring) {
+  // Redirect as soon as the authenticated user is known. Login security and
+  // Aegis restoration continue in background; their privileged runtimes keep
+  // their own approval/readiness gates.
+  if (user && !isRecoveryPending()) {
+    const from = (location.state as { from?: string })?.from || '/feed';
+    return <Navigate to={from} replace />;
+  }
+
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" />
-          <span className="text-muted-foreground">
-            {cryptoRestoring ? 'Restauration du coffre chiffré…' : 'Chargement...'}
-          </span>
+          <span className="text-muted-foreground">Chargement...</span>
         </div>
       </div>
     );
-  }
-
-  // If already authenticated, redirect to feed — but NOT during recovery
-  if (user && !isRecoveryPending()) {
-    const from = (location.state as { from?: string })?.from || '/feed';
-    return <Navigate to={from} replace />;
   }
 
   return <>{children}</>;
