@@ -1,5 +1,30 @@
 export type LoginRiskReason = 'UNVERIFIED_DEVICE' | 'COUNTRY_CHANGED';
 
+export type LoginSecuritySessionStatus =
+  | 'approved'
+  | 'pending'
+  | 'denied'
+  | 'expired'
+  | 'unassessed';
+
+export function effectiveLoginSecurityStatus(
+  status: unknown,
+  expiresAt: unknown,
+  nowMs = Date.now(),
+): LoginSecuritySessionStatus {
+  const normalized = typeof status === 'string'
+    && ['approved', 'pending', 'denied', 'expired'].includes(status)
+    ? status as Exclude<LoginSecuritySessionStatus, 'unassessed'>
+    : 'unassessed';
+
+  if (normalized !== 'approved' && normalized !== 'pending') return normalized;
+
+  const expirationMs = typeof expiresAt === 'string' ? Date.parse(expiresAt) : Number.NaN;
+  return Number.isFinite(expirationMs) && expirationMs > nowMs
+    ? normalized
+    : 'expired';
+}
+
 export interface LoginRiskAssessment {
   status: 'approved' | 'pending';
   riskLevel: 'low' | 'high';

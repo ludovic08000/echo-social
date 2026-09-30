@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assessLoginRisk,
+  effectiveLoginSecurityStatus,
   loginDecisionMutation,
 } from '../../../../supabase/functions/login-security/risk';
 
@@ -81,5 +82,32 @@ describe('login-security risk policy', () => {
     });
     expect(mutation.values.status).toBe('denied');
     expect(mutation.revokeAuthSession).toBe(true);
+  });
+
+  it('exposes expired pending sessions so the client can reassess and send a fresh email', () => {
+    const now = Date.parse('2026-09-30T11:00:00.000Z');
+
+    expect(effectiveLoginSecurityStatus(
+      'pending',
+      '2026-09-30T10:59:59.999Z',
+      now,
+    )).toBe('expired');
+    expect(effectiveLoginSecurityStatus(
+      'pending',
+      '2026-09-30T11:15:00.000Z',
+      now,
+    )).toBe('pending');
+  });
+
+  it('fails closed when an approved session is expired or has no valid expiry', () => {
+    const now = Date.parse('2026-09-30T11:00:00.000Z');
+
+    expect(effectiveLoginSecurityStatus(
+      'approved',
+      '2026-09-30T10:59:59.999Z',
+      now,
+    )).toBe('expired');
+    expect(effectiveLoginSecurityStatus('approved', null, now)).toBe('expired');
+    expect(effectiveLoginSecurityStatus('denied', null, now)).toBe('denied');
   });
 });
