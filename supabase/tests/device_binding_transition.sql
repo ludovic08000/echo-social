@@ -11,6 +11,11 @@ declare
   result jsonb;
   device public.user_devices%rowtype;
 begin
+  -- Test fixtures provision account roots through the same trusted server role
+  -- used by the production identity Edge Functions. Browser roles are
+  -- intentionally blocked by aegis_guard_account_identity_mutation_v2.
+  perform set_config('request.jwt.claim.role', 'service_role', true);
+
   insert into auth.users(id,email) values(owner_id,'binding-transition@example.invalid');
   insert into public.user_public_keys(user_id,identity_key,signing_key,fingerprint,
     identity_binding_signature,identity_binding_version,kem_type)
