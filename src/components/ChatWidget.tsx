@@ -1618,14 +1618,24 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                           );
                         })()
                         /* GIF message */
-                        : isGifMessage(msg.body) ? (
-                          <div
-                            onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
-                            className="cursor-pointer rounded-xl overflow-hidden"
-                          >
-                            <img src={getGifUrl(msg.body)} alt="GIF" className="max-w-full max-h-[150px] object-cover rounded-xl" />
-                          </div>
-                        ) : isVoiceMessage(msg.body) ? (
+                        : isGifMessage(msg.body) ? (() => {
+                          const gifUrl = sanitizeUrl(getGifUrl(msg.body));
+                          return gifUrl === '#' ? null : (
+                            <div
+                              onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)}
+                              className="cursor-pointer rounded-xl overflow-hidden"
+                            >
+                              <img
+                                src={gifUrl}
+                                alt="GIF"
+                                className="max-w-full max-h-[150px] object-cover rounded-xl"
+                                loading="lazy"
+                                decoding="async"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          );
+                        })() : isVoiceMessage(msg.body) ? (
                           <div onClick={() => setActiveMessageId(activeMessageId === msg.id ? null : msg.id)} className="cursor-pointer">
                             {(() => {
                               const vd = getVoiceData(msg.body);
@@ -1778,7 +1788,14 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                   const gifUrl = sanitizeUrl(getGifUrl(text));
                   return gifUrl === '#'
                     ? null
-                    : <img src={gifUrl} alt="GIF" className="max-w-full max-h-[150px] object-cover rounded-xl opacity-70" />;
+                    : <img
+                        src={gifUrl}
+                        alt="GIF"
+                        className="max-w-full max-h-[150px] object-cover rounded-xl opacity-70"
+                        loading="lazy"
+                        decoding="async"
+                        referrerPolicy="no-referrer"
+                      />;
                 }
                 if (isVoiceMessage(text)) {
                   const vd = getVoiceData(text);

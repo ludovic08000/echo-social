@@ -24,3 +24,17 @@ it('allows camera and microphone capture only for the ForSure origin', () => {
   expect(policy).toContain('geolocation=()');
   expect(policy).toContain('payment=()');
 });
+
+it('allows only the required GIPHY API and media origins', () => {
+  const html = readFileSync('index.html', 'utf8');
+  const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
+  expect(policy).toBeDefined();
+  const directives = new Map(policy!.split(';').filter(Boolean).map(part => {
+    const [name, ...sources] = part.trim().split(/\s+/);
+    return [name, sources];
+  }));
+
+  expect(directives.get('connect-src')).toContain('https://api.giphy.com');
+  expect(directives.get('img-src')).toContain('https://*.giphy.com');
+  expect(directives.get('connect-src')).not.toContain('https://*.giphy.com');
+});

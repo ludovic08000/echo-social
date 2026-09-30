@@ -3,7 +3,7 @@ import { Search, X, Loader2, RefreshCw } from 'lucide-react';
 
 const GIPHY_API_KEY = (import.meta.env.VITE_GIPHY_API_KEY || 'O9bC3d0aKxZHD5RQNNUFDgH60cQfgLH5').trim();
 
-interface GifResult {
+export interface GifResult {
   id: string;
   url: string;
   preview: string;
@@ -16,44 +16,81 @@ interface GifPickerProps {
   onClose: () => void;
 }
 
-function normalizeGiphyResults(data: any): GifResult[] {
-  return (data?.data || [])
-    .map((result: any) => ({
-      id: String(result.id || crypto.randomUUID?.() || Math.random()),
-      url:
-        result.images?.original?.url ||
-        result.images?.downsized?.url ||
-        result.images?.fixed_width?.url ||
-        '',
-      preview:
-        result.images?.fixed_width_small?.url ||
-        result.images?.fixed_width?.url ||
-        result.images?.downsized?.url ||
-        '',
-      width: Number(result.images?.fixed_width_small?.width || 200),
-      height: Number(result.images?.fixed_width_small?.height || 200),
-    }))
-    .filter((gif: GifResult) =>
-      gif.url.startsWith('https://') && gif.preview.startsWith('https://'),
-    );
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
 }
 
-async function fetchFromGiphy(query: string): Promise<GifResult[]> {
-  if (!GIPHY_API_KEY) throw new Error('GIPHY_NOT_CONFIGURED');
+export function isTrustedGiphyMediaUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && (
+      parsed.hostname === 'giphy.com' || parsed.hostname.endsWith('.giphy.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeGiphyResults(data: unknown): GifResult[] {
+  const rows = asRecord(data).data;
+  if (!Array.isArray(rows)) return [];
+
+  return rows.flatMap((value, index) => {
+    const result = asRecord(value);
+    const images = asRecord(result.images);
+    const original = asRecord(images.original);
+    const downsized = asRecord(images.downsized);
+    const fixedWidth = asRecord(images.fixed_width);
+    const fixedWidthSmall = asRecord(images.fixed_width_small);
+    const url = String(original.url || downsized.url || fixedWidth.url || '');
+    const preview = String(fixedWidthSmall.url || fixedWidth.url || downsized.url || '');
+
+    if (!isTrustedGiphyMediaUrl(url) || !isTrustedGiphyMediaUrl(preview)) return [];
+
+    return [{
+      id: String(result.id || `giphy-${index}-${url}`),
+      url,
+      preview,
+      width: Number(fixedWidthSmall.width || fixedWidth.width || 200),
+      height: Number(fixedWidthSmall.height || fixedWidth.height || 200),
+    }];
+  });
+}
+
+interface FetchFromGiphyOptions {
+  apiKey?: string;
+  fetcher?: typeof fetch;
+  signal?: AbortSignal;
+}
+
+export async function fetchFromGiphy(
+  query: string,
+  {
+    apiKey = GIPHY_API_KEY,
+    fetcher = fetch,
+    signal,
+  }: FetchFromGiphyOptions = {},
+): Promise<GifResult[]> {
+  const normalizedKey = apiKey.trim();
+  if (!normalizedKey) throw new Error('GIPHY_NOT_CONFIGURED');
 
   const params = new URLSearchParams({
-    api_key: GIPHY_API_KEY,
+    api_key: normalizedKey,
     limit: '20',
     rating: 'pg-13',
     lang: 'fr',
     bundle: 'messaging_non_clips',
+    remove_low_contrast: 'true',
   });
 
-  if (query.trim()) params.set('q', query.trim());
-  const path = query.trim() ? 'search' : 'trending';
-  const response = await fetch(
+  const normalizedQuery = query.trim().slice(0, 50);
+  if (normalizedQuery) params.set('q', normalizedQuery);
+  const path = normalizedQuery ? 'search' : 'trending';
+  const response = await fetcher(
     `https://api.giphy.com/v1/gifs/${path}?${params.toString()}`,
-    { headers: { Accept: 'application/json' } },
+    { headers: { Accept: 'application/json' }, signal },
   );
 
   if (!response.ok) {
@@ -74,14 +111,18 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchGifs = useCallback(async (query: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     const requestId = ++requestIdRef.current;
     setLoading(true);
     setErrorMessage(null);
 
     try {
-      const gifs = await fetchFromGiphy(query);
+      const gifs = await fetchFromGiphy(query, { signal: controller.signal });
       if (requestId !== requestIdRef.current) return;
 
       if (query.trim()) {
@@ -91,11 +132,12 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
         setLoadedTrending(true);
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       if (requestId !== requestIdRef.current) return;
       const message = error instanceof Error ? error.message : String(error);
 
       if (message === 'GIPHY_NOT_CONFIGURED') {
-        setErrorMessage('Service GIF non configuré. Ajoutez VITE_GIPHY_API_KEY.');
+        setErrorMessage('Les GIFs sont temporairement indisponibles.');
       } else if (message.includes('HTTP 403')) {
         setErrorMessage('La clé GIPHY est refusée. Vérifiez ses restrictions de domaine.');
       } else if (message.includes('HTTP 429')) {
@@ -120,6 +162,7 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
   }, [fetchGifs, loadedTrending]);
 
   useEffect(() => () => {
+    abortRef.current?.abort();
     requestIdRef.current += 1;
     if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
@@ -163,7 +206,7 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
         </div>
       </div>
 
-      <div className="px-1.5 pb-2 max-h-[160px] overflow-y-auto scrollbar-thin">
+      <div className="px-1.5 pb-2 max-h-[160px] overflow-y-auto scrollbar-thin" aria-live="polite">
         {loading ? (
           <div className="flex items-center justify-center py-6">
             <Loader2 className="w-5 h-5 text-primary animate-spin" />
@@ -200,6 +243,8 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
                   alt="GIF"
                   className="w-full h-full object-cover"
                   loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
                 />
               </button>
             ))}
