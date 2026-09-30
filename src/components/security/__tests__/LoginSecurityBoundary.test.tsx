@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authHarness = vi.hoisted(() => ({
@@ -59,5 +59,26 @@ describe('LoginSecurityBoundary', () => {
 
     expect(screen.getByText('Espace privé')).toBeInTheDocument();
     expect(screen.queryByText('Ouverture de ForSure')).not.toBeInTheDocument();
+  });
+
+  it('refreshes a pending approval immediately and when the tab regains focus', async () => {
+    const refreshLoginSecurity = vi.fn().mockResolvedValue(undefined);
+    authHarness.useAuth.mockReturnValue(authState({
+      loginSecurity: {
+        status: 'pending',
+        session: { status: 'pending', sessionId: 'session-1' },
+      },
+      refreshLoginSecurity,
+    }));
+
+    render(
+      <LoginSecurityBoundary>
+        <div>Espace privé</div>
+      </LoginSecurityBoundary>,
+    );
+
+    await waitFor(() => expect(refreshLoginSecurity).toHaveBeenCalledTimes(1));
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(refreshLoginSecurity).toHaveBeenCalledTimes(2));
   });
 });

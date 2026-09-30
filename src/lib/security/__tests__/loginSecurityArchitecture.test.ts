@@ -107,16 +107,23 @@ describe('risk-based login security architecture', () => {
     );
   });
 
-  it('keeps email link previews read-only and requires an explicit form POST', () => {
-    expect(edge).toContain('mail scanners and link previews must never approve or deny a login');
+  it('keeps email link previews read-only while a browser click submits one direct decision', () => {
+    expect(edge).toContain('#token=${encodeURIComponent(token)}&decision=approve');
+    expect(edge).toContain('#token=${encodeURIComponent(token)}&decision=deny');
+    expect(edge).toContain('window.location.hash.slice(1)');
+    expect(edge).toContain("form.method = 'post'");
+    expect(edge).toContain('form.submit()');
     expect(edge).toContain("contentType.includes('application/x-www-form-urlencoded')");
-    expect(edge).toContain('name="action" value="email_decision"');
     const getBranch = edge.indexOf("if (req.method === 'GET')");
     const formBranch = edge.indexOf("contentType.includes('application/x-www-form-urlencoded')");
+    const getBody = edge.slice(getBranch, formBranch);
+    const decide = edge.indexOf('const completed = await decide(', formBranch);
     const consume = edge.indexOf(".update({ consumed_at: now, consumed_decision: decision })", formBranch);
     expect(getBranch).toBeGreaterThan(-1);
     expect(formBranch).toBeGreaterThan(getBranch);
-    expect(consume).toBeGreaterThan(formBranch);
+    expect(getBody).not.toContain(".from('login_security_email_tokens')");
+    expect(decide).toBeGreaterThan(formBranch);
+    expect(consume).toBeGreaterThan(decide);
   });
 
   it('bounds unauthenticated bodies and prevents duplicate approval e-mails', () => {

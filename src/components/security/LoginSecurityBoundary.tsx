@@ -25,10 +25,29 @@ export function LoginSecurityBoundary({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user || loginSecurity.status !== 'pending') return;
-    const timer = window.setInterval(() => {
-      void refreshLoginSecurity().catch(() => undefined);
-    }, 4_000);
-    return () => window.clearInterval(timer);
+    let refreshInFlight = false;
+    const refreshPending = () => {
+      if (refreshInFlight || document.visibilityState === 'hidden') return;
+      refreshInFlight = true;
+      void refreshLoginSecurity()
+        .catch(() => undefined)
+        .finally(() => {
+          refreshInFlight = false;
+        });
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshPending();
+    };
+
+    refreshPending();
+    const timer = window.setInterval(refreshPending, 4_000);
+    window.addEventListener('focus', refreshPending);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshPending);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, [loginSecurity.status, refreshLoginSecurity, user]);
 
   if (!user || (loginSecurity.status === 'approved' && !cryptoRestoring)) return <>{children}</>;

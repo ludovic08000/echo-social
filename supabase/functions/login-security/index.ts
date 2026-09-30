@@ -34,7 +34,15 @@ function redirect(location: string): Response {
   });
 }
 
-function htmlPage(status: number, body: string): Response {
+function htmlPage(status: number, body: string, scriptNonce?: string): Response {
+  const contentSecurityPolicy = [
+    "default-src 'none'",
+    "style-src 'unsafe-inline'",
+    "form-action 'self'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    scriptNonce ? `script-src 'nonce-${scriptNonce}'` : '',
+  ].filter(Boolean).join('; ');
   return new Response(body, {
     status,
     headers: {
@@ -42,7 +50,7 @@ function htmlPage(status: number, body: string): Response {
       'Cache-Control': 'no-store',
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      'Content-Security-Policy': contentSecurityPolicy,
     },
   });
 }
@@ -331,12 +339,15 @@ serve(async (req) => {
     if (tokenError) return false;
 
     const endpoint = `${supabaseUrl}/functions/v1/login-security`;
-    const reviewUrl = `${endpoint}?token=${encodeURIComponent(token)}`;
+    // Keep the one-time token in the URL fragment. Fragments are not sent by
+    // HTTP clients, so ordinary mail previews cannot consume or apply it.
+    const approveUrl = `${endpoint}#token=${encodeURIComponent(token)}&decision=approve`;
+    const denyUrl = `${endpoint}#token=${encodeURIComponent(token)}&decision=deny`;
     const location = [args.city, args.region, args.country].filter(Boolean).join(', ') || 'Localisation indisponible';
     const safeDevice = escapeHtml(args.device);
     const safeLocation = escapeHtml(location);
-    const html = `<!doctype html><html lang="fr"><body style="font-family:Arial,sans-serif;background:#f5f7fb;color:#172033;padding:24px"><div style="max-width:600px;margin:auto;background:#fff;border-radius:18px;padding:28px"><h1 style="margin-top:0">Nouvelle connexion ForSure</h1><p>Une connexion demande l’accès à votre compte.</p><p><strong>Appareil :</strong> ${safeDevice}<br><strong>Zone :</strong> ${safeLocation}<br><strong>Heure :</strong> ${escapeHtml(now.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }))}</p><p style="margin:28px 0"><a href="${reviewUrl}" style="background:#2563eb;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold">Examiner cette connexion</a></p><p style="color:#667085;font-size:13px">Ouvrir ce lien ne valide rien automatiquement : une confirmation explicite sera demandée. Le lien est à usage unique et expire dans 15 minutes. ForSure ne vous demandera jamais votre mot de passe par e-mail.</p></div></body></html>`;
-    const text = `Nouvelle connexion ForSure\n\nAppareil : ${args.device}\nZone : ${location}\n\nExaminer et confirmer : ${reviewUrl}\n\nOuvrir le lien ne valide rien automatiquement. Lien à usage unique, valable 15 minutes.`;
+    const html = `<!doctype html><html lang="fr"><body style="font-family:Arial,sans-serif;background:#f5f7fb;color:#172033;padding:24px"><div style="max-width:600px;margin:auto;background:#fff;border-radius:18px;padding:28px"><h1 style="margin-top:0">Nouvelle connexion ForSure</h1><p>Une connexion demande l’accès à votre compte.</p><p><strong>Appareil :</strong> ${safeDevice}<br><strong>Zone :</strong> ${safeLocation}<br><strong>Heure :</strong> ${escapeHtml(now.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }))}</p><p style="margin:28px 0"><a href="${escapeHtml(approveUrl)}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold">C’était bien moi</a></p><p style="margin:20px 0"><a href="${escapeHtml(denyUrl)}" style="color:#b91c1c;font-weight:bold">Ce n’était pas moi — bloquer cette connexion</a></p><p style="color:#667085;font-size:13px">Le bouton choisi applique directement votre décision. Chaque lien est à usage unique et expire dans 15 minutes. ForSure ne vous demandera jamais votre mot de passe par e-mail.</p></div></body></html>`;
+    const text = `Nouvelle connexion ForSure\n\nAppareil : ${args.device}\nZone : ${location}\n\nC’était bien moi : ${approveUrl}\n\nCe n’était pas moi — bloquer cette connexion : ${denyUrl}\n\nChaque lien applique directement votre décision. Lien à usage unique, valable 15 minutes.`;
     const messageId = `login-security:${args.sessionId}:${tokenHash.slice(0, 16)}`;
 
     await admin.from('email_send_log').insert({
@@ -386,26 +397,24 @@ serve(async (req) => {
     return true;
   };
 
-  // Email links intentionally work without a bearer token. A GET is read-only:
-  // mail scanners and link previews must never approve or deny a login. The
-  // human must submit a second, explicit POST from the confirmation page.
+  // Email links intentionally work without a bearer token. The token and the
+  // decision live in the URL fragment, which is not included in the GET. Mail
+  // previews therefore receive only this read-only shell; a real browser turns
+  // the fragment into the explicit form POST that applies the user's decision.
   if (req.method === 'GET') {
     const requestUrl = new URL(req.url);
-    const token = requestUrl.searchParams.get('token') || '';
-    if (!/^[a-f0-9]{64}$/.test(token)) {
-      return redirect(`${SITE_URL}/login?loginSecurity=invalid`);
+    const legacyToken = requestUrl.searchParams.get('token') || '';
+    if (legacyToken) {
+      if (!/^[a-f0-9]{64}$/.test(legacyToken)) {
+        return redirect(`${SITE_URL}/login?loginSecurity=invalid`);
+      }
+      const endpoint = `${requestUrl.origin}${requestUrl.pathname}`;
+      return redirect(`${endpoint}#token=${encodeURIComponent(legacyToken)}&decision=approve`);
     }
-    const tokenHash = await sha256(token);
-    const { data: emailToken } = await admin
-      .from('login_security_email_tokens')
-      .select('id,user_id,target_session_id,expires_at,consumed_at')
-      .eq('token_hash', tokenHash)
-      .maybeSingle();
-    if (!emailToken || emailToken.consumed_at || new Date(emailToken.expires_at).getTime() <= Date.now()) {
-      return redirect(`${SITE_URL}/login?loginSecurity=expired`);
-    }
-    const safeToken = escapeHtml(token);
-    return htmlPage(200, `<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connexion ForSure</title></head><body style="font-family:Arial,sans-serif;background:#f5f7fb;color:#172033;padding:24px"><main style="max-width:520px;margin:8vh auto;background:#fff;border-radius:18px;padding:28px;box-shadow:0 12px 40px rgba(15,23,42,.12)"><h1>Est-ce bien vous&nbsp;?</h1><p>Confirmez uniquement si vous venez de vous connecter à ForSure. Sinon, refusez : la session sera bloquée.</p><form method="post" style="display:grid;gap:12px;margin-top:28px"><input type="hidden" name="action" value="email_decision"><input type="hidden" name="token" value="${safeToken}"><button name="decision" value="approve" style="border:0;border-radius:10px;padding:13px;background:#2563eb;color:#fff;font-weight:bold;cursor:pointer">C’était bien moi</button><button name="decision" value="deny" style="border:1px solid #b91c1c;border-radius:10px;padding:13px;background:#fff;color:#b91c1c;font-weight:bold;cursor:pointer">Ce n’était pas moi — bloquer</button></form><p style="color:#667085;font-size:13px;margin-top:24px">Cette action est unique et le lien expire après 15 minutes.</p></main></body></html>`);
+
+    const scriptNonce = randomToken();
+    const invalidUrl = JSON.stringify(`${SITE_URL}/login?loginSecurity=invalid`).replace(/</g, '\\u003c');
+    return htmlPage(200, `<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connexion ForSure</title></head><body style="font-family:Arial,sans-serif;background:#f5f7fb;color:#172033;padding:24px"><main style="max-width:520px;margin:8vh auto;background:#fff;border-radius:18px;padding:28px;box-shadow:0 12px 40px rgba(15,23,42,.12)"><h1>Validation de votre identité…</h1><p>ForSure applique votre décision et sécurise la connexion.</p><noscript><p>JavaScript doit être activé pour utiliser ce lien sécurisé.</p></noscript></main><script nonce="${scriptNonce}">(() => { const invalidUrl = ${invalidUrl}; const fail = () => window.location.replace(invalidUrl); const params = new URLSearchParams(window.location.hash.slice(1)); const token = params.get('token') || ''; const decision = params.get('decision') || ''; try { window.history.replaceState(null, '', window.location.pathname); } catch { /* Ignore unavailable history state. */ } if (!/^[a-f0-9]{64}$/.test(token) || !['approve', 'deny'].includes(decision)) { fail(); return; } const form = document.createElement('form'); form.method = 'post'; form.action = window.location.pathname; const fields = { action: 'email_decision', token, decision }; Object.entries(fields).forEach(([name, value]) => { const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.appendChild(input); }); document.body.appendChild(form); form.submit(); })();</script></body></html>`, scriptNonce);
   }
 
   const contentType = req.headers.get('content-type') || '';
@@ -421,30 +430,46 @@ serve(async (req) => {
       return redirect(`${SITE_URL}/login?loginSecurity=invalid`);
     }
     const tokenHash = await sha256(token);
-    const { data: emailToken } = await admin
+    const { data: emailToken, error: emailTokenError } = await admin
       .from('login_security_email_tokens')
       .select('id,user_id,target_session_id,expires_at,consumed_at')
       .eq('token_hash', tokenHash)
       .maybeSingle();
-    if (!emailToken || emailToken.consumed_at || new Date(emailToken.expires_at).getTime() <= Date.now()) {
+    if (emailTokenError || !emailToken || emailToken.consumed_at
+      || new Date(emailToken.expires_at).getTime() <= Date.now()) {
       return redirect(`${SITE_URL}/login?loginSecurity=expired`);
     }
-    const now = new Date().toISOString();
-    const { data: consumed } = await admin
-      .from('login_security_email_tokens')
-      .update({ consumed_at: now, consumed_decision: decision })
-      .eq('id', emailToken.id)
-      .is('consumed_at', null)
-      .select('id')
-      .maybeSingle();
-    if (!consumed) return redirect(`${SITE_URL}/login?loginSecurity=expired`);
     const completed = await decide(
       emailToken.user_id,
       emailToken.target_session_id,
       decision,
       'email',
     );
-    return redirect(`${SITE_URL}/login?loginSecurity=${completed ? decision : 'expired'}`);
+    if (!completed) return redirect(`${SITE_URL}/login?loginSecurity=expired`);
+
+    // The pending session row is the concurrency gate. Mark the token consumed
+    // after the decision so a transient token update cannot burn a still-pending
+    // approval. Replays remain harmless because decide() only mutates pending rows.
+    const now = new Date().toISOString();
+    const { data: consumed, error: consumeError } = await admin
+      .from('login_security_email_tokens')
+      .update({ consumed_at: now, consumed_decision: decision })
+      .eq('id', emailToken.id)
+      .is('consumed_at', null)
+      .select('id')
+      .maybeSingle();
+    if (consumeError || !consumed) {
+      await recordEvent(
+        emailToken.user_id,
+        emailToken.target_session_id,
+        'email_token_consume',
+        'failure',
+        { reason: 'TOKEN_MARK_FAILED', decision },
+      );
+    }
+
+    const next = decision === 'approve' ? '&next=%2Ffeed' : '';
+    return redirect(`${SITE_URL}/login?loginSecurity=${decision === 'approve' ? 'approved' : 'denied'}${next}`);
   }
 
   if (req.method !== 'POST') return json(req, 405, { ok: false, code: 'METHOD_NOT_ALLOWED' });
