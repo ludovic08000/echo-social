@@ -78,36 +78,57 @@ export function ReportUserDialog({ open, onOpenChange, reportedUserId, reportedN
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Signaler {reportedName || 'cette personne'}</DialogTitle>
-          <DialogDescription>Choisissez le motif. Votre signalement est confidentiel.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
-          {REASONS.map((r) => (
-            <button
-              key={r.type}
-              type="button"
-              onClick={() => setReason(r.type)}
-              className={cn(
-                'w-full flex items-center gap-3 p-2.5 rounded-xl border text-left text-sm transition-colors',
-                reason === r.type ? 'border-destructive bg-destructive/10' : 'border-border/50 hover:bg-muted',
-              )}
-            >
-              <span className="text-lg">{r.emoji}</span>
-              <span className="font-medium">{r.label}</span>
-            </button>
-          ))}
-        </div>
-        <Textarea
-          value={details}
-          onChange={(e) => setDetails(e.target.value)}
-          maxLength={500}
-          placeholder="Détails (facultatif)"
-          className="min-h-[70px]"
-        />
-        <Button variant="destructive" disabled={!reason || report.isPending} onClick={submit}>
-          {report.isPending ? 'Envoi…' : 'Envoyer le signalement'}
-        </Button>
+        {step === 'block-choice' ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Signalement envoyé</DialogTitle>
+              <DialogDescription>
+                Voulez-vous aussi bloquer {reportedName || 'cette personne'} ? Vous pourrez la débloquer plus tard.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-2">
+              <Button variant="destructive" disabled={blocking} onClick={handleBlock}>
+                {blocking ? 'Blocage…' : 'Bloquer cette personne'}
+              </Button>
+              <Button variant="outline" disabled={blocking} onClick={closeAndReset}>
+                Garder le contact
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Signaler {reportedName || 'cette personne'}</DialogTitle>
+              <DialogDescription>Choisissez le motif. Votre signalement est confidentiel.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+              {REASONS.map((r) => (
+                <button
+                  key={r.type}
+                  type="button"
+                  onClick={() => setReason(r.type)}
+                  className={cn(
+                    'w-full flex items-center gap-3 p-2.5 rounded-xl border text-left text-sm transition-colors',
+                    reason === r.type ? 'border-destructive bg-destructive/10' : 'border-border/50 hover:bg-muted',
+                  )}
+                >
+                  <span className="text-lg">{r.emoji}</span>
+                  <span className="font-medium">{r.label}</span>
+                </button>
+              ))}
+            </div>
+            <Textarea
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+              maxLength={500}
+              placeholder="Détails (facultatif)"
+              className="min-h-[70px]"
+            />
+            <Button variant="destructive" disabled={!reason || report.isPending} onClick={submit}>
+              {report.isPending ? 'Envoi…' : 'Envoyer le signalement'}
+            </Button>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
