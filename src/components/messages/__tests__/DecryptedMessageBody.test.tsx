@@ -168,6 +168,21 @@ describe('DecryptedMessageBody', () => {
     expect(screen.queryByText(/GIF:https/)).not.toBeInTheDocument();
   });
 
+  it('does not load rich media while a message request is unaccepted', async () => {
+    render(
+      <DecryptedMessageBody
+        body={UNSUPPORTED_ENCRYPTED_BODY}
+        decrypt={vi.fn()}
+        isEncryptionActive={true}
+        cachedPlaintext="GIF:https://tracker.example/request.gif"
+        allowRichContent={false}
+      />,
+    );
+
+    expect(await screen.findByText('Contenu multimédia masqué jusqu’à l’acceptation.')).toBeInTheDocument();
+    expect(screen.queryByAltText('GIF')).not.toBeInTheDocument();
+  });
+
   it.skip('renders the decrypted text when decrypt resolves', async () => {
     const decrypt = vi.fn().mockResolvedValue({ text: 'decrypted!', incompatible: false });
     render(

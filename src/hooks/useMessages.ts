@@ -11,6 +11,13 @@ import {
 } from '@/lib/messaging/multiDeviceFanout';
 import type { Database } from '@/integrations/supabase/types';
 import { purgeMessageLocalState } from '@/lib/messaging/messageLocalCleanup';
+import {
+  loadDirectMessageRequestStates,
+  type DirectMessageInboxCategory,
+  type DirectMessageRequestRole,
+  type DirectMessageRequestState,
+  type DirectMessageRequestStatus,
+} from '@/hooks/useDirectMessageRequests';
 
 // Un seul chemin d'envoi : Aegis et son moteur Libsignal.
 export { useSendMessage } from './useSendMessageSecure';
@@ -132,7 +139,7 @@ function isMultiDeviceMessageRow(message: { body?: string | null; body_kind?: st
   return Boolean(message.body && isMultiDeviceEnvelopeBody(message.body));
 }
 
-let keysRestoredConversationRefetchTimer: ReturnType<typeof setTimeout> | null = null;
+const conversationRefetchTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function invalidateUserConversations(queryClient: QueryClient, userId: string): void {
   void queryClient.invalidateQueries({
@@ -141,16 +148,16 @@ function invalidateUserConversations(queryClient: QueryClient, userId: string): 
   });
 }
 
-function scheduleKeysRestoredConversationRefetch(queryClient: QueryClient, userId: string) {
-  if (keysRestoredConversationRefetchTimer) return;
-  keysRestoredConversationRefetchTimer = setTimeout(() => {
-    keysRestoredConversationRefetchTimer = null;
-    console.log('[messaging] keys restored - refetch conversations');
+function scheduleConversationRefetch(queryClient: QueryClient, userId: string) {
+  if (conversationRefetchTimers.has(userId)) return;
+  const timer = setTimeout(() => {
+    conversationRefetchTimers.delete(userId);
     void queryClient.invalidateQueries({
       queryKey: ['conversations', userId],
       exact: true,
     });
-  }, 500);
+  }, 250);
+  conversationRefetchTimers.set(userId, timer);
 }
 
 // Helper to get the user's custom AI companion name
@@ -217,6 +224,41 @@ export interface Conversation {
     sender_id: string;
   };
   unread_count: number;
+  inbox_category: DirectMessageInboxCategory;
+  request_role: DirectMessageRequestRole;
+  request_status: DirectMessageRequestStatus;
+  can_send_text: boolean;
+  can_send_media: boolean;
+  can_call: boolean;
+}
+
+function applyDirectMessageRequestStates(
+  conversations: Conversation[],
+  states: Map<string, DirectMessageRequestState>,
+): Conversation[] {
+  return conversations.map((conversation) => {
+    const state = states.get(conversation.id);
+    if (state) {
+      return {
+        ...conversation,
+        ...state,
+        // Spam and hidden requests remain discoverable in their dedicated
+        // bucket, but never inflate the global unread notification badge.
+        unread_count: state.inbox_category === 'spam' || state.inbox_category === 'hidden'
+          ? 0
+          : conversation.unread_count,
+      };
+    }
+    return {
+      ...conversation,
+      inbox_category: 'primary',
+      request_role: 'none',
+      request_status: 'accepted',
+      can_send_text: true,
+      can_send_media: true,
+      can_call: true,
+    };
+  });
 }
 
 export function useConversations() {
@@ -228,10 +270,19 @@ export function useConversations() {
     if (!user?.id) return;
     const userId = user.id;
     const onRestored = () => {
-      scheduleKeysRestoredConversationRefetch(queryClient, userId);
+      scheduleConversationRefetch(queryClient, userId);
+    };
+    const onInboxMessage = (event: Event) => {
+      const detail = (event as CustomEvent<{ reason?: string }>).detail;
+      if (detail?.reason !== 'aegis-device-copy') return;
+      scheduleConversationRefetch(queryClient, userId);
     };
     window.addEventListener('forsure-keys-restored', onRestored);
-    return () => window.removeEventListener('forsure-keys-restored', onRestored);
+    window.addEventListener('forsure-decrypt-retry', onInboxMessage as EventListener);
+    return () => {
+      window.removeEventListener('forsure-keys-restored', onRestored);
+      window.removeEventListener('forsure-decrypt-retry', onInboxMessage as EventListener);
+    };
   }, [user?.id, queryClient]);
 
   return useQuery({
@@ -258,7 +309,7 @@ export function useConversations() {
         if (!rpcError && rpcData) {
           console.log('[messaging] conversations from RPC:', rpcData.length);
           if (rpcData.length === 0) return [];
-          return rpcData.map((row) => ({
+          const mapped = rpcData.map((row) => ({
             id: row.conv_id,
             created_at: row.conv_created_at,
             updated_at: row.conv_updated_at,
@@ -277,7 +328,14 @@ export function useConversations() {
               sender_id: row.last_message_sender,
             } : undefined,
             unread_count: Number(row.unread_count) || 0,
+            inbox_category: 'primary' as const,
+            request_role: 'none' as const,
+            request_status: 'accepted' as const,
+            can_send_text: true,
+            can_send_media: true,
+            can_call: true,
           })) as Conversation[];
+          return applyDirectMessageRequestStates(mapped, await loadDirectMessageRequestStates());
         }
       } catch {
         // Fall through to legacy queries
@@ -342,7 +400,7 @@ export function useConversations() {
         if (!lastMessageMap.has(m.conversation_id) && !isUnsupportedEncryptedBody(m.body)) lastMessageMap.set(m.conversation_id, m);
       });
 
-      return conversations.map(conv => {
+      const mappedConversations = conversations.map(conv => {
         const convParts = (allParticipants || [])
           .filter(p => p.conversation_id === conv.id)
           .map(p => ({ user_id: p.user_id, name: profileMap.get(p.user_id)?.name || 'Unknown', avatar_url: profileMap.get(p.user_id)?.avatar_url || null }));
@@ -358,8 +416,15 @@ export function useConversations() {
           participants: conv.is_group ? convParts : undefined,
           last_message: lastMessageMap.get(conv.id),
           unread_count: unreadCounts[conv.id] || 0,
+          inbox_category: 'primary',
+          request_role: 'none',
+          request_status: 'accepted',
+          can_send_text: true,
+          can_send_media: true,
+          can_call: true,
         } as Conversation;
       });
+      return applyDirectMessageRequestStates(mappedConversations, await loadDirectMessageRequestStates());
     },
     enabled: !!user,
     staleTime: 30_000,
@@ -368,6 +433,12 @@ export function useConversations() {
     refetchOnMount: false,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
+    refetchInterval: (query) => {
+      const data = query.state.data as Conversation[] | undefined;
+      return data?.some((conversation) => conversation.inbox_category === 'outgoing_pending')
+        ? 10_000
+        : false;
+    },
   });
 }
 

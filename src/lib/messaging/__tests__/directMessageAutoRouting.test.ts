@@ -23,14 +23,14 @@ describe('direct message auto-routing', () => {
     expect(migration).toContain("f.status = 'accepted'");
   });
 
-  it('migrates historical requests and removes the request UI', () => {
+  it('migrates the legacy message-status queue without restoring its client hooks', () => {
     expect(migration).toContain("where m.status = 'pending'");
     expect(migration).toContain("set status = 'delivered'");
     expect(messagesHook).not.toContain("['delivered', 'pending']");
     expect(messagesHook).not.toContain('useHasPendingMessages');
     expect(messagesHook).not.toContain('useAcceptMessageRequest');
     expect(messagesHook).not.toContain('useRejectMessageRequest');
-    expect(chatWidget).not.toContain('Demande de message');
+    expect(chatWidget).toContain('Demande de message');
     expect(chatWidget).not.toContain('useHasPendingMessages');
   });
 
