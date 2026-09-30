@@ -14,6 +14,21 @@ it('allows cryptographic WASM without JavaScript eval or inline scripts', () => 
   expect(directives.get('object-src')).toEqual(["'none'"]);
 });
 
+it('allows login approval forms only on ForSure and its Lovable backend', () => {
+  const html = readFileSync('index.html', 'utf8');
+  const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
+  expect(policy).toBeDefined();
+  const directives = new Map(policy!.split(';').filter(Boolean).map(part => {
+    const [name, ...sources] = part.trim().split(/\s+/);
+    return [name, sources];
+  }));
+
+  expect(directives.get('form-action')).toEqual([
+    "'self'",
+    'https://vkpmoqfzrihcijjochks.supabase.co',
+  ]);
+});
+
 it('allows camera and microphone capture only for the ForSure origin', () => {
   const html = readFileSync('index.html', 'utf8');
   const policy = html.match(/http-equiv="Permissions-Policy" content="([^"]+)"/)?.[1];
