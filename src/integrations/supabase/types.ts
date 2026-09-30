@@ -2920,6 +2920,65 @@ export type Database = {
         }
         Relationships: []
       }
+      feed_rank_cursors: {
+        Row: {
+          created_at: string
+          expires_at: string
+          next_position: number
+          snapshot_id: string
+          token: string
+          viewer_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          next_position?: number
+          snapshot_id: string
+          token?: string
+          viewer_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          next_position?: number
+          snapshot_id?: string
+          token?: string
+          viewer_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feed_rank_cursors_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "feed_rank_snapshots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feed_rank_snapshots: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          items: Json
+          viewer_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          items?: Json
+          viewer_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          items?: Json
+          viewer_id?: string | null
+        }
+        Relationships: []
+      }
       feed_score_cache: {
         Row: {
           computed_at: string
@@ -3596,6 +3655,222 @@ export type Database = {
           ip_address?: string | null
           success?: boolean
           user_agent?: string | null
+        }
+        Relationships: []
+      }
+      login_security_challenges: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          device_id: string | null
+          expires_at: string
+          id: string
+          intent: string
+          payload: string
+          session_id: string
+          target_session_id: string | null
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          device_id?: string | null
+          expires_at?: string
+          id?: string
+          intent: string
+          payload: string
+          session_id: string
+          target_session_id?: string | null
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          device_id?: string | null
+          expires_at?: string
+          id?: string
+          intent?: string
+          payload?: string
+          session_id?: string
+          target_session_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      login_security_config: {
+        Row: {
+          approval_ttl: string
+          challenge_ttl: string
+          email_token_ttl: string
+          enforcement_enabled: boolean
+          enforcement_started_at: string | null
+          id: number
+          updated_at: string
+        }
+        Insert: {
+          approval_ttl?: string
+          challenge_ttl?: string
+          email_token_ttl?: string
+          enforcement_enabled?: boolean
+          enforcement_started_at?: string | null
+          id?: number
+          updated_at?: string
+        }
+        Update: {
+          approval_ttl?: string
+          challenge_ttl?: string
+          email_token_ttl?: string
+          enforcement_enabled?: boolean
+          enforcement_started_at?: string | null
+          id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      login_security_email_tokens: {
+        Row: {
+          consumed_at: string | null
+          consumed_decision: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          target_session_id: string
+          token_hash: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          consumed_decision?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          target_session_id: string
+          token_hash: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          consumed_decision?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          target_session_id?: string
+          token_hash?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      login_security_events: {
+        Row: {
+          created_at: string
+          detail: Json
+          event_type: string
+          id: number
+          outcome: string
+          session_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: Json
+          event_type: string
+          id?: never
+          outcome: string
+          session_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          detail?: Json
+          event_type?: string
+          id?: never
+          outcome?: string
+          session_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      login_security_sessions: {
+        Row: {
+          approved_at: string | null
+          approved_via: string | null
+          city: string | null
+          country_code: string | null
+          created_at: string
+          denied_at: string | null
+          device_id: string | null
+          device_proof_verified_at: string | null
+          email_sent_at: string | null
+          expires_at: string
+          id: string
+          ip_hash: string | null
+          known_device: boolean
+          language: string | null
+          last_seen_at: string
+          region: string | null
+          risk_level: string
+          risk_reasons: Json
+          session_id: string
+          status: string
+          timezone: string | null
+          updated_at: string
+          user_agent_hash: string | null
+          user_agent_summary: string | null
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_via?: string | null
+          city?: string | null
+          country_code?: string | null
+          created_at?: string
+          denied_at?: string | null
+          device_id?: string | null
+          device_proof_verified_at?: string | null
+          email_sent_at?: string | null
+          expires_at?: string
+          id?: string
+          ip_hash?: string | null
+          known_device?: boolean
+          language?: string | null
+          last_seen_at?: string
+          region?: string | null
+          risk_level?: string
+          risk_reasons?: Json
+          session_id: string
+          status?: string
+          timezone?: string | null
+          updated_at?: string
+          user_agent_hash?: string | null
+          user_agent_summary?: string | null
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_via?: string | null
+          city?: string | null
+          country_code?: string | null
+          created_at?: string
+          denied_at?: string | null
+          device_id?: string | null
+          device_proof_verified_at?: string | null
+          email_sent_at?: string | null
+          expires_at?: string
+          id?: string
+          ip_hash?: string | null
+          known_device?: boolean
+          language?: string | null
+          last_seen_at?: string
+          region?: string | null
+          risk_level?: string
+          risk_reasons?: Json
+          session_id?: string
+          status?: string
+          timezone?: string | null
+          updated_at?: string
+          user_agent_hash?: string | null
+          user_agent_summary?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -7297,8 +7572,6 @@ export type Database = {
       }
       user_feed_preferences: {
         Row: {
-          ai_summaries_enabled: boolean
-          auto_translate_enabled: boolean
           created_at: string
           diversity_boost: number
           feed_algorithm: string
@@ -7314,8 +7587,6 @@ export type Database = {
           weight_marketplace: number
         }
         Insert: {
-          ai_summaries_enabled?: boolean
-          auto_translate_enabled?: boolean
           created_at?: string
           diversity_boost?: number
           feed_algorithm?: string
@@ -7331,8 +7602,6 @@ export type Database = {
           weight_marketplace?: number
         }
         Update: {
-          ai_summaries_enabled?: boolean
-          auto_translate_enabled?: boolean
           created_at?: string
           diversity_boost?: number
           feed_algorithm?: string
@@ -7511,21 +7780,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_online_presence: {
-        Row: {
-          last_seen_at: string
-          user_id: string
-        }
-        Insert: {
-          last_seen_at?: string
-          user_id: string
-        }
-        Update: {
-          last_seen_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       user_public_keys: {
         Row: {
           created_at: string
@@ -7533,6 +7787,7 @@ export type Database = {
           id: string
           identity_binding_signature: string | null
           identity_binding_version: number | null
+          identity_epoch: number
           identity_key: string
           is_active: boolean
           kem_type: string
@@ -7547,6 +7802,7 @@ export type Database = {
           id?: string
           identity_binding_signature?: string | null
           identity_binding_version?: number | null
+          identity_epoch?: number
           identity_key: string
           is_active?: boolean
           kem_type?: string
@@ -7561,6 +7817,7 @@ export type Database = {
           id?: string
           identity_binding_signature?: string | null
           identity_binding_version?: number | null
+          identity_epoch?: number
           identity_key?: string
           is_active?: boolean
           kem_type?: string
@@ -8500,6 +8757,7 @@ export type Database = {
         }
         Returns: Json
       }
+      assert_current_login_session_approved: { Args: never; Returns: undefined }
       begin_aegis_view_once_consume: {
         Args: { p_device_id: string; p_message_id: string }
         Returns: Json
@@ -8631,6 +8889,7 @@ export type Database = {
         Args: { p_other_user: string }
         Returns: string
       }
+      current_login_security_session_id: { Args: never; Returns: string }
       ddos_check_ip: {
         Args: {
           p_endpoint?: string
@@ -8690,6 +8949,16 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      feed_eligible_post_ids_internal: {
+        Args: { p_post_ids: string[]; p_viewer_id: string }
+        Returns: {
+          post_id: string
+        }[]
+      }
+      feed_post_is_eligible_internal: {
+        Args: { p_post_id: string; p_viewer_id: string }
+        Returns: boolean
       }
       feed_score_batch: {
         Args: { p_algo?: string; p_post_ids: string[]; p_user_id: string }
@@ -8852,10 +9121,6 @@ export type Database = {
           user_reaction: string
         }[]
       }
-      get_ranked_feed_page: {
-        Args: { p_cursor?: string | null; p_limit?: number }
-        Returns: Json
-      }
       get_friend_suggestions: {
         Args: { limit_count?: number; target_user_id: string }
         Returns: {
@@ -8923,6 +9188,10 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      get_ranked_feed_page: {
+        Args: { p_cursor?: string; p_limit?: number }
+        Returns: Json
+      }
       get_safe_live_stream: {
         Args: { p_live_id: string }
         Returns: {
@@ -8982,6 +9251,7 @@ export type Database = {
         Args: { conv_id: string; uid: string }
         Returns: boolean
       }
+      is_current_login_session_approved: { Args: never; Returns: boolean }
       is_invalid_e2ee_device: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: boolean
@@ -9245,6 +9515,17 @@ export type Database = {
         }
         Returns: Json
       }
+      publish_own_identity_key_v2: {
+        Args: {
+          p_binding_signature: string
+          p_binding_version: number
+          p_fingerprint: string
+          p_identity_key: string
+          p_kem_type?: string
+          p_signing_key: string
+        }
+        Returns: Json
+      }
       purge_old_ai_engine_events: { Args: never; Returns: undefined }
       purge_old_audit_logs: { Args: never; Returns: undefined }
       purge_old_crypto_error_logs: { Args: never; Returns: number }
@@ -9345,6 +9626,17 @@ export type Database = {
         }
         Returns: string
       }
+      replace_unrecoverable_identity_v2: {
+        Args: {
+          p_binding_signature: string
+          p_binding_version: number
+          p_fingerprint: string
+          p_identity_key: string
+          p_signing_key: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       request_device_copy_retry: {
         Args: {
           p_message_id: string
@@ -9364,6 +9656,10 @@ export type Database = {
       reset_backup_pin_attempts: {
         Args: { _user_id: string }
         Returns: undefined
+      }
+      revoke_login_security_auth_session: {
+        Args: { p_session_id: string; p_user_id: string }
+        Returns: boolean
       }
       revoke_user_device: { Args: { p_device_id: string }; Returns: Json }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
@@ -9466,7 +9762,6 @@ export type Database = {
         | "friend_accepted"
         | "message"
         | "story_view"
-        | "close_friend_post"
         | "sale"
         | "new_device"
       order_status:
@@ -9616,7 +9911,6 @@ export const Constants = {
         "friend_accepted",
         "message",
         "story_view",
-        "close_friend_post",
         "sale",
         "new_device",
       ],
