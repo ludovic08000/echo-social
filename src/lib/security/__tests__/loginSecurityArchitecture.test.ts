@@ -1,0 +1,127 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+function source(path: string): string {
+  return readFileSync(resolve(process.cwd(), path), 'utf8');
+}
+
+const migration = source('supabase/migrations/20260930011500_login_security_step_up.sql');
+const edge = source('supabase/functions/login-security/index.ts');
+const riskPolicy = source('supabase/functions/login-security/risk.ts');
+const client = source('src/lib/security/loginSecurity.ts');
+const auth = source('src/lib/auth.tsx');
+const app = source('src/App.tsx');
+const boundary = source('src/components/security/LoginSecurityBoundary.tsx');
+const inbox = source('src/components/security/LoginApprovalInbox.tsx');
+
+describe('risk-based login security architecture', () => {
+  it('creates private session, challenge, token, and audit stores with staged enforcement', () => {
+    expect(migration).toContain('create table if not exists public.login_security_sessions');
+    expect(migration).toContain('create table if not exists public.login_security_challenges');
+    expect(migration).toContain('create table if not exists public.login_security_email_tokens');
+    expect(migration).toContain('create table if not exists public.login_security_events');
+    expect(migration).toContain('enforcement_enabled boolean not null default false');
+    expect(migration).toContain('revoke all on table public.login_security_email_tokens');
+    expect(migration).not.toContain('grant select on table public.login_security_sessions to authenticated');
+    expect(migration).not.toContain('grant select on table public.login_security_events to authenticated');
+  });
+
+  it('binds Aegis identity and device activation to the exact approved auth session', () => {
+    expect(migration).toContain("auth.jwt() ->> 'session_id'");
+    expect(migration).toContain('public.is_current_login_session_approved()');
+    expect(migration).toContain('perform public.assert_current_login_session_approved()');
+    expect(migration).toContain('aegis_guard_device_activation_by_login_session');
+    expect(migration).toContain("new.approval_status = 'approved'");
+    expect(migration).toContain("new.routing_status = 'ready'");
+  });
+
+  it('stores only hashed network identifiers and one-time email tokens', () => {
+    expect(edge).toContain('hmacSha256(serviceRoleKey, context.ip)');
+    expect(edge).toContain('const tokenHash = await sha256(token)');
+    expect(edge).toContain(".eq('token_hash', tokenHash)");
+    expect(edge).toContain(".is('consumed_at', null)");
+    expect(edge).not.toContain('ip_address: context.ip');
+    expect(edge).not.toContain("req.headers.get('x-country-code')");
+    expect(edge).not.toContain("req.headers.get('x-vercel-ip-country')");
+    expect(migration).not.toContain('ip_address inet');
+  });
+
+  it('requires a live approved Aegis device and an Ed25519 challenge proof', () => {
+    expect(edge).toContain(".from('user_devices')");
+    expect(edge).toContain(".eq('approval_status', 'approved')");
+    expect(edge).toContain(".is('revoked_at', null)");
+    expect(edge).toContain('verifyEd25519(device.device_signing_key, signature, challenge.payload)');
+    expect(client).toContain("hardCrypto.sign(\n    'Ed25519'");
+    expect(client).toContain("action: 'challenge'");
+  });
+
+  it('blocks key restoration and the crypto runtime until login approval', () => {
+    const assessment = auth.indexOf('const security = await ensureLoginSecurity(data.session)');
+    const setup = auth.indexOf('await completePendingPasswordSetup(data.user.id)', assessment);
+    expect(assessment).toBeGreaterThan(-1);
+    expect(setup).toBeGreaterThan(assessment);
+    expect(app).toContain("loginSecurity.status !== 'approved' || cryptoRestoring");
+    expect(app).toContain('<LoginSecurityBoundary>');
+    expect(boundary).toContain("loginSecurity.status === 'approved'");
+  });
+
+  it('supports both single-use email decisions and a trusted-device inbox', () => {
+    expect(edge).toContain("subject: 'Confirmez votre nouvelle connexion ForSure'");
+    expect(edge).toContain('if (mutation.revokeAuthSession)');
+    expect(riskPolicy).toContain('revokeAuthSession: true');
+    expect(edge).toContain("approved_via: status === 'approved' ? 'trusted_device' : null");
+    expect(edge).toContain("action === 'decide_pending'");
+    expect(inbox).toContain('decidePendingLoginSecuritySession');
+    expect(inbox).toContain("void decide('deny')");
+    expect(inbox).toContain("void decide('approve')");
+  });
+
+  it('keeps email link previews read-only and requires an explicit form POST', () => {
+    expect(edge).toContain('mail scanners and link previews must never approve or deny a login');
+    expect(edge).toContain("contentType.includes('application/x-www-form-urlencoded')");
+    expect(edge).toContain('name="action" value="email_decision"');
+    const getBranch = edge.indexOf("if (req.method === 'GET')");
+    const formBranch = edge.indexOf("contentType.includes('application/x-www-form-urlencoded')");
+    const consume = edge.indexOf(".update({ consumed_at: now, consumed_decision: decision })", formBranch);
+    expect(getBranch).toBeGreaterThan(-1);
+    expect(formBranch).toBeGreaterThan(getBranch);
+    expect(consume).toBeGreaterThan(formBranch);
+  });
+
+  it('bounds unauthenticated bodies and prevents duplicate approval e-mails', () => {
+    expect(edge).toContain('readBoundedBody(req, 4_096)');
+    expect(edge).toContain('readBoundedBody(req, 16_384)');
+    expect(edge).toContain("existing?.status === 'pending'");
+    expect(edge).toContain('existing.email_sent_at');
+    expect(edge).toContain("code: 'CHALLENGE_RATE_LIMITED'");
+  });
+
+  it('fails open only while the server rollout gate itself is disabled', () => {
+    expect(client).toContain("rpc('is_current_login_session_approved'");
+    expect(auth).toContain('if (await isLoginSecurityServerGateOpen())');
+    expect(migration).toContain('if not coalesce(v_enabled, false) then');
+    expect(migration).toContain("security_session.status = 'approved'");
+  });
+
+  it('requires the same approved login session for privileged identity reset', () => {
+    const identityReset = source('supabase/functions/identity-reset/index.ts');
+    expect(identityReset).toContain("rpc('is_current_login_session_approved')");
+    expect(identityReset).toContain('LOGIN_SECURITY_APPROVAL_REQUIRED');
+    expect(identityReset.indexOf("rpc('is_current_login_session_approved')"))
+      .toBeLessThan(identityReset.indexOf("rpc('replace_unrecoverable_identity_v2'"));
+  });
+
+  it('also gates privileged rotation and rotation-recovery Edge Functions', () => {
+    const rotation = source('supabase/functions/identity-rotation/index.ts');
+    const recovery = source('supabase/functions/identity-rotation-recovery/index.ts');
+    for (const privilegedEdge of [rotation, recovery]) {
+      expect(privilegedEdge).toContain("rpc('is_current_login_session_approved')");
+      expect(privilegedEdge).toContain('LOGIN_SECURITY_APPROVAL_REQUIRED');
+    }
+    expect(rotation.indexOf("rpc('is_current_login_session_approved')"))
+      .toBeLessThan(rotation.indexOf("rpc('begin_identity_rotation_v1'"));
+    expect(recovery.indexOf("rpc('is_current_login_session_approved')"))
+      .toBeLessThan(recovery.indexOf("rpc('finalize_identity_rotation_recovery_v1'"));
+  });
+});

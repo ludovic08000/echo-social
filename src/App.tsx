@@ -31,6 +31,8 @@ import { ContactVerificationDialog } from "@/components/messages/ContactVerifica
 import { E2EEDebugPanel } from "@/components/debug/E2EEDebugPanel";
 import { callErrorUserMessage } from "@/lib/calls/callDiagnostics";
 import { SettingsRuntime } from "@/components/settings/SettingsRuntime";
+import { LoginSecurityBoundary } from "@/components/security/LoginSecurityBoundary";
+import { LoginApprovalInbox } from "@/components/security/LoginApprovalInbox";
 
 const isChunkLoadError = (e: unknown): boolean => {
   const msg = (e as Error)?.message || '';
@@ -207,7 +209,7 @@ function MessagingRuntimeRunner() {
   );
 }
 
-function AccountKeySyncRunner() {
+function ApprovedAccountKeySyncRunner() {
   const lifecycle = useDeviceLifecycle();
 
   useEffect(() => {
@@ -221,6 +223,12 @@ function AccountKeySyncRunner() {
 
   if (!lifecycle.canRunCryptoRuntime) return null;
   return <MessagingRuntimeRunner />;
+}
+
+function AccountKeySyncRunner() {
+  const { loginSecurity, cryptoRestoring } = useAuth();
+  if (loginSecurity.status !== 'approved' || cryptoRestoring) return null;
+  return <ApprovedAccountKeySyncRunner />;
 }
 
 function RoutedErrorBoundary({ children }: { children: React.ReactNode }) {
@@ -244,12 +252,14 @@ function AppContent() {
               <Toaster />
               <Sonner />
               <BrowserRouter>
-                <RecoveryFlowGuard />
-                <SettingsRuntime />
-                <AccountKeySyncRunner />
-                <RoutedErrorBoundary>
-                  <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
-                    <Routes>
+                <LoginSecurityBoundary>
+                  <RecoveryFlowGuard />
+                  <SettingsRuntime />
+                  <AccountKeySyncRunner />
+                  <LoginApprovalInbox />
+                  <RoutedErrorBoundary>
+                    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
+                      <Routes>
                     <Route path="/" element={<Navigate to="/feed" replace />} />
                     <Route path="/landing" element={<Landing />} />
                     <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
@@ -303,12 +313,13 @@ function AppContent() {
                     <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                     <Route path="/unsubscribe" element={<Unsubscribe />} />
                     <Route path="*" element={<NotFound />} />
-                    </Routes>
-                  </Suspense>
-                </RoutedErrorBoundary>
-                <ChatWidget />
-                <ContactVerificationDialog />
-                <CookieConsentBanner />
+                      </Routes>
+                    </Suspense>
+                  </RoutedErrorBoundary>
+                  <ChatWidget />
+                  <ContactVerificationDialog />
+                  <CookieConsentBanner />
+                </LoginSecurityBoundary>
               </BrowserRouter>
             </TooltipProvider>
           </ChatWidgetProvider>

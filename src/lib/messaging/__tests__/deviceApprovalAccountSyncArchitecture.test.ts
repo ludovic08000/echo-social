@@ -9,6 +9,10 @@ const autoApproval = readFileSync(
   'supabase/migrations/20260909073359_538c185a-f83c-4a5c-9149-16b60c84e836.sql',
   'utf8',
 );
+const accountSecurityHardening = readFileSync(
+  'supabase/migrations/20260930002834_harden_identity_and_device_enrollment.sql',
+  'utf8',
+);
 const migration = readFileSync(
   'supabase/migrations/20260809170000_device_roles_and_trusted_approval.sql',
   'utf8',
@@ -32,6 +36,17 @@ describe('canonical automatic device approval', () => {
     expect(autoApproval).toContain("'approval_mode','automatic'");
     expect(atomicApproval).toContain('approve_device_enrollment_decision_pre_account_authorization');
     expect(approvalBridge).toContain('APPROVER_DEVICE_NOT_READY');
+  });
+
+  it('derives bootstrap state server-side and root-authorizes secondary devices', () => {
+    expect(decision).toContain("rpc('get_device_enrollment_approval_mode'");
+    expect(decision).toContain('prepareDeviceAuthorization');
+    expect(decision).toContain('p_bootstrap_primary: mode.bootstrap_primary');
+    expect(decision).not.toContain('p_bootstrap_primary: true');
+    expect(accountSecurityHardening).toContain('BOOTSTRAP_STATE_MISMATCH');
+    expect(accountSecurityHardening).toContain('p_bootstrap_primary is distinct from v_is_first');
+    expect(accountSecurityHardening).toContain('public.aegis_verify_device_authorization(');
+    expect(accountSecurityHardening).toContain('ATOMIC_DEVICE_APPROVAL_BINDING_FAILED');
   });
 
   it('enforces one live primary and a closed lifecycle in PostgreSQL', () => {

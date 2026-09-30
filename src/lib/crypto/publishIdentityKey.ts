@@ -1,9 +1,12 @@
 import { supabase } from '@/integrations/supabase/client';
 
 /**
- * Invariant corrigé : l'unicité de la clé active est portée par un index PARTIEL
- * (user_id WHERE is_active), qu'un upsert PostgREST ne peut pas cibler.
- * On écrit donc explicitement la ligne active : update sinon insert.
+ * Publication idempotente de l'identité publique Aegis.
+ *
+ * Le navigateur n'écrit jamais directement dans `user_public_keys`. Le RPC
+ * vérifie la liaison Ed25519 et n'accepte une création que si le compte n'a
+ * encore aucune identité. Une racine différente exige le parcours explicite
+ * de rotation/récupération.
  */
 export type PublishableIdentityRow = {
   user_id: string;
@@ -18,32 +21,27 @@ export type PublishableIdentityRow = {
 };
 
 export async function publishActiveIdentityKey(row: PublishableIdentityRow): Promise<void> {
-  const { data: updated, error: updateError } = await supabase
-    .from('user_public_keys')
-    .update({
-      identity_key: row.identity_key,
-      signing_key: row.signing_key,
-      fingerprint: row.fingerprint,
-      identity_binding_version: row.identity_binding_version,
-      identity_binding_signature: row.identity_binding_signature,
-      kem_type: row.kem_type,
-      updated_at: row.updated_at,
-    })
-    .eq('user_id', row.user_id)
-    .eq('is_active', true)
-    .select('id');
+  const { data, error } = await supabase.rpc(
+    'publish_own_identity_key_v2' as never,
+    {
+      p_identity_key: row.identity_key,
+      p_signing_key: row.signing_key,
+      p_fingerprint: row.fingerprint,
+      p_binding_version: row.identity_binding_version,
+      p_binding_signature: row.identity_binding_signature,
+      p_kem_type: row.kem_type,
+    } as never,
+  );
 
-  if (updateError) throw updateError;
-  if (updated && updated.length > 0) return;
+  if (error) throw new Error(`IDENTITY_PUBLICATION_FAILED:${error.message}`);
 
-  const { error: insertError } = await supabase
-    .from('user_public_keys')
-    .insert(row);
-
-  if (insertError) {
-    // Course possible avec une autre publication concurrente : la ligne active
-    // existe déjà, l'invariant est satisfait.
-    if (insertError.code === '23505') return;
-    throw insertError;
+  const result = data as Record<string, unknown> | null;
+  if (!result || result.ok !== true) {
+    throw new Error(
+      typeof result?.code === 'string' ? result.code : 'IDENTITY_PUBLICATION_REJECTED',
+    );
+  }
+  if (result.fingerprint !== row.fingerprint) {
+    throw new Error('IDENTITY_PUBLICATION_FINGERPRINT_MISMATCH');
   }
 }

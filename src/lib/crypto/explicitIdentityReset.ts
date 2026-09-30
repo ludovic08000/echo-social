@@ -59,39 +59,53 @@ function fail(code: IdentityResetErrorCode): IdentityResetResult {
 async function runReset(password: string): Promise<IdentityResetResult> {
   const { data: userData, error: userError } = await supabase.auth.getUser();
   const user = userData?.user;
-  if (userError || !user?.id || !user.email) return fail('not_authenticated');
+  if (userError || !user?.id) return fail('not_authenticated');
 
   const before = await inspectAccountCryptoState(user.id);
   if (before.state === 'INCONSISTENT') return fail('inspection_failed');
   if (before.hasRestorableBackup) return fail('backup_exists');
   if (before.state !== 'UNRECOVERABLE_SERVER_IDENTITY') return fail('state_not_resettable');
 
-  // Réauthentification explicite : le mot de passe est vérifié par le serveur
-  // d'authentification avant toute mutation cryptographique.
-  const { error: authError } = await supabase.auth.signInWithPassword({
-    email: user.email,
-    password,
-  });
-  if (authError) return fail('invalid_password');
-
   const keys = await generateIdentityKeys();
   const bundle = await exportPublicKeyBundle(keys);
 
-  // Invariant corrigé : l'archivage de l'ancienne identité et la publication
-  // de la nouvelle sont désormais une seule transaction serveur. L'ancien
-  // chemin en deux requêtes pouvait laisser le compte sans identité active.
-  const { error: publishError } = await (supabase as unknown as {
-    rpc: (fn: string, args: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>;
-  }).rpc('replace_own_identity_key', {
-    p_identity_key: bundle.identityKey,
-    p_signing_key: bundle.signingKey,
-    p_fingerprint: bundle.fingerprint,
-    p_binding_version: bundle.bindingVersion,
-    p_binding_signature: bundle.bindingSignature,
+  // La preuve du mot de passe et l'appel au RPC privilégié ont lieu dans la
+  // même Edge Function. Une session navigateur volée ne peut donc ni affirmer
+  // que la réauthentification a réussi, ni appeler directement le remplacement.
+  const { data: resetData, error: resetError } = await supabase.functions.invoke('identity-reset', {
+    body: {
+      password,
+      identity_key: bundle.identityKey,
+      signing_key: bundle.signingKey,
+      fingerprint: bundle.fingerprint,
+      binding_version: bundle.bindingVersion,
+      binding_signature: bundle.bindingSignature,
+    },
   });
-  if (publishError) {
-    if ((publishError.message ?? '').includes('RECOVERABLE_BACKUP_EXISTS')) return fail('backup_exists');
+
+  let resetCode = typeof (resetData as { code?: unknown } | null)?.code === 'string'
+    ? (resetData as { code: string }).code
+    : null;
+  if (!resetCode && resetError) {
+    const response = (resetError as { context?: Response }).context;
+    if (response) {
+      try {
+        const payload = await response.clone().json() as { code?: unknown };
+        if (typeof payload.code === 'string') resetCode = payload.code;
+      } catch {
+        // A non-JSON infrastructure error is mapped to the generic failure.
+      }
+    }
+  }
+
+  if (resetError || (resetData as { ok?: boolean } | null)?.ok !== true) {
+    if (resetCode === 'INVALID_PASSWORD') return fail('invalid_password');
+    if (resetCode === 'NOT_AUTHENTICATED') return fail('not_authenticated');
+    if (resetCode === 'RECOVERABLE_BACKUP_EXISTS') return fail('backup_exists');
     return fail('publish_failed');
+  }
+  if ((resetData as { fingerprint?: unknown }).fingerprint !== bundle.fingerprint) {
+    return fail('verification_failed');
   }
 
   await saveIdentityKeys(user.id, keys);

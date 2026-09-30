@@ -107,3 +107,8 @@ project_id = "vkpmoqfzrihcijjochks"
     verify_jwt = false
   [functions.kt-publish-epoch]
     verify_jwt = false
+[functions.identity-reset]
+verify_jwt = true
+
+[functions.login-security]
+verify_jwt = false
