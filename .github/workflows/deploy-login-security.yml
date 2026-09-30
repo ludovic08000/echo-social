@@ -32,7 +32,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.117.0
 
@@ -83,9 +83,19 @@ jobs:
         if: steps.changes.outputs.login_security == 'true'
         run: |
           set -euo pipefail
-          supabase functions deploy login-security \
+          set +e
+          deploy_output="$(supabase functions deploy login-security \
             --project-ref "$SUPABASE_PROJECT_REF" \
-            --no-verify-jwt
+            --no-verify-jwt 2>&1)"
+          deploy_status=$?
+          set -e
+          printf '%s\n' "$deploy_output"
+          if [ "$deploy_status" -ne 0 ]; then
+            safe_output="${deploy_output//$SUPABASE_ACCESS_TOKEN/***}"
+            summary="$(printf '%s\n' "$safe_output" | tail -n 12 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            echo "::error title=login-security deployment failed::$summary"
+            exit "$deploy_status"
+          fi
 
       - name: Deploy authenticated identity functions
         if: steps.changes.outputs.identity_security == 'true'
