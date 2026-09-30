@@ -62,7 +62,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function base64ToBytes(value: string): Uint8Array {
+function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
@@ -93,7 +93,7 @@ function isCanonicalBase64(
   }
 }
 
-async function hashRecoveryCode(code: string, salt: Uint8Array): Promise<string> {
+async function hashRecoveryCode(code: string, salt: Uint8Array<ArrayBuffer>): Promise<string> {
   const codeBytes = new TextEncoder().encode(code);
   const baseKey = await crypto.subtle.importKey(
     "raw",

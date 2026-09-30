@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.117.0";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 /**
@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       }
 
       for (const row of data || []) {
-        const val = (row as Record<string, string>)[column];
+        const val = (row as unknown as Record<string, string>)[column];
         if (val && typeof val === "string" && val.includes(r2PublicUrl)) {
           referencedUrls.add(val);
         }
@@ -223,11 +223,11 @@ async function sign(
   return `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 }
 
-async function sha256Hex(data: Uint8Array): Promise<string> {
+async function sha256Hex(data: Uint8Array<ArrayBuffer>): Promise<string> {
   return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", data)));
 }
 
-async function hmacSha256(key: Uint8Array | ArrayBuffer, message: string): Promise<Uint8Array> {
+async function hmacSha256(key: Uint8Array<ArrayBuffer> | ArrayBuffer, message: string): Promise<Uint8Array<ArrayBuffer>> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw", key instanceof Uint8Array ? key : new Uint8Array(key),
     { name: "HMAC", hash: "SHA-256" }, false, ["sign"]

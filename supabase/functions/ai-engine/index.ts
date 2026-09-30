@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.117.0";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { logAIEvent } from "../_shared/aiEngineLog.ts";
 
@@ -65,7 +65,7 @@ function redactSecurityContext(input: Record<string, unknown>) {
   return out;
 }
 
-async function logSecurityAIResult(supabase: ReturnType<typeof createClient>, userId: string, action: string, result: unknown, context: Record<string, unknown>) {
+async function logSecurityAIResult(supabase: SupabaseClient<any, any, any, any, any>, userId: string, action: string, result: unknown, context: Record<string, unknown>) {
   try {
     await supabase.from("security_ai_events" as any).insert({
       user_id: userId,

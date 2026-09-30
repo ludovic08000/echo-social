@@ -1,0 +1,5 @@
+{
+  // Le fichier mcp/index.ts est régénéré automatiquement par le plugin
+  // (code bundlé sans annotations) : on le retire du typecheck deno.
+  "exclude": ["mcp"]
+}

@@ -185,10 +185,10 @@ Deno.serve(async (req) => {
 });
 
 // ─── Crypto helpers ───
-async function sha256Hex(data: Uint8Array): Promise<string> {
+async function sha256Hex(data: Uint8Array<ArrayBuffer>): Promise<string> {
   return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", data)));
 }
-async function hmacSha256(key: Uint8Array | ArrayBuffer, message: string): Promise<Uint8Array> {
+async function hmacSha256(key: Uint8Array<ArrayBuffer> | ArrayBuffer, message: string): Promise<Uint8Array<ArrayBuffer>> {
   const cryptoKey = await crypto.subtle.importKey("raw", key instanceof Uint8Array ? key : new Uint8Array(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(message)));
 }

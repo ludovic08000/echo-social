@@ -22,7 +22,7 @@ function b64urlEncode(buf: ArrayBuffer | Uint8Array): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function b64urlDecode(str: string): Uint8Array {
+function b64urlDecode(str: string): Uint8Array<ArrayBuffer> {
   const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));
   const b64 = (str + pad).replace(/-/g, "+").replace(/_/g, "/");
   const bin = atob(b64);
@@ -31,7 +31,7 @@ function b64urlDecode(str: string): Uint8Array {
   return out;
 }
 
-function concat(...arrs: Uint8Array[]): Uint8Array {
+function concat(...arrs: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const total = arrs.reduce((n, a) => n + a.length, 0);
   const out = new Uint8Array(total);
   let off = 0;
@@ -82,11 +82,11 @@ async function buildVapidJwt(audience: string, subject: string, vapidKey: Crypto
 }
 
 async function hkdf(
-  salt: Uint8Array,
-  ikm: Uint8Array,
-  info: Uint8Array,
+  salt: Uint8Array<ArrayBuffer>,
+  ikm: Uint8Array<ArrayBuffer>,
+  info: Uint8Array<ArrayBuffer>,
   length: number,
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
   const key = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
   return new Uint8Array(await crypto.subtle.deriveBits(
     { name: "HKDF", hash: "SHA-256", salt, info },
@@ -97,9 +97,9 @@ async function hkdf(
 
 async function encryptAes128Gcm(
   payload: Uint8Array,
-  p256dhRaw: Uint8Array,
-  authSecret: Uint8Array,
-): Promise<Uint8Array> {
+  p256dhRaw: Uint8Array<ArrayBuffer>,
+  authSecret: Uint8Array<ArrayBuffer>,
+): Promise<Uint8Array<ArrayBuffer>> {
   const eph = await crypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
     true,
