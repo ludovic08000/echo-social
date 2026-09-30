@@ -9616,6 +9616,7 @@ export type Database = {
         Args: { p_owner_user_id: string; p_scope: string }
         Returns: boolean
       }
+      process_email_queue_cron_tick: { Args: never; Returns: undefined }
       publish_libsignal_prekey_bundle: {
         Args: {
           p_device_id: string
