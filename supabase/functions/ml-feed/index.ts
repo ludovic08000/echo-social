@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.117.0";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
 
@@ -11,7 +11,7 @@ import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
  *   track    → Record a behavior signal (view, dwell, like, etc.)
  */
 
-let _supabase: ReturnType<typeof createClient> | null = null;
+let _supabase: SupabaseClient<any, any, any, any, any> | null = null;
 function getServiceClient() {
   if (!_supabase) {
     _supabase = createClient(

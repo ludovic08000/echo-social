@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2.117.0";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.117.0";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { cached, invalidateCache } from "../_shared/edge-cache.ts";
 
@@ -38,7 +38,7 @@ function computeTrustScore(data: {
 }
 
 // ─── Reusable service-role client ───
-let _supabase: ReturnType<typeof createClient> | null = null;
+let _supabase: SupabaseClient<any, any, any, any, any> | null = null;
 function getServiceClient() {
   if (!_supabase) {
     _supabase = createClient(
