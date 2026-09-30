@@ -29,10 +29,48 @@ jobs:
       SUPABASE_PROJECT_REF: vkpmoqfzrihcijjochks
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: supabase/setup-cli@v1
         with:
           version: 2.117.0
+
+      - name: Detect changed function groups
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "login_security=true" >> "$GITHUB_OUTPUT"
+            echo "identity_security=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            BEFORE_SHA="${AFTER_SHA}^"
+          fi
+
+          if git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- \
+            supabase/functions/login-security \
+            supabase/config.toml \
+            .github/workflows/deploy-login-security.yml; then
+            echo "login_security=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "login_security=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- \
+            supabase/functions/identity-reset \
+            supabase/functions/identity-rotation \
+            supabase/functions/identity-rotation-recovery; then
+            echo "identity_security=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "identity_security=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Validate deployment credentials
         run: |
@@ -41,7 +79,16 @@ jobs:
             exit 1
           }
 
+      - name: Deploy login approval endpoint
+        if: steps.changes.outputs.login_security == 'true'
+        run: |
+          set -euo pipefail
+          supabase functions deploy login-security \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --no-verify-jwt
+
       - name: Deploy authenticated identity functions
+        if: steps.changes.outputs.identity_security == 'true'
         run: |
           set -euo pipefail
           supabase functions deploy identity-reset \
@@ -50,10 +97,3 @@ jobs:
             --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy identity-rotation-recovery \
             --project-ref "$SUPABASE_PROJECT_REF"
-
-      - name: Deploy login approval endpoint
-        run: |
-          set -euo pipefail
-          supabase functions deploy login-security \
-            --project-ref "$SUPABASE_PROJECT_REF" \
-            --no-verify-jwt
