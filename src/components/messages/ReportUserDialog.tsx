@@ -22,12 +22,23 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   reportedUserId: string;
   reportedName?: string;
+  /** Action de blocage fournie par l’appelant (ex. useMessageBlock.setBlocked). */
+  onBlock?: () => Promise<void> | void;
 }
 
-export function ReportUserDialog({ open, onOpenChange, reportedUserId, reportedName }: Props) {
+export function ReportUserDialog({ open, onOpenChange, reportedUserId, reportedName, onBlock }: Props) {
   const [reason, setReason] = useState<string | null>(null);
   const [details, setDetails] = useState('');
+  const [step, setStep] = useState<'report' | 'block-choice'>('report');
+  const [blocking, setBlocking] = useState(false);
   const report = useReportUser();
+
+  const closeAndReset = () => {
+    setReason(null);
+    setDetails('');
+    setStep('report');
+    onOpenChange(false);
+  };
 
   const submit = async () => {
     if (!reason) return;
@@ -39,11 +50,28 @@ export function ReportUserDialog({ open, onOpenChange, reportedUserId, reportedN
         description: `[Messagerie] ${label}${details.trim() ? ` — ${details.trim().slice(0, 500)}` : ''}`,
       });
       toast.success('Signalement envoyé. Notre équipe va l’examiner.');
-      setReason(null);
-      setDetails('');
-      onOpenChange(false);
+      // Après le signalement, l’utilisateur choisit de bloquer ou de garder le contact.
+      if (onBlock) {
+        setStep('block-choice');
+      } else {
+        closeAndReset();
+      }
     } catch {
       toast.error('Impossible d’envoyer le signalement.');
+    }
+  };
+
+  const handleBlock = async () => {
+    if (!onBlock) return;
+    setBlocking(true);
+    try {
+      await onBlock();
+      toast.success('Contact bloqué.');
+    } catch {
+      toast.error('Impossible de bloquer ce contact.');
+    } finally {
+      setBlocking(false);
+      closeAndReset();
     }
   };
 
