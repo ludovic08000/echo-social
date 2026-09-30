@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const body = await req.json();
+    const authedUserId = user.id;
     const { action, pin, current_pin, allowed_categories } = body;
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);

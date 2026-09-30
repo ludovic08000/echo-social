@@ -93,7 +93,7 @@ function isCanonicalBase64(
   }
 }
 
-async function hashRecoveryCode(code: string, salt: Uint8Array): Promise<string> {
+async function hashRecoveryCode(code: string, salt: Uint8Array<ArrayBuffer>): Promise<string> {
   const codeBytes = new TextEncoder().encode(code);
   const baseKey = await crypto.subtle.importKey(
     "raw",

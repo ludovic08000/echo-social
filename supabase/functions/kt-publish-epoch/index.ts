@@ -46,7 +46,7 @@ function concatBytes(...arr: Uint8Array[]) {
   }
   return out;
 }
-async function sha256(b: Uint8Array): Promise<Uint8Array> {
+async function sha256(b: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", b));
 }
 
@@ -142,7 +142,7 @@ async function getOrCreateSigningKey(supabase: any): Promise<{ id: string; privJ
   return { id: ins.id, privJwk: priv, pubJwk: pub };
 }
 
-async function signEd25519(privJwk: JsonWebKey, data: Uint8Array): Promise<string> {
+async function signEd25519(privJwk: JsonWebKey, data: Uint8Array<ArrayBuffer>): Promise<string> {
   const key = await crypto.subtle.importKey(
     "jwk",
     privJwk,
