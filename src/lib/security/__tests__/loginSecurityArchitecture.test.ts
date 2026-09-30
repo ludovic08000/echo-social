@@ -15,6 +15,7 @@ const auth = source('src/lib/auth.tsx');
 const app = source('src/App.tsx');
 const boundary = source('src/components/security/LoginSecurityBoundary.tsx');
 const inbox = source('src/components/security/LoginApprovalInbox.tsx');
+const emailDecisionBridge = source('src/components/security/LoginSecurityEmailDecisionBridge.tsx');
 
 describe('risk-based login security architecture', () => {
   it('creates private session, challenge, token, and audit stores with staged enforcement', () => {
@@ -108,11 +109,16 @@ describe('risk-based login security architecture', () => {
   });
 
   it('keeps email link previews read-only while a browser click submits one direct decision', () => {
-    expect(edge).toContain('#token=${encodeURIComponent(token)}&decision=approve');
-    expect(edge).toContain('#token=${encodeURIComponent(token)}&decision=deny');
-    expect(edge).toContain('window.location.hash.slice(1)');
-    expect(edge).toContain("form.method = 'post'");
-    expect(edge).toContain('form.submit()');
+    expect(edge).toContain('?token=${encodeURIComponent(token)}&decision=approve');
+    expect(edge).toContain('?token=${encodeURIComponent(token)}&decision=deny');
+    expect(edge).toContain('loginSecurityToken: token');
+    expect(edge).toContain('loginSecurityDecision: decision');
+    expect(edge).toContain("new URL('/feed', `${SITE_URL}/`)");
+    expect(emailDecisionBridge).toContain('window.location.hash.slice(1)');
+    expect(emailDecisionBridge).toContain('window.history.replaceState');
+    expect(emailDecisionBridge).toContain('formRef.current?.submit()');
+    expect(emailDecisionBridge).toContain('method="post"');
+    expect(emailDecisionBridge).toContain('name="action" value="email_decision"');
     expect(edge).toContain("contentType.includes('application/x-www-form-urlencoded')");
     const getBranch = edge.indexOf("if (req.method === 'GET')");
     const formBranch = edge.indexOf("contentType.includes('application/x-www-form-urlencoded')");
@@ -131,6 +137,8 @@ describe('risk-based login security architecture', () => {
     expect(edge).toContain('readBoundedBody(req, 16_384)');
     expect(edge).toContain("existing?.status === 'pending'");
     expect(edge).toContain('existing.email_sent_at');
+    expect(edge).toContain(".update({ expires_at: expiresAt, updated_at: now.toISOString() })");
+    expect(edge).toContain(".eq('status', 'pending')");
     expect(edge).toContain("code: 'CHALLENGE_RATE_LIMITED'");
   });
 
