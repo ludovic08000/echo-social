@@ -37,7 +37,9 @@ describe('settings panels end-to-end wiring', () => {
     const push = readSource('supabase/functions/push-notify/index.ts');
 
     expect(hook).toContain(".from('wellbeing_preferences')");
-    expect(hook).toContain(".channel(`wellbeing_prefs:${userId}`)");
+    expect(hook).toContain('function acquireWellbeingRealtime(userId: string)');
+    expect(hook).toContain('const wellbeingRealtimeEntries = new Map');
+    expect(hook).toContain('`wellbeing_prefs:${userId}:${Date.now().toString(36)}:${wellbeingRealtimeGeneration}`');
     expect(hook).toContain("const LS_OWNER_KEY = 'wellbeing-prefs-user'");
     expect(runtime).toContain("root.classList.toggle('wellbeing-focus-mode'");
     expect(runtime).toContain('isDetoxScheduleActive');
