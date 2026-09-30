@@ -285,6 +285,33 @@ serve(async (req) => {
     city: string | null;
     device: string;
   }): Promise<boolean> => {
+    const normalizedEmail = args.email.trim().toLowerCase();
+    const { data: existingUnsubscribeToken, error: unsubscribeLookupError } = await admin
+      .from('email_unsubscribe_tokens')
+      .select('token')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+    if (unsubscribeLookupError) return false;
+
+    let unsubscribeToken = existingUnsubscribeToken?.token as string | undefined;
+    if (!unsubscribeToken) {
+      const { error: unsubscribeInsertError } = await admin
+        .from('email_unsubscribe_tokens')
+        .upsert(
+          { token: randomToken(), email: normalizedEmail },
+          { onConflict: 'email', ignoreDuplicates: true },
+        );
+      if (unsubscribeInsertError) return false;
+
+      const { data: storedUnsubscribeToken, error: unsubscribeReadbackError } = await admin
+        .from('email_unsubscribe_tokens')
+        .select('token')
+        .eq('email', normalizedEmail)
+        .maybeSingle();
+      if (unsubscribeReadbackError || !storedUnsubscribeToken?.token) return false;
+      unsubscribeToken = storedUnsubscribeToken.token;
+    }
+
     const token = randomToken();
     const tokenHash = await sha256(token);
     const now = new Date();
@@ -329,9 +356,15 @@ serve(async (req) => {
         subject: 'Confirmez votre nouvelle connexion ForSure',
         html,
         text,
-        purpose: 'authentication',
+        // Custom approval messages are app-generated transactional e-mails.
+        // Lovable reserves purpose=authentication for Auth Hook deliveries
+        // carrying a platform-issued run_id.
+        purpose: 'transactional',
         label: 'login_security_approval',
         idempotency_key: messageId,
+        // Lovable's app-email transport requires this metadata even for
+        // mandatory security notices. The message itself contains no opt-out.
+        unsubscribe_token: unsubscribeToken,
         queued_at: now.toISOString(),
       },
     });

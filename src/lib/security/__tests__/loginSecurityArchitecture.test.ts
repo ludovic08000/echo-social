@@ -69,6 +69,10 @@ describe('risk-based login security architecture', () => {
 
   it('supports both single-use email decisions and a trusted-device inbox', () => {
     expect(edge).toContain("subject: 'Confirmez votre nouvelle connexion ForSure'");
+    expect(edge).toContain("purpose: 'transactional'");
+    expect(edge).not.toContain("purpose: 'authentication'");
+    expect(edge).toContain(".from('email_unsubscribe_tokens')");
+    expect(edge).toContain('unsubscribe_token: unsubscribeToken');
     expect(edge).toContain('if (mutation.revokeAuthSession)');
     expect(riskPolicy).toContain('revokeAuthSession: true');
     expect(edge).toContain("approved_via: status === 'approved' ? 'trusted_device' : null");
