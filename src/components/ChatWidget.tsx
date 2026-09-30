@@ -1338,6 +1338,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
           open={showReportDialog}
           onOpenChange={setShowReportDialog}
           reportedUserId={peerUserId}
+          onBlock={() => messageBlock.setBlocked(true)}
         />
       )}
 
