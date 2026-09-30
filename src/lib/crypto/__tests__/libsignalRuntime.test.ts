@@ -10,11 +10,15 @@ vi.mock('@/lib/crypto/libsignalPlatformBridge', () => ({
   decryptLibsignalMessage: vi.fn(),
 }));
 import { encryptForLibsignalDevice } from '../libsignalRuntime';
+import { __libsignalDeviceNumberTest } from '../libsignalDeviceNumber';
 const args = { conversationId: 'conversation', ownerUserId: 'alice', ownerDeviceId: 'a', remoteUserId: 'bob', remoteDeviceId: 'b', plaintext: 'Bonjour 👋' };
 beforeEach(() => {
   vi.resetAllMocks();
+  __libsignalDeviceNumberTest.reset();
   mocks.renew = false;
-  mocks.rpc.mockImplementation(async (name: string) => ({ data: name === 'get_libsignal_device_number' ? 1 : [{ public_bundle: 'AQID' }], error: null }));
+  mocks.rpc.mockImplementation((name: string) => name === 'get_libsignal_device_number'
+    ? { abortSignal: async () => ({ data: 1, error: null }) }
+    : Promise.resolve({ data: [{ public_bundle: 'AQID' }], error: null }));
   mocks.establish.mockResolvedValue(undefined);
 });
 describe('Libsignal first-message session bootstrap', () => {

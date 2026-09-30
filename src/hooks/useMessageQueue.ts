@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
+import { warmLibsignalDeviceNumbers } from '@/lib/crypto/libsignalDeviceNumber';
+import { prewarmLibsignalStore } from '@/lib/crypto/libsignalPlatformBridge';
+import { maintainLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import {
   cancelAegisRetry,
   isRetryableOutboundStatus,
@@ -49,8 +52,9 @@ function prewarmSession(): Promise<void> {
 }
 
 /**
- * Warms only authenticated, stable-device and public route metadata. It never
- * claims a prekey, creates ciphertext or advances a Libsignal ratchet.
+ * Prépare l'authentification, le moteur, le store et les métadonnées publiques
+ * avant Send. Il ne réclame aucune préclé distante, ne crée aucun ciphertext et
+ * n'avance jamais un ratchet Libsignal.
  */
 export function prewarmAegisSendPath(
   userId: string,
@@ -81,7 +85,31 @@ export function prewarmAegisSendPath(
     ]);
     if (session.status !== 'fulfilled' || device.status !== 'fulfilled') return;
 
-    await block('PREWARM_ROUTE', () => warmFanoutRoute(conversationId, userId));
+    const routePromise = block(
+      'PREWARM_ROUTE',
+      () => warmFanoutRoute(conversationId, userId),
+    );
+    const storePromise = block(
+      'PREWARM_LIBSIGNAL_STORE',
+      () => prewarmLibsignalStore(userId, device.value.deviceId),
+    );
+    const maintenancePromise = block(
+      'PREWARM_PREKEY_MAINTENANCE',
+      () => maintainLibsignalDevice(userId, device.value.deviceId),
+    );
+
+    const numberPromise = routePromise.then((route) => block(
+      'PREWARM_DEVICE_NUMBERS',
+      () => warmLibsignalDeviceNumbers([
+        { userId, deviceId: device.value.deviceId },
+        ...(route?.targets ?? []).map((target) => ({
+          userId: target.userId,
+          deviceId: target.deviceId,
+        })),
+      ]),
+    ));
+
+    await Promise.all([routePromise, storePromise, maintenancePromise, numberPromise]);
     prewarmCompletedAt.set(prewarmKey, Date.now());
   })().finally(() => {
     if (prewarmInflight.get(prewarmKey) === task) prewarmInflight.delete(prewarmKey);

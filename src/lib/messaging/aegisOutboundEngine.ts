@@ -27,7 +27,6 @@ import {
 } from '@/lib/messaging/outboxVault';
 import { runAegisConversationJob } from '@/lib/messaging/aegisConversationQueue';
 import { traceE2EE, traceE2EEBlock } from '@/lib/messaging/e2eeTrace';
-import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import { supabase } from '@/integrations/supabase/client';
 import { publishSealedSenderWakeups } from '@/lib/messaging/sealedSenderTransport';
 
@@ -195,11 +194,9 @@ export async function sendAegisOutboundMessage(
     'DEVICE_READINESS',
     () => ensureAegisDeviceReady(input.senderUserId),
   );
-  // Invariant : publier les préclés du même moteur et du même appareil que le fanout.
-  await traceBlock(
-    'LIBSIGNAL_PROVISION',
-    () => provisionLibsignalDevice(input.senderUserId, readyDevice.deviceId),
-  );
+  // Invariant corrigé : une route prête prouve que les préclés initiales ont été
+  // publiées. Leur entretien s'exécute au préchauffage, jamais entre Send et le
+  // chiffrement ; le store et chaque ratchet restent vérifiés par le bridge.
   trace('DEVICE_READY', { deviceId: readyDevice.deviceId });
   let transportPlaintext = resumed?.transportPlaintext ?? input.plaintext;
   let parentBody = isMultiDeviceEnvelopeBody(resumed?.encryptedBody) && resumed?.keyCapsule

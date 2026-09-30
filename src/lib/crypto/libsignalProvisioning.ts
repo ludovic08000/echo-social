@@ -1,12 +1,17 @@
 import { supabase } from '@/integrations/supabase/client';
 import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 import { captureLibsignalStore, createLibsignalBundle, createLibsignalStore } from './libsignalPlatformBridge';
+import { getLibsignalDeviceNumber } from './libsignalDeviceNumber';
 import { bufferToBase64 } from './utils';
 import { getCurrentDeviceFinalizationTraceId, traceFinalizationOperation } from '@/lib/device-manager/deviceFinalizationTrace';
 
 const BUNDLE_BATCH = 20;
 const BUNDLE_PUBLISH_CONCURRENCY = 4;
+const PREKEY_MAINTENANCE_TTL_MS = 12 * 60 * 60 * 1_000;
+const PREKEY_MAINTENANCE_RETRY_MS = 60_000;
 const provisioning = new Map<string, Promise<void>>();
+const maintainedAt = new Map<string, number>();
+const maintenanceFailedAt = new Map<string, number>();
 
 type RpcResult<T> = {
   data: T;
@@ -17,18 +22,6 @@ function randomId(): number {
   const raw = new Uint32Array(1);
   crypto.getRandomValues(raw);
   return (raw[0] & 0x7fffffff) || 1;
-}
-
-async function resolveDeviceNumber(userId: string, deviceId: string): Promise<number> {
-  const { data, error } = await runDeviceRpcWithTimeout<RpcResult<number>>(
-    'AEGIS_LIBSIGNAL_DEVICE_NUMBER_UNAVAILABLE',
-    (signal) => (supabase as any)
-      .rpc('get_libsignal_device_number', { p_user_id: userId, p_device_id: deviceId })
-      .abortSignal(signal),
-  );
-  const value = Number(data);
-  if (error || !Number.isInteger(value) || value < 1 || value > 127) throw new Error('AEGIS_LIBSIGNAL_DEVICE_NUMBER_UNAVAILABLE');
-  return value;
 }
 
 async function publishBundle(args: {
@@ -70,7 +63,11 @@ async function publishBundle(args: {
 /** Crée puis publie un lot complet seulement après scellement de chaque privé. */
 async function provisionDevice(userId: string, deviceId: string): Promise<void> {
   const context = { userId, deviceId, traceId: getCurrentDeviceFinalizationTraceId() };
-  const deviceNumber = await traceFinalizationOperation('libsignal.device_number', () => resolveDeviceNumber(userId, deviceId), context);
+  const deviceNumber = await traceFinalizationOperation(
+    'libsignal.device_number',
+    () => getLibsignalDeviceNumber(userId, deviceId),
+    context,
+  );
   const { data: countData } = await traceFinalizationOperation('libsignal.bundle_count', async () => {
     const result = await runDeviceRpcWithTimeout<RpcResult<number>>(
       'AEGIS_LIBSIGNAL_BUNDLE_COUNT_FAILED',
@@ -118,9 +115,53 @@ export function provisionLibsignalDevice(userId: string, deviceId: string): Prom
   const key = JSON.stringify([userId, deviceId]);
   const active = provisioning.get(key);
   if (active) return active;
-  const work = provisionDevice(userId, deviceId).finally(() => {
-    if (provisioning.get(key) === work) provisioning.delete(key);
-  });
+  const work = provisionDevice(userId, deviceId)
+    .then(() => {
+      maintainedAt.set(key, Date.now());
+      maintenanceFailedAt.delete(key);
+    })
+    .catch((error) => {
+      maintenanceFailedAt.set(key, Date.now());
+      throw error;
+    })
+    .finally(() => {
+      if (provisioning.get(key) === work) provisioning.delete(key);
+    });
   provisioning.set(key, work);
   return work;
 }
+
+/**
+ * Maintenance façon Signal : la disponibilité des préclés est vérifiée hors
+ * du chemin d'envoi et au plus une fois par fenêtre réussie. Une préparation
+ * ou une rotation explicite continue d'appeler `provisionLibsignalDevice`.
+ */
+export function maintainLibsignalDevice(userId: string, deviceId: string): Promise<void> {
+  const key = JSON.stringify([userId, deviceId]);
+  const now = Date.now();
+  if (now - (maintainedAt.get(key) ?? 0) < PREKEY_MAINTENANCE_TTL_MS) {
+    return Promise.resolve();
+  }
+  if (now - (maintenanceFailedAt.get(key) ?? 0) < PREKEY_MAINTENANCE_RETRY_MS) {
+    return Promise.resolve();
+  }
+  return provisionLibsignalDevice(userId, deviceId);
+}
+
+export function invalidateLibsignalMaintenanceCache(): void {
+  maintainedAt.clear();
+  maintenanceFailedAt.clear();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('forsure:logout', invalidateLibsignalMaintenanceCache);
+}
+
+export const __libsignalProvisioningTest = {
+  maintenanceTtlMs: PREKEY_MAINTENANCE_TTL_MS,
+  maintenanceRetryMs: PREKEY_MAINTENANCE_RETRY_MS,
+  reset(): void {
+    provisioning.clear();
+    invalidateLibsignalMaintenanceCache();
+  },
+};

@@ -130,7 +130,7 @@ describe('canonical Aegis outbound transaction engine', () => {
       messageId: COPY.message_id,
     });
 
-    expect(mocks.provision).toHaveBeenCalledWith(COPY.sender_user_id, 'sender-device');
+    expect(mocks.provision).not.toHaveBeenCalled();
     expect(isMultiDeviceEnvelopeBody(result.parentBody)).toBe(true);
     expect(JSON.parse(result.parentBody).protocol).toBe(AEGIS_MESSAGE_PROTOCOL);
     expect(mocks.putOutbox).toHaveBeenCalledTimes(4);
@@ -258,7 +258,6 @@ describe('canonical Aegis outbound transaction engine', () => {
 
     expect(completedBlocks).toEqual(expect.arrayContaining([
       'DEVICE_READINESS',
-      'LIBSIGNAL_PROVISION',
       'OUTBOX_DURABLE_WRITE',
       'TRUST_VERIFY',
       'ARCHIVE_PREPARE',
@@ -273,15 +272,16 @@ describe('canonical Aegis outbound transaction engine', () => {
     expect(serialized).not.toContain(COPY.message_id);
   });
 
-  it('stops before fanout when libsignal provisioning fails', async () => {
+  it('keeps prekey maintenance outside the hot send path', async () => {
     mocks.provision.mockRejectedValueOnce(new Error('AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED'));
     await expect(sendAegisOutboundMessage({
       conversationId: '44444444-4444-4444-8444-444444444444',
       senderUserId: COPY.sender_user_id,
       plaintext: 'secret',
-    })).rejects.toThrow('AEGIS_LIBSIGNAL_STORE_COMMIT_FAILED');
-    expect(mocks.buildCopies).not.toHaveBeenCalled();
-    expect(mocks.sendRpc).not.toHaveBeenCalled();
+    })).resolves.toMatchObject({ id: COPY.message_id });
+    expect(mocks.provision).not.toHaveBeenCalled();
+    expect(mocks.buildCopies).toHaveBeenCalledOnce();
+    expect(mocks.sendRpc).toHaveBeenCalledOnce();
   });
 
   it('never calls the server without a recipient-device copy', async () => {

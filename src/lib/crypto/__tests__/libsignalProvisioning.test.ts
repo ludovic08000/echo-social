@@ -15,7 +15,12 @@ vi.mock('@/lib/crypto/libsignalPlatformBridge', () => ({
   createLibsignalBundle: (...args: unknown[]) => mocks.createBundle(...args),
   createLibsignalStore: (...args: unknown[]) => mocks.createStore(...args),
 }));
-import { provisionLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
+import {
+  __libsignalProvisioningTest,
+  maintainLibsignalDevice,
+  provisionLibsignalDevice,
+} from '@/lib/crypto/libsignalProvisioning';
+import { __libsignalDeviceNumberTest } from '@/lib/crypto/libsignalDeviceNumber';
 
 function bundleBytes(): Uint8Array {
   const bytes = new Uint8Array(24);
@@ -28,6 +33,8 @@ function bundleBytes(): Uint8Array {
 describe('libsignal device provisioning', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __libsignalProvisioningTest.reset();
+    __libsignalDeviceNumberTest.reset();
     mocks.createStore.mockResolvedValue(undefined);
     mocks.captureStore.mockResolvedValue('sealed-private-store');
     mocks.createBundle.mockImplementation(async () => bundleBytes());
@@ -73,6 +80,21 @@ describe('libsignal device provisioning', () => {
     expect(mocks.createStore).not.toHaveBeenCalled();
     expect(mocks.captureStore).toHaveBeenCalledWith('user-id', `dev_${'b'.repeat(32)}`);
     expect(mocks.createBundle).not.toHaveBeenCalled();
+  });
+
+  it('keeps successful prekey maintenance out of the hot send window', async () => {
+    mocks.rpc.mockImplementation((name: string) => ({
+      abortSignal: async () => name === 'get_libsignal_device_number'
+        ? { data: 1, error: null }
+        : { data: 10, error: null },
+    }));
+
+    await maintainLibsignalDevice('user-id', 'device-id');
+    const callsAfterFirstMaintenance = mocks.rpc.mock.calls.length;
+    await maintainLibsignalDevice('user-id', 'device-id');
+
+    expect(callsAfterFirstMaintenance).toBe(2);
+    expect(mocks.rpc).toHaveBeenCalledTimes(callsAfterFirstMaintenance);
   });
 
   it('stops before publishing if private store persistence fails', async () => {

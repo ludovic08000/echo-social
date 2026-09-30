@@ -207,8 +207,8 @@ export function invalidateAllFanoutRoutes(): void {
 export async function warmFanoutRoute(
   conversationId: string,
   senderUserId: string,
-): Promise<void> {
-  await resolveFanoutRoute(conversationId, senderUserId);
+): Promise<FanoutRouteSnapshot> {
+  return resolveFanoutRouteSnapshot(conversationId, senderUserId);
 }
 
 export const __test__ = {

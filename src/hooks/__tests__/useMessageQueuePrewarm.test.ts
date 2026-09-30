@@ -4,6 +4,9 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   ensureDeviceReady: vi.fn(),
   warmRoute: vi.fn(),
+  warmDeviceNumbers: vi.fn(),
+  prewarmStore: vi.fn(),
+  maintainDevice: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -18,6 +21,18 @@ vi.mock('@/lib/messaging/aegisDeviceRuntime', () => ({
 
 vi.mock('@/lib/messaging/fanoutRouteCache', () => ({
   warmFanoutRoute: mocks.warmRoute,
+}));
+
+vi.mock('@/lib/crypto/libsignalDeviceNumber', () => ({
+  warmLibsignalDeviceNumbers: mocks.warmDeviceNumbers,
+}));
+
+vi.mock('@/lib/crypto/libsignalPlatformBridge', () => ({
+  prewarmLibsignalStore: mocks.prewarmStore,
+}));
+
+vi.mock('@/lib/crypto/libsignalProvisioning', () => ({
+  maintainLibsignalDevice: mocks.maintainDevice,
 }));
 
 vi.mock('@/lib/messaging/e2eeTrace', () => ({
@@ -38,7 +53,17 @@ describe('Aegis send-path prewarm', () => {
       deviceId: 'device-stable',
       userId: 'user-one',
     });
-    mocks.warmRoute.mockResolvedValue(undefined);
+    mocks.warmRoute.mockResolvedValue({
+      version: 'route-one',
+      targets: [{
+        userId: 'user-two',
+        deviceId: 'device-remote',
+        devicePublicKey: 'public-key',
+      }],
+    });
+    mocks.warmDeviceNumbers.mockResolvedValue(undefined);
+    mocks.prewarmStore.mockResolvedValue(undefined);
+    mocks.maintainDevice.mockResolvedValue(undefined);
   });
 
   it('waits for a stable device before warming the canonical route', async () => {
@@ -58,6 +83,12 @@ describe('Aegis send-path prewarm', () => {
     await prewarm;
 
     expect(mocks.warmRoute).toHaveBeenCalledWith('conversation-one', 'user-one');
+    expect(mocks.prewarmStore).toHaveBeenCalledWith('user-one', 'device-stable');
+    expect(mocks.maintainDevice).toHaveBeenCalledWith('user-one', 'device-stable');
+    expect(mocks.warmDeviceNumbers).toHaveBeenCalledWith([
+      { userId: 'user-one', deviceId: 'device-stable' },
+      { userId: 'user-two', deviceId: 'device-remote' },
+    ]);
   });
 
   it('coalesces concurrent warmups and reuses a fresh route window', async () => {
@@ -71,6 +102,9 @@ describe('Aegis send-path prewarm', () => {
     expect(mocks.getSession).toHaveBeenCalledTimes(1);
     expect(mocks.ensureDeviceReady).toHaveBeenCalledTimes(1);
     expect(mocks.warmRoute).toHaveBeenCalledTimes(1);
+    expect(mocks.prewarmStore).toHaveBeenCalledTimes(1);
+    expect(mocks.maintainDevice).toHaveBeenCalledTimes(1);
+    expect(mocks.warmDeviceNumbers).toHaveBeenCalledTimes(1);
   });
 
   it('does not cache a failed route warmup', async () => {

@@ -10,6 +10,7 @@ import {
   decryptLibsignalMessage as decryptWasmMessage,
   encryptLibsignalMessage as encryptWasmMessage,
   establishLibsignalSession as establishWasmSession,
+  initializeAegisWasm as initializeWasm,
   restoreLibsignalStore as restoreWasmStore,
 } from './aegisWasmBridge';
 
@@ -279,6 +280,25 @@ export async function decryptLibsignalMessage(args: {
 export async function captureLibsignalStore(userId: string, deviceId: string): Promise<string> {
   if (!nativePlatform()) return captureWasmStore(userId, deviceId);
   return withNativeStoreLock(userId, deviceId, () => loadNativeStore(userId, deviceId));
+}
+
+/**
+ * Précharge le moteur et relit le store sans créer de session ni avancer le
+ * ratchet. L'envoi conserve ainsi exactement les mêmes garanties de scellement.
+ */
+export async function prewarmLibsignalStore(userId: string, deviceId: string): Promise<void> {
+  if (!nativePlatform()) {
+    await Promise.all([
+      initializeWasm(),
+      captureWasmStore(userId, deviceId),
+    ]);
+    return;
+  }
+
+  await Promise.all([
+    requireNativeCapabilities(),
+    withNativeStoreLock(userId, deviceId, () => loadNativeStore(userId, deviceId)),
+  ]);
 }
 
 /** Une clé de signature présente ne prouve pas la présence du store Libsignal. */

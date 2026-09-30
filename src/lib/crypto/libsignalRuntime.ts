@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { base64ToBuffer } from './utils';
+import { getLibsignalDeviceNumber } from './libsignalDeviceNumber';
 import { withLibsignalSessionFreshness } from './libsignalSessionFreshness';
 import { traceE2EE, traceE2EEBlock, type E2EETraceInput } from '@/lib/messaging/e2eeTrace';
 import {
@@ -12,17 +13,10 @@ import {
 import { decodeLibsignalWire, encodeLibsignalWire } from './libsignalWire';
 export { LIBSIGNAL_WIRE_PREFIX, decodeLibsignalWire, encodeLibsignalWire } from './libsignalWire';
 
-async function deviceNumber(userId: string, deviceId: string): Promise<number> {
-  const { data, error } = await (supabase as any).rpc('get_libsignal_device_number', { p_user_id: userId, p_device_id: deviceId });
-  const number = Number(data);
-  if (error || !Number.isInteger(number) || number < 1 || number > 127) throw new Error('AEGIS_LIBSIGNAL_DEVICE_NUMBER_UNAVAILABLE');
-  return number;
-}
-
 async function addresses(localUserId: string, localDeviceId: string, remoteUserId: string, remoteDeviceId: string): Promise<{ local: LibsignalAddress; remote: LibsignalAddress }> {
   const [localNumber, remoteNumber] = await Promise.all([
-    traceE2EEBlock({ direction: 'session', component: 'libsignal', stage: 'LOCAL_DEVICE_NUMBER', deviceId: localDeviceId }, () => deviceNumber(localUserId, localDeviceId)),
-    traceE2EEBlock({ direction: 'session', component: 'libsignal', stage: 'REMOTE_DEVICE_NUMBER', peerDeviceId: remoteDeviceId }, () => deviceNumber(remoteUserId, remoteDeviceId)),
+    traceE2EEBlock({ direction: 'session', component: 'libsignal', stage: 'LOCAL_DEVICE_NUMBER', deviceId: localDeviceId }, () => getLibsignalDeviceNumber(localUserId, localDeviceId)),
+    traceE2EEBlock({ direction: 'session', component: 'libsignal', stage: 'REMOTE_DEVICE_NUMBER', peerDeviceId: remoteDeviceId }, () => getLibsignalDeviceNumber(remoteUserId, remoteDeviceId)),
   ]);
   return { local: { userId: localUserId, deviceNumber: localNumber }, remote: { userId: remoteUserId, deviceNumber: remoteNumber } };
 }
