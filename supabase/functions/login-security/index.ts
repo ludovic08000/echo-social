@@ -1,7 +1,11 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.117.0';
 import { getCorsHeaders } from '../_shared/cors.ts';
-import { assessLoginRisk, loginDecisionMutation } from './risk.ts';
+import {
+  assessLoginRisk,
+  effectiveLoginSecurityStatus,
+  loginDecisionMutation,
+} from './risk.ts';
 
 type JsonObject = Record<string, unknown>;
 type Decision = 'approve' | 'deny';
@@ -183,7 +187,10 @@ function sessionView(row: JsonObject | null): JsonObject {
   if (!row) return { status: 'unassessed' };
   return {
     sessionId: row.session_id,
-    status: row.status,
+    // Expiration is part of the effective state. Returning a stale `pending`
+    // value traps the client on the approval screen because status refreshes
+    // never trigger a new assessment while resends correctly reject the row.
+    status: effectiveLoginSecurityStatus(row.status, row.expires_at),
     riskLevel: row.risk_level,
     reasons: row.risk_reasons,
     knownDevice: row.known_device,
