@@ -5169,6 +5169,27 @@ export type Database = {
           },
         ]
       }
+      notification_digest_dispatches: {
+        Row: {
+          digest_date: string
+          notification_count: number
+          queued_at: string
+          user_id: string
+        }
+        Insert: {
+          digest_date: string
+          notification_count: number
+          queued_at?: string
+          user_id: string
+        }
+        Update: {
+          digest_date?: string
+          notification_count?: number
+          queued_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       notification_settings: {
         Row: {
           close_friends_posts_enabled: boolean
@@ -7572,6 +7593,8 @@ export type Database = {
       }
       user_feed_preferences: {
         Row: {
+          ai_summaries_enabled: boolean
+          auto_translate_enabled: boolean
           created_at: string
           diversity_boost: number
           feed_algorithm: string
@@ -7587,6 +7610,8 @@ export type Database = {
           weight_marketplace: number
         }
         Insert: {
+          ai_summaries_enabled?: boolean
+          auto_translate_enabled?: boolean
           created_at?: string
           diversity_boost?: number
           feed_algorithm?: string
@@ -7602,6 +7627,8 @@ export type Database = {
           weight_marketplace?: number
         }
         Update: {
+          ai_summaries_enabled?: boolean
+          auto_translate_enabled?: boolean
           created_at?: string
           diversity_boost?: number
           feed_algorithm?: string
@@ -7777,6 +7804,21 @@ export type Database = {
           blocked_user_id?: string
           blocker_user_id?: string
           created_at?: string
+        }
+        Relationships: []
+      }
+      user_online_presence: {
+        Row: {
+          last_seen_at: string
+          user_id: string
+        }
+        Insert: {
+          last_seen_at?: string
+          user_id: string
+        }
+        Update: {
+          last_seen_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -8890,6 +8932,10 @@ export type Database = {
         Returns: string
       }
       current_login_security_session_id: { Args: never; Returns: string }
+      current_viewer_parental_post_allowed: {
+        Args: { p_body: string; p_post_id: string }
+        Returns: boolean
+      }
       ddos_check_ip: {
         Args: {
           p_endpoint?: string
@@ -8926,11 +8972,20 @@ export type Database = {
           updated_at: string
         }[]
       }
+      dispatch_aegis_push: {
+        Args: {
+          p_kind: string
+          p_require_interaction?: boolean
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      enqueue_notification_email_digests: { Args: never; Returns: number }
       ensure_user_crypto_state: {
         Args: never
         Returns: {
@@ -8958,6 +9013,15 @@ export type Database = {
       }
       feed_post_is_eligible_internal: {
         Args: { p_post_id: string; p_viewer_id: string }
+        Returns: boolean
+      }
+      feed_priority_topic_matches: {
+        Args: {
+          p_body: string
+          p_hashtags: string[]
+          p_priority_topics: string[]
+          p_topics: string[]
+        }
         Returns: boolean
       }
       feed_score_batch: {
@@ -9167,6 +9231,20 @@ export type Database = {
         }[]
       }
       get_profile_for_viewer: { Args: { p_user_id: string }; Returns: Json }
+      get_profile_for_viewer_redacted: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
+      get_profile_privacy: {
+        Args: { p_user_id: string }
+        Returns: {
+          friends_list_visibility: string
+          posts_visibility: string
+          profile_visibility: string
+          search_engine_indexing: boolean
+          wall_visibility: string
+        }[]
+      }
       get_public_profile: {
         Args: { profile_user_id: string }
         Returns: {
@@ -9238,6 +9316,27 @@ export type Database = {
           wrapped_key: string
         }[]
       }
+      get_visible_mutual_friends: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          avatar_url: string
+          id: string
+          name: string
+          user_id: string
+        }[]
+      }
+      get_visible_profile_friend_count: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
+      get_visible_profile_friends: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: {
+          avatar_url: string
+          name: string
+          user_id: string
+        }[]
+      }
       has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
       has_role: {
@@ -9277,6 +9376,7 @@ export type Database = {
         Returns: boolean
       }
       is_user_minor: { Args: { p_user_id: string }; Returns: boolean }
+      is_user_protected_minor: { Args: { p_user_id: string }; Returns: boolean }
       kt_get_signing_key: {
         Args: { p_key_id: string }
         Returns: {
@@ -9502,6 +9602,19 @@ export type Database = {
           source_queue: string
         }
         Returns: number
+      }
+      parental_content_category_allowed: {
+        Args: {
+          p_allowed_categories: string[]
+          p_body: string
+          p_hashtags: string[]
+          p_topics: string[]
+        }
+        Returns: boolean
+      }
+      privacy_scope_allows: {
+        Args: { p_owner_user_id: string; p_scope: string }
+        Returns: boolean
       }
       publish_libsignal_prekey_bundle: {
         Args: {

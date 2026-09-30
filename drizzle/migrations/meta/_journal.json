@@ -64,6 +64,13 @@
       "when": 1790713865575,
       "tag": "0008_optimize_feed_latency",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790733316460,
+      "tag": "0009_wire_settings_privacy_parental_content",
+      "breakpoints": true
     }
   ]
 }
