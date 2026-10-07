@@ -41,10 +41,9 @@ const FeedMarketplaceSection = lazy(() => import('@/components/feed/FeedMarketpl
 const FeedMediaSection = lazy(() => import('@/components/feed/FeedMediaSection').then(m => ({ default: m.FeedMediaSection })));
 const LocalMediaSection = lazy(() => import('@/components/feed/LocalMediaSection').then(m => ({ default: m.LocalMediaSection })));
 
-const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace' | 'local_news'> = {
+const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
   3: 'media',
   6: 'suggestions_city',
-  10: 'local_news',
   15: 'suggestions',
   20: 'reels',
   28: 'suggestions',
@@ -214,7 +213,6 @@ export default function Feed() {
           {type === 'suggestions' && <FriendSuggestions />}
           {type === 'suggestions_city' && <FriendSuggestionsByCity />}
           {type === 'media' && <FeedMediaSection />}
-          {type === 'local_news' && <LocalMediaSection />}
           {type === 'marketplace' && <FeedMarketplaceSection />}
         </Suspense>
       </LazyMount>
@@ -406,6 +404,17 @@ export default function Feed() {
                         PIN
                       </Button>
                     </div>
+                  </div>
+                )}
+
+                {/* Partner news must not depend on the number of social posts. */}
+                {!wellbeingPrefs.focusModeEnabled && (
+                  <div className="sm:px-4 mt-4">
+                    <LazyMount minHeight={200}>
+                      <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
+                        <LocalMediaSection />
+                      </Suspense>
+                    </LazyMount>
                   </div>
                 )}
 
