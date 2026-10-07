@@ -29,7 +29,7 @@ function AccountDiscoveryPreferences() {
   const dirty = useRef(false);
   const request = useRef(0);
   useEffect(() => () => { request.current++; }, []);
-  useEffect(() => { if (data && !dirty.current) setDraft(data.updated_at ? data : { ...data, local_media: true }); }, [data]);
+  useEffect(() => { if (data && !dirty.current) setDraft(data); }, [data]);
   const patch = (value: Partial<DiscoveryPreferences>) => {
     dirty.current = true;
     setDraft(current => ({ ...current, ...value }));
@@ -67,11 +67,10 @@ function AccountDiscoveryPreferences() {
   return <section className="rounded-xl border border-border p-4 space-y-4" aria-labelledby="discovery-heading">
     <h3 id="discovery-heading" className="font-semibold">Publicités et médias locaux</h3>
     <p className="text-sm text-muted-foreground">Le ciblage publicitaire est facultatif, désactivé par défaut et réservé aux adultes. Aucun message privé n’est analysé et aucune catégorie sensible n’est proposée aux annonceurs.</p>
-    <p className="text-sm text-muted-foreground">Sans choix enregistré, les actualités peuvent utiliser la ville du profil ou une région réseau approximative si la détection est configurée. Aucun GPS, aucune IP enregistrée dans ces préférences. Désactive les médias locaux puis enregistre pour rester sur la sélection France.</p>
+    <p className="text-sm text-muted-foreground">Les actualités utilisent automatiquement la ville du profil, sinon une région réseau approximative, avec repli sur la France. Aucun GPS et aucune IP ne sont enregistrés dans ces préférences. Ce fonctionnement est indépendant du ciblage publicitaire.</p>
     {([
       ['ads_profile', 'Publicités selon mes intérêts déclarés', 'Utiliser les centres d’intérêt non sensibles de mon profil et ma tranche d’âge.'],
       ['ads_activity', 'Publicités selon mon activité publique', 'Déduire des thèmes généraux de mes nouvelles publications, commentaires publics et vidéos du feed regardées. Nécessite aussi les statistiques et le partage IA activés. Aucun historique antérieur au consentement.'],
-      ['local_media', 'Médias de ma ville et de ma région', 'Zone choisie prioritaire ; sinon suggestion automatique du profil ou du réseau, sans ciblage publicitaire.'],
       ['ads_location', 'Publicités de ma ville et de ma région', 'Utiliser ma zone choisie pour les publicités. Indépendant des actualités locales et désactivable à tout moment.'],
       ['ads_location_auto', 'Trouver automatiquement ma zone publicitaire', 'Si aucune zone n’est choisie : utiliser ma ville de profil, sinon une estimation réseau avec la base DB-IP hébergée par ForSure. Mon IP n’est pas transmise à DB-IP. Sans GPS ; la zone est valable 15 minutes par session puis purgée au nettoyage périodique, sans IP ni coordonnées enregistrées.'],
     ] as const).map(([key, label, help]) => <div key={key} className="flex items-start justify-between gap-4">
@@ -79,7 +78,7 @@ function AccountDiscoveryPreferences() {
       <Switch id={`discovery-${key}`} checked={draft[key]} onCheckedChange={value => patch(key === 'ads_location' && !value ? { ads_location: false, ads_location_auto: false } : { [key]: value })}
         disabled={save.isPending || detecting || (key === 'ads_location_auto' && !draft.ads_location)} />
     </div>)}
-    {(draft.local_media || draft.ads_location) && <div className="space-y-3">
+    {draft.ads_location && <div className="space-y-3">
       <p className="text-xs text-muted-foreground">Ta zone enregistrée est prioritaire et n’est jamais écrasée par le réseau. Aucun autre champ du compte n’est analysé pour choisir les journaux.</p>
       <Button type="button" variant="outline" disabled={detecting || save.isPending} onClick={() => void suggest('profile')}>Utiliser la ville de mon profil</Button>
       <label className="block text-sm">Rechercher une commune française ou un code postal<Input disabled={detecting || save.isPending} value={query} maxLength={100} onChange={e => setQuery(e.target.value)} /></label>

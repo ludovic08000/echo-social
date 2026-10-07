@@ -1,7 +1,6 @@
 import { FRENCH_REGIONS } from './rss-catalog.ts';
 import type { Commune } from './communes.ts';
 
-type Preferences = { local_media: boolean; country: string | null; region: string | null; city: string | null };
 export type MediaContext = { country: string; region: string; city: string | null; source: 'selected' | 'profile' | 'network' };
 const ISO_REGIONS: Record<string, keyof typeof FRENCH_REGIONS> = {
  ARA:'84',BFC:'27',BRE:'53',CVL:'24',COR:'94',GES:'44',HDF:'32',IDF:'11',NOR:'28',NAQ:'75',OCC:'76',PDL:'52',PAC:'93',
@@ -25,12 +24,10 @@ export function trustedRegion(headers: Headers, config: { enabled: boolean; coun
  return region ? {country:'FR',region,city:null,source:'network'} : null;
 }
 export async function resolveMediaContext(input: {
- enabled: boolean; preferences: Preferences | null; profileCity: string | null;
+ enabled: boolean; profileCity: string | null;
  search: (query:string)=>Promise<Commune[]>; network: ()=>MediaContext | null | Promise<MediaContext | null>;
 }): Promise<MediaContext | null> {
- if (!input.enabled || input.preferences?.local_media===false) return null;
- const p=input.preferences;
- if (p?.country && p.region) return {country:p.country,region:p.region,city:p.city,source:'selected'};
+ if (!input.enabled) return null;
  const city=input.profileCity?.trim();
  if (city && city.length>=2 && city.length<=100) {
    try {

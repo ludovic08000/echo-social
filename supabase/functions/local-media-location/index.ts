@@ -37,11 +37,8 @@ Deno.serve(locationHandler({
     const enabled = Deno.env.get('LOCAL_MEDIA_CONTEXT_ENABLED') === 'true';
     if (!enabled) return null;
     const client = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, options);
-    const { data: preferences, error } = await client.from('discovery_preferences')
-      .select('local_media,country,region,city').eq('user_id', userId).maybeSingle();
-    if (error || preferences?.local_media === false) return null;
-    const { data: profile } = preferences?.region ? { data: null } : await client.from('profiles').select('city').eq('user_id', userId).maybeSingle();
-    return resolveMediaContext({ enabled, preferences, profileCity: profile?.city ?? null, search: searchCommunes,
+    const { data: profile } = await client.from('profiles').select('city').eq('user_id', userId).maybeSingle();
+    return resolveMediaContext({ enabled, profileCity: profile?.city ?? null, search: searchCommunes,
       network: async () => {
         const zone = trustedRegion(headers, { enabled,
           countryHeader: Deno.env.get('LOCAL_MEDIA_TRUSTED_GEO_COUNTRY_HEADER'),

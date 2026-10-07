@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { useDiscoveryPreferences } from '@/hooks/useDiscoveryPreferences';
 import { type MediaScope, type MediaKind, type PartnerMediaItem, safePartnerUrl, youtubeEmbedUrl } from '@/lib/discovery';
 import { Button } from '@/components/ui/button';
 import { GeoAttribution } from '@/components/geo/GeoAttribution';
@@ -34,13 +33,11 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
 
 export function LocalMediaSection() {
   const { user } = useAuth();
-  const { data: preferences } = useDiscoveryPreferences();
-  const [scope, setScope] = useState<MediaScope>('nearby');
   const [kind, setKind] = useState<MediaKind>('all');
   const languages = navigator.languages.join(',');
   const { data: context } = useQuery({
-    queryKey: ['media-context', user?.id, preferences?.updated_at, languages],
-    enabled: !!user && !!preferences && (!preferences.updated_at || (preferences.local_media && !preferences.region)),
+    queryKey: ['media-context', user?.id, languages],
+    enabled: !!user,
     staleTime: 600_000, retry: false, refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('local-media-location', { body: { context: true }, headers: { 'Accept-Language': languages } });
@@ -48,37 +45,30 @@ export function LocalMediaSection() {
       return (data?.location ?? null) as MediaContext | null;
     },
   });
-  const location = preferences?.region ? preferences : context;
-  const automatic = !preferences?.region && !!context?.region;
-  const local = preferences?.local_media === true || automatic;
-  const effectiveScope = local ? scope : 'france';
+  const location = context;
+  const automatic = !!context?.region;
+  const effectiveScope: MediaScope = automatic ? 'nearby' : 'france';
   const { data = [], isLoading, isError } = useQuery({
-    queryKey: ['partner-media', user?.id, effectiveScope, kind, location?.country, location?.region, location?.city, preferences?.updated_at, automatic],
+    queryKey: ['partner-media', user?.id, effectiveScope, kind, location?.country, location?.region, location?.city],
     enabled: !!user, staleTime: 60_000, retry: false,
     queryFn: async () => {
-      const { data: items, error } = automatic
-        ? await supabase.rpc('get_contextual_partner_media' as never, { p_scope: effectiveScope, p_kind: kind,
-          p_country: context.country, p_region: context.region, p_city: context.city } as never)
-        : await supabase.rpc('get_local_partner_media' as never, { p_scope: effectiveScope, p_kind: kind } as never);
+      const { data: items, error } = await supabase.rpc('get_contextual_partner_media' as never, {
+        p_scope: effectiveScope, p_kind: kind, p_country: context?.country ?? 'FR',
+        p_region: context?.region ?? '', p_city: context?.city ?? null,
+      } as never);
       if (error) throw error;
       return (items ?? []) as unknown as PartnerMediaItem[];
     },
   });
   return <section className="rounded-2xl bg-card border border-border p-4 space-y-3" aria-labelledby="local-media-title">
     <h2 id="local-media-title" className="font-semibold">Médias et actualités</h2>
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Zone des médias">
-      {([['nearby', 'Près de moi'], ['city', 'Ma ville'], ['region', 'Ma région'], ['france', 'France']] as const).map(([value, label]) =>
-        <Button key={value} size="sm" variant={effectiveScope === value ? 'default' : 'outline'}
-          aria-pressed={effectiveScope === value} disabled={value !== 'france' && (!local || !location?.region || (value === 'city' && !location?.city))}
-          onClick={() => setScope(value)}>{label}</Button>)}
-    </div>
-    {effectiveScope === 'nearby' && <p className="text-xs text-muted-foreground">Ta ville, puis ta région, puis les actualités nationales autorisées. La zone choisie reste prioritaire sur l’IP.</p>}
+    <p className="text-xs text-muted-foreground">Sélection automatique : ta ville si elle est connue, puis ta région, puis les actualités nationales autorisées.</p>
     <label className="block text-sm">Format <select className="ml-2 bg-background border rounded p-1" value={kind} onChange={e => setKind(e.target.value as MediaKind)}>
       <option value="all">Tous</option><option value="article">Articles</option><option value="video">Vidéos</option>
     </select></label>
-    {automatic && <p className="text-xs text-muted-foreground">{context.source === 'profile' ? 'Ville du profil' : 'Région approximative du réseau'} : {[context.display?.city ?? context.city, context.display?.region ?? context.region].filter(Boolean).join(' · ')}. Tu peux modifier ou désactiver cette sélection.</p>}
+    {automatic && <p className="text-xs text-muted-foreground">{context.source === 'profile' ? 'Ville du profil' : context.source === 'selected' ? 'Zone du compte' : 'Région approximative du réseau'} : {[context.display?.city ?? context.city, context.display?.region ?? context.region].filter(Boolean).join(' · ')}.</p>}
     <GeoAttribution />
-    <Link to="/settings?tab=privacy" className="text-xs underline">Choisir ma ville et gérer mes préférences</Link>
+    <Link to="/privacy" className="text-xs underline">Voir comment la zone est déterminée</Link>
     {isLoading ? <p role="status">Chargement des médias…</p> : isError ? <p role="status">Médias momentanément indisponibles. Ton feed reste accessible.</p>
       : data.length === 0 ? <p className="text-sm text-muted-foreground">Aucun contenu partenaire autorisé disponible dans cette zone pour le moment.</p>
         : data.map(item => <PartnerCard key={item.id} item={item} />)}
