@@ -65,14 +65,14 @@ function redactSecurityContext(input: Record<string, unknown>) {
   return out;
 }
 
-async function logSecurityAIResult(supabase: ReturnType<typeof createClient>, userId: string, action: string, result: unknown, context: Record<string, unknown>) {
+async function logSecurityAIResult(supabase: any, userId: string, action: string, result: unknown, context: Record<string, unknown>) {
   try {
     await supabase.from("security_ai_events" as any).insert({
       user_id: userId,
       action,
       result,
       context: redactSecurityContext(context),
-    });
+    } as any);
   } catch {
     // Optional table. Never break AI engine because audit table is missing.
   }
