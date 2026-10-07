@@ -1,5 +1,5 @@
 import { trustedRegion } from '../local-media-location/context.ts';
-import type { Commune } from '../local-media-location/communes.ts';
+import type { Commune } from '../_shared/communes.ts';
 import type { CoarseLocation } from '../local-media-location/location.ts';
 
 export type AdLocation = CoarseLocation & { source: 'profile' | 'network' };

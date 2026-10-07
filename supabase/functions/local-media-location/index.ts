@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.0';
 import { getCorsHeaders } from '../_shared/cors.ts';
 import { locationHandler, trustedLocationIp } from './location.ts';
 import { dbipFromCloud } from '../_shared/dbip-storage.ts';
-import { searchCommunes } from './communes.ts';
+import { searchCommunes } from '../_shared/communes.ts';
 import { resolveMediaContext, trustedRegion } from './context.ts';
 
 const url = Deno.env.get('SUPABASE_URL')!; // Existing Lovable Cloud runtime variables.

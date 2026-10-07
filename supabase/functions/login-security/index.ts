@@ -6,7 +6,7 @@ import {
   effectiveLoginSecurityStatus,
   loginDecisionMutation,
 } from './risk.ts';
-import { resolveLoginNetworkContext } from './networkContext.ts';
+import { resolveLoginNetworkContext } from '../_shared/network-context.ts';
 
 type JsonObject = Record<string, unknown>;
 type Decision = 'approve' | 'deny';

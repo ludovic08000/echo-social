@@ -1,5 +1,5 @@
-import { normalizePublicIp } from '../login-security/networkContext.ts';
-import type { Commune } from './communes.ts';
+import { normalizePublicIp } from '../_shared/network-context.ts';
+import type { Commune } from '../_shared/communes.ts';
 
 export interface CoarseLocation { country: string; region: string | null; city: string | null }
 const clean = (value: unknown) => typeof value === 'string' && value.trim().length <= 100

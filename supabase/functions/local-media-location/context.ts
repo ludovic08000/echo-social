@@ -1,5 +1,5 @@
 import { FRENCH_REGIONS } from '../partner-rss-sync/catalog.ts';
-import type { Commune } from './communes.ts';
+import type { Commune } from '../_shared/communes.ts';
 
 type Preferences = { local_media: boolean; country: string | null; region: string | null; city: string | null };
 export type MediaContext = { country: string; region: string; city: string | null; source: 'selected' | 'profile' | 'network' };
