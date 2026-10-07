@@ -178,16 +178,22 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.5.3
-      - name: Typecheck Lot 1 Edge Functions
-        run: |
-          deno check --no-config supabase/functions/sealed-mint-token/index.ts
-          deno check --no-config supabase/functions/sealed-relay/index.ts
-          deno check --no-config supabase/functions/identity-rotation/index.ts
-          deno check --no-config supabase/functions/identity-rotation-recovery/index.ts
-          deno check --no-config supabase/functions/identity-reset/index.ts
-          deno check --no-config supabase/functions/login-security/index.ts
-          deno check --no-config supabase/functions/zeus/index.ts
-          deno check --no-config supabase/functions/ml-feed-train/index.ts
+      - name: Typecheck sealed-mint-token
+        run: deno check --no-config supabase/functions/sealed-mint-token/index.ts
+      - name: Typecheck sealed-relay
+        run: deno check --no-config supabase/functions/sealed-relay/index.ts
+      - name: Typecheck identity-rotation
+        run: deno check --no-config supabase/functions/identity-rotation/index.ts
+      - name: Typecheck identity-rotation-recovery
+        run: deno check --no-config supabase/functions/identity-rotation-recovery/index.ts
+      - name: Typecheck identity-reset
+        run: deno check --no-config supabase/functions/identity-reset/index.ts
+      - name: Typecheck login-security
+        run: deno check --no-config supabase/functions/login-security/index.ts
+      - name: Typecheck zeus
+        run: deno check --no-config supabase/functions/zeus/index.ts
+      - name: Typecheck ml-feed-train
+        run: deno check --no-config supabase/functions/ml-feed-train/index.ts
 
   database:
     name: Migrations and SQL security tests
