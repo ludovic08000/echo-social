@@ -81,7 +81,7 @@ describe('explicit discovery consent',()=>{
   it('does not expose a switch that can disable automatic contextual news',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
     expect(screen.queryByRole('switch',{name:'Médias de ma ville et de ma région'})).toBeNull();
-    expect(screen.getByText(/actualités utilisent automatiquement/i)).toBeInTheDocument();
+    expect(screen.getByText(/médias et actualités ne nécessitent aucun réglage adulte/i)).toBeInTheDocument();
   });
   it('keeps local ads independent of news and requires a separate opt-in for auto location',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);

@@ -62,12 +62,15 @@ function AccountDiscoveryPreferences() {
     } finally { if (request.current === ticket) setDetecting(false); }
   };
 
-  if (isLoading) return <p role="status">Chargement des préférences publicitaires et locales…</p>;
-  if (isError) return <p role="status">Les préférences publicitaires et locales ne sont pas encore disponibles.</p>;
+  if (isLoading) return <p role="status">Chargement des préférences publicitaires…</p>;
+  if (isError) return <p role="status">Les préférences publicitaires ne sont pas encore disponibles.</p>;
   return <section className="rounded-xl border border-border p-4 space-y-4" aria-labelledby="discovery-heading">
-    <h3 id="discovery-heading" className="font-semibold">Publicités et médias locaux</h3>
-    <p className="text-sm text-muted-foreground">Le ciblage publicitaire est facultatif, désactivé par défaut et réservé aux adultes. Aucun message privé n’est analysé et aucune catégorie sensible n’est proposée aux annonceurs.</p>
-    <p className="text-sm text-muted-foreground">Les actualités utilisent automatiquement la ville du profil, sinon une région réseau approximative, avec repli sur la France. Aucun GPS et aucune IP ne sont enregistrés dans ces préférences. Ce fonctionnement est indépendant du ciblage publicitaire.</p>
+    <h3 id="discovery-heading" className="font-semibold">Publicités personnalisées — adultes uniquement</h3>
+    <p className="text-sm text-muted-foreground">Ces réglages concernent uniquement la publicité. Ils sont facultatifs, désactivés par défaut et réservés aux comptes adultes. Aucun message privé n’est analysé et aucune catégorie sensible n’est proposée aux annonceurs.</p>
+    <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
+      <p className="text-sm font-medium">Les médias et actualités ne nécessitent aucun réglage adulte</p>
+      <p className="text-xs text-muted-foreground">Ils apparaissent automatiquement selon la ville du profil, sinon une région réseau approximative, avec repli sur la France. Aucun GPS et aucune IP ne sont enregistrés ici.</p>
+    </div>
     {([
       ['ads_profile', 'Publicités selon mes intérêts déclarés', 'Utiliser les centres d’intérêt non sensibles de mon profil et ma tranche d’âge.'],
       ['ads_activity', 'Publicités selon mon activité publique', 'Déduire des thèmes généraux de mes nouvelles publications, commentaires publics et vidéos du feed regardées. Nécessite aussi les statistiques et le partage IA activés. Aucun historique antérieur au consentement.'],
@@ -100,7 +103,12 @@ function AccountDiscoveryPreferences() {
       </div>}
     </div>}
     <Button disabled={save.isPending || detecting} onClick={() => {
-      save.mutate(draft, { onSuccess: () => { dirty.current = false; toast.success('Préférences enregistrées'); }, onError: () => toast.error('Enregistrement refusé. Le ciblage exige un compte adulte connu ; vérifie aussi le pays.') });
+      save.mutate(draft, { onSuccess: () => { dirty.current = false; toast.success('Préférences publicitaires enregistrées'); }, onError: () => {
+        const requestsPersonalizedAds = draft.ads_profile || draft.ads_activity || draft.ads_location || draft.ads_location_auto;
+        toast.error(requestsPersonalizedAds
+          ? 'Ces options concernent uniquement la publicité personnalisée et exigent un compte adulte connu. Les actualités restent disponibles automatiquement.'
+          : 'Impossible d’enregistrer ces préférences pour le moment. Les actualités restent disponibles automatiquement.');
+      } });
     }}>{save.isPending ? 'Enregistrement…' : 'Enregistrer mes choix'}</Button>
     <p className="text-xs text-muted-foreground">Désactiver l’activité efface ses thèmes dérivés. <Link className="underline" to="/privacy">Informations sur les données utilisées</Link></p>
   </section>;
