@@ -3,7 +3,7 @@ export interface NewsComment {
 }
 export interface NewsDiscussion {
   id: string; canonical_url: string; source_name: string; locked: boolean;
-  article: { title: string; excerpt: string; published_at: string } | null;
+  article: { title: string; excerpt: string; published_at: string; thumbnail_url?: string | null; kind?: 'article' | 'video'; youtube_id?: string | null } | null;
   comments: NewsComment[];
 }
 export const isNewsId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);

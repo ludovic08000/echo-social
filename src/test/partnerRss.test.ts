@@ -38,14 +38,24 @@ describe('daily RSS normalization', () => {
     expect(fetcher).not.toHaveBeenCalled();
     expect(() => assertRssCoverage('actu-ile-de-france', { country: 'FR', region: 'Ile de France', city: null })).not.toThrow();
   });
-  it('retains plain metadata, never publisher full text, images or script', async () => {
+  it('retains plain metadata and approved image references, never publisher full text or script', async () => {
     const [item] = await parseRss(rss(entry('<description><![CDATA[<p>Info <b>locale</b></p><script>alert(1)</script>]]></description><content:encoded>FULL ARTICLE</content:encoded><enclosure url="https://evil.invalid/image"/>')), source, now);
     expect(item.title).toBe('Actualité & région'); expect(item.excerpt).toBe('Info locale');
     expect(item.canonical_url).toBe('https://www.leparisien.fr/test');
     expect(item.external_id).toMatch(/^rss:[a-f0-9]{64}$/);
     expect(JSON.stringify(item)).not.toMatch(/FULL ARTICLE|alert|enclosure|evil/);
   });
-  it('honors excerpt rights and expiry, never assumes image/video rights', async () => {
+  it('extracts safe RSS/Atom thumbnails and rejects active or credentialed URLs', async () => {
+    const [rssItem] = await parseRss(rss(entry('<media:thumbnail url="https://cdn.publisher.test/photo.jpg"/>')), source, now);
+    expect(rssItem.thumbnail_url).toBe('https://cdn.publisher.test/photo.jpg');
+    const atom = '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Bonjour</title><link rel="alternate" href="https://www.leparisien.fr/atom-image"/><link rel="enclosure" type="image/webp" href="https://img.publisher.test/p.webp"/><published>2026-10-06T09:00:00Z</published></entry></feed>';
+    expect((await parseRss(atom, source, now))[0].thumbnail_url).toBe('https://img.publisher.test/p.webp');
+    for (const image of ['javascript:alert(1)','http://img.test/a.jpg','https://user:pass@img.test/a.jpg']) {
+      const [item] = await parseRss(rss(entry(`<media:thumbnail url="${image}"/>`)), source, now);
+      expect(item.thumbnail_url).toBeNull();
+    }
+  });
+  it('honors excerpt rights and expiry', async () => {
     const [item] = await parseRss(rss(entry('<description>Excerpt</description>')), { ...source, allow_excerpt: false, rights_until: '2026-10-07T00:00:00Z' }, now);
     expect(item.excerpt).toBe(''); expect(item.expires_at).toBe('2026-10-07T00:00:00.000Z');
     await expect(parseRss(rss(), { ...source, rights_until: '2020-01-01' }, now)).rejects.toThrow('PARTNER_RIGHTS_REQUIRED');

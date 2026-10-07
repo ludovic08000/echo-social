@@ -13,11 +13,11 @@ async function rpc(name: string, args: Record<string, unknown>) {
   if (error) throw error;
   return data as unknown;
 }
-export function NewsDiscussionPanel({ threadId }: { threadId: string }) {
+export function NewsDiscussionPanel({ threadId, compact = false }: { threadId: string; compact?: boolean }) {
   const { user } = useAuth();
-  return <AccountDiscussion key={`${user?.id}:${threadId}`} threadId={threadId} userId={user?.id} />;
+  return <AccountDiscussion key={`${user?.id}:${threadId}`} threadId={threadId} userId={user?.id} compact={compact} />;
 }
-function AccountDiscussion({ threadId, userId }: { threadId: string; userId?: string }) {
+function AccountDiscussion({ threadId, userId, compact }: { threadId: string; userId?: string; compact: boolean }) {
   const cache = useQueryClient();
   const [body, setBody] = useState('');
   const [parent, setParent] = useState<string | null>(null);
@@ -68,13 +68,14 @@ function AccountDiscussion({ threadId, userId }: { threadId: string; userId?: st
   if (query.isError) return <div role="alert">Discussion indisponible. <Button onClick={() => void query.refetch()}>Réessayer</Button></div>;
   if (!thread) return <p>Discussion introuvable ou non accessible à ton compte.</p>;
   const source = safePartnerUrl(thread.canonical_url);
-  return <section className="p-4 space-y-4" aria-label="Discussion de l’actualité">
-    <h1 className="text-xl font-bold">{thread.article?.title ?? 'Discussion d’une actualité archivée'}</h1>
-    <p className="text-sm text-muted-foreground">Source : {thread.source_name}. Les commentaires sont ceux des membres de ForSure, pas ceux du journal.</p>
-    {thread.article?.excerpt && <p>{thread.article.excerpt}</p>}
-    {!thread.article && <p className="text-sm">L’extrait n’est plus disponible ; la discussion et le lien vers le journal sont conservés.</p>}
-    {source && <a className="underline" href={source} target="_blank" rel="noopener noreferrer">Lire chez l’éditeur</a>}
-    <ShareButton url={`${window.location.origin}/news/${threadId}`} title={`Discussion · ${thread.source_name}`} showLabel size="sm" />
+  return <section className={compact ? 'mt-3 space-y-3 border-t border-border pt-3' : 'p-4 space-y-4'} aria-label="Discussion de l’actualité">
+    {!compact && <><h1 className="text-xl font-bold">{thread.article?.title ?? 'Discussion d’une actualité archivée'}</h1>
+      <p className="text-sm text-muted-foreground">Source : {thread.source_name}. Les commentaires sont ceux des membres de ForSure, pas ceux du journal.</p>
+      {thread.article?.excerpt && <p>{thread.article.excerpt}</p>}
+      {!thread.article && <p className="text-sm">L’extrait n’est plus disponible ; la discussion et le lien vers le journal sont conservés.</p>}
+      {source && <a className="underline" href={source} target="_blank" rel="noopener noreferrer">Lire chez l’éditeur</a>}
+      <ShareButton url={`${window.location.origin}/news/${threadId}`} title={`Discussion · ${thread.source_name}`} showLabel size="sm" /></>}
+    {compact && <h3 className="font-semibold">Commentaires ForSure</h3>}
     <p className="text-sm text-muted-foreground">Échange public : respecte les personnes et évite de recopier les articles.</p>
     {query.isFetching && !query.isFetchingNextPage && <p role="status">Actualisation…</p>}
     <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>Actualiser les commentaires</Button>

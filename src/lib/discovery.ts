@@ -22,7 +22,7 @@ export type MediaKind = 'all' | 'article' | 'video';
 export interface PartnerMediaItem {
   discussion_id?: string | null;
   id: string; title: string; excerpt: string; canonical_url: string;
-  kind: 'article' | 'video'; youtube_id: string | null;
+  kind: 'article' | 'video'; youtube_id: string | null; thumbnail_url?: string | null;
   published_at: string; source_name: string; country: string; region: string | null; city: string | null;
   proximity?: 'city' | 'region' | 'national' | 'other';
 }

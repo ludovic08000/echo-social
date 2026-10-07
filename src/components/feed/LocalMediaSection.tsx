@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { MessageCircle, Play } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -7,27 +8,43 @@ import { type MediaScope, type MediaKind, type PartnerMediaItem, safePartnerUrl,
 import { Button } from '@/components/ui/button';
 import { GeoAttribution } from '@/components/geo/GeoAttribution';
 const ShareNews = lazy(() => import('@/components/ShareButton').then(m => ({ default: m.ShareButton })));
+const Discussion = lazy(() => import('./NewsDiscussionPanel').then(m => ({ default: m.NewsDiscussionPanel })));
 type MediaContext = { country: string; region: string; city: string | null; source: string;
   display?: { country: string; region: string | null; city: string | null } };
 
 function PartnerCard({ item }: { item: PartnerMediaItem }) {
   const [playing, setPlaying] = useState(false);
+  const [discussionOpen, setDiscussionOpen] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
   const url = safePartnerUrl(item.canonical_url);
+  const thumbnail = imageFailed ? null : safePartnerUrl(item.thumbnail_url ?? '');
   const embed = youtubeEmbedUrl(item.youtube_id);
   if (!url) return null;
-  return <article className="rounded-lg border border-border p-3 space-y-2">
+  return <article className="overflow-hidden rounded-xl border border-border bg-card">
+    {thumbnail && <a href={url} target="_blank" rel="noopener noreferrer" className="relative block aspect-video bg-muted">
+      <img src={thumbnail} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
+        className="h-full w-full object-cover" onError={() => setImageFailed(true)} />
+      {item.kind === 'video' && <span className="absolute inset-0 grid place-items-center bg-black/20" aria-hidden="true"><span className="grid h-12 w-12 place-items-center rounded-full bg-black/70 text-white"><Play className="h-6 w-6 fill-current" /></span></span>}
+    </a>}
+    <div className="p-3 space-y-2">
     <p className="text-xs text-muted-foreground">{item.source_name} · {item.kind === 'video' ? 'Vidéo' : 'Actualité'} · {new Date(item.published_at).toLocaleDateString('fr-FR')}</p>
     <p className="text-xs text-muted-foreground">{[item.city, item.region].filter(Boolean).join(' · ') || 'France'}{item.proximity === 'national' ? ' · Sélection nationale' : ''}</p>
-    <a className="font-medium underline" href={url} target="_blank" rel="noopener noreferrer">{item.title}</a>
+    <a className="block font-semibold leading-snug hover:underline" href={url} target="_blank" rel="noopener noreferrer">{item.title}</a>
     {item.excerpt && <p className="text-sm text-muted-foreground">{item.excerpt}</p>}
-    {item.discussion_id && <div className="flex items-center gap-3">
-      <Link className="text-sm underline" to={`/news/${item.discussion_id}`}>Commenter et débattre</Link>
+    {item.discussion_id && <div className="flex flex-wrap items-center gap-2">
+      <Button type="button" size="sm" variant={discussionOpen ? 'secondary' : 'outline'} aria-expanded={discussionOpen}
+        onClick={() => setDiscussionOpen(value => !value)}><MessageCircle className="mr-1 h-4 w-4" />{discussionOpen ? 'Fermer les commentaires' : 'Commenter et débattre'}</Button>
+      <Link className="text-sm underline" to={`/news/${item.discussion_id}`}>Ouvrir la discussion</Link>
       <Suspense fallback={null}><ShareNews url={`${window.location.origin}/news/${item.discussion_id}`} title={`Discussion · ${item.source_name}`} showLabel size="sm" /></Suspense>
     </div>}
     {embed && (playing ? <iframe title={item.title} src={embed} className="w-full aspect-video rounded-lg"
       referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation" allow="encrypted-media; fullscreen; picture-in-picture" allowFullScreen />
       : <div><Button variant="outline" onClick={() => setPlaying(true)}>Charger la vidéo YouTube</Button>
         <p className="text-xs text-muted-foreground">Ce clic établit une connexion avec YouTube. Aucun lecteur tiers n’est chargé avant.</p></div>)}
+    {discussionOpen && item.discussion_id && <Suspense fallback={<p role="status">Chargement des commentaires…</p>}>
+      <Discussion threadId={item.discussion_id} compact />
+    </Suspense>}
+    </div>
   </article>;
 }
 

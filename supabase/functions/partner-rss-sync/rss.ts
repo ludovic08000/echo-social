@@ -11,21 +11,29 @@ export interface RssSource {
 }
 export interface RssItem {
   external_id: string; title: string; excerpt: string; canonical_url: string;
-  kind: 'article'; published_at: string; expires_at: string;
+  kind: 'article'; thumbnail_url: string | null; published_at: string; expires_at: string;
 }
 type XmlNode = Record<string, unknown>;
 const node = (value: unknown): XmlNode => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as XmlNode : {};
 const text = (value: unknown): string => typeof value === 'string' ? value : typeof node(value)['#text'] === 'string' ? node(value)['#text'] as string : '';
 const list = (value: unknown): unknown[] => value === undefined ? [] : Array.isArray(value) ? value : [value];
 
-// Only plain text is retained. Never store publisher HTML, full articles, images or scripts.
+const hasUnsafeUrlCharacters = (value: string): boolean => {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x20 || code === 0x7f || value[index] === '\\') return true;
+  }
+  return false;
+};
+
+// Only plain text is retained. Never store publisher HTML, full articles or scripts.
 function plain(value: unknown, length: number): string {
   return text(value).replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
-    .replace(/<[^>]*>/g, ' ').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, length);
+    .replace(/<[^>]*>/g, ' ').replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, length);
 }
 
 function canonical(value: string, host: string): string | null {
-  if (!value || value.length > 2048 || /[\u0000-\u0020\u007f\\]/.test(value)) return null;
+  if (!value || value.length > 2048 || hasUnsafeUrlCharacters(value)) return null;
   try {
     const url = new URL(value);
     if (url.protocol !== 'https:' || url.hostname !== host || url.port || url.username || url.password) return null;
@@ -34,6 +42,29 @@ function canonical(value: string, host: string): string | null {
     url.searchParams.sort();
     return url.href;
   } catch { return null; }
+}
+
+function safeThumbnail(value: unknown): string | null {
+  const candidate = text(value).trim();
+  if (!candidate || candidate.length > 2048 || hasUnsafeUrlCharacters(candidate)) return null;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+  } catch { return null; }
+}
+
+function thumbnail(entry: XmlNode): string | null {
+  const media = list(entry['media:content']).map(node);
+  const enclosure = list(entry.enclosure).map(node);
+  const atomLinks = list(entry.link).map(node);
+  const candidates = [
+    ...list(entry['media:thumbnail']).map(value => node(value)['@_url']),
+    ...media.filter(value => value['@_medium'] === 'image' || String(value['@_type'] ?? '').startsWith('image/')).map(value => value['@_url']),
+    ...enclosure.filter(value => String(value['@_type'] ?? '').startsWith('image/')).map(value => value['@_url']),
+    ...atomLinks.filter(value => value['@_rel'] === 'enclosure' && String(value['@_type'] ?? '').startsWith('image/')).map(value => value['@_href']),
+  ];
+  for (const value of candidates) { const safe = safeThumbnail(value); if (safe) return safe; }
+  return null;
 }
 
 function parisienUrlDate(url: string): number {
@@ -78,6 +109,7 @@ export async function parseRss(xml: string, source: Pick<RssSource, 'website_hos
     if (!url || !title || !Number.isFinite(published) || published > now || expires <= now || deduped.has(url)) continue;
     deduped.set(url, {
       title, canonical_url: url, kind: 'article',
+      thumbnail_url: thumbnail(entry),
       excerpt: source.allow_excerpt ? plain(entry.description ?? entry.summary, 400) : '',
       published_at: new Date(published).toISOString(), expires_at: new Date(expires).toISOString(),
     });
@@ -90,7 +122,8 @@ export async function parseRss(xml: string, source: Pick<RssSource, 'website_hos
   }));
 }
 
-const validatorHeader = (value: string | null): string | null => value && value.length <= 256 && !/[\r\n\u0000]/.test(value) ? value : null;
+const validatorHeader = (value: string | null): string | null => value && value.length <= 256
+  && !value.includes('\r') && !value.includes('\n') && !value.includes('\0') ? value : null;
 export interface FetchResult { status: 'success' | 'not_modified'; items: RssItem[]; etag: string | null; last_modified: string | null }
 export async function fetchRss(source: RssSource, fetcher: typeof fetch = fetch, now = Date.now()): Promise<FetchResult> {
   const url = rssDestination(source.source_key, source.website_host);

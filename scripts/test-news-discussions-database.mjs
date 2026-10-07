@@ -5,6 +5,7 @@ export async function testNewsDiscussionsDatabase(db) {
   await db.exec(`CREATE TABLE abuse_reports(reporter_id uuid,reported_user_id uuid,report_type text,description text,evidence_urls text[]);
     CREATE FUNCTION has_role(uid uuid,role text) RETURNS boolean LANGUAGE sql AS $$ SELECT uid='00000000-0000-4000-8000-000000000809'::uuid AND role='admin' $$;`);
   await db.exec(readFileSync(new URL('../supabase/migrations/20261005225507_news_discussions_and_context.sql',import.meta.url),'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261007211600_partner_media_thumbnails_and_inline_comments.sql',import.meta.url),'utf8'));
   const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
   const q=(sql,args=[])=>db.query(sql,args);
   const scalar=async(sql,args=[])=>Object.values((await q(sql,args)).rows[0])[0];
@@ -22,13 +23,20 @@ export async function testNewsDiscussionsDatabase(db) {
   await db.exec('SET ROLE service_role');
   await insert(811,'https://news.invalid/one');await insert(812,'https://news.invalid/one');
   await insert(813,'https://news.invalid/two',false);await insert(814,'https://news.invalid/adult',true,false);
+  const importedRows=(await q(`SELECT external_id,title,excerpt,canonical_url,kind,youtube_id,published_at,expires_at
+    FROM partner_media_items WHERE id IN ($1,$2) ORDER BY id`,[id(811),id(812)])).rows;
+  const thumbnail='https://images.news.invalid/one.webp';
+  for (const imported of importedRows) imported.thumbnail_url=thumbnail;
+  eq(await scalar('SELECT import_partner_media($1,$2)',[id(810),JSON.stringify(importedRows)]),2);
+  eq(await scalar('SELECT moderated FROM partner_media_items WHERE id=$1',[id(811)]),true);
+  eq(await scalar('SELECT thumbnail_url FROM partner_media_items WHERE id=$1',[id(811)]),thumbnail);
   const tid=await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(811)]);
   const adult=await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(814)]);
   eq(tid,await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(812)]));
   eq(null,await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(813)]));
   const read=(thread=tid,time=null,cursor=null)=>scalar('SELECT get_news_discussion($1,$2,$3)',[thread,time,cursor]);
   const add=(n,text='Hello',parent=null,thread=tid)=>scalar('SELECT add_news_comment($1,$2,$3,$4)',[thread,id(n),text,parent]);
-  await login(801);eq((await read()).article.title,'Licensed title');
+  await login(801);eq((await read()).article.title,'Licensed title');eq((await read()).article.thumbnail_url,thumbnail);
   for(const table of ['news_threads','news_comments','news_comment_limits','news_comment_reports']) await rejects('SELECT * FROM '+table);
   await rejects('SELECT news_thread_readable($1,$2)',[tid,id(802)]);
   await rejects('SELECT partner_media_for_zone($1,$2,$3,$4,$5)',['france','all',null,null,null]);
@@ -53,7 +61,7 @@ export async function testNewsDiscussionsDatabase(db) {
   await login(801);eq(await scalar('SELECT remove_news_comment($1)',[id(820)]),true);
   eq((await read()).comments[0].body,'');eq((await read()).comments[1].body,'Reply');
   await login(809);eq(await scalar('SELECT moderate_news_comment($1)',[id(821)]),true);eq((await read()).comments[1].removed,true);
-  await login(803);eq(await read(adult),null);eq((await read()).id,tid);
+  await login(803);eq((await read(adult)).id,adult);eq((await read()).id,tid);
   // Keyset pagination does not skip ties or repeat rows; 51st row is only a sentinel.
   await db.exec('RESET ROLE');
   for(let n=830;n<886;n++) await q("INSERT INTO news_comments(id,thread_id,user_id,body,created_at) VALUES($1,$2,$3,'page',now()+interval '1 hour')",[id(n),tid,id(801)]);
@@ -70,6 +78,7 @@ export async function testNewsDiscussionsDatabase(db) {
   // Coarse context never saves data; explicit opt-out wins over any client-supplied region.
   const context=()=>scalar("SELECT get_contextual_partner_media('nearby','all','FR','Grand Est','Reims')");
   eq((await context()).some(x=>x.discussion_id===tid),true);
+  eq((await context()).find(x=>x.discussion_id===tid).thumbnail_url,thumbnail);
   eq(Number(await scalar('SELECT count(*) FROM discovery_preferences')),0);
   await scalar('SELECT set_discovery_preferences($1)',[JSON.stringify({local_media:false})]);
   eq((await context()).some(x=>x.discussion_id===tid),false);
@@ -79,7 +88,7 @@ export async function testNewsDiscussionsDatabase(db) {
   // Expiring RSS deletes neither the thread nor the member discussions, and exposes no expired excerpts.
   await q('DELETE FROM partner_media_items WHERE id IN ($1,$2)',[id(811),id(812)]);
   await login(801);eq((await read()).article,null);eq((await read()).comments.length,51);
-  await login(803);eq(await read(),null);
+  await login(803);eq((await read()).id,tid);
   await db.exec('RESET ROLE');await q('UPDATE news_threads SET locked=true WHERE id=$1',[tid]);
   await login(802);await rejects('SELECT add_news_comment($1,$2,$3)',[tid,id(889),'locked'],/DISCUSSION_UNAVAILABLE/);
   await db.exec('RESET ROLE');await q('DELETE FROM auth.users WHERE id=$1',[id(801)]);

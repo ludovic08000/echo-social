@@ -7,6 +7,7 @@ import { LocalMediaSection } from '../LocalMediaSection';
 const mocks=vi.hoisted(()=>({rpc:vi.fn(),invoke:vi.fn()}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:mocks.rpc,functions:{invoke:mocks.invoke}}}));
 vi.mock('@/components/ShareButton',()=>({ShareButton:({url}:{url:string})=><a href={url}>Partager</a>}));
+vi.mock('../NewsDiscussionPanel',()=>({NewsDiscussionPanel:()=> <div>Formulaire de commentaires réel</div>}));
 vi.mock('@/lib/auth',()=>({useAuth:()=>({user:{id:'test'}})}));
 beforeEach(()=>mocks.invoke.mockResolvedValue({data:{location:null},error:null}));
 afterEach(()=>{cleanup();vi.clearAllMocks();});
@@ -17,7 +18,10 @@ describe('partner media UI',()=>{
     mocks.rpc.mockResolvedValue({data:[{id:'x',discussion_id:'durable',title:'Local',kind:'article',canonical_url:'https://media.invalid/x',published_at:'2026-10-06',source_name:'Journal'}],error:null});
     mount();await screen.findByText(/Région approximative du réseau/);
     await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('get_contextual_partner_media',{p_scope:'nearby',p_kind:'all',p_country:'FR',p_region:'Grand Est',p_city:null}));
-    expect(screen.getByText('Commenter et débattre')).toHaveAttribute('href','/news/durable');
+    expect(screen.getByRole('button',{name:/Commenter et débattre/})).toHaveAttribute('aria-expanded','false');
+    fireEvent.click(screen.getByRole('button',{name:/Commenter et débattre/}));
+    expect(await screen.findByText('Formulaire de commentaires réel')).toBeInTheDocument();
+    expect(screen.getByText('Ouvrir la discussion')).toHaveAttribute('href','/news/durable');
     expect(await screen.findByText('Partager')).toHaveAttribute('href',`${window.location.origin}/news/durable`);
   });
   it('always requests automatic context and falls back to France',async()=>{
@@ -26,9 +30,10 @@ describe('partner media UI',()=>{
     expect(mocks.rpc).toHaveBeenCalledWith('get_contextual_partner_media',{p_scope:'france',p_kind:'all',p_country:'FR',p_region:'',p_city:null});
   });
   it('shows attribution and only connects the player after a click',async()=>{
-    mocks.rpc.mockResolvedValue({data:[{id:'1',title:'Vidéo partenaire',excerpt:'Extrait',canonical_url:'https://media.invalid/article',kind:'video',youtube_id:'abcdefghijk',published_at:'2026-10-05T10:00:00Z',source_name:'Partenaire'}],error:null});
+    mocks.rpc.mockResolvedValue({data:[{id:'1',title:'Vidéo partenaire',excerpt:'Extrait',canonical_url:'https://media.invalid/article',thumbnail_url:'https://img.invalid/thumb.jpg',kind:'video',youtube_id:'abcdefghijk',published_at:'2026-10-05T10:00:00Z',source_name:'Partenaire'}],error:null});
     const {container}=mount();
     await screen.findByText('Vidéo partenaire');
+    expect(container.querySelector('img')).toHaveAttribute('src','https://img.invalid/thumb.jpg');
     expect(container.querySelector('iframe')).toBeNull();
     expect(screen.queryByRole('group',{name:'Zone des médias'})).toBeNull();
     expect(screen.getByText(/Voir comment la zone/).getAttribute('href')).toBe('/privacy');
