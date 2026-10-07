@@ -78,6 +78,13 @@
       "when": 1791391977817,
       "tag": "0010_friend_group_post_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791392000451,
+      "tag": "0011_enforce_single_post_reaction",
+      "breakpoints": true
     }
   ]
 }
