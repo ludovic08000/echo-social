@@ -438,6 +438,39 @@ export type Database = {
           },
         ]
       }
+      ad_location_contexts: {
+        Row: {
+          city: string | null
+          country: string | null
+          expires_at: string
+          preference_revision: string
+          region: string | null
+          session_id: string
+          source: string
+          user_id: string
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          expires_at?: string
+          preference_revision: string
+          region?: string | null
+          session_id: string
+          source: string
+          user_id: string
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          expires_at?: string
+          preference_revision?: string
+          region?: string | null
+          session_id?: string
+          source?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ad_sets: {
         Row: {
           advertiser_id: string
@@ -2473,6 +2506,7 @@ export type Database = {
           activity_since: string | null
           ads_activity: boolean
           ads_location: boolean
+          ads_location_auto: boolean
           ads_profile: boolean
           city: string | null
           consent_revision: string
@@ -2486,6 +2520,7 @@ export type Database = {
           activity_since?: string | null
           ads_activity?: boolean
           ads_location?: boolean
+          ads_location_auto?: boolean
           ads_profile?: boolean
           city?: string | null
           consent_revision?: string
@@ -2499,6 +2534,7 @@ export type Database = {
           activity_since?: string | null
           ads_activity?: boolean
           ads_location?: boolean
+          ads_location_auto?: boolean
           ads_profile?: boolean
           city?: string | null
           consent_revision?: string
@@ -9051,6 +9087,10 @@ export type Database = {
         Returns: boolean
       }
       ad_adult_internal: { Args: { p_user: string }; Returns: boolean }
+      ad_effective_location_internal: {
+        Args: { p_user: string }
+        Returns: Json
+      }
       ad_is_deliverable_internal: {
         Args: { p_ad: string; p_placement: string; p_user: string }
         Returns: boolean
@@ -9066,6 +9106,8 @@ export type Database = {
         Returns: boolean
       }
       ad_my_topics_internal: { Args: { p_user: string }; Returns: string[] }
+      ad_place_key_internal: { Args: { p_label: string }; Returns: string }
+      ad_session_internal: { Args: never; Returns: string }
       ad_text_topics_internal: { Args: { p_text: string }; Returns: string[] }
       ad_topic_internal: { Args: { p_text: string }; Returns: string }
       add_group_members: {
@@ -9867,6 +9909,7 @@ export type Database = {
         Returns: Json
       }
       get_my_ad_explanation: { Args: { p_ad_id: string }; Returns: Json }
+      get_my_ad_location_context: { Args: never; Returns: Json }
       get_my_live_stream_key: { Args: { _stream_id: string }; Returns: string }
       get_my_media_profile_city: { Args: never; Returns: string }
       get_my_seller_revenue: { Args: never; Returns: number }
@@ -10498,6 +10541,18 @@ export type Database = {
       }
       set_message_archive_body: {
         Args: { p_archive_body: string; p_message_id: string }
+        Returns: boolean
+      }
+      store_ad_location_context: {
+        Args: {
+          p_city: string
+          p_country: string
+          p_region: string
+          p_revision: string
+          p_session: string
+          p_source: string
+          p_user: string
+        }
         Returns: boolean
       }
       stripe_mark_event_processed: {
