@@ -209,6 +209,47 @@ export type Database = {
         }
         Relationships: []
       }
+      ad_audience_cache: {
+        Row: {
+          topics: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          topics?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          topics?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ad_audience_sources: {
+        Row: {
+          author_id: string
+          user_id: string
+        }
+        Insert: {
+          author_id: string
+          user_id: string
+        }
+        Update: {
+          author_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_audience_sources_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "ad_audience_cache"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       ad_campaigns: {
         Row: {
           advertiser_id: string
@@ -2427,6 +2468,48 @@ export type Database = {
           },
         ]
       }
+      discovery_preferences: {
+        Row: {
+          activity_since: string | null
+          ads_activity: boolean
+          ads_location: boolean
+          ads_profile: boolean
+          city: string | null
+          consent_revision: string
+          country: string | null
+          local_media: boolean
+          region: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activity_since?: string | null
+          ads_activity?: boolean
+          ads_location?: boolean
+          ads_profile?: boolean
+          city?: string | null
+          consent_revision?: string
+          country?: string | null
+          local_media?: boolean
+          region?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activity_since?: string | null
+          ads_activity?: boolean
+          ads_location?: boolean
+          ads_profile?: boolean
+          city?: string | null
+          consent_revision?: string
+          country?: string | null
+          local_media?: boolean
+          region?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       e2ee_kt_leaves: {
         Row: {
           epoch: number
@@ -4038,6 +4121,48 @@ export type Database = {
           user_agent_hash?: string | null
           user_agent_summary?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      media_partners: {
+        Row: {
+          active: boolean
+          agreement_reference: string
+          allow_excerpt: boolean
+          allow_youtube_embed: boolean
+          city: string | null
+          country: string
+          id: string
+          name: string
+          region: string | null
+          rights_until: string
+          website_host: string
+        }
+        Insert: {
+          active?: boolean
+          agreement_reference: string
+          allow_excerpt?: boolean
+          allow_youtube_embed?: boolean
+          city?: string | null
+          country?: string
+          id?: string
+          name: string
+          region?: string | null
+          rights_until: string
+          website_host: string
+        }
+        Update: {
+          active?: boolean
+          agreement_reference?: string
+          allow_excerpt?: boolean
+          allow_youtube_embed?: boolean
+          city?: string | null
+          country?: string
+          id?: string
+          name?: string
+          region?: string | null
+          rights_until?: string
+          website_host?: string
         }
         Relationships: []
       }
@@ -5806,6 +5931,59 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      partner_media_items: {
+        Row: {
+          canonical_url: string
+          excerpt: string
+          expires_at: string
+          external_id: string
+          family_safe: boolean
+          id: string
+          kind: string
+          moderated: boolean
+          partner_id: string
+          published_at: string
+          title: string
+          youtube_id: string | null
+        }
+        Insert: {
+          canonical_url: string
+          excerpt?: string
+          expires_at: string
+          external_id: string
+          family_safe?: boolean
+          id?: string
+          kind: string
+          moderated?: boolean
+          partner_id: string
+          published_at: string
+          title: string
+          youtube_id?: string | null
+        }
+        Update: {
+          canonical_url?: string
+          excerpt?: string
+          expires_at?: string
+          external_id?: string
+          family_safe?: boolean
+          id?: string
+          kind?: string
+          moderated?: boolean
+          partner_id?: string
+          published_at?: string
+          title?: string
+          youtube_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_media_items_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "media_partners"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       post_views: {
         Row: {
@@ -8690,6 +8868,24 @@ export type Database = {
         Args: { p_strike_id: string }
         Returns: boolean
       }
+      ad_adult_internal: { Args: { p_user: string }; Returns: boolean }
+      ad_is_deliverable_internal: {
+        Args: { p_ad: string; p_placement: string; p_user: string }
+        Returns: boolean
+      }
+      ad_location_matches_internal: {
+        Args: {
+          p_city: string
+          p_consent: boolean
+          p_country: string
+          p_region: string
+          p_target: Json
+        }
+        Returns: boolean
+      }
+      ad_my_topics_internal: { Args: { p_user: string }; Returns: string[] }
+      ad_text_topics_internal: { Args: { p_text: string }; Returns: string[] }
+      ad_topic_internal: { Args: { p_text: string }; Returns: string }
       add_group_members: {
         Args: { p_conv_id: string; p_member_ids: string[] }
         Returns: number
@@ -9073,6 +9269,7 @@ export type Database = {
         Args: { p_current_device_id: string; p_stale_after?: string }
         Returns: Json
       }
+      cleanup_discovery_data: { Args: never; Returns: undefined }
       cleanup_edge_rate_limits: { Args: never; Returns: undefined }
       cleanup_old_behavior_signals: { Args: never; Returns: undefined }
       cleanup_old_fingerprints: { Args: never; Returns: undefined }
@@ -9451,6 +9648,11 @@ export type Database = {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
       }
+      get_local_partner_media: {
+        Args: { p_kind?: string; p_scope?: string }
+        Returns: Json
+      }
+      get_my_ad_explanation: { Args: { p_ad_id: string }; Returns: Json }
       get_my_live_stream_key: { Args: { _stream_id: string }; Returns: string }
       get_my_seller_revenue: { Args: never; Returns: number }
       get_my_stream_key: { Args: { p_stream_id: string }; Returns: string }
@@ -9595,6 +9797,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      import_partner_media: {
+        Args: { p_items: Json; p_partner: string }
+        Returns: number
       }
       is_ad_set_paid_and_active: {
         Args: { p_ad_set_id: string }
@@ -9946,6 +10152,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      refresh_my_ad_audience: { Args: never; Returns: string[] }
       relay_sealed_sender: {
         Args: {
           p_anonymous_sender_tag: string
@@ -10040,6 +10247,10 @@ export type Database = {
         Returns: Json
       }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
+      set_discovery_preferences: {
+        Args: { p_preferences: Json }
+        Returns: Json
+      }
       set_message_archive_body: {
         Args: { p_archive_body: string; p_message_id: string }
         Returns: boolean

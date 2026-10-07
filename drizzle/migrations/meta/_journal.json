@@ -127,6 +127,13 @@
       "when": 1791392674805,
       "tag": "0017_feed_offline_evaluation_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791392896735,
+      "tag": "0018_consented_ads_and_local_media",
+      "breakpoints": true
     }
   ]
 }
