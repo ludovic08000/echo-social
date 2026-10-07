@@ -5475,6 +5475,116 @@ export type Database = {
           },
         ]
       }
+      news_comment_limits: {
+        Row: {
+          last_sent: string
+          user_id: string
+        }
+        Insert: {
+          last_sent: string
+          user_id: string
+        }
+        Update: {
+          last_sent?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      news_comment_reports: {
+        Row: {
+          comment_id: string
+          created_at: string
+          reporter_id: string
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          reporter_id: string
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          reporter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_comment_reports_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "news_comments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      news_comments: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          parent_id: string | null
+          removed: boolean
+          thread_id: string
+          user_id: string | null
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id: string
+          parent_id?: string | null
+          removed?: boolean
+          thread_id: string
+          user_id?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          parent_id?: string | null
+          removed?: boolean
+          thread_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_comments_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "news_comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "news_comments_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "news_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      news_threads: {
+        Row: {
+          canonical_url: string
+          created_at: string
+          id: string
+          locked: boolean
+          source_name: string
+        }
+        Insert: {
+          canonical_url: string
+          created_at?: string
+          id?: string
+          locked?: boolean
+          source_name: string
+        }
+        Update: {
+          canonical_url?: string
+          created_at?: string
+          id?: string
+          locked?: boolean
+          source_name?: string
+        }
+        Relationships: []
+      }
       notification_digest_dispatches: {
         Row: {
           digest_date: string
@@ -5935,6 +6045,7 @@ export type Database = {
       partner_media_items: {
         Row: {
           canonical_url: string
+          discussion_id: string | null
           excerpt: string
           expires_at: string
           external_id: string
@@ -5949,6 +6060,7 @@ export type Database = {
         }
         Insert: {
           canonical_url: string
+          discussion_id?: string | null
           excerpt?: string
           expires_at: string
           external_id: string
@@ -5963,6 +6075,7 @@ export type Database = {
         }
         Update: {
           canonical_url?: string
+          discussion_id?: string | null
           excerpt?: string
           expires_at?: string
           external_id?: string
@@ -5976,6 +6089,13 @@ export type Database = {
           youtube_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "partner_media_items_discussion_id_fkey"
+            columns: ["discussion_id"]
+            isOneToOne: false
+            referencedRelation: "news_threads"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "partner_media_items_partner_id_fkey"
             columns: ["partner_id"]
@@ -8952,6 +9072,15 @@ export type Database = {
         Args: { p_conv_id: string; p_member_ids: string[] }
         Returns: number
       }
+      add_news_comment: {
+        Args: {
+          p_body: string
+          p_id: string
+          p_parent?: string
+          p_thread: string
+        }
+        Returns: string
+      }
       admin_list_profiles: {
         Args: { p_limit?: number; p_search?: string; p_user_ids?: string[] }
         Returns: {
@@ -9606,6 +9735,16 @@ export type Database = {
           stale_at: string
         }[]
       }
+      get_contextual_partner_media: {
+        Args: {
+          p_city?: string
+          p_country: string
+          p_kind: string
+          p_region: string
+          p_scope: string
+        }
+        Returns: Json
+      }
       get_conversation_deliverable_devices: {
         Args: { p_conversation_id: string; p_exclude_device_id?: string }
         Returns: {
@@ -9732,6 +9871,10 @@ export type Database = {
       get_my_media_profile_city: { Args: never; Returns: string }
       get_my_seller_revenue: { Args: never; Returns: number }
       get_my_stream_key: { Args: { p_stream_id: string }; Returns: string }
+      get_news_discussion: {
+        Args: { p_after_id?: string; p_after_time?: string; p_thread: string }
+        Returns: Json
+      }
       get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
       get_own_phone_number: { Args: never; Returns: string }
       get_parental_controls: {
@@ -10133,6 +10276,7 @@ export type Database = {
         Args: { p_post_id: string; p_user_id: string }
         Returns: number
       }
+      moderate_news_comment: { Args: { p_id: string }; Returns: boolean }
       move_to_dlq: {
         Args: {
           dlq_name: string
@@ -10142,6 +10286,14 @@ export type Database = {
         }
         Returns: number
       }
+      news_thread_readable: {
+        Args: { p_thread: string; p_user: string }
+        Returns: boolean
+      }
+      news_users_unblocked: {
+        Args: { p_other: string; p_user: string }
+        Returns: boolean
+      }
       parental_content_category_allowed: {
         Args: {
           p_allowed_categories: string[]
@@ -10150,6 +10302,16 @@ export type Database = {
           p_topics: string[]
         }
         Returns: boolean
+      }
+      partner_media_for_zone: {
+        Args: {
+          p_city: string
+          p_country: string
+          p_kind: string
+          p_region: string
+          p_scope: string
+        }
+        Returns: Json
       }
       preview_feed_training_order: {
         Args: { p_limit?: number; p_user_id: string }
@@ -10274,6 +10436,7 @@ export type Database = {
           salt: string
         }[]
       }
+      remove_news_comment: { Args: { p_id: string }; Returns: boolean }
       replace_own_identity_key: {
         Args: {
           p_binding_signature: string
@@ -10294,6 +10457,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      report_news_comment: {
+        Args: { p_id: string; p_reason: string }
+        Returns: boolean
       }
       request_device_copy_retry: {
         Args: {

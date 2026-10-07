@@ -85,6 +85,13 @@
       "when": 1791396292195,
       "tag": "0011_regional_media_discovery",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791396363763,
+      "tag": "0012_news_discussions_and_context",
+      "breakpoints": true
     }
   ]
 }
