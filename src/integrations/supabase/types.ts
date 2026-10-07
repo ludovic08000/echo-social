@@ -9729,6 +9729,7 @@ export type Database = {
       }
       get_my_ad_explanation: { Args: { p_ad_id: string }; Returns: Json }
       get_my_live_stream_key: { Args: { _stream_id: string }; Returns: string }
+      get_my_media_profile_city: { Args: never; Returns: string }
       get_my_seller_revenue: { Args: never; Returns: number }
       get_my_stream_key: { Args: { p_stream_id: string }; Returns: string }
       get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
@@ -9745,6 +9746,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_partner_rss_coverage: { Args: never; Returns: Json }
       get_pending_device_copy_retry_requests: {
         Args: { p_limit?: number }
         Returns: {
@@ -10018,6 +10020,7 @@ export type Database = {
               user_id: string
             }[]
           }
+      media_place_key: { Args: { p_value: string }; Returns: string }
       ml_backfill_feed_feature_shells: { Args: never; Returns: Json }
       ml_build_post_embedding_text: {
         Args: { p_post_id: string }

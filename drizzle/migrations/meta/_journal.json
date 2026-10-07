@@ -78,6 +78,13 @@
       "when": 1791396252524,
       "tag": "0010_daily_partner_rss",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791396292195,
+      "tag": "0011_regional_media_discovery",
+      "breakpoints": true
     }
   ]
 }
