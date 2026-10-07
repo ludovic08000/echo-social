@@ -120,6 +120,13 @@
       "when": 1791392635826,
       "tag": "0016_feed_training_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791392674805,
+      "tag": "0017_feed_offline_evaluation_contract",
+      "breakpoints": true
     }
   ]
 }

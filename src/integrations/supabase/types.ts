@@ -3049,6 +3049,7 @@ export type Database = {
       feed_rank_snapshots: {
         Row: {
           created_at: string
+          evaluation_context: Json | null
           experiment_revision: string | null
           expires_at: string
           id: string
@@ -3057,6 +3058,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          evaluation_context?: Json | null
           experiment_revision?: string | null
           expires_at?: string
           id?: string
@@ -3065,6 +3067,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          evaluation_context?: Json | null
           experiment_revision?: string | null
           expires_at?: string
           id?: string
@@ -9211,6 +9214,10 @@ export type Database = {
         Returns: {
           post_id: string
         }[]
+      }
+      feed_evaluation_slates: {
+        Args: { p_as_of?: string; p_limit?: number }
+        Returns: Json
       }
       feed_ml_health: { Args: never; Returns: Json }
       feed_post_is_eligible_internal: {
