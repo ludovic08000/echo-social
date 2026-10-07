@@ -150,7 +150,7 @@ async function signEd25519(privJwk: JsonWebKey, data: Uint8Array): Promise<strin
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign({ name: "Ed25519" }, key, data);
+  const sig = await crypto.subtle.sign({ name: "Ed25519" }, key, data as BufferSource);
   return bytesToHex(new Uint8Array(sig));
 }
 
