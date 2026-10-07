@@ -6091,7 +6091,6 @@ export type Database = {
           moderated: boolean
           partner_id: string
           published_at: string
-          thumbnail_url: string | null
           title: string
           youtube_id: string | null
         }
@@ -6107,7 +6106,6 @@ export type Database = {
           moderated?: boolean
           partner_id: string
           published_at: string
-          thumbnail_url?: string | null
           title: string
           youtube_id?: string | null
         }
@@ -6123,7 +6121,6 @@ export type Database = {
           moderated?: boolean
           partner_id?: string
           published_at?: string
-          thumbnail_url?: string | null
           title?: string
           youtube_id?: string | null
         }
