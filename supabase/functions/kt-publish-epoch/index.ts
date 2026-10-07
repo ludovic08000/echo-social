@@ -47,7 +47,7 @@ function concatBytes(...arr: Uint8Array[]) {
   return out;
 }
 async function sha256(b: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", b));
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", b as BufferSource));
 }
 
 function canonicalLeafPayload(entry: any): string {
