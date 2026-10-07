@@ -71,6 +71,34 @@
       "when": 1790733316460,
       "tag": "0009_wire_settings_privacy_parental_content",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791396252524,
+      "tag": "0010_daily_partner_rss",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791396292195,
+      "tag": "0011_regional_media_discovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791396363763,
+      "tag": "0012_news_discussions_and_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791396436571,
+      "tag": "0013_consented_city_ad_delivery",
+      "breakpoints": true
     }
   ]
 }

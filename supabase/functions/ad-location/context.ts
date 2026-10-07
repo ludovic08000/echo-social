@@ -1,6 +1,6 @@
-import { trustedRegion } from '../local-media-location/context.ts';
+import { trustedRegion } from '../_shared/media-context.ts';
 import type { Commune } from '../_shared/communes.ts';
-import type { CoarseLocation } from '../local-media-location/location.ts';
+import type { CoarseLocation } from '../_shared/media-location.ts';
 
 export type AdLocation = CoarseLocation & { source: 'profile' | 'network' };
 export type AdLocationSnapshot = {
