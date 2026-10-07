@@ -99,6 +99,27 @@
       "when": 1791396436571,
       "tag": "0013_consented_city_ad_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791406087609,
+      "tag": "0014_partner_media_thumbnails_and_inline_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791406109694,
+      "tag": "0015_partner_media_thumbnail_proxy",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791406143214,
+      "tag": "0016_perfect_partner_media_delivery",
+      "breakpoints": true
     }
   ]
 }
