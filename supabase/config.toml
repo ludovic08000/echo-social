@@ -122,5 +122,8 @@ verify_jwt = false # getUser + JWT-scoped RPC validate adult consent and session
 [functions.partner-rss-sync]
 verify_jwt = false # Server-only: dedicated cron secret is required by the handler.
 
+[functions.partner-media-thumbnail]
+verify_jwt = false # Public image response; the server resolves only an eligible moderated item ID.
+
 [functions.geoip-import]
 verify_jwt = false # Temporary operator import: disabled by default and guarded by a dedicated bearer token.

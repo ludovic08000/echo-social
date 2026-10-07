@@ -30,10 +30,11 @@ describe('partner media UI',()=>{
     expect(mocks.rpc).toHaveBeenCalledWith('get_contextual_partner_media',{p_scope:'france',p_kind:'all',p_country:'FR',p_region:'',p_city:null});
   });
   it('shows attribution and only connects the player after a click',async()=>{
-    mocks.rpc.mockResolvedValue({data:[{id:'1',title:'Vidéo partenaire',excerpt:'Extrait',canonical_url:'https://media.invalid/article',thumbnail_url:'https://img.invalid/thumb.jpg',kind:'video',youtube_id:'abcdefghijk',published_at:'2026-10-05T10:00:00Z',source_name:'Partenaire'}],error:null});
+    mocks.rpc.mockResolvedValue({data:[{id:'00000000-0000-4000-8000-000000000001',title:'Vidéo partenaire',excerpt:'Extrait',canonical_url:'https://media.invalid/article',thumbnail_url:'https://img.invalid/thumb.jpg',kind:'video',youtube_id:'abcdefghijk',published_at:'2026-10-05T10:00:00Z',source_name:'Partenaire'}],error:null});
     const {container}=mount();
     await screen.findByText('Vidéo partenaire');
-    expect(container.querySelector('img')).toHaveAttribute('src','https://img.invalid/thumb.jpg');
+    expect(container.querySelector('img')?.getAttribute('src')).toContain('/functions/v1/partner-media-thumbnail?id=');
+    expect(container.querySelector('img')?.getAttribute('src')).not.toContain('img.invalid');
     expect(container.querySelector('iframe')).toBeNull();
     expect(screen.queryByRole('group',{name:'Zone des médias'})).toBeNull();
     expect(screen.getByText(/Voir comment la zone/).getAttribute('href')).toBe('/privacy');

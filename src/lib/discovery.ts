@@ -36,6 +36,24 @@ export function safePartnerUrl(value: string): string | null {
   } catch { return null; }
 }
 
+const PARTNER_THUMBNAIL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PARTNER_MEDIA_BACKEND = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '') ?? '';
+
+export function partnerThumbnailUrl(
+  itemId: string,
+  available: string | null | undefined,
+  backend = PARTNER_MEDIA_BACKEND,
+): string | null {
+  if (!available || !PARTNER_THUMBNAIL_ID.test(itemId) || !backend) return null;
+  try {
+    const origin = new URL(backend);
+    if (origin.protocol !== 'https:' || origin.username || origin.password) return null;
+    const endpoint = new URL('/functions/v1/partner-media-thumbnail', origin);
+    endpoint.searchParams.set('id', itemId);
+    return endpoint.toString();
+  } catch { return null; }
+}
+
 export function youtubeEmbedUrl(id: string | null): string | null {
   return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}?autoplay=0` : null;
 }

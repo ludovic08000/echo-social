@@ -4,7 +4,7 @@ import { MessageCircle, Play } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { type MediaScope, type MediaKind, type PartnerMediaItem, safePartnerUrl, youtubeEmbedUrl } from '@/lib/discovery';
+import { type MediaScope, type MediaKind, type PartnerMediaItem, partnerThumbnailUrl, safePartnerUrl, youtubeEmbedUrl } from '@/lib/discovery';
 import { Button } from '@/components/ui/button';
 import { GeoAttribution } from '@/components/geo/GeoAttribution';
 const ShareNews = lazy(() => import('@/components/ShareButton').then(m => ({ default: m.ShareButton })));
@@ -17,7 +17,7 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
   const [discussionOpen, setDiscussionOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const url = safePartnerUrl(item.canonical_url);
-  const thumbnail = imageFailed ? null : safePartnerUrl(item.thumbnail_url ?? '');
+  const thumbnail = imageFailed ? null : partnerThumbnailUrl(item.id, item.thumbnail_url);
   const embed = youtubeEmbedUrl(item.youtube_id);
   if (!url) return null;
   return <article className="overflow-hidden rounded-xl border border-border bg-card">

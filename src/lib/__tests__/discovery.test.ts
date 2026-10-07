@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_DISCOVERY, discoveryPayload, safePartnerUrl, youtubeEmbedUrl } from '../discovery';
+import { DEFAULT_DISCOVERY, discoveryPayload, partnerThumbnailUrl, safePartnerUrl, youtubeEmbedUrl } from '../discovery';
 import { locationHandler, trustedLocationIp } from '../../../supabase/functions/local-media-location/location';
 import { dbipFromCloud } from '../../../supabase/functions/_shared/dbip-storage';
 
@@ -21,6 +21,14 @@ describe('discovery privacy boundaries', () => {
     expect(youtubeEmbedUrl('abcdefghijk')).toBe('https://www.youtube-nocookie.com/embed/abcdefghijk?autoplay=0');
     expect(youtubeEmbedUrl('https://evil.test')).toBeNull();
     expect(youtubeEmbedUrl(null)).toBeNull();
+  });
+  it('routes partner thumbnails through the ForSure backend without exposing the publisher URL', () => {
+    const item='00000000-0000-4000-8000-000000000401';
+    expect(partnerThumbnailUrl(item,'https://publisher.test/photo.jpg','https://cloud.forsure.test'))
+      .toBe(`https://cloud.forsure.test/functions/v1/partner-media-thumbnail?id=${item}`);
+    expect(partnerThumbnailUrl('not-a-uuid','https://publisher.test/photo.jpg','https://cloud.forsure.test')).toBeNull();
+    expect(partnerThumbnailUrl(item,null,'https://cloud.forsure.test')).toBeNull();
+    expect(partnerThumbnailUrl(item,'https://publisher.test/photo.jpg','http://cloud.forsure.test')).toBeNull();
   });
   it('requires a configured trusted gateway and ignores arbitrary client geography', () => {
     const headers=new Headers({ 'cf-connecting-ip':'8.8.8.8','x-real-ip':'192.168.1.1','x-forwarded-for':'8.8.4.4, 1.1.1.1','cf-ipcountry':'FR' });

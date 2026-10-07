@@ -65,7 +65,7 @@ jobs:
       - name: Application regressions with bounded memory
         run: npx vitest run --maxWorkers=1
       - name: Edge function type safety
-        run: npx --yes deno@2.5.3 check --no-config supabase/functions/ml-feed-train/index.ts supabase/functions/ml-twotower-train/index.ts supabase/functions/feed-optimizer/index.ts supabase/functions/local-media-location/index.ts supabase/functions/ad-location/index.ts supabase/functions/data-export/index.ts
+        run: npx --yes deno@2.5.3 check --no-config supabase/functions/ml-feed-train/index.ts supabase/functions/ml-twotower-train/index.ts supabase/functions/feed-optimizer/index.ts supabase/functions/local-media-location/index.ts supabase/functions/ad-location/index.ts supabase/functions/data-export/index.ts supabase/functions/partner-media-thumbnail/index.ts
       - name: Daily RSS worker type safety
         run: npx --yes deno@2.5.3 check --config supabase/functions/partner-rss-sync/deno.json supabase/functions/partner-rss-sync/index.ts
       - name: Production build and crypto boundary

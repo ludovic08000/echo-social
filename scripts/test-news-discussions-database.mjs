@@ -6,6 +6,7 @@ export async function testNewsDiscussionsDatabase(db) {
     CREATE FUNCTION has_role(uid uuid,role text) RETURNS boolean LANGUAGE sql AS $$ SELECT uid='00000000-0000-4000-8000-000000000809'::uuid AND role='admin' $$;`);
   await db.exec(readFileSync(new URL('../supabase/migrations/20261005225507_news_discussions_and_context.sql',import.meta.url),'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/20261007211600_partner_media_thumbnails_and_inline_comments.sql',import.meta.url),'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261007211800_partner_media_thumbnail_proxy.sql',import.meta.url),'utf8'));
   const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
   const q=(sql,args=[])=>db.query(sql,args);
   const scalar=async(sql,args=[])=>Object.values((await q(sql,args)).rows[0])[0];
@@ -30,6 +31,7 @@ export async function testNewsDiscussionsDatabase(db) {
   eq(await scalar('SELECT import_partner_media($1,$2)',[id(810),JSON.stringify(importedRows)]),2);
   eq(await scalar('SELECT moderated FROM partner_media_items WHERE id=$1',[id(811)]),true);
   eq(await scalar('SELECT thumbnail_url FROM partner_media_items WHERE id=$1',[id(811)]),thumbnail);
+  eq(await scalar('SELECT partner_media_thumbnail_source($1)',[id(811)]),thumbnail);
   const tid=await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(811)]);
   const adult=await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(814)]);
   eq(tid,await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(812)]));
@@ -38,6 +40,7 @@ export async function testNewsDiscussionsDatabase(db) {
   const add=(n,text='Hello',parent=null,thread=tid)=>scalar('SELECT add_news_comment($1,$2,$3,$4)',[thread,id(n),text,parent]);
   await login(801);eq((await read()).article.title,'Licensed title');eq((await read()).article.thumbnail_url,thumbnail);
   for(const table of ['news_threads','news_comments','news_comment_limits','news_comment_reports']) await rejects('SELECT * FROM '+table);
+  await rejects('SELECT partner_media_thumbnail_source($1)',[id(811)]);
   await rejects('SELECT news_thread_readable($1,$2)',[tid,id(802)]);
   await rejects('SELECT partner_media_for_zone($1,$2,$3,$4,$5)',['france','all',null,null,null]);
   await rejects('INSERT INTO news_comments(id,thread_id,user_id,body) VALUES($1,$2,$3,$4)',[id(820),tid,id(802),'forged']);
