@@ -5985,6 +5985,68 @@ export type Database = {
           },
         ]
       }
+      partner_rss_sources: {
+        Row: {
+          auto_publish: boolean
+          enabled: boolean
+          etag: string | null
+          id: string
+          last_checked_at: string | null
+          last_error: string | null
+          last_items: number
+          last_modified: string | null
+          last_status: string | null
+          last_success_at: string | null
+          lease_token: string | null
+          lease_until: string | null
+          next_fetch_at: string
+          partner_id: string
+          source_key: string
+        }
+        Insert: {
+          auto_publish?: boolean
+          enabled?: boolean
+          etag?: string | null
+          id?: string
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_items?: number
+          last_modified?: string | null
+          last_status?: string | null
+          last_success_at?: string | null
+          lease_token?: string | null
+          lease_until?: string | null
+          next_fetch_at?: string
+          partner_id: string
+          source_key: string
+        }
+        Update: {
+          auto_publish?: boolean
+          enabled?: boolean
+          etag?: string | null
+          id?: string
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_items?: number
+          last_modified?: string | null
+          last_status?: string | null
+          last_success_at?: string | null
+          lease_token?: string | null
+          lease_until?: string | null
+          next_fetch_at?: string
+          partner_id?: string
+          source_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_rss_sources_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "media_partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       post_views: {
         Row: {
           id: string
@@ -9264,6 +9326,7 @@ export type Database = {
           registration_id: number
         }[]
       }
+      claim_partner_rss_sources: { Args: { p_limit?: number }; Returns: Json }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {
         Args: { p_current_device_id: string; p_stale_after?: string }
@@ -9484,6 +9547,18 @@ export type Database = {
       }
       finish_feed_feature_job: {
         Args: { p_features: Json; p_post: string; p_revision: string }
+        Returns: boolean
+      }
+      finish_partner_rss_import: {
+        Args: {
+          p_error?: string
+          p_etag?: string
+          p_items: Json
+          p_lease: string
+          p_modified?: string
+          p_source: string
+          p_status: string
+        }
         Returns: boolean
       }
       generate_order_number: { Args: never; Returns: string }
