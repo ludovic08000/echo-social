@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.0';
 import { getCorsHeaders } from '../_shared/cors.ts';
 import { searchCommunes } from '../_shared/communes.ts';
-import { trustedLocationIp } from '../local-media-location/location.ts';
+import { trustedLocationIp } from '../_shared/media-location.ts';
 import { dbipFromCloud } from '../_shared/dbip-storage.ts';
 import { adLocationHandler, trustedAdZone, type AdLocationSnapshot } from './context.ts';
 
