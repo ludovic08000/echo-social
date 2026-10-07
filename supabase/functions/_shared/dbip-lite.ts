@@ -1,5 +1,5 @@
-import { frenchRegion } from '../local-media-location/context.ts';
-import { normalizePublicIp } from '../login-security/networkContext.ts';
+import { frenchRegion } from './media-context.ts';
+import { normalizePublicIp } from './network-context.ts';
 
 // Names only: no coordinates, IP history, identity decisions or external IP API.
 export const DBIP_LANGUAGES = ['en', 'fr', 'de', 'es', 'pt-BR', 'zh-CN', 'ja', 'ru', 'fa', 'ko'] as const;
