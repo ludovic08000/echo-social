@@ -351,27 +351,43 @@ export type Database = {
       }
       ad_interactions: {
         Row: {
+          ad_id: string | null
           campaign_id: string
           created_at: string
           id: string
+          interaction_day: string
           interaction_type: string
+          placement: string | null
           user_id: string
         }
         Insert: {
+          ad_id?: string | null
           campaign_id: string
           created_at?: string
           id?: string
+          interaction_day?: string
           interaction_type?: string
+          placement?: string | null
           user_id: string
         }
         Update: {
+          ad_id?: string | null
           campaign_id?: string
           created_at?: string
           id?: string
+          interaction_day?: string
           interaction_type?: string
+          placement?: string | null
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ad_interactions_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ads"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ad_interactions_campaign_id_fkey"
             columns: ["campaign_id"]
@@ -9056,6 +9072,18 @@ export type Database = {
         Returns: Json
       }
       generate_order_number: { Args: never; Returns: string }
+      get_active_ads_for_placement: {
+        Args: { p_limit?: number; p_placement?: string }
+        Returns: {
+          cta_text: string
+          cta_url: string
+          headline: string
+          id: string
+          image_url: string
+          primary_text: string
+          video_url: string
+        }[]
+      }
       get_active_device_public_key: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: {
@@ -9836,6 +9864,10 @@ export type Database = {
           top_category: string
           total: number
         }[]
+      }
+      track_ad_interaction: {
+        Args: { p_ad_id: string; p_kind: string; p_placement?: string }
+        Returns: boolean
       }
       try_consume_backup_pin_attempt: {
         Args: {

@@ -92,6 +92,13 @@
       "when": 1791392036213,
       "tag": "0012_restrict_creator_ads_and_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791392123882,
+      "tag": "0013_harden_and_improve_ad_delivery",
+      "breakpoints": true
     }
   ]
 }
