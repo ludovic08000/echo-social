@@ -2,17 +2,34 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 export async function testNewsDiscussionsDatabase(db) {
   await db.exec('RESET ROLE');
-  await db.exec(`CREATE TABLE abuse_reports(reporter_id uuid,reported_user_id uuid,report_type text,description text,evidence_urls text[]);
-    CREATE FUNCTION has_role(uid uuid,role text) RETURNS boolean LANGUAGE sql AS $$ SELECT uid='00000000-0000-4000-8000-000000000809'::uuid AND role='admin' $$;`);
-  await db.exec(readFileSync(new URL('../supabase/migrations/20261005225507_news_discussions_and_context.sql',import.meta.url),'utf8'));
-  await db.exec(readFileSync(new URL('../supabase/migrations/20261007211600_partner_media_thumbnails_and_inline_comments.sql',import.meta.url),'utf8'));
-  await db.exec(readFileSync(new URL('../supabase/migrations/20261007211800_partner_media_thumbnail_proxy.sql',import.meta.url),'utf8'));
   const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
   const q=(sql,args=[])=>db.query(sql,args);
   const scalar=async(sql,args=[])=>Object.values((await q(sql,args)).rows[0])[0];
+  await db.exec(`CREATE TABLE abuse_reports(reporter_id uuid,reported_user_id uuid,report_type text,description text,evidence_urls text[]);
+    CREATE FUNCTION has_role(uid uuid,role text) RETURNS boolean LANGUAGE sql AS $$ SELECT uid='00000000-0000-4000-8000-000000000809'::uuid AND role='admin' $$;`);
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261005225507_news_discussions_and_context.sql',import.meta.url),'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261007203500_automatic_contextual_partner_media.sql',import.meta.url),'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261007211600_partner_media_thumbnails_and_inline_comments.sql',import.meta.url),'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261007211800_partner_media_thumbnail_proxy.sql',import.meta.url),'utf8'));
+  // Simulate a source cached before thumbnail/video support. The final migration
+  // must invalidate only the worker lease and validators, never social data.
+  await q(`UPDATE partner_rss_sources SET enabled=true,auto_publish=true,etag='"legacy"',
+    last_modified='Tue, 06 Oct 2026 10:00:00 GMT',next_fetch_at=now()+interval '1 day',
+    lease_token=$2,lease_until=now()+interval '5 minutes' WHERE id=$1`,[id(760),id(799)]);
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261007220000_perfect_partner_media_delivery.sql',import.meta.url),'utf8'));
   let checks=0;const eq=(a,b)=>{assert.deepEqual(a,b);checks++;};
   const rejects=async(sql,args=[],pattern=/permission denied/)=>{await assert.rejects(()=>q(sql,args),pattern);checks++;};
   const login=async n=>{await db.exec('RESET ROLE');await q("SELECT set_config('request.jwt.claim.sub',$1,false)",[n?id(n):'']);await db.exec('SET ROLE authenticated');};
+  eq(await scalar("SELECT to_regprocedure('public.partner_media_thumbnail_source(uuid)') IS NULL"),true);
+  eq(await scalar('SELECT etag IS NULL AND last_modified IS NULL AND lease_token IS NULL AND next_fetch_at<=now() FROM partner_rss_sources WHERE id=$1',[id(760)]),true);
+  await db.exec('SET ROLE service_role');
+  const [videoClaim]=await scalar('SELECT claim_partner_rss_sources(1)');
+  eq(videoClaim.allow_youtube_embed,false);
+  const videoItem={external_id:'rss:'+'c'.repeat(64),title:'VIDÉO. Fixture',excerpt:'',canonical_url:'https://region.invalid/videos/fixture',kind:'video',youtube_id:null,thumbnail_url:'https://cdn.region.invalid/video.jpg',published_at:new Date(Date.now()-3600000).toISOString(),expires_at:new Date(Date.now()+86400000).toISOString()};
+  await rejects('SELECT finish_partner_rss_import($1,$2,$3,$4)',[id(760),videoClaim.lease_token,JSON.stringify([{...videoItem,youtube_id:'abcdefghijk'}]),'success'],/INVALID_RSS_ITEM/);
+  eq(await scalar('SELECT finish_partner_rss_import($1,$2,$3,$4)',[id(760),videoClaim.lease_token,JSON.stringify([videoItem]),'success']),true);
+  eq(await scalar('SELECT kind FROM partner_media_items WHERE external_id=$1',[videoItem.external_id]),'video');
+  await db.exec('RESET ROLE');
   for(const n of [801,802,803,809]) {
     await q('INSERT INTO auth.users VALUES($1)',[id(n)]);
     await q("INSERT INTO profiles(user_id,date_of_birth,city) VALUES($1,$2,'Reims')",[id(n),n===803?'2015-01-01':'1990-01-01']);
@@ -31,7 +48,6 @@ export async function testNewsDiscussionsDatabase(db) {
   eq(await scalar('SELECT import_partner_media($1,$2)',[id(810),JSON.stringify(importedRows)]),2);
   eq(await scalar('SELECT moderated FROM partner_media_items WHERE id=$1',[id(811)]),true);
   eq(await scalar('SELECT thumbnail_url FROM partner_media_items WHERE id=$1',[id(811)]),thumbnail);
-  eq(await scalar('SELECT partner_media_thumbnail_source($1)',[id(811)]),thumbnail);
   const tid=await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(811)]);
   const adult=await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(814)]);
   eq(tid,await scalar('SELECT discussion_id FROM partner_media_items WHERE id=$1',[id(812)]));
@@ -40,7 +56,6 @@ export async function testNewsDiscussionsDatabase(db) {
   const add=(n,text='Hello',parent=null,thread=tid)=>scalar('SELECT add_news_comment($1,$2,$3,$4)',[thread,id(n),text,parent]);
   await login(801);eq((await read()).article.title,'Licensed title');eq((await read()).article.thumbnail_url,thumbnail);
   for(const table of ['news_threads','news_comments','news_comment_limits','news_comment_reports']) await rejects('SELECT * FROM '+table);
-  await rejects('SELECT partner_media_thumbnail_source($1)',[id(811)]);
   await rejects('SELECT news_thread_readable($1,$2)',[tid,id(802)]);
   await rejects('SELECT partner_media_for_zone($1,$2,$3,$4,$5)',['france','all',null,null,null]);
   await rejects('INSERT INTO news_comments(id,thread_id,user_id,body) VALUES($1,$2,$3,$4)',[id(820),tid,id(802),'forged']);
@@ -78,15 +93,15 @@ export async function testNewsDiscussionsDatabase(db) {
   eq(await scalar('SELECT report_news_comment($1,$2)',[id(830),'spam']),false);
   await db.exec('RESET ROLE');eq(Number(await scalar('SELECT count(*) FROM news_comment_reports WHERE reporter_id=$1',[id(802)])),20);
   await login(801);
-  // Coarse context never saves data; explicit opt-out wins over any client-supplied region.
+  // Partner news routing is automatic and independent from the old optional media preference.
   const context=()=>scalar("SELECT get_contextual_partner_media('nearby','all','FR','Grand Est','Reims')");
   eq((await context()).some(x=>x.discussion_id===tid),true);
   eq((await context()).find(x=>x.discussion_id===tid).thumbnail_url,thumbnail);
   eq(Number(await scalar('SELECT count(*) FROM discovery_preferences')),0);
   await scalar('SELECT set_discovery_preferences($1)',[JSON.stringify({local_media:false})]);
-  eq((await context()).some(x=>x.discussion_id===tid),false);
+  eq((await context()).some(x=>x.discussion_id===tid),true);
   await scalar('SELECT set_discovery_preferences($1)',[JSON.stringify({local_media:true,country:'FR',region:'Bretagne',city:'Rennes'})]);
-  eq((await context()).some(x=>x.discussion_id===tid),false); // manual region not overwritten
+  eq((await context()).some(x=>x.discussion_id===tid),true); // automatic request context wins over legacy preferences
   await db.exec('RESET ROLE');
   // Expiring RSS deletes neither the thread nor the member discussions, and exposes no expired excerpts.
   await q('DELETE FROM partner_media_items WHERE id IN ($1,$2)',[id(811),id(812)]);
@@ -99,5 +114,5 @@ export async function testNewsDiscussionsDatabase(db) {
   eq(Number(await scalar('SELECT count(*) FROM news_comments WHERE thread_id=$1',[tid])),58);
   await login(null);eq(await read(),null);await rejects('SELECT add_news_comment($1,$2,$3)',[tid,id(889),'unauth'],/AUTH_REQUIRED/);
   await db.exec('SET ROLE anon');await rejects('SELECT get_news_discussion($1)',[tid]);await rejects('SELECT add_news_comment($1,$2,$3)',[tid,id(890),'anon']);
-  console.log(`News discussions SQL: ${checks} functional checks passed (authorization, blocking, moderation, idempotency, paging, rights expiry and context opt-out).`);
+  console.log(`News discussions SQL: ${checks} functional checks passed (authorization, blocking, moderation, idempotency, paging, rights expiry and automatic context).`);
 }

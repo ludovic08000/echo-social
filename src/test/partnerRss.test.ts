@@ -7,7 +7,8 @@ import { rssHandler } from '../../supabase/functions/partner-rss-sync/handler';
 const now = Date.parse('2026-10-06T10:00:00Z');
 const source: RssSource = {
   id: 'source-1', partner_id: 'partner-1', source_key: 'le-parisien', lease_token: 'lease-1',
-  website_host: 'www.leparisien.fr', allow_excerpt: true, rights_until: '2026-11-01T00:00:00Z', etag: null, last_modified: null,
+  website_host: 'www.leparisien.fr', allow_excerpt: true, allow_youtube_embed: false,
+  rights_until: '2026-11-01T00:00:00Z', etag: null, last_modified: null,
   country: 'FR', region: null, city: null,
 };
 const entry = (fields = '') => `<item><title>Actualité &amp; région</title><link>https://www.leparisien.fr/test?utm_source=rss</link><pubDate>Tue, 06 Oct 2026 09:00:00 GMT</pubDate>${fields}</item>`;
@@ -50,10 +51,22 @@ describe('daily RSS normalization', () => {
     expect(rssItem.thumbnail_url).toBe('https://cdn.publisher.test/photo.jpg');
     const atom = '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Bonjour</title><link rel="alternate" href="https://www.leparisien.fr/atom-image"/><link rel="enclosure" type="image/webp" href="https://img.publisher.test/p.webp"/><published>2026-10-06T09:00:00Z</published></entry></feed>';
     expect((await parseRss(atom, source, now))[0].thumbnail_url).toBe('https://img.publisher.test/p.webp');
-    for (const image of ['javascript:alert(1)','http://img.test/a.jpg','https://user:pass@img.test/a.jpg']) {
+    const html = rss(entry('<description><![CDATA[<p>Résumé<img data-src="https://cdn.publisher.test/from-html.jpg"></p>]]></description>'));
+    expect((await parseRss(html, source, now))[0].thumbnail_url).toBe('https://cdn.publisher.test/from-html.jpg');
+    for (const image of ['javascript:alert(1)','http://img.test/a.jpg','https://user:pass@img.test/a.jpg','https://127.0.0.1/a.jpg','https://cdn.publisher.test:444/a.jpg']) {
       const [item] = await parseRss(rss(entry(`<media:thumbnail url="${image}"/>`)), source, now);
       expect(item.thumbnail_url).toBeNull();
     }
+  });
+  it('classifies publisher video pages and only retains YouTube IDs when embedding is granted', async () => {
+    const video = rss(entry('<media:content medium="video" type="video/mp4" url="https://www.youtube.com/watch?v=abcdefghijk"/><enclosure type="image/jpeg" url="https://cdn.publisher.test/video.jpg"/>'));
+    const denied = (await parseRss(video, source, now))[0];
+    expect(denied).toMatchObject({ kind: 'video', youtube_id: null, thumbnail_url: 'https://cdn.publisher.test/video.jpg' });
+    const allowed = (await parseRss(video, { ...source, allow_youtube_embed: true }, now))[0];
+    expect(allowed.youtube_id).toBe('abcdefghijk');
+    const publisherPage = rss(entry().replace('/test?utm_source=rss', '/article/videos/reportage'))
+      .replace('Actualité &amp; région', 'VIDÉO. Le reportage du jour');
+    expect((await parseRss(publisherPage, source, now))[0].kind).toBe('video');
   });
   it('honors excerpt rights and expiry', async () => {
     const [item] = await parseRss(rss(entry('<description>Excerpt</description>')), { ...source, allow_excerpt: false, rights_until: '2026-10-07T00:00:00Z' }, now);

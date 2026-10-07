@@ -23,6 +23,7 @@ describe('partner media UI',()=>{
     expect(await screen.findByText('Formulaire de commentaires réel')).toBeInTheDocument();
     expect(screen.getByText('Ouvrir la discussion')).toHaveAttribute('href','/news/durable');
     expect(await screen.findByText('Partager')).toHaveAttribute('href',`${window.location.origin}/news/durable`);
+    expect(screen.getByText('Aperçu de l’actualité')).toBeInTheDocument();
   });
   it('always requests automatic context and falls back to France',async()=>{
     mocks.rpc.mockResolvedValue({data:[],error:null});mount();await screen.findByText(/Aucun contenu/);
@@ -35,6 +36,8 @@ describe('partner media UI',()=>{
     await screen.findByText('Vidéo partenaire');
     expect(container.querySelector('img')?.getAttribute('src')).toContain('/functions/v1/partner-media-thumbnail?id=');
     expect(container.querySelector('img')?.getAttribute('src')).not.toContain('img.invalid');
+    fireEvent.error(container.querySelector('img')!);
+    expect(screen.getByText('Aperçu vidéo')).toBeInTheDocument();
     expect(container.querySelector('iframe')).toBeNull();
     expect(screen.queryByRole('group',{name:'Zone des médias'})).toBeNull();
     expect(screen.getByText(/Voir comment la zone/).getAttribute('href')).toBe('/privacy');

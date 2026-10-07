@@ -5,13 +5,14 @@ export const MAX_RSS_BYTES = 1_000_000;
 const DAY = 86_400_000;
 export interface RssSource {
   id: string; partner_id: string; source_key: string; lease_token: string;
-  website_host: string; allow_excerpt: boolean; rights_until: string;
+  website_host: string; allow_excerpt: boolean; allow_youtube_embed: boolean; rights_until: string;
   etag: string | null; last_modified: string | null;
   country: string; region: string | null; city: string | null;
 }
 export interface RssItem {
   external_id: string; title: string; excerpt: string; canonical_url: string;
-  kind: 'article'; thumbnail_url: string | null; published_at: string; expires_at: string;
+  kind: 'article' | 'video'; youtube_id: string | null; thumbnail_url: string | null;
+  published_at: string; expires_at: string;
 }
 type XmlNode = Record<string, unknown>;
 const node = (value: unknown): XmlNode => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as XmlNode : {};
@@ -49,21 +50,98 @@ function safeThumbnail(value: unknown): string | null {
   if (!candidate || candidate.length > 2048 || hasUnsafeUrlCharacters(candidate)) return null;
   try {
     const url = new URL(candidate);
-    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+    const host = url.hostname.toLowerCase();
+    const localName = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal');
+    const literalAddress = host.includes(':') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || !host.includes('.') || localName || literalAddress) return null;
+    url.hash = '';
+    return url.href;
   } catch { return null; }
 }
 
+function mediaValues(entry: XmlNode, key: string): unknown[] {
+  return [
+    ...list(entry[key]),
+    ...list(entry['media:group']).flatMap(group => list(node(group)[key])),
+  ];
+}
+
+function htmlImage(value: unknown): string | null {
+  const markup = text(value);
+  const pattern = /<img\b[^>]*\b(?:src|data-src)\s*=\s*["']([^"']+)["']/gi;
+  for (let match = pattern.exec(markup); match; match = pattern.exec(markup)) {
+    const safe = safeThumbnail(match[1].replace(/&amp;/gi, '&'));
+    if (safe) return safe;
+  }
+  return null;
+}
+
 function thumbnail(entry: XmlNode): string | null {
-  const media = list(entry['media:content']).map(node);
+  const media = mediaValues(entry, 'media:content').map(node);
   const enclosure = list(entry.enclosure).map(node);
   const atomLinks = list(entry.link).map(node);
   const candidates = [
-    ...list(entry['media:thumbnail']).map(value => node(value)['@_url']),
+    ...mediaValues(entry, 'media:thumbnail').map(value => node(value)['@_url']),
     ...media.filter(value => value['@_medium'] === 'image' || String(value['@_type'] ?? '').startsWith('image/')).map(value => value['@_url']),
     ...enclosure.filter(value => String(value['@_type'] ?? '').startsWith('image/')).map(value => value['@_url']),
     ...atomLinks.filter(value => value['@_rel'] === 'enclosure' && String(value['@_type'] ?? '').startsWith('image/')).map(value => value['@_href']),
   ];
   for (const value of candidates) { const safe = safeThumbnail(value); if (safe) return safe; }
+  for (const value of [entry.description, entry.summary, entry['content:encoded'], entry.content]) {
+    const safe = htmlImage(value);
+    if (safe) return safe;
+  }
+  return null;
+}
+
+const normalizedWord = (value: string): string => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+
+function isVideo(entry: XmlNode, url: string, title: string): boolean {
+  const media = mediaValues(entry, 'media:content').map(node);
+  const enclosure = list(entry.enclosure).map(node);
+  const atomLinks = list(entry.link).map(node);
+  const typedVideo = [
+    ...media.map(value => `${String(value['@_medium'] ?? '')} ${String(value['@_type'] ?? '')}`),
+    ...enclosure.map(value => String(value['@_type'] ?? '')),
+    ...atomLinks.filter(value => value['@_rel'] === 'enclosure').map(value => String(value['@_type'] ?? '')),
+  ].some(value => /(?:^|\s)video(?:\/|\s|$)/i.test(value));
+  const categoryVideo = [...list(entry.category), ...mediaValues(entry, 'media:category')]
+    .map(value => normalizedWord(text(value) || String(node(value)['@_label'] ?? '')))
+    .some(value => value === 'video' || value === 'videos');
+  const pathname = new URL(url).pathname;
+  return typedVideo || mediaValues(entry, 'media:player').length > 0 || !!text(entry['yt:videoId'])
+    || /\/(?:video|videos)(?:\/|$)/i.test(pathname) || /^\s*vid[eé]o\b[\s:.-]*/i.test(title) || categoryVideo;
+}
+
+function youtubeIdFromUrl(value: unknown): string | null {
+  const candidate = text(value) || String(node(value)['@_url'] ?? node(value)['@_href'] ?? '');
+  if (!candidate || hasUnsafeUrlCharacters(candidate)) return null;
+  try {
+    const url = new URL(candidate);
+    const host = url.hostname.toLowerCase();
+    let id = '';
+    if (host === 'youtu.be') id = url.pathname.split('/').filter(Boolean)[0] ?? '';
+    else if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'www.youtube-nocookie.com'].includes(host)) {
+      id = url.searchParams.get('v') ?? url.pathname.match(/^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{11})(?:\/|$)/)?.[1] ?? '';
+    }
+    return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+  } catch { return null; }
+}
+
+function youtubeId(entry: XmlNode, allowed: boolean): string | null {
+  if (!allowed) return null;
+  const declared = text(entry['yt:videoId']).trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(declared)) return declared;
+  const candidates = [
+    ...mediaValues(entry, 'media:player'),
+    ...mediaValues(entry, 'media:content'),
+    ...list(entry.enclosure),
+    ...list(entry.link),
+  ];
+  for (const candidate of candidates) {
+    const id = youtubeIdFromUrl(candidate);
+    if (id) return id;
+  }
   return null;
 }
 
@@ -78,7 +156,7 @@ function parisienUrlDate(url: string): number {
   return Number.isFinite(stamp) && new Date(stamp).toISOString() === iso ? stamp : NaN;
 }
 
-export async function parseRss(xml: string, source: Pick<RssSource, 'website_host' | 'allow_excerpt' | 'rights_until'>, now = Date.now()): Promise<RssItem[]> {
+export async function parseRss(xml: string, source: Pick<RssSource, 'website_host' | 'allow_excerpt' | 'allow_youtube_embed' | 'rights_until'>, now = Date.now()): Promise<RssItem[]> {
   if (new TextEncoder().encode(xml).length > MAX_RSS_BYTES) throw new Error('FEED_TOO_LARGE');
   if (/<!\s*(DOCTYPE|ENTITY)\b/i.test(xml)) throw new Error('UNSAFE_XML');
   const until = Date.parse(source.rights_until);
@@ -107,8 +185,9 @@ export async function parseRss(xml: string, source: Pick<RssSource, 'website_hos
     const published = declaredDate ? Date.parse(declaredDate) : url ? parisienUrlDate(url) : NaN;
     const expires = Math.min(published + 7 * DAY, until);
     if (!url || !title || !Number.isFinite(published) || published > now || expires <= now || deduped.has(url)) continue;
+    const kind = isVideo(entry, url, title) ? 'video' : 'article';
     deduped.set(url, {
-      title, canonical_url: url, kind: 'article',
+      title, canonical_url: url, kind, youtube_id: kind === 'video' ? youtubeId(entry, source.allow_youtube_embed) : null,
       thumbnail_url: thumbnail(entry),
       excerpt: source.allow_excerpt ? plain(entry.description ?? entry.summary, 400) : '',
       published_at: new Date(published).toISOString(), expires_at: new Date(expires).toISOString(),

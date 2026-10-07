@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageCircle, Play } from 'lucide-react';
+import { MessageCircle, Newspaper, Play } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -21,11 +21,16 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
   const embed = youtubeEmbedUrl(item.youtube_id);
   if (!url) return null;
   return <article className="overflow-hidden rounded-xl border border-border bg-card">
-    {thumbnail && <a href={url} target="_blank" rel="noopener noreferrer" className="relative block aspect-video bg-muted">
-      <img src={thumbnail} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
+    <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Ouvrir chez ${item.source_name} : ${item.title}`}
+      className="relative block aspect-video overflow-hidden bg-gradient-to-br from-primary/20 via-muted to-secondary/30">
+      {thumbnail ? <img src={thumbnail} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
         className="h-full w-full object-cover" onError={() => setImageFailed(true)} />
+        : <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground" data-testid="partner-media-fallback">
+          <Newspaper className="h-10 w-10" aria-hidden="true" />
+          <span className="text-sm font-medium">{item.kind === 'video' ? 'Aperçu vidéo' : 'Aperçu de l’actualité'}</span>
+        </span>}
       {item.kind === 'video' && <span className="absolute inset-0 grid place-items-center bg-black/20" aria-hidden="true"><span className="grid h-12 w-12 place-items-center rounded-full bg-black/70 text-white"><Play className="h-6 w-6 fill-current" /></span></span>}
-    </a>}
+    </a>
     <div className="p-3 space-y-2">
     <p className="text-xs text-muted-foreground">{item.source_name} · {item.kind === 'video' ? 'Vidéo' : 'Actualité'} · {new Date(item.published_at).toLocaleDateString('fr-FR')}</p>
     <p className="text-xs text-muted-foreground">{[item.city, item.region].filter(Boolean).join(' · ') || 'France'}{item.proximity === 'national' ? ' · Sélection nationale' : ''}</p>
