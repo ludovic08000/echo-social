@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       // Cache trust score 3 minutes per user
       const data = await cached(`trust:${userId}`, 180_000, async () => {
         const { data, error } = await supabase
-          .from("trust_scores")
+          .from("trust_scores" as any)
           .select("*")
           .eq("user_id", userId)
           .maybeSingle();
@@ -101,13 +101,13 @@ Deno.serve(async (req) => {
       // ── PARALLEL: fetch all data in one shot instead of sequential queries ──
       const [profileRes, existingRes, sellerRes, friendCountRes, reportsReceivedRes, reportsConfirmedRes] =
         await Promise.all([
-          supabase.from("profiles").select("created_at").eq("user_id", userId).single(),
-          supabase.from("trust_scores").select("*").eq("user_id", userId).maybeSingle(),
-          supabase.from("seller_profiles").select("rating_average, rating_count, total_sales").eq("user_id", userId).maybeSingle(),
-          supabase.from("friendships").select("id", { count: "exact", head: true })
+          supabase.from("profiles" as any).select("created_at").eq("user_id", userId).single(),
+          supabase.from("trust_scores" as any).select("*").eq("user_id", userId).maybeSingle(),
+          supabase.from("seller_profiles" as any).select("rating_average, rating_count, total_sales").eq("user_id", userId).maybeSingle(),
+          supabase.from("friendships" as any).select("id", { count: "exact", head: true })
             .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`).eq("status", "accepted"),
-          supabase.from("abuse_reports").select("id", { count: "exact", head: true }).eq("reported_user_id", userId),
-          supabase.from("abuse_reports").select("id", { count: "exact", head: true })
+          supabase.from("abuse_reports" as any).select("id", { count: "exact", head: true }).eq("reported_user_id", userId),
+          supabase.from("abuse_reports" as any).select("id", { count: "exact", head: true })
             .eq("reported_user_id", userId).eq("status", "confirmed"),
         ]);
 
@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
       });
 
       const { data: result, error } = await supabase
-        .from("trust_scores")
+        .from("trust_scores" as any)
         .upsert({
           user_id: userId,
           trust_score: scores.trustScore,
