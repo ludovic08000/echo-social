@@ -71,6 +71,41 @@
       "when": 1790733316460,
       "tag": "0009_wire_settings_privacy_parental_content",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791391977817,
+      "tag": "0010_friend_group_post_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791392000451,
+      "tag": "0011_enforce_single_post_reaction",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791392036213,
+      "tag": "0012_restrict_creator_ads_and_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791392123882,
+      "tag": "0013_harden_and_improve_ad_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791392206057,
+      "tag": "0014_optimize_feed_media_delivery",
+      "breakpoints": true
     }
   ]
 }
