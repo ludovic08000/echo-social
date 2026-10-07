@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       }
 
       for (const row of data || []) {
-        const val = (row as Record<string, string>)[column];
+        const val = (row as unknown as Record<string, string>)[column];
         if (val && typeof val === "string" && val.includes(r2PublicUrl)) {
           referencedUrls.add(val);
         }
@@ -224,7 +224,7 @@ async function sign(
 }
 
 async function sha256Hex(data: Uint8Array): Promise<string> {
-  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", data)));
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", data as BufferSource)));
 }
 
 async function hmacSha256(key: Uint8Array | ArrayBuffer, message: string): Promise<Uint8Array> {
