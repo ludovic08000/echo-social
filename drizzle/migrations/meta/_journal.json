@@ -99,6 +99,13 @@
       "when": 1791396436571,
       "tag": "0013_consented_city_ad_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791406087609,
+      "tag": "0014_partner_media_thumbnails_and_inline_comments",
+      "breakpoints": true
     }
   ]
 }
