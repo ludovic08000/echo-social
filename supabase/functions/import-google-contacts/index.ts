@@ -160,7 +160,7 @@ async function fetchGoogleContacts(
       url.searchParams.set("pageToken", nextPageToken);
     }
 
-    const res = await fetch(url.toString(), {
+    const res: Response = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
@@ -170,7 +170,7 @@ async function fetchGoogleContacts(
       throw new Error(`Google API error ${res.status}: ${errorBody}`);
     }
 
-    const data = await res.json();
+    const data: any = await res.json();
     const connections = data.connections || [];
 
     for (const person of connections) {
@@ -215,7 +215,7 @@ async function fetchMicrosoftContacts(
       throw new Error(`Microsoft API error ${res.status}: ${errorBody}`);
     }
 
-    const data = await res.json();
+    const data: any = await res.json();
     const items = data.value || [];
 
     for (const contact of items) {

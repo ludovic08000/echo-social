@@ -47,7 +47,7 @@ function concatBytes(...arr: Uint8Array[]) {
   return out;
 }
 async function sha256(b: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", b));
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", b as BufferSource));
 }
 
 function canonicalLeafPayload(entry: any): string {
@@ -150,7 +150,7 @@ async function signEd25519(privJwk: JsonWebKey, data: Uint8Array): Promise<strin
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign({ name: "Ed25519" }, key, data);
+  const sig = await crypto.subtle.sign({ name: "Ed25519" }, key, data as BufferSource);
   return bytesToHex(new Uint8Array(sig));
 }
 
