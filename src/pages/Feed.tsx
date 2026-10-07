@@ -31,6 +31,7 @@ import { FlowUniversalSearch } from '@/components/flow/FlowUniversalSearch';
 import { FlowDashboard } from '@/components/flow/FlowDashboard';
 import { SEOHead } from '@/components/SEOHead';
 import { buildFeedMeta } from '@/lib/seo/buildMeta';
+import { getFeedAdSlot } from '@/lib/ads/adDelivery';
 
 // Lazy-load heavy injection components — only loaded when scrolled into view
 const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions').then(m => ({ default: m.FriendSuggestions })));
@@ -38,31 +39,33 @@ const FriendSuggestionsByCity = lazy(() => import('@/components/feed/FriendSugge
 const FeedReelsSection = lazy(() => import('@/components/feed/FeedReelsSection').then(m => ({ default: m.FeedReelsSection })));
 const FeedMarketplaceSection = lazy(() => import('@/components/feed/FeedMarketplaceSection').then(m => ({ default: m.FeedMarketplaceSection })));
 const FeedMediaSection = lazy(() => import('@/components/feed/FeedMediaSection').then(m => ({ default: m.FeedMediaSection })));
+const LocalMediaSection = lazy(() => import('@/components/feed/LocalMediaSection').then(m => ({ default: m.LocalMediaSection })));
 
-const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace'> = {
+const INJECTION_MAP: Record<number, 'suggestions' | 'suggestions_city' | 'reels' | 'media' | 'marketplace' | 'local_news'> = {
   3: 'media',
   6: 'suggestions_city',
+  10: 'local_news',
   15: 'suggestions',
   20: 'reels',
   28: 'suggestions',
 };
 
 export default function Feed() {
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = usePosts();
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, snapshotExpired, restartFeed } = usePosts();
   const navigate = useNavigate();
   const { id: profileId } = useParams<{ id: string }>();
   
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const [feedWeights, setFeedWeights] = useState(loadFeedWeights);
-  const { data: activeAds } = useActiveAds();
+  const { data: activeAds } = useActiveAds('feed');
   const feedBgStyle = useCustomBackground(profileId ? 'profile' : 'feed', profileId);
   const { feedStyle: feedCustomStyle } = useFeedCustomization();
   const { isMinor, isUnlocked, requestUnlock } = useParentalGate();
   const isMobile = useIsMobile();
 
   useFeedScrollMemory('feed-main-scroll');
-  const feedPerf = useFeedPerformance();
+  const { markFeedStart, markFeedReady, trackPostsRendered, measureFPS } = useFeedPerformance();
   const { isFlow } = useUXMode();
 
   useEffect(() => {
@@ -93,24 +96,54 @@ export default function Feed() {
   // client-side ML sort here adds latency and can make the feed reshuffle.
   const posts = rawPosts;
 
+  // Warm the media CDN connection as soon as the ranked page arrives. The
+  // hints are intentionally kept for the tab lifetime so later pages reuse the
+  // same TLS connection without adding render-blocking work.
+  useEffect(() => {
+    const origins = new Set<string>();
+    for (const post of posts.slice(0, 8)) {
+      for (const mediaUrl of [post.image_url, post.media_thumbnail_url, post.profile.avatar_url]) {
+        if (!mediaUrl) continue;
+        try {
+          const parsed = new URL(mediaUrl);
+          if (parsed.protocol === 'https:') origins.add(parsed.origin);
+        } catch {
+          // Ignore malformed legacy URLs; the media component handles fallback.
+        }
+      }
+    }
+
+    for (const origin of origins) {
+      const exists = Array.from(document.head.querySelectorAll<HTMLLinkElement>('link[data-forsure-media-origin]'))
+        .some((link) => link.dataset.forsureMediaOrigin === origin);
+      if (exists) continue;
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = origin;
+      link.crossOrigin = 'anonymous';
+      link.dataset.forsureMediaOrigin = origin;
+      document.head.appendChild(link);
+    }
+  }, [posts]);
+
   // Track feed load performance
   useEffect(() => {
-    feedPerf.markFeedStart();
-  }, []);
+    markFeedStart();
+  }, [markFeedStart]);
 
   useEffect(() => {
     if (!isLoading && posts.length > 0) {
-      feedPerf.markFeedReady();
-      feedPerf.trackPostsRendered(posts.length);
+      markFeedReady();
+      trackPostsRendered(posts.length);
     }
-  }, [isLoading, posts.length]);
+  }, [isLoading, markFeedReady, posts.length, trackPostsRendered]);
 
   // Sample FPS every 2 minutes
   useEffect(() => {
-    const iv = setInterval(() => feedPerf.measureFPS(), 120_000);
-    const t = setTimeout(() => feedPerf.measureFPS(), 5000);
+    const iv = setInterval(() => measureFPS(), 120_000);
+    const t = setTimeout(() => measureFPS(), 5000);
     return () => { clearInterval(iv); clearTimeout(t); };
-  }, []);
+  }, [measureFPS]);
 
   // P5: hydrate cloud-synced wellbeing prefs into the localStorage cache that
   // the minute-tick loop below reads synchronously.
@@ -128,7 +161,9 @@ export default function Feed() {
             setShowPauseReminder(true);
           }
         }
-      } catch {}
+      } catch {
+        // The local preference cache is best-effort; cloud state remains authoritative.
+      }
     }, 60000);
     return () => clearInterval(interval);
   }, [pauseDismissed]);
@@ -158,13 +193,13 @@ export default function Feed() {
       type = 'marketplace';
     }
 
-    if (!isMobile && activeAds?.length && index > 0 && index % 6 === 0) {
-      const adIndex = Math.floor(index / 6) % activeAds.length;
-      const ad = activeAds[adIndex];
+    const adSlot = getFeedAdSlot(index, isMobile, Boolean(type));
+    if (adSlot !== null && activeAds?.length && adSlot < activeAds.length * 2) {
+      const ad = activeAds[adSlot % activeAds.length];
       if (ad) {
         return (
           <LazyMount minHeight={220}>
-            <SponsoredPostCard ad={ad} />
+            <SponsoredPostCard ad={ad} placement="feed" />
           </LazyMount>
         );
       }
@@ -179,6 +214,7 @@ export default function Feed() {
           {type === 'suggestions' && <FriendSuggestions />}
           {type === 'suggestions_city' && <FriendSuggestionsByCity />}
           {type === 'media' && <FeedMediaSection />}
+          {type === 'local_news' && <LocalMediaSection />}
           {type === 'marketplace' && <FeedMarketplaceSection />}
         </Suspense>
       </LazyMount>
@@ -228,6 +264,13 @@ export default function Feed() {
               <ProfileFeedView userId={profileId} />
             ) : (
             <>
+            {snapshotExpired && (
+              <div role="status" className="p-3 text-center">
+                <Button variant="outline" onClick={() => void restartFeed()}>
+                  Actualiser le fil pour voir les nouvelles publications
+                </Button>
+              </div>
+            )}
             {/* Scroll pause reminder */}
             <AnimatePresence>
               {showPauseReminder && (
@@ -376,7 +419,7 @@ export default function Feed() {
                         containIntrinsicSize: '720px',
                       } as React.CSSProperties}
                     >
-                      <PostCard post={post} />
+                      <PostCard post={post} mediaPriority={index < 2} />
                       {!wellbeingPrefs.focusModeEnabled && renderInjection(index)}
                     </div>
                   ))}

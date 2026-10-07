@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { ParentalGateProvider } from "@/components/ParentalGate";
 import { I18nProvider } from "@/lib/i18n";
 import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContext";
-import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
+import { CreatorOnlyRoute, ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
@@ -76,6 +76,7 @@ const lazyWithOneRetry = <TModule extends { default: React.ComponentType<object>
 });
 
 const PostDetail = lazyWithOneRetry(() => import("./pages/PostDetail"), 'r-post');
+const NewsDiscussion = lazyWithOneRetry(() => import("./pages/NewsDiscussion"), 'r-news');
 const Landing = lazyWithOneRetry(() => import("./pages/Landing"), 'r-landing');
 const Login = lazyWithOneRetry(() => import("./pages/Login"), 'r-login');
 const OAuthConsent = lazyWithOneRetry(() => import("./pages/OAuthConsent"), 'r-oauth');
@@ -327,6 +328,7 @@ function AppContent() {
                     <Route path="/auth/confirm" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}><AuthConfirmPage /></Suspense>} />
                     <Route path="/feed" element={<Feed />} />
                     <Route path="/post/:id" element={<PostDetail />} />
+                    <Route path="/news/:id" element={<ProtectedRoute><NewsDiscussion /></ProtectedRoute>} />
                     <Route path="/profile/:id" element={<Feed />} />
                     <Route path="/search" element={<Search />} />
                     <Route path="/videos" element={<Videos />} />
@@ -343,9 +345,9 @@ function AppContent() {
                     <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
                     <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
                     <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
-                    <Route path="/ads" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
-                    <Route path="/publicites" element={<ProtectedRoute><AdsManager /></ProtectedRoute>} />
-                    <Route path="/ai-agents" element={<ProtectedRoute><AIAgents /></ProtectedRoute>} />
+                    <Route path="/ads" element={<CreatorOnlyRoute><AdsManager /></CreatorOnlyRoute>} />
+                    <Route path="/publicites" element={<CreatorOnlyRoute><AdsManager /></CreatorOnlyRoute>} />
+                    <Route path="/ai-agents" element={<CreatorOnlyRoute><AIAgents /></CreatorOnlyRoute>} />
                     <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
                     <Route path="/settings/transparence-cles" element={<ProtectedRoute><KeyTransparencyAudit /></ProtectedRoute>} />
                     <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />

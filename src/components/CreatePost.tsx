@@ -9,6 +9,7 @@ import { uploadToR2 } from '@/lib/r2';
 import { useAgeVerification } from '@/hooks/useAgeVerification';
 import { generateVideoThumbnail } from '@/lib/videoThumbnail';
 import { isVideoCompatible } from '@/lib/videoCompat';
+import { compressImageForUpload } from '@/lib/messaging/compressImage';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
@@ -198,35 +199,34 @@ export function CreatePost() {
             }
           };
 
-          // Run upload and thumbnail generation concurrently
-          // Thumbnail uses requestIdleCallback to avoid blocking
-          const [videoResult, thumbBlob] = await Promise.all([
+          // Upload the playback file and its lightweight poster in parallel.
+          // The poster lets the Feed paint a video immediately, before the
+          // browser has downloaded enough bytes to decode the first frame.
+          const thumbnailUpload = generateVideoThumbnail(media)
+            .then((thumbBlob) => {
+              const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
+              return uploadToR2(thumbFile, 'thumbnails').then(({ url }) => url);
+            })
+            .catch((error) => {
+              console.warn('Thumbnail upload failed', error);
+              return null;
+            });
+
+          const [videoResult, uploadedThumbnailUrl] = await Promise.all([
             uploadToR2(media, 'videos', undefined, throttledProgress),
-            new Promise<Blob | null>((resolve) => {
-              const doThumb = () => generateVideoThumbnail(media).catch(() => null).then(resolve);
-              if ('requestIdleCallback' in window) {
-                requestIdleCallback(() => doThumb());
-              } else {
-                setTimeout(doThumb, 0);
-              }
-            }),
+            thumbnailUpload,
           ]);
           imageUrl = videoResult.url;
-
-          if (thumbBlob) {
-            setUploadStep('Miniature…');
-            try {
-              const thumbFile = new File([thumbBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
-              const { url: thumbUrl } = await uploadToR2(thumbFile, 'thumbnails');
-              thumbnailUrl = thumbUrl;
-            } catch (e) {
-              console.warn('Thumbnail upload failed', e);
-            }
-          }
+          thumbnailUrl = uploadedThumbnailUrl;
         } else {
+          setUploadStep('Optimisation de l\'image…');
+          const optimizedImage = await compressImageForUpload(media, {
+            maxDimension: 1920,
+            quality: 0.82,
+          });
           setUploadStep('Envoi de l\'image…');
           let lastImgProgress = 0;
-          const { url } = await uploadToR2(media, 'post-images', undefined, (p) => {
+          const { url } = await uploadToR2(optimizedImage, 'post-images', undefined, (p) => {
             const now = Date.now();
             if (now - lastImgProgress > 250 || p.percent === 100) {
               lastImgProgress = now;
@@ -274,7 +274,13 @@ export function CreatePost() {
         }
       } catch {}
 
-      const newPost = await createPost.mutateAsync({ body: body.trim(), imageUrl, expiresAt, publishAt });
+      const newPost = await createPost.mutateAsync({
+        body: body.trim(),
+        imageUrl,
+        mediaThumbnailUrl: thumbnailUrl ?? undefined,
+        expiresAt,
+        publishAt,
+      });
 
       // Zeus moderation check (async, non-blocking)
       if (body.trim()) {

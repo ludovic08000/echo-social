@@ -8,6 +8,8 @@ import { Flag, CheckCircle, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { newsReportTarget } from '@/lib/newsDiscussion';
 
 export function ReportsSection() {
   const queryClient = useQueryClient();
@@ -41,6 +43,14 @@ export function ReportsSection() {
   });
 
   const pendingCount = reports?.filter(r => r.status === 'pending').length || 0;
+  const removeNewsComment = useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.rpc('moderate_news_comment' as never, { p_id: id } as never);
+      if (error || !data) throw error ?? new Error('Not removed');
+    },
+    onSuccess: () => { toast({ title: 'Commentaire masqué' }); void queryClient.invalidateQueries({ queryKey: ['news-discussion'] }); },
+    onError: () => toast({ title: 'Suppression non confirmée', variant: 'destructive' }),
+  });
 
   return (
     <div className="space-y-4">
@@ -75,6 +85,14 @@ export function ReportsSection() {
                         Signalé par <span className="font-medium">{r.reporterName}</span> · {format(new Date(r.created_at), 'dd/MM HH:mm', { locale: fr })}
                       </p>
                       {r.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.description}</p>}
+                      {(r.evidence_urls ?? []).map(url => {
+                        const news = newsReportTarget(url);
+                        return news ? <div key={url} className="flex flex-wrap gap-2 items-center">
+                          <Link className="text-xs underline" to={`/news/${news.thread}#comment-${news.comment}`}>Voir la discussion signalée</Link>
+                          <Button size="sm" variant="destructive" disabled={removeNewsComment.isPending}
+                            onClick={() => removeNewsComment.mutate(news.comment)}>Masquer le commentaire</Button>
+                        </div> : null;
+                      })}
                     </div>
                     {r.status === 'pending' && (
                       <div className="flex gap-1 shrink-0">

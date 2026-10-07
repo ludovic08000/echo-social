@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { KeyBackupPanel } from '@/components/KeyBackupPanel';
+import { DiscoveryPreferencesPanel } from './DiscoveryPreferencesPanel';
 import { Shield, Eye, MessageCircle, Heart, Search, BarChart3, Ghost, Globe, Lock, Trash2, AlertTriangle, KeyRound } from 'lucide-react';
 import { usePrivacySettings, useUpdatePrivacySettings, type PrivacySettingsUpdate } from '@/hooks/usePrivacySettings';
 import { RestrictedFriendsPanel } from './RestrictedFriendsPanel';
@@ -243,6 +244,7 @@ export function PrivacySettingsPanel() {
 
   return (
     <div className="space-y-8">
+      <DiscoveryPreferencesPanel />
       {/* Ghost Mode */}
       <section className="space-y-4">
         <div className="flex items-center gap-2">

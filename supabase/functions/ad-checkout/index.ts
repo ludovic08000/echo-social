@@ -16,17 +16,61 @@ serve(async (req) => {
   );
 
   try {
-    const authHeader = req.headers.get("Authorization")!;
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Non authentifié" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+      });
+    }
     const token = authHeader.replace("Bearer ", "");
     const { data } = await supabaseClient.auth.getUser(token);
     const user = data.user;
     if (!user?.email) throw new Error("Non authentifié");
 
-    const { campaign_id, amount, campaign_title } = await req.json();
-    if (!campaign_id || !amount) throw new Error("Données manquantes");
+    const serviceClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    );
 
-    // Validate amount server-side
-    const numAmount = Number(amount);
+    const { data: profile, error: profileError } = await serviceClient
+      .from("profiles")
+      .select("is_creator")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (profileError) throw new Error("Vérification du compte créateur indisponible");
+    if (profile?.is_creator !== true) {
+      return new Response(JSON.stringify({ error: "Accès réservé aux comptes créateur", code: "CREATOR_ACCOUNT_REQUIRED" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 403,
+      });
+    }
+
+    const { campaign_id } = await req.json();
+    if (!campaign_id) throw new Error("Données manquantes");
+
+    const { data: campaign, error: campaignError } = await serviceClient
+      .from("ad_campaigns")
+      .select("id, advertiser_id, title, budget, status")
+      .eq("id", campaign_id)
+      .eq("advertiser_id", user.id)
+      .maybeSingle();
+    if (campaignError) throw new Error("Campagne indisponible");
+    if (!campaign) {
+      return new Response(JSON.stringify({ error: "Campagne introuvable ou non autorisée" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 404,
+      });
+    }
+    if (campaign.status !== "pending_payment") {
+      return new Response(JSON.stringify({ error: "Cette campagne n'attend pas de paiement" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 409,
+      });
+    }
+
+    // The amount and title are loaded from the owned campaign, never trusted from the browser.
+    const numAmount = Number(campaign.budget);
     if (!Number.isFinite(numAmount) || numAmount < 1 || numAmount > 100000) {
       throw new Error("Montant invalide (min 1€, max 100 000€)");
     }
@@ -42,7 +86,10 @@ serve(async (req) => {
       customerId = customers.data[0].id;
     }
 
-    const origin = req.headers.get("origin") || "https://calm-connect-05.lovable.app";
+    const configuredOrigin = Deno.env.get("PUBLIC_SITE_URL") || "https://forsure.fans";
+    const requestOrigin = req.headers.get("origin");
+    const isLocalOrigin = requestOrigin ? /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin) : false;
+    const origin = requestOrigin === configuredOrigin || isLocalOrigin ? requestOrigin! : configuredOrigin;
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -52,7 +99,7 @@ serve(async (req) => {
           price_data: {
             currency: "eur",
             product_data: {
-              name: `Campagne pub: ${campaign_title || "ForSure Ads"}`,
+              name: `Campagne pub: ${campaign.title || "ForSure Ads"}`,
               description: `Budget publicitaire ForSure Ads`,
             },
             unit_amount: Math.round(numAmount * 100), // Convert to cents
@@ -68,6 +115,8 @@ serve(async (req) => {
         user_id: user.id,
         type: "ad_campaign",
       },
+    }, {
+      idempotencyKey: `forsure-ad-campaign-${campaign_id}`,
     });
 
     return new Response(JSON.stringify({ url: session.url }), {

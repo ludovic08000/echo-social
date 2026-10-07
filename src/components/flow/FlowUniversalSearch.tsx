@@ -3,6 +3,7 @@ import { Search, X, Home, Users, Settings, MessageCircle, Bot, Heart, Megaphone,
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useProfile } from '@/hooks/useProfile';
 
 const SEARCH_ITEMS = [
   { label: 'Accueil', path: '/feed', icon: Home, keywords: ['feed', 'home', 'accueil'] },
@@ -21,13 +22,15 @@ export function FlowUniversalSearch() {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { data: profile } = useProfile();
+  const availableItems = SEARCH_ITEMS.filter((item) => profile?.is_creator || item.path !== '/ads');
 
   const filtered = query.trim()
-    ? SEARCH_ITEMS.filter(item =>
+    ? availableItems.filter(item =>
         item.label.toLowerCase().includes(query.toLowerCase()) ||
         item.keywords.some(k => k.includes(query.toLowerCase()))
       )
-    : SEARCH_ITEMS.slice(0, 8);
+    : availableItems.slice(0, 8);
 
   const handleSelect = (item: typeof SEARCH_ITEMS[0]) => {
     if (item.path === '#zeus') {

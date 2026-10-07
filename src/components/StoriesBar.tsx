@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
+import { buildStoryReplyMessage } from '@/lib/messaging/storyReplyMessage';
 
 const STORY_DURATION = 5000;
 const QUICK_REACTIONS = [
@@ -219,12 +220,10 @@ export function StoriesBar() {
 
     try {
       const conversation = await createConversation.mutateAsync(currentStory.user_id);
-      // Attach the story media (image/video URL) so the recipient sees the
-      // exact story being replied to right inside the chat bubble.
+      // Invariant Aegis : une URL de story n'est jamais jointe à un message sans sa propre clé média MKEY.
       await sendMessage.mutateAsync({
         conversationId: conversation.id,
-        body: `↩️ Réponse à votre story : ${message.trim()}`,
-        imageUrl: currentStory.image_url || undefined,
+        ...buildStoryReplyMessage(message),
       });
       setReplyText('');
       resumeTimer();

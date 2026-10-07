@@ -1,5 +1,5 @@
 // ML Feed trainer: hourly job that learns user preferences and post features
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.0";
 import {
   evaluateMmrShadow,
   parsePgVector,
@@ -7,6 +7,8 @@ import {
   type MmrEvaluation,
   type SemanticCandidate,
 } from "../_shared/semantic-mmr.ts";
+
+import { trainingSnippet, clickThroughRate, normalizeAffinities } from "../_shared/feed-training-policy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +37,7 @@ interface InteractionRow {
 
 interface PostRow {
   id: string;
+  revision?: string;
   user_id: string;
   body: string | null;
   image_url: string | null;
@@ -74,7 +77,7 @@ async function generateEmbeddingBatch(texts: string[]): Promise<Array<number[] |
       signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
     });
     if (!resp.ok) {
-      console.error("embedding HTTP error:", resp.status, await resp.text().catch(() => ""));
+      console.error("embedding HTTP error:", resp.status);
       return output;
     }
     const data = await resp.json();
@@ -102,19 +105,6 @@ async function generateEmbeddingBatch(texts: string[]): Promise<Array<number[] |
 // Convert a JS number array into the pgvector text format: "[0.1,0.2,...]"
 function toPgVector(arr: number[]): string {
   return "[" + arr.map((n) => Number(n.toFixed(6))).join(",") + "]";
-}
-
-// Deterministically fold the 768d semantic vector into a normalized 256d
-// cold-start vector. A trained two-tower vector always wins and is never
-// overwritten by this seed.
-function foldSemanticEmbedding(embedding: number[]): number[] | null {
-  if (embedding.length !== 768 || embedding.some((value) => !Number.isFinite(value))) return null;
-  const folded = new Array(256).fill(0).map((_, index) => (
-    embedding[index] + embedding[index + 256] + embedding[index + 512]
-  ));
-  const norm = Math.sqrt(folded.reduce((sum, value) => sum + value * value, 0));
-  if (!Number.isFinite(norm) || norm === 0) return null;
-  return folded.map((value) => value / norm);
 }
 
 function averageMetric(values: number[]): number | null {
@@ -147,17 +137,18 @@ function averageEmbeddings(items: { emb: number[]; weight: number }[]): number[]
 }
 
 // Extract topics + hashtags from post body using Lovable AI
-async function extractFeatures(post: PostRow): Promise<{ topics: string[]; hashtags: string[]; sentiment: number; quality: number; language: string }> {
-  const text = (post.body || "").slice(0, 1500);
+async function extractFeatures(post: PostRow): Promise<{ topics: string[]; hashtags: string[]; sentiment: number; quality: number; language: string; extracted: boolean }> {
+  const text = trainingSnippet(post.body);
   const fallback = {
     topics: [] as string[],
     hashtags: (text.match(/#[\p{L}\p{N}_]+/gu) || []).map((h) => h.toLowerCase().replace("#", "")).slice(0, 10),
     sentiment: 0,
     quality: post.image_url ? 0.6 : 0.5,
     language: "und",
+    extracted: false,
   };
 
-  if (!text || text.length < 10) return fallback;
+  if (text.length < 5) return { ...fallback, extracted: true };
 
   try {
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -204,11 +195,13 @@ async function extractFeatures(post: PostRow): Promise<{ topics: string[]; hasht
     if (!args) return fallback;
     const parsed = JSON.parse(args);
     return {
-      topics: (parsed.topics || []).map((t: string) => t.toLowerCase()).slice(0, 8),
-      hashtags: [...new Set([...(parsed.hashtags || []), ...fallback.hashtags])].slice(0, 12),
+      extracted: true,
+      topics: (Array.isArray(parsed.topics) ? parsed.topics : []).filter((t: unknown) => typeof t === "string").map((t: string) => t.toLowerCase().slice(0, 40)).slice(0, 8),
+      hashtags: [...new Set([...(Array.isArray(parsed.hashtags) ? parsed.hashtags : []), ...fallback.hashtags])]
+        .filter((tag: unknown) => typeof tag === 'string').map((tag: string) => tag.toLowerCase().slice(0, 40)).slice(0, 12),
       sentiment: Math.max(-1, Math.min(1, Number(parsed.sentiment) || 0)),
       quality: Math.max(0, Math.min(1, Number(parsed.quality) || 0.5)),
-      language: parsed.language || "und",
+      language: typeof parsed.language === 'string' && /^[a-z]{2,3}$/.test(parsed.language) ? parsed.language : "und",
     };
   } catch (e) {
     console.error("extractFeatures error:", e);
@@ -224,88 +217,63 @@ Deno.serve(async (req) => {
   const guard = await requireAdmin(req, corsHeaders);
   if (!("userId" in guard)) return guard.response;
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+  const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { global: {
+    fetch: (input, init) => fetch(input, { ...init, signal: init?.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000) }),
+  } });
   const startedAt = Date.now();
 
-  // Recover invocations that were terminated by the Edge runtime before they
-  // could close their run row, then avoid overlapping healthy hourly runs.
-  const staleCutoff = new Date(startedAt - STALE_RUN_AFTER_MS).toISOString();
-  await supabase
-    .from("ml_model_runs")
-    .update({
-      status: "failed",
-      completed_at: new Date(startedAt).toISOString(),
-      error_message: "Recovered stale hourly feed run before starting a replacement",
-    })
-    .eq("run_type", "hourly")
-    .eq("status", "running")
-    .lt("started_at", staleCutoff);
-
-  const { data: activeRun } = await supabase
-    .from("ml_model_runs")
-    .select("id, started_at")
-    .eq("run_type", "hourly")
-    .eq("status", "running")
-    .gte("started_at", staleCutoff)
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (activeRun) {
-    return new Response(JSON.stringify({
-      ok: true,
-      skipped: "RUN_ALREADY_ACTIVE",
-      active_run_id: activeRun.id,
-    }), {
-      status: 202,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  // Insert run record
-  const { data: runRow } = await supabase
-    .from("ml_model_runs")
-    .insert({ run_type: "hourly", status: "running" })
-    .select()
-    .single();
-  const runId = runRow?.id;
+  const leaseOwner = crypto.randomUUID();
+  const lease = await supabase.rpc("claim_feed_training_lease", { p_name: "features", p_owner: leaseOwner });
+  if (lease.error) return new Response(JSON.stringify({ error: "TRAINING_LEASE_UNAVAILABLE" }), { status: 503, headers: corsHeaders });
+  if (!lease.data) return new Response(JSON.stringify({ ok: true, skipped: "RUN_ALREADY_ACTIVE" }), { status: 202, headers: corsHeaders });
+  let runId: string | undefined;
+  const overBudget = () => Date.now() - startedAt > 90_000;
 
   try {
+    const run = await supabase.from("ml_model_runs").insert({ run_type: "hourly", status: "running" }).select("id").single();
+    if (run.error) throw run.error;
+    runId = run.data.id;
     // Load config
-    const { data: configRows } = await supabase.from("ml_model_config").select("key, value");
+    const { data: configRows, error: configError } = await supabase.from("ml_model_config").select("key, value");
+    if (configError) throw configError;
     const config: Record<string, any> = {};
     (configRows || []).forEach((r) => (config[r.key] = r.value));
     const halfLife = Number(config.decay_half_life_days) || 7;
     const signalW: Record<string, number> = config.signal_weights || {};
 
-    // 1) Fetch recent interactions (last 14 days)
-    const since = new Date(Date.now() - 14 * 86400000).toISOString();
-    const { data: interactions } = await supabase
-      .from("ml_interactions")
-      .select("user_id, post_id, signal_type, weight, dwell_ms, hour_of_day, day_of_week, created_at")
-      .gte("created_at", since)
-      .limit(50000);
-    const allInter = (interactions || []) as InteractionRow[];
-
-    // 2) Fetch every active post. The previous 30-day window permanently
-    // stranded older active posts without semantic features or embeddings.
-    const { data: posts } = await supabase
-      .from("posts")
-      .select("id, user_id, body, image_url, created_at, likes_count, comments_count")
-      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-      .order("created_at", { ascending: false })
-      .limit(2000);
-    const allPosts = (posts || []) as PostRow[];
+    // Explicit bounded sample, paginated below the gateway row limit.
+    const allInter: InteractionRow[] = [];
+    for (let offset = 0; offset < 10000; offset += 1000) {
+      if (overBudget()) throw new Error("TRAINING_BUDGET_EXHAUSTED");
+      const events = await supabase.rpc("feed_training_events", { p_limit: 10000, p_as_of: new Date(startedAt).toISOString() }).range(offset, offset + 999);
+      if (events.error) throw events.error;
+      allInter.push(...(events.data || []));
+      if ((events.data || []).length < 1000) break;
+    }
+    const claimed = await supabase.rpc("claim_feed_feature_jobs", { p_limit: 40 });
+    if (claimed.error) throw claimed.error;
+    const pendingPosts: PostRow[] = (claimed.data || []).map((p: any) => ({ ...p, id: p.post_id }));
+    // Context is bounded separately from the durable backlog, so old jobs are never starved.
+    const contextIds = [...new Set([...pendingPosts.map(p => p.id), ...allInter.map(i => i.post_id)])].slice(0, 2000);
+    const allPosts: PostRow[] = [];
+    for (let i = 0; i < contextIds.length; i += 200) {
+      const result = await supabase.from("posts").select("id,user_id,body,image_url,created_at,likes_count,comments_count").in("id", contextIds.slice(i,i+200));
+      if (result.error) throw result.error;
+      allPosts.push(...(result.data || []));
+    }
 
     // 3) Fill missing feature rows AND rows whose semantic embedding is null.
     // This is deliberately capped to keep Lovable AI cost and runtime bounded.
-    let existing: any[] = [];
-    if (allPosts.length > 0) {
+    const existing: any[] = [];
+    for (let offset = 0; offset < allPosts.length; offset += 200) {
+      if (overBudget()) throw new Error("TRAINING_BUDGET_EXHAUSTED");
       const existingResult = await supabase
         .from("ml_post_features")
         .select("post_id, topics, hashtags, sentiment, quality_score, language, embedding, embedding_text")
-        .in("post_id", allPosts.map((p) => p.id));
+        .in("post_id", allPosts.slice(offset, offset + 200).map((p) => p.id));
       if (existingResult.error) throw existingResult.error;
-      existing = existingResult.data || [];
+      existing.push(...(existingResult.data || []));
     }
     type CachedFeature = {
       topics: string[];
@@ -329,15 +297,15 @@ Deno.serve(async (req) => {
       });
     }
     const existingIds = new Set(existingMap.keys());
-    const toExtract = allPosts
-      .filter((post) => !existingMap.has(post.id) || !parsePgVector(existingMap.get(post.id)?.embedding))
-      .slice(0, 60);
+    const toExtract = pendingPosts;
+
 
     let postsProcessed = 0;
     let featureRowsCreated = 0;
     let semanticEmbeddingsCreated = 0;
     let semanticEmbeddingAttempts = 0;
     let semanticEmbeddingFailures = 0;
+    let featureFailures = 0;
     const postEmbeddings = new Map<string, number[]>();
     // Cache for freshly extracted features so we can build the user-profile phase without re-querying
     const freshFeatures = new Map<string, { topics: string[]; hashtags: string[] }>();
@@ -345,34 +313,11 @@ Deno.serve(async (req) => {
     // Batch AI extraction (5 posts in parallel) — keeps cost bounded but ~5x faster than serial
     const EXTRACT_CONCURRENCY = 5;
     for (let i = 0; i < toExtract.length; i += EXTRACT_CONCURRENCY) {
+      if (overBudget()) throw new Error("TRAINING_BUDGET_EXHAUSTED");
       const chunk = toExtract.slice(i, i + EXTRACT_CONCURRENCY);
-      const embeddingTexts = chunk.map((post) => {
-        const cached = existingMap.get(post.id);
-        return [
-          post.body || (post.image_url ? "media image" : "post"),
-          (cached?.topics || []).join(" "),
-          (cached?.hashtags || []).map((hashtag) => "#" + hashtag).join(" "),
-        ].filter(Boolean).join("\n").slice(0, 2000);
-      });
+      const embeddingTexts = chunk.map(post => trainingSnippet(post.body));
       const [features, embeddings] = await Promise.all([
-        Promise.all(chunk.map(async (post) => {
-          const current = existingMap.get(post.id);
-          const hasExtractedMetadata = !!current && (
-            current.topics.length > 0
-            || current.hashtags.length > 0
-            || current.language !== "und"
-          );
-          const f = hasExtractedMetadata
-            ? {
-                topics: current.topics,
-                hashtags: current.hashtags,
-                sentiment: current.sentiment,
-                quality: current.quality,
-                language: current.language,
-              }
-            : await extractFeatures(post);
-          return f;
-        })),
+        Promise.all(chunk.map(post => extractFeatures(post))),
         generateEmbeddingBatch(embeddingTexts),
       ]);
       const results = chunk.map((post, index) => ({
@@ -392,24 +337,15 @@ Deno.serve(async (req) => {
         const hadFeatureRow = current !== undefined;
         if (emb) postEmbeddings.set(post.id, emb);
         freshFeatures.set(post.id, { topics: f.topics, hashtags: f.hashtags });
-        const featureResult = await supabase.from("ml_post_features").upsert({
-          post_id: post.id,
-          topics: f.topics,
-          hashtags: f.hashtags,
-          sentiment: f.sentiment,
-          quality_score: f.quality,
-          language: f.language,
-          has_media: !!post.image_url,
-          creator_id: post.user_id,
-          embedding_text: embText,
-          updated_at: new Date().toISOString(),
-          ...(emb ? {
-            embedding: toPgVector(emb),
-            embedding_source: `${EMBEDDING_MODEL}:${EMBEDDING_DIMENSION}`,
-            embedding_updated_at: new Date().toISOString(),
-          } : {}),
+        const featureResult = await supabase.rpc("finish_feed_feature_job", {
+          p_post: post.id, p_revision: post.revision,
+          p_features: f.extracted && (emb || embText.length < 5) ? {
+            ...f, embedding: emb ? toPgVector(emb) : null,
+            embedding_text: embText, embedding_source: `${EMBEDDING_MODEL}:${EMBEDDING_DIMENSION}`,
+          } : null,
         });
         if (featureResult.error) throw featureResult.error;
+        if (!featureResult.data) { featureFailures++; postEmbeddings.delete(post.id); freshFeatures.delete(post.id); continue; }
         existingMap.set(post.id, {
           topics: f.topics,
           hashtags: f.hashtags,
@@ -431,60 +367,29 @@ Deno.serve(async (req) => {
       if (embedding?.length === 768) postEmbeddings.set(pid, embedding);
     }
 
-    // Seed only missing 256d rows. ignoreDuplicates makes this race-safe and
-    // guarantees that an existing/trained two-tower vector is never replaced.
-    let existingItemIds = new Set<string>();
-    if (allPosts.length > 0) {
-      const itemResult = await supabase
-        .from("ml_post_embeddings")
-        .select("post_id")
-        .in("post_id", allPosts.map((post) => post.id));
-      if (itemResult.error) throw itemResult.error;
-      existingItemIds = new Set((itemResult.data || []).map((row: any) => row.post_id));
-    }
-    const seededAt = new Date().toISOString();
-    const semanticSeedRows = Array.from(postEmbeddings.entries())
-      .filter(([postId]) => !existingItemIds.has(postId))
-      .map(([postId, semantic]) => {
-        const folded = foldSemanticEmbedding(semantic);
-        return folded ? {
-          post_id: postId,
-          embedding: toPgVector(folded),
-          training_samples: 0,
-          embedding_source: "semantic_seed",
-          semantic_seeded_at: seededAt,
-          last_trained_at: seededAt,
-          updated_at: seededAt,
-        } : null;
-      })
-      .filter(Boolean);
-    if (semanticSeedRows.length > 0) {
-      const seedResult = await supabase
-        .from("ml_post_embeddings")
-        .upsert(semanticSeedRows, {
-          onConflict: "post_id",
-          ignoreDuplicates: true,
-        });
-      if (seedResult.error) throw seedResult.error;
-    }
+    // Semantic and learned spaces are deliberately not mixed.
+    const semanticSeedRows: unknown[] = [];
 
     // 4) Update CTR & velocity for ALL posts with features (cheap aggregation)
-    const postInteractions = new Map<string, { views: number; pos: number; neg: number }>();
+    const postInteractions = new Map<string, { views: number; pos: number; neg: number; events: InteractionRow[]; dwell: number[] }>();
     for (const it of allInter) {
-      const cur = postInteractions.get(it.post_id) || { views: 0, pos: 0, neg: 0 };
+      const cur = postInteractions.get(it.post_id) || { views: 0, pos: 0, neg: 0, events: [], dwell: [] };
       const w = signalW[it.signal_type] ?? it.weight ?? 1;
       if (it.signal_type === "view") cur.views++;
       if (w > 0.5) cur.pos++;
       if (w < 0) cur.neg++;
+      cur.events.push(it);
+      if (it.dwell_ms && ['dwell_medium','dwell_long','watch_complete'].includes(it.signal_type)) cur.dwell.push(it.dwell_ms);
       postInteractions.set(it.post_id, cur);
     }
     // Parallelize CTR updates (10 at a time) instead of awaiting one-by-one
     const ctrEntries = Array.from(postInteractions.entries());
     const CTR_CONCURRENCY = 10;
     for (let i = 0; i < ctrEntries.length; i += CTR_CONCURRENCY) {
+      if (overBudget()) throw new Error("TRAINING_BUDGET_EXHAUSTED");
       const chunk = ctrEntries.slice(i, i + CTR_CONCURRENCY);
       await Promise.all(chunk.map(([postId, agg]) => {
-        const ctr = agg.views > 0 ? agg.pos / agg.views : 0;
+        const ctr = clickThroughRate(agg.events);
         return supabase
           .from("ml_post_features")
           .update({
@@ -493,8 +398,9 @@ Deno.serve(async (req) => {
             negative_count: agg.neg,
             ctr: Number(ctr.toFixed(4)),
             engagement_velocity: agg.pos + agg.neg,
+            avg_watch_time_ms: Math.round(averageMetric(agg.dwell) ?? 0),
           })
-          .eq("post_id", postId);
+          .eq("post_id", postId).then(result => { if (result.error) throw result.error; });
       }));
     }
 
@@ -503,11 +409,13 @@ Deno.serve(async (req) => {
     const creatorIds = [...new Set(allPosts.map((post) => post.user_id).filter(Boolean))];
     let creatorsRefreshed = 0;
     for (let index = 0; index < creatorIds.length; index += 10) {
+      if (overBudget()) throw new Error("TRAINING_BUDGET_EXHAUSTED");
       const creatorChunk = creatorIds.slice(index, index + 10);
       const refreshes = await Promise.all(creatorChunk.map((creatorId) => (
         supabase.rpc("ml_refresh_creator_features_v8", { p_creator_id: creatorId })
       )));
       creatorsRefreshed += refreshes.filter((result) => !result.error && result.data === true).length;
+      featureFailures += refreshes.filter((result) => result.error).length;
     }
 
     // 5) Build per-user preference profiles — read features from in-memory cache (no N+1 query)
@@ -560,19 +468,15 @@ Deno.serve(async (req) => {
     }
 
     // Normalize and persist profiles
-    const normalize = (obj: Record<string, number>): Record<string, number> => {
-      const max = Math.max(0.0001, ...Object.values(obj));
-      const out: Record<string, number> = {};
-      for (const [k, v] of Object.entries(obj)) out[k] = Number((v / max).toFixed(3));
-      return out;
-    };
+    const normalize = normalizeAffinities;
 
     let usersProcessed = 0;
     let usersWithEmbedding = 0;
     for (const [userId, u] of userAgg) {
       const userEmb = averageEmbeddings(u.embItems);
       if (userEmb) usersWithEmbedding++;
-      await supabase.from("ml_user_profiles").upsert({
+      if (overBudget()) throw new Error("TRAINING_BUDGET_EXHAUSTED");
+      const profileWrite = await supabase.from("ml_user_profiles").upsert({
         user_id: userId,
         topic_weights: normalize(u.topics),
         hashtag_weights: normalize(u.hashtags),
@@ -582,35 +486,40 @@ Deno.serve(async (req) => {
         avg_session_dwell_ms: u.dwellCount > 0 ? Math.round(u.dwellSum / u.dwellCount) : 0,
         total_interactions: u.total,
         last_trained_at: new Date().toISOString(),
-        ...(userEmb ? { embedding: toPgVector(userEmb), embedding_updated_at: new Date().toISOString() } : {}),
+        embedding: userEmb ? toPgVector(userEmb) : null,
+        embedding_updated_at: userEmb ? new Date().toISOString() : null,
       });
+      if (profileWrite.error) throw profileWrite.error;
       usersProcessed++;
     }
 
     // 6) Limited semantic-MMR experiment in shadow mode. It compares the
-    // current v8 order with MMR for at most five active users and persists only
+    // current v8 order with MMR for at most ten active users and persists only
     // aggregate diagnostics. No response shown to users is reordered.
     const shadowMetrics: MmrEvaluation[] = [];
     let shadowCandidates = 0;
     let mmrShadowRunId: number | null = null;
-    const sampleUserIds = [...new Set(allInter.map((interaction) => interaction.user_id))].slice(0, 5);
+    const activeUserIds = [...new Set(allInter.map((interaction) => interaction.user_id))].sort();
+    const sampleOffset = Math.floor(Date.now() / 3600000) * 10 % Math.max(1, activeUserIds.length);
+    const sampleUserIds = [...activeUserIds.slice(sampleOffset), ...activeUserIds.slice(0,sampleOffset)].slice(0, 10);
 
     try {
       for (const userId of sampleUserIds) {
-        const feedResult = await supabase.rpc("get_feed_posts_v8", {
+        if (overBudget()) break;
+        const feedResult = await supabase.rpc("preview_feed_training_order", {
           p_user_id: userId,
           p_limit: 40,
-          p_offset: 0,
         });
         const feedRows = Array.isArray(feedResult.data) ? feedResult.data.slice(0, 40) : [];
-        if (feedResult.error || feedRows.length < 2) continue;
+        if (feedResult.error) { featureFailures++; continue; }
+        if (feedRows.length < 2) continue;
 
         const postIds = feedRows.map((row: any) => row.id).filter(Boolean);
         const semanticResult = await supabase
           .from("ml_post_features")
           .select("post_id, embedding")
           .in("post_id", postIds);
-        if (semanticResult.error) continue;
+        if (semanticResult.error) { featureFailures++; continue; }
         const semanticByPost = new Map(
           (semanticResult.data || []).map((row: any) => [row.post_id, parsePgVector(row.embedding)]),
         );
@@ -650,7 +559,7 @@ Deno.serve(async (req) => {
           mean_relevance_delta: averageMetric(shadowMetrics.map((metric) => metric.meanRelevanceDelta)),
           metadata: {
             mode: "shadow_only",
-            baseline: "get_feed_posts_v8",
+            baseline: "server_snapshot_order",
             challenger: "semantic_mmr",
             production_order_changed: false,
           },
@@ -660,9 +569,11 @@ Deno.serve(async (req) => {
       if (!shadowInsert.error && shadowInsert.data?.id) {
         mmrShadowRunId = Number(shadowInsert.data.id);
       } else if (shadowInsert.error) {
+        featureFailures++;
         console.error("MMR shadow metrics insert failed:", shadowInsert.error);
       }
     } catch (shadowError) {
+      featureFailures++;
       console.error("MMR shadow experiment failed:", shadowError);
     }
 
@@ -672,18 +583,17 @@ Deno.serve(async (req) => {
     if (!coverageResult.error && coverageResult.data != null) {
       coverageSnapshotId = coverageResult.data as number | string;
     } else if (coverageResult.error) {
+      featureFailures++;
       console.error("Coverage snapshot failed:", coverageResult.error);
     }
 
     // 7) Compute global metrics
-    const totalViews = allInter.filter((i) => i.signal_type === "view").length;
-    const totalPositive = allInter.filter((i) => (signalW[i.signal_type] ?? 0) >= 1).length;
-    const globalCTR = totalViews > 0 ? totalPositive / totalViews : 0;
+    const globalCTR = clickThroughRate(allInter);
 
-    await supabase
+    const completed = await supabase
       .from("ml_model_runs")
       .update({
-        status: "success",
+        status: semanticEmbeddingFailures + featureFailures > 0 ? "partial" : "success",
         completed_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         users_processed: usersProcessed,
@@ -693,7 +603,10 @@ Deno.serve(async (req) => {
           global_ctr: Number(globalCTR.toFixed(4)),
           total_users_with_profiles: usersProcessed,
           total_posts_with_features: featureRowsCreated + existingIds.size,
-          avg_dwell_ms: 0,
+          avg_dwell_ms: averageMetric(allInter.filter(i => (i.dwell_ms ?? 0) > 0).map(i => i.dwell_ms!)),
+          feature_failures: featureFailures,
+          bounded_sample_limit: 10000,
+          context_posts_limit: 2000,
           users_with_embedding: usersWithEmbedding,
           posts_with_new_embedding: semanticEmbeddingsCreated,
           semantic_embedding_attempts: semanticEmbeddingAttempts,
@@ -707,10 +620,12 @@ Deno.serve(async (req) => {
         },
       })
       .eq("id", runId);
+    if (completed.error) throw completed.error;
 
     return new Response(
       JSON.stringify({
-        ok: true,
+        ok: semanticEmbeddingFailures + featureFailures === 0,
+        feature_failures: featureFailures,
         run_id: runId,
         users_processed: usersProcessed,
         posts_processed: postsProcessed,
@@ -740,5 +655,7 @@ Deno.serve(async (req) => {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  } finally {
+    await supabase.from("feed_training_leases").delete().eq("name", "features").eq("owner", leaseOwner);
   }
 });

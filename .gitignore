@@ -25,3 +25,18 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Private offline feed learning data and isolated Python runtime
+ml/.venv-feed/
+ml/runs/
+**/__pycache__/
+*.pyc
+
+# Downloaded geolocation database, immutable build artifacts and isolated importer
+.geoip-build/
+.geoip-venv/
+*.mmdb
+*.mmdb.gz
+
+# Local Supabase CLI state; never publish project refs or transient binaries.
+supabase/.temp/

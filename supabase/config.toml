@@ -112,3 +112,12 @@ verify_jwt = true
 
 [functions.login-security]
 verify_jwt = false
+
+[functions.local-media-location]
+verify_jwt = false # getUser validates the bearer token inside the function.
+
+[functions.ad-location]
+verify_jwt = false # getUser + JWT-scoped RPC validate adult consent and session before locating.
+
+[functions.partner-rss-sync]
+verify_jwt = false # Server-only: dedicated cron secret is required by the handler.

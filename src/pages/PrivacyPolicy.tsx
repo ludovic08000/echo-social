@@ -23,7 +23,7 @@ export default function PrivacyPolicy() {
           <Shield className="w-8 h-8 text-primary" />
           <h1 className="text-3xl font-bold">Politique de Confidentialité</h1>
         </div>
-        <p className="text-sm text-muted-foreground mb-8">Dernière mise à jour : 3 avril 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Dernière mise à jour : 5 octobre 2026</p>
 
         <div className="prose prose-invert max-w-none space-y-8 text-foreground/90">
 
@@ -44,8 +44,8 @@ export default function PrivacyPolicy() {
             <p>Forsure est un réseau social <strong>anti-surveillance</strong>. Nous nous engageons formellement à :</p>
             <ul className="list-disc pl-6 space-y-2">
               <li>🚫 <strong>Aucune revente de données</strong> à des tiers, annonceurs ou courtiers de données</li>
-              <li>🚫 <strong>Aucun tracking publicitaire</strong> — aucun pixel espion, aucun cookie tiers</li>
-              <li>🚫 <strong>Aucun profilage commercial</strong> — votre comportement n'est jamais analysé à des fins marketing</li>
+              <li>🚫 <strong>Aucun pixel publicitaire tiers</strong> ajouté par ce système de ciblage</li>
+              <li>✅ <strong>Personnalisation publicitaire facultative</strong> : uniquement pour les adultes ayant donné un accord distinct, retirable dans les paramètres</li>
               <li>🚫 <strong>Aucun shadow banning</strong> — si un contenu est modéré, vous êtes notifié avec le motif</li>
               <li>✅ <strong>Transparence totale</strong> sur les données collectées et leur usage</li>
               <li>✅ <strong>Suppression immédiate</strong> de vos données sur simple demande</li>
@@ -150,7 +150,7 @@ export default function PrivacyPolicy() {
               <Video className="w-4 h-4 text-primary" /> 4.4. Fil d'actualité et algorithme
             </h3>
             <ul className="list-disc pl-6 space-y-1">
-              <li>L'algorithme de recommandation est basé sur vos <strong>interactions sociales</strong> (amis, likes), pas sur un profilage commercial</li>
+              <li>La recommandation du feed et la personnalisation publicitaire ont des réglages distincts. Activer les recommandations ne vaut pas consentement publicitaire.</li>
               <li>Vous pouvez consulter les facteurs de scoring de chaque publication</li>
               <li>Aucun contenu sponsorisé caché — les publicités sont clairement identifiées</li>
               <li>L'algorithme est optimisé par une IA de feed avec des recommandations transparentes et réversibles</li>
@@ -184,7 +184,7 @@ export default function PrivacyPolicy() {
           <section>
             <h2 className="text-xl font-semibold text-foreground">6. Base légale du traitement</h2>
             <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Consentement</strong> (Art. 6.1.a RGPD) : acceptation des CGU lors de l'inscription</li>
+              <li><strong>Consentement</strong> (Art. 6.1.a RGPD) : choix explicite pour chaque personnalisation publicitaire et pour la localisation facultative ; accepter les CGU ne suffit pas</li>
               <li><strong>Exécution du contrat</strong> (Art. 6.1.b RGPD) : fourniture du service, marketplace</li>
               <li><strong>Obligation légale</strong> (Art. 6.1.c RGPD) : conservation des logs de connexion (LCEN)</li>
               <li><strong>Intérêt légitime</strong> (Art. 6.1.f RGPD) : sécurité anti-fraude, détection d'usurpation d'identité, protection DDoS</li>
@@ -213,8 +213,7 @@ export default function PrivacyPolicy() {
               <li>Cookie d'authentification (session utilisateur) — <strong>Secure, HttpOnly, SameSite=Strict</strong></li>
               <li>Préférences d'affichage (thème clair/sombre, langue)</li>
             </ul>
-            <p className="font-semibold mt-2">🚫 Aucun cookie publicitaire, aucun cookie de traçage, aucun cookie tiers.</p>
-            <p className="text-sm text-muted-foreground">Conformément à la directive ePrivacy et aux recommandations de la CNIL.</p>
+            <p className="mt-2">Les lecteurs vidéo partenaires YouTube ne sont chargés qu'après votre clic, en mode de confidentialité avancé. Leur chargement transmet notamment votre IP à YouTube et reste soumis aux règles de ce fournisseur.</p>
           </section>
 
           {/* 9. Vos droits */}
@@ -294,13 +293,27 @@ export default function PrivacyPolicy() {
             <p>Forsure propose un système publicitaire <strong>respectueux de votre vie privée</strong> :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>Les publicités sont clairement identifiées comme « sponsorisées »</li>
-              <li>Le ciblage est basé sur des critères généraux (âge, localisation, centres d'intérêt déclarés) et jamais sur un profilage comportemental</li>
+              <li>Sans consentement publicitaire : campagnes générales destinées aux adultes connus. Pas de publicité diffusée par ce système aux comptes mineurs ou dont l'âge est inconnu.</li>
+              <li>Trois accords indépendants : intérêts déclarés et tranche d'âge ; thèmes de l'activité publique ; zone choisie. Ils sont désactivés par défaut. Les publicités locales fonctionnent indépendamment des actualités locales.</li>
+              <li>Un choix supplémentaire, désactivé par défaut, autorise la zone publicitaire automatique si aucune zone n'est choisie : ville du profil, sinon estimation réseau. Lorsque DB-IP City Lite est configuré, ForSure consulte sa copie de la base dans Lovable Cloud sans transmettre votre IP à DB-IP. Cette estimation peut correspondre à la sortie du réseau mobile ou du VPN, pas à votre ville réelle. Pas de GPS, de coordonnées précises ni d'IP enregistrée dans le contexte publicitaire ; aucun journal de sécurité n'est réutilisé. La zone approximative est isolée par session, valable 15 minutes puis inutilisable et purgée par le nettoyage périodique. Aucun historique de déplacement n'est constitué, et aucune zone individuelle n'est fournie aux annonceurs. Retirer le choix publicitaire supprime immédiatement ce contexte.</li>
+              <li>L'analyse facultative examine un nombre limité de publications, commentaires publics et légendes des vidéos du feed regardées jusqu'au bout, postérieurs au consentement et dans une fenêtre de 30 jours. Elle nécessite aussi les statistiques et le partage IA activés. Aucun message privé, audio privé ou journal intime n'est consulté.</li>
+              <li>Les catégories ciblables sont limitées à sport, technologie, cuisine, musique, art, gaming, jardinage et bricolage. Aucun ciblage politique, religieux, médical ou fondé sur l'orientation sexuelle n'est proposé.</li>
+              <li>Les thèmes dérivés ne sont utilisables que pendant cinq minutes, puis recalculés si nécessaire ; le nettoyage programmé les supprime au plus tard 15 minutes après expiration. Retirer l'accord supprime immédiatement ces thèmes. Les annonceurs n'y ont pas accès individuellement.</li>
+              <li>Le bouton « Pourquoi cette publicité ? » décrit les critères applicables. Gérez vos choix dans Paramètres → Vie privée → Publicités et médias locaux.</li>
               <li>Chaque campagne publicitaire est soumise à une modération avant diffusion</li>
               <li>Vous ne verrez jamais de publicité basée sur vos messages privés ou conversations</li>
             </ul>
           </section>
 
           {/* 12. Transferts */}
+          <section>
+            <h2 className="text-xl font-semibold text-foreground">Médias partenaires et localisation facultative</h2>
+            <p>Lorsque la sélection contextuelle est activée par ForSure et sans préférence enregistrée, la ville déclarée au profil peut servir à choisir les actualités ; à défaut, une zone approximative de la passerelle réseau ou de notre copie DB-IP City Lite peut être utilisée pendant la consultation. Aucun accès GPS n’est demandé, aucune IP n’est envoyée à DB-IP et cette zone n’est pas enregistrée dans les préférences. Le choix manuel reste prioritaire. Vous pouvez désactiver les médias locaux dans les paramètres de confidentialité et enregistrer ce choix. Cette sélection n’active jamais le ciblage publicitaire.</p>
+            <p>Les actualités nationales n'exigent aucune localisation. Pour les médias de votre ville ou région, choisissez votre zone, utilisez volontairement la ville de votre profil ou demandez une estimation avec notre copie DB-IP City Lite. Elle ne demande pas le GPS et ne conserve ni IP ni coordonnées dans vos préférences de découverte. La recherche des communes transmet seulement le nom ou code postal recherché à geo.api.gouv.fr via notre serveur, sans identifiant de compte ni IP du navigateur. Vérifiez et sélectionnez la proposition avant de l'enregistrer : votre choix est prioritaire et n'est pas remplacé par vos déplacements. Aucun autre champ du profil ni message privé ne sert à choisir les journaux. Les journaux de sécurité ont une finalité séparée et ne sont pas utilisés pour ce ciblage.</p>
+            <p>Seuls le pays, la région et la ville choisis sont conservés jusqu'à modification, désactivation à la fois des médias locaux et des publicités locales, ou suppression du compte. Le ciblage publicitaire local exige un accord supplémentaire. Les articles et vidéos indiquent leur source et sont présentés uniquement selon les droits autorisés par le partenaire. Ouvrir un lien externe applique les règles de l'éditeur concerné.</p>
+            <p>Les discussions d’actualités sont publiques entre membres autorisés, avec application des blocages et des restrictions pour les mineurs. L’expiration d’un extrait de presse ne supprime pas vos commentaires : le lien source et la discussion restent accessibles selon ces règles. Vous pouvez supprimer vos commentaires ; le texte est alors effacé et les réponses conservées. Un signalement transmet le texte concerné à la modération pour examen.</p>
+          </section>
+
           <section>
             <h2 className="text-xl font-semibold text-foreground">12. Transferts de données</h2>
             <p>Les données sont hébergées au sein de l'Union Européenne. Les fichiers médias (photos, vidéos) sont stockés sur une infrastructure cloud sécurisée (Cloudflare R2).</p>

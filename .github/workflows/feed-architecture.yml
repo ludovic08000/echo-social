@@ -1,0 +1,72 @@
+name: Feed architecture checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'supabase/**'
+      - 'scripts/test-feed-database.mjs'
+      - 'scripts/test-discovery-database.mjs'
+      - 'scripts/test-partner-rss-database.mjs'
+      - 'scripts/test-regional-media-database.mjs'
+      - 'scripts/test-news-discussions-database.mjs'
+      - 'scripts/test-ad-location-database.mjs'
+      - 'ml/**'
+      - 'package*.json'
+      - '.github/workflows/feed-architecture.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feed-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-recommender:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      OMP_NUM_THREADS: 1
+      OPENBLAS_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ml/requirements-feed.txt
+      - run: pip install --only-binary=:all: -r ml/requirements-feed.txt
+      - run: python -m unittest discover -s ml/tests -v
+      - run: python -m ml.feed_ai demo --name ci-synthetic
+      - run: python -m ml.feed_ai benchmark --name ci-replay
+      # No production credentials, data export or candidate upload from CI.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: PostgreSQL contracts in isolation
+        run: npm run test:feed-db
+      - name: Consent advertising and licensed media contracts
+        run: npm run test:discovery-db
+      - name: Application regressions with bounded memory
+        run: npx vitest run --maxWorkers=1
+      - name: Edge function type safety
+        run: npx --yes deno@2.5.3 check --no-config supabase/functions/ml-feed-train/index.ts supabase/functions/ml-twotower-train/index.ts supabase/functions/feed-optimizer/index.ts supabase/functions/local-media-location/index.ts supabase/functions/ad-location/index.ts supabase/functions/data-export/index.ts
+      - name: Daily RSS worker type safety
+        run: npx --yes deno@2.5.3 check --config supabase/functions/partner-rss-sync/deno.json supabase/functions/partner-rss-sync/index.ts
+      - name: Production build and crypto boundary
+        run: npm run build

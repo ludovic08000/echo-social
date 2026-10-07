@@ -148,26 +148,8 @@ export function useRecordVideoView() {
 
       if (error) throw error;
 
-      const signalType =
-        completionRate >= 0.9 ? 'watch_complete' :
-        completionRate >= 0.55 ? 'dwell_long' :
-        completionRate < 0.2 ? 'skip_fast' :
-        'dwell_medium';
-
-      try {
-        if (isAnalyticsEnabled(user.id)) {
-          await supabase.from('ml_interactions').insert({
-            user_id: user.id,
-            post_id: videoId,
-            signal_type: signalType,
-            weight: signalType === 'skip_fast' ? -1 : signalType === 'watch_complete' ? 2.2 : 1.2,
-            dwell_ms: Math.max(0, Math.round(watchTimeSeconds * 1000)),
-            scroll_depth: Math.max(0, Math.min(1, completionRate)),
-          });
-        }
-      } catch {
-        // video_views remains the source of truth if an older schema rejects this row.
-      }
+      // Short-video IDs are not post IDs. Keep this surface in video_views;
+      // never inject its watch events into the main-feed A/B experiment.
 
       // Mettre à jour les intérêts de l'utilisateur basé sur le visionnage
       if (completionRate > 0.5) {

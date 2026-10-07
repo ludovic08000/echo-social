@@ -60,7 +60,6 @@ export function FeedIntelligenceSection() {
   const [history, setHistory] = useState<ConfigChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
-  const [autoApplying, setAutoApplying] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
   // Fetch everything
@@ -68,27 +67,31 @@ export function FeedIntelligenceSection() {
     setLoading(true);
     try {
       // Observe (Level 1)
-      const { data: obsData } = await supabase.functions.invoke('feed-optimizer', {
+      const { data: obsData, error: observeError } = await supabase.functions.invoke('feed-optimizer', {
         body: { action: 'observe' },
       });
+      if (observeError) throw observeError;
       if (obsData?.summary) setMetrics(obsData.summary);
 
       // Pending recommendations
-      const { data: recos } = await supabase
+      const { data: recos, error: recommendationsError } = await supabase
         .from('feed_ai_recommendations')
         .select('*')
         .in('status', ['pending', 'applied'])
         .order('created_at', { ascending: false })
         .limit(20);
+      if (recommendationsError) throw recommendationsError;
       setRecommendations((recos as any) || []);
 
       // Change history
-      const { data: histData } = await supabase.functions.invoke('feed-optimizer', {
+      const { data: histData, error: historyError } = await supabase.functions.invoke('feed-optimizer', {
         body: { action: 'history' },
       });
+      if (historyError) throw historyError;
       setHistory(histData?.changes || []);
     } catch (e) {
       console.error('Feed intelligence fetch error:', e);
+      toast({ title: 'Mesures indisponibles : réessayez avant de conclure.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -100,9 +103,10 @@ export function FeedIntelligenceSection() {
   const runAnalysis = async () => {
     setAnalyzing(true);
     try {
-      const { data } = await supabase.functions.invoke('feed-optimizer', {
+      const { data, error } = await supabase.functions.invoke('feed-optimizer', {
         body: { action: 'recommend' },
       });
+      if (error) throw error;
       toast({
         title: `Analyse terminée`,
         description: `${data?.count || 0} recommandation(s) générée(s).`,
@@ -115,40 +119,23 @@ export function FeedIntelligenceSection() {
     }
   };
 
-  // Level 3: Auto-apply safe changes
-  const autoApply = async () => {
-    setAutoApplying(true);
-    try {
-      const { data } = await supabase.functions.invoke('feed-optimizer', {
-        body: { action: 'auto_apply' },
-      });
-      toast({
-        title: `${data?.applied || 0} ajustement(s) appliqué(s)`,
-        description: data?.changes?.map((c: any) => `${c.key}: ${c.old} → ${c.new}`).join(', ') || 'Aucun changement.',
-      });
-      fetchAll();
-    } catch {
-      toast({ title: 'Erreur d\'application', variant: 'destructive' });
-    } finally {
-      setAutoApplying(false);
-    }
-  };
-
   // Dismiss a recommendation
   const dismissReco = async (id: string) => {
-    await supabase
+    const { error } = await supabase
       .from('feed_ai_recommendations')
       .update({ status: 'dismissed', dismissed_at: new Date().toISOString() } as any)
       .eq('id', id);
+    if (error) { toast({ title: 'Impossible de masquer la recommandation', variant: 'destructive' }); return; }
     setRecommendations(prev => prev.filter(r => r.id !== id));
   };
 
   // Rollback a change
   const rollback = async (changeId: string) => {
     try {
-      await supabase.functions.invoke('feed-optimizer', {
+      const { error } = await supabase.functions.invoke('feed-optimizer', {
         body: { action: 'rollback', change_id: changeId },
       });
+      if (error) throw error;
       toast({ title: 'Rollback effectué ✅' });
       fetchAll();
     } catch {
@@ -158,6 +145,8 @@ export function FeedIntelligenceSection() {
 
   const metricLabels: Record<string, { label: string; unit: string; icon: typeof Activity }> = {
     load_time: { label: 'Temps de chargement', unit: 'ms', icon: Clock },
+    rpc_latency: { label: 'Réponse du classement', unit: 'ms', icon: Clock },
+    media_ready: { label: 'Chargement média prioritaire', unit: 'ms', icon: Clock },
     scroll_depth: { label: 'Profondeur de scroll', unit: '%', icon: TrendingUp },
     posts_rendered: { label: 'Posts affichés', unit: '', icon: BarChart3 },
     fps: { label: 'FPS', unit: '', icon: Cpu },
@@ -175,7 +164,7 @@ export function FeedIntelligenceSection() {
           </div>
           <div>
             <h2 className="text-lg font-bold">Feed Intelligence</h2>
-            <p className="text-xs text-muted-foreground">IA observatrice · recommandatrice · semi-autonome</p>
+            <p className="text-xs text-muted-foreground">Observations et recommandations · changements soumis à validation</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -183,9 +172,9 @@ export function FeedIntelligenceSection() {
             <Activity className="w-3.5 h-3.5" />
             {analyzing ? 'Analyse…' : 'Analyser'}
           </Button>
-          <Button size="sm" onClick={autoApply} disabled={autoApplying} className="gap-1.5">
+          <Button size="sm" disabled title="Une expérience validée est requise avant de modifier le classement." className="gap-1.5">
             <Zap className="w-3.5 h-3.5" />
-            {autoApplying ? 'Application…' : 'Auto-optimiser'}
+            Promotion sur validation
           </Button>
         </div>
       </div>
@@ -199,7 +188,7 @@ export function FeedIntelligenceSection() {
           <Brain className="w-3 h-3" /> Niveau 2 : Recommander
         </Badge>
         <Badge variant="outline" className="gap-1 text-xs border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
-          <Zap className="w-3 h-3" /> Niveau 3 : Semi-autonome
+          <Zap className="w-3 h-3" /> Niveau 3 : Validation expérimentale
         </Badge>
       </div>
 

@@ -4,6 +4,7 @@ import { MessageCircle, Radio, Bot, Heart, Megaphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useConversations } from '@/hooks/useMessages';
+import { useProfile } from '@/hooks/useProfile';
 
 const WIDGETS = [
   { icon: MessageCircle, label: 'Messages', path: '/messages', gradient: 'from-blue-500/20 to-blue-600/10', iconColor: 'text-blue-400', badgeKey: 'messages' },
@@ -17,7 +18,9 @@ export function FlowDashboard() {
   const navigate = useNavigate();
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
+  const { data: profile } = useProfile();
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
+  const widgets = WIDGETS.filter((widget) => profile?.is_creator || widget.path !== '/ads');
 
   const getBadge = (key?: string) => {
     if (key === 'messages') return unreadMessages;
@@ -36,7 +39,7 @@ export function FlowDashboard() {
   return (
     <div className="px-4 pb-2">
       <div className="grid grid-cols-4 gap-2">
-        {WIDGETS.map((w, i) => {
+        {widgets.map((w, i) => {
           const badge = getBadge(w.badgeKey);
           return (
             <motion.button

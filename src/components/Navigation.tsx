@@ -9,12 +9,14 @@ import { useConversations } from '@/hooks/useMessages';
 import { useFriendships } from '@/hooks/useFriendships';
 import { useScrollHideNav } from '@/hooks/useScrollHideNav';
 import { useChatWidget } from '@/components/ChatWidgetContext';
+import { useProfile } from '@/hooks/useProfile';
 
 import { cn } from '@/lib/utils';
 
 export function MobileNav() {
   const location = useLocation();
   const { user } = useAuth();
+  const { data: profile } = useProfile();
   const { t } = useTranslation();
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
@@ -103,7 +105,7 @@ export function MobileNav() {
                    { path: '#zeus', icon: Bot, label: 'Zeus IA ⚡' },
                    { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
                    { path: '/settings', icon: Settings, label: 'Réglages' },
-                 ].map((item) => (
+                ].filter((item) => profile?.is_creator || item.path !== '/ads').map((item) => (
                   item.path === '#zeus' ? (
                     <button
                       key="zeus"

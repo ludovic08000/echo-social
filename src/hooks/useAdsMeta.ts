@@ -8,6 +8,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { type Json } from '@/integrations/supabase/types';
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export const OBJECTIVES = [
   { value: 'awareness', label: 'Notoriété', desc: 'Faire connaître ta marque', icon: '📣' },
@@ -19,11 +24,12 @@ export const OBJECTIVES = [
 ] as const;
 
 export const PLACEMENTS = [
-  { value: 'feed', label: 'Fil d\'actualité' },
-  { value: 'stories', label: 'Stories' },
-  { value: 'live', label: 'Lives' },
-  { value: 'marketplace', label: 'Marketplace' },
-  { value: 'sidebar', label: 'Colonne latérale' },
+  { value: 'feed', label: 'Fil d\'actualité', description: 'Mobile et ordinateur', available: true },
+  { value: 'stories', label: 'Stories', description: 'Format vertical', available: false },
+  { value: 'reels', label: 'Reels', description: 'Vidéo verticale', available: false },
+  { value: 'live', label: 'Lives', description: 'Pendant les directs', available: false },
+  { value: 'marketplace', label: 'Marketplace', description: 'Découverte shopping', available: false },
+  { value: 'sidebar', label: 'Colonne latérale', description: 'Ordinateur uniquement', available: false },
 ] as const;
 
 export interface AdSet {
@@ -40,7 +46,7 @@ export interface AdSet {
   target_age_max: number;
   target_gender: 'all' | 'male' | 'female';
   target_interests: string[];
-  target_location: any;
+  target_location: Json | null;
   placements: string[];
   optimization_goal: 'reach' | 'impressions' | 'clicks' | 'conversions' | 'engagement';
   created_at: string;
@@ -78,7 +84,7 @@ export function useAdSets(campaignId?: string) {
     queryKey: ['ad-sets', user?.id, campaignId],
     queryFn: async () => {
       let q = supabase
-        .from('ad_sets' as any)
+        .from('ad_sets')
         .select('*')
         .eq('advertiser_id', user!.id)
         .order('created_at', { ascending: false });
@@ -97,7 +103,7 @@ export function useCreateAdSet() {
   return useMutation({
     mutationFn: async (payload: Partial<AdSet> & { campaign_id: string }) => {
       const { data, error } = await supabase
-        .from('ad_sets' as any)
+        .from('ad_sets')
         .insert({ ...payload, advertiser_id: user!.id })
         .select()
         .single();
@@ -108,7 +114,7 @@ export function useCreateAdSet() {
       qc.invalidateQueries({ queryKey: ['ad-sets'] });
       toast.success('Ensemble de publicités créé');
     },
-    onError: (e: any) => toast.error(e.message ?? 'Erreur'),
+    onError: (error: unknown) => toast.error(errorMessage(error, 'Erreur')),
   });
 }
 
@@ -117,7 +123,7 @@ export function useUpdateAdSet() {
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<AdSet> }) => {
       const { data, error } = await supabase
-        .from('ad_sets' as any)
+        .from('ad_sets')
         .update(patch)
         .eq('id', id)
         .select()
@@ -137,7 +143,7 @@ export function useAds(adSetId?: string) {
     queryKey: ['ads', user?.id, adSetId],
     queryFn: async () => {
       let q = supabase
-        .from('ads' as any)
+        .from('ads')
         .select('*')
         .eq('advertiser_id', user!.id)
         .order('created_at', { ascending: false });
@@ -156,7 +162,7 @@ export function useCreateAd() {
   return useMutation({
     mutationFn: async (payload: Partial<Ad> & { ad_set_id: string; headline: string; primary_text: string }) => {
       const { data, error } = await supabase
-        .from('ads' as any)
+        .from('ads')
         .insert({ ...payload, advertiser_id: user!.id })
         .select()
         .single();
@@ -167,7 +173,7 @@ export function useCreateAd() {
       qc.invalidateQueries({ queryKey: ['ads'] });
       toast.success('Publicité créée');
     },
-    onError: (e: any) => toast.error(e.message ?? 'Erreur'),
+    onError: (error: unknown) => toast.error(errorMessage(error, 'Erreur')),
   });
 }
 
@@ -176,7 +182,7 @@ export function useUpdateAd() {
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<Ad> }) => {
       const { data, error } = await supabase
-        .from('ads' as any)
+        .from('ads')
         .update(patch)
         .eq('id', id)
         .select()
@@ -185,5 +191,34 @@ export function useUpdateAd() {
       return data as unknown as Ad;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ads'] }),
+  });
+}
+
+export function useDeleteAd() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (adId: string) => {
+      if (!user) throw new Error('Connexion requise');
+
+      const { data, error } = await supabase
+        .from('ads')
+        .delete()
+        .eq('id', adId)
+        .eq('advertiser_id', user.id)
+        .select('id')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error('Publicité introuvable ou non autorisée');
+      return (data as unknown as { id: string }).id;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ads'] });
+      qc.invalidateQueries({ queryKey: ['active-ads'] });
+      toast.success('Ancienne publicité supprimée');
+    },
+    onError: (error: Error) => toast.error(error.message || 'Suppression impossible'),
   });
 }

@@ -3,16 +3,28 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { type TargetLocation } from '@/lib/geoData';
+import { type AdPlacement } from '@/lib/ads/adDelivery';
+import { type Json } from '@/integrations/supabase/types';
+import { useDiscoveryPreferences } from './useDiscoveryPreferences';
+import { useAdLocation } from './useAdLocation';
+import { adSessionCacheKey } from '@/lib/ads/sessionCacheKey';
+
+type AdAudience = { description?: string; [key: string]: Json | undefined };
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export interface AdCampaign {
   id: string;
   advertiser_id: string;
+  objective: string;
   title: string;
   body: string;
   image_url: string | null;
   cta_text: string;
   cta_url: string | null;
-  target_audience: any;
+  target_audience: Json | null;
   target_age_min: number;
   target_age_max: number;
   target_gender: string;
@@ -29,6 +41,7 @@ export interface AdCampaign {
   clicks: number;
   reach: number;
   spent: number;
+  paid_at?: string | null;
   created_at: string;
 }
 
@@ -40,6 +53,16 @@ export interface AdDailyStat {
   clicks: number;
   reach: number;
   spent: number;
+}
+
+export interface FeedAd {
+  id: string;
+  headline: string;
+  primary_text: string;
+  image_url: string | null;
+  video_url: string | null;
+  cta_text: string;
+  cta_url: string | null;
 }
 
 const PRICING = {
@@ -101,27 +124,38 @@ export function useAdDailyStats(campaignId?: string) {
   });
 }
 
-export function useActiveAds() {
-  const { user, loading } = useAuth();
+export function useActiveAds(placement: AdPlacement = 'feed') {
+  const { user, loading, session } = useAuth();
+  const { data: preferences } = useDiscoveryPreferences();
+  // Independent bounded query: deriving topics must never delay the social feed.
+  const sessionKey = adSessionCacheKey(session?.access_token);
+  const location = useAdLocation(user?.id, sessionKey, preferences);
+  const audience = useQuery({
+    queryKey: ['ad-audience', user?.id, preferences?.updated_at],
+    enabled: !loading && !!user && preferences?.ads_activity === true,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('refresh_my_ad_audience' as never);
+      if (error) throw error;
+      return (data ?? []) as unknown as string[];
+    },
+    staleTime: 5 * 60_000, retry: false,
+  });
 
   return useQuery({
-    queryKey: ['active-ads', loading ? 'loading' : user?.id ?? 'guest'],
+    queryKey: ['active-ads', placement, loading ? 'loading' : user?.id ?? 'guest', sessionKey, preferences?.updated_at, audience.dataUpdatedAt, location.dataUpdatedAt, location.errorUpdatedAt],
     queryFn: async () => {
       if (!user) return [];
 
-      const { data, error } = await supabase
-        .from('ad_campaigns')
-        .select('*')
-        .eq('status', 'active')
-        .eq('moderation_status', 'approved')
-        .lte('starts_at', new Date().toISOString())
-        .gt('ends_at', new Date().toISOString())
-        .order('budget', { ascending: false })
-        .limit(10);
+      const { data, error } = await supabase.rpc(
+        'get_active_ads_for_placement' as never,
+        { p_placement: placement, p_limit: 12 } as never,
+      );
       if (error) throw error;
-      return data as AdCampaign[];
+      return (data || []) as unknown as FeedAd[];
     },
     enabled: !loading && !!user,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -133,18 +167,23 @@ export function useCreateAdCampaign() {
     mutationFn: async (input: {
       title: string;
       body: string;
+      objective?: string;
       image_url?: string;
       video_url?: string;
       cta_text?: string;
       cta_url?: string;
-      target_audience?: any;
+      target_audience?: AdAudience;
       target_age_min?: number;
       target_age_max?: number;
       target_gender?: string;
       target_interests?: string[];
       target_location?: TargetLocation;
-      duration_type: DurationType;
+      duration_type?: DurationType;
+      duration_days?: number;
+      budget?: number;
     }) => {
+      if (!user) throw new Error('Connexion requise');
+
       // 1. Moderate content
       const { data: modResult } = await supabase.functions.invoke('zeus', {
         body: {
@@ -163,8 +202,26 @@ export function useCreateAdCampaign() {
         throw new Error(`Publicité refusée : ${moderationReason || 'Contenu non conforme'}`);
       }
 
-      const pricing = PRICING[input.duration_type];
-      const endsAt = getEndDate(input.duration_type);
+      const durationType = input.duration_type ?? '1_week';
+      const durationDays = input.duration_days;
+      const pricing = PRICING[durationType];
+      const campaignBudget = input.budget ?? pricing.price;
+      if (!Number.isFinite(campaignBudget) || campaignBudget < 5 || campaignBudget > 100_000) {
+        throw new Error('Budget invalide (5 € à 100 000 €)');
+      }
+      if (durationDays !== undefined && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 90)) {
+        throw new Error('Durée invalide (1 à 90 jours)');
+      }
+
+      const startsAt = new Date();
+      const endsAt = durationDays === undefined
+        ? getEndDate(durationType, startsAt)
+        : new Date(startsAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
+      const targetLocation: Json = {
+        country: input.target_location?.country ?? 'FR',
+        region: input.target_location?.region ?? null,
+        villes: input.target_location?.villes ?? [],
+      };
       
       // 2. Create campaign with status 'pending_payment'
       const { data, error } = await supabase
@@ -173,6 +230,7 @@ export function useCreateAdCampaign() {
           advertiser_id: user!.id,
           title: input.title,
           body: input.body,
+          objective: input.objective || 'traffic',
           image_url: input.image_url || null,
           video_url: input.video_url || null,
           cta_text: input.cta_text || 'En savoir plus',
@@ -182,78 +240,70 @@ export function useCreateAdCampaign() {
           target_age_max: input.target_age_max || 65,
           target_gender: input.target_gender || 'all',
           target_interests: input.target_interests || [],
-          target_location: input.target_location || { type: 'france', values: [] },
-          budget: pricing.price,
-          duration_type: input.duration_type,
+          target_location: targetLocation,
+          budget: campaignBudget,
+          duration_type: durationDays === undefined ? durationType : `custom_${durationDays}_days`,
+          starts_at: startsAt.toISOString(),
           ends_at: endsAt.toISOString(),
           status: 'pending_payment',
           moderation_status: 'approved',
           moderation_reason: moderationReason,
-        } as any)
+        })
         .select()
         .single();
       if (error) throw error;
-
-      // 3. Create Stripe checkout session
-      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke('ad-checkout', {
-        body: {
-          campaign_id: data.id,
-          amount: pricing.price,
-          campaign_title: input.title,
-        },
-      });
-
-      if (checkoutError) throw checkoutError;
-      if (!checkoutData?.url) throw new Error('Erreur de paiement');
-
-      // 4. Redirect to Stripe
-      window.location.href = checkoutData.url;
-
       return data;
     },
-    onError: (e: any) => toast.error(e.message),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ad-campaigns'] }),
+    onError: (error: unknown) => toast.error(errorMessage(error, 'Création impossible')),
   });
 }
 
-/**
- * Activate a campaign after successful payment
- */
-export function useActivateAdCampaign() {
+export function useStartAdCheckout() {
+  return useMutation({
+    mutationFn: async (campaignId: string) => {
+      const { data, error } = await supabase.functions.invoke('ad-checkout', {
+        body: { campaign_id: campaignId },
+      });
+
+      if (error) throw error;
+      if (!data?.url) throw new Error('Le paiement publicitaire est indisponible');
+      window.location.assign(data.url);
+      return data.url as string;
+    },
+    onError: (error: Error) => toast.error(error.message || 'Erreur de paiement'),
+  });
+}
+
+export function useDeleteAdCampaign() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (campaignId: string) => {
-      // Get campaign to recalculate dates from now
-      const { data: campaign } = await supabase
+      if (!user) throw new Error('Connexion requise');
+
+      const { data, error } = await supabase
         .from('ad_campaigns')
-        .select('duration_type')
+        .delete()
         .eq('id', campaignId)
-        .eq('status', 'pending_payment')
-        .single();
-
-      if (!campaign) throw new Error('Campaign not found or already activated');
-
-      const durationType = (campaign.duration_type || '1_week') as DurationType;
-      const now = new Date();
-      const endsAt = getEndDate(durationType, now);
-
-      const { error } = await supabase
-        .from('ad_campaigns')
-        .update({
-          status: 'active',
-          starts_at: now.toISOString(),
-          ends_at: endsAt.toISOString(),
-        })
-        .eq('id', campaignId)
-        .eq('status', 'pending_payment');
+        .eq('advertiser_id', user.id)
+        .select('id')
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) throw new Error('Campagne introuvable ou non autorisée');
+      return data.id;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ad-campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['ad-sets'] });
+      queryClient.invalidateQueries({ queryKey: ['ads'] });
+      queryClient.invalidateQueries({ queryKey: ['ad-daily-stats'] });
       queryClient.invalidateQueries({ queryKey: ['active-ads'] });
-      toast.success('🎉 Paiement confirmé ! Votre campagne est active.');
+      toast.success('Ancienne campagne supprimée');
     },
+    onError: (error: Error) => toast.error(error.message || 'Suppression impossible'),
   });
 }
 
@@ -275,6 +325,6 @@ export function useAdAIAssistant() {
       if (error) throw error;
       return data;
     },
-    onError: (e: any) => toast.error(e.message || 'Erreur IA'),
+    onError: (error: unknown) => toast.error(errorMessage(error, 'Erreur IA')),
   });
 }

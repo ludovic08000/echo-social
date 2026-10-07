@@ -98,6 +98,10 @@ export function useUpdatePrivacySettings() {
       updateRuntimeCache(settings);
       queryClient.setQueryData(['privacy-settings', user?.id], settings);
       queryClient.invalidateQueries({ queryKey: ['privacy-settings', user?.id] });
+      // Existing public/analytics switches also invalidate derived ad targeting.
+      queryClient.setQueriesData({ queryKey: ['active-ads'] }, []);
+      void queryClient.invalidateQueries({ queryKey: ['active-ads'] });
+      void queryClient.invalidateQueries({ queryKey: ['ad-audience'] });
     },
   });
 }

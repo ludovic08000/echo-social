@@ -65,6 +65,36 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   return <>{children}</>;
 }
 
+function CreatorAccessGate({ children }: ProtectedRouteProps) {
+  const location = useLocation();
+  const { data: profile, isLoading } = useProfile();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" />
+          <span className="text-muted-foreground">Vérification du compte créateur...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile?.is_creator) {
+    return <Navigate to="/creator" state={{ from: location.pathname, creatorRequired: true }} replace />;
+  }
+
+  return <>{children}</>;
+}
+
+export function CreatorOnlyRoute({ children }: ProtectedRouteProps) {
+  return (
+    <ProtectedRoute>
+      <CreatorAccessGate>{children}</CreatorAccessGate>
+    </ProtectedRoute>
+  );
+}
+
 export function PublicOnlyRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
   const location = useLocation();

@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.0";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
@@ -86,6 +86,14 @@ Deno.serve(async (req) => {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
     exportData.comments = comments;
+    // Own public news contributions only; disclose the bounded export, never silently truncate it.
+    const news = await serviceClient.from('news_comments')
+      .select('id,thread_id,parent_id,body,created_at,removed', { count: 'exact' })
+      .eq('user_id', user.id).order('created_at', { ascending: false }).order('id').limit(1000);
+    if (news.error) throw new Error('News comments export unavailable');
+    exportData.news_comments = news.data;
+    exportData.news_comments_total = news.count;
+    exportData.news_comments_truncated = (news.count ?? 0) > (news.data?.length ?? 0);
 
     // Friends
     const { data: friendships } = await serviceClient
@@ -112,6 +120,17 @@ Deno.serve(async (req) => {
       .eq("user_id", user.id)
       .single();
     exportData.privacy_settings = privacy;
+
+    // Private discovery data is scoped to the authenticated exporter, never a supplied ID.
+    const [discovery, audience, adLocations] = await Promise.all([
+      serviceClient.from('discovery_preferences').select('*').eq('user_id', user.id).maybeSingle(),
+      serviceClient.from('ad_audience_cache').select('topics,updated_at').eq('user_id', user.id).maybeSingle(),
+      serviceClient.from('ad_location_contexts').select('country,region,city,source,expires_at').eq('user_id', user.id),
+    ]);
+    if (discovery.error || audience.error || adLocations.error) throw new Error('Discovery export unavailable');
+    exportData.discovery_preferences = discovery.data;
+    exportData.ad_audience = audience.data;
+    exportData.ad_locations = adLocations.data;
 
     // Journal
     const { data: journal } = await serviceClient

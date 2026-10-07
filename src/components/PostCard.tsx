@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo, useCallback } from 'react';
+import { useEffect, useRef, useState, memo, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -25,9 +25,9 @@ import { toast } from 'sonner';
 import { FeedAutoplayVideo } from './FeedAutoplayVideo';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { imagePresets } from '@/lib/imageOptimize';
-import { useMLTracking } from '@/hooks/useMLFeed';
-import { useMLViewTracker, trackMLSignal, cachePostAuthor } from '@/hooks/useMLTracker';
-import { useQualityTracker, trackQuality } from '@/hooks/useQualityTracker';
+import { emitFeedPerformanceMetric } from '@/hooks/useFeedPerformance';
+import { useMLViewTracker, trackMLSignal } from '@/hooks/useMLTracker';
+import { useQualityTracker } from '@/hooks/useQualityTracker';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,9 +57,15 @@ interface PostCardProps {
   post: Post & { user_reaction?: ReactionType | null };
   showActions?: boolean;
   onCommentClick?: () => void;
+  mediaPriority?: boolean;
 }
 
-export const PostCard = memo(function PostCard({ post, showActions = true, onCommentClick }: PostCardProps) {
+export const PostCard = memo(function PostCard({
+  post,
+  showActions = true,
+  onCommentClick,
+  mediaPriority = false,
+}: PostCardProps) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const deletePost = useDeletePost();
@@ -70,17 +76,24 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const [saved, setSaved] = useState(false);
   const [viewTracked, setViewTracked] = useState(false);
   const { data: isMinorUser } = useCurrentUserIsMinor();
   const reportUser = useReportUser();
   const isMobile = useIsMobile();
-  const { trackView, startDwell, endDwell, trackInteraction } = useMLTracking();
+  const mediaStarted = useRef(performance.now());
+  const mediaMeasured = useRef(false);
+  const markMediaLoaded = () => {
+    setMediaLoaded(true);
+    if (mediaPriority && post.exposure_id && !mediaMeasured.current && !document.hidden) {
+      mediaMeasured.current = true;
+      emitFeedPerformanceMetric('media_ready', performance.now() - mediaStarted.current, { kind: isVideoPost ? 'video' : 'image' });
+    }
+  };
   // New ML pipeline tracker (auto view + dwell + skip detection)
-  const mlRef = useMLViewTracker(post.id) as React.MutableRefObject<HTMLElement | null>;
+  const mlRef = useMLViewTracker(post.id, post.exposure_id) as React.MutableRefObject<HTMLElement | null>;
   const cardRef = useRef<HTMLElement>(null);
-  // Cache author for live session re-ranking signals (boost/penalty per author)
-  useEffect(() => { cachePostAuthor(post.id, post.user_id); }, [post.id, post.user_id]);
   const setRefs = useCallback((node: HTMLElement | null) => {
     cardRef.current = node;
     mlRef.current = node;
@@ -93,30 +106,31 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
     authorId: post.user_id,
   });
 
-  // Legacy ML tracking (kept for back-compat with useMLFeed dashboard)
+  // Quality dashboard is separate from the served-exposure experiment.
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !user) return;
-    const contentType = isVideoPost ? 'video' : post.image_url ? 'image' : 'text';
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
-          trackView(post.id, { content_type: contentType });
-          startDwell(post.id);
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
           quality.onEnter();
         } else {
-          endDwell(post.id, { content_type: contentType });
           quality.onLeave();
         }
       },
       { threshold: 0.5 }
     );
     observer.observe(el);
-    return () => { observer.disconnect(); endDwell(post.id, { content_type: contentType }); };
-  }, [post.id, user?.id]);
+    return () => { observer.disconnect(); quality.onLeave(); };
+  }, [post.id, user?.id, quality.onEnter, quality.onLeave]);
 
   const postUrl = generatePostUrl(post.id);
   const isVideoPost = Boolean(post.image_url && /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(post.image_url));
+  const optimizedPostImage = useMemo(
+    () => post.image_url ? imagePresets.postThumbnail(post.image_url) || post.image_url : null,
+    [post.image_url],
+  );
+  const [renderedImageUrl, setRenderedImageUrl] = useState(optimizedPostImage);
 
   const { data: videoViewCount } = useQuery({
     queryKey: ['post-views', post.id],
@@ -127,7 +141,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
         .eq('post_id', post.id);
       return count || 0;
     },
-    enabled: isVideoPost && !loading && !!user,
+    enabled: isVideoPost && !loading && !!user && mediaLoaded,
     staleTime: 60_000,
   });
 
@@ -150,9 +164,13 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
 
   useEffect(() => {
     setMediaLoaded(false);
+    mediaStarted.current = performance.now();
+    mediaMeasured.current = false;
     setVideoError(false);
+    setImageError(false);
+    setRenderedImageUrl(optimizedPostImage);
     setViewTracked(false);
-  }, [post.id]);
+  }, [optimizedPostImage, post.id]);
 
   useEffect(() => {
     if (!post.expires_at) return;
@@ -257,7 +275,7 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                   className="w-full justify-start p-0"
                 />
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setSaved(!saved); if (user) trackMLSignal(user.id, post.id, saved ? 'not_interested' : 'save'); if (!saved) quality.onSave(); }}>
+              <DropdownMenuItem onClick={() => { setSaved(!saved); if (user && !saved) trackMLSignal(user.id, post.id, 'save'); if (!saved) quality.onSave(); }}>
                 <Bookmark className={cn("w-4 h-4 mr-2", saved && "fill-current")} />
                 {saved ? 'Retirer' : 'Enregistrer'}
               </DropdownMenuItem>
@@ -364,8 +382,12 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
 
       {/* Media — full width */}
       {post.image_url && (
-        <div className={cn("relative w-full overflow-hidden bg-muted/30", isVideoPost && "aspect-[4/5]")}>
-          {!mediaLoaded && !videoError && (
+        <div className={cn(
+          "relative w-full overflow-hidden bg-muted/30",
+          isVideoPost && "aspect-[4/5]",
+          !isVideoPost && !mediaLoaded && "min-h-[240px] sm:min-h-[280px]",
+        )}>
+          {!mediaLoaded && !videoError && !imageError && (
             <div className="absolute inset-0 skeleton aspect-[4/5]" />
           )}
           {isVideoPost ? (
@@ -380,9 +402,12 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
               <>
                 <FeedAutoplayVideo
                   src={post.image_url!}
-                  onMediaLoaded={() => setMediaLoaded(true)}
+                  poster={post.media_thumbnail_url}
+                  priority={mediaPriority}
+                  onMediaLoaded={markMediaLoaded}
                   onVideoError={() => { setMediaLoaded(true); setVideoError(true); }}
                   onPlay={() => trackVideoView()}
+                  onWatchComplete={(dwell) => trackMLSignal(user?.id ?? null, post.id, 'watch_complete', { dwell_ms: dwell })}
                 />
                 {typeof videoViewCount === 'number' && videoViewCount > 0 && (
                   <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 text-white text-xs bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
@@ -392,18 +417,34 @@ export const PostCard = memo(function PostCard({ post, showActions = true, onCom
                 )}
               </>
             )
+          ) : imageError ? (
+            <div className="min-h-[240px] flex items-center justify-center bg-muted/70">
+              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-background/80 border border-border/40">
+                <AlertTriangle className="w-4 h-4 text-destructive" />
+                <span className="text-xs font-medium text-foreground">Image indisponible</span>
+              </div>
+            </div>
           ) : (
             <Link to={`/post/${post.id}`}>
               <img
-                src={imagePresets.postThumbnail(post.image_url) || post.image_url}
+                src={renderedImageUrl || post.image_url}
                 alt="Image du post"
-                loading="lazy"
+                loading={mediaPriority ? 'eager' : 'lazy'}
+                fetchPriority={mediaPriority ? 'high' : 'auto'}
                 decoding="async"
                 className={cn(
-                  "w-full transition-opacity duration-300",
+                  "w-full transition-opacity duration-150",
                   mediaLoaded ? "opacity-100" : "opacity-0"
                 )}
-                onLoad={() => setMediaLoaded(true)}
+                onLoad={markMediaLoaded}
+                onError={() => {
+                  if (renderedImageUrl && renderedImageUrl !== post.image_url) {
+                    setRenderedImageUrl(post.image_url);
+                    return;
+                  }
+                  setMediaLoaded(true);
+                  setImageError(true);
+                }}
               />
             </Link>
           )}

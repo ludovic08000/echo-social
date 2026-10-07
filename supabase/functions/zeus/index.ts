@@ -1924,6 +1924,43 @@ async function handleCommentModeration(apiKey: string, body: any, userId: string
 // ═══════════════════════════════════════════════════════════════
 // MAIN ROUTER
 // ═══════════════════════════════════════════════════════════════
+const CREATOR_ONLY_DOMAINS = new Set(["ads", "agent"]);
+
+async function enforceCreatorDomainAccess(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  domain: string,
+  cors: Record<string, string>,
+): Promise<Response | null> {
+  if (!CREATOR_ONLY_DOMAINS.has(domain)) return null;
+
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("is_creator")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Creator access lookup failed:", error.message);
+    return new Response(JSON.stringify({ error: "Vérification du compte créateur indisponible" }), {
+      status: 503,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
+  if (profile?.is_creator !== true) {
+    return new Response(JSON.stringify({
+      error: "Accès réservé aux comptes créateur",
+      code: "CREATOR_ACCOUNT_REQUIRED",
+    }), {
+      status: 403,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
+  return null;
+}
+
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
@@ -1950,6 +1987,9 @@ Deno.serve(async (req) => {
     if (!domain) {
       return new Response(JSON.stringify({ error: "⚡ Zeus requires 'domain' parameter." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+
+    const creatorAccessDenial = await enforceCreatorDomainAccess(supabase, user.id, domain, cors);
+    if (creatorAccessDenial) return creatorAccessDenial;
 
     // Rate limit per domain
     const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30, "post-moderation": 30, "comment-moderation": 60 };

@@ -14,10 +14,12 @@ export type FeedSignalType =
   | 'click';
 
 export interface FeedRpcRow {
+  exposure_id?: string | null;
   id: string;
   user_id: string;
   body: string | null;
   image_url: string | null;
+  media_thumbnail_url?: string | null;
   created_at: string;
   expires_at?: string | null;
   likes_count?: number | null;
@@ -33,10 +35,12 @@ export interface FeedRpcRow {
 }
 
 export interface FeedPostView {
+  exposure_id?: string | null;
   id: string;
   user_id: string;
   body: string;
   image_url: string | null;
+  media_thumbnail_url: string | null;
   created_at: string;
   expires_at?: string | null;
   profile: {
@@ -65,10 +69,12 @@ export interface FeedExperimentEvent {
 export function mapFeedRpcRow(row: FeedRpcRow): FeedPostView {
   const score = Number(row.final_score);
   return {
+    exposure_id: row.exposure_id || null,
     id: row.id,
     user_id: row.user_id,
     body: row.body || '',
     image_url: row.image_url || null,
+    media_thumbnail_url: row.media_thumbnail_url || null,
     created_at: row.created_at,
     expires_at: row.expires_at || null,
     profile: {

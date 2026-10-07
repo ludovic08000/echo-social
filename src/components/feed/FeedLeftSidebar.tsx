@@ -43,6 +43,9 @@ export function FeedLeftSidebar() {
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
   const friendRequests = friendships?.requests.length || 0;
+  const visibleMainLinks = mainLinks.filter(
+    (item) => profile?.is_creator || (item.path !== '/ads' && item.path !== '/ai-agents'),
+  );
 
   if (!user || isMobile) return null;
 
@@ -72,7 +75,7 @@ export function FeedLeftSidebar() {
 
         {/* Main navigation */}
         <div className="space-y-0.5 pt-1">
-          {mainLinks.map((item) => {
+          {visibleMainLinks.map((item) => {
             const isActive = location.pathname === item.path;
             const badge = getBadge(item.path);
 

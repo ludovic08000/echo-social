@@ -30,13 +30,25 @@ function canEncodeWebp(): boolean {
   return _webpSupported;
 }
 
-export async function compressImageForChat(file: File): Promise<File> {
+export interface ImageCompressionOptions {
+  maxDimension?: number;
+  quality?: number;
+  skipBelowBytes?: number;
+}
+
+export async function compressImageForUpload(
+  file: File,
+  options: ImageCompressionOptions = {},
+): Promise<File> {
   try {
+    const maxDimension = options.maxDimension ?? MAX_DIMENSION;
+    const quality = options.quality ?? QUALITY;
+    const skipBelowBytes = options.skipBelowBytes ?? SKIP_BELOW_BYTES;
     if (!STILL_IMAGE_MIME.test(file.type)) return file;
-    if (file.size <= SKIP_BELOW_BYTES) return file;
+    if (file.size <= skipBelowBytes) return file;
 
     const bitmap = await loadBitmap(file);
-    const { width, height } = scaleDown(bitmap.width, bitmap.height, MAX_DIMENSION);
+    const { width, height } = scaleDown(bitmap.width, bitmap.height, maxDimension);
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -56,7 +68,7 @@ export async function compressImageForChat(file: File): Promise<File> {
     const outExt = useWebp ? '.webp' : '.jpg';
 
     const blob: Blob | null = await new Promise(resolve =>
-      canvas.toBlob(resolve, outMime, QUALITY)
+      canvas.toBlob(resolve, outMime, quality)
     );
     canvas.width = 1;
     canvas.height = 1;
@@ -67,6 +79,10 @@ export async function compressImageForChat(file: File): Promise<File> {
   } catch {
     return file;
   }
+}
+
+export function compressImageForChat(file: File): Promise<File> {
+  return compressImageForUpload(file);
 }
 
 async function loadBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {

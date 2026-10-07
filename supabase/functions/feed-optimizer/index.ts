@@ -1,17 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.0";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
-
-// ── Safe bounds for Level 3 (semi-autonomous) ──
-const SAFE_BOUNDS: Record<string, { min: number; max: number }> = {
-  discovery_boost: { min: 30, max: 70 },
-  evening_boost: { min: 1.0, max: 1.8 },
-  spam_penalty: { min: 0.3, max: 0.8 },
-  diversity_penalty_base: { min: 5, max: 15 },
-  marketplace_injection_interval: { min: 4, max: 10 },
-  recency_tier_1h: { min: 35, max: 65 },
-  engagement_cap: { min: 15, max: 40 },
-};
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -34,7 +23,7 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    const { action } = await req.json();
+    const { action, change_id } = await req.json();
 
     // ═════════════════════════════════════════════
     // LEVEL 1: OBSERVE — Gather & aggregate metrics
@@ -43,12 +32,13 @@ Deno.serve(async (req) => {
       const since = new Date(Date.now() - 6 * 3600_000).toISOString();
 
       // Get recent metrics
-      const { data: metrics } = await supabase
+      const { data: metrics, error: metricsError } = await supabase
         .from("feed_performance_metrics")
-        .select("metric_type, value, metadata, created_at")
+        .select("metric_type, value, session_id, metadata, created_at")
         .gte("created_at", since)
         .order("created_at", { ascending: false })
         .limit(1000);
+      if (metricsError) throw metricsError;
 
       if (!metrics || metrics.length === 0) {
         return new Response(
@@ -79,9 +69,10 @@ Deno.serve(async (req) => {
       }
 
       // Get current config
-      const { data: config } = await supabase
-        .from("feed_algorithm_config")
+      const { data: config, error: configError } = await supabase
+        .from("ml_model_config")
         .select("key, value");
+      if (configError) throw configError;
 
       const currentConfig: Record<string, any> = {};
       (config || []).forEach((c: any) => {
@@ -100,16 +91,18 @@ Deno.serve(async (req) => {
     if (action === "recommend") {
       const since = new Date(Date.now() - 6 * 3600_000).toISOString();
 
-      const { data: metrics } = await supabase
+      const { data: metrics, error: metricsError } = await supabase
         .from("feed_performance_metrics")
-        .select("metric_type, value, metadata, created_at")
+        .select("metric_type, value, session_id, metadata, created_at")
         .gte("created_at", since)
         .order("created_at", { ascending: false })
         .limit(1000);
+      if (metricsError) throw metricsError;
 
-      const { data: config } = await supabase
-        .from("feed_algorithm_config")
+      const { data: config, error: configError } = await supabase
+        .from("ml_model_config")
         .select("key, value");
+      if (configError) throw configError;
 
       const currentConfig: Record<string, any> = {};
       (config || []).forEach((c: any) => {
@@ -201,18 +194,25 @@ Deno.serve(async (req) => {
       }
 
       // ── Rule 4: High abandonment rate ──
-      const abandonments = byType["abandonment"] || [];
-      const totalSessions = new Set((metrics || []).map((m: any) => m.metadata?.session_id)).size || 1;
-      const abandonRate = Math.round((abandonments.length / Math.max(1, totalSessions)) * 100);
+      // Rows are newest first. A resumed session can replace an earlier
+      // abandonment=1 with 0; unfinished sessions are not the denominator.
+      const sessionSummary = new Map<string, boolean>();
+      for (const metric of metrics || []) {
+        if (metric.metric_type === 'abandonment' && !sessionSummary.has(metric.session_id)) {
+          sessionSummary.set(metric.session_id, Number(metric.value) > 0);
+        }
+      }
+      const abandonedSessions = [...sessionSummary.values()].filter(Boolean).length;
+      const abandonRate = Math.round(abandonedSessions / Math.max(1, sessionSummary.size) * 100);
       if (abandonRate > 30) {
         recommendations.push({
           recommendation_type: "content_insight",
           severity: "warning",
           title: "🚪 Taux d'abandon élevé",
           description: `${abandonRate}% des sessions quittent le feed avant 15% de scroll. Le contenu en tête du feed manque peut-être d'intérêt.`,
-          suggested_action: { key: "discovery_boost", current: currentConfig.discovery_boost, suggested: Math.min(70, (Number(currentConfig.discovery_boost) || 50) + 10) },
-          auto_applicable: true,
-          safe_bounds: SAFE_BOUNDS.discovery_boost,
+          suggested_action: { action: "review_ab_experiment", reason: "abandonment" },
+          auto_applicable: false,
+          safe_bounds: {},
         });
       }
 
@@ -226,47 +226,31 @@ Deno.serve(async (req) => {
             severity: "warning",
             title: "📉 Engagement de scroll faible",
             description: `Les utilisateurs ne scrollent qu'à ${avgDepth}% du feed en moyenne. Augmentez le diversity boost ou ajoutez du contenu varié.`,
-            suggested_action: { key: "diversity_penalty_base", current: currentConfig.diversity_penalty_base, suggested: 10 },
-            auto_applicable: true,
-            safe_bounds: SAFE_BOUNDS.diversity_penalty_base,
+            suggested_action: { action: "review_mmr_shadow", reason: "scroll_depth" },
+            auto_applicable: false,
+            safe_bounds: {},
           });
         } else if (avgDepth > 70) {
           recommendations.push({
             recommendation_type: "content_insight",
             severity: "info",
             title: "🔥 Excellent engagement",
-            description: `Les utilisateurs scrollent en moyenne à ${avgDepth}%. L'algorithme est bien calibré.`,
+            description: `La profondeur moyenne observée est ${avgDepth}%. À comparer à la satisfaction et aux retours négatifs ; le scroll seul ne valide pas le classement.`,
             suggested_action: null,
             auto_applicable: false,
           });
         }
       }
 
-      // ── Rule 6: Time-based optimization ──
-      const hour = new Date().getHours();
-      if (hour >= 18 && hour <= 22) {
-        const currentEvening = Number(currentConfig.evening_boost) || 1.3;
-        if (currentEvening < 1.4) {
-          recommendations.push({
-            recommendation_type: "score_adjustment",
-            severity: "info",
-            title: "🌙 Boost soirée recommandé",
-            description: `Il est ${hour}h, l'heure de pic d'activité. Le evening_boost actuel (${currentEvening}) pourrait être augmenté.`,
-            suggested_action: { key: "evening_boost", current: currentEvening, suggested: 1.5 },
-            auto_applicable: true,
-            safe_bounds: SAFE_BOUNDS.evening_boost,
-          });
-        }
-      }
-
       // Save recommendations to DB
       if (recommendations.length > 0) {
-        await supabase.from("feed_ai_recommendations").insert(
+        const stored = await supabase.from("feed_ai_recommendations").insert(
           recommendations.map((r) => ({
             ...r,
             status: "pending",
           }))
         );
+        if (stored.error) throw stored.error;
       }
 
       return new Response(
@@ -276,145 +260,37 @@ Deno.serve(async (req) => {
     }
 
     // ═══════════════════════════════════════════════════════
-    // LEVEL 3: AUTO-APPLY — Apply safe adjustments in bounds
+    // Automatic mutation is disabled until a reviewed experiment is available.
     // ═══════════════════════════════════════════════════════
     if (action === "auto_apply") {
-      // Get pending auto-applicable recommendations
-      const { data: recos } = await supabase
-        .from("feed_ai_recommendations")
-        .select("*")
-        .eq("status", "pending")
-        .eq("auto_applicable", true)
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (!recos || recos.length === 0) {
-        return new Response(
-          JSON.stringify({ status: "ok", applied: 0, message: "Aucune recommandation auto-applicable." }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      let applied = 0;
-      const appliedChanges: any[] = [];
-
-      for (const reco of recos) {
-        const action = reco.suggested_action as any;
-        if (!action?.key || action.suggested === undefined) continue;
-
-        const bounds = SAFE_BOUNDS[action.key];
-        if (!bounds) continue;
-
-        // Clamp to safe bounds
-        const clampedValue = Math.max(bounds.min, Math.min(bounds.max, Number(action.suggested)));
-
-        // Get current value
-        const { data: current } = await supabase
-          .from("feed_algorithm_config")
-          .select("value")
-          .eq("key", action.key)
-          .maybeSingle();
-
-        const oldValue = current?.value;
-
-        // Apply change
-        const { error } = await supabase
-          .from("feed_algorithm_config")
-          .upsert({
-            key: action.key,
-            value: clampedValue,
-            description: `Auto-ajusté par IA: ${reco.title}`,
-            updated_at: new Date().toISOString(),
-          } as any, { onConflict: "key" });
-
-        if (!error) {
-          // Log the change
-          await supabase.from("feed_config_change_log").insert({
-            config_key: action.key,
-            old_value: oldValue ?? null,
-            new_value: clampedValue,
-            change_source: "ai_auto",
-            ai_level: "autonomous",
-            reason: reco.title,
-            applied_by: "system",
-          } as any);
-
-          // Mark recommendation as applied
-          await supabase
-            .from("feed_ai_recommendations")
-            .update({ status: "applied", applied_at: new Date().toISOString() } as any)
-            .eq("id", reco.id);
-
-          applied++;
-          appliedChanges.push({
-            key: action.key,
-            old: oldValue,
-            new: clampedValue,
-            reason: reco.title,
-          });
-        }
-      }
-
-      return new Response(
-        JSON.stringify({ status: "ok", applied, changes: appliedChanges }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({
+        error: "EXPERIMENT_REQUIRED",
+        message: "Modification automatique désactivée : valider une expérience avant de changer le classement.",
+      }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // ═══════════════════════════════════
     // ROLLBACK — Undo a config change
     // ═══════════════════════════════════
     if (action === "rollback") {
-      const { change_id } = await req.json().catch(() => ({}));
-      if (!change_id) {
-        return new Response(
-          JSON.stringify({ error: "change_id required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (typeof change_id !== "string" || !/^[0-9a-f-]{36}$/i.test(change_id)) {
+        return new Response(JSON.stringify({ error: "change_id required" }), { status: 400, headers: corsHeaders });
       }
-
-      const { data: change } = await supabase
-        .from("feed_config_change_log")
-        .select("*")
-        .eq("id", change_id)
-        .single();
-
-      if (!change || change.rolled_back) {
-        return new Response(
-          JSON.stringify({ error: "Change not found or already rolled back" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Restore old value
-      if (change.old_value !== null) {
-        await supabase
-          .from("feed_algorithm_config")
-          .update({ value: change.old_value, updated_at: new Date().toISOString() } as any)
-          .eq("key", change.config_key);
-      }
-
-      // Mark as rolled back
-      await supabase
-        .from("feed_config_change_log")
-        .update({ rolled_back: true, rolled_back_at: new Date().toISOString() } as any)
-        .eq("id", change_id);
-
-      return new Response(
-        JSON.stringify({ status: "ok", rolled_back: change.config_key, restored_value: change.old_value }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      const { data, error } = await supabase.rpc("rollback_feed_legacy_config", { p_change_id: change_id });
+      if (error) return new Response(JSON.stringify({ error: "ROLLBACK_CONFLICT", message: "La configuration a changé ou ce retour arrière est indisponible." }), { status: 409, headers: corsHeaders });
+      return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // ══════════════════════════════════════
     // HISTORY — Get config change history
     // ══════════════════════════════════════
     if (action === "history") {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("feed_config_change_log")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50);
+      if (error) throw error;
 
       return new Response(
         JSON.stringify({ status: "ok", changes: data || [] }),

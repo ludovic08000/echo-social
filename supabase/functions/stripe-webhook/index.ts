@@ -77,6 +77,78 @@ serve(async (req) => {
 
         console.log(`✅ Tip confirmed for session ${stripeSessionId}`);
       }
+      // ── ADS CAMPAIGN PAYMENT ──
+      else if (metadataType === "ad_campaign") {
+        const campaignId = session.metadata?.campaign_id;
+        const userId = session.metadata?.user_id;
+        if (!campaignId || !userId) throw new Error("Ad campaign payment metadata is incomplete");
+        if (session.payment_status !== "paid" || session.currency !== "eur") {
+          throw new Error(`Ad campaign payment is not confirmed for ${campaignId}`);
+        }
+
+        const { data: campaign, error: campaignLookupError } = await supabase
+          .from("ad_campaigns")
+          .select("id, advertiser_id, budget, status, paid_at, starts_at, ends_at")
+          .eq("id", campaignId)
+          .eq("advertiser_id", userId)
+          .maybeSingle();
+        if (campaignLookupError) throw campaignLookupError;
+        if (!campaign) throw new Error(`Ad campaign ${campaignId} not found for payment owner`);
+
+        const expectedAmount = Math.round(Number(campaign.budget) * 100);
+        if (!Number.isFinite(expectedAmount) || session.amount_total !== expectedAmount) {
+          throw new Error(`Ad campaign amount mismatch for ${campaignId}`);
+        }
+
+        if (campaign.status !== "active" || !campaign.paid_at) {
+          const originalStart = new Date(campaign.starts_at).getTime();
+          const originalEnd = new Date(campaign.ends_at).getTime();
+          const requestedDuration = originalEnd - originalStart;
+          const durationMs = Math.min(
+            90 * 24 * 60 * 60 * 1000,
+            Math.max(24 * 60 * 60 * 1000, requestedDuration),
+          );
+          const startsAt = new Date();
+          const endsAt = new Date(startsAt.getTime() + durationMs);
+
+          const { error: campaignUpdateError } = await supabase
+            .from("ad_campaigns")
+            .update({
+              status: "active",
+              paid_at: startsAt.toISOString(),
+              starts_at: startsAt.toISOString(),
+              ends_at: endsAt.toISOString(),
+            })
+            .eq("id", campaignId)
+            .eq("advertiser_id", userId);
+          if (campaignUpdateError) throw campaignUpdateError;
+
+          const { data: adSets, error: adSetUpdateError } = await supabase
+            .from("ad_sets")
+            .update({
+              status: "active",
+              starts_at: startsAt.toISOString(),
+              ends_at: endsAt.toISOString(),
+            })
+            .eq("campaign_id", campaignId)
+            .eq("advertiser_id", userId)
+            .select("id");
+          if (adSetUpdateError) throw adSetUpdateError;
+
+          const adSetIds = (adSets || []).map((adSet) => adSet.id);
+          if (adSetIds.length > 0) {
+            const { error: adUpdateError } = await supabase
+              .from("ads")
+              .update({ status: "active" })
+              .eq("advertiser_id", userId)
+              .eq("moderation_status", "approved")
+              .in("ad_set_id", adSetIds);
+            if (adUpdateError) throw adUpdateError;
+          }
+        }
+
+        console.log(`✅ Ad campaign activated for campaign ${campaignId}`);
+      }
       // ── SUBSCRIPTION (Creator) ──
       else if (!session.metadata?.order_id && session.metadata?.user_id && session.mode === "subscription") {
         const userId = session.metadata.user_id;

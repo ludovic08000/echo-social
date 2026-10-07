@@ -1,15 +1,61 @@
 /**
- * Utility for generating optimized image URLs.
- * Uses the image-optimize edge function to serve resized/cached images.
+ * Builds fast image delivery URLs without adding an Edge Function hop.
+ *
+ * R2 and other CDN URLs are returned unchanged so the browser can hit the
+ * media CDN directly. Supabase's native image renderer is used only when the
+ * deployment explicitly enables it; this avoids broken images on plans where
+ * image transformations are unavailable.
  */
 
-const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-const BASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/image-optimize`;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '');
+const SUPABASE_IMAGE_TRANSFORMATIONS_ENABLED =
+  import.meta.env.VITE_SUPABASE_IMAGE_TRANSFORMATIONS_ENABLED === 'true';
 
 interface ImageOptions {
   width?: number;
   height?: number;
   quality?: number;
+}
+
+interface SupabaseTransformConfig {
+  supabaseUrl?: string;
+  enabled?: boolean;
+}
+
+const PUBLIC_OBJECT_PATH = '/storage/v1/object/public/';
+const PUBLIC_RENDER_PATH = '/storage/v1/render/image/public/';
+
+export function buildSupabaseImageTransformUrl(
+  originalUrl: string,
+  options: ImageOptions,
+  config: SupabaseTransformConfig = {},
+): string {
+  const supabaseUrl = config.supabaseUrl?.replace(/\/$/, '') ?? SUPABASE_URL;
+  const enabled = config.enabled ?? SUPABASE_IMAGE_TRANSFORMATIONS_ENABLED;
+  if (!enabled || !supabaseUrl) return originalUrl;
+
+  try {
+    const source = new URL(originalUrl);
+    const backend = new URL(supabaseUrl);
+    if (
+      source.origin !== backend.origin ||
+      !source.pathname.startsWith(PUBLIC_OBJECT_PATH)
+    ) {
+      return originalUrl;
+    }
+
+    const objectPath = source.pathname.slice(PUBLIC_OBJECT_PATH.length);
+    if (!objectPath) return originalUrl;
+
+    const rendered = new URL(`${PUBLIC_RENDER_PATH}${objectPath}`, backend.origin);
+    if (options.width) rendered.searchParams.set('width', String(options.width));
+    if (options.height) rendered.searchParams.set('height', String(options.height));
+    if (options.quality) rendered.searchParams.set('quality', String(options.quality));
+    rendered.searchParams.set('resize', 'contain');
+    return rendered.toString();
+  } catch {
+    return originalUrl;
+  }
 }
 
 /**
@@ -22,21 +68,12 @@ export function optimizedImageUrl(originalUrl: string | null | undefined, option
   // Skip optimization for SVGs, data URLs, or already-optimized URLs
   if (
     originalUrl.startsWith('data:') ||
-    originalUrl.endsWith('.svg') ||
-    originalUrl.includes('/image-optimize')
+    originalUrl.endsWith('.svg')
   ) {
     return originalUrl;
   }
 
-  // If no project ID, return original
-  if (!SUPABASE_PROJECT_ID) return originalUrl;
-
-  const params = new URLSearchParams({ url: originalUrl });
-  if (options.width) params.set('w', String(options.width));
-  if (options.height) params.set('h', String(options.height));
-  if (options.quality) params.set('q', String(options.quality));
-
-  return `${BASE_URL}?${params.toString()}`;
+  return buildSupabaseImageTransformUrl(originalUrl, options);
 }
 
 /** Common presets */

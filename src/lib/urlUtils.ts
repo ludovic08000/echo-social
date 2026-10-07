@@ -256,6 +256,7 @@ export const PROTECTED_ROUTES = [
   '/lives',
   '/live',
   '/post',
+  '/news',
   '/search',
 ];
 

@@ -44,11 +44,17 @@ export function MLFeedSection() {
     avgCTR: 0,
   });
   const [loading, setLoading] = useState(false);
+  const [health, setHealth] = useState<any>(null);
+  const [healthUnavailable, setHealthUnavailable] = useState(false);
   const [training, setTraining] = useState(false);
   const [trainingTwoTower, setTrainingTwoTower] = useState(false);
 
   const load = async () => {
     setLoading(true);
+    try {
+    const healthResult = await supabase.rpc('feed_ml_health' as never);
+    setHealth(healthResult.data);
+    setHealthUnavailable(Boolean(healthResult.error));
     const [runsRes, configRes, profilesRes, featuresRes, interRes] = await Promise.all([
       supabase.from("ml_model_runs").select("*").order("started_at", { ascending: false }).limit(15),
       supabase.from("ml_model_config").select("value").eq("key", "hybrid_weights").maybeSingle(),
@@ -59,6 +65,8 @@ export function MLFeedSection() {
         .select("id", { count: "exact", head: true })
         .gte("created_at", new Date(Date.now() - 86400000).toISOString()),
     ]);
+    const error = [runsRes, configRes, profilesRes, featuresRes, interRes].find(result => result.error)?.error;
+    if (error) throw error;
 
     if (runsRes.data) setRuns(runsRes.data as unknown as ModelRun[]);
     if (configRes.data?.value) setWeights(configRes.data.value as unknown as HybridWeights);
@@ -73,7 +81,10 @@ export function MLFeedSection() {
       interactions24h: interRes.count || 0,
       avgCTR: ctr,
     });
-    setLoading(false);
+    } catch {
+      setHealthUnavailable(true);
+      toast.error('Mesures ML indisponibles : les compteurs ne peuvent pas être validés.');
+    } finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -90,8 +101,9 @@ export function MLFeedSection() {
   const triggerTraining = async () => {
     setTraining(true);
     try {
-      const { error } = await supabase.functions.invoke("ml-feed-train");
+      const { data, error } = await supabase.functions.invoke("ml-feed-train");
       if (error) throw error;
+      if (data?.ok === false) throw new Error("Analyse partielle : consultez les erreurs du traitement.");
       toast.success("Entraînement lancé");
       setTimeout(load, 2000);
     } catch (e: any) {
@@ -104,9 +116,11 @@ export function MLFeedSection() {
   const triggerTwoTower = async () => {
     setTrainingTwoTower(true);
     try {
-      const { error } = await supabase.functions.invoke("ml-twotower-train");
+      const { data, error } = await supabase.functions.invoke("ml-twotower-train");
       if (error) throw error;
-      toast.success("Two-Tower : entraînement neural lancé (≈ 2-5 min)");
+      toast.success(data?.status === 'candidate'
+        ? "Candidat évalué. Modèle actif inchangé."
+        : "Données insuffisantes ou candidat rejeté. Modèle actif inchangé.");
       setTimeout(load, 3000);
     } catch (e: any) {
       toast.error("Échec Two-Tower : " + (e?.message || "erreur inconnue"));
@@ -161,7 +175,7 @@ export function MLFeedSection() {
           </Button>
           <Button size="sm" variant="secondary" onClick={triggerTwoTower} disabled={trainingTwoTower}>
             <Brain className="h-4 w-4 mr-2" />
-            {trainingTwoTower ? "Neural..." : "Entraîner Two-Tower"}
+            {trainingTwoTower ? "Évaluation..." : "Évaluer un candidat Two-Tower"}
           </Button>
         </div>
       </div>
@@ -214,6 +228,22 @@ export function MLFeedSection() {
         </Card>
       </div>
 
+      <Card>
+        <CardHeader><CardTitle>Qualité des données et garde-fous</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {healthUnavailable ? <p role="status">Diagnostics indisponibles : vérifier le déploiement et les droits administrateur.</p> : <>
+            <p>Couverture sémantique : {health?.coverage?.semantic_embedding_coverage_pct ?? 'non mesurée'} %</p>
+            <p>Couverture créateurs : {health?.coverage?.creator_feature_coverage_pct ?? 'non mesurée'} %</p>
+            <p>Analyses en attente : {health?.queue?.pending ?? 0} · en échec : {health?.queue?.failed ?? 0} · ignorées : {health?.queue?.skipped ?? 0}</p>
+            <p>MMR : comparaison hors ligne uniquement · {health?.mmr?.sampled_users ?? 0} utilisateurs évalués</p>
+            <p>Dernier candidat : {health?.candidate?.status ?? 'aucun'}</p>
+            <p>Aucune promotion automatique. Un résultat hors ligne ne valide pas une mise en production.</p>
+            {(health?.experiments ?? []).map((e: any) => (
+              <p key={e.revision + e.variant}>Variante {e.variant.toUpperCase()} · {e.viewers} utilisateurs · {e.views} vues vérifiées · {e.clicks} clics</p>
+            ))}
+          </>}
+        </CardContent>
+      </Card>
       {/* Weights tuning */}
       <Card>
         <CardHeader>

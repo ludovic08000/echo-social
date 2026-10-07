@@ -12,6 +12,7 @@ it('allows cryptographic WASM without JavaScript eval or inline scripts', () => 
   expect(directives.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'"]);
   expect(directives.get('script-src-elem')).toEqual(["'self'"]);
   expect(directives.get('object-src')).toEqual(["'none'"]);
+  expect(directives.get('frame-src')).toEqual(['https://www.youtube-nocookie.com']);
 });
 
 it('allows login approval forms only on ForSure and its Lovable backend', () => {

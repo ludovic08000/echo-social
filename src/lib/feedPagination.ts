@@ -4,6 +4,7 @@ export type FeedPage<T> = T[] & {
   nextCursor: FeedCursor;
   hasMore: boolean;
   sourceCount: number;
+  snapshotExpiresAt: string | null;
 };
 
 export interface RankedFeedPagePayload {
@@ -14,6 +15,7 @@ export interface RankedFeedPagePayload {
 }
 
 interface BuildFeedPageOptions {
+  snapshotExpiresAt?: unknown;
   nextCursor?: unknown;
   hasMore?: unknown;
 }
@@ -40,6 +42,7 @@ export function buildFeedPage<T>(
     nextCursor,
     hasMore,
     sourceCount: sourceItems.length,
+    snapshotExpiresAt: typeof options.snapshotExpiresAt === 'string' ? options.snapshotExpiresAt : null,
   });
 }
 
@@ -50,6 +53,7 @@ export function replaceFeedPageItems<T>(
   return buildFeedPage(items, {
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
+    snapshotExpiresAt: page.snapshotExpiresAt,
   });
 }
 
@@ -83,5 +87,12 @@ export function readRankedFeedPage<T>(
   return buildFeedPage(mappedItems, {
     nextCursor: page.next_cursor,
     hasMore: page.has_more,
+    snapshotExpiresAt: page.snapshot_expires_at,
   });
+}
+
+export function isFeedCursorError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { code?: string; message?: string };
+  return e.code === '22023' && /feed cursor/i.test(e.message ?? '');
 }

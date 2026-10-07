@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { ReactionType } from '@/hooks/useReactions';
@@ -10,6 +11,7 @@ import {
   readRankedFeedPage,
   replaceFeedPageItems,
   type FeedCursor,
+  isFeedCursorError,
 } from '@/lib/feedPagination';
 import { emitFeedPerformanceMetric } from '@/hooks/useFeedPerformance';
 
@@ -30,10 +32,12 @@ function ensureFeedPrefsSynced(userId: string): Promise<void> {
 }
 
 export interface Post {
+  exposure_id?: string | null;
   id: string;
   user_id: string;
   body: string;
   image_url: string | null;
+  media_thumbnail_url?: string | null;
   created_at: string;
   expires_at?: string | null;
   profile: {
@@ -47,7 +51,9 @@ export interface Post {
   user_reaction?: ReactionType | null;
 }
 
-const PAGE_SIZE = 25;
+// Keep the first response small enough to paint on mobile immediately. The
+// 1200px feed sentinel fetches the next page before the user reaches the end.
+const PAGE_SIZE = 12;
 
 type FeedRpcResponse = {
   data?: unknown;
@@ -89,21 +95,26 @@ async function runTimedFeedRpc<T extends FeedRpcResponse>(
 
 export function usePosts() {
   const { user, loading } = useAuth();
+  const queryClient = useQueryClient();
+  const [expired, setExpired] = useState(false);
+  const queryKey = ['posts', 'friends-feed', loading ? 'loading' : user?.id ?? 'guest'];
 
-  return useInfiniteQuery({
-    queryKey: ['posts', 'friends-feed', loading ? 'loading' : user?.id ?? 'guest'],
+  const query = useInfiniteQuery({
+    queryKey,
     queryFn: async ({ pageParam }: { pageParam: FeedCursor }) => {
       const cursor = pageParam;
       const preferencesReady = user
         ? ensureFeedPrefsSynced(user.id).catch(() => undefined)
         : Promise.resolve();
-      const pagePromise = runTimedFeedRpc(cursor, () =>
+      // The initial snapshot must see any one-time migration of local preferences.
+      // Subsequent pages only read the immutable server snapshot.
+      if (cursor === null) await preferencesReady;
+      const result = await runTimedFeedRpc(cursor, () =>
         supabase.rpc('get_ranked_feed_page', {
           p_limit: PAGE_SIZE,
           p_cursor: cursor,
         }),
       );
-      const [result] = await Promise.all([pagePromise, preferencesReady]);
 
       if (result.error) throw result.error;
 
@@ -127,7 +138,21 @@ export function usePosts() {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
+    retry: (attempt, error) => !isFeedCursorError(error) && attempt < 2,
   });
+  const expiresAt = query.data?.pages[0]?.snapshotExpiresAt;
+  useEffect(() => {
+    setExpired(false);
+    if (!expiresAt) return;
+    const timer = setTimeout(() => setExpired(true), Math.max(0, Date.parse(expiresAt) - Date.now() - 1000));
+    return () => clearTimeout(timer);
+  }, [expiresAt, user?.id]);
+  return {
+    ...query,
+    hasNextPage: !expired && query.hasNextPage,
+    snapshotExpired: expired || isFeedCursorError(query.error),
+    restartFeed: () => queryClient.resetQueries({ queryKey, exact: true }),
+  };
 }
 
 export function useUserPosts(userId: string) {
@@ -138,7 +163,7 @@ export function useUserPosts(userId: string) {
     queryFn: async () => {
       const { data: posts, error } = await supabase
         .from('posts')
-        .select('id, user_id, body, image_url, created_at, expires_at')
+        .select('id, user_id, body, image_url, media_thumbnail_url, created_at, expires_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
@@ -177,6 +202,7 @@ export function useUserPosts(userId: string) {
           user_id: post.user_id,
           body: post.body,
           image_url: post.image_url,
+          media_thumbnail_url: post.media_thumbnail_url,
           created_at: post.created_at,
           expires_at: (post as any).expires_at || null,
           profile: {
@@ -202,7 +228,19 @@ export function useCreatePost() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ body, imageUrl, expiresAt, publishAt }: { body: string; imageUrl?: string; expiresAt?: string; publishAt?: string }) => {
+    mutationFn: async ({
+      body,
+      imageUrl,
+      mediaThumbnailUrl,
+      expiresAt,
+      publishAt,
+    }: {
+      body: string;
+      imageUrl?: string;
+      mediaThumbnailUrl?: string;
+      expiresAt?: string;
+      publishAt?: string;
+    }) => {
       if (!user) throw new Error('Not authenticated');
 
       // Sanitize: strip HTML tags and limit length
@@ -212,6 +250,7 @@ export function useCreatePost() {
         user_id: user.id,
         body: sanitizedBody,
         image_url: imageUrl || null,
+        media_thumbnail_url: mediaThumbnailUrl || null,
       };
       if (expiresAt) insertData.expires_at = expiresAt;
       if (publishAt) insertData.publish_at = publishAt;
@@ -238,6 +277,7 @@ export function useCreatePost() {
             user_id: newPost.user_id,
             body: newPost.body,
             image_url: newPost.image_url,
+            media_thumbnail_url: newPost.media_thumbnail_url,
             created_at: newPost.created_at,
             expires_at: newPost.expires_at || null,
             profile: {
@@ -273,7 +313,7 @@ export function useDeletePost() {
       // Fetch the post to get media URL before deleting
       const { data: post } = await supabase
         .from('posts')
-        .select('image_url')
+        .select('image_url, media_thumbnail_url')
         .eq('id', postId)
         .single();
 
@@ -288,6 +328,15 @@ export function useDeletePost() {
           if (pathMatch) await deleteFromR2(pathMatch);
         } catch (e) {
           console.error('R2 media cleanup error:', e);
+        }
+      }
+      if (post?.media_thumbnail_url) {
+        try {
+          const { deleteFromR2 } = await import('@/lib/r2');
+          const pathMatch = extractR2Path(post.media_thumbnail_url);
+          if (pathMatch) await deleteFromR2(pathMatch);
+        } catch (error) {
+          console.error('R2 thumbnail cleanup error:', error);
         }
       }
     },

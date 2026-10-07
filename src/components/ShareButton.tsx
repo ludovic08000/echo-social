@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Share2, Copy, Check, Send, FileText, Radio, MessageCircle, Users, X, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { shareUrl, ShareData } from '@/lib/urlUtils';
 import { cn } from '@/lib/utils';
@@ -44,13 +45,13 @@ export function ShareButton({
         {showLabel && <span>Partager</span>}
       </Button>
 
-      <ShareDialog
+      {showShareDialog && <ShareDialog
         open={showShareDialog}
         onOpenChange={setShowShareDialog}
         url={url}
         title={title}
         text={text}
-      />
+      />}
     </>
   );
 }
@@ -70,6 +71,7 @@ function ShareDialog({
   text?: string;
 }) {
   const { user } = useAuth();
+  const cache = useQueryClient();
   const { openConversation } = useChatWidget();
   const [search, setSearch] = useState('');
   const [sending, setSending] = useState<string | null>(null);
@@ -100,17 +102,20 @@ function ShareDialog({
   };
 
   const shareToFeed = async () => {
-    if (!user) return;
+    if (!user || sending) return;
+    setSending('feed');
     try {
-      await supabase.from('posts').insert({
+      const { error } = await supabase.from('posts').insert({
         user_id: user.id,
         body: `🔗 ${shareText}\n\n${url}`,
       });
+      if (error) throw error;
+      void cache.invalidateQueries({ queryKey: ['posts'] });
       toast({ title: 'Partagé !', description: 'Publié sur votre fil d\'actualité' });
       onOpenChange(false);
     } catch {
       toast({ title: 'Erreur', variant: 'destructive' });
-    }
+    } finally { setSending(null); }
   };
 
   const shareToConversation = async (conversationId: string) => {
@@ -145,6 +150,7 @@ function ShareDialog({
       <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col p-0 gap-0 rounded-2xl overflow-hidden">
         <DialogHeader className="p-4 pb-2">
           <DialogTitle className="text-base font-bold">Partager</DialogTitle>
+          <DialogDescription className="sr-only">Choisis ton fil, une conversation ou copie le lien.</DialogDescription>
         </DialogHeader>
 
         {/* Preview */}
@@ -158,6 +164,7 @@ function ShareDialog({
           <div className="grid grid-cols-4 gap-2">
             <button
               onClick={shareToFeed}
+              disabled={!user || !!sending}
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-secondary/50 hover:bg-secondary transition-all active:scale-95"
             >
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">

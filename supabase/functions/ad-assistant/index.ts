@@ -101,6 +101,23 @@ serve(async (req) => {
       });
     }
 
+    const serviceClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: profile, error: profileError } = await serviceClient
+      .from("profiles")
+      .select("is_creator")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (profileError) {
+      return new Response(JSON.stringify({ error: "Vérification du compte créateur indisponible" }), {
+        status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (profile?.is_creator !== true) {
+      return new Response(JSON.stringify({ error: "Accès réservé aux comptes créateur", code: "CREATOR_ACCOUNT_REQUIRED" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Rate limit
     if (!checkRateLimit(user.id)) {
       return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez dans un moment" }), {
