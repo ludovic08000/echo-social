@@ -227,6 +227,7 @@ export type Database = {
           moderation_reason: string | null
           moderation_status: string | null
           objective: string
+          paid_at: string | null
           reach: number
           spent: number
           starts_at: string
@@ -258,6 +259,7 @@ export type Database = {
           moderation_reason?: string | null
           moderation_status?: string | null
           objective?: string
+          paid_at?: string | null
           reach?: number
           spent?: number
           starts_at?: string
@@ -289,6 +291,7 @@ export type Database = {
           moderation_reason?: string | null
           moderation_status?: string | null
           objective?: string
+          paid_at?: string | null
           reach?: number
           spent?: number
           starts_at?: string
@@ -9339,11 +9342,16 @@ export type Database = {
       }
       has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
+      has_creator_tool_access: { Args: never; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_ad_set_paid_and_active: {
+        Args: { p_ad_set_id: string }
         Returns: boolean
       }
       is_conversation_participant: {
