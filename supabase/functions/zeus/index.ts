@@ -1927,7 +1927,7 @@ async function handleCommentModeration(apiKey: string, body: any, userId: string
 const CREATOR_ONLY_DOMAINS = new Set(["ads", "agent"]);
 
 async function enforceCreatorDomainAccess(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof createClient<any>>,
   userId: string,
   domain: string,
   cors: Record<string, string>,
@@ -1948,7 +1948,7 @@ async function enforceCreatorDomainAccess(
     });
   }
 
-  if (profile?.is_creator !== true) {
+  if ((profile as { is_creator?: boolean } | null)?.is_creator !== true) {
     return new Response(JSON.stringify({
       error: "Accès réservé aux comptes créateur",
       code: "CREATOR_ACCOUNT_REQUIRED",
