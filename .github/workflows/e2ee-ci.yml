@@ -177,7 +177,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version: v2.5.3
       - name: Typecheck Lot 1 Edge Functions
         run: |
           deno check --no-config supabase/functions/sealed-mint-token/index.ts
