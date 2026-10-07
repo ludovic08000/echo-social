@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
     }
 
     async function matchesStoredPin(rawPin: string, storedHash: string) {
-      const currentHash = await hashPinServer(rawPin, user.id);
+      const currentHash = await hashPinServer(rawPin, user!.id);
       if (currentHash === storedHash) return { ok: true, legacy: false, currentHash };
 
       const legacyData = new TextEncoder().encode(rawPin + "forsure-parental-salt");
