@@ -10359,10 +10359,6 @@ export type Database = {
         }
         Returns: Json
       }
-      partner_media_thumbnail_source: {
-        Args: { p_item: string }
-        Returns: string
-      }
       preview_feed_training_order: {
         Args: { p_limit?: number; p_user_id: string }
         Returns: Json
