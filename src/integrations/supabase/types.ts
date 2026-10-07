@@ -5671,7 +5671,6 @@ export type Database = {
           id: string
           image_url: string | null
           likes_count: number
-          media_thumbnail_url: string | null
           publish_at: string | null
           user_id: string
         }
@@ -5683,7 +5682,6 @@ export type Database = {
           id?: string
           image_url?: string | null
           likes_count?: number
-          media_thumbnail_url?: string | null
           publish_at?: string | null
           user_id: string
         }
@@ -5695,7 +5693,6 @@ export type Database = {
           id?: string
           image_url?: string | null
           likes_count?: number
-          media_thumbnail_url?: string | null
           publish_at?: string | null
           user_id?: string
         }
