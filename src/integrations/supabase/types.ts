@@ -9878,6 +9878,7 @@ export type Database = {
         | "story_view"
         | "sale"
         | "new_device"
+        | "close_friend_post"
       order_status:
         | "pending"
         | "paid"
@@ -10027,6 +10028,7 @@ export const Constants = {
         "story_view",
         "sale",
         "new_device",
+        "close_friend_post",
       ],
       order_status: [
         "pending",
