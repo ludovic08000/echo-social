@@ -106,6 +106,13 @@
       "when": 1791392206057,
       "tag": "0014_optimize_feed_media_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791392490959,
+      "tag": "0015_harden_feed_serving_and_events",
+      "breakpoints": true
     }
   ]
 }

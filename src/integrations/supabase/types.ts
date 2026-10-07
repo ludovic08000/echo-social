@@ -2977,6 +2977,7 @@ export type Database = {
       feed_rank_snapshots: {
         Row: {
           created_at: string
+          experiment_revision: string | null
           expires_at: string
           id: string
           items: Json
@@ -2984,6 +2985,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          experiment_revision?: string | null
           expires_at?: string
           id?: string
           items?: Json
@@ -2991,6 +2993,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          experiment_revision?: string | null
           expires_at?: string
           id?: string
           items?: Json
@@ -3066,6 +3069,58 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      feed_served_items: {
+        Row: {
+          experiment_revision: string | null
+          id: string
+          post_id: string
+          served_at: string
+          snapshot_id: string
+          variant: string
+          viewer_id: string
+        }
+        Insert: {
+          experiment_revision?: string | null
+          id?: string
+          post_id: string
+          served_at?: string
+          snapshot_id: string
+          variant: string
+          viewer_id: string
+        }
+        Update: {
+          experiment_revision?: string | null
+          id?: string
+          post_id?: string
+          served_at?: string
+          snapshot_id?: string
+          variant?: string
+          viewer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feed_served_items_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feed_served_items_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feed_served_items_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "feed_rank_snapshots"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       friend_group_members: {
         Row: {
@@ -4632,12 +4687,14 @@ export type Database = {
           created_at: string
           day_of_week: number
           dwell_ms: number | null
+          exposure_id: string | null
           hour_of_day: number
           id: string
           is_weekend: boolean
           post_id: string
           scroll_depth: number | null
           signal_type: string
+          surface: string
           user_id: string
           weight: number
         }
@@ -4645,12 +4702,14 @@ export type Database = {
           created_at?: string
           day_of_week?: number
           dwell_ms?: number | null
+          exposure_id?: string | null
           hour_of_day?: number
           id?: string
           is_weekend?: boolean
           post_id: string
           scroll_depth?: number | null
           signal_type: string
+          surface?: string
           user_id: string
           weight?: number
         }
@@ -4658,16 +4717,26 @@ export type Database = {
           created_at?: string
           day_of_week?: number
           dwell_ms?: number | null
+          exposure_id?: string | null
           hour_of_day?: number
           id?: string
           is_weekend?: boolean
           post_id?: string
           scroll_depth?: number | null
           signal_type?: string
+          surface?: string
           user_id?: string
           weight?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ml_interactions_exposure_id_fkey"
+            columns: ["exposure_id"]
+            isOneToOne: false
+            referencedRelation: "feed_served_items"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_model_config: {
         Row: {
@@ -6123,6 +6192,7 @@ export type Database = {
       quality_events: {
         Row: {
           author_id: string | null
+          client_event_id: string | null
           content_id: string
           created_at: string
           event_type: string
@@ -6136,6 +6206,7 @@ export type Database = {
         }
         Insert: {
           author_id?: string | null
+          client_event_id?: string | null
           content_id: string
           created_at?: string
           event_type: string
@@ -6149,6 +6220,7 @@ export type Database = {
         }
         Update: {
           author_id?: string | null
+          client_event_id?: string | null
           content_id?: string
           created_at?: string
           event_type?: string
@@ -9552,6 +9624,7 @@ export type Database = {
           similarity: number
         }[]
       }
+      ml_ingest_feed_events: { Args: { p_events: Json }; Returns: number }
       ml_is_cold_start: { Args: { p_user_id: string }; Returns: boolean }
       ml_pareto_score: {
         Args: {
