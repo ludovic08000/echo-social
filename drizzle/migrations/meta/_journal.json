@@ -113,6 +113,13 @@
       "when": 1791392490959,
       "tag": "0015_harden_feed_serving_and_events",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791392635826,
+      "tag": "0016_feed_training_lifecycle",
+      "breakpoints": true
     }
   ]
 }

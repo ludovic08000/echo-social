@@ -2822,6 +2822,51 @@ export type Database = {
         }
         Relationships: []
       }
+      feed_feature_jobs: {
+        Row: {
+          attempts: number
+          available_at: string
+          lease_until: string | null
+          post_id: string
+          revision: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          lease_until?: string | null
+          post_id: string
+          revision?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          lease_until?: string | null
+          post_id?: string
+          revision?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feed_feature_jobs_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: true
+            referencedRelation: "feed_posts_enriched"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feed_feature_jobs_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: true
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feed_learning_insights: {
         Row: {
           applied_at: string | null
@@ -2906,6 +2951,33 @@ export type Database = {
           summary?: Json | null
           trends_detected?: number | null
           users_profiled?: number | null
+        }
+        Relationships: []
+      }
+      feed_model_candidates: {
+        Row: {
+          artifacts: Json
+          created_at: string
+          id: string
+          kind: string
+          metrics: Json
+          status: string
+        }
+        Insert: {
+          artifacts: Json
+          created_at?: string
+          id?: string
+          kind: string
+          metrics: Json
+          status: string
+        }
+        Update: {
+          artifacts?: Json
+          created_at?: string
+          id?: string
+          kind?: string
+          metrics?: Json
+          status?: string
         }
         Relationships: []
       }
@@ -3121,6 +3193,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      feed_training_leases: {
+        Row: {
+          expires_at: string
+          name: string
+          owner: string
+        }
+        Insert: {
+          expires_at: string
+          name: string
+          owner: string
+        }
+        Update: {
+          expires_at?: string
+          name?: string
+          owner?: string
+        }
+        Relationships: []
       }
       friend_group_members: {
         Row: {
@@ -8945,6 +9035,23 @@ export type Database = {
         }
         Returns: boolean
       }
+      claim_feed_feature_jobs: {
+        Args: { p_limit?: number }
+        Returns: {
+          body: string
+          comments_count: number
+          created_at: string
+          image_url: string
+          likes_count: number
+          post_id: string
+          revision: string
+          user_id: string
+        }[]
+      }
+      claim_feed_training_lease: {
+        Args: { p_name: string; p_owner: string }
+        Returns: boolean
+      }
       claim_libsignal_prekey_bundle: {
         Args: {
           p_conversation_id: string
@@ -9105,6 +9212,7 @@ export type Database = {
           post_id: string
         }[]
       }
+      feed_ml_health: { Args: never; Returns: Json }
       feed_post_is_eligible_internal: {
         Args: { p_post_id: string; p_viewer_id: string }
         Returns: boolean
@@ -9128,6 +9236,30 @@ export type Database = {
           reason: string
         }[]
       }
+      feed_training_events: {
+        Args: { p_as_of?: string; p_limit?: number }
+        Returns: {
+          created_at: string
+          day_of_week: number
+          dwell_ms: number | null
+          exposure_id: string | null
+          hour_of_day: number
+          id: string
+          is_weekend: boolean
+          post_id: string
+          scroll_depth: number | null
+          signal_type: string
+          surface: string
+          user_id: string
+          weight: number
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "ml_interactions"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       finalize_device_account_binding: {
         Args: {
           p_device_authorization_signature: string
@@ -9145,6 +9277,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      finish_feed_feature_job: {
+        Args: { p_features: Json; p_post: string; p_revision: string }
+        Returns: boolean
       }
       generate_order_number: { Args: never; Returns: string }
       get_active_ads_for_placement: {
@@ -9724,6 +9860,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      preview_feed_training_order: {
+        Args: { p_limit?: number; p_user_id: string }
+        Returns: Json
+      }
       privacy_scope_allows: {
         Args: { p_owner_user_id: string; p_scope: string }
         Returns: boolean
@@ -9888,6 +10028,10 @@ export type Database = {
         Returns: boolean
       }
       revoke_user_device: { Args: { p_device_id: string }; Returns: Json }
+      rollback_feed_legacy_config: {
+        Args: { p_change_id: string }
+        Returns: Json
+      }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
       set_message_archive_body: {
         Args: { p_archive_body: string; p_message_id: string }
