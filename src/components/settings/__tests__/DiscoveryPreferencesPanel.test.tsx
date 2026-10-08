@@ -8,6 +8,7 @@ vi.mock('@/lib/auth',()=>({useAuth:()=>({user:{id:mocks.user}})}));
 vi.mock('@/hooks/useDiscoveryPreferences',()=>({useDiscoveryPreferences:()=>({data:DEFAULT_DISCOVERY,isLoading:false,isError:false}),useSaveDiscoveryPreferences:()=>({mutate:mocks.mutate,isPending:false})}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{functions:{invoke:mocks.invoke},rpc:mocks.rpc}}));
 vi.mock('sonner',()=>({toast:{info:vi.fn(),error:vi.fn(),success:vi.fn()}}));
+vi.mock('@/lib/browserLocation',()=>({browserLocationContext:vi.fn(async()=>({timeZone:'Europe/Paris',languages:['fr-FR','fr']}))}));
 afterEach(()=>{cleanup();vi.clearAllMocks();mocks.user='user-one';});
 describe('explicit discovery consent',()=>{
   it('shows translated proposals and attribution but saves canonical targeting names',async()=>{
@@ -16,7 +17,7 @@ describe('explicit discovery consent',()=>{
     fireEvent.click(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'}));
     expect(screen.getByRole('link',{name:'DB-IP'})).toHaveAttribute('href','https://db-ip.com');
     expect(screen.getByRole('link',{name:'CC BY 4.0'})).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button',{name:'Détecter ma zone avec DB-IP'}));
+    fireEvent.click(screen.getByRole('button',{name:'Détecter avec le navigateur et l’IP'}));
     fireEvent.click(await screen.findByRole('button',{name:'ランス · グラン・テスト · フランス'}));
     expect(screen.getByLabelText('Ville')).toHaveValue('Reims');
     fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix'}));
@@ -36,12 +37,15 @@ describe('explicit discovery consent',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
     fireEvent.click(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'}));
     expect(mocks.invoke).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button',{name:'Détecter ma zone avec DB-IP'}));
+    fireEvent.click(screen.getByRole('button',{name:'Détecter avec le navigateur et l’IP'}));
     await screen.findByRole('button',{name:'Reims · Grand Est · FR'});
     expect(screen.getByLabelText('Ville')).toHaveValue('');
     fireEvent.click(screen.getByRole('button',{name:'Reims · Grand Est · FR'}));
     expect(screen.getByLabelText('Ville')).toHaveValue('Reims');
-    expect(mocks.invoke).toHaveBeenCalledWith('local-media-location',{body:{consent:true},headers:{'Accept-Language':navigator.languages.join(',')}});
+    expect(mocks.invoke).toHaveBeenCalledWith('local-media-location',{
+      body:{consent:true,browser:{timeZone:'Europe/Paris',languages:['fr-FR','fr']}},
+      headers:{'Accept-Language':'fr-FR,fr'},
+    });
     expect(mocks.mutate).not.toHaveBeenCalled();
     expect(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'})).toBeChecked();
   });
@@ -63,7 +67,7 @@ describe('explicit discovery consent',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
     fireEvent.click(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'}));
     fireEvent.change(screen.getByLabelText('Ville'),{target:{value:'Reims'}});
-    fireEvent.click(screen.getByRole('button',{name:'Détecter ma zone avec DB-IP'}));
+    fireEvent.click(screen.getByRole('button',{name:'Détecter avec le navigateur et l’IP'}));
     await screen.findByRole('button',{name:'Paris · Île-de-France · FR'});
     expect(screen.getByLabelText('Ville')).toHaveValue('Reims');
   });
@@ -72,7 +76,8 @@ describe('explicit discovery consent',()=>{
     mocks.invoke.mockImplementationOnce(()=>new Promise(r=>{resolve=r;}));
     const {rerender}=render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
     fireEvent.click(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'}));
-    fireEvent.click(screen.getByRole('button',{name:'Détecter ma zone avec DB-IP'}));
+    fireEvent.click(screen.getByRole('button',{name:'Détecter avec le navigateur et l’IP'}));
+    await waitFor(()=>expect(typeof resolve).toBe('function'));
     mocks.user='user-two';rerender(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
     resolve({data:{country:'FR',city:'Paris',region:'Île-de-France'},error:null});
     await waitFor(()=>expect(screen.queryByRole('group',{name:'Zones proposées'})).toBeNull());
