@@ -1,0 +1,192 @@
+name: Deploy positive editorial media
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - supabase/migrations/20261008170000_positive_editorial_media.sql
+      - supabase/functions/_shared/rss-catalog.ts
+      - supabase/functions/partner-rss-sync/**
+      - .github/workflows/deploy-positive-editorial-media.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-positive-editorial-media
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PROJECT_REF: vkpmoqfzrihcijjochks
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      MIGRATION_FILE: supabase/migrations/20261008170000_positive_editorial_media.sql
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Lovable Cloud deployment token
+        shell: bash
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN" >&2
+            exit 1
+          fi
+
+      - name: Verify backend prerequisites without reading secrets
+        shell: bash
+        run: |
+          verification_sql="select
+            to_regclass('public.media_partners') is not null as partners_ready,
+            to_regclass('public.partner_rss_sources') is not null as sources_ready,
+            to_regclass('public.partner_media_items') is not null as items_ready,
+            to_regprocedure('private.partner_rss_daily_tick()') is not null as tick_ready,
+            exists (
+              select 1 from vault.decrypted_secrets
+              where name='partner_rss_cron_secret'
+                and length(decrypted_secret) between 32 and 256
+            ) as scheduler_secret_ready;"
+          jq -n --arg query "$verification_sql" '{query: $query, read_only: true}' > "$RUNNER_TEMP/preflight-request.json"
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/preflight-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/preflight-request.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Lovable Cloud preflight failed with HTTP $status" >&2
+            exit 1
+          fi
+          jq -e '
+            first(.. | objects | select(has("partners_ready")))
+            | .partners_ready == true
+              and .sources_ready == true
+              and .items_ready == true
+              and .tick_ready == true
+              and .scheduler_secret_ready == true
+          ' "$RUNNER_TEMP/preflight-response.json" > /dev/null
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.117.0
+
+      - name: Type-check the RSS worker
+        run: npx --yes deno@2.5.3 check --config supabase/functions/partner-rss-sync/deno.json supabase/functions/partner-rss-sync/index.ts
+
+      - name: Enable and deploy the existing Lovable Cloud RSS worker
+        shell: bash
+        run: |
+          supabase secrets set PARTNER_RSS_ENABLED=true --project-ref "$PROJECT_REF"
+          supabase functions deploy partner-rss-sync \
+            --project-ref "$PROJECT_REF" \
+            --no-verify-jwt
+
+      - name: Apply the additive editorial-media migration
+        id: migrate
+        shell: bash
+        run: |
+          jq -Rs '{query: ., read_only: false}' "$MIGRATION_FILE" > "$RUNNER_TEMP/editorial-media-migration.json"
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/editorial-media-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/editorial-media-migration.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Lovable Cloud editorial-media migration failed with HTTP $status" >&2
+            jq . "$RUNNER_TEMP/editorial-media-response.json" >&2 || true
+            exit 1
+          fi
+
+      - name: Verify fresh science, music, education and wellbeing items
+        shell: bash
+        run: |
+          verification_sql="with target_sources as (
+            select s.*,p.editorial_category,p.id as media_partner_id
+            from public.partner_rss_sources s
+            join public.media_partners p on p.id=s.partner_id
+            where s.source_key=any(array[
+              'cnrs-journal','futura-sciences','pour-la-science','le-monde-sciences',
+              'the-conversation-education','le-monde-education','cafe-pedagogique',
+              'le-monde-musiques','france-musique','tsugi',
+              'the-conversation-sante','psychologies','sante-publique-france-sante-mentale'
+            ]::text[])
+          ), live_items as (
+            select distinct p.editorial_category,m.id
+            from public.partner_media_items m
+            join public.media_partners p on p.id=m.partner_id
+            join target_sources s on s.media_partner_id=p.id
+            where p.active and p.rights_until>now() and m.moderated
+              and m.published_at<=now() and m.expires_at>now()
+          ) select
+            (select count(*)::integer from target_sources) as source_count,
+            (select count(*)::integer from target_sources where last_success_at is not null) as success_count,
+            (select count(*)::integer from target_sources where last_status='failure') as failed_count,
+            (select count(*)::integer from live_items) as item_count,
+            (select count(distinct editorial_category)::integer from live_items) as category_count;"
+
+          for attempt in 1 2 3 4 5 6 7 8; do
+            jq -n --arg query "$verification_sql" '{query: $query, read_only: true}' > "$RUNNER_TEMP/editorial-media-verification.json"
+            status="$(curl --silent --show-error \
+              --output "$RUNNER_TEMP/editorial-media-verification-response.json" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/editorial-media-verification.json" \
+              "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+            if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+              echo "Lovable Cloud editorial-media verification failed with HTTP $status" >&2
+              exit 1
+            fi
+            values="$(jq -r 'first(.. | objects | select(has("source_count"))) | [.source_count,.success_count,.failed_count,.item_count,.category_count] | @tsv' "$RUNNER_TEMP/editorial-media-verification-response.json")"
+            read -r source_count success_count failed_count item_count category_count <<< "$values"
+            echo "Editorial media: sources=$source_count successful=$success_count failed=$failed_count live_items=$item_count categories=$category_count"
+            if [ "$source_count" = "13" ] && [ "${item_count:-0}" -ge 4 ] && [ "$category_count" = "4" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo "The four editorial lanes were not populated before the verification timeout" >&2
+          exit 1
+
+      - name: Disable only the new editorial sources after a failed verification
+        if: failure() && steps.migrate.outcome == 'success'
+        shell: bash
+        run: |
+          rollback_sql="begin;
+            update public.partner_rss_sources
+            set enabled=false,lease_token=null,lease_until=null
+            where source_key=any(array[
+              'cnrs-journal','futura-sciences','pour-la-science','le-monde-sciences',
+              'the-conversation-education','le-monde-education','cafe-pedagogique',
+              'le-monde-musiques','france-musique','tsugi',
+              'the-conversation-sante','psychologies','sante-publique-france-sante-mentale'
+            ]::text[]);
+            update public.media_partners
+            set active=false
+            where agreement_reference like 'operator-confirmed:2026-10-08:%';
+          commit;"
+          jq -n --arg query "$rollback_sql" '{query: $query, read_only: false}' > "$RUNNER_TEMP/editorial-media-rollback.json"
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/editorial-media-rollback-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/editorial-media-rollback.json" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "Automatic rollback failed with HTTP $status" >&2
+            exit 1
+          fi

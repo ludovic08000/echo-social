@@ -6,6 +6,7 @@ const readSource = (path: string) => readFileSync(resolve(process.cwd(), path), 
 const migration = readSource('supabase/migrations/20261008170000_positive_editorial_media.sql');
 const panel = readSource('src/components/settings/ContentPreferencesPanel.tsx');
 const media = readSource('src/components/feed/LocalMediaSection.tsx');
+const deployment = readSource('.github/workflows/deploy-positive-editorial-media.yml');
 
 describe('positive editorial media architecture', () => {
   it('persists an explicit bounded taxonomy and activates all four specialized lanes', () => {
@@ -27,6 +28,11 @@ describe('positive editorial media architecture', () => {
     expect(migration).toContain('LIMIT 16');
   });
 
+  it('prioritizes the first import of newly enabled editorial sources', () => {
+    expect(migration.match(/next_fetch_at=to_timestamp\(0\)/g)).toHaveLength(1);
+    expect(migration).toContain('true,true,to_timestamp(0)');
+  });
+
   it('keeps news independent from advertising/adult gates and exposes the categories in the UI', () => {
     expect(migration).not.toContain('ad_adult_internal');
     expect(migration).not.toContain('family_safe=true');
@@ -35,5 +41,13 @@ describe('positive editorial media architecture', () => {
     expect(panel).toContain("queryKey: ['partner-media', userId]");
     expect(media).toContain("science: 'Science'");
     expect(media).toContain("wellbeing: 'Bien-être'");
+  });
+
+  it('fails closed during Cloud deployment without exporting the scheduler secret', () => {
+    expect(deployment).toContain('scheduler_secret_ready');
+    expect(deployment).not.toContain('decrypted_secret as cron_secret');
+    expect(deployment).toContain("if: failure() && steps.migrate.outcome == 'success'");
+    expect(deployment).toContain('set enabled=false,lease_token=null,lease_until=null');
+    expect(deployment).toContain('set active=false');
   });
 });

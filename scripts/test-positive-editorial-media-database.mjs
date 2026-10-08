@@ -113,9 +113,12 @@ try {
     { editorial_category: 'wellbeing', count: 3 },
   ]);
   const sources = await db.query(
-    'SELECT count(*)::integer AS count FROM public.partner_rss_sources WHERE enabled AND auto_publish',
+    `SELECT count(*)::integer AS count,
+      bool_and(next_fetch_at < now()-interval '1 year') AS prioritized
+     FROM public.partner_rss_sources WHERE enabled AND auto_publish`,
   );
   assert.equal(sources.rows[0].count, 13);
+  assert.equal(sources.rows[0].prioritized, true);
 
   const result = await db.query(
     "SELECT public.partner_media_for_zone('nearby','all','FR','Grand Est',NULL) AS items",

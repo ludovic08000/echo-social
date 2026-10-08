@@ -93,7 +93,7 @@ WITH configured(source_key) AS (
     ('the-conversation-sante'),('psychologies'),('sante-publique-france-sante-mentale')
 )
 INSERT INTO public.partner_rss_sources(partner_id,source_key,enabled,auto_publish,next_fetch_at)
-SELECT partner.id,configured.source_key,true,true,now()
+SELECT partner.id,configured.source_key,true,true,to_timestamp(0)
 FROM configured
 JOIN public.media_partners AS partner
   ON partner.agreement_reference='operator-confirmed:2026-10-08:'||configured.source_key
@@ -102,7 +102,9 @@ ON CONFLICT(partner_id,source_key) DO UPDATE SET
   auto_publish=true,
   etag=NULL,
   last_modified=NULL,
-  next_fetch_at=now(),
+  -- The first worker batch must contain these newly enabled lanes instead of
+  -- waiting behind older general-news sources that are already overdue.
+  next_fetch_at=to_timestamp(0),
   lease_token=NULL,
   lease_until=NULL;
 
