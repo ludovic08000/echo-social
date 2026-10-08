@@ -37,7 +37,11 @@ import type {
   DeviceLifecycleReason,
   DeviceLifecycleRecord,
 } from '@/lib/device-manager/deviceLifecycleMachine';
-import { readPinUnlocked, subscribePinUnlocked } from '@/lib/device-manager/pinUnlockSignal';
+import {
+  readPinUnlocked,
+  subscribeAccountKeysRestored,
+  subscribePinUnlocked,
+} from '@/lib/device-manager/pinUnlockSignal';
 import { syncIosDeviceAdapter } from '@/platforms/ios/iosLifecycleAdapter';
 import { syncAndroidDeviceAdapter } from '@/platforms/android/androidLifecycleAdapter';
 
@@ -114,6 +118,7 @@ configureDeviceLifecycleDeps((userId) => ({
   setUserScope: (id) => setCurrentDeviceUserScope(id),
   readPinUnlocked: (id) => readPinUnlocked(id),
   subscribePinUnlocked: (id, listener) => subscribePinUnlocked(id, listener),
+  subscribeAccountKeysRestored: (id, listener) => subscribeAccountKeysRestored(id, listener),
   onDeviceRecordChanged: (id, listener) => {
     const onEvent = () => listener();
     REFRESH_EVENTS.forEach((name) => window.addEventListener(name, onEvent));

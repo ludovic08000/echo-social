@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assessLoginRisk,
   effectiveLoginSecurityStatus,
+  isRecentInitialAccountBootstrap,
   loginDecisionMutation,
 } from '../../../../supabase/functions/login-security/risk';
 
@@ -52,6 +53,59 @@ describe('login-security risk policy', () => {
       status: 'pending',
       reasons: ['UNVERIFIED_DEVICE'],
     });
+  });
+
+  it('accepts the first session just after confirmed signup with no account history', () => {
+    const now = Date.parse('2026-10-08T18:00:00.000Z');
+    const initialAccountBootstrap = isRecentInitialAccountBootstrap({
+      accountCreatedAt: '2026-10-08T17:50:00.000Z',
+      emailConfirmedAt: '2026-10-08T17:55:00.000Z',
+      hasPriorLoginSession: false,
+      hasDeviceHistory: false,
+      hasAccountIdentity: false,
+      nowMs: now,
+    });
+
+    expect(initialAccountBootstrap).toBe(true);
+    expect(assessLoginRisk({
+      trustedDeviceProof: false,
+      initialAccountBootstrap,
+      previousCountry: null,
+      currentCountry: 'FR',
+    })).toMatchObject({
+      status: 'approved',
+      riskLevel: 'low',
+      reasons: [],
+    });
+  });
+
+  it('accepts a delayed signup when the first e-mail confirmation itself is recent', () => {
+    expect(isRecentInitialAccountBootstrap({
+      accountCreatedAt: '2026-10-01T10:00:00.000Z',
+      emailConfirmedAt: '2026-10-08T17:55:00.000Z',
+      hasPriorLoginSession: false,
+      hasDeviceHistory: false,
+      hasAccountIdentity: false,
+      nowMs: Date.parse('2026-10-08T18:00:00.000Z'),
+    })).toBe(true);
+  });
+
+  it.each([
+    ['an old confirmation', { emailConfirmedAt: '2026-10-08T16:00:00.000Z' }],
+    ['an unconfirmed email', { emailConfirmedAt: null }],
+    ['a previous login session', { hasPriorLoginSession: true }],
+    ['device history', { hasDeviceHistory: true }],
+    ['an existing account identity', { hasAccountIdentity: true }],
+  ])('fails closed for %s', (_label, overrides) => {
+    expect(isRecentInitialAccountBootstrap({
+      accountCreatedAt: '2026-10-08T17:50:00.000Z',
+      emailConfirmedAt: '2026-10-08T17:55:00.000Z',
+      hasPriorLoginSession: false,
+      hasDeviceHistory: false,
+      hasAccountIdentity: false,
+      nowMs: Date.parse('2026-10-08T18:00:00.000Z'),
+      ...overrides,
+    })).toBe(false);
   });
 
   it('accumulates independent device and country reasons', () => {

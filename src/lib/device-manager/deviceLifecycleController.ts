@@ -112,6 +112,7 @@ export interface DeviceLifecycleDeps {
   setUserScope(userId: string | null): void;
   readPinUnlocked(userId: string): boolean;
   subscribePinUnlocked(userId: string, listener: (unlocked: boolean) => void): () => void;
+  subscribeAccountKeysRestored(userId: string, listener: () => void): () => void;
   onDeviceRecordChanged(userId: string, listener: () => void): () => void;
   pinRequired: boolean;
   stepTimeoutMs: number;
@@ -169,6 +170,8 @@ export class DeviceLifecycleController {
   private manualEnrollmentRequested = false;
   private requiresExplicitEnrollment = false;
   private blockedUntilRetry = false;
+  private approvalPrerequisiteObserved = false;
+  private approvalResumeScheduled = false;
   private disposed = false;
   /** Corrélation d'une tentative complète de pipeline (diagnostic seulement). */
   private traceId = newDeviceFinalizationTraceId();
@@ -194,20 +197,16 @@ export class DeviceLifecycleController {
       // est le seul blocage que le signal PIN peut réarmer automatiquement.
       // Un évènement `true` répété reste pertinent lorsque le PIN était déjà
       // ouvert mais que la clé de compte vient seulement d'être restaurée.
-      const canResumeApproval = unlocked
-        && this.blockedUntilRetry
-        && this.snapshot.state === 'PENDING_APPROVAL'
-        && this.error?.startsWith('PIN_UNLOCK_REQUIRED') === true;
+      const canResumeApproval = unlocked && this.hasPendingApprovalPrerequisite();
       if (this.pinUnlocked === unlocked && !canResumeApproval) return;
       this.pinUnlocked = unlocked;
-      if (canResumeApproval) {
-        this.error = null;
-        this.blockedUntilRetry = false;
-        this.trace('approval_prerequisite_ready', 'retry');
-      }
       this.trace(unlocked ? 'pin_unlocked' : 'pin_locked', 'info');
       this.publish();
-      void this.advance();
+      if (canResumeApproval) this.resumeApprovalAfterPrerequisite('pin_unlocked');
+      else void this.advance();
+    }));
+    this.teardown.push(deps.subscribeAccountKeysRestored(userId, () => {
+      if (!this.disposed) this.resumeApprovalAfterPrerequisite('account_keys_restored');
     }));
     this.teardown.push(deps.onDeviceRecordChanged(userId, () => {
       if (!this.disposed) void this.advance();
@@ -292,6 +291,48 @@ export class DeviceLifecycleController {
     });
     this.pipelinePromise = run;
     return run;
+  }
+
+  private hasPendingApprovalPrerequisite(): boolean {
+    const record = this.record === 'unknown' ? null : this.record;
+    return record?.approvalStatus === 'pending'
+      && (this.stage === 'approving'
+        || (this.blockedUntilRetry && this.error?.startsWith('PIN_UNLOCK_REQUIRED') === true));
+  }
+
+  /**
+   * Réarme l'approbation après restauration de la clé de compte sans prétendre
+   * que le PIN est déverrouillé. Si le signal arrive pendant la RPC qui va
+   * échouer, la relance attend la fin du pipeline courant afin de ne jamais
+   * perdre l'évènement ni lancer deux décisions concurrentes.
+   */
+  private resumeApprovalAfterPrerequisite(source: 'pin_unlocked' | 'account_keys_restored'): void {
+    if (!this.hasPendingApprovalPrerequisite()) return;
+    this.approvalPrerequisiteObserved = true;
+    this.trace('approval_prerequisite_ready', 'retry', { detail: source });
+    if (this.blockedUntilRetry && this.error?.startsWith('PIN_UNLOCK_REQUIRED')) {
+      this.error = null;
+      this.blockedUntilRetry = false;
+      this.publish();
+    }
+    if (this.approvalResumeScheduled) return;
+    this.approvalResumeScheduled = true;
+
+    const resume = () => {
+      this.approvalResumeScheduled = false;
+      if (this.disposed || !this.approvalPrerequisiteObserved) return;
+      this.approvalPrerequisiteObserved = false;
+      const record = this.record === 'unknown' ? null : this.record;
+      if (record?.approvalStatus !== 'pending') return;
+      if (this.error?.startsWith('PIN_UNLOCK_REQUIRED')) this.error = null;
+      this.blockedUntilRetry = false;
+      this.publish();
+      void this.advance();
+    };
+
+    const currentPipeline = this.pipelinePromise;
+    if (currentPipeline) void currentPipeline.finally(resume);
+    else queueMicrotask(resume);
   }
 
   private async runPipeline(): Promise<void> {
@@ -599,6 +640,7 @@ export const __deviceLifecycleTestUtils = {
       setUserScope: () => undefined,
       readPinUnlocked: () => true,
       subscribePinUnlocked: () => () => undefined,
+      subscribeAccountKeysRestored: () => () => undefined,
       onDeviceRecordChanged: () => () => undefined,
       pinRequired: false,
       stepTimeoutMs: DEFAULT_STEP_TIMEOUT_MS,

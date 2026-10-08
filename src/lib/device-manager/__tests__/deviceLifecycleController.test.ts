@@ -162,6 +162,80 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     controller.dispose();
   });
 
+  it('reprend après restauration de la clé de compte sans déverrouiller implicitement le PIN', async () => {
+    const server = fakeServer(row());
+    const approve = server.api.autoApprove;
+    let attempts = 0;
+    let notifyPinState: ((unlocked: boolean) => void) | undefined;
+    let notifyKeysRestored: (() => void) | undefined;
+    server.api.autoApprove = async (userId) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('PIN_UNLOCK_REQUIRED:account_key_locked');
+      return approve(userId);
+    };
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => false,
+      subscribePinUnlocked: (_userId, listener) => {
+        notifyPinState = listener;
+        return () => undefined;
+      },
+      subscribeAccountKeysRestored: (_userId, listener) => {
+        notifyKeysRestored = listener;
+        return () => undefined;
+      },
+    });
+    await controller.refresh();
+
+    expect(controller.getSnapshot().error).toContain('PIN_UNLOCK_REQUIRED');
+    notifyKeysRestored?.();
+    await vi.waitFor(() => expect(attempts).toBe(2));
+
+    expect(controller.getSnapshot().state).toBe('APPROVED_LOCKED');
+    expect(controller.getSnapshot().pinUnlocked).toBe(false);
+    expect(server.calls.bind).toBe(0);
+
+    notifyPinState?.(true);
+    await vi.waitFor(() => expect(controller.getSnapshot().state).toBe('MESSAGING_READY'));
+    controller.dispose();
+  });
+
+  it('ne perd pas une restauration de clé reçue pendant la RPC d’approbation', async () => {
+    const server = fakeServer(row());
+    const approve = server.api.autoApprove;
+    let attempts = 0;
+    let rejectFirst: ((reason: Error) => void) | undefined;
+    let notifyKeysRestored: (() => void) | undefined;
+    server.api.autoApprove = async (userId) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Promise((_, reject) => { rejectFirst = reject; });
+      }
+      return approve(userId);
+    };
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => false,
+      subscribeAccountKeysRestored: (_userId, listener) => {
+        notifyKeysRestored = listener;
+        return () => undefined;
+      },
+    });
+
+    const firstRun = controller.refresh();
+    await vi.waitFor(() => expect(attempts).toBe(1));
+    notifyKeysRestored?.();
+    rejectFirst?.(new Error('PIN_UNLOCK_REQUIRED:account_key_restore_race'));
+    await firstRun;
+    await vi.waitFor(() => expect(attempts).toBe(2));
+
+    expect(controller.getSnapshot().state).toBe('APPROVED_LOCKED');
+    expect(controller.getSnapshot().error).toBeNull();
+    controller.dispose();
+  });
+
   it('ne réarme jamais une autre erreur d’approbation avec un signal PIN', async () => {
     const server = fakeServer(row());
     let attempts = 0;

@@ -82,4 +82,25 @@ export function subscribePinUnlocked(
   };
 }
 
+/**
+ * La restauration de la clé de compte peut rendre possible la signature d'un
+ * appareil secondaire avant que le PIN de messagerie soit déverrouillé. Ce
+ * signal réarme uniquement l'étape d'approbation ; il ne modifie jamais la
+ * preuve de déverrouillage PIN conservée dans sessionStorage.
+ */
+export function subscribeAccountKeysRestored(
+  userId: string | null | undefined,
+  listener: () => void,
+): () => void {
+  if (typeof window === 'undefined' || !userId) return () => undefined;
+
+  const onRestored = (event: Event) => {
+    const detail = (event as CustomEvent<{ userId?: string }>).detail;
+    if (detail?.userId && detail.userId !== userId) return;
+    listener();
+  };
+  window.addEventListener('forsure-keys-restored', onRestored);
+  return () => window.removeEventListener('forsure-keys-restored', onRestored);
+}
+
 export const __test__ = { PIN_STATE_CHANGED_EVENT, SESSION_KEY, PIN_PROTECTION_ENABLED };

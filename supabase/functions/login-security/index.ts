@@ -4,6 +4,7 @@ import { getCorsHeaders } from '../_shared/cors.ts';
 import {
   assessLoginRisk,
   effectiveLoginSecurityStatus,
+  isRecentInitialAccountBootstrap,
   loginDecisionMutation,
 } from './risk.ts';
 import { resolveLoginNetworkContext } from '../_shared/network-context.ts';
@@ -526,6 +527,33 @@ serve(async (req) => {
     return data as JsonObject | null;
   };
 
+  const canBootstrapInitialAccountSession = async (): Promise<boolean> => {
+    const [priorSessions, deviceHistory, accountIdentity] = await Promise.all([
+      admin
+        .from('login_security_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .neq('session_id', sessionId),
+      admin
+        .from('user_devices')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id),
+      admin
+        .from('user_public_keys')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id),
+    ]);
+    if (priorSessions.error || deviceHistory.error || accountIdentity.error) return false;
+
+    return isRecentInitialAccountBootstrap({
+      accountCreatedAt: user.created_at || null,
+      emailConfirmedAt: user.email_confirmed_at || null,
+      hasPriorLoginSession: (priorSessions.count || 0) > 0,
+      hasDeviceHistory: (deviceHistory.count || 0) > 0,
+      hasAccountIdentity: (accountIdentity.count || 0) > 0,
+    });
+  };
+
   const consumeTrustedDeviceProof = async (intent: ChallengeIntent, targetSessionId?: string) => {
     const challengeId = stringField(body, 'challengeId', 64);
     const deviceId = stringField(body, 'deviceId', 128);
@@ -671,6 +699,16 @@ serve(async (req) => {
     if (existing?.status === 'pending'
       && existing.email_sent_at
       && new Date(String(existing.expires_at)).getTime() > Date.now()) {
+      // A deployment may meet a brand-new account while its redundant login
+      // e-mail is already pending. Promote only the exact recent signup with
+      // no prior session, device or account identity; every ambiguity remains
+      // fail-closed and continues to require the one-time e-mail decision.
+      if (await canBootstrapInitialAccountSession()) {
+        const promoted = await decide(user.id, sessionId, 'approve', 'initial_account_bootstrap');
+        if (promoted) {
+          return json(req, 200, { ok: true, session: sessionView(await loadCurrentSession()) });
+        }
+      }
       await admin.from('login_security_sessions').update({
         last_seen_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -679,6 +717,7 @@ serve(async (req) => {
     }
 
     const proof = await consumeTrustedDeviceProof('assess');
+    const initialAccountBootstrap = !proof && await canBootstrapInitialAccountSession();
     const context = await requestContext(req);
     const timezone = stringField(body, 'timezone', 80) || null;
     const language = stringField(body, 'language', 32) || null;
@@ -694,6 +733,7 @@ serve(async (req) => {
       .maybeSingle();
     const risk = assessLoginRisk({
       trustedDeviceProof: Boolean(proof),
+      initialAccountBootstrap,
       previousCountry: previous?.country_code || null,
       currentCountry: context.country,
     });
@@ -722,7 +762,9 @@ serve(async (req) => {
       language,
       device_proof_verified_at: proof ? now : null,
       approved_at: status === 'approved' ? now : null,
-      approved_via: status === 'approved' ? 'trusted_device' : null,
+      approved_via: status === 'approved'
+        ? (proof ? 'trusted_device' : 'initial_account_bootstrap')
+        : null,
       last_seen_at: now,
       updated_at: now,
       expires_at: expiresAt,
@@ -738,6 +780,7 @@ serve(async (req) => {
       risk_level: riskLevel,
       reasons,
       known_device: Boolean(proof),
+      initial_account_bootstrap: initialAccountBootstrap,
       country_changed: countryChanged,
     });
     if (status === 'pending') {

@@ -63,6 +63,18 @@ describe('risk-based login security architecture', () => {
     expect(client).toContain("action: 'challenge'");
   });
 
+  it('bootstraps only a freshly confirmed account with no prior security or Aegis history', () => {
+    expect(edge).toContain('canBootstrapInitialAccountSession');
+    expect(edge).toContain(".from('login_security_sessions')");
+    expect(edge).toContain(".from('user_devices')");
+    expect(edge).toContain(".from('user_public_keys')");
+    expect(edge).toContain("'initial_account_bootstrap'");
+    expect(riskPolicy).toContain('isRecentInitialAccountBootstrap');
+    expect(riskPolicy).toContain('nowMs - confirmedAtMs <= maxAgeMs');
+    expect(riskPolicy).toContain('createdAtMs <= confirmedAtMs');
+    expect(riskPolicy).toContain('input.hasPriorLoginSession || input.hasDeviceHistory || input.hasAccountIdentity');
+  });
+
   it('blocks key restoration and the crypto runtime until login approval', () => {
     const assessment = auth.indexOf('const security = await ensureLoginSecurity(data.session)');
     const setup = auth.indexOf('await completePendingPasswordSetup(data.user.id)', assessment);
@@ -92,7 +104,8 @@ describe('risk-based login security architecture', () => {
     expect(edge).toContain('unsubscribe_token: unsubscribeToken');
     expect(edge).toContain('if (mutation.revokeAuthSession)');
     expect(riskPolicy).toContain('revokeAuthSession: true');
-    expect(edge).toContain("approved_via: status === 'approved' ? 'trusted_device' : null");
+    expect(edge).toContain("approved_via: status === 'approved'");
+    expect(edge).toContain("proof ? 'trusted_device' : 'initial_account_bootstrap'");
     expect(edge).toContain("action === 'decide_pending'");
     expect(inbox).toContain('decidePendingLoginSecuritySession');
     expect(inbox).toContain("void decide('deny')");

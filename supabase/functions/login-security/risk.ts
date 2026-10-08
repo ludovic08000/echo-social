@@ -32,8 +32,40 @@ export interface LoginRiskAssessment {
   countryChanged: boolean;
 }
 
+export interface InitialAccountBootstrapInput {
+  accountCreatedAt: string | null;
+  emailConfirmedAt: string | null;
+  hasPriorLoginSession: boolean;
+  hasDeviceHistory: boolean;
+  hasAccountIdentity: boolean;
+  nowMs?: number;
+  maxAgeMs?: number;
+}
+
+/**
+ * Premier accès uniquement : l'adresse vient d'être confirmée et aucun état
+ * Aegis ou de connexion n'existe encore. La fraîcheur porte sur la preuve
+ * e-mail, pas sur la création du compte : une personne peut légitimement
+ * confirmer plus tard son inscription sans recevoir un second e-mail.
+ */
+export function isRecentInitialAccountBootstrap(input: InitialAccountBootstrapInput): boolean {
+  if (input.hasPriorLoginSession || input.hasDeviceHistory || input.hasAccountIdentity) return false;
+
+  const nowMs = input.nowMs ?? Date.now();
+  const maxAgeMs = input.maxAgeMs ?? 30 * 60_000;
+  const createdAtMs = input.accountCreatedAt ? Date.parse(input.accountCreatedAt) : Number.NaN;
+  const confirmedAtMs = input.emailConfirmedAt ? Date.parse(input.emailConfirmedAt) : Number.NaN;
+  if (!Number.isFinite(createdAtMs) || !Number.isFinite(confirmedAtMs)) return false;
+
+  return createdAtMs <= nowMs
+    && createdAtMs <= confirmedAtMs
+    && confirmedAtMs <= nowMs
+    && nowMs - confirmedAtMs <= maxAgeMs;
+}
+
 export function assessLoginRisk(args: {
   trustedDeviceProof: boolean;
+  initialAccountBootstrap?: boolean;
   previousCountry: string | null;
   currentCountry: string | null;
 }): LoginRiskAssessment {
@@ -43,7 +75,7 @@ export function assessLoginRisk(args: {
     previousCountry && currentCountry && previousCountry !== currentCountry,
   );
   const reasons: LoginRiskReason[] = [];
-  if (!args.trustedDeviceProof) reasons.push('UNVERIFIED_DEVICE');
+  if (!args.trustedDeviceProof && !args.initialAccountBootstrap) reasons.push('UNVERIFIED_DEVICE');
   if (countryChanged) reasons.push('COUNTRY_CHANGED');
   const status = reasons.length === 0 ? 'approved' : 'pending';
   return {

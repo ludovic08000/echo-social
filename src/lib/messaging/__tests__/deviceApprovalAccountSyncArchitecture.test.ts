@@ -107,11 +107,14 @@ describe('single canonical device lifecycle authority', () => {
     expect(gate).toContain('approvalPrerequisiteUnlockRequired');
     expect(gate).toContain("startsWith('PIN_UNLOCK_REQUIRED')");
     expect(gate).toContain('if (approvalPrerequisiteUnlockRequired) return <>{children}</>;');
-    expect(controller).toContain('canResumeApproval');
-    expect(controller).toContain("this.snapshot.state === 'PENDING_APPROVAL'");
+    expect(controller).toContain('hasPendingApprovalPrerequisite');
+    expect(controller).toContain('resumeApprovalAfterPrerequisite');
+    expect(controller).toContain("resumeApprovalAfterPrerequisite('account_keys_restored')");
     expect(controller).toContain("this.error?.startsWith('PIN_UNLOCK_REQUIRED')");
-    expect(pinSignal).toContain("window.addEventListener('forsure-keys-restored', emit)");
-    expect(pinSignal).toContain("window.removeEventListener('forsure-keys-restored', emit)");
+    expect(pinSignal).toContain('subscribeAccountKeysRestored');
+    expect(pinSignal).toContain("window.addEventListener('forsure-keys-restored', onRestored)");
+    expect(pinSignal).toContain("window.removeEventListener('forsure-keys-restored', onRestored)");
+    expect(lifecycle).toContain('subscribeAccountKeysRestored:');
   });
 
   it('mounts the mandatory PIN gate in the canonical order', () => {
