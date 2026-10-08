@@ -1,19 +1,6 @@
-name: Deploy local media location
+name: Manual deploy local media location
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - supabase/functions/local-media-location/**
-      - supabase/functions/_shared/communes.ts
-      - supabase/functions/_shared/dbip-api.ts
-      - supabase/functions/_shared/dbip-storage.ts
-      - supabase/functions/_shared/media-context.ts
-      - supabase/functions/_shared/media-location.ts
-      - supabase/functions/_shared/network-context.ts
-      - supabase/functions/_shared/rss-catalog.ts
-      - supabase/config.toml
-      - .github/workflows/deploy-local-media-location.yml
   workflow_dispatch:
 
 permissions:
