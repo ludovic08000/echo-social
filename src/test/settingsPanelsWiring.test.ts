@@ -15,6 +15,15 @@ describe('settings panels end-to-end wiring', () => {
     }
   });
 
+  it('opens the local-news zone editor instead of the privacy policy', () => {
+    const feedSection = readSource('src/components/feed/LocalMediaSection.tsx');
+    const settings = readSource('src/pages/Settings.tsx');
+
+    expect(feedSection).toContain('/settings?tab=privacy#discovery-heading');
+    expect(feedSection).not.toContain('to="/privacy"');
+    expect(settings).toContain('document.getElementById(targetId)?.scrollIntoView');
+  });
+
   it('applies accessibility preferences to the whole application', () => {
     const preferences = readSource('src/lib/accessibilityPreferences.ts');
     const runtime = readSource('src/components/settings/SettingsRuntime.tsx');

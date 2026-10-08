@@ -2,14 +2,21 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.0';
 import { getCorsHeaders } from '../_shared/cors.ts';
 import { locationHandler, trustedLocationIp } from './location.ts';
 import { dbipFromCloud } from '../_shared/dbip-storage.ts';
+import { locateWithDbipFree } from '../_shared/dbip-api.ts';
 import { searchCommunes } from '../_shared/communes.ts';
 import { resolveMediaContext, trustedRegion } from './context.ts';
+import { readTrustedClientIp } from '../_shared/network-context.ts';
 
 const url = Deno.env.get('SUPABASE_URL')!; // Existing Lovable Cloud runtime variables.
 const lookup = dbipFromCloud(name => Deno.env.get(name));
-const locate = (headers: Headers) => {
-  const ip = trustedLocationIp(headers, Deno.env.get('LOCAL_MEDIA_TRUSTED_IP_HEADER'));
-  return ip ? lookup(ip, headers.get('accept-language') ?? '') : Promise.resolve(null);
+const locate = async (headers: Headers) => {
+  const ip = trustedLocationIp(headers, Deno.env.get('LOCAL_MEDIA_TRUSTED_IP_HEADER'))
+    ?? readTrustedClientIp(headers);
+  if (!ip) return null;
+  const local = await lookup(ip, headers.get('accept-language') ?? '');
+  if (local) return local;
+  if (Deno.env.get('DBIP_FREE_API_ENABLED') === 'false') return null;
+  return locateWithDbipFree(ip);
 };
 const options = {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -33,8 +40,9 @@ Deno.serve(locationHandler({
   },
   search: searchCommunes,
   context: async (userId, headers) => {
-    // Enable only after documenting purpose/legal basis and trusted proxy configuration in Lovable.
-    const enabled = Deno.env.get('LOCAL_MEDIA_CONTEXT_ENABLED') === 'true';
+    // News context is enabled by default and can be disabled instantly with a
+    // server-side kill switch. Advertising consent is never read or changed.
+    const enabled = Deno.env.get('LOCAL_MEDIA_CONTEXT_ENABLED') !== 'false';
     if (!enabled) return null;
     const client = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, options);
     const [{ data: profile }, { data: preferences }] = await Promise.all([
@@ -55,6 +63,14 @@ Deno.serve(locationHandler({
           regionHeader: Deno.env.get('LOCAL_MEDIA_TRUSTED_GEO_REGION_HEADER'),
         });
         if (zone) return zone;
+        if (!await (async () => {
+          const { data, error } = await client.rpc('check_rate_limit', {
+            p_key: `local-media-location:ip:${userId}`,
+            p_max_requests: 5,
+            p_window_seconds: 3600,
+          });
+          return !error && data === true;
+        })()) return null;
         const estimated = await locate(headers);
         return estimated?.region ? { ...estimated, region: estimated.region, source: 'network' as const } : null;
       },

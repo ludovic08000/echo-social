@@ -76,6 +76,10 @@ mondiale dans une Edge Function ou dans le navigateur.
    `DBIP_LITE_ENABLED=true` seulement après ces contrôles. Les interrupteurs
    `LOCAL_MEDIA_CONTEXT_ENABLED` et `ADS_LOCATION_AUTO_ENABLED` restent
    indépendants, et les règles serveur de consentement/majorité inchangées.
+   Les actualités locales peuvent utiliser temporairement l'API HTTPS gratuite
+   DB-IP lorsque la copie privée n'est pas disponible. Ce repli se désactive
+   immédiatement avec `DBIP_FREE_API_ENABLED=false`, ne sert jamais au ciblage
+   publicitaire et ne conserve ni IP ni coordonnées dans les préférences.
 
 ## Limites, mise à jour et retour arrière
 
@@ -104,7 +108,9 @@ Les crédits existants sont autorisés avec un plafond total de 10 crédits
 pour la mise en place et les tests (réponse utilisateur du 7 octobre 2026).
 Aucun achat ni recharge. Le bucket,
 la provenance de l'IP et le parcours réel Lovable doivent encore être validés
-avant activation. Les tests ne certifient pas l'exactitude géographique de
+pour la copie privée et le ciblage publicitaire. Le repli actualités utilise
+les en-têtes réseau déjà normalisés par le parcours de sécurité de connexion.
+Les tests ne certifient pas l'exactitude géographique de
 la ville estimée à partir d'une IP.
 
 Validation locale initiale du 7 octobre 2026, avant l'import réel :

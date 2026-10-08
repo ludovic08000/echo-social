@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageCircle, Newspaper, Play } from 'lucide-react';
+import { MapPin, MessageCircle, Newspaper, Play } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -60,7 +60,7 @@ export function LocalMediaSection() {
   const { data: context } = useQuery({
     queryKey: ['media-context', user?.id, languages],
     enabled: !!user,
-    staleTime: 600_000, retry: false, refetchOnWindowFocus: false,
+    staleTime: 3_600_000, retry: false, refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('local-media-location', { body: { context: true }, headers: { 'Accept-Language': languages } });
       if (error) throw error;
@@ -88,9 +88,13 @@ export function LocalMediaSection() {
     <label className="block text-sm">Format <select className="ml-2 bg-background border rounded p-1" value={kind} onChange={e => setKind(e.target.value as MediaKind)}>
       <option value="all">Tous</option><option value="article">Articles</option><option value="video">Vidéos</option>
     </select></label>
-    {automatic && <p className="text-xs text-muted-foreground">{context.source === 'profile' ? 'Ville du profil' : context.source === 'selected' ? 'Zone du compte' : 'Région approximative du réseau'} : {[context.display?.city ?? context.city, context.display?.region ?? context.region].filter(Boolean).join(' · ')}.</p>}
+    {automatic ? <Link to="/settings?tab=privacy#discovery-heading" className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2">
+      <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+      {context.source === 'profile' ? 'Ville du profil' : context.source === 'selected' ? 'Zone du compte' : 'Zone IP approximative'} : {[context.display?.city ?? context.city, context.display?.region ?? context.region].filter(Boolean).join(' · ')} · Modifier
+    </Link> : <Link to="/settings?tab=privacy#discovery-heading" className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2">
+      <MapPin className="h-3.5 w-3.5" aria-hidden="true" />Zone automatique indisponible · Choisir ma ville
+    </Link>}
     <GeoAttribution />
-    <Link to="/privacy" className="text-xs underline">Voir comment la zone est déterminée</Link>
     {isLoading ? <p role="status">Chargement des médias…</p> : isError ? <p role="status">Médias momentanément indisponibles. Ton feed reste accessible.</p>
       : data.length === 0 ? <p className="text-sm text-muted-foreground">Aucun contenu partenaire autorisé disponible dans cette zone pour le moment.</p>
         : data.map(item => <PartnerCard key={item.id} item={item} />)}

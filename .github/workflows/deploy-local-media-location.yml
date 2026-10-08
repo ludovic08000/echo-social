@@ -1,0 +1,66 @@
+name: Deploy local media location
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - supabase/functions/local-media-location/**
+      - supabase/functions/_shared/communes.ts
+      - supabase/functions/_shared/dbip-api.ts
+      - supabase/functions/_shared/dbip-storage.ts
+      - supabase/functions/_shared/media-context.ts
+      - supabase/functions/_shared/media-location.ts
+      - supabase/functions/_shared/network-context.ts
+      - supabase/functions/_shared/rss-catalog.ts
+      - supabase/config.toml
+      - .github/workflows/deploy-local-media-location.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-local-media-location
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: vkpmoqfzrihcijjochks
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Lovable Cloud deployment token
+        shell: bash
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "Missing GitHub secret: SUPABASE_ACCESS_TOKEN" >&2
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.117.0
+
+      - name: Type-check location function
+        run: npx --yes deno@2.5.3 check --no-config supabase/functions/local-media-location/index.ts
+
+      - name: Deploy to the existing Lovable Cloud backend
+        run: supabase functions deploy local-media-location --project-ref "$PROJECT_REF" --no-verify-jwt
+
+      - name: Verify the deployed authentication boundary
+        shell: bash
+        run: |
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/local-media-location-response.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"context":true}' \
+            "https://$PROJECT_REF.supabase.co/functions/v1/local-media-location")"
+          test "$status" = "401"
+          jq -e '.error == "AUTH_REQUIRED"' "$RUNNER_TEMP/local-media-location-response.json" > /dev/null

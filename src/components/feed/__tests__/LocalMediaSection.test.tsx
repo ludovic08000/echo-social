@@ -16,7 +16,7 @@ describe('partner media UI',()=>{
   it('loads contextual news in the background and provides a stable discussion/share link',async()=>{
     mocks.invoke.mockResolvedValue({data:{location:{country:'FR',region:'Grand Est',city:null,source:'network'}},error:null});
     mocks.rpc.mockResolvedValue({data:[{id:'x',discussion_id:'durable',title:'Local',kind:'article',canonical_url:'https://media.invalid/x',published_at:'2026-10-06',source_name:'Journal'}],error:null});
-    mount();await screen.findByText(/Région approximative du réseau/);
+    mount();await screen.findByRole('link',{name:/Zone IP approximative.*Grand Est.*Modifier/});
     await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('get_contextual_partner_media',{p_scope:'nearby',p_kind:'all',p_country:'FR',p_region:'Grand Est',p_city:null}));
     expect(screen.getByRole('button',{name:/Commenter et débattre/})).toHaveAttribute('aria-expanded','false');
     fireEvent.click(screen.getByRole('button',{name:/Commenter et débattre/}));
@@ -40,7 +40,7 @@ describe('partner media UI',()=>{
     expect(screen.getByText('Aperçu vidéo')).toBeInTheDocument();
     expect(container.querySelector('iframe')).toBeNull();
     expect(screen.queryByRole('group',{name:'Zone des médias'})).toBeNull();
-    expect(screen.getByText(/Voir comment la zone/).getAttribute('href')).toBe('/privacy');
+    expect(screen.getByRole('link',{name:/Choisir ma ville/})).toHaveAttribute('href','/settings?tab=privacy#discovery-heading');
     fireEvent.click(screen.getByRole('button',{name:'Charger la vidéo YouTube'}));
     expect(container.querySelector('iframe')?.src).toContain('https://www.youtube-nocookie.com/embed/abcdefghijk');
     fireEvent.change(screen.getByRole('combobox'),{target:{value:'article'}});
@@ -55,6 +55,7 @@ describe('partner media UI',()=>{
     mocks.invoke.mockResolvedValue({data:{location:{country:'FR',region:'Grand Est',city:'Reims',source:'profile'}},error:null});
     mocks.rpc.mockResolvedValue({data:[],error:null});mount();
     await screen.findByText(/Ville du profil/);
+    expect(screen.getByRole('link',{name:/Ville du profil.*Modifier/})).toHaveAttribute('href','/settings?tab=privacy#discovery-heading');
     await waitFor(()=>expect(mocks.rpc).toHaveBeenLastCalledWith('get_contextual_partner_media',{p_scope:'nearby',p_kind:'all',p_country:'FR',p_region:'Grand Est',p_city:'Reims'}));
     await screen.findByText(/Aucun contenu partenaire autorisé/);
   });

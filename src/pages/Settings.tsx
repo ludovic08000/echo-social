@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useUXMode } from '@/hooks/useUXMode';
 import { ArrowLeft, Palette, Heart, Brain, Accessibility, Baby, Smartphone } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -28,6 +29,15 @@ export default function Settings() {
     'privacy', 'notifications', 'parental', 'devices',
   ]);
   const activeTab = requestedTab && validTabs.has(requestedTab) ? requestedTab : null;
+
+  useEffect(() => {
+    if (!activeTab || !window.location.hash) return;
+    const targetId = decodeURIComponent(window.location.hash.slice(1));
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(targetId)?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab]);
 
   const setActiveTab = (tab: string | null) => {
     const next = new URLSearchParams(searchParams);
