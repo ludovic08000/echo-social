@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Users, ShieldCheck, Baby, MessageCircleOff, AlertOctagon, Eye, ChevronDown, CheckCircle } from 'lucide-react';
+import { Users, ShieldCheck, MessageCircleOff, AlertOctagon, Eye, ChevronDown, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SEOPageLayout } from '@/components/seo/SEOPageLayout';
 import { useState } from 'react';
@@ -18,21 +18,21 @@ function FAQItem({ q, a }: { q: string; a: string }) {
 }
 
 const measures = [
-  { icon: Baby, title: 'Protection des données des mineurs', desc: 'La protection des données des utilisateurs de moins de 16 ans est renforcée : messages d\'inconnus bloqués, détection de manipulation, seuils de modération abaissés.' },
-  { icon: MessageCircleOff, title: 'Messages d\'inconnus bloqués', desc: 'La protection des données des mineurs inclut le blocage par défaut des messages provenant d\'adultes inconnus. Seuls les contacts approuvés peuvent communiquer.' },
+  { icon: Users, title: 'Protection identique pour tous', desc: 'Chaque compte dispose des mêmes outils de confidentialité, de signalement et de sécurité, sans restriction parentale automatique.' },
+  { icon: MessageCircleOff, title: 'Blocage à la demande', desc: 'Chaque utilisateur peut bloquer un compte ou signaler un comportement abusif depuis son profil ou une conversation.' },
   { icon: AlertOctagon, title: 'Détection de manipulation', desc: 'La protection des données est renforcée par une IA qui détecte les tentatives de manipulation et les comportements prédateurs en temps réel.' },
-  { icon: ShieldCheck, title: 'Contrôle parental intégré', desc: 'La protection des données de votre famille est entre vos mains grâce à un tableau de bord parental complet pour superviser l\'activité de vos enfants.' },
+  { icon: ShieldCheck, title: 'Protection accessible à tous', desc: 'Signalement, blocage et paramètres de confidentialité protègent chaque compte sans imposer de contrôle parental par code PIN.' },
   { icon: Eye, title: 'Zéro tracking publicitaire', desc: 'La protection des données sur Forsure signifie qu\'aucune donnée personnelle n\'est collectée pour la publicité. Vos informations ne sont jamais vendues.' },
-  { icon: Users, title: 'Vérification d\'âge automatique', desc: 'La protection des données est adaptée automatiquement en fonction de l\'âge vérifié de chaque utilisateur lors de l\'inscription.' },
+  { icon: Users, title: 'Paramètres sous votre contrôle', desc: 'Les choix de confidentialité et de bien-être restent accessibles directement depuis les paramètres du compte.' },
 ];
 
 const faqs = [
   { q: 'Comment Forsure assure-t-il la protection des données personnelles ?', a: 'La protection des données sur Forsure repose sur un principe simple : nous ne collectons que le strict minimum nécessaire au fonctionnement du service. Vos informations personnelles sont chiffrées et ne sont jamais vendues, partagées ou utilisées à des fins publicitaires.' },
   { q: 'Mes données sont-elles vendues à des annonceurs ?', a: 'Non, jamais. La protection des données sur Forsure est un engagement fondamental. Contrairement à Facebook, Instagram ou TikTok, nous ne vendons aucune donnée personnelle et ne monétisons pas vos informations.' },
-  { q: 'Comment fonctionne la protection des données pour les mineurs ?', a: 'La protection des données des mineurs est renforcée à tous les niveaux : messages d\'inconnus bloqués par défaut, détection automatique de manipulation, contrôle parental intégré, et filtrage des contenus inappropriés.' },
+  { q: 'Comment fonctionne la protection des utilisateurs ?', a: 'La protection repose sur le signalement, le blocage, la confidentialité du compte et la modération des comportements abusifs. Le contrôle parental par code PIN est désactivé.' },
   { q: 'Que se passe-t-il avec mes données si je supprime mon compte ?', a: 'La protection des données inclut le droit à l\'oubli complet. Quand vous supprimez votre compte, toutes vos données personnelles sont effacées de nos serveurs dans un délai de 30 jours maximum.' },
   { q: 'Forsure est-il conforme au RGPD pour la protection des données ?', a: 'Oui, la protection des données sur Forsure est entièrement conforme au Règlement Général sur la Protection des Données (RGPD) européen. La protection des données est intégrée dès la conception de chaque fonctionnalité.' },
-  { q: 'Les parents peuvent-ils renforcer la protection des données de leur enfant ?', a: 'Oui, le contrôle parental de Forsure permet de renforcer la protection des données et de la sécurité : supervision du temps d\'écran, gestion des contacts autorisés, et alertes de sécurité en temps réel.' },
+  { q: 'Puis-je renforcer la protection de mon compte ?', a: 'Oui. Chaque utilisateur peut gérer sa confidentialité, bloquer ou signaler un compte et utiliser les outils de bien-être numérique disponibles dans les paramètres.' },
   { q: 'Quelles données Forsure collecte-t-il exactement ?', a: 'La protection des données sur Forsure se traduit par une collecte minimale : votre email, votre nom d\'utilisateur, et les contenus que vous publiez volontairement. Aucune donnée de navigation, aucun cookie de suivi, aucune information de localisation.' },
   { q: 'La protection des données est-elle la même sur mobile et ordinateur ?', a: 'Oui, la protection des données sur Forsure est identique sur tous les appareils — smartphone, tablette, ordinateur. Que vous utilisiez l\'application ou le navigateur, vos données bénéficient du même niveau de protection.' },
 ];
@@ -41,7 +41,7 @@ const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebPage',
   name: 'Protection des données personnelles — Réseau social respectueux de la vie privée — Forsure',
-  description: 'Forsure assure la protection des données personnelles de tous ses utilisateurs. Zéro tracking publicitaire, contrôle parental intégré, conformité RGPD.',
+  description: 'Forsure assure la protection des données personnelles de tous ses utilisateurs avec confidentialité, signalement, blocage et conformité RGPD.',
   url: 'https://forsure.fans/protection-donnees',
   isPartOf: { '@type': 'WebSite', name: 'Forsure', url: 'https://forsure.fans' },
 };
@@ -100,15 +100,15 @@ export default function SEOProtection() {
             <h3 className="text-xl font-bold text-foreground mt-8">Zéro revente de données à des tiers</h3>
             <p>La protection des données sur Forsure inclut l'engagement formel de ne jamais vendre, louer, échanger ou partager vos données personnelles avec des tiers. Aucun annonceur, aucun partenaire commercial, aucune agence n'a accès à vos informations. La protection des données est un engagement contractuel.</p>
 
-            <h2 className="text-2xl font-bold text-foreground mt-10">Protection des données renforcée pour les enfants et adolescents</h2>
-            <p>La protection des données des mineurs est une responsabilité que Forsure prend particulièrement au sérieux. Les réseaux sociaux représentent un risque réel pour les jeunes : cyberharcèlement, prédateurs en ligne, exposition à des contenus inappropriés, collecte de données sans consentement éclairé.</p>
-            <p>La protection des données des mineurs sur Forsure inclut des mesures spécifiques :</p>
+            <h2 className="text-2xl font-bold text-foreground mt-10">Protection et outils de sécurité accessibles à tous</h2>
+            <p>Forsure met les mêmes outils de sécurité à la disposition de chaque utilisateur. Aucun contrôle parental par PIN, filtre automatique du feed ou blocage automatique de la messagerie n’est appliqué.</p>
+            <p>Les protections disponibles reposent sur des actions explicites de l’utilisateur :</p>
             <ul className="space-y-2">
-              <li>🛡️ <strong className="text-foreground">Messages d'inconnus bloqués</strong> — La protection des données des mineurs bloque par défaut les messages d'adultes non approuvés</li>
+              <li>🛡️ <strong className="text-foreground">Blocage manuel</strong> — Chaque utilisateur peut bloquer un compte depuis son profil ou une conversation</li>
               <li>🤖 <strong className="text-foreground">Détection de manipulation</strong> — Notre <Link to="/ia-moderation" className="text-primary hover:underline">intelligence artificielle de modération</Link> détecte les tentatives de manipulation</li>
-              <li>👨‍👩‍👧 <strong className="text-foreground">Contrôle parental complet</strong> — La protection des données familiales est entre les mains des parents</li>
-              <li>📊 <strong className="text-foreground">Alertes de sécurité</strong> — Notification immédiate aux parents en cas de comportement suspect</li>
-              <li>🔒 <strong className="text-foreground">Données minimales collectées</strong> — La protection des données des mineurs implique une collecte encore plus restreinte</li>
+              <li>🛡️ <strong className="text-foreground">Contrôle utilisateur</strong> — Chaque membre peut gérer sa confidentialité, bloquer et signaler</li>
+              <li>📊 <strong className="text-foreground">Alertes de sécurité</strong> — Notification en cas de comportement suspect</li>
+              <li>🔒 <strong className="text-foreground">Données minimales collectées</strong> — La collecte reste limitée aux données nécessaires au service</li>
             </ul>
 
             <h2 className="text-2xl font-bold text-foreground mt-10">Conformité RGPD et droits des utilisateurs</h2>
@@ -138,7 +138,7 @@ export default function SEOProtection() {
                   <tr className="border-b border-border/50"><td className="py-2 pr-4">Revente de données</td><td className="text-center text-primary font-bold">Jamais ✅</td><td className="text-center">Oui ❌</td><td className="text-center">Oui ❌</td></tr>
                   <tr className="border-b border-border/50"><td className="py-2 pr-4">Tracking en ligne</td><td className="text-center text-primary font-bold">Aucun ✅</td><td className="text-center">Intensif ❌</td><td className="text-center">Intensif ❌</td></tr>
                   <tr className="border-b border-border/50"><td className="py-2 pr-4">Chiffrement messages</td><td className="text-center text-primary font-bold">Par défaut ✅</td><td className="text-center">Optionnel ❌</td><td className="text-center">Non ❌</td></tr>
-                  <tr><td className="py-2 pr-4">Contrôle parental</td><td className="text-center text-primary font-bold">Intégré ✅</td><td className="text-center">Limité ⚠️</td><td className="text-center">Limité ⚠️</td></tr>
+                  <tr><td className="py-2 pr-4">Outils de bien-être</td><td className="text-center text-primary font-bold">Intégrés ✅</td><td className="text-center">Limités ⚠️</td><td className="text-center">Limités ⚠️</td></tr>
                 </tbody>
               </table>
             </div>

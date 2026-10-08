@@ -2,11 +2,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { ddosShield } from "../_shared/ddos-shield.ts";
 
 /**
- * age-verify: Uses AI vision to estimate age from an uploaded photo.
- * If user declared 18+ but looks under 18, flags the account and
- * activates parental controls + requests ID verification.
- *
- * POST body: { imageUrl: string }
+ * Compatibility endpoint for cached clients.
+ * Photo-based age estimation is retired: after authentication this function
+ * returns a neutral result before any profile or parental-state mutation.
  */
 
 import { getCorsHeaders } from "../_shared/cors.ts";
@@ -43,6 +41,13 @@ Deno.serve(async (req) => {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Cached application bundles may still call this endpoint. Fail open with
+    // a stable, non-mutating response so an ordinary photo can never lock an account.
+    return new Response(JSON.stringify({ status: 'retired', flagged: false }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
 
     const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 

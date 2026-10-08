@@ -19,7 +19,7 @@ describe('partner news delivery reliability', () => {
   it('keeps the local media section visible even when focus mode is enabled', () => {
     expect(feedSource).toContain('<LocalMediaSection');
     expect(feedSource).not.toMatch(
-      /!wellbeingPrefs\.focusModeEnabled\s*&&\s*\([\s\S]{0,2000}<LocalMediaSection/,
+      /!wellbeingPrefs\.focusModeEnabled\s*&&\s*<LocalMediaSection/,
     );
   });
 

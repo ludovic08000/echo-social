@@ -10,9 +10,10 @@ describe('settings panels end-to-end wiring', () => {
     const settings = readSource('src/pages/Settings.tsx');
 
     expect(app).toContain('<SettingsRuntime />');
-    for (const tab of ['wellbeing', 'content', 'accessibility', 'privacy', 'notifications', 'parental']) {
+    for (const tab of ['wellbeing', 'content', 'accessibility', 'privacy', 'notifications']) {
       expect(settings).toContain(`activeTab === '${tab}'`);
     }
+    expect(settings).not.toContain("activeTab === 'parental'");
   });
 
   it('opens the local-news zone editor instead of the privacy policy', () => {
@@ -91,16 +92,49 @@ describe('settings panels end-to-end wiring', () => {
     expect(panel).toContain('<FriendGroupsManager />');
   });
 
-  it('requires the current parental PIN and filters content on the server', () => {
+  it('keeps parental controls disabled on the client and at database boundaries', () => {
     const edge = readSource('supabase/functions/verify-parental-pin/index.ts');
     const hook = readSource('src/hooks/useParentalControl.ts');
-    const migration = readSource('supabase/migrations/20260930120000_wire_settings_privacy_parental_content.sql');
+    const minorHook = readSource('src/hooks/useMinorProtection.ts');
+    const signup = readSource('src/pages/Signup.tsx');
+    const onboarding = readSource('src/pages/Onboarding.tsx');
+    const settings = readSource('src/pages/Settings.tsx');
+    const migration = readSource('supabase/migrations/20261008203014_disable_parental_controls.sql');
 
-    expect(edge).toContain('matchesStoredPin(current_pin, existing.pin_hash)');
-    expect(edge).toContain('/^\\d{8,12}$/');
-    expect(hook).toContain('current_pin: currentPin');
-    expect(migration).toContain('CREATE OR REPLACE FUNCTION public.parental_content_category_allowed');
-    expect(migration).toContain('viewer_parental.allowed_categories');
+    expect(edge).toContain('PARENTAL_CONTROLS_ENABLED = false');
+    expect(edge).toContain('enabled: PARENTAL_CONTROLS_ENABLED');
+    expect(edge).toContain('disabled: true');
+    expect(edge).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+    expect(edge).not.toContain('.from("parental_controls")');
+    expect(hook).toContain('PARENTAL_CONTROLS_ENABLED = false');
+    expect(hook).not.toContain("functions.invoke('verify-parental-pin'");
+    expect(minorHook).not.toContain("rpc('is_user_protected_minor'");
+    expect(signup).not.toContain('Protection parentale');
+    expect(signup).not.toContain('parentalPin');
+    expect(onboarding).not.toContain("functions.invoke('verify-parental-pin'");
+    expect(settings).not.toContain("activeTab === 'parental'");
+    expect(migration).toContain('CREATE TRIGGER trg_force_parental_controls_disabled');
+    expect(migration).toContain('NEW.is_active := false');
+    expect(migration).toContain('NEW.is_minor := false');
+    expect(migration).toContain('CREATE OR REPLACE FUNCTION public.is_user_minor');
+    expect(migration).toContain('CREATE OR REPLACE FUNCTION public.current_viewer_parental_post_allowed');
+  });
+
+  it('never starts parental age verification from an ordinary post or profile photo', () => {
+    const createPost = readSource('src/components/CreatePost.tsx');
+    const profileSettings = readSource('src/components/settings/SettingsProfileTab.tsx');
+    const protectedRoute = readSource('src/components/ProtectedRoute.tsx');
+    const ageReview = readSource('src/components/AgeFlaggedScreen.tsx');
+
+    expect(createPost).not.toContain('useAgeVerification');
+    expect(createPost).not.toContain('verifyAge(');
+    expect(profileSettings).not.toContain('useAgeVerification');
+    expect(profileSettings).not.toContain('verifyAge(');
+    // Explicitly flagged identity-review states remain protected; normal media never creates them.
+    expect(protectedRoute).toContain("profile.age_verification_status === 'flagged'");
+    expect(ageReview).not.toContain("functions.invoke('verify-parental-pin'");
+    expect(ageReview).not.toContain('Définir le code parental');
+    expect(ageReview).toContain("'submit_own_identity_document'");
   });
 
   it('persists content and AI preferences and applies them to ranked feed eligibility', () => {

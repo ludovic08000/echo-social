@@ -29,6 +29,7 @@ export interface ContentPrefs {
 export interface FeedWeights {
   friends: number;     // 0-100
   discovery: number;   // 0-100
+  news: number;        // 0-100
   marketplace: number; // 0-100
 }
 
@@ -47,6 +48,7 @@ const DEFAULT_PREFS: ContentPrefs = {
 const DEFAULT_WEIGHTS: FeedWeights = {
   friends: 60,
   discovery: 30,
+  news: 30,
   marketplace: 10,
 };
 

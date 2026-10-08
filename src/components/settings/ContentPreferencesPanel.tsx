@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 type FeedAlgorithm = ContentPrefs['feedAlgorithm'];
 
 const topicOptions = [
+  { value: 'news', labelKey: 'content.topicNews' },
   { value: 'technology', labelKey: 'content.topicTech' },
   { value: 'sport', labelKey: 'content.topicSport' },
   { value: 'art', labelKey: 'content.topicArt' },
@@ -103,6 +104,7 @@ export function ContentPreferencesPanel() {
     const t = setTimeout(() => {
       void saveFeedPrefs(userId, { weights: feedWeights }).then(() => {
         void queryClient.invalidateQueries({ queryKey: ['posts', 'friends-feed'] });
+        void queryClient.invalidateQueries({ queryKey: ['partner-media', userId] });
       }).catch(() => {
         toast({ title: 'Pondération non enregistrée', variant: 'destructive' });
       });
@@ -226,6 +228,13 @@ export function ContentPreferencesPanel() {
               <span className="text-xs font-semibold text-primary">{feedWeights.discovery}%</span>
             </div>
             <Slider value={[feedWeights.discovery]} onValueChange={([v]) => setFeedWeights(w => ({ ...w, discovery: v }))} min={0} max={100} step={5} />
+          </div>
+          <div>
+            <div className="flex justify-between mb-1.5">
+              <Label className="text-xs">Actualités & médias positifs</Label>
+              <span className="text-xs font-semibold text-primary">{feedWeights.news}%</span>
+            </div>
+            <Slider value={[feedWeights.news]} onValueChange={([v]) => setFeedWeights(w => ({ ...w, news: v }))} min={0} max={100} step={5} />
           </div>
           <div>
             <div className="flex justify-between mb-1.5">

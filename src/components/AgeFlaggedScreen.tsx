@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { Shield, Upload, Lock, AlertTriangle } from 'lucide-react';
+import { Shield, Upload, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,51 +16,13 @@ const ALLOWED_ID_DOCUMENT_TYPES = new Set([
 ]);
 
 /**
- * Blocking screen shown when the AI age verification flags a user.
- * Requires:
- * 1. A parent to set a parental PIN (8+ digits)
- * 2. Upload of an ID document
- * The user cannot access the app until both steps are done.
+ * Blocking screen shown only when an explicit age-review state exists.
+ * The identity document remains private and the server owns every status change.
  */
 export function AgeFlaggedScreen() {
   const { user, signOut } = useAuth();
-  const [step, setStep] = useState<'pin' | 'id'>('pin');
-  const [pin, setPin] = useState('');
-  const [pinConfirm, setPinConfirm] = useState('');
-  const [showPin, setShowPin] = useState(false);
-  const [isSubmittingPin, setIsSubmittingPin] = useState(false);
   const [isUploadingId, setIsUploadingId] = useState(false);
   const [idUploaded, setIdUploaded] = useState(false);
-
-  const handlePinSubmit = async () => {
-    if (pin.length < 8 || !/^\d{8,12}$/.test(pin)) {
-      toast({ title: 'Code invalide', description: 'Le code parental doit contenir au moins 8 chiffres.', variant: 'destructive' });
-      return;
-    }
-    if (pin !== pinConfirm) {
-      toast({ title: 'Les codes ne correspondent pas', variant: 'destructive' });
-      return;
-    }
-
-    setIsSubmittingPin(true);
-    try {
-      const { error } = await supabase.functions.invoke('verify-parental-pin', {
-        body: {
-          action: 'set',
-          pin,
-          allowed_categories: ['general', 'education', 'sport', 'gaming', 'musique', 'art', 'humour'],
-        },
-      });
-      if (error) throw error;
-
-      toast({ title: 'Code parental défini ✓' });
-      setStep('id');
-    } catch (err: any) {
-      toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
-    } finally {
-      setIsSubmittingPin(false);
-    }
-  };
 
   const handleIdUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -166,7 +126,7 @@ export function AgeFlaggedScreen() {
               Vous recevrez une notification une fois la vérification terminée.
             </p>
             <p className="text-xs text-muted-foreground mb-6">
-              En attendant, votre compte reste en mode protégé avec le contrôle parental activé.
+              En attendant, votre compte reste protégé pendant la revue d’identité.
             </p>
             <Button variant="outline" onClick={() => signOut()} className="w-full">
               Se déconnecter
@@ -194,85 +154,29 @@ export function AgeFlaggedScreen() {
           </div>
 
           <div className="bg-muted/50 rounded-lg p-3 mb-6 text-sm text-muted-foreground">
-            Pour la sécurité de tous, un <strong>parent ou tuteur légal</strong> doit compléter les étapes suivantes avant de pouvoir utiliser l'application.
+            Pour corriger cette vérification, envoyez une pièce d’identité. Aucun contrôle parental ne sera créé sur votre compte.
           </div>
 
-          {/* Progress steps */}
-          <div className="flex items-center gap-2 mb-6">
-            <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${step === 'pin' ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`}>
-              <Lock className="w-3 h-3" />
-              1. Code parental
-            </div>
-            <div className="h-px flex-1 bg-border" />
-            <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${step === 'id' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-              <Upload className="w-3 h-3" />
-              2. Pièce d'identité
-            </div>
-          </div>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Veuillez envoyer une <strong>pièce d'identité</strong> (carte d'identité, passeport) pour vérifier votre âge.
+            </p>
 
-          {step === 'pin' && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Un parent doit définir un <strong>code PIN à 8 chiffres minimum</strong> pour le contrôle parental.
-              </p>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Code PIN</Label>
-                  <Input
-                    type={showPin ? 'text' : 'password'}
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                    placeholder="8 chiffres min."
-                    maxLength={12}
-                    className="text-center text-lg tracking-[0.3em] font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Confirmer</Label>
-                  <Input
-                    type={showPin ? 'text' : 'password'}
-                    value={pinConfirm}
-                    onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                    placeholder="8 chiffres min."
-                    maxLength={12}
-                    className="text-center text-lg tracking-[0.3em] font-mono"
-                  />
-                </div>
-              </div>
-
-              <button type="button" onClick={() => setShowPin(!showPin)} className="text-xs text-primary hover:underline">
-                {showPin ? 'Masquer' : 'Afficher'} le code
-              </button>
-
-              <Button onClick={handlePinSubmit} disabled={isSubmittingPin || pin.length < 8} className="w-full pulse-button-gradient">
-                {isSubmittingPin ? 'Enregistrement…' : 'Définir le code parental'}
-              </Button>
-            </motion.div>
-          )}
-
-          {step === 'id' && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Veuillez envoyer une <strong>pièce d'identité</strong> (carte d'identité, passeport) pour vérifier votre âge.
-              </p>
-
-              <label className="flex flex-col items-center gap-3 p-6 border-2 border-dashed border-primary/30 rounded-xl cursor-pointer hover:border-primary/60 transition-colors">
-                <Upload className="w-8 h-8 text-primary" />
-                <span className="text-sm font-medium text-foreground">
-                  {isUploadingId ? 'Envoi en cours…' : 'Cliquez pour uploader'}
-                </span>
-                <span className="text-xs text-muted-foreground">JPG, PNG, WEBP ou PDF — Max 10 Mo</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={handleIdUpload}
-                  disabled={isUploadingId}
-                  className="hidden"
-                />
-              </label>
-            </motion.div>
-          )}
+            <label className="flex flex-col items-center gap-3 p-6 border-2 border-dashed border-primary/30 rounded-xl cursor-pointer hover:border-primary/60 transition-colors">
+              <Upload className="w-8 h-8 text-primary" />
+              <span className="text-sm font-medium text-foreground">
+                {isUploadingId ? 'Envoi en cours…' : 'Cliquez pour uploader'}
+              </span>
+              <span className="text-xs text-muted-foreground">JPG, PNG, WEBP ou PDF — Max 10 Mo</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={handleIdUpload}
+                disabled={isUploadingId}
+                className="hidden"
+              />
+            </label>
+          </motion.div>
 
           <div className="mt-6 pt-4 border-t border-border">
             <Button variant="ghost" size="sm" onClick={() => signOut()} className="w-full text-muted-foreground">

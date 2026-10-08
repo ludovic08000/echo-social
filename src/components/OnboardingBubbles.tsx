@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, MessageCircle, Users, Video, Sparkles, Bell, ShoppingBag, Gamepad2, ChevronRight, Shield, Heart, Palette, BookOpen, Trophy, Brain, Radio, Search, Baby, Image } from 'lucide-react';
+import { X, MessageCircle, Users, Video, Sparkles, Bell, ShoppingBag, Gamepad2, ChevronRight, Shield, Heart, Palette, BookOpen, Trophy, Brain, Radio, Search, Image } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -64,12 +64,6 @@ const STEPS: BubbleStep[] = [
     icon: <Shield className="w-5 h-5" />,
     title: 'Sécurité & Confidentialité 🛡️',
     description: 'Vérification d\'identité, signalement, modération IA, chiffrement E2E et contrôle total de ta vie privée.',
-    position: 'bottom',
-  },
-  {
-    icon: <Baby className="w-5 h-5" />,
-    title: 'Protection des mineurs 👶',
-    description: 'Contrôle parental avec code PIN, filtrage de contenu, profil privé forcé et blocage des messages d\'inconnus.',
     position: 'bottom',
   },
   {

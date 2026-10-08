@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
-import { DEFAULT_DISCOVERY, discoveryPayload, type DiscoveryPreferences } from '@/lib/discovery';
+import {
+  DEFAULT_DISCOVERY,
+  discoveryPayload,
+  newsDiscoveryPayload,
+  type DiscoveryPreferences,
+  type NewsDiscoveryPreferences,
+} from '@/lib/discovery';
 
 export function useDiscoveryPreferences() {
   const { user } = useAuth();
@@ -37,6 +43,28 @@ export function useSaveDiscoveryPreferences() {
       void cache.invalidateQueries({ queryKey: ['active-ads'] });
       void cache.invalidateQueries({ queryKey: ['partner-media'] });
       void cache.invalidateQueries({ queryKey: ['ad-audience'] });
+      cache.removeQueries({ queryKey: ['ad-location', userId] });
+    },
+  });
+}
+
+export function useSaveNewsDiscoveryPreferences() {
+  const { user } = useAuth();
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: async (value: NewsDiscoveryPreferences) => {
+      if (!user) throw new Error('Connexion requise');
+      const { data, error } = await supabase.rpc('set_news_discovery_preferences' as never,
+        { p_preferences: newsDiscoveryPayload(value) } as never);
+      if (error) throw error;
+      return { preferences: data as unknown as DiscoveryPreferences, userId: user.id };
+    },
+    onSuccess: ({ preferences: value, userId }) => {
+      if (user?.id !== userId) return;
+      cache.setQueryData(['discovery-preferences', userId], value);
+      void cache.invalidateQueries({ queryKey: ['partner-media'] });
+      // The selected news zone can also be reused by an already-consented local-ad setting.
+      void cache.invalidateQueries({ queryKey: ['active-ads'] });
       cache.removeQueries({ queryKey: ['ad-location', userId] });
     },
   });

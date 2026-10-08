@@ -21,7 +21,7 @@ import { SafeMarkdown } from '@/components/SafeMarkdown';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
-import { saveFeedPrefs } from '@/lib/feedPreferences';
+import { CONTENT_PREFS_CHANGED_EVENT, saveFeedPrefs } from '@/lib/feedPreferences';
 
 
 type Msg = { role: string; content: string };
@@ -165,25 +165,27 @@ function ActionCard({ action, onExecute, executing, executed }: {
 }
 
 // ── Feed Preview ──
-function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, diversityBoost }: {
-  friends: number; discovery: number; marketplace: number; algo: FeedAlgorithm; viralReduce: boolean; diversityBoost: number;
+function FeedPreviewBar({ friends, discovery, news, marketplace, algo, viralReduce, diversityBoost }: {
+  friends: number; discovery: number; news: number; marketplace: number; algo: FeedAlgorithm; viralReduce: boolean; diversityBoost: number;
 }) {
-  const total = Math.max(1, friends + discovery + marketplace);
+  const total = Math.max(1, friends + discovery + news + marketplace);
   const fPct = Math.round((friends / total) * 100);
   const dPct = Math.round((discovery / total) * 100);
-  const mPct = 100 - fPct - dPct;
+  const nPct = Math.round((news / total) * 100);
+  const mPct = Math.max(0, 100 - fPct - dPct - nPct);
 
   const posts = Array.from({ length: 10 }, (_, i) => {
     const rand = Math.random() * 100;
     if (algo === 'chronological') return 'chrono';
-    if (algo === 'friends_first') return i < 7 ? 'friend' : rand < 50 ? 'discovery' : 'marketplace';
+    if (algo === 'friends_first') return i < 7 ? 'friend' : rand < 50 ? 'discovery' : 'news';
     if (rand < fPct) return 'friend';
     if (rand < fPct + dPct) return 'discovery';
+    if (rand < fPct + dPct + nPct) return 'news';
     return 'marketplace';
   });
 
   const colors: Record<string, string> = {
-    friend: 'bg-primary', discovery: 'bg-violet-500', marketplace: 'bg-amber-500', chrono: 'bg-primary/60',
+    friend: 'bg-primary', discovery: 'bg-violet-500', news: 'bg-sky-500', marketplace: 'bg-amber-500', chrono: 'bg-primary/60',
   };
 
   return (
@@ -204,6 +206,10 @@ function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, di
           className="bg-violet-500/30 flex items-center justify-center min-w-0" title={`Découverte: ${dPct}%`}>
           {dPct > 15 && <span className="text-[8px] font-bold text-violet-700 dark:text-violet-200">{dPct}%</span>}
         </motion.div>
+        <motion.div animate={{ width: `${nPct}%` }} transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+          className="bg-sky-500/30 flex items-center justify-center min-w-0" title={`Actualités: ${nPct}%`}>
+          {nPct > 15 && <span className="text-[8px] font-bold text-sky-700 dark:text-sky-200">{nPct}%</span>}
+        </motion.div>
         <motion.div animate={{ width: `${mPct}%` }} transition={{ type: 'spring', stiffness: 300, damping: 25 }}
           className="bg-amber-500/30 flex items-center justify-center min-w-0" title={`Marketplace: ${mPct}%`}>
           {mPct > 15 && <span className="text-[8px] font-bold text-amber-700 dark:text-amber-200">{mPct}%</span>}
@@ -219,6 +225,7 @@ function FeedPreviewBar({ friends, discovery, marketplace, algo, viralReduce, di
       <div className="flex gap-3 justify-center">
         <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-primary inline-block" /> Amis</span>
         <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-violet-500 inline-block" /> Découverte</span>
+        <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-sky-500 inline-block" /> Actualités</span>
         <span className="flex items-center gap-1 text-[8px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" /> Market</span>
       </div>
     </div>
@@ -264,8 +271,10 @@ function AlgorithmPanel() {
   const updateWeights = (w: FeedWeights, label: string) => {
     setFeedWeights(w);
     localStorage.setItem('feed-weights', JSON.stringify(w));
+    window.dispatchEvent(new CustomEvent(CONTENT_PREFS_CHANGED_EVENT));
     if (user) void saveFeedPrefs(user.id, { weights: w }).catch(() => {});
     queryClient.invalidateQueries({ queryKey: ['posts'] });
+    queryClient.invalidateQueries({ queryKey: ['partner-media', user?.id] });
     showFeedback(label);
   };
   const updateDiversity = (v: number) => { setDiversityBoost(v); savePrefs({ diversityBoost: v }); showFeedback('Diversité'); };
@@ -292,7 +301,7 @@ function AlgorithmPanel() {
         )}
       </AnimatePresence>
 
-      <FeedPreviewBar friends={feedWeights.friends} discovery={feedWeights.discovery}
+      <FeedPreviewBar friends={feedWeights.friends} discovery={feedWeights.discovery} news={feedWeights.news}
         marketplace={feedWeights.marketplace} algo={feedAlgo} viralReduce={viralReduce} diversityBoost={diversityBoost} />
 
       <div className="space-y-2">
@@ -332,6 +341,7 @@ function AlgorithmPanel() {
           {[
             { key: 'friends' as keyof FeedWeights, label: 'Amis', color: 'bg-primary', hint: 'Contenu de vos amis' },
             { key: 'discovery' as keyof FeedWeights, label: 'Découverte', color: 'bg-violet-500', hint: 'Nouveau contenu à explorer' },
+            { key: 'news' as keyof FeedWeights, label: 'Actualités', color: 'bg-sky-500', hint: 'Médias locaux et contenus positifs' },
             { key: 'marketplace' as keyof FeedWeights, label: 'Marketplace', color: 'bg-amber-500', hint: 'Produits et annonces' },
           ].map(item => (
             <div key={item.key} className="space-y-1.5 p-3 rounded-xl bg-muted/50 border border-border">

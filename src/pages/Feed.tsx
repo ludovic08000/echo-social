@@ -32,6 +32,7 @@ import { FlowDashboard } from '@/components/flow/FlowDashboard';
 import { SEOHead } from '@/components/SEOHead';
 import { buildFeedMeta } from '@/lib/seo/buildMeta';
 import { getFeedAdSlot } from '@/lib/ads/adDelivery';
+import { buildEditorialBlendPlan, editorialMediaSlotAfterPost } from '@/lib/editorialFeed';
 
 // Lazy-load heavy injection components — only loaded when scrolled into view
 const FriendSuggestions = lazy(() => import('@/components/feed/FriendSuggestions').then(m => ({ default: m.FriendSuggestions })));
@@ -57,6 +58,10 @@ export default function Feed() {
   const [showPauseReminder, setShowPauseReminder] = useState(false);
   const [pauseDismissed, setPauseDismissed] = useState(false);
   const [feedWeights, setFeedWeights] = useState(loadFeedWeights);
+  const editorialBlendPlan = useMemo(
+    () => buildEditorialBlendPlan(feedWeights.news),
+    [feedWeights.news],
+  );
   const { data: activeAds } = useActiveAds('feed');
   const feedBgStyle = useCustomBackground(profileId ? 'profile' : 'feed', profileId);
   const { feedStyle: feedCustomStyle } = useFeedCustomization();
@@ -378,6 +383,11 @@ export default function Feed() {
                   </p>
                 </div>
                 <div className="mt-4 space-y-3">
+                  {editorialBlendPlan.enabled && (
+                    <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
+                      <LocalMediaSection maxItems={Math.min(3, editorialBlendPlan.maxItems)} />
+                    </Suspense>
+                  )}
                   <FeedLiveSection />
                   <Suspense fallback={null}>
                     <FeedReelsSection />
@@ -407,29 +417,29 @@ export default function Feed() {
                   </div>
                 )}
 
-                {/* Partner news must not depend on social post count or focus mode. */}
-                <div className="sm:px-4 mt-4">
-                  <LazyMount minHeight={200}>
-                    <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
-                      <LocalMediaSection />
-                    </Suspense>
-                  </LazyMount>
-                </div>
-
-                {/* Posts list — clean spacing */}
+                {/* Publications et médias sont mélangés selon le réglage explicite Actualités. */}
                 <div className="sm:px-4 sm:space-y-4 mt-4">
-                  {posts.map((post, index) => (
-                    <div
-                      key={post.id}
-                      style={{
-                        contentVisibility: 'auto',
-                        containIntrinsicSize: '720px',
-                      } as React.CSSProperties}
-                    >
-                      <PostCard post={post} mediaPriority={index < 2} />
-                      {!wellbeingPrefs.focusModeEnabled && renderInjection(index)}
-                    </div>
-                  ))}
+                  {posts.map((post, index) => {
+                    const editorialSlot = editorialMediaSlotAfterPost(index, editorialBlendPlan);
+                    return <React.Fragment key={post.id}>
+                      <div
+                        style={{
+                          contentVisibility: 'auto',
+                          containIntrinsicSize: '720px',
+                        } as React.CSSProperties}
+                      >
+                        <PostCard post={post} mediaPriority={index < 2} />
+                        {!wellbeingPrefs.focusModeEnabled && renderInjection(index)}
+                      </div>
+                      {editorialSlot !== null && (
+                        <LazyMount minHeight={200}>
+                          <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
+                            <LocalMediaSection variant="feed-card" itemIndex={editorialSlot} />
+                          </Suspense>
+                        </LazyMount>
+                      )}
+                    </React.Fragment>;
+                  })}
                 </div>
 
                 {/* Infinite scroll sentinel */}

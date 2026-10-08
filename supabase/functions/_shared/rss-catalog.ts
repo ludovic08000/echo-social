@@ -8,7 +8,7 @@ export const FRENCH_REGIONS = {
   '53': 'Bretagne', '75': 'Nouvelle-Aquitaine', '76': 'Occitanie',
   '84': 'Auvergne-Rhône-Alpes', '93': 'Provence-Alpes-Côte d’Azur', '94': 'Corse',
 } as const;
-export type RssEditorialCategory = 'general' | 'science' | 'music' | 'education' | 'wellbeing';
+export type RssEditorialCategory = 'general' | 'science' | 'music' | 'education' | 'wellbeing' | 'sport';
 export interface RssCatalogEntry {
   name: string; url: string | null; websiteHost: string | null; verified: boolean;
   reference: string; regionCode: keyof typeof FRENCH_REGIONS | null; city: string | null;
@@ -57,6 +57,9 @@ export const RSS_CATALOG: Record<string, RssCatalogEntry> = {
   'the-conversation-sante': publisher('The Conversation — Santé', 'https://theconversation.com/fr/sante/articles.atom', null, 'wellbeing'),
   'psychologies': publisher('Psychologies', 'https://www.psychologies.com/feed', null, 'wellbeing'),
   'sante-publique-france-sante-mentale': publisher('Santé publique France — Santé mentale', 'https://www.santepubliquefrance.fr/rss/1060', null, 'wellbeing'),
+  'le-monde-sport': publisher('Le Monde — Sport', 'https://www.lemonde.fr/sport/rss_full.xml', null, 'sport'),
+  'franceinfo-sports': publisher('franceinfo — Sports', 'https://www.franceinfo.fr/sports.rss', null, 'sport'),
+  'rmc-sport': publisher('RMC Sport', 'https://rmcsport.bfmtv.com/rss/fil-sport/', null, 'sport'),
   'le-figaro': publisher('Le Figaro', 'https://www.lefigaro.fr/rss/figaro_actualites.xml'),
   'liberation': publisher('Libération', 'https://www.liberation.fr/arc/outboundfeeds/rss-all/?outputType=xml'),
   'humanite': publisher('L’Humanité', 'https://www.humanite.fr/feed'),

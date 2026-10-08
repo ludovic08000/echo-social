@@ -8196,6 +8196,7 @@ export type Database = {
           viral_content_reduce: boolean
           weight_discovery: number
           weight_friends: number
+          weight_news: number
           weight_marketplace: number
         }
         Insert: {
@@ -8213,6 +8214,7 @@ export type Database = {
           viral_content_reduce?: boolean
           weight_discovery?: number
           weight_friends?: number
+          weight_news?: number
           weight_marketplace?: number
         }
         Update: {
@@ -8230,6 +8232,7 @@ export type Database = {
           viral_content_reduce?: boolean
           weight_discovery?: number
           weight_friends?: number
+          weight_news?: number
           weight_marketplace?: number
         }
         Relationships: []

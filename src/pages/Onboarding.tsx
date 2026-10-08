@@ -13,7 +13,7 @@ import { useSendFriendRequest } from '@/hooks/useFriendships';
 import { UserAvatar } from '@/components/UserAvatar';
 import { MatchedContact } from '@/hooks/useContactSync';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { loadSignupDataRaw, loadSignupData, clearSignupData, hasSignupData, computeAgeFromDOB, type StoredSignupData, type SignupPayload } from '@/lib/signupIntegrity';
+import { loadSignupDataRaw, loadSignupData, clearSignupData, hasSignupData, type StoredSignupData, type SignupPayload } from '@/lib/signupIntegrity';
 
 type SignupData = StoredSignupData;
 
@@ -23,6 +23,8 @@ const INTERESTS = [
   { value: 'sport', label: 'Sport', emoji: '⚽', color: 'border-green-500/40 bg-green-500/10 text-green-300' },
   { value: 'news', label: 'Actualités', emoji: '📰', color: 'border-blue-500/40 bg-blue-500/10 text-blue-300' },
   { value: 'education', label: 'Éducation', emoji: '📚', color: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300' },
+  { value: 'science', label: 'Science', emoji: '🔬', color: 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300' },
+  { value: 'wellbeing', label: 'Bien-être', emoji: '🌿', color: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' },
   { value: 'cooking', label: 'Cuisine', emoji: '🍳', color: 'border-orange-500/40 bg-orange-500/10 text-orange-300' },
   { value: 'tech', label: 'Tech', emoji: '💻', color: 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300' },
   { value: 'art', label: 'Art & Créativité', emoji: '🎨', color: 'border-rose-500/40 bg-rose-500/10 text-rose-300' },
@@ -227,9 +229,6 @@ export default function Onboarding() {
     setIntegrityVerified(true);
     setShowPasswordPrompt(false);
 
-    // Recompute age from DOB (never trust stored age)
-    const age = computeAgeFromDOB(verified.dateOfBirth);
-
     // Show creating step
     setStep('creating');
 
@@ -303,18 +302,7 @@ export default function Onboarding() {
         }).catch(() => {});
       }
 
-      // 4. Save parental controls if minor
-      if (verified.parentalPin && age < 16) {
-        await supabase.functions.invoke('verify-parental-pin', {
-          body: {
-            action: 'set',
-            pin: verified.parentalPin,
-            allowed_categories: ['general', 'education', 'sport', 'gaming', 'musique', 'art', 'humour'],
-          },
-        }).catch(() => {});
-      }
-
-      // 5. Save interests & AI name
+      // 4. Save interests & AI name
       await savePreferences(newUser.id);
 
       // 5b. Advance onboarding step server-side (step 0 → 1)
@@ -358,6 +346,15 @@ export default function Onboarding() {
     }));
     try {
       await supabase.from('user_interests').upsert(rows, { onConflict: 'user_id,interest_type,interest_value' } as any);
+    } catch {}
+
+    // Les choix déclarés au premier démarrage alimentent le même contrat que
+    // le panneau « Contenu » ; ils restent modifiables ensuite par l'utilisateur.
+    try {
+      await supabase.from('user_feed_preferences').upsert(
+        { user_id: userId, priority_topics: selected },
+        { onConflict: 'user_id' },
+      );
     } catch {}
 
     // Save AI companion name

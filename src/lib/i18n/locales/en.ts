@@ -186,6 +186,7 @@ const en = {
   'content.sensitiveFilter': 'Sensitive content filter',
   'content.sensitiveFilterDesc': 'Blur potentially shocking content',
   'content.topicTech': 'Technology',
+  'content.topicNews': 'News',
   'content.topicSport': 'Sport',
   'content.topicArt': 'Art',
   'content.topicMusic': 'Music',

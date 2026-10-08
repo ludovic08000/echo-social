@@ -12,6 +12,8 @@ export interface DiscoveryPreferences {
   updated_at?: string;
 }
 
+export type NewsDiscoveryPreferences = Pick<DiscoveryPreferences, 'local_media' | 'country' | 'region' | 'city'>;
+
 export const DEFAULT_DISCOVERY: DiscoveryPreferences = {
   ads_profile: false, ads_activity: false, ads_location: false, ads_location_auto: false, local_media: false,
   country: null, region: null, city: null,
@@ -19,7 +21,7 @@ export const DEFAULT_DISCOVERY: DiscoveryPreferences = {
 
 export type MediaScope = 'nearby' | 'city' | 'region' | 'france';
 export type MediaKind = 'all' | 'article' | 'video';
-export type MediaEditorialCategory = 'general' | 'science' | 'music' | 'education' | 'wellbeing';
+export type MediaEditorialCategory = 'general' | 'science' | 'music' | 'education' | 'wellbeing' | 'sport';
 export interface PartnerMediaItem {
   discussion_id?: string | null;
   id: string; title: string; excerpt: string; canonical_url: string;
@@ -27,6 +29,7 @@ export interface PartnerMediaItem {
   published_at: string; source_name: string; country: string; region: string | null; city: string | null;
   editorial_category?: MediaEditorialCategory;
   proximity?: 'city' | 'region' | 'national' | 'other';
+  rank_reason?: 'declared_interest' | 'local_relevance' | 'positive_editorial_diversity' | string;
 }
 
 export function safePartnerUrl(value: string): string | null {
@@ -68,5 +71,14 @@ export function discoveryPayload(value: DiscoveryPreferences) {
     country: value.local_media || value.ads_location ? value.country?.trim().toUpperCase() || null : null,
     region: value.local_media || value.ads_location ? value.region?.trim() || null : null,
     city: value.local_media || value.ads_location ? value.city?.trim() || null : null,
+  };
+}
+
+export function newsDiscoveryPayload(value: NewsDiscoveryPreferences) {
+  return {
+    local_media: value.local_media,
+    country: value.local_media ? value.country?.trim().toUpperCase() || null : null,
+    region: value.local_media ? value.region?.trim() || null : null,
+    city: value.local_media ? value.city?.trim() || null : null,
   };
 }

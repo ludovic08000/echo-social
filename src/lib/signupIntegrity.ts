@@ -39,22 +39,11 @@ export interface StoredSignupData {
   name: string;
   dateOfBirth: string;
   phoneNumber: string;
-  parentalPin: string | null;
 }
 
 /** Full signup payload including password (only in memory) */
 export interface SignupPayload extends StoredSignupData {
   password: string;
-}
-
-/** Compute age from DOB string (YYYY-MM-DD) */
-export function computeAgeFromDOB(dob: string): number {
-  const birth = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-  return age;
 }
 
 /** Store signup data with HMAC integrity signature. Password is NOT stored. */
@@ -67,7 +56,6 @@ export async function storeSignupData(data: SignupPayload): Promise<void> {
     name: data.name,
     dateOfBirth: data.dateOfBirth,
     phoneNumber: data.phoneNumber,
-    parentalPin: data.parentalPin,
   };
 
   const payload = JSON.stringify(storedData);

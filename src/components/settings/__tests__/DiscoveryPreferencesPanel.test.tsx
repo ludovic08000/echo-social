@@ -3,9 +3,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_DISCOVERY } from '@/lib/discovery';
 import { DiscoveryPreferencesPanel } from '../DiscoveryPreferencesPanel';
-const mocks=vi.hoisted(()=>({mutate:vi.fn(),invoke:vi.fn(),rpc:vi.fn(),user:'user-one'}));
+const mocks=vi.hoisted(()=>({mutateAds:vi.fn(),mutateNews:vi.fn(),invoke:vi.fn(),rpc:vi.fn(),user:'user-one'}));
 vi.mock('@/lib/auth',()=>({useAuth:()=>({user:{id:mocks.user}})}));
-vi.mock('@/hooks/useDiscoveryPreferences',()=>({useDiscoveryPreferences:()=>({data:DEFAULT_DISCOVERY,isLoading:false,isError:false}),useSaveDiscoveryPreferences:()=>({mutate:mocks.mutate,isPending:false})}));
+vi.mock('@/hooks/useDiscoveryPreferences',()=>({
+  useDiscoveryPreferences:()=>({data:DEFAULT_DISCOVERY,isLoading:false,isError:false}),
+  useSaveDiscoveryPreferences:()=>({mutate:mocks.mutateAds,isPending:false}),
+  useSaveNewsDiscoveryPreferences:()=>({mutate:mocks.mutateNews,isPending:false}),
+}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{functions:{invoke:mocks.invoke},rpc:mocks.rpc}}));
 vi.mock('sonner',()=>({toast:{info:vi.fn(),error:vi.fn(),success:vi.fn()}}));
 vi.mock('@/lib/browserLocation',()=>({browserLocationContext:vi.fn(async()=>({timeZone:'Europe/Paris',languages:['fr-FR','fr']}))}));
@@ -20,17 +24,17 @@ describe('explicit discovery consent',()=>{
     fireEvent.click(screen.getByRole('button',{name:'Détecter avec le navigateur et l’IP'}));
     fireEvent.click(await screen.findByRole('button',{name:'ランス · グラン・テスト · フランス'}));
     expect(screen.getByLabelText('Ville')).toHaveValue('Reims');
-    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix'}));
-    expect(mocks.mutate.mock.calls[0][0]).toMatchObject({country:'FR',region:'Grand Est',city:'Reims',ads_location:true});
+    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix publicitaires'}));
+    expect(mocks.mutateAds.mock.calls[0][0]).toMatchObject({country:'FR',region:'Grand Est',city:'Reims',ads_location:true});
   });
   it('does nothing on mount and saves only after the explicit button',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
-    expect(mocks.mutate).not.toHaveBeenCalled();expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.mutateAds).not.toHaveBeenCalled();expect(mocks.invoke).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('switch',{name:'Publicités selon mes intérêts déclarés'}));
-    expect(mocks.mutate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix'}));
-    expect(mocks.mutate.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,ads_profile:true});
+    expect(mocks.mutateAds).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix publicitaires'}));
+    expect(mocks.mutateAds.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,ads_profile:true});
   });
   it('treats IP lookup as a proposal after local ads opt-in and never saves automatically',async()=>{
     mocks.invoke.mockResolvedValue({data:{country:'FR',region:'Grand Est',city:'Reims'},error:null});
@@ -46,7 +50,7 @@ describe('explicit discovery consent',()=>{
       body:{consent:true,browser:{timeZone:'Europe/Paris',languages:['fr-FR','fr']}},
       headers:{'Accept-Language':'fr-FR,fr'},
     });
-    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(mocks.mutateAds).not.toHaveBeenCalled();
     expect(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'})).toBeChecked();
   });
   it('confirms a profile city and its region only after local ads opt-in',async()=>{
@@ -58,9 +62,9 @@ describe('explicit discovery consent',()=>{
     fireEvent.click(await screen.findByRole('button',{name:'Reims · Marne · Grand Est · FR'}));
     expect(mocks.rpc).toHaveBeenCalledWith('get_my_media_profile_city');
     expect(mocks.invoke).toHaveBeenCalledWith('local-media-location',{body:{cityQuery:'Reims'}});
-    expect(mocks.mutate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix'}));
-    expect(mocks.mutate.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,ads_location:true,local_media:true,country:'FR',city:'Reims',region:'Grand Est'});
+    expect(mocks.mutateAds).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix publicitaires'}));
+    expect(mocks.mutateAds.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,ads_location:true,local_media:true,country:'FR',city:'Reims',region:'Grand Est'});
   });
   it('does not overwrite a manual choice with an IP suggestion',async()=>{
     mocks.invoke.mockResolvedValue({data:{country:'FR',region:'Île-de-France',city:'Paris'},error:null});
@@ -86,7 +90,7 @@ describe('explicit discovery consent',()=>{
   it('does not expose a switch that can disable automatic contextual news',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
     expect(screen.queryByRole('switch',{name:'Médias de ma ville et de ma région'})).toBeNull();
-    expect(screen.getByText(/actualités locales sont disponibles sans contrôle parental actif/i)).toBeInTheDocument();
+    expect(screen.getByText(/actualités locales sont disponibles pour tous les comptes/i)).toBeInTheDocument();
   });
   it('saves a selected news zone without enabling any personalized advertising',async()=>{
     mocks.rpc.mockResolvedValue({data:'Charleville-Mézières',error:null});
@@ -94,8 +98,9 @@ describe('explicit discovery consent',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button',{name:'Utiliser la ville de mon profil'}));
     fireEvent.click(await screen.findByRole('button',{name:'Charleville-Mézières · Ardennes · Grand Est · FR'}));
-    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix'}));
-    expect(mocks.mutate.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,local_media:true,country:'FR',region:'Grand Est',city:'Charleville-Mézières'});
+    fireEvent.click(screen.getByRole('button',{name:'Enregistrer la zone des actualités'}));
+    expect(mocks.mutateNews.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,local_media:true,country:'FR',region:'Grand Est',city:'Charleville-Mézières'});
+    expect(mocks.mutateAds).not.toHaveBeenCalled();
     expect(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'})).not.toBeChecked();
   });
   it('keeps local ads independent of news and requires a separate opt-in for auto location',()=>{
@@ -104,8 +109,8 @@ describe('explicit discovery consent',()=>{
     fireEvent.click(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'}));
     expect(screen.getByRole('switch',{name:'Trouver automatiquement ma zone publicitaire'})).not.toBeChecked();
     fireEvent.click(screen.getByRole('switch',{name:'Trouver automatiquement ma zone publicitaire'}));
-    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix'}));
-    expect(mocks.mutate.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,ads_location:true,ads_location_auto:true});
+    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix publicitaires'}));
+    expect(mocks.mutateAds.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,ads_location:true,ads_location_auto:true});
     expect(mocks.invoke).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'}));
     expect(screen.getByRole('switch',{name:'Trouver automatiquement ma zone publicitaire'})).not.toBeChecked();

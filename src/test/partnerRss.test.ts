@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
-import { parseRss, fetchRss, MAX_RSS_BYTES, type RssSource } from '../../supabase/functions/partner-rss-sync/rss';
+import { parseRss, fetchRss, MAX_RSS_BYTES, MEDIA_FRESHNESS_MS, type RssSource } from '../../supabase/functions/partner-rss-sync/rss';
 import { rssDestination, assertRssCoverage, FRENCH_REGIONS, RSS_CATALOG } from '../../supabase/functions/partner-rss-sync/catalog';
 import { rssHandler } from '../../supabase/functions/partner-rss-sync/handler';
 
@@ -38,6 +38,7 @@ describe('daily RSS normalization', () => {
       music: ['france-musique', 'le-monde-musiques', 'tsugi'],
       education: ['the-conversation-education', 'le-monde-education', 'cafe-pedagogique'],
       wellbeing: ['the-conversation-sante', 'psychologies', 'sante-publique-france-sante-mentale'],
+      sport: ['le-monde-sport', 'franceinfo-sports', 'rmc-sport'],
     } as const;
     for (const [category, keys] of Object.entries(expected)) {
       for (const key of keys) {
@@ -105,6 +106,14 @@ describe('daily RSS normalization', () => {
       expect(await parseRss(rss().replace('Tue, 06 Oct 2026 09:00:00 GMT', date), source, now)).toEqual([]);
     }
   });
+  it('only imports the current daily-news window while retaining a longer discussion lifetime', async () => {
+    const recentDate = new Date(now - MEDIA_FRESHNESS_MS + 60_000).toUTCString();
+    const staleDate = new Date(now - MEDIA_FRESHNESS_MS).toUTCString();
+    const [recent] = await parseRss(rss().replace('Tue, 06 Oct 2026 09:00:00 GMT', recentDate), source, now);
+    expect(recent).toBeDefined();
+    expect(Date.parse(recent.expires_at) - Date.parse(recent.published_at)).toBe(7 * 86_400_000);
+    expect(await parseRss(rss().replace('Tue, 06 Oct 2026 09:00:00 GMT', staleDate), source, now)).toEqual([]);
+  });
   it('bounds items and sorts recent first', async () => {
     const xml = rss(Array.from({ length: 60 }, (_, i) => entry().replace('/test?', `/test-${i}?`)).join(''));
     expect(await parseRss(xml, source, now)).toHaveLength(50);
@@ -114,7 +123,7 @@ describe('daily RSS normalization', () => {
     const xml = rss('<item><title>Info</title><link>https://www.leparisien.fr/actualites/info-05-10-2026-ABCDEF123.php</link></item>');
     const [item] = await parseRss(xml, source, now);
     expect(item.published_at).toBe('2026-10-05T00:00:00.000Z');
-    expect(await parseRss(xml, source, now + 86400000)).toEqual([item]);
+    expect(await parseRss(xml, source, now + 86400000)).toEqual([]);
     expect(await parseRss(xml.replace('05-10-2026', '31-02-2026'), source, now)).toEqual([]);
   });
   it('permits the two live-verified regional destinations only for their exact publisher host', () => {

@@ -3,6 +3,10 @@ import { assertRssCoverage, rssDestination } from './catalog.ts';
 
 export const MAX_RSS_BYTES = 1_000_000;
 const DAY = 86_400_000;
+// The feed is refreshed roughly every 23 hours. A 36-hour display/import
+// horizon tolerates a delayed publisher or worker run without resurfacing
+// week-old articles. Rows are retained longer so existing discussions survive.
+export const MEDIA_FRESHNESS_MS = 36 * 60 * 60 * 1000;
 export interface RssSource {
   id: string; partner_id: string; source_key: string; lease_token: string;
   website_host: string; allow_excerpt: boolean; allow_youtube_embed: boolean; rights_until: string;
@@ -184,7 +188,8 @@ export async function parseRss(xml: string, source: Pick<RssSource, 'website_hos
     const declaredDate = text(entry.pubDate ?? entry.published ?? entry['dc:date'] ?? entry.updated);
     const published = declaredDate ? Date.parse(declaredDate) : url ? parisienUrlDate(url) : NaN;
     const expires = Math.min(published + 7 * DAY, until);
-    if (!url || !title || !Number.isFinite(published) || published > now || expires <= now || deduped.has(url)) continue;
+    if (!url || !title || !Number.isFinite(published) || published > now
+      || published <= now - MEDIA_FRESHNESS_MS || expires <= now || deduped.has(url)) continue;
     const kind = isVideo(entry, url, title) ? 'video' : 'article';
     deduped.set(url, {
       title, canonical_url: url, kind, youtube_id: kind === 'video' ? youtubeId(entry, source.allow_youtube_embed) : null,

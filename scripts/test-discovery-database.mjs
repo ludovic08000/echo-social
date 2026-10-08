@@ -18,6 +18,7 @@ const denied = async (sql,args=[],pattern=/permission denied|AUTH_REQUIRED|ADULT
 const user = async n => { await db.exec('RESET ROLE'); await q("SELECT set_config('request.jwt.claim.sub',$1,false)",[n?uid(n):'']); await db.exec('SET ROLE authenticated'); };
 const admin = () => db.exec('RESET ROLE');
 const prefs = p => scalar('SELECT set_discovery_preferences($1)',[JSON.stringify(p)]);
+const newsPrefs = p => scalar('SELECT set_news_discovery_preferences($1)',[JSON.stringify(p)]);
 const refresh = () => scalar('SELECT refresh_my_ad_audience()');
 const ads = async () => (await q("SELECT id FROM get_active_ads_for_placement('feed',30)")).rows.map(x=>x.id);
 const eligible = async n => (await ads()).includes(uid(n));
@@ -42,6 +43,7 @@ try {
   `);
   await db.exec(readFileSync(new URL('../supabase/migrations/20261005213316_consented_ads_and_local_media.sql',import.meta.url),'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/20261008130755_fix_inactive_parental_adult_gate.sql',import.meta.url),'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261008195531_separate_news_preferences_from_adult_ads.sql',import.meta.url),'utf8'));
   for (let n=1;n<=6;n++) {
     await q('INSERT INTO auth.users VALUES($1)',[uid(n)]);
     await q("INSERT INTO profiles VALUES($1,'Test', $2, '{Sport}','Reims')",[uid(n),n===2?'2015-01-01':n===3?null:'1990-01-01']);
@@ -71,7 +73,11 @@ try {
   await denied('SELECT set_discovery_preferences($1)',[JSON.stringify({user_id:uid(5)})]);
   await denied('SELECT set_discovery_preferences($1)',[JSON.stringify({ads_profile:'true'})]);
   await denied('SELECT set_discovery_preferences($1)',[JSON.stringify({city:[]})]);
+  await denied('SELECT set_news_discovery_preferences($1)',[JSON.stringify({ads_profile:true})]);
+  await denied('SELECT set_news_discovery_preferences($1)',[JSON.stringify({local_media:'true'})]);
   await prefs({ads_profile:true});
+  const adultNews = await newsPrefs({local_media:true,country:'fr',region:'Grand Est',city:'Reims'});
+  eq(adultNews.ads_profile,true); eq(adultNews.local_media,true); eq(adultNews.country,'FR');
   eq(await eligible(12),true); eq(await eligible(13),false); eq(await eligible(15),true);
   const why=await scalar('SELECT get_my_ad_explanation($1)',[uid(12)]);
   eq(why.topics,['Sport']); eq(why.advertiser,'Test');
@@ -84,6 +90,9 @@ try {
   await denied("SELECT track_ad_interaction($1,'click')",[uid(12)]);
   eq(await scalar('SELECT get_my_ad_explanation($1)',[uid(12)]),null);
   for (const n of [2,3,6]) { await user(n); eq(await ads(),[]); await denied('SELECT set_discovery_preferences($1)',[JSON.stringify({ads_activity:true})]); }
+  await user(6);
+  const minorNews = await newsPrefs({local_media:true,country:'FR',region:'Bretagne',city:'Rennes'});
+  eq(minorNews.local_media,true); eq(minorNews.ads_profile,false); eq(minorNews.city,'Rennes');
   await user(5); await prefs({local_media:true,country:'FR',region:'Occitanie',city:'Toulouse'});
   await user(1); eq((await q('SELECT user_id FROM discovery_preferences')).rows.map(x=>x.user_id),[uid(1)]);
   await prefs({local_media:true,country:'fr',region:'Grand Est',city:'Reims'}); eq(await eligible(14),false);
@@ -166,6 +175,7 @@ try {
   await db.exec('SELECT cleanup_discovery_data()'); eq(Number(await scalar('SELECT count(*) FROM ad_audience_cache')),0);
   await db.exec('SET ROLE anon'); await denied('SELECT get_local_partner_media()'); await denied('SELECT get_active_ads_for_placement()');
   await user(null); await denied('SELECT set_discovery_preferences($1)',['{}']);
+  await denied('SELECT set_news_discovery_preferences($1)',['{}']);
   console.log(`Discovery SQL: ${checks} functional checks passed (isolated PostgreSQL; no production connection).`);
   await testPartnerRssDatabase(db);
   await testRegionalMediaDatabase(db);

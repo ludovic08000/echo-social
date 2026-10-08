@@ -19,7 +19,14 @@ const editorialCategoryLabel = {
   music: 'Musique',
   education: 'Éducation',
   wellbeing: 'Bien-être',
+  sport: 'Sport',
 } as const;
+
+const rankReasonLabel: Record<string, string> = {
+  declared_interest: 'Selon tes choix',
+  local_relevance: 'Près de chez toi',
+  positive_editorial_diversity: 'Découverte positive',
+};
 
 function PartnerCard({ item }: { item: PartnerMediaItem }) {
   const [playing, setPlaying] = useState(false);
@@ -43,6 +50,7 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
     <div className="p-3 space-y-2">
     <p className="text-xs text-muted-foreground">{item.source_name} · {editorialCategoryLabel[item.editorial_category ?? 'general']} · {item.kind === 'video' ? 'Vidéo' : 'Article'} · {new Date(item.published_at).toLocaleDateString('fr-FR')}</p>
     <p className="text-xs text-muted-foreground">{[item.city, item.region].filter(Boolean).join(' · ') || 'France'}{item.proximity === 'national' ? ' · Sélection nationale' : ''}</p>
+    {item.rank_reason && <p className="text-xs font-medium text-primary">{rankReasonLabel[item.rank_reason] ?? 'Sélection du feed'}</p>}
     <a className="block font-semibold leading-snug hover:underline" href={url} target="_blank" rel="noopener noreferrer">{item.title}</a>
     {item.excerpt && <p className="text-sm text-muted-foreground">{item.excerpt}</p>}
     {item.discussion_id && <div className="flex flex-wrap items-center gap-2">
@@ -62,9 +70,16 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
   </article>;
 }
 
-export function LocalMediaSection() {
+type LocalMediaSectionProps = {
+  variant?: 'section' | 'feed-card';
+  itemIndex?: number;
+  maxItems?: number;
+};
+
+export function LocalMediaSection({ variant = 'section', itemIndex = 0, maxItems = 16 }: LocalMediaSectionProps) {
   const { user } = useAuth();
   const [kind, setKind] = useState<MediaKind>('all');
+  const effectiveKind: MediaKind = variant === 'feed-card' ? 'all' : kind;
   const browserLocale = browserLocaleContext();
   const languages = browserLocale.languages.join(',');
   const { data: context } = useQuery({
@@ -85,20 +100,30 @@ export function LocalMediaSection() {
   const automatic = !!context?.region;
   const effectiveScope: MediaScope = automatic ? 'nearby' : 'france';
   const { data = [], isLoading, isError } = useQuery({
-    queryKey: ['partner-media', user?.id, effectiveScope, kind, location?.country, location?.region, location?.city],
+    queryKey: ['partner-media', user?.id, effectiveScope, effectiveKind, location?.country, location?.region, location?.city],
     enabled: !!user, staleTime: 60_000, retry: false,
     queryFn: async () => {
       const { data: items, error } = await supabase.rpc('get_contextual_partner_media' as never, {
-        p_scope: effectiveScope, p_kind: kind, p_country: context?.country ?? 'FR',
+        p_scope: effectiveScope, p_kind: effectiveKind, p_country: context?.country ?? 'FR',
         p_region: context?.region ?? '', p_city: context?.city ?? null,
       } as never);
       if (error) throw error;
       return (items ?? []) as unknown as PartnerMediaItem[];
     },
   });
+
+  if (variant === 'feed-card') {
+    if (isLoading) return <div className="h-40 skeleton rounded-2xl" role="status" aria-label="Chargement d’une actualité" />;
+    if (isError || !data[itemIndex]) return null;
+    return <section className="space-y-2" aria-label="Actualité recommandée dans le feed">
+      <p className="px-1 text-xs font-semibold text-muted-foreground">Actualité choisie selon tes réglages</p>
+      <PartnerCard item={data[itemIndex]} />
+    </section>;
+  }
+
   return <section className="rounded-2xl bg-card border border-border p-4 space-y-3" aria-labelledby="local-media-title">
     <h2 id="local-media-title" className="font-semibold">Médias et actualités</h2>
-    <p className="text-xs text-muted-foreground">Sélection automatique : actualité locale, science, musique, éducation et bien-être, classées selon tes priorités du feed.</p>
+    <p className="text-xs text-muted-foreground">Sélection automatique : actualité locale, science, musique, éducation, sport et bien-être, classées selon tes priorités du feed.</p>
     <label className="block text-sm">Format <select className="ml-2 bg-background border rounded p-1" value={kind} onChange={e => setKind(e.target.value as MediaKind)}>
       <option value="all">Tous</option><option value="article">Articles</option><option value="video">Vidéos</option>
     </select></label>
@@ -111,6 +136,6 @@ export function LocalMediaSection() {
     <GeoAttribution />
     {isLoading ? <p role="status">Chargement des médias…</p> : isError ? <p role="status">Médias momentanément indisponibles. Ton feed reste accessible.</p>
       : data.length === 0 ? <p className="text-sm text-muted-foreground">Aucun contenu partenaire autorisé disponible dans cette zone pour le moment.</p>
-        : data.map(item => <PartnerCard key={item.id} item={item} />)}
+        : data.slice(0, Math.max(1, maxItems)).map(item => <PartnerCard key={item.id} item={item} />)}
   </section>;
 }

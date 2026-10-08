@@ -154,7 +154,7 @@ export default function SEOLanding() {
               Notre <Link to="/ia-moderation" className="text-primary hover:underline">IA de modération</Link>, baptisée Zeus, analyse les contenus publiés en temps réel pour détecter le harcèlement, les discours de haine, les arnaques et les contenus inappropriés. Contrairement aux autres plateformes qui modèrent a posteriori (après signalement), Forsure agit <strong className="text-foreground">avant que le contenu toxique n'atteigne votre fil d'actualité</strong>. Cette approche proactive élimine la quasi-totalité des contenus nuisibles avant même qu'ils ne soient visibles.
             </p>
             <p>
-              Pour les utilisateurs de moins de 16 ans, la <Link to="/protection-donnees" className="text-primary hover:underline">protection est encore plus stricte</Link> : les messages d'inconnus sont bloqués par défaut, et l'IA détecte automatiquement les tentatives de manipulation (grooming) avec un seuil de sensibilité renforcé. Les parents disposent d'un tableau de bord de contrôle parental pour superviser l'activité de leurs enfants en toute sérénité.
+              La <Link to="/protection-donnees" className="text-primary hover:underline">protection des utilisateurs</Link> repose sur le signalement, le blocage et la modération des comportements abusifs. Le contrôle parental par code PIN est désactivé et ne filtre plus le feed ni la messagerie.
             </p>
 
             <h2 className="text-xl md:text-2xl font-bold text-foreground mt-10 mb-4">Toutes les fonctionnalités que vous aimez, sans les inconvénients</h2>

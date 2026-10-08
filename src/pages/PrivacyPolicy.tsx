@@ -171,10 +171,8 @@ export default function PrivacyPolicy() {
             <p>Forsure accorde une importance particulière à la <strong>protection des utilisateurs de moins de 18 ans</strong> :</p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Vérification d'âge obligatoire à l'inscription (13 ans minimum, conformément au RGPD)</li>
-              <li>Système de <strong>contrôle parental</strong> avec code PIN sécurisé (8-12 caractères, hachage serveur) configurable par les parents</li>
-              <li>Filtrage de contenu par catégories autorisées (éducation, sport, gaming, musique, art, humour)</li>
-              <li>Restrictions automatiques pour les mineurs : <strong>seuls les amis approuvés</strong> peuvent envoyer des messages</li>
-              <li>Badge « mineur protégé » visible pour sensibiliser les autres utilisateurs</li>
+              <li>Le contrôle parental par code PIN est désactivé et n’applique plus de filtrage automatique au feed ou à la messagerie</li>
+              <li>Paramètres de confidentialité, blocage et signalement accessibles à chaque utilisateur</li>
               <li>Bouton de signalement spécifique pour les interactions impliquant un mineur</li>
               <li>Fonctionnalités de <strong>bien-être numérique</strong> : détox programmée, rappels de pause, limite de temps quotidienne</li>
             </ul>
@@ -311,7 +309,7 @@ export default function PrivacyPolicy() {
             <p>ForSure sélectionne automatiquement les actualités avec la zone choisie, puis la ville déclarée au profil ; à défaut, il combine les langues et le fuseau horaire du navigateur avec une estimation approximative de la ville et de la région calculée à partir de l’adresse IP reçue par la passerelle. La base privée DB-IP City Lite est utilisée lorsqu’elle est disponible ; sinon l’API HTTPS DB-IP reçoit cette adresse IP uniquement pour retourner une zone approximative. Aucun accès GPS n’est demandé, aucune coordonnée n’est utilisée et l’adresse IP n’est pas enregistrée dans les préférences de découverte. Cette sélection n’active jamais le ciblage publicitaire.</p>
             <p>Les actualités nationales n'exigent aucune localisation. La ville du profil est utilisée lorsqu'elle correspond sans ambiguïté à une commune ; sinon une région réseau approximative peut être calculée pendant la consultation. Aucun autre champ du profil ni message privé ne sert à choisir les journaux. Les journaux de sécurité ont une finalité séparée et ne sont pas réutilisés pour cette sélection.</p>
             <p>Le pays, la région et la ville ne sont conservés comme préférences que si vous les renseignez séparément pour les publicités locales. Ce consentement publicitaire reste facultatif, indépendant et révocable. Les articles et vidéos indiquent leur source et sont présentés uniquement selon les droits autorisés par le partenaire. Ouvrir un lien externe applique les règles de l'éditeur concerné.</p>
-            <p>Les discussions d’actualités sont publiques entre membres autorisés, avec application des blocages et des restrictions pour les mineurs. L’expiration d’un extrait de presse ne supprime pas vos commentaires : le lien source et la discussion restent accessibles selon ces règles. Vous pouvez supprimer vos commentaires ; le texte est alors effacé et les réponses conservées. Un signalement transmet le texte concerné à la modération pour examen.</p>
+            <p>Les discussions d’actualités sont publiques entre membres autorisés, avec application des blocages de comptes. L’expiration d’un extrait de presse ne supprime pas vos commentaires : le lien source et la discussion restent accessibles selon ces règles. Vous pouvez supprimer vos commentaires ; le texte est alors effacé et les réponses conservées. Un signalement transmet le texte concerné à la modération pour examen.</p>
           </section>
 
           <section>

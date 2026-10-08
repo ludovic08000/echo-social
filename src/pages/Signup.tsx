@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Shield, Phone } from 'lucide-react';
-import { differenceInYears } from 'date-fns';
+import { Eye, EyeOff, Phone } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -34,10 +33,6 @@ export default function Signup() {
   const [isLoading, setIsLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const [showParentalStep, setShowParentalStep] = useState(false);
-  const [parentalPin, setParentalPin] = useState('');
-  const [parentalPinConfirm, setParentalPinConfirm] = useState('');
-  const [showParentalPin, setShowParentalPin] = useState(false);
   // Anti-bot honeypot (invisible field — bots fill it, humans don't)
   const [honeypot, setHoneypot] = useState('');
   // Rate limiting: track form submission time
@@ -104,28 +99,10 @@ export default function Signup() {
     }
 
     const today = new Date();
-    const age = differenceInYears(today, dateOfBirth);
     const minDate = new Date(today.getFullYear() - 13, today.getMonth(), today.getDate());
     if (dateOfBirth > minDate) {
       toast({ title: 'Âge minimum requis', description: 'Vous devez avoir au moins 13 ans pour vous inscrire.', variant: 'destructive' });
       return;
-    }
-
-    const isMinor = age < 16;
-    if (isMinor && !showParentalStep) {
-      setShowParentalStep(true);
-      return;
-    }
-
-    if (isMinor && showParentalStep) {
-      if (parentalPin.length < 8 || !/^\d{8,12}$/.test(parentalPin)) {
-        toast({ title: 'Code invalide', description: 'Le code parental doit être composé de 8 chiffres minimum', variant: 'destructive' });
-        return;
-      }
-      if (parentalPin !== parentalPinConfirm) {
-        toast({ title: 'Les codes ne correspondent pas', variant: 'destructive' });
-        return;
-      }
     }
 
     // Minimum password length
@@ -215,7 +192,6 @@ export default function Signup() {
       name: fullName,
       dateOfBirth: dobString,
       phoneNumber: phoneNumber.trim(),
-      parentalPin: isMinor ? parentalPin : null,
     };
 
     // Use HMAC-signed storage to prevent tampering
@@ -338,34 +314,8 @@ export default function Signup() {
               </div>
             </div>
 
-            {/* Parental control step for minors */}
-            {showParentalStep && (
-              <div className="space-y-3 p-4 rounded-xl bg-destructive/5 border border-destructive/20 animate-fade-in">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <Shield className="w-4 h-4 text-destructive" />
-                  Protection parentale
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  L'utilisateur a moins de 16 ans. Un parent doit définir un code PIN à 8 chiffres minimum pour le contrôle parental.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Code PIN</Label>
-                    <Input type={showParentalPin ? 'text' : 'password'} value={parentalPin} onChange={(e) => setParentalPin(e.target.value.replace(/\D/g, '').slice(0, 12))} placeholder="8 chiffres min." maxLength={12} className="text-center text-lg tracking-[0.3em] font-mono" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Confirmer</Label>
-                    <Input type={showParentalPin ? 'text' : 'password'} value={parentalPinConfirm} onChange={(e) => setParentalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 12))} placeholder="8 chiffres min." maxLength={12} className="text-center text-lg tracking-[0.3em] font-mono" />
-                  </div>
-                </div>
-                <button type="button" onClick={() => setShowParentalPin(!showParentalPin)} className="text-xs text-primary hover:underline">
-                  {showParentalPin ? 'Masquer' : 'Afficher'} le code
-                </button>
-              </div>
-            )}
-
             <Button type="submit" disabled={isLoading || !acceptedTerms || !acceptedPrivacy} className="pulse-button-gradient w-full">
-              {isLoading ? t('signup.submitting') : showParentalStep ? 'Continuer avec protection' : 'Continuer'}
+              {isLoading ? t('signup.submitting') : 'Continuer'}
             </Button>
           </form>
 

@@ -11,8 +11,19 @@ vi.mock('../NewsDiscussionPanel',()=>({NewsDiscussionPanel:()=> <div>Formulaire 
 vi.mock('@/lib/auth',()=>({useAuth:()=>({user:{id:'test'}})}));
 beforeEach(()=>mocks.invoke.mockResolvedValue({data:{location:null},error:null}));
 afterEach(()=>{cleanup();vi.clearAllMocks();});
-function mount(){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><LocalMediaSection /></MemoryRouter></QueryClientProvider>);}
+function mount(props: Parameters<typeof LocalMediaSection>[0] = {}){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><LocalMediaSection {...props} /></MemoryRouter></QueryClientProvider>);}
 describe('partner media UI',()=>{
+  it('renders one deterministic ML-selected card inside the social feed',async()=>{
+    mocks.rpc.mockResolvedValue({data:[
+      {id:'first',title:'Première actualité',kind:'article',canonical_url:'https://media.invalid/first',published_at:'2026-10-08',source_name:'Journal A'},
+      {id:'second',title:'Deuxième actualité',kind:'article',canonical_url:'https://media.invalid/second',published_at:'2026-10-08',source_name:'Journal B',rank_reason:'declared_interest'},
+    ],error:null});
+    mount({variant:'feed-card',itemIndex:1});
+    expect(await screen.findByText('Deuxième actualité')).toBeInTheDocument();
+    expect(screen.queryByText('Première actualité')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByText('Selon tes choix')).toBeInTheDocument();
+  });
   it('loads contextual news in the background and provides a stable discussion/share link',async()=>{
     mocks.invoke.mockResolvedValue({data:{location:{country:'FR',region:'Grand Est',city:null,source:'network'}},error:null});
     mocks.rpc.mockResolvedValue({data:[{id:'x',discussion_id:'durable',title:'Local',kind:'article',canonical_url:'https://media.invalid/x',published_at:'2026-10-06',source_name:'Journal',editorial_category:'science'}],error:null});

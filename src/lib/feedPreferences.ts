@@ -29,6 +29,7 @@ const DEFAULT_PREFS: ContentPrefs = {
 const DEFAULT_WEIGHTS: FeedWeights = {
   friends: 60,
   discovery: 30,
+  news: 30,
   marketplace: 10,
 };
 
@@ -44,6 +45,7 @@ type Row = {
   seen_posts_hide: boolean;
   weight_friends: number;
   weight_discovery: number;
+  weight_news?: number;
   weight_marketplace: number;
 };
 
@@ -63,6 +65,7 @@ function rowToPrefs(row: Row): { prefs: ContentPrefs; weights: FeedWeights } {
     weights: {
       friends: row.weight_friends,
       discovery: row.weight_discovery,
+      news: row.weight_news ?? 30,
       marketplace: row.weight_marketplace,
     },
   };
@@ -129,6 +132,7 @@ export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
       seen_posts_hide: localPrefs.seenPostsHide,
       weight_friends: localWeights.friends,
       weight_discovery: localWeights.discovery,
+      weight_news: localWeights.news,
       weight_marketplace: localWeights.marketplace,
     });
 
@@ -177,6 +181,7 @@ export async function saveFeedPrefs(
       seen_posts_hide: nextPrefs.seenPostsHide,
       weight_friends: nextWeights.friends,
       weight_discovery: nextWeights.discovery,
+      weight_news: nextWeights.news,
       weight_marketplace: nextWeights.marketplace,
     })
     .select('*')

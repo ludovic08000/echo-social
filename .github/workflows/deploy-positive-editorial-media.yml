@@ -6,6 +6,11 @@ on:
       - main
     paths:
       - supabase/migrations/20261008170000_positive_editorial_media.sql
+      - supabase/migrations/20261008195531_separate_news_preferences_from_adult_ads.sql
+      - supabase/migrations/20261008200503_retire_automatic_photo_age_flags.sql
+      - supabase/migrations/20261008203014_disable_parental_controls.sql
+      - supabase/migrations/20261008204946_fresh_daily_sport_media.sql
+      - supabase/migrations/20261008210755_align_editorial_media_with_user_ml.sql
       - supabase/functions/_shared/rss-catalog.ts
       - supabase/functions/partner-rss-sync/**
       - .github/workflows/deploy-positive-editorial-media.yml
@@ -25,7 +30,12 @@ jobs:
     env:
       PROJECT_REF: vkpmoqfzrihcijjochks
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      MIGRATION_FILE: supabase/migrations/20261008170000_positive_editorial_media.sql
+      RELEASE_MIGRATIONS: >-
+        supabase/migrations/20261008195531_separate_news_preferences_from_adult_ads.sql
+        supabase/migrations/20261008200503_retire_automatic_photo_age_flags.sql
+        supabase/migrations/20261008203014_disable_parental_controls.sql
+        supabase/migrations/20261008204946_fresh_daily_sport_media.sql
+        supabase/migrations/20261008210755_align_editorial_media_with_user_ml.sql
 
     steps:
       - uses: actions/checkout@v4
@@ -171,26 +181,73 @@ jobs:
           supabase secrets set --env-file "$secret_env" --project-ref "$PROJECT_REF"
           supabase secrets unset PARTNER_RSS_CRON_SECRET_NEXT --project-ref "$PROJECT_REF"
 
-      - name: Apply the additive editorial-media migration
+      - name: Apply the validated release migrations in order
         id: migrate
         shell: bash
         run: |
-          jq -Rs '{query: ., read_only: false}' "$MIGRATION_FILE" > "$RUNNER_TEMP/editorial-media-migration.json"
+          for migration_file in $RELEASE_MIGRATIONS; do
+            echo "Applying $(basename "$migration_file")"
+            jq -Rs '{query: ., read_only: false}' "$migration_file" > "$RUNNER_TEMP/release-migration.json"
+            status="$(curl --silent --show-error \
+              --retry 3 \
+              --retry-all-errors \
+              --max-time 60 \
+              --output "$RUNNER_TEMP/release-migration-response.json" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/release-migration.json" \
+              "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+            if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+              error_code="$(jq -r '(.error_code // .code // .error // "unknown") | tostring | gsub("[^A-Za-z0-9_.:-]"; "_") | .[0:80]' "$RUNNER_TEMP/release-migration-response.json" 2>/dev/null || echo unknown)"
+              echo "::error title=Lovable Cloud migration::$(basename "$migration_file") failed with HTTP $status, code=$error_code" >&2
+              exit 1
+            fi
+          done
+
+      - name: Verify feed vision and safety schema
+        shell: bash
+        run: |
+          verification_sql="select
+            exists (
+              select 1 from information_schema.columns
+              where table_schema='public' and table_name='user_feed_preferences' and column_name='weight_news'
+            ) as news_weight_ready,
+            to_regprocedure('public.feed_normalize_topic(text)') is not null as topic_normalizer_ready,
+            to_regprocedure('public.set_news_discovery_preferences(jsonb)') is not null as news_preferences_ready,
+            to_regprocedure('public.force_parental_controls_disabled()') is not null as parental_kill_switch_ready,
+            not exists (
+              select 1 from public.parental_controls
+              where is_active is distinct from false or is_minor is distinct from false
+            ) as parental_rows_disabled,
+            exists (
+              select 1 from public.media_partners
+              where active and editorial_category='sport'
+            ) as sport_lane_ready;"
+          jq -n --arg query "$verification_sql" '{query: $query, read_only: true}' > "$RUNNER_TEMP/release-verification.json"
           status="$(curl --silent --show-error \
-            --output "$RUNNER_TEMP/editorial-media-response.json" \
+            --retry 3 \
+            --retry-all-errors \
+            --max-time 30 \
+            --output "$RUNNER_TEMP/release-verification-response.json" \
             --write-out '%{http_code}' \
             --request POST \
             --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             --header 'Content-Type: application/json' \
-            --data-binary "@$RUNNER_TEMP/editorial-media-migration.json" \
+            --data-binary "@$RUNNER_TEMP/release-verification.json" \
             "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
           if [ "$status" != "200" ] && [ "$status" != "201" ]; then
-            echo "Lovable Cloud editorial-media migration failed with HTTP $status" >&2
-            jq . "$RUNNER_TEMP/editorial-media-response.json" >&2 || true
+            echo "::error title=Lovable Cloud release verification::HTTP $status" >&2
+            exit 1
+          fi
+          row="$(jq -c 'first(.. | objects | select(has("news_weight_ready"))) // empty' "$RUNNER_TEMP/release-verification-response.json")"
+          if [ -z "$row" ] || [ "$(jq -r '[.news_weight_ready,.topic_normalizer_ready,.news_preferences_ready,.parental_kill_switch_ready,.parental_rows_disabled,.sport_lane_ready] | all' <<< "$row")" != "true" ]; then
+            echo "::error title=Lovable Cloud release verification::Validated feed schema is incomplete" >&2
             exit 1
           fi
 
-      - name: Verify fresh science, music, education and wellbeing items
+      - name: Verify fresh science, music, education, wellbeing and sport items
         shell: bash
         run: |
           verification_sql="with target_sources as (
@@ -201,7 +258,8 @@ jobs:
               'cnrs-journal','futura-sciences','pour-la-science','le-monde-sciences',
               'the-conversation-education','le-monde-education','cafe-pedagogique',
               'le-monde-musiques','france-musique','tsugi',
-              'the-conversation-sante','psychologies','sante-publique-france-sante-mentale'
+              'the-conversation-sante','psychologies','sante-publique-france-sante-mentale',
+              'le-monde-sport','franceinfo-sports','rmc-sport'
             ]::text[])
           ), live_items as (
             select distinct p.editorial_category,m.id
@@ -209,7 +267,8 @@ jobs:
             join public.media_partners p on p.id=m.partner_id
             join target_sources s on s.media_partner_id=p.id
             where p.active and p.rights_until>now() and m.moderated
-              and m.published_at<=now() and m.expires_at>now()
+              and m.published_at<=now() and m.published_at>now()-interval '36 hours'
+              and m.expires_at>now()
           ) select
             (select count(*)::integer from target_sources) as source_count,
             (select count(*)::integer from target_sources where last_success_at is not null) as success_count,
@@ -234,16 +293,16 @@ jobs:
             values="$(jq -r 'first(.. | objects | select(has("source_count"))) | [.source_count,.success_count,.failed_count,.item_count,.category_count] | @tsv' "$RUNNER_TEMP/editorial-media-verification-response.json")"
             read -r source_count success_count failed_count item_count category_count <<< "$values"
             echo "Editorial media: sources=$source_count successful=$success_count failed=$failed_count live_items=$item_count categories=$category_count"
-            if [ "$source_count" = "13" ] && [ "${item_count:-0}" -ge 4 ] && [ "$category_count" = "4" ]; then
+            if [ "$source_count" = "16" ] && [ "${item_count:-0}" -ge 5 ] && [ "$category_count" = "5" ]; then
               exit 0
             fi
             sleep 15
           done
 
-          echo "The four editorial lanes were not populated before the verification timeout" >&2
+          echo "The five editorial lanes were not populated before the verification timeout" >&2
           exit 1
 
-      - name: Disable only the new editorial sources after a failed verification
+      - name: Disable only the new sport sources after a failed verification
         if: failure() && steps.migrate.outcome == 'success'
         shell: bash
         run: |
@@ -251,14 +310,15 @@ jobs:
             update public.partner_rss_sources
             set enabled=false,lease_token=null,lease_until=null
             where source_key=any(array[
-              'cnrs-journal','futura-sciences','pour-la-science','le-monde-sciences',
-              'the-conversation-education','le-monde-education','cafe-pedagogique',
-              'le-monde-musiques','france-musique','tsugi',
-              'the-conversation-sante','psychologies','sante-publique-france-sante-mentale'
+              'le-monde-sport','franceinfo-sports','rmc-sport'
             ]::text[]);
             update public.media_partners
             set active=false
-            where agreement_reference like 'operator-confirmed:2026-10-08:%';
+            where agreement_reference=any(array[
+              'operator-confirmed:2026-10-08:le-monde-sport',
+              'operator-confirmed:2026-10-08:franceinfo-sports',
+              'operator-confirmed:2026-10-08:rmc-sport'
+            ]::text[]);
           commit;"
           jq -n --arg query "$rollback_sql" '{query: $query, read_only: false}' > "$RUNNER_TEMP/editorial-media-rollback.json"
           status="$(curl --silent --show-error \

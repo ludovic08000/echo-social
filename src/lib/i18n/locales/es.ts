@@ -173,6 +173,7 @@ const es = {
   'content.sensitiveFilter': 'Filtro de contenido sensible',
   'content.sensitiveFilterDesc': 'Difuminar contenido potencialmente impactante',
   'content.topicTech': 'Tecnología',
+  'content.topicNews': 'Noticias',
   'content.topicSport': 'Deporte',
   'content.topicArt': 'Arte',
   'content.topicMusic': 'Música',
