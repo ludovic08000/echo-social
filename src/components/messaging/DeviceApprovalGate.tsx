@@ -34,6 +34,8 @@ function Shell({ children, compact }: { children: ReactNode; compact: boolean })
  */
 export function DeviceApprovalGate({ children, compact = false }: DeviceApprovalGateProps) {
   const lifecycle = useDeviceLifecycle();
+  const approvalPrerequisiteUnlockRequired = lifecycle.state === 'PENDING_APPROVAL'
+    && lifecycle.error?.startsWith('PIN_UNLOCK_REQUIRED') === true;
 
   const failure = (
     <ErrorBlock error={lifecycle.error} onRetry={lifecycle.retry} />
@@ -112,7 +114,7 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
 
   // Invariant cryptographique modifié : plus d'écran d'attente d'approbation.
   // L'appareil demande son approbation au serveur, qui seul décide.
-  if (lifecycle.state === 'PENDING_APPROVAL') {
+  if (lifecycle.state === 'PENDING_APPROVAL' && !approvalPrerequisiteUnlockRequired) {
     return (
       <Shell compact={compact}>
         <div className="flex flex-col items-center gap-3 text-center">
@@ -127,6 +129,12 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
       </Shell>
     );
   }
+
+  // Exception de prérequis, pas contournement d'approbation : le contrôleur
+  // reste bloqué en PENDING_APPROVAL et la messagerie demeure inaccessible.
+  // On expose seulement PinUnlockGate afin qu'il restaure la clé de compte ou
+  // demande le PIN nécessaire à la signature cryptographique de l'appareil.
+  if (approvalPrerequisiteUnlockRequired) return <>{children}</>;
 
   if (!lifecycle.canPromptForPin) {
     // Invariant cryptographique : cette garde s'arrête exactement à l'étape

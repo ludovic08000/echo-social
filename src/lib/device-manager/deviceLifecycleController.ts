@@ -188,8 +188,23 @@ export class DeviceLifecycleController {
     this.snapshot = this.computeSnapshot();
 
     this.teardown.push(deps.subscribePinUnlocked(userId, (unlocked) => {
-      if (this.disposed || this.pinUnlocked === unlocked) return;
+      if (this.disposed) return;
+      // Un appareil secondaire doit restaurer/déverrouiller la clé de compte
+      // avant de pouvoir signer sa propre demande d'approbation. Cette erreur
+      // est le seul blocage que le signal PIN peut réarmer automatiquement.
+      // Un évènement `true` répété reste pertinent lorsque le PIN était déjà
+      // ouvert mais que la clé de compte vient seulement d'être restaurée.
+      const canResumeApproval = unlocked
+        && this.blockedUntilRetry
+        && this.snapshot.state === 'PENDING_APPROVAL'
+        && this.error?.startsWith('PIN_UNLOCK_REQUIRED') === true;
+      if (this.pinUnlocked === unlocked && !canResumeApproval) return;
       this.pinUnlocked = unlocked;
+      if (canResumeApproval) {
+        this.error = null;
+        this.blockedUntilRetry = false;
+        this.trace('approval_prerequisite_ready', 'retry');
+      }
       this.trace(unlocked ? 'pin_unlocked' : 'pin_locked', 'info');
       this.publish();
       void this.advance();
@@ -280,6 +295,9 @@ export class DeviceLifecycleController {
   }
 
   private async runPipeline(): Promise<void> {
+    // Conserver l'erreur observable et éviter les lectures serveur périodiques
+    // tant qu'aucun retry explicite (ou prérequis PIN ciblé) n'a réarmé le flux.
+    if (this.blockedUntilRetry) return;
     const pipelineElapsed = startFinalizationTimer();
     setCurrentDeviceFinalizationTraceId(this.traceId);
     this.trace('pipeline', 'start');

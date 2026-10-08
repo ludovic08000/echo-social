@@ -69,6 +69,7 @@ describe('single canonical device lifecycle authority', () => {
   const gate = readFileSync('src/components/messaging/DeviceApprovalGate.tsx', 'utf8');
   const lifecycle = readFileSync('src/hooks/useDeviceLifecycle.ts', 'utf8');
   const messagingGate = readFileSync('src/components/MessagingPinGate.tsx', 'utf8');
+  const pinSignal = readFileSync('src/lib/device-manager/pinUnlockSignal.ts', 'utf8');
   const auth = readFileSync('src/lib/auth.tsx', 'utf8');
 
   it('auto-enrolls only a true first device and blocks silent stale-device replacement', () => {
@@ -102,13 +103,23 @@ describe('single canonical device lifecycle authority', () => {
     expect(messagingGate).not.toContain('DeviceAccountBindingGate');
   });
 
+  it('exposes only the missing PIN/key prerequisite without bypassing device approval', () => {
+    expect(gate).toContain('approvalPrerequisiteUnlockRequired');
+    expect(gate).toContain("startsWith('PIN_UNLOCK_REQUIRED')");
+    expect(gate).toContain('if (approvalPrerequisiteUnlockRequired) return <>{children}</>;');
+    expect(controller).toContain('canResumeApproval');
+    expect(controller).toContain("this.snapshot.state === 'PENDING_APPROVAL'");
+    expect(controller).toContain("this.error?.startsWith('PIN_UNLOCK_REQUIRED')");
+    expect(pinSignal).toContain("window.addEventListener('forsure-keys-restored', emit)");
+    expect(pinSignal).toContain("window.removeEventListener('forsure-keys-restored', emit)");
+  });
+
   it('mounts the mandatory PIN gate in the canonical order', () => {
     expect(messagingGate).toContain('DeviceApprovalGate');
     expect(messagingGate).toContain('PinUnlockGate');
     expect(messagingGate.indexOf('<DeviceApprovalGate'))
       .toBeLessThan(messagingGate.indexOf('<PinUnlockGate'));
-    expect(readFileSync('src/lib/device-manager/pinUnlockSignal.ts', 'utf8'))
-      .toContain('const PIN_PROTECTION_ENABLED = true;');
+    expect(pinSignal).toContain('const PIN_PROTECTION_ENABLED = true;');
     expect(lifecycle).toContain('const PIN_PROTECTION_ENABLED = true;');
   });
 

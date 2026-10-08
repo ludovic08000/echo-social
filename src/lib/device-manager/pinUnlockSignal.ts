@@ -1,8 +1,9 @@
 /**
- * Invariant cryptographique : le déverrouillage PIN est une étape obligatoire
- * du cycle de vie, placée après l'approbation serveur et avant le binding, la
- * préparation des clés et la synchronisation de compte. Aucun chemin PIN-first
- * ni contournement n'est autorisé.
+ * Invariant cryptographique : le déverrouillage PIN reste obligatoire avant le
+ * binding, la préparation des clés et la synchronisation. Sur un appareil
+ * secondaire, il peut aussi fournir la clé de compte nécessaire à la signature
+ * de l'approbation ; ce signal seul ne change aucun état serveur et n'ouvre
+ * jamais le runtime de messagerie.
  */
 
 const PIN_STATE_CHANGED_EVENT = 'forsure:chat-pin-state-changed';
@@ -70,11 +71,13 @@ export function subscribePinUnlocked(
 
   window.addEventListener(PIN_STATE_CHANGED_EVENT, onPinState);
   window.addEventListener('forsure-keys-unlocked', emit);
+  window.addEventListener('forsure-keys-restored', emit);
   window.addEventListener('forsure-messaging-locked', emit);
 
   return () => {
     window.removeEventListener(PIN_STATE_CHANGED_EVENT, onPinState);
     window.removeEventListener('forsure-keys-unlocked', emit);
+    window.removeEventListener('forsure-keys-restored', emit);
     window.removeEventListener('forsure-messaging-locked', emit);
   };
 }

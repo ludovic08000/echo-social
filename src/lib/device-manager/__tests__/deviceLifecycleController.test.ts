@@ -98,6 +98,132 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     controller.dispose();
   });
 
+  it('reprend automatiquement l’approbation après le déverrouillage PIN requis', async () => {
+    const server = fakeServer(row());
+    const approve = server.api.autoApprove;
+    let attempts = 0;
+    let notifyPinState: ((unlocked: boolean) => void) | undefined;
+    server.api.autoApprove = async (userId) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('PIN_UNLOCK_REQUIRED:account_key_locked');
+      return approve(userId);
+    };
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => false,
+      subscribePinUnlocked: (_userId, listener) => {
+        notifyPinState = listener;
+        return () => undefined;
+      },
+    });
+    await controller.refresh();
+
+    expect(controller.getSnapshot().state).toBe('PENDING_APPROVAL');
+    expect(controller.getSnapshot().error).toContain('PIN_UNLOCK_REQUIRED');
+    expect(server.calls.bind).toBe(0);
+
+    notifyPinState?.(true);
+    await controller.refresh();
+
+    expect(attempts).toBe(2);
+    expect(controller.getSnapshot().error).toBeNull();
+    expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('reprend l’approbation après restauration de clé même si le PIN était déjà ouvert', async () => {
+    const server = fakeServer(row());
+    const approve = server.api.autoApprove;
+    let attempts = 0;
+    let notifyPinState: ((unlocked: boolean) => void) | undefined;
+    server.api.autoApprove = async (userId) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('PIN_UNLOCK_REQUIRED:account_key_restore_required');
+      return approve(userId);
+    };
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => true,
+      subscribePinUnlocked: (_userId, listener) => {
+        notifyPinState = listener;
+        return () => undefined;
+      },
+    });
+    await controller.refresh();
+
+    expect(controller.getSnapshot().error).toContain('PIN_UNLOCK_REQUIRED');
+    notifyPinState?.(true);
+    await controller.refresh();
+
+    expect(attempts).toBe(2);
+    expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
+    controller.dispose();
+  });
+
+  it('ne réarme jamais une autre erreur d’approbation avec un signal PIN', async () => {
+    const server = fakeServer(row());
+    let attempts = 0;
+    let notifyPinState: ((unlocked: boolean) => void) | undefined;
+    server.api.autoApprove = async () => {
+      attempts += 1;
+      throw new Error('NOT_AUTHENTICATED');
+    };
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => false,
+      subscribePinUnlocked: (_userId, listener) => {
+        notifyPinState = listener;
+        return () => undefined;
+      },
+    });
+    await controller.refresh();
+
+    notifyPinState?.(true);
+    await controller.refresh();
+
+    expect(attempts).toBe(1);
+    expect(controller.getSnapshot().error).toBe('NOT_AUTHENTICATED');
+    expect(controller.getSnapshot().canRunCryptoRuntime).toBe(false);
+    controller.dispose();
+  });
+
+  it('ne réarme pas une erreur PIN hors de l’étape d’approbation', async () => {
+    const server = fakeServer(row({
+      approvalStatus: 'approved',
+      bindingStatus: 'bound',
+      routingStatus: 'ready',
+      lifecycleStatus: 'ready',
+    }));
+    let attempts = 0;
+    let notifyPinState: ((unlocked: boolean) => void) | undefined;
+    server.api.syncAccount = async () => {
+      attempts += 1;
+      throw new Error('PIN_UNLOCK_REQUIRED:account_sync');
+    };
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => true,
+      subscribePinUnlocked: (_userId, listener) => {
+        notifyPinState = listener;
+        return () => undefined;
+      },
+    });
+    await controller.refresh();
+
+    expect(controller.getSnapshot().state).toBe('ACCOUNT_KEY_SYNC');
+    expect(controller.getSnapshot().error).toContain('PIN_UNLOCK_REQUIRED');
+    notifyPinState?.(true);
+    await controller.refresh();
+
+    expect(attempts).toBe(1);
+    expect(controller.getSnapshot().error).toContain('PIN_UNLOCK_REQUIRED');
+    controller.dispose();
+  });
+
   it('refuse un utilisateur non authentifié sans boucler', async () => {
     const server = fakeServer(row());
     server.api.autoApprove = async () => { throw new Error('NOT_AUTHENTICATED'); };
