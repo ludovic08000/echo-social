@@ -16,7 +16,10 @@ describe('partner media UI',()=>{
   it('loads contextual news in the background and provides a stable discussion/share link',async()=>{
     mocks.invoke.mockResolvedValue({data:{location:{country:'FR',region:'Grand Est',city:null,source:'network'}},error:null});
     mocks.rpc.mockResolvedValue({data:[{id:'x',discussion_id:'durable',title:'Local',kind:'article',canonical_url:'https://media.invalid/x',published_at:'2026-10-06',source_name:'Journal'}],error:null});
-    mount();await screen.findByRole('link',{name:/Zone IP approximative.*Grand Est.*Modifier/});
+    mount();await screen.findByRole('link',{name:/Zone navigateur \+ IP.*Grand Est.*Modifier/});
+    expect(mocks.invoke).toHaveBeenCalledWith('local-media-location', expect.objectContaining({
+      body: { context: true, browser: expect.objectContaining({ languages: expect.any(Array) }) },
+    }));
     await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('get_contextual_partner_media',{p_scope:'nearby',p_kind:'all',p_country:'FR',p_region:'Grand Est',p_city:null}));
     expect(screen.getByRole('button',{name:/Commenter et débattre/})).toHaveAttribute('aria-expanded','false');
     fireEvent.click(screen.getByRole('button',{name:/Commenter et débattre/}));

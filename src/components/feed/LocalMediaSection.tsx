@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { type MediaScope, type MediaKind, type PartnerMediaItem, partnerThumbnailUrl, safePartnerUrl, youtubeEmbedUrl } from '@/lib/discovery';
 import { Button } from '@/components/ui/button';
 import { GeoAttribution } from '@/components/geo/GeoAttribution';
+import { browserLocationContext, browserLocaleContext } from '@/lib/browserLocation';
 const ShareNews = lazy(() => import('@/components/ShareButton').then(m => ({ default: m.ShareButton })));
 const Discussion = lazy(() => import('./NewsDiscussionPanel').then(m => ({ default: m.NewsDiscussionPanel })));
 type MediaContext = { country: string; region: string; city: string | null; source: string;
@@ -56,13 +57,18 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
 export function LocalMediaSection() {
   const { user } = useAuth();
   const [kind, setKind] = useState<MediaKind>('all');
-  const languages = navigator.languages.join(',');
+  const browserLocale = browserLocaleContext();
+  const languages = browserLocale.languages.join(',');
   const { data: context } = useQuery({
-    queryKey: ['media-context', user?.id, languages],
+    queryKey: ['media-context', user?.id, languages, browserLocale.timeZone],
     enabled: !!user,
     staleTime: 3_600_000, retry: false, refetchOnWindowFocus: false,
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('local-media-location', { body: { context: true }, headers: { 'Accept-Language': languages } });
+      const browser = await browserLocationContext();
+      const { data, error } = await supabase.functions.invoke('local-media-location', {
+        body: { context: true, browser },
+        headers: { 'Accept-Language': languages },
+      });
       if (error) throw error;
       return (data?.location ?? null) as MediaContext | null;
     },
@@ -90,7 +96,7 @@ export function LocalMediaSection() {
     </select></label>
     {automatic ? <Link to="/settings?tab=privacy#discovery-heading" className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2">
       <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-      {context.source === 'profile' ? 'Ville du profil' : context.source === 'selected' ? 'Zone du compte' : 'Zone IP approximative'} : {[context.display?.city ?? context.city, context.display?.region ?? context.region].filter(Boolean).join(' · ')} · Modifier
+      {context.source === 'profile' ? 'Ville du profil' : context.source === 'selected' ? 'Zone du compte' : 'Zone navigateur + IP'} : {[context.display?.city ?? context.city, context.display?.region ?? context.region].filter(Boolean).join(' · ')} · Modifier
     </Link> : <Link to="/settings?tab=privacy#discovery-heading" className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2">
       <MapPin className="h-3.5 w-3.5" aria-hidden="true" />Zone automatique indisponible · Choisir ma ville
     </Link>}

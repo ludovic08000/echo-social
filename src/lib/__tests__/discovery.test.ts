@@ -63,4 +63,14 @@ describe('discovery privacy boundaries', () => {
     expect((await handle(req({consent:true}))).status).toBe(503);
     expect(deps.locate).toHaveBeenCalledTimes(1);
   });
+  it('accepts bounded browser locale signals but never a client-supplied position or IP', async () => {
+    const deps={authenticate:vi.fn(async()=> 'user'),allow:vi.fn(async()=>true),locate:vi.fn(async()=>({country:'FR',city:'Reims',region:'Grand Est'})),cors:()=>({})};
+    const handle=locationHandler(deps);
+    const req=(body:unknown)=>new Request('https://test.invalid/',{method:'POST',headers:{authorization:'Bearer test'},body:JSON.stringify(body)});
+    const browser={timeZone:'Europe/Paris',languages:['fr-FR','fr']};
+    expect((await handle(req({consent:true,browser}))).status).toBe(200);
+    expect(deps.locate).toHaveBeenCalledWith(expect.objectContaining({get:expect.any(Function)}),browser);
+    expect((await handle(req({consent:true,browser:{...browser,ip:'8.8.8.8'}}))).status).toBe(400);
+    expect((await handle(req({consent:true,browser:{...browser,position:{latitude:49,longitude:4}}}))).status).toBe(400);
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveMediaContext, trustedRegion } from '../../supabase/functions/local-media-location/context';
+import { browserTerritory, resolveMediaContext, trustedRegion } from '../../supabase/functions/local-media-location/context';
 import { locationHandler } from '../../supabase/functions/local-media-location/location';
 const network=()=>({country:'FR',region:'Grand Est',city:null,source:'network' as const});
 const config={enabled:true,countryHeader:'gateway-country',regionHeader:'gateway-region'};
@@ -39,6 +39,12 @@ describe('coarse contextual news without extra GPS or third-party IP lookup',()=
     expect(trustedRegion(new Headers({'gateway-country':'FR','gateway-region':'unknown'}),config)).toBeNull();
     expect(trustedRegion(new Headers({'gateway-country':'GP','gateway-region':'GP'}),config)?.region).toBe('Guadeloupe');
   });
+  it('uses only unambiguous French territory timezones as a browser fallback',()=>{
+    expect(browserTerritory('America/Cayenne')).toEqual({country:'FR',region:'Guyane',city:null,source:'network'});
+    expect(browserTerritory('Indian/Reunion')?.region).toBe('La Réunion');
+    expect(browserTerritory('Europe/Paris')).toBeNull();
+    expect(browserTerritory('America/New_York')).toBeNull();
+  });
   it('keeps the operator kill switch and otherwise uses the network fallback',async()=>{
     const search=vi.fn();const net=vi.fn(network);
     expect(await resolveMediaContext({enabled:false,profileCity:'Reims',search,network:net})).toBeNull();
@@ -60,7 +66,9 @@ describe('coarse contextual news without extra GPS or third-party IP lookup',()=
     const req=(body:unknown,auth='Bearer t')=>new Request('https://local.invalid',{method:'POST',headers:{authorization:auth},body:JSON.stringify(body)});
     expect((await handler(req({context:true},''))).status).toBe(401);
     expect((await handler(req({context:true,userId:'other'}))).status).toBe(400);
-    expect(await(await handler(req({context:true}))).json()).toEqual({location:network()});
-    expect(context).toHaveBeenCalledWith('authenticated-user',expect.objectContaining({get:expect.any(Function)}));expect(locate).not.toHaveBeenCalled();
+    const browser={timeZone:'Europe/Paris',languages:['fr-FR','fr']};
+    expect(await(await handler(req({context:true,browser}))).json()).toEqual({location:network()});
+    expect(context).toHaveBeenCalledWith('authenticated-user',expect.objectContaining({get:expect.any(Function)}),browser);expect(locate).not.toHaveBeenCalled();
+    expect((await handler(req({context:true,browser:{...browser,position:{latitude:49,longitude:4}}}))).status).toBe(400);
   });
 });

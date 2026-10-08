@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth';
 import { GeoAttribution } from '@/components/geo/GeoAttribution';
+import { browserLocationContext } from '@/lib/browserLocation';
 
 type PlaceProposal = { country: string; region: string | null; city: string | null; department?: string; code?: string;
   display?: { country: string; region: string | null; city: string | null } };
@@ -51,9 +52,10 @@ function AccountDiscoveryPreferences() {
         cityQuery = profileCity;
       }
       if (request.current !== ticket) return;
+      const browser = mode === 'ip' ? await browserLocationContext() : null;
       const { data: result, error } = await supabase.functions.invoke('local-media-location', {
-        body: mode === 'ip' ? { consent: true } : { cityQuery },
-        ...(mode === 'ip' ? { headers: { 'Accept-Language': navigator.languages.join(',') } } : {}),
+        body: mode === 'ip' ? { consent: true, browser } : { cityQuery },
+        ...(mode === 'ip' ? { headers: { 'Accept-Language': browser?.languages.join(',') ?? '' } } : {}),
       });
       if (request.current !== ticket) return;
       if (error) throw error;
@@ -72,7 +74,7 @@ function AccountDiscoveryPreferences() {
     <p className="text-sm text-muted-foreground">ForSure choisit automatiquement les médias de ta ville, puis de ta région et enfin de France. Tu peux corriger la zone proposée ici, sans activer la publicité personnalisée.</p>
     <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
       <p className="text-sm font-medium">Les actualités locales sont disponibles sans contrôle parental actif</p>
-      <p className="text-xs text-muted-foreground">La ville du profil est prioritaire, puis une région réseau approximative, avec repli sur la France. Aucun GPS et aucune IP ne sont enregistrés ici.</p>
+      <p className="text-xs text-muted-foreground">La ville du profil est prioritaire, puis les signaux du navigateur et l’IP réseau approximative, avec repli sur la France. Aucune IP ni coordonnée n’est enregistrée ici.</p>
     </div>
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">Une zone choisie manuellement est prioritaire et n’est jamais écrasée par le réseau. Aucun message ni autre champ du compte n’est analysé pour choisir les journaux.</p>
@@ -84,9 +86,9 @@ function AccountDiscoveryPreferences() {
       <label className="block text-sm">Région<Input disabled={detecting || save.isPending} value={draft.region ?? ''} maxLength={100} placeholder="Grand Est" onChange={e => patchMediaLocation({ region: e.target.value })} /></label>
       <label className="block text-sm">Ville<Input disabled={detecting || save.isPending} value={draft.city ?? ''} maxLength={100} placeholder="Reims" onChange={e => patchMediaLocation({ city: e.target.value })} /></label>
       <Button type="button" variant="outline" disabled={detecting || save.isPending} onClick={() => { request.current++; setProposals([]); patch({ local_media: false, country: null, region: null, city: null }); }}>Effacer la zone choisie</Button>
-      <p className="text-xs text-muted-foreground">ForSure estime ta zone côté serveur à partir de l’adresse IP transmise par la passerelle. La base privée DB-IP est utilisée lorsqu’elle est disponible ; sinon l’API HTTPS DB-IP peut recevoir cette IP pour retourner uniquement une ville et une région approximatives. Aucun GPS, aucune coordonnée et aucune IP ne sont enregistrés dans tes préférences. Un VPN ou un réseau mobile peut indiquer une autre ville : vérifie la proposition ou saisis ta ville.</p>
+      <p className="text-xs text-muted-foreground">ForSure combine le fuseau et les langues du navigateur avec l’adresse IP vue par la passerelle. La base privée DB-IP est utilisée lorsqu’elle est disponible ; à défaut, l’API HTTPS DB-IP retourne une ville et une région approximatives. Aucune IP ni coordonnée n’est enregistrée dans tes préférences. Un VPN, Relais privé ou réseau mobile peut indiquer une autre ville.</p>
       <GeoAttribution />
-      <Button type="button" variant="outline" disabled={detecting || save.isPending} onClick={() => void suggest('ip')}><MapPin className="w-4 h-4 mr-2" />{detecting ? 'Recherche…' : 'Détecter ma zone avec DB-IP'}</Button>
+      <Button type="button" variant="outline" disabled={detecting || save.isPending} onClick={() => void suggest('ip')}><MapPin className="w-4 h-4 mr-2" />{detecting ? 'Recherche…' : 'Détecter avec le navigateur et l’IP'}</Button>
       {proposals.length > 0 && <div role="group" aria-label="Zones proposées" className="space-y-2">
         <p className="text-sm">Choisis la bonne zone, puis enregistre tes choix :</p>
         {proposals.map((place, i) => <Button key={place.code ?? i} type="button" variant="outline" className="h-auto whitespace-normal" onClick={() => {

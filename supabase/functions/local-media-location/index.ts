@@ -4,16 +4,16 @@ import { locationHandler, trustedLocationIp } from './location.ts';
 import { dbipFromCloud } from '../_shared/dbip-storage.ts';
 import { locateWithDbipFree } from '../_shared/dbip-api.ts';
 import { searchCommunes } from '../_shared/communes.ts';
-import { resolveMediaContext, trustedRegion } from './context.ts';
+import { browserTerritory, resolveMediaContext, trustedRegion } from './context.ts';
 import { readTrustedClientIp } from '../_shared/network-context.ts';
 
 const url = Deno.env.get('SUPABASE_URL')!; // Existing Lovable Cloud runtime variables.
 const lookup = dbipFromCloud(name => Deno.env.get(name));
-const locate = async (headers: Headers) => {
+const locate = async (headers: Headers, browser: import('../_shared/media-location.ts').BrowserLocationContext | null) => {
   const ip = trustedLocationIp(headers, Deno.env.get('LOCAL_MEDIA_TRUSTED_IP_HEADER'))
     ?? readTrustedClientIp(headers);
   if (!ip) return null;
-  const local = await lookup(ip, headers.get('accept-language') ?? '');
+  const local = await lookup(ip, browser?.languages.join(',') || headers.get('accept-language') || '');
   if (local) return local;
   if (Deno.env.get('DBIP_FREE_API_ENABLED') === 'false') return null;
   return locateWithDbipFree(ip);
@@ -39,7 +39,7 @@ Deno.serve(locationHandler({
     return !error && data === true; // Fail closed if limiter is down.
   },
   search: searchCommunes,
-  context: async (userId, headers) => {
+  context: async (userId, headers, browser) => {
     // News context is enabled by default and can be disabled instantly with a
     // server-side kill switch. Advertising consent is never read or changed.
     const enabled = Deno.env.get('LOCAL_MEDIA_CONTEXT_ENABLED') !== 'false';
@@ -71,8 +71,9 @@ Deno.serve(locationHandler({
           });
           return !error && data === true;
         })()) return null;
-        const estimated = await locate(headers);
-        return estimated?.region ? { ...estimated, region: estimated.region, source: 'network' as const } : null;
+        const estimated = await locate(headers, browser);
+        return estimated?.region ? { ...estimated, region: estimated.region, source: 'network' as const }
+          : browserTerritory(browser?.timeZone);
       },
     });
   },

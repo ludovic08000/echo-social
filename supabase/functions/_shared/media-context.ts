@@ -23,6 +23,15 @@ export function trustedRegion(headers: Headers, config: { enabled: boolean; coun
  const region=frenchRegion(country ?? '', headers.get(config.regionHeader));
  return region ? {country:'FR',region,city:null,source:'network'} : null;
 }
+
+/** Conservative browser-only fallback for French territories with unique IANA zones. */
+export function browserTerritory(timeZone: string | null | undefined): MediaContext | null {
+ const regions: Record<string, keyof typeof FRENCH_REGIONS> = {
+   'America/Guadeloupe':'01','America/Martinique':'02','America/Cayenne':'03','Indian/Reunion':'04','Indian/Mayotte':'06',
+ };
+ const code=timeZone ? regions[timeZone] : null;
+ return code ? {country:'FR',region:FRENCH_REGIONS[code],city:null,source:'network'} : null;
+}
 export async function resolveMediaContext(input: {
  enabled: boolean; profileCity: string | null;
  selected?: { enabled: boolean; country: string | null; region: string | null; city: string | null } | null;
