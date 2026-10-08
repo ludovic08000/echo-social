@@ -62,6 +62,8 @@ jobs:
         run: npm run test:feed-db
       - name: Consent advertising and licensed media contracts
         run: npm run test:discovery-db
+      - name: Positive editorial media mix
+        run: npm run test:positive-media-db
       - name: Application regressions with bounded memory
         run: npx vitest run --maxWorkers=1
       - name: Edge function type safety

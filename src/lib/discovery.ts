@@ -19,11 +19,13 @@ export const DEFAULT_DISCOVERY: DiscoveryPreferences = {
 
 export type MediaScope = 'nearby' | 'city' | 'region' | 'france';
 export type MediaKind = 'all' | 'article' | 'video';
+export type MediaEditorialCategory = 'general' | 'science' | 'music' | 'education' | 'wellbeing';
 export interface PartnerMediaItem {
   discussion_id?: string | null;
   id: string; title: string; excerpt: string; canonical_url: string;
   kind: 'article' | 'video'; youtube_id: string | null; thumbnail_url?: string | null;
   published_at: string; source_name: string; country: string; region: string | null; city: string | null;
+  editorial_category?: MediaEditorialCategory;
   proximity?: 'city' | 'region' | 'national' | 'other';
 }
 

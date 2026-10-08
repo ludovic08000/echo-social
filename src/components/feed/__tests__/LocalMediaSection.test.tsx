@@ -15,7 +15,7 @@ function mount(){return render(<QueryClientProvider client={new QueryClient({def
 describe('partner media UI',()=>{
   it('loads contextual news in the background and provides a stable discussion/share link',async()=>{
     mocks.invoke.mockResolvedValue({data:{location:{country:'FR',region:'Grand Est',city:null,source:'network'}},error:null});
-    mocks.rpc.mockResolvedValue({data:[{id:'x',discussion_id:'durable',title:'Local',kind:'article',canonical_url:'https://media.invalid/x',published_at:'2026-10-06',source_name:'Journal'}],error:null});
+    mocks.rpc.mockResolvedValue({data:[{id:'x',discussion_id:'durable',title:'Local',kind:'article',canonical_url:'https://media.invalid/x',published_at:'2026-10-06',source_name:'Journal',editorial_category:'science'}],error:null});
     mount();await screen.findByRole('link',{name:/Zone navigateur \+ IP.*Grand Est.*Modifier/});
     expect(mocks.invoke).toHaveBeenCalledWith('local-media-location', expect.objectContaining({
       body: { context: true, browser: expect.objectContaining({ languages: expect.any(Array) }) },
@@ -27,6 +27,7 @@ describe('partner media UI',()=>{
     expect(screen.getByText('Ouvrir la discussion')).toHaveAttribute('href','/news/durable');
     expect(await screen.findByText('Partager')).toHaveAttribute('href',`${window.location.origin}/news/durable`);
     expect(screen.getByText('Aperçu de l’actualité')).toBeInTheDocument();
+    expect(screen.getByText(/Journal · Science · Article/)).toBeInTheDocument();
   });
   it('always requests automatic context and falls back to France',async()=>{
     mocks.rpc.mockResolvedValue({data:[],error:null});mount();await screen.findByText(/Aucun contenu/);

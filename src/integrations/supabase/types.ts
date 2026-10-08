@@ -4168,6 +4168,7 @@ export type Database = {
           allow_youtube_embed: boolean
           city: string | null
           country: string
+          editorial_category: string
           id: string
           name: string
           region: string | null
@@ -4181,6 +4182,7 @@ export type Database = {
           allow_youtube_embed?: boolean
           city?: string | null
           country?: string
+          editorial_category?: string
           id?: string
           name: string
           region?: string | null
@@ -4194,6 +4196,7 @@ export type Database = {
           allow_youtube_embed?: boolean
           city?: string | null
           country?: string
+          editorial_category?: string
           id?: string
           name?: string
           region?: string | null

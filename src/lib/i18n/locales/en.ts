@@ -192,6 +192,8 @@ const en = {
   'content.topicCooking': 'Cooking',
   'content.topicTravel': 'Travel',
   'content.topicScience': 'Science',
+  'content.topicEducation': 'Education',
+  'content.topicWellbeing': 'Wellbeing',
   'content.topicFashion': 'Fashion',
   'content.topicCinema': 'Cinema',
   'content.topicLiterature': 'Literature',

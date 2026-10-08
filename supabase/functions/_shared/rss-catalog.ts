@@ -1,4 +1,4 @@
-// Closed destinations, checked against public publisher feeds on 2026-10-06.
+// Closed destinations, checked against public publisher feeds through 2026-10-08.
 // A working RSS feed is NOT a publishing agreement. Each edition needs its own
 // matching, active media_partners record before any ingestion/publication.
 export const FRENCH_REGIONS = {
@@ -8,17 +8,24 @@ export const FRENCH_REGIONS = {
   '53': 'Bretagne', '75': 'Nouvelle-Aquitaine', '76': 'Occitanie',
   '84': 'Auvergne-Rhône-Alpes', '93': 'Provence-Alpes-Côte d’Azur', '94': 'Corse',
 } as const;
+export type RssEditorialCategory = 'general' | 'science' | 'music' | 'education' | 'wellbeing';
 export interface RssCatalogEntry {
   name: string; url: string | null; websiteHost: string | null; verified: boolean;
   reference: string; regionCode: keyof typeof FRENCH_REGIONS | null; city: string | null;
+  editorialCategory?: RssEditorialCategory;
 }
 function actu(slug: string, regionCode: keyof typeof FRENCH_REGIONS): RssCatalogEntry {
   const url = `https://actu.fr/${slug}/rss.xml`;
   return { name: `actu.fr — ${FRENCH_REGIONS[regionCode]}`, url, websiteHost: 'actu.fr',
     verified: true, reference: url, regionCode, city: null };
 }
-function publisher(name: string, url: string, regionCode: keyof typeof FRENCH_REGIONS | null = null): RssCatalogEntry {
-  return { name, url, websiteHost: new URL(url).hostname, verified: true, reference: url, regionCode, city: null };
+function publisher(
+  name: string,
+  url: string,
+  regionCode: keyof typeof FRENCH_REGIONS | null = null,
+  editorialCategory: RssEditorialCategory = 'general',
+): RssCatalogEntry {
+  return { name, url, websiteHost: new URL(url).hostname, verified: true, reference: url, regionCode, city: null, editorialCategory };
 }
 function pending(name: string, website: string, regionCode: keyof typeof FRENCH_REGIONS | null = null): RssCatalogEntry {
   return { name, url: null, websiteHost: new URL(website).hostname, verified: false, reference: website, regionCode, city: null };
@@ -32,9 +39,24 @@ export const RSS_CATALOG: Record<string, RssCatalogEntry> = {
   'la-voix-du-nord': pending('La Voix du Nord', 'https://www.lavoixdunord.fr/', '32'),
   'le-dauphine': pending('Le Dauphiné libéré', 'https://www.ledauphine.com/'),
   'le-telegramme': pending('Le Télégramme', 'https://www.letelegramme.fr/', '53'),
-  // Public RSS metadata verified 2026-10-06; none of these entries enables publication.
+  // Public RSS metadata verified through 2026-10-08; this catalogue alone never enables publication.
   'le-monde': { ...publisher('Le Monde', 'https://www.lemonde.fr/rss/une.xml'),
     reference: 'https://www.lemonde.fr/le-monde-et-vous/article/2025/07/14/les-flux-rss-du-monde-fr_5498778_3237.html' },
+  // National positive-editorial lanes. They complement local news and are
+  // ranked from the user's feed priorities; they never replace nearby news.
+  'cnrs-journal': publisher('Le Journal du CNRS', 'https://lejournal.cnrs.fr/rss', null, 'science'),
+  'futura-sciences': publisher('Futura', 'https://www.futura-sciences.com/rss/actualites.xml', null, 'science'),
+  'pour-la-science': publisher('Pour la Science', 'https://www.pourlascience.fr/rss.xml', null, 'science'),
+  'le-monde-sciences': publisher('Le Monde — Sciences', 'https://www.lemonde.fr/sciences/rss_full.xml', null, 'science'),
+  'the-conversation-education': publisher('The Conversation — Éducation', 'https://theconversation.com/fr/education/articles.atom', null, 'education'),
+  'le-monde-education': publisher('Le Monde — Éducation', 'https://www.lemonde.fr/education/rss_full.xml', null, 'education'),
+  'cafe-pedagogique': publisher('Le Café pédagogique', 'https://www.cafepedagogique.net/feed/', null, 'education'),
+  'le-monde-musiques': publisher('Le Monde — Musiques', 'https://www.lemonde.fr/musiques/rss_full.xml', null, 'music'),
+  'france-musique': publisher('France Musique', 'https://www.radiofrance.fr/francemusique/rss', null, 'music'),
+  'tsugi': publisher('Tsugi', 'https://www.tsugi.fr/feed/', null, 'music'),
+  'the-conversation-sante': publisher('The Conversation — Santé', 'https://theconversation.com/fr/sante/articles.atom', null, 'wellbeing'),
+  'psychologies': publisher('Psychologies', 'https://www.psychologies.com/feed', null, 'wellbeing'),
+  'sante-publique-france-sante-mentale': publisher('Santé publique France — Santé mentale', 'https://www.santepubliquefrance.fr/rss/1060', null, 'wellbeing'),
   'le-figaro': publisher('Le Figaro', 'https://www.lefigaro.fr/rss/figaro_actualites.xml'),
   'liberation': publisher('Libération', 'https://www.liberation.fr/arc/outboundfeeds/rss-all/?outputType=xml'),
   'humanite': publisher('L’Humanité', 'https://www.humanite.fr/feed'),

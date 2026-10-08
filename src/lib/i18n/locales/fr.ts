@@ -192,6 +192,8 @@ const fr = {
   'content.topicCooking': 'Cuisine',
   'content.topicTravel': 'Voyage',
   'content.topicScience': 'Science',
+  'content.topicEducation': 'Éducation',
+  'content.topicWellbeing': 'Bien-être',
   'content.topicFashion': 'Mode',
   'content.topicCinema': 'Cinéma',
   'content.topicLiterature': 'Littérature',

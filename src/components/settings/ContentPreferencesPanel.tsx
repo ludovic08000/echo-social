@@ -23,6 +23,8 @@ const topicOptions = [
   { value: 'cooking', labelKey: 'content.topicCooking' },
   { value: 'travel', labelKey: 'content.topicTravel' },
   { value: 'science', labelKey: 'content.topicScience' },
+  { value: 'education', labelKey: 'content.topicEducation' },
+  { value: 'wellbeing', labelKey: 'content.topicWellbeing' },
   { value: 'fashion', labelKey: 'content.topicFashion' },
   { value: 'cinema', labelKey: 'content.topicCinema' },
   { value: 'literature', labelKey: 'content.topicLiterature' },
@@ -86,6 +88,7 @@ export function ContentPreferencesPanel() {
         seenPostsHide: prefs.seenPostsHide,
       }).then(() => {
         void queryClient.invalidateQueries({ queryKey: ['posts', 'friends-feed'] });
+        void queryClient.invalidateQueries({ queryKey: ['partner-media', userId] });
       }).catch(() => {
         toast({ title: 'Préférences non enregistrées', description: 'La synchronisation avec votre compte a échoué.', variant: 'destructive' });
       });

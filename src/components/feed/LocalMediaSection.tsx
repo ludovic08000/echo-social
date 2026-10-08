@@ -13,6 +13,14 @@ const Discussion = lazy(() => import('./NewsDiscussionPanel').then(m => ({ defau
 type MediaContext = { country: string; region: string; city: string | null; source: string;
   display?: { country: string; region: string | null; city: string | null } };
 
+const editorialCategoryLabel = {
+  general: 'Actualité',
+  science: 'Science',
+  music: 'Musique',
+  education: 'Éducation',
+  wellbeing: 'Bien-être',
+} as const;
+
 function PartnerCard({ item }: { item: PartnerMediaItem }) {
   const [playing, setPlaying] = useState(false);
   const [discussionOpen, setDiscussionOpen] = useState(false);
@@ -33,7 +41,7 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
       {item.kind === 'video' && <span className="absolute inset-0 grid place-items-center bg-black/20" aria-hidden="true"><span className="grid h-12 w-12 place-items-center rounded-full bg-black/70 text-white"><Play className="h-6 w-6 fill-current" /></span></span>}
     </a>
     <div className="p-3 space-y-2">
-    <p className="text-xs text-muted-foreground">{item.source_name} · {item.kind === 'video' ? 'Vidéo' : 'Actualité'} · {new Date(item.published_at).toLocaleDateString('fr-FR')}</p>
+    <p className="text-xs text-muted-foreground">{item.source_name} · {editorialCategoryLabel[item.editorial_category ?? 'general']} · {item.kind === 'video' ? 'Vidéo' : 'Article'} · {new Date(item.published_at).toLocaleDateString('fr-FR')}</p>
     <p className="text-xs text-muted-foreground">{[item.city, item.region].filter(Boolean).join(' · ') || 'France'}{item.proximity === 'national' ? ' · Sélection nationale' : ''}</p>
     <a className="block font-semibold leading-snug hover:underline" href={url} target="_blank" rel="noopener noreferrer">{item.title}</a>
     {item.excerpt && <p className="text-sm text-muted-foreground">{item.excerpt}</p>}
@@ -90,7 +98,7 @@ export function LocalMediaSection() {
   });
   return <section className="rounded-2xl bg-card border border-border p-4 space-y-3" aria-labelledby="local-media-title">
     <h2 id="local-media-title" className="font-semibold">Médias et actualités</h2>
-    <p className="text-xs text-muted-foreground">Sélection automatique : ta ville si elle est connue, puis ta région, puis les actualités nationales autorisées.</p>
+    <p className="text-xs text-muted-foreground">Sélection automatique : actualité locale, science, musique, éducation et bien-être, classées selon tes priorités du feed.</p>
     <label className="block text-sm">Format <select className="ml-2 bg-background border rounded p-1" value={kind} onChange={e => setKind(e.target.value as MediaKind)}>
       <option value="all">Tous</option><option value="article">Articles</option><option value="video">Vidéos</option>
     </select></label>

@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:feed-db": "node scripts/test-feed-database.mjs",
     "test:discovery-db": "node scripts/test-discovery-database.mjs",
+    "test:positive-media-db": "node scripts/test-positive-editorial-media-database.mjs",
     "test:watch": "vitest",
     "verify:browser-boundary": "node scripts/assert-aegis-browser-boundary.mjs"
   },

@@ -32,6 +32,20 @@ describe('daily RSS normalization', () => {
       expect(() => assertRssCoverage(key, { country: 'FR', region: entry.regionCode ? FRENCH_REGIONS[entry.regionCode] : null, city: entry.city })).not.toThrow();
     }
   });
+  it('catalogues diverse positive-editorial sources for every specialized feed lane', () => {
+    const expected = {
+      science: ['cnrs-journal', 'futura-sciences', 'pour-la-science'],
+      music: ['france-musique', 'le-monde-musiques', 'tsugi'],
+      education: ['the-conversation-education', 'le-monde-education', 'cafe-pedagogique'],
+      wellbeing: ['the-conversation-sante', 'psychologies', 'sante-publique-france-sante-mentale'],
+    } as const;
+    for (const [category, keys] of Object.entries(expected)) {
+      for (const key of keys) {
+        expect(RSS_CATALOG[key]).toMatchObject({ verified: true, editorialCategory: category });
+        expect(rssDestination(key, RSS_CATALOG[key].websiteHost!)).toMatch(/^https:\/\//);
+      }
+    }
+  });
   it('refuses incorrect edition geography before fetching or publishing', async () => {
     const fetcher = vi.fn();
     await expect(fetchRss({ ...source, source_key: 'actu-grand-est', website_host: 'actu.fr', region: 'Bretagne' }, fetcher)).rejects.toThrow('SOURCE_COVERAGE_MISMATCH');

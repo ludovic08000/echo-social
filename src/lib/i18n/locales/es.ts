@@ -179,6 +179,8 @@ const es = {
   'content.topicCooking': 'Cocina',
   'content.topicTravel': 'Viajes',
   'content.topicScience': 'Ciencia',
+  'content.topicEducation': 'Educación',
+  'content.topicWellbeing': 'Bienestar',
   'content.topicFashion': 'Moda',
   'content.topicCinema': 'Cine',
   'content.topicLiterature': 'Literatura',
