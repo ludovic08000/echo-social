@@ -43,9 +43,14 @@ describe('positive editorial media architecture', () => {
     expect(media).toContain("wellbeing: 'Bien-être'");
   });
 
-  it('fails closed during Cloud deployment without exporting the scheduler secret', () => {
-    expect(deployment).toContain('scheduler_secret_ready');
+  it('fails closed and rotates the Cloud scheduler secret without exposing it', () => {
+    expect(deployment).toContain('PARTNER_RSS_CRON_SECRET_NEXT');
+    expect(deployment).toContain('::add-mask::');
+    expect(deployment).toContain('vault.update_secret');
+    expect(deployment).toContain('vault.create_secret');
+    expect(deployment).toContain('supabase secrets unset PARTNER_RSS_CRON_SECRET_NEXT');
     expect(deployment).not.toContain('decrypted_secret as cron_secret');
+    expect(deployment).not.toContain('cat "$RUNNER_TEMP/rss-scheduler.env"');
     expect(deployment).toContain("if: failure() && steps.migrate.outcome == 'success'");
     expect(deployment).toContain('set enabled=false,lease_token=null,lease_until=null');
     expect(deployment).toContain('set active=false');

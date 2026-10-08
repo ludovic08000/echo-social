@@ -9,6 +9,7 @@ const cloud = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE
 });
 Deno.serve(rssHandler({
   secret: Deno.env.get('PARTNER_RSS_CRON_SECRET'),
+  nextSecret: Deno.env.get('PARTNER_RSS_CRON_SECRET_NEXT'),
   enabled: Deno.env.get('PARTNER_RSS_ENABLED') === 'true',
   claim: async () => {
     const { data, error } = await cloud.rpc('claim_partner_rss_sources', { p_limit: 20 });

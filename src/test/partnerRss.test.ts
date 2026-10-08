@@ -175,6 +175,13 @@ describe('server-only daily worker', () => {
     for (const key of [null, 'user-access-token', 'wrong']) expect((await handler(request(key))).status).toBe(401);
     expect((await handler(request(secret, 'GET'))).status).toBe(405); expect(claim).not.toHaveBeenCalled();
   });
+  it('accepts a staged scheduler secret during a zero-downtime rotation', async () => {
+    const { claim, finish, fetcher } = setup();
+    const stagedSecret = 'staged-rss-secret-that-is-long-enough-0001';
+    const handler = rssHandler({ secret, nextSecret: stagedSecret, enabled: true, claim, finish, fetch: fetcher });
+    expect((await handler(request(stagedSecret))).status).toBe(200);
+    expect((await handler(request('wrong'))).status).toBe(401);
+  });
   it('fails closed without cron secret and obeys the kill switch', async () => {
     const { claim, finish, handler } = setup(false);
     expect(await (await handler(request())).json()).toEqual({ status: 'disabled' }); expect(claim).not.toHaveBeenCalled();

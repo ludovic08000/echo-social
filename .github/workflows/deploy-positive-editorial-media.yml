@@ -39,6 +39,7 @@ jobs:
           fi
 
       - name: Verify backend prerequisites without reading secrets
+        id: preflight
         shell: bash
         run: |
           verification_sql="select
@@ -46,13 +47,13 @@ jobs:
             to_regclass('public.partner_rss_sources') is not null as sources_ready,
             to_regclass('public.partner_media_items') is not null as items_ready,
             to_regprocedure('private.partner_rss_daily_tick()') is not null as tick_ready,
-            exists (
-              select 1 from vault.decrypted_secrets
-              where name='partner_rss_cron_secret'
-                and length(decrypted_secret) between 32 and 256
-            ) as scheduler_secret_ready;"
+            to_regclass('vault.secrets') is not null as vault_ready,
+            to_regclass('vault.decrypted_secrets') is not null as decrypted_vault_ready;"
           jq -n --arg query "$verification_sql" '{query: $query, read_only: true}' > "$RUNNER_TEMP/preflight-request.json"
           status="$(curl --silent --show-error \
+            --retry 3 \
+            --retry-all-errors \
+            --max-time 30 \
             --output "$RUNNER_TEMP/preflight-response.json" \
             --write-out '%{http_code}' \
             --request POST \
@@ -61,17 +62,21 @@ jobs:
             --data-binary "@$RUNNER_TEMP/preflight-request.json" \
             "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
           if [ "$status" != "200" ] && [ "$status" != "201" ]; then
-            echo "Lovable Cloud preflight failed with HTTP $status" >&2
+            error_code="$(jq -r '(.error_code // .code // .error // "unknown") | tostring | gsub("[^A-Za-z0-9_.:-]"; "_") | .[0:80]' "$RUNNER_TEMP/preflight-response.json" 2>/dev/null || echo unknown)"
+            echo "::error title=Lovable Cloud preflight::HTTP $status, code=$error_code" >&2
             exit 1
           fi
-          jq -e '
-            first(.. | objects | select(has("partners_ready")))
-            | .partners_ready == true
-              and .sources_ready == true
-              and .items_ready == true
-              and .tick_ready == true
-              and .scheduler_secret_ready == true
-          ' "$RUNNER_TEMP/preflight-response.json" > /dev/null
+          row="$(jq -c 'first(.. | objects | select(has("partners_ready"))) // empty' "$RUNNER_TEMP/preflight-response.json")"
+          if [ -z "$row" ]; then
+            echo "::error title=Lovable Cloud preflight::Unexpected database response shape" >&2
+            exit 1
+          fi
+          read -r partners_ready sources_ready items_ready tick_ready vault_ready decrypted_vault_ready <<< "$(jq -r '[.partners_ready,.sources_ready,.items_ready,.tick_ready,.vault_ready,.decrypted_vault_ready] | @tsv' <<< "$row")"
+          echo "Lovable Cloud prerequisites: partners=$partners_ready sources=$sources_ready items=$items_ready tick=$tick_ready vault=$vault_ready decrypted_vault=$decrypted_vault_ready"
+          if [ "$partners_ready" != "true" ] || [ "$sources_ready" != "true" ] || [ "$items_ready" != "true" ] || [ "$tick_ready" != "true" ] || [ "$vault_ready" != "true" ] || [ "$decrypted_vault_ready" != "true" ]; then
+            echo "::error title=Lovable Cloud preflight::One or more required database objects are missing" >&2
+            exit 1
+          fi
 
       - uses: supabase/setup-cli@v1
         with:
@@ -80,13 +85,91 @@ jobs:
       - name: Type-check the RSS worker
         run: npx --yes deno@2.5.3 check --config supabase/functions/partner-rss-sync/deno.json supabase/functions/partner-rss-sync/index.ts
 
-      - name: Enable and deploy the existing Lovable Cloud RSS worker
+      - name: Rotate the RSS scheduler secret and deploy without interruption
         shell: bash
         run: |
-          supabase secrets set PARTNER_RSS_ENABLED=true --project-ref "$PROJECT_REF"
+          scheduler_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$scheduler_secret"
+          umask 077
+          secret_env="$RUNNER_TEMP/rss-scheduler.env"
+          vault_request="$RUNNER_TEMP/rss-vault-request.json"
+          vault_response="$RUNNER_TEMP/rss-vault-response.json"
+          verify_request="$RUNNER_TEMP/rss-vault-verify-request.json"
+          verify_response="$RUNNER_TEMP/rss-vault-verify-response.json"
+          trap 'rm -f "$secret_env" "$vault_request" "$vault_response" "$verify_request" "$verify_response"' EXIT
+
+          # Stage the new value while the current primary remains accepted.
+          printf 'PARTNER_RSS_ENABLED=true\nPARTNER_RSS_CRON_SECRET_NEXT=%s\n' "$scheduler_secret" > "$secret_env"
+          supabase secrets set --env-file "$secret_env" --project-ref "$PROJECT_REF"
           supabase functions deploy partner-rss-sync \
             --project-ref "$PROJECT_REF" \
             --no-verify-jwt
+
+          vault_sql="do \$rss_rotation\$
+          declare existing_secret_id uuid;
+          begin
+            select id into existing_secret_id
+            from vault.secrets
+            where name='partner_rss_cron_secret'
+            order by created_at desc
+            limit 1;
+            if existing_secret_id is null then
+              perform vault.create_secret('$scheduler_secret','partner_rss_cron_secret','ForSure partner RSS scheduler');
+            else
+              perform vault.update_secret(existing_secret_id,'$scheduler_secret','partner_rss_cron_secret','ForSure partner RSS scheduler');
+            end if;
+          end
+          \$rss_rotation\$;"
+          jq -n --arg query "$vault_sql" '{query: $query, read_only: false}' > "$vault_request"
+          status="$(curl --silent --show-error \
+            --retry 3 \
+            --retry-all-errors \
+            --max-time 30 \
+            --output "$vault_response" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$vault_request" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            error_code="$(jq -r '(.error_code // .code // .error // "unknown") | tostring | gsub("[^A-Za-z0-9_.:-]"; "_") | .[0:80]' "$vault_response" 2>/dev/null || echo unknown)"
+            echo "::error title=RSS scheduler Vault rotation::HTTP $status, code=$error_code" >&2
+            exit 1
+          fi
+
+          verify_sql="select exists (
+            select 1 from vault.decrypted_secrets
+            where name='partner_rss_cron_secret'
+              and length(decrypted_secret) between 32 and 256
+          ) as scheduler_secret_ready;"
+          jq -n --arg query "$verify_sql" '{query: $query, read_only: true}' > "$verify_request"
+          status="$(curl --silent --show-error \
+            --retry 3 \
+            --retry-all-errors \
+            --max-time 30 \
+            --output "$verify_response" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$verify_request" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query")"
+          if [ "$status" != "200" ] && [ "$status" != "201" ]; then
+            echo "::error title=RSS scheduler Vault verification::HTTP $status" >&2
+            exit 1
+          fi
+          scheduler_secret_ready="$(jq -r 'first(.. | objects | select(has("scheduler_secret_ready"))) | .scheduler_secret_ready // false' "$verify_response")"
+          if [ "$scheduler_secret_ready" != "true" ]; then
+            echo "::error title=RSS scheduler Vault verification::Encrypted scheduler secret is unavailable" >&2
+            exit 1
+          fi
+
+          # Promote only after Vault accepts the staged value. The worker accepts
+          # both slots throughout the transition, so a partial run stays routable.
+          printf 'PARTNER_RSS_ENABLED=true\nPARTNER_RSS_CRON_SECRET=%s\n' "$scheduler_secret" > "$secret_env"
+          supabase secrets set --env-file "$secret_env" --project-ref "$PROJECT_REF"
+          supabase secrets unset PARTNER_RSS_CRON_SECRET_NEXT --project-ref "$PROJECT_REF"
 
       - name: Apply the additive editorial-media migration
         id: migrate
