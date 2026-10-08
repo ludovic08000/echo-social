@@ -407,16 +407,14 @@ export default function Feed() {
                   </div>
                 )}
 
-                {/* Partner news must not depend on the number of social posts. */}
-                {!wellbeingPrefs.focusModeEnabled && (
-                  <div className="sm:px-4 mt-4">
-                    <LazyMount minHeight={200}>
-                      <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
-                        <LocalMediaSection />
-                      </Suspense>
-                    </LazyMount>
-                  </div>
-                )}
+                {/* Partner news must not depend on social post count or focus mode. */}
+                <div className="sm:px-4 mt-4">
+                  <LazyMount minHeight={200}>
+                    <Suspense fallback={<div className="h-32 skeleton rounded-2xl" />}>
+                      <LocalMediaSection />
+                    </Suspense>
+                  </LazyMount>
+                </div>
 
                 {/* Posts list — clean spacing */}
                 <div className="sm:px-4 sm:space-y-4 mt-4">

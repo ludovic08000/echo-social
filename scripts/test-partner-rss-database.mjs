@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 export async function testPartnerRssDatabase(db) {
   await db.exec('RESET ROLE');
   await db.exec(readFileSync(new URL('../supabase/migrations/20261005221140_daily_partner_rss.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261008130000_restore_partner_media_delivery.sql', import.meta.url), 'utf8'));
   const q = (sql, args=[]) => db.query(sql, args);
   const scalar = async (sql, args=[]) => Object.values((await q(sql, args)).rows[0])[0];
   let checks = 0;
@@ -46,6 +47,10 @@ export async function testPartnerRssDatabase(db) {
   eq(await scalar('SELECT family_safe FROM partner_media_items WHERE external_id=$1',[newItem.external_id]),false);
   await due(); const [fourth] = await claim();
   eq(await finish(fourth.lease_token,[{ ...newItem, title:'Edited title' }]),true);
+  eq(await scalar('SELECT moderated FROM partner_media_items WHERE external_id=$1',[newItem.external_id]),true);
+  await q('UPDATE partner_media_items SET moderated=false WHERE external_id=$1',[newItem.external_id]);
+  await due(); const [rejected] = await claim();
+  eq(await finish(rejected.lease_token,[{ ...newItem, title:'Rejected edit stays rejected' }]),true);
   eq(await scalar('SELECT moderated FROM partner_media_items WHERE external_id=$1',[newItem.external_id]),false);
   eq(Number(await scalar('SELECT count(*) FROM partner_media_items WHERE partner_id=$1',[partner])),2);
   await due(); const [cached] = await claim(); eq(cached.etag,'"one"');
