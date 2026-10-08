@@ -20,6 +20,20 @@ describe('coarse contextual news without extra GPS or third-party IP lookup',()=
     search.mockResolvedValueOnce([commune,{...commune,code:'other'}]);
     expect(await resolveMediaContext({enabled:true,profileCity:'saint malo',search,network})).toEqual(network());
   });
+  it('uses a manually selected news zone before profile or network context',async()=>{
+    const search=vi.fn();const net=vi.fn(network);
+    expect(await resolveMediaContext({enabled:true,profileCity:'Reims',
+      selected:{enabled:true,country:'FR',region:'grand-est',city:'Charleville-Mézières'},search,network:net}))
+      .toEqual({country:'FR',region:'Grand Est',city:'Charleville-Mézières',source:'selected'});
+    expect(search).not.toHaveBeenCalled();expect(net).not.toHaveBeenCalled();
+  });
+  it('ignores a disabled or invalid saved zone and keeps the automatic fallback',async()=>{
+    const search=vi.fn();const net=vi.fn(network);
+    expect(await resolveMediaContext({enabled:true,profileCity:null,
+      selected:{enabled:false,country:'FR',region:'Grand Est',city:'Reims'},search,network:net})).toEqual(network());
+    expect(await resolveMediaContext({enabled:true,profileCity:null,
+      selected:{enabled:true,country:'FR',region:'inconnue',city:'Reims'},search,network:net})).toEqual(network());
+  });
   it('rejects foreign/unknown regions, not guessing a city or storing IP',()=>{
     expect(trustedRegion(new Headers({'gateway-country':'US','gateway-region':'NY'}),config)).toBeNull();
     expect(trustedRegion(new Headers({'gateway-country':'FR','gateway-region':'unknown'}),config)).toBeNull();

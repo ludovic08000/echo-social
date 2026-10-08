@@ -25,9 +25,19 @@ export function trustedRegion(headers: Headers, config: { enabled: boolean; coun
 }
 export async function resolveMediaContext(input: {
  enabled: boolean; profileCity: string | null;
+ selected?: { enabled: boolean; country: string | null; region: string | null; city: string | null } | null;
  search: (query:string)=>Promise<Commune[]>; network: ()=>MediaContext | null | Promise<MediaContext | null>;
 }): Promise<MediaContext | null> {
  if (!input.enabled) return null;
+ const selected=input.selected;
+ if (selected?.enabled) {
+   const country=selected.country?.trim().toUpperCase() ?? '';
+   const region=frenchRegion(country,selected.region);
+   const city=selected.city?.trim();
+   if (region && (!city || city.length<=100)) {
+     return {country:'FR',region,city:city || null,source:'selected'};
+   }
+ }
  const city=input.profileCity?.trim();
  if (city && city.length>=2 && city.length<=100) {
    try {

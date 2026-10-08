@@ -5,6 +5,12 @@ import { describe, expect, it } from 'vitest';
 const readSource = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('secure ad delivery architecture', () => {
+  it('does not treat an inactive parental-control record as an active minor restriction', () => {
+    const migration = readSource('supabase/migrations/20261008130755_fix_inactive_parental_adult_gate.sql');
+    expect(migration).toContain('controls.is_minor = true');
+    expect(migration).toContain('controls.is_active = true');
+  });
+
   it('serves sanitized paid creatives through a narrow placement RPC', () => {
     const migration = readSource('supabase/migrations/20260930120500_harden_and_improve_ad_delivery.sql');
 

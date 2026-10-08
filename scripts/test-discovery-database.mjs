@@ -28,7 +28,7 @@ try {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     GRANT USAGE ON SCHEMA auth TO authenticated,anon;
     CREATE TABLE profiles(user_id uuid PRIMARY KEY, name text, date_of_birth date, interests text[], city text);
-    CREATE TABLE parental_controls(user_id uuid,is_minor boolean);
+    CREATE TABLE parental_controls(user_id uuid,is_minor boolean,is_active boolean NOT NULL DEFAULT true);
     CREATE TABLE privacy_settings(user_id uuid PRIMARY KEY,analytics_enabled boolean DEFAULT true,ai_data_sharing_enabled boolean DEFAULT true,profile_visibility text DEFAULT 'public',posts_visibility text DEFAULT 'public');
     CREATE TABLE posts(id uuid PRIMARY KEY,user_id uuid,body text,image_url text,created_at timestamptz DEFAULT now(),expires_at timestamptz,publish_at timestamptz);
     CREATE TABLE comments(id uuid PRIMARY KEY,user_id uuid,post_id uuid,body text,created_at timestamptz DEFAULT now(),is_zeus_reply boolean DEFAULT false);
@@ -41,12 +41,14 @@ try {
     CREATE TABLE ad_daily_stats(campaign_id uuid,stat_date date,impressions int,clicks int,reach int,spent numeric,UNIQUE(campaign_id,stat_date));
   `);
   await db.exec(readFileSync(new URL('../supabase/migrations/20261005213316_consented_ads_and_local_media.sql',import.meta.url),'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261008130755_fix_inactive_parental_adult_gate.sql',import.meta.url),'utf8'));
   for (let n=1;n<=6;n++) {
     await q('INSERT INTO auth.users VALUES($1)',[uid(n)]);
     await q("INSERT INTO profiles VALUES($1,'Test', $2, '{Sport}','Reims')",[uid(n),n===2?'2015-01-01':n===3?null:'1990-01-01']);
     await q('INSERT INTO privacy_settings(user_id) VALUES($1)',[uid(n)]);
   }
-  await q('INSERT INTO parental_controls VALUES($1,true)',[uid(6)]);
+  await q('INSERT INTO parental_controls VALUES($1,true,false)',[uid(1)]);
+  await q('INSERT INTO parental_controls VALUES($1,true,true)',[uid(6)]);
   for (let n=11;n<=15;n++) {
     await q('INSERT INTO ad_campaigns(id) VALUES($1)',[uid(n)]);
     await q('INSERT INTO ad_sets(id,campaign_id) VALUES($1,$1)',[uid(n)]);
@@ -56,6 +58,9 @@ try {
   await q("UPDATE ad_sets SET target_interests='{Santé}' WHERE id=$1",[uid(13)]);
   await q(`UPDATE ad_sets SET target_location='{"country":"FR","region":"Grand Est","villes":["Reims"]}' WHERE id=$1`,[uid(14)]);
   await q('UPDATE ad_sets SET target_age_min=25,target_age_max=45 WHERE id=$1',[uid(15)]);
+  await admin();
+  eq(await scalar('SELECT ad_adult_internal($1)',[uid(1)]),true);
+  eq(await scalar('SELECT ad_adult_internal($1)',[uid(6)]),false);
   await user(1);
   eq(await ads(),[uid(11)]); // No implicit use of profile interests, age range or city.
   eq((await prefs({})).ads_activity,false);

@@ -56,7 +56,7 @@ describe('explicit discovery consent',()=>{
     expect(mocks.invoke).toHaveBeenCalledWith('local-media-location',{body:{cityQuery:'Reims'}});
     expect(mocks.mutate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix'}));
-    expect(mocks.mutate.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,ads_location:true,country:'FR',city:'Reims',region:'Grand Est'});
+    expect(mocks.mutate.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,ads_location:true,local_media:true,country:'FR',city:'Reims',region:'Grand Est'});
   });
   it('does not overwrite a manual choice with an IP suggestion',async()=>{
     mocks.invoke.mockResolvedValue({data:{country:'FR',region:'Île-de-France',city:'Paris'},error:null});
@@ -81,7 +81,17 @@ describe('explicit discovery consent',()=>{
   it('does not expose a switch that can disable automatic contextual news',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
     expect(screen.queryByRole('switch',{name:'Médias de ma ville et de ma région'})).toBeNull();
-    expect(screen.getByText(/médias et actualités ne nécessitent aucun réglage adulte/i)).toBeInTheDocument();
+    expect(screen.getByText(/actualités locales sont disponibles sans contrôle parental actif/i)).toBeInTheDocument();
+  });
+  it('saves a selected news zone without enabling any personalized advertising',async()=>{
+    mocks.rpc.mockResolvedValue({data:'Charleville-Mézières',error:null});
+    mocks.invoke.mockResolvedValue({data:{cities:[{code:'08105',country:'FR',city:'Charleville-Mézières',region:'Grand Est',department:'Ardennes'}]},error:null});
+    render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button',{name:'Utiliser la ville de mon profil'}));
+    fireEvent.click(await screen.findByRole('button',{name:'Charleville-Mézières · Ardennes · Grand Est · FR'}));
+    fireEvent.click(screen.getByRole('button',{name:'Enregistrer mes choix'}));
+    expect(mocks.mutate.mock.calls[0][0]).toEqual({...DEFAULT_DISCOVERY,local_media:true,country:'FR',region:'Grand Est',city:'Charleville-Mézières'});
+    expect(screen.getByRole('switch',{name:'Publicités de ma ville et de ma région'})).not.toBeChecked();
   });
   it('keeps local ads independent of news and requires a separate opt-in for auto location',()=>{
     render(<MemoryRouter><DiscoveryPreferencesPanel /></MemoryRouter>);
