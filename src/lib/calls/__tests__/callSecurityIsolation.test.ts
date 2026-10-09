@@ -28,7 +28,12 @@ describe('call hardening isolation and rollback', () => {
 
   it('issues short-lived call tokens only after device and invitation checks', () => {
     const edge = read('supabase/functions/livekit-token/index.ts');
-    expect(edge).toContain('ttl: "10m"');
+    // Appels : 10 minutes. Lives : 75 minutes (60 minutes de direct + marge de clôture).
+    expect(edge).toContain('tokenTtl = "10m"');
+    expect(edge).toContain('tokenTtl = "75m"');
+    expect(edge).toContain('ttl: tokenTtl');
+    // Aucun jeton ne peut dépasser la fenêtre de live de 75 minutes.
+    expect(edge).not.toMatch(/tokenTtl\s*=\s*"\d{3,}m"/);
     expect(edge).toContain('CALL_DEVICE_NOT_AUTHORIZED');
     expect(edge).toContain('CALL_DEVICE_NOT_INVITED');
     expect(edge).toContain('x-aegis-diagnostic-id');
