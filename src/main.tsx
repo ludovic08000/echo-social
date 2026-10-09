@@ -2,12 +2,14 @@ import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import "./index.css";
 import { installGlobalCrashHandlers } from "@/lib/crashLogger";
+import { installResizeObserverPatch } from "@/lib/resizeObserverPatch";
 import { installE2EEDebugHelper } from "@/lib/consoleGuard";
 import { registerPwaUpdates } from "@/lib/pwa/registerPwaUpdates";
 
 // Install BEFORE anything else so the very first error (incl. during chunk
 // loading or crypto bootstrap) is captured with full context.
 installGlobalCrashHandlers();
+installResizeObserverPatch();
 installE2EEDebugHelper();
 registerPwaUpdates();
 
