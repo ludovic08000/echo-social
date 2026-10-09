@@ -121,9 +121,9 @@ export function HostLiveView({ live }: HostLiveViewProps) {
     setMessage('');
   };
 
-  const handleEndLive = async () => {
-    if (!confirm('Terminer le live ?')) return;
-    
+  const handleEndLive = async (auto = false) => {
+    if (!auto && !confirm('Terminer le live ?')) return;
+
     setIsEnding(true);
     try {
       // Stop recording first
@@ -152,8 +152,10 @@ export function HostLiveView({ live }: HostLiveViewProps) {
         });
       }
       
-      toast({ 
-        title: recordingUrl ? 'Live terminé et publié dans le feed ! 🎬' : 'Live terminé !' 
+      toast({
+        title: auto
+          ? 'Live terminé : durée maximale atteinte (1 h) ⏳'
+          : recordingUrl ? 'Live terminé et publié dans le feed ! 🎬' : 'Live terminé !'
       });
       navigate('/feed');
     } catch (error) {
