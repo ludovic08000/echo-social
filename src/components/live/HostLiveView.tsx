@@ -105,6 +105,33 @@ export function HostLiveView({ live }: HostLiveViewProps) {
     }
   }, [chatMessages]);
 
+  // Limite de durée : alerte à 5 min de la fin, arrêt automatique à 60 min
+  useEffect(() => {
+    if (!live.started_at) return;
+    const startedAt = new Date(live.started_at).getTime();
+    const WARN_MS = 55 * 60 * 1000;
+    const MAX_MS = 60 * 60 * 1000;
+    let warned = false;
+    let ended = false;
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      if (!warned && elapsed >= WARN_MS) {
+        warned = true;
+        toast({
+          title: 'Plus que 5 minutes de live ⏳',
+          description: 'Ton live se terminera automatiquement. Tu pourras en relancer un juste après.',
+        });
+      }
+      if (!ended && elapsed >= MAX_MS) {
+        ended = true;
+        autoEndRef.current?.();
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 10_000);
+    return () => clearInterval(interval);
+  }, [live.started_at]);
+
   const handleStreamReady = (stream?: MediaStream) => {
     if (stream && stream.getTracks().length > 0) {
       startRecording(stream);
