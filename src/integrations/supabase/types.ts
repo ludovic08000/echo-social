@@ -4168,6 +4168,7 @@ export type Database = {
           allow_youtube_embed: boolean
           city: string | null
           country: string
+          editorial_category: string
           id: string
           name: string
           region: string | null
@@ -4181,6 +4182,7 @@ export type Database = {
           allow_youtube_embed?: boolean
           city?: string | null
           country?: string
+          editorial_category?: string
           id?: string
           name: string
           region?: string | null
@@ -4194,6 +4196,7 @@ export type Database = {
           allow_youtube_embed?: boolean
           city?: string | null
           country?: string
+          editorial_category?: string
           id?: string
           name?: string
           region?: string | null
@@ -8194,6 +8197,7 @@ export type Database = {
           weight_discovery: number
           weight_friends: number
           weight_marketplace: number
+          weight_news: number
         }
         Insert: {
           ai_summaries_enabled?: boolean
@@ -8211,6 +8215,7 @@ export type Database = {
           weight_discovery?: number
           weight_friends?: number
           weight_marketplace?: number
+          weight_news?: number
         }
         Update: {
           ai_summaries_enabled?: boolean
@@ -8228,6 +8233,7 @@ export type Database = {
           weight_discovery?: number
           weight_friends?: number
           weight_marketplace?: number
+          weight_news?: number
         }
         Relationships: []
       }
@@ -9654,6 +9660,7 @@ export type Database = {
         Returns: Json
       }
       feed_ml_health: { Args: never; Returns: Json }
+      feed_normalize_topic: { Args: { p_topic: string }; Returns: string }
       feed_post_is_eligible_internal: {
         Args: { p_post_id: string; p_viewer_id: string }
         Returns: boolean
