@@ -44,7 +44,7 @@ serve(async (req) => {
       });
     }
 
-    const { amount, creator_id, message } = await req.json();
+    const { amount, creator_id, message, live_stream_id } = await req.json();
 
     // Server-side validation
     if (!amount || typeof amount !== "number" || amount < 1) throw new Error("Montant minimum : 1€");
@@ -68,6 +68,12 @@ serve(async (req) => {
     if (!creatorProfile?.is_creator) throw new Error("Cet utilisateur n'est pas créateur");
 
     // Commission ForSure de 25 % sur cadeaux et pourboires.
+    // Le live doit appartenir au créateur, sinon on n'attribue pas le pourboire au live.
+    let liveStreamId: string | null = null;
+    if (typeof live_stream_id === "string" && /^[0-9a-f-]{36}$/i.test(live_stream_id)) {
+      const { data: live } = await supabaseAdmin.from("live_streams").select("user_id").eq("id", live_stream_id).maybeSingle();
+      if (live?.user_id === creator_id) liveStreamId = live_stream_id;
+    }
     const commissionRate = 0.25;
     const commissionAmount = Math.round(amount * commissionRate * 100) / 100;
     const creatorPayout = Math.round((amount - commissionAmount) * 100) / 100;
@@ -97,7 +103,7 @@ serve(async (req) => {
         quantity: 1,
       }],
       mode: "payment",
-      success_url: `${origin}/profile/${creator_id}?tip=success`,
+      success_url: liveStreamId ? `${origin}/live/${liveStreamId}?tip=success` : `${origin}/profile/${creator_id}?tip=success`,
       cancel_url: `${origin}/profile/${creator_id}?tip=canceled`,
       metadata: {
         type: "tip",
@@ -107,6 +113,7 @@ serve(async (req) => {
         commission_amount: commissionAmount.toString(),
         creator_payout: creatorPayout.toString(),
         message: safeMessage,
+        live_stream_id: liveStreamId ?? "",
       },
     });
 
@@ -120,6 +127,7 @@ serve(async (req) => {
       stripe_session_id: session.id,
       status: "pending",
       message: safeMessage || null,
+      live_stream_id: liveStreamId,
     });
 
     return new Response(JSON.stringify({ url: session.url }), {

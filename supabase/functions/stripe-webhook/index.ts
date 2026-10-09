@@ -61,7 +61,7 @@ serve(async (req) => {
 
         await supabase
           .from("tips")
-          .update({ status: "completed" })
+          .update({ status: "completed", paid_at: new Date().toISOString() })
           .eq("stripe_session_id", stripeSessionId);
 
         // Notify the creator
