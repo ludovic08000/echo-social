@@ -1,10 +1,12 @@
 import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, MessageCircle, Newspaper, Play } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { type MediaScope, type MediaKind, type PartnerMediaItem, partnerThumbnailUrl, safePartnerUrl, youtubeEmbedUrl } from '@/lib/discovery';
+import { REACTION_EMOJIS, REACTION_LABELS, type ReactionType } from '@/hooks/useReactions';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { GeoAttribution } from '@/components/geo/GeoAttribution';
 import { browserLocationContext, browserLocaleContext } from '@/lib/browserLocation';
@@ -27,6 +29,63 @@ const rankReasonLabel: Record<string, string> = {
   local_relevance: 'Près de chez toi',
   positive_editorial_diversity: 'Découverte positive',
 };
+
+const REACTION_KEYS = Object.keys(REACTION_EMOJIS) as ReactionType[];
+
+type NewsReactions = { counts: Partial<Record<ReactionType, number>>; mine: ReactionType | null };
+
+/** Réactions emoji d'une carte d'actualité : une seule par membre, réappui = changer, même emoji = retirer. */
+function NewsReactionBar({ threadId }: { threadId: string }) {
+  const { user } = useAuth();
+  const cache = useQueryClient();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const queryKey = ['news-reactions', user?.id, threadId];
+  const { data } = useQuery({
+    queryKey, enabled: !!user, staleTime: 15_000, retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_news_reactions' as never, { p_thread: threadId } as never);
+      if (error) throw error;
+      return data as unknown as NewsReactions;
+    },
+  });
+  const mutation = useMutation({
+    mutationFn: async (reaction: ReactionType | null) => {
+      const name = reaction ? 'set_news_reaction' : 'remove_news_reaction';
+      const args = reaction ? { p_thread: threadId, p_reaction: reaction } : { p_thread: threadId };
+      const { error } = await supabase.rpc(name as never, args as never);
+      if (error) throw error;
+    },
+    onSettled: () => cache.invalidateQueries({ queryKey }),
+  });
+  const mine = data?.mine ?? null;
+  const total = Object.values(data?.counts ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
+  const choose = (reaction: ReactionType) => {
+    if (mutation.isPending) return;
+    setPickerOpen(false);
+    mutation.mutate(mine === reaction ? null : reaction);
+  };
+  return <div className="relative flex-1">
+    {pickerOpen && <div role="group" aria-label="Choisir une réaction"
+      className="absolute bottom-full left-1/2 z-20 mb-2 flex -translate-x-1/2 gap-1 rounded-full border border-border/30 bg-card p-1.5 shadow-lg">
+      {REACTION_KEYS.map(key => <button key={key} type="button" aria-label={REACTION_LABELS[key]} disabled={mutation.isPending}
+        onClick={() => choose(key)}
+        className={cn('rounded-full p-1 text-xl transition-transform hover:scale-125', mine === key && 'bg-primary/15')}>
+        {REACTION_EMOJIS[key]}
+      </button>)}
+    </div>}
+    <Button type="button" variant="ghost" size="sm" disabled={mutation.isPending}
+      aria-label={mine ? `Ma réaction : ${REACTION_LABELS[mine]}. Appuyer pour changer.` : 'Réagir'}
+      onClick={() => {
+        if (mutation.isPending) return;
+        if (!mine) mutation.mutate('like'); else setPickerOpen(open => !open);
+      }}
+      className="h-11 w-full gap-1.5 rounded-xl text-xs text-muted-foreground hover:bg-secondary/50 hover:text-foreground">
+      <span aria-hidden="true" className="text-base">{mine ? REACTION_EMOJIS[mine] : '👍'}</span>
+      <span className="font-medium">{mine ? REACTION_LABELS[mine] : 'Réagir'}</span>
+    </Button>
+    {total > 0 && <span className="sr-only">{total} réaction{total !== 1 ? 's' : ''}</span>}
+  </div>;
+}
 
 function PartnerCard({ item }: { item: PartnerMediaItem }) {
   const [playing, setPlaying] = useState(false);
