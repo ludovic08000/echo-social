@@ -4,6 +4,7 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { ShareButton } from '@/components/ShareButton';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
+import { TipButton } from '@/components/TipButton';
 
 interface LiveRightActionsProps {
   hostAvatar?: string | null;
@@ -12,6 +13,8 @@ interface LiveRightActionsProps {
   onCommentClick?: () => void;
   shareUrl?: string;
   shareTitle?: string;
+  creatorId?: string;
+  liveStreamId?: string;
 }
 
 function ActionButton({
@@ -49,13 +52,20 @@ function ActionButton({
   );
 }
 
-export function LiveRightActions({ hostAvatar, hostName, viewerCount, onCommentClick, shareUrl, shareTitle }: LiveRightActionsProps) {
+export function LiveRightActions({ hostAvatar, hostName, viewerCount, onCommentClick, shareUrl, shareTitle, creatorId, liveStreamId }: LiveRightActionsProps) {
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [followed, setFollowed] = useState(false);
 
   return (
     <div className="flex flex-col items-center gap-4">
+      {creatorId && liveStreamId && (
+        <div className="order-last flex flex-col items-center gap-1">
+          <TipButton creatorId={creatorId} creatorName={hostName ?? ''} liveStreamId={liveStreamId}
+            className="w-11 h-11 rounded-full backdrop-blur-md bg-primary/20 hover:bg-primary/30 text-primary-foreground" />
+          <span className="text-white/60 text-[9px] font-medium">Cadeau</span>
+        </div>
+      )}
       {/* Host avatar with follow button */}
       <div className="relative mb-1">
         <div className={cn('rounded-full p-[2px] transition-all')}

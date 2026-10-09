@@ -176,6 +176,13 @@
       "when": 1791510420532,
       "tag": "0024_live_ranking_followed_first_and_topics",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791511499880,
+      "tag": "0025_creator_revenue_per_live",
+      "breakpoints": true
     }
   ]
 }

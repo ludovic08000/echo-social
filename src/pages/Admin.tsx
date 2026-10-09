@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   DashboardSection, UsersSection, PostsSection, ReportsSection,
-  StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
+  StatsSection, SubscriptionsSection, CreatorRevenueSection, SecuritySection, SettingsSection,
   AISection, PlatformHealthDashboard, FeedIntelligenceSection, MonitoringSection,
   SecurityMonitoringSection, CryptoErrorsSection, MLFeedSection,
   CommentModerationAlertsSection,
@@ -51,6 +51,7 @@ const NAV_GROUPS = [
     label: 'Commerce',
     items: [
       { key: 'subscriptions', label: 'Commandes', icon: CreditCard },
+      { key: 'creator_revenue', label: 'Revenus créateurs', icon: CreditCard },
     ],
   },
   {
@@ -79,7 +80,7 @@ const NAV_GROUPS = [
   },
 ];
 
-type AdminSection = 'dashboard' | 'health' | 'stats' | 'quality' | 'monitoring' | 'users' | 'posts' | 'reports' | 'comment_alerts' | 'verifications' | 'archives' | 'subscriptions' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
+type AdminSection = 'dashboard' | 'health' | 'stats' | 'quality' | 'monitoring' | 'users' | 'posts' | 'reports' | 'comment_alerts' | 'verifications' | 'archives' | 'subscriptions' | 'creator_revenue' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
 
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
@@ -130,6 +131,7 @@ export default function Admin() {
       case 'stats': return <StatsSection />;
       case 'quality': return <QualityMetricsSection />;
       case 'subscriptions': return <SubscriptionsSection />;
+      case 'creator_revenue': return <CreatorRevenueSection />;
       case 'ai': return <AISection />;
       case 'zeus': return <ZeusSection />;
       case 'audit_logs': return <AuditLogsSection />;

@@ -131,6 +131,8 @@ export function LivePlayerCard({ item, isVisible, zeusReason }: LivePlayerCardPr
           onCommentClick={() => setShowChat(!showChat)}
           shareUrl={generateLiveUrl(item.id)}
           shareTitle={item.title}
+          creatorId={item.user_id}
+          liveStreamId={item.id}
         />
       </div>
 
