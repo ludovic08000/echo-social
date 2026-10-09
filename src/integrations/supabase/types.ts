@@ -2827,6 +2827,128 @@ export type Database = {
         }
         Relationships: []
       }
+      fan_clubs: {
+        Row: {
+          created_at: string
+          creator_id: string
+          description: string | null
+          id: string
+          is_enabled: boolean
+          monthly_price_cents: number
+          stripe_price_id: string | null
+          stripe_product_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          description?: string | null
+          id?: string
+          is_enabled?: boolean
+          monthly_price_cents?: number
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          description?: string | null
+          id?: string
+          is_enabled?: boolean
+          monthly_price_cents?: number
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fan_clubs_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "fan_clubs_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "profiles_public"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "fan_clubs_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "profiles_safe"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "fan_clubs_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "public_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      fan_subscriptions: {
+        Row: {
+          amount_cents: number
+          cancelled_at: string | null
+          commission_cents: number
+          commission_rate: number
+          created_at: string
+          creator_id: string
+          creator_payout_cents: number
+          current_period_end: string | null
+          current_period_start: string | null
+          fan_id: string
+          id: string
+          status: string
+          stripe_customer_id: string | null
+          stripe_price_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          cancelled_at?: string | null
+          commission_cents: number
+          commission_rate?: number
+          created_at?: string
+          creator_id: string
+          creator_payout_cents: number
+          current_period_end?: string | null
+          current_period_start?: string | null
+          fan_id: string
+          id?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          cancelled_at?: string | null
+          commission_cents?: number
+          commission_rate?: number
+          created_at?: string
+          creator_id?: string
+          creator_payout_cents?: number
+          current_period_end?: string | null
+          current_period_start?: string | null
+          fan_id?: string
+          id?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       feed_ai_recommendations: {
         Row: {
           applied_at: string | null
@@ -6285,6 +6407,7 @@ export type Database = {
           likes_count: number
           media_thumbnail_url: string | null
           publish_at: string | null
+          subscriber_only: boolean
           user_id: string
         }
         Insert: {
@@ -6297,6 +6420,7 @@ export type Database = {
           likes_count?: number
           media_thumbnail_url?: string | null
           publish_at?: string | null
+          subscriber_only?: boolean
           user_id: string
         }
         Update: {
@@ -6309,6 +6433,7 @@ export type Database = {
           likes_count?: number
           media_thumbnail_url?: string | null
           publish_at?: string | null
+          subscriber_only?: boolean
           user_id?: string
         }
         Relationships: []
@@ -10111,6 +10236,10 @@ export type Database = {
           user_id: string
         }[]
       }
+      has_active_creator_badge: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
       has_creator_tool_access: { Args: never; Returns: boolean }
@@ -10124,6 +10253,10 @@ export type Database = {
       import_partner_media: {
         Args: { p_items: Json; p_partner: string }
         Returns: number
+      }
+      is_active_fan: {
+        Args: { p_creator_id: string; p_fan_id: string }
+        Returns: boolean
       }
       is_ad_set_paid_and_active: {
         Args: { p_ad_set_id: string }

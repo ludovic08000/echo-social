@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus, Radio, User } from 'lucide-react';
+import { Image, Video, X, Send, Timer, Rocket, ShoppingBag, Sparkles, Loader2, Check, Globe, Type, ArrowDownRight, ArrowUpRight, Briefcase, SmilePlus, Radio, User, Lock } from 'lucide-react';
 import { useCreatePost } from '@/hooks/usePosts';
 import { usePostModeration } from '@/hooks/useZeusCompanion';
 import { useProfile } from '@/hooks/useProfile';
+import { useFanClub } from '@/hooks/useFanClub';
 import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
 import { generateVideoThumbnail } from '@/lib/videoThumbnail';
@@ -46,6 +47,7 @@ export function CreatePost() {
   const { data: profile } = useProfile();
   const createPost = useCreatePost();
   const postModeration = usePostModeration();
+  const { data: ownClub } = useFanClub(user?.id);
   const [body, setBody] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [media, setMedia] = useState<File | null>(null);
@@ -56,6 +58,7 @@ export function CreatePost() {
   const [uploadPercent, setUploadPercent] = useState(0);
   const [expiryHours, setExpiryHours] = useState<number | null>(null);
   const [capsuleDays, setCapsuleDays] = useState<number | null>(null);
+  const [subscriberOnly, setSubscriberOnly] = useState(false);
   const [publishAsReplay, setPublishAsReplay] = useState(false);
   const [replayTitle, setReplayTitle] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -273,6 +276,7 @@ export function CreatePost() {
         mediaThumbnailUrl: thumbnailUrl ?? undefined,
         expiresAt,
         publishAt,
+        subscriberOnly: subscriberOnly && !!ownClub?.is_enabled,
       });
 
       // Zeus moderation check (async, non-blocking)
@@ -312,6 +316,7 @@ export function CreatePost() {
       setExpanded(false);
       setExpiryHours(null);
       setCapsuleDays(null);
+      setSubscriberOnly(false);
       setPublishAsReplay(false);
       setReplayTitle('');
 
@@ -495,6 +500,29 @@ export function CreatePost() {
                           <X className="w-3 h-3" />
                         </button>
                       </span>
+                    </motion.div>
+                  )}
+
+                  {ownClub?.is_enabled && (
+                    <motion.div
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="flex items-center gap-1.5 mb-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSubscriberOnly(!subscriberOnly)}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-medium border transition-all',
+                          subscriberOnly
+                            ? 'bg-primary/15 text-primary border-primary/25'
+                            : 'bg-secondary/40 text-muted-foreground border-border/20 hover:bg-secondary/60'
+                        )}
+                      >
+                        <Lock className="w-3 h-3" />
+                        Réservé aux abonnés
+                        {subscriberOnly && <Check className="w-3 h-3" />}
+                      </button>
                     </motion.div>
                   )}
 

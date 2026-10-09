@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, memo, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye, Send, Globe } from 'lucide-react';
+import { MessageCircle, Trash2, MoreHorizontal, ThumbsUp, Sparkles, Languages, Loader2, Timer, Bookmark, ShieldAlert, AlertTriangle, Eye, Send, Globe, Lock } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Post, useDeletePost } from '@/hooks/usePosts';
 import { supabase } from '@/integrations/supabase/client';
@@ -246,7 +246,14 @@ export const PostCard = memo(function PostCard({
                   {formatDistanceToNow(new Date(post.created_at), { addSuffix: true, locale: fr })}
                 </span>
               </Link>
-              <Globe className="w-2.5 h-2.5 text-muted-foreground" />
+              {post.subscriber_only ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                  <Lock className="w-2.5 h-2.5" />
+                  Abonnés
+                </span>
+              ) : (
+                <Globe className="w-2.5 h-2.5 text-muted-foreground" />
+              )}
               {timeLeft && (
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-medium">
                   <Timer className="w-2.5 h-2.5" />

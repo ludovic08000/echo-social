@@ -149,6 +149,46 @@ serve(async (req) => {
 
         console.log(`✅ Ad campaign activated for campaign ${campaignId}`);
       }
+      // ── FAN SUBSCRIPTION (un fan rejoint le club d'un créateur) ──
+      else if (metadataType === "fan_subscription") {
+        const creatorId = session.metadata?.creator_id;
+        const fanId = session.metadata?.fan_id;
+        if (!creatorId || !fanId) throw new Error("Abonnement fan : métadonnées incomplètes");
+
+        const subId = typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription?.id ?? null;
+        let periodStart = new Date().toISOString();
+        let periodEnd: string | null = null;
+        if (subId) {
+          const sub = await stripe.subscriptions.retrieve(subId);
+          if (sub.current_period_start) periodStart = new Date(sub.current_period_start * 1000).toISOString();
+          if (sub.current_period_end) periodEnd = new Date(sub.current_period_end * 1000).toISOString();
+        }
+
+        const { error: fanUpdateErr } = await supabase
+          .from("fan_subscriptions")
+          .update({
+            status: "active",
+            stripe_subscription_id: subId,
+            stripe_customer_id: typeof session.customer === "string"
+              ? session.customer
+              : session.customer?.id ?? null,
+            current_period_start: periodStart,
+            current_period_end: periodEnd,
+          })
+          .eq("creator_id", creatorId)
+          .eq("fan_id", fanId);
+        if (fanUpdateErr) throw new Error(`Activation de l'abonnement fan impossible : ${fanUpdateErr.message}`);
+
+        await supabase.from("notifications").insert({
+          user_id: creatorId,
+          actor_id: fanId,
+          type: "sale",
+        });
+
+        console.log(`✅ Fan ${fanId} subscribed to creator ${creatorId}`);
+      }
       // ── SUBSCRIPTION (Creator) ──
       else if (!session.metadata?.order_id && session.metadata?.user_id && session.mode === "subscription") {
         const userId = session.metadata.user_id;
@@ -305,32 +345,104 @@ serve(async (req) => {
       }
     }
 
-    // ── SUBSCRIPTION DELETED (Creator unsubscribes) ──
+    // ── SUBSCRIPTION DELETED (badge Créateur résilié ou fan qui quitte un club) ──
     if (event.type === "customer.subscription.deleted") {
       const subscription = event.data.object as Stripe.Subscription;
-      const customerId = typeof subscription.customer === "string"
-        ? subscription.customer
-        : subscription.customer?.id;
+      const deletedSubId = typeof subscription.id === "string" ? subscription.id : null;
 
-      if (customerId) {
-        const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
-        if (customer?.email) {
-          const { data: users } = await supabase.auth.admin.listUsers();
-          const matchedUser = users?.users?.find((u) => u.email === customer.email);
+      // Un abonnement fan se clôture dans fan_subscriptions, jamais dans le badge Créateur.
+      let fanCreatorId: string | null =
+        subscription.metadata?.type === "fan_subscription" && typeof subscription.metadata?.creator_id === "string"
+          ? subscription.metadata.creator_id
+          : null;
 
-          if (matchedUser) {
-            await supabase
-              .from("profiles")
-              .update({ is_creator: false, creator_tier: "free" })
-              .eq("user_id", matchedUser.id);
+      if (!fanCreatorId && deletedSubId) {
+        const { data: fanRow } = await supabase
+          .from("fan_subscriptions")
+          .select("creator_id")
+          .eq("stripe_subscription_id", deletedSubId)
+          .maybeSingle();
+        fanCreatorId = fanRow?.creator_id ?? null;
+      }
 
-            await supabase
-              .from("creator_subscriptions")
-              .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
-              .eq("user_id", matchedUser.id);
+      if (fanCreatorId && deletedSubId) {
+        await supabase
+          .from("fan_subscriptions")
+          .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+          .eq("stripe_subscription_id", deletedSubId);
+        console.log(`✅ Fan subscription ${deletedSubId} cancelled (creator ${fanCreatorId})`);
+      } else {
+        const customerId = typeof subscription.customer === "string"
+          ? subscription.customer
+          : subscription.customer?.id;
 
-            console.log(`✅ Creator subscription cancelled for user ${matchedUser.id}`);
+        if (customerId) {
+          const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+          if (customer?.email) {
+            const { data: users } = await supabase.auth.admin.listUsers();
+            const matchedUser = users?.users?.find((u) => u.email === customer.email);
+
+            if (matchedUser) {
+              await supabase
+                .from("profiles")
+                .update({ is_creator: false, creator_tier: "free" })
+                .eq("user_id", matchedUser.id);
+
+              await supabase
+                .from("creator_subscriptions")
+                .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+                .eq("user_id", matchedUser.id);
+
+              console.log(`✅ Creator subscription cancelled for user ${matchedUser.id}`);
+            }
           }
+        }
+      }
+    }
+
+    // ── SUBSCRIPTION UPDATED (nouvelle période, impayé, ou résiliation programmée) ──
+    if (event.type === "customer.subscription.updated") {
+      const subscription = event.data.object as Stripe.Subscription;
+      const subId = typeof subscription.id === "string" ? subscription.id : null;
+
+      if (subId) {
+        const periodStart = subscription.current_period_start
+          ? new Date(subscription.current_period_start * 1000).toISOString()
+          : null;
+        const periodEnd = subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000).toISOString()
+          : null;
+
+        const { data: fanRow } = await supabase
+          .from("fan_subscriptions")
+          .select("id")
+          .eq("stripe_subscription_id", subId)
+          .maybeSingle();
+
+        if (fanRow) {
+          const nextStatus = subscription.status === "active"
+            ? "active"
+            : subscription.status === "past_due"
+              ? "past_due"
+              : subscription.status === "canceled"
+                ? "cancelled"
+                : null;
+
+          await supabase
+            .from("fan_subscriptions")
+            .update({
+              status: nextStatus ?? "active",
+              current_period_start: periodStart,
+              current_period_end: periodEnd,
+            })
+            .eq("id", fanRow.id);
+          console.log(`✅ Fan subscription ${subId} updated (${subscription.status})`);
+        } else {
+          await supabase
+            .from("creator_subscriptions")
+            .update({ current_period_start: periodStart, current_period_end: periodEnd })
+            .eq("stripe_subscription_id", subId);
+          console.log(`✅ Creator subscription ${subId} period refreshed`);
         }
       }
     }
