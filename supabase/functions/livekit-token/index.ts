@@ -120,6 +120,8 @@ Deno.serve(async (req) => {
     let tokenIdentity = userId;
     let auditConversationId: string | null = null;
     let auditLiveId: string | null = null;
+    // Durée du jeton : 10 min pour les appels, 75 min pour les lives (limite 1 h + marge)
+    let tokenTtl = "10m";
 
     diagnostic.step("room_lookup");
     if (roomName.startsWith("call-")) {
@@ -184,11 +186,16 @@ Deno.serve(async (req) => {
       if (!UUID_RE.test(liveId)) return json(400, { error: "INVALID_REQUEST" });
       const { data: live, error: liveError } = await adminClient
         .from("live_streams")
-        .select("user_id, is_active")
+        .select("user_id, is_active, started_at")
         .eq("id", liveId)
         .maybeSingle();
       if (liveError) return json(503, { error: "CALL_SERVICE_UNAVAILABLE" });
       if (!live || live.is_active !== true) return json(403, { error: "CALL_NOT_JOINABLE" });
+      // Limite de durée : un live ne peut pas dépasser 60 minutes (fail-closed côté jeton)
+      if (live.started_at && Date.now() - new Date(live.started_at).getTime() > 60 * 60 * 1000) {
+        return json(403, { error: "LIVE_DURATION_EXCEEDED" });
+      }
+      tokenTtl = "75m";
       if (live.user_id === userId) {
         role = "host";
         canPublish = true;
