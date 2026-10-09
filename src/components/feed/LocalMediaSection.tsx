@@ -95,9 +95,33 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
   const thumbnail = imageFailed ? null : partnerThumbnailUrl(item.id, item.thumbnail_url);
   const embed = youtubeEmbedUrl(item.youtube_id);
   if (!url) return null;
-  return <article className="overflow-hidden rounded-xl border border-border bg-card">
+  return <article className="group relative overflow-hidden border-y border-border/20 bg-card shadow-[0_10px_34px_-22px_hsl(var(--foreground)/0.2)] transition-all duration-300 hover:shadow-[0_18px_44px_-24px_hsl(var(--foreground)/0.24)] sm:rounded-[26px] sm:border">
+    {/* En-tête façon publication */}
+    <div className="flex items-center gap-2.5 px-3 py-2.5">
+      <span className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-primary/10 text-primary" aria-hidden="true">
+        <Newspaper className="h-4.5 w-4.5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-semibold text-foreground">{item.source_name}</p>
+        <p className="text-[11px] text-muted-foreground">
+          {editorialCategoryLabel[item.editorial_category ?? 'general']} · {item.kind === 'video' ? 'Vidéo' : 'Article'} · {new Date(item.published_at).toLocaleDateString('fr-FR')}
+        </p>
+      </div>
+    </div>
+
+    {/* Texte au-dessus du média, comme une publication */}
+    <div className="px-3 pb-2">
+      <a className="block text-[14px] font-semibold leading-[1.5] text-foreground hover:underline" href={url} target="_blank" rel="noopener noreferrer">{item.title}</a>
+      {item.excerpt && <p className="mt-1 text-[13px] text-muted-foreground">{item.excerpt}</p>}
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {[item.city, item.region].filter(Boolean).join(' · ') || 'France'}{item.proximity === 'national' ? ' · Sélection nationale' : ''}
+        {item.rank_reason ? ` · ${rankReasonLabel[item.rank_reason] ?? 'Sélection du feed'}` : ''}
+      </p>
+    </div>
+
+    {/* Média pleine largeur */}
     <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Ouvrir chez ${item.source_name} : ${item.title}`}
-      className="relative block aspect-video overflow-hidden bg-gradient-to-br from-primary/20 via-muted to-secondary/30">
+      className="relative block aspect-video overflow-hidden bg-muted/30">
       {thumbnail ? <img src={thumbnail} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
         className="h-full w-full object-cover" onError={() => setImageFailed(true)} />
         : <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground" data-testid="partner-media-fallback">
@@ -106,26 +130,37 @@ function PartnerCard({ item }: { item: PartnerMediaItem }) {
         </span>}
       {item.kind === 'video' && <span className="absolute inset-0 grid place-items-center bg-black/20" aria-hidden="true"><span className="grid h-12 w-12 place-items-center rounded-full bg-black/70 text-white"><Play className="h-6 w-6 fill-current" /></span></span>}
     </a>
-    <div className="p-3 space-y-2">
-    <p className="text-xs text-muted-foreground">{item.source_name} · {editorialCategoryLabel[item.editorial_category ?? 'general']} · {item.kind === 'video' ? 'Vidéo' : 'Article'} · {new Date(item.published_at).toLocaleDateString('fr-FR')}</p>
-    <p className="text-xs text-muted-foreground">{[item.city, item.region].filter(Boolean).join(' · ') || 'France'}{item.proximity === 'national' ? ' · Sélection nationale' : ''}</p>
-    {item.rank_reason && <p className="text-xs font-medium text-primary">{rankReasonLabel[item.rank_reason] ?? 'Sélection du feed'}</p>}
-    <a className="block font-semibold leading-snug hover:underline" href={url} target="_blank" rel="noopener noreferrer">{item.title}</a>
-    {item.excerpt && <p className="text-sm text-muted-foreground">{item.excerpt}</p>}
-    {item.discussion_id && <div className="flex flex-wrap items-center gap-2">
-      <Button type="button" size="sm" variant={discussionOpen ? 'secondary' : 'outline'} aria-expanded={discussionOpen}
-        onClick={() => setDiscussionOpen(value => !value)}><MessageCircle className="mr-1 h-4 w-4" />{discussionOpen ? 'Fermer les commentaires' : 'Commenter et débattre'}</Button>
-      <Link className="text-sm underline" to={`/news/${item.discussion_id}`}>Ouvrir la discussion</Link>
-      <Suspense fallback={null}><ShareNews url={`${window.location.origin}/news/${item.discussion_id}`} title={`Discussion · ${item.source_name}`} showLabel size="sm" /></Suspense>
-    </div>}
-    {embed && (playing ? <iframe title={item.title} src={embed} className="w-full aspect-video rounded-lg"
+
+    {/* Barre d'actions façon publication : Réagir / Commenter / Partager */}
+    {item.discussion_id && <>
+      <div className="mx-3 border-t border-border/20" />
+      <div className="flex items-center px-1 py-0.5">
+        <NewsReactionBar threadId={item.discussion_id} />
+        <Button type="button" variant="ghost" size="sm" aria-expanded={discussionOpen}
+          onClick={() => setDiscussionOpen(value => !value)}
+          className="h-11 flex-1 gap-1.5 rounded-xl text-xs text-muted-foreground hover:bg-secondary/50 hover:text-foreground">
+          <MessageCircle className="h-[18px] w-[18px]" />
+          <span className="font-medium">Commenter</span>
+        </Button>
+        <Suspense fallback={null}>
+          <ShareNews url={`${window.location.origin}/news/${item.discussion_id}`} title={`Discussion · ${item.source_name}`} showLabel size="sm"
+            className="h-11 flex-1 gap-1.5 rounded-xl text-xs text-muted-foreground hover:bg-secondary/50 hover:text-foreground" />
+        </Suspense>
+      </div>
+    </>}
+
+    {embed && <div className="px-3 pb-2">{playing ? <iframe title={item.title} src={embed} className="w-full aspect-video rounded-lg"
       referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation" allow="encrypted-media; fullscreen; picture-in-picture" allowFullScreen />
       : <div><Button variant="outline" onClick={() => setPlaying(true)}>Charger la vidéo YouTube</Button>
-        <p className="text-xs text-muted-foreground">Ce clic établit une connexion avec YouTube. Aucun lecteur tiers n’est chargé avant.</p></div>)}
-    {discussionOpen && item.discussion_id && <Suspense fallback={<p role="status">Chargement des commentaires…</p>}>
-      <Discussion threadId={item.discussion_id} compact />
-    </Suspense>}
-    </div>
+        <p className="text-xs text-muted-foreground">Ce clic établit une connexion avec YouTube. Aucun lecteur tiers n’est chargé avant.</p></div>}</div>}
+
+    {/* Commentaires directement sous la carte */}
+    {discussionOpen && item.discussion_id && <div className="px-3 pb-3">
+      <Suspense fallback={<p role="status">Chargement des commentaires…</p>}>
+        <Discussion threadId={item.discussion_id} compact />
+      </Suspense>
+      <Link className="mt-1 inline-block text-sm underline" to={`/news/${item.discussion_id}`}>Ouvrir la discussion en pleine page</Link>
+    </div>}
   </article>;
 }
 
