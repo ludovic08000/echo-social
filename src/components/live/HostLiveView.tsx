@@ -191,6 +191,8 @@ export function HostLiveView({ live }: HostLiveViewProps) {
     }
   };
 
+  autoEndRef.current = () => { void handleEndLive(true); };
+
   return (
     <div className="fixed inset-0 bg-black flex flex-col">
       {/* Video — full screen */}
