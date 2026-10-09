@@ -188,9 +188,12 @@ export async function parseRss(xml: string, source: Pick<RssSource, 'website_hos
     const declaredDate = text(entry.pubDate ?? entry.published ?? entry['dc:date'] ?? entry.updated);
     const published = declaredDate ? Date.parse(declaredDate) : url ? parisienUrlDate(url) : NaN;
     const expires = Math.min(published + 7 * DAY, until);
+    const kind = url && title ? (isVideo(entry, url, title) ? 'video' : 'article') : 'article';
+    // Les vidéos restent fraîches 7 jours (rythme de publication hebdomadaire
+    // des chaînes), les articles gardent la fenêtre de 36 h.
+    const freshness = kind === 'video' ? 7 * DAY : MEDIA_FRESHNESS_MS;
     if (!url || !title || !Number.isFinite(published) || published > now
-      || published <= now - MEDIA_FRESHNESS_MS || expires <= now || deduped.has(url)) continue;
-    const kind = isVideo(entry, url, title) ? 'video' : 'article';
+      || published <= now - freshness || expires <= now || deduped.has(url)) continue;
     deduped.set(url, {
       title, canonical_url: url, kind, youtube_id: kind === 'video' ? youtubeId(entry, source.allow_youtube_embed) : null,
       thumbnail_url: thumbnail(entry),
