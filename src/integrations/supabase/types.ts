@@ -5600,6 +5600,35 @@ export type Database = {
           },
         ]
       }
+      news_reactions: {
+        Row: {
+          created_at: string
+          reaction: string
+          thread_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          reaction: string
+          thread_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          reaction?: string
+          thread_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_reactions_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "news_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       news_threads: {
         Row: {
           canonical_url: string
@@ -9928,6 +9957,7 @@ export type Database = {
         Args: { p_after_id?: string; p_after_time?: string; p_thread: string }
         Returns: Json
       }
+      get_news_reactions: { Args: { p_thread: string }; Returns: Json }
       get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
       get_own_phone_number: { Args: never; Returns: string }
       get_parental_controls: {
@@ -10494,6 +10524,7 @@ export type Database = {
         }[]
       }
       remove_news_comment: { Args: { p_id: string }; Returns: boolean }
+      remove_news_reaction: { Args: { p_thread: string }; Returns: undefined }
       replace_own_identity_key: {
         Args: {
           p_binding_signature: string
@@ -10556,6 +10587,10 @@ export type Database = {
       set_message_archive_body: {
         Args: { p_archive_body: string; p_message_id: string }
         Returns: boolean
+      }
+      set_news_reaction: {
+        Args: { p_reaction: string; p_thread: string }
+        Returns: undefined
       }
       store_ad_location_context: {
         Args: {
