@@ -268,7 +268,7 @@ export default function CreatorUpgrade() {
                 {checkoutLoading ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <><Crown className="w-5 h-5 mr-2" /> Devenir Créateur — 5€/mois</>
+                  <><Crown className="w-5 h-5 mr-2" /> Devenir Créateur — 4,99€/mois</>
                 )}
               </Button>
               <p className="text-[10px] text-muted-foreground text-center">
