@@ -39,7 +39,7 @@ export function CartSheet() {
     const price = item.products?.price ?? 0;
     return sum + price * item.quantity;
   }, 0);
-  const buyerFee = Math.round(subtotal * 0.05 * 100) / 100;
+  const buyerFee = 0;
 
   // Calculate shipping from product weights
   const shippingTotal = cart.reduce((sum, item) => {
@@ -232,10 +232,6 @@ export function CartSheet() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Sous-total</span>
                   <span>{subtotal.toFixed(2)}€</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Frais de service (5%)</span>
-                  <span>{buyerFee.toFixed(2)}€</span>
                 </div>
                 {hasPhysical && selectedRelay && (
                   <div className="flex justify-between">

@@ -4,7 +4,8 @@ import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
-const COMMISSION_RATE = 0.05; // 5% buyer fee
+// Commission ForSure de 25 % prélevée sur le vendeur : l'acheteur paie le prix affiché.
+const COMMISSION_RATE = 0.25;
 
 function estimateRelayShipping(weightGrams: number): number {
   const base = 4.2;
@@ -111,7 +112,7 @@ serve(async (req) => {
         totalShipping = Math.round(totalShipping * 100) / 100;
       }
 
-      const total = subtotal + commission + totalShipping;
+      const total = subtotal + totalShipping;
 
       // Build line items for Stripe using server-side prices
       const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = verifiedItems.map((item: any) => ({
@@ -125,21 +126,6 @@ serve(async (req) => {
         },
         quantity: item.quantity,
       }));
-
-      // Add commission as separate line item
-      if (commission > 0) {
-        lineItems.push({
-          price_data: {
-            currency: "eur",
-            product_data: {
-              name: "Frais de service ForSure (5%)",
-              images: [],
-            },
-            unit_amount: Math.round(commission * 100),
-          },
-          quantity: 1,
-        });
-      }
 
       if (totalShipping > 0) {
         lineItems.push({
@@ -368,7 +354,7 @@ serve(async (req) => {
         totalShipping = estimateRelayShipping(weight);
       }
 
-      const total = agreedPrice + commission + totalShipping;
+      const total = agreedPrice + totalShipping;
 
       const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 
@@ -439,17 +425,6 @@ serve(async (req) => {
           quantity: 1,
         },
       ];
-
-      if (commission > 0) {
-        lineItems.push({
-          price_data: {
-            currency: "eur",
-            product_data: { name: "Frais de service ForSure (5%)", images: [] },
-            unit_amount: Math.round(commission * 100),
-          },
-          quantity: 1,
-        });
-      }
 
       if (totalShipping > 0) {
         lineItems.push({

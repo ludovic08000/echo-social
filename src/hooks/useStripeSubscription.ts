@@ -4,8 +4,8 @@ import { useAuth } from '@/lib/auth';
 
 // Stripe IDs for ForSure Créateur
 export const CREATOR_PLAN = {
-  product_id: "prod_U6tyVVxTfK1n12",
-  price_id: "price_1T8gAk6wgOEGAgcG4A12CIFZ",
+  product_id: "prod_VPHhzVzkbhw8bM",
+  price_id: "price_1UOT8Q6wgOEGAgcGDX1iQ2Lt",
 } as const;
 
 interface SubscriptionState {

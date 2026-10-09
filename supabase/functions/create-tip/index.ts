@@ -67,7 +67,8 @@ serve(async (req) => {
 
     if (!creatorProfile?.is_creator) throw new Error("Cet utilisateur n'est pas créateur");
 
-    const commissionRate = 0.15;
+    // Commission ForSure de 25 % sur cadeaux et pourboires.
+    const commissionRate = 0.25;
     const commissionAmount = Math.round(amount * commissionRate * 100) / 100;
     const creatorPayout = Math.round((amount - commissionAmount) * 100) / 100;
 

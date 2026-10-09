@@ -116,7 +116,7 @@ export default function CreatorUpgrade() {
           ) : (
             <>
               <div className="flex items-baseline justify-center gap-1">
-                <span className="text-4xl font-bold">5€</span>
+                <span className="text-4xl font-bold">4,99€</span>
                 <span className="text-muted-foreground">/mois</span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">Annulable à tout moment</p>
@@ -268,7 +268,7 @@ export default function CreatorUpgrade() {
                 {checkoutLoading ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <><Crown className="w-5 h-5 mr-2" /> Devenir Créateur — 5€/mois</>
+                  <><Crown className="w-5 h-5 mr-2" /> Devenir Créateur — 4,99€/mois</>
                 )}
               </Button>
               <p className="text-[10px] text-muted-foreground text-center">

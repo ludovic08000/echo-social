@@ -48,7 +48,7 @@ export function useActivateCreator() {
 
       // Start Stripe checkout — activation happens via webhook
       const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { priceId: 'price_1T8gAk6wgOEGAgcG4A12CIFZ' },
+        body: { priceId: 'price_1UOT8Q6wgOEGAgcGDX1iQ2Lt' },
       });
 
       if (error) throw error;

@@ -165,7 +165,7 @@ serve(async (req) => {
           user_id: userId,
           status: "active",
           plan: "creator_monthly",
-          price_cents: 500,
+          price_cents: 499,
           currency: "eur",
           stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id || null,
           stripe_subscription_id: typeof session.subscription === "string" ? session.subscription : session.subscription?.id || null,
