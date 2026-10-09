@@ -208,8 +208,8 @@ export function HostLiveView({ live }: HostLiveViewProps) {
         {/* Top overlay */}
         <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10">
           <div className="flex items-center justify-between pointer-events-auto">
-            <button 
-              onClick={handleEndLive}
+            <button
+              onClick={() => handleEndLive()}
               disabled={isEnding || isSavingRecording}
               className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500 text-white font-medium"
             >
