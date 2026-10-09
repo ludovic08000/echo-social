@@ -68,7 +68,8 @@ export const RSS_CATALOG: Record<string, RssCatalogEntry> = {
   'le-monde-pixels': publisher('Le Monde — Pixels', 'https://www.lemonde.fr/pixels/rss_full.xml', null, 'technology'),
   'gamekult': publisher('Gamekult', 'https://www.gamekult.com/feeds/actualite.html', null, 'gaming'),
   'jeuxvideo-com': publisher('Jeuxvideo.com', 'https://www.jeuxvideo.com/rss/rss.xml', null, 'gaming'),
-  'cowcotland': publisher('Cowcotland', 'https://feeds.feedburner.com/cowcotland', null, 'gaming'),
+  // Flux hébergé chez FeedBurner : l'hôte éditeur reste celui du partenaire.
+  'cowcotland': { ...publisher('Cowcotland', 'https://feeds.feedburner.com/cowcotland', null, 'gaming'), websiteHost: 'www.cowcotland.com' },
   'franceinfo-cinema': publisher('franceinfo — Cinéma', 'https://www.franceinfo.fr/culture/cinema.rss', null, 'cinema'),
   'livres-hebdo': publisher('Livres Hebdo', 'https://www.livreshebdo.fr/rss.xml', null, 'literature'),
   'franceinfo-livres': publisher('franceinfo — Livres', 'https://www.franceinfo.fr/culture/livres.rss', null, 'literature'),
