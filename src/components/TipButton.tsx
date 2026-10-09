@@ -27,7 +27,7 @@ const GIFTS = [
   { emoji: '🦄', label: 'Licorne', amount: 200, color: 'from-fuchsia-500/20 to-pink-500/20 border-fuchsia-500/30' },
 ];
 
-export function TipButton({ creatorId, creatorName }: TipButtonProps) {
+export function TipButton({ creatorId, creatorName, liveStreamId, className }: TipButtonProps) {
   const { user } = useAuth();
   const { enabled: revenueEnabled } = useIsCreatorRevenueEnabled();
   const eligibility = useCreatorEligibility();
