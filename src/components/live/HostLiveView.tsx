@@ -31,6 +31,7 @@ export function HostLiveView({ live }: HostLiveViewProps) {
   const { data: chatMessages } = useLiveChat(live.id);
   const sendMessage = useSendLiveChatMessage();
   const endLive = useEndLive();
+  const autoEndRef = useRef<(() => void) | null>(null);
 
   // Auto-start recording when stream is ready
   const startRecording = (stream: MediaStream) => {
