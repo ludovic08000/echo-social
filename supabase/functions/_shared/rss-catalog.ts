@@ -70,6 +70,18 @@ export const RSS_CATALOG: Record<string, RssCatalogEntry> = {
   'jeuxvideo-com': publisher('Jeuxvideo.com', 'https://www.jeuxvideo.com/rss/rss.xml', null, 'gaming'),
   // Flux hébergé chez FeedBurner : l'hôte éditeur reste celui du partenaire.
   'cowcotland': { ...publisher('Cowcotland', 'https://feeds.feedburner.com/cowcotland', null, 'gaming'), websiteHost: 'www.cowcotland.com' },
+  // Chaînes YouTube françaises (flux Atom officiels, yt:videoId embarquable).
+  // L'intégration YouTube est le droit d'usage retenu : allow_youtube_embed=true.
+  'youtube-scienceclic': publisher('ScienceClic', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCWvq4kcdNI1r1jZKFw9TiUA', null, 'science'),
+  'youtube-scilabus': publisher('Scilabus', 'https://www.youtube.com/feeds/videos.xml?channel_id=UC6107grRI4m0o2-emgoDnAA', null, 'science'),
+  'youtube-nowtech': publisher('Nowtech', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCNOUTy_TWRJzAaSfIGserkg', null, 'technology'),
+  'youtube-micode': publisher('Micode', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCWedHS9qKebauVIK2J7383g', null, 'technology'),
+  'youtube-underscore': publisher('Underscore_', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCYnvxJ-PKiGXo_tYXpWAC-w', null, 'technology'),
+  'youtube-jdg': publisher('Joueur du Grenier', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCKNJiTmKrur10zxStf5Gztw', null, 'gaming'),
+  'youtube-tiboinshape': publisher('Tibo InShape', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCHM5qNObSsbj60EWsU9TE3w', null, 'sport'),
+  'youtube-psykocouac': publisher('PsykoCouac', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCjFDAyjR5j8KqzxIkgCYgmA', null, 'wellbeing'),
+  'youtube-konbini': publisher('Konbini', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCsfzsERQ5599Jx_W_AHienw', null, 'cinema'),
+  'youtube-notabene': publisher('Nota Bene', 'https://www.youtube.com/feeds/videos.xml?channel_id=UCrbbgYjbrXVYRM_iRGEDqFw', null, 'cinema'),
   'franceinfo-cinema': publisher('franceinfo — Cinéma', 'https://www.franceinfo.fr/culture/cinema.rss', null, 'cinema'),
   'livres-hebdo': publisher('Livres Hebdo', 'https://www.livreshebdo.fr/rss.xml', null, 'literature'),
   'franceinfo-livres': publisher('franceinfo — Livres', 'https://www.franceinfo.fr/culture/livres.rss', null, 'literature'),
