@@ -116,7 +116,7 @@ export default function CreatorUpgrade() {
           ) : (
             <>
               <div className="flex items-baseline justify-center gap-1">
-                <span className="text-4xl font-bold">5€</span>
+                <span className="text-4xl font-bold">4,99€</span>
                 <span className="text-muted-foreground">/mois</span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">Annulable à tout moment</p>
