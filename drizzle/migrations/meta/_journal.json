@@ -169,6 +169,13 @@
       "when": 1791509336160,
       "tag": "0023_wellbeing_news_filter",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791510420532,
+      "tag": "0024_live_ranking_followed_first_and_topics",
+      "breakpoints": true
     }
   ]
 }
