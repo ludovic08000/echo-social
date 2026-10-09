@@ -62,7 +62,7 @@ export function FanClubPanel({ creatorId, creatorName, isOwnProfile }: FanClubPa
             <p className="text-sm font-semibold">Club d'abonnés</p>
           </div>
           <p className="text-xs text-muted-foreground">
-            Le badge Créateur à 4,99 €/mois est nécessaire pour ouvrir un club d'abonnés et recevoir de l\'argent.
+            Le badge Créateur à 4,99 €/mois est nécessaire pour ouvrir un club d'abonnés et recevoir de l'argent.
           </p>
           <Link
             to="/creator-upgrade"
