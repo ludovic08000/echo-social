@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { LocalMediaSection } from '../LocalMediaSection';
-const mocks=vi.hoisted(()=>({rpc:vi.fn(),invoke:vi.fn()}));
+const mocks=vi.hoisted(()=>({rpc:vi.fn((name:string)=>name==='get_news_reactions'?Promise.resolve({data:{counts:{},mine:null},error:null}):Promise.resolve({data:null,error:null})),invoke:vi.fn()}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:mocks.rpc,functions:{invoke:mocks.invoke}}}));
 vi.mock('@/components/ShareButton',()=>({ShareButton:({url}:{url:string})=><a href={url}>Partager</a>}));
 vi.mock('../NewsDiscussionPanel',()=>({NewsDiscussionPanel:()=> <div>Formulaire de commentaires réel</div>}));
@@ -32,10 +32,10 @@ describe('partner media UI',()=>{
       body: { context: true, browser: expect.objectContaining({ languages: expect.any(Array) }) },
     }));
     await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('get_contextual_partner_media',{p_scope:'nearby',p_kind:'all',p_country:'FR',p_region:'Grand Est',p_city:null}));
-    expect(screen.getByRole('button',{name:/Commenter et débattre/})).toHaveAttribute('aria-expanded','false');
-    fireEvent.click(screen.getByRole('button',{name:/Commenter et débattre/}));
+    expect(screen.getByRole('button',{name:'Commenter'})).toHaveAttribute('aria-expanded','false');
+    fireEvent.click(screen.getByRole('button',{name:'Commenter'}));
     expect(await screen.findByText('Formulaire de commentaires réel')).toBeInTheDocument();
-    expect(screen.getByText('Ouvrir la discussion')).toHaveAttribute('href','/news/durable');
+    expect(screen.getByText('Ouvrir la discussion en pleine page')).toHaveAttribute('href','/news/durable');
     expect(await screen.findByText('Partager')).toHaveAttribute('href',`${window.location.origin}/news/durable`);
     expect(screen.getByText('Aperçu de l’actualité')).toBeInTheDocument();
     expect(screen.getByText(/Journal · Science · Article/)).toBeInTheDocument();
