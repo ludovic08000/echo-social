@@ -162,6 +162,13 @@
       "when": 1791509096026,
       "tag": "0022_subject_media_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791509336160,
+      "tag": "0023_wellbeing_news_filter",
+      "breakpoints": true
     }
   ]
 }
