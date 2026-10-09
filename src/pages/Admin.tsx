@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   DashboardSection, UsersSection, PostsSection, ReportsSection,
-  StatsSection, SubscriptionsSection, SecuritySection, SettingsSection,
+  StatsSection, SubscriptionsSection, CreatorRevenueSection, SecuritySection, SettingsSection,
   AISection, PlatformHealthDashboard, FeedIntelligenceSection, MonitoringSection,
   SecurityMonitoringSection, CryptoErrorsSection, MLFeedSection,
   CommentModerationAlertsSection,
@@ -51,6 +51,7 @@ const NAV_GROUPS = [
     label: 'Commerce',
     items: [
       { key: 'subscriptions', label: 'Commandes', icon: CreditCard },
+      { key: 'creator_revenue', label: 'Revenus créateurs', icon: CreditCard },
     ],
   },
   {
