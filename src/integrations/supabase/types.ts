@@ -10390,6 +10390,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      partner_media_detect_topics: {
+        Args: { p_category: string; p_excerpt: string; p_title: string }
+        Returns: string[]
+      }
       partner_media_for_zone: {
         Args: {
           p_city: string
