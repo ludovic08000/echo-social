@@ -8,7 +8,8 @@ export const FRENCH_REGIONS = {
   '53': 'Bretagne', '75': 'Nouvelle-Aquitaine', '76': 'Occitanie',
   '84': 'Auvergne-Rhône-Alpes', '93': 'Provence-Alpes-Côte d’Azur', '94': 'Corse',
 } as const;
-export type RssEditorialCategory = 'general' | 'science' | 'music' | 'education' | 'wellbeing' | 'sport';
+export type RssEditorialCategory = 'general' | 'science' | 'music' | 'education' | 'wellbeing' | 'sport'
+  | 'technology' | 'gaming' | 'cinema' | 'literature' | 'travel' | 'nature' | 'art' | 'fashion';
 export interface RssCatalogEntry {
   name: string; url: string | null; websiteHost: string | null; verified: boolean;
   reference: string; regionCode: keyof typeof FRENCH_REGIONS | null; city: string | null;
@@ -60,6 +61,24 @@ export const RSS_CATALOG: Record<string, RssCatalogEntry> = {
   'le-monde-sport': publisher('Le Monde — Sport', 'https://www.lemonde.fr/sport/rss_full.xml', null, 'sport'),
   'franceinfo-sports': publisher('franceinfo — Sports', 'https://www.franceinfo.fr/sports.rss', null, 'sport'),
   'rmc-sport': publisher('RMC Sport', 'https://rmcsport.bfmtv.com/rss/fil-sport/', null, 'sport'),
+  // Subject lanes added 2026-10-09 so every feed priority topic has dedicated
+  // sources. URLs verified reachable on 2026-10-09.
+  '01net': publisher('01net', 'https://www.01net.com/rss/info/flux-rss/flux-toutes-les-actualites/', null, 'technology'),
+  'numerama': publisher('Numerama', 'https://www.numerama.com/feed/', null, 'technology'),
+  'le-monde-pixels': publisher('Le Monde — Pixels', 'https://www.lemonde.fr/pixels/rss_full.xml', null, 'technology'),
+  'gamekult': publisher('Gamekult', 'https://www.gamekult.com/feeds/actualite.html', null, 'gaming'),
+  'jeuxvideo-com': publisher('Jeuxvideo.com', 'https://www.jeuxvideo.com/rss/rss.xml', null, 'gaming'),
+  'franceinfo-cinema': publisher('franceinfo — Cinéma', 'https://www.franceinfo.fr/culture/cinema.rss', null, 'cinema'),
+  'livres-hebdo': publisher('Livres Hebdo', 'https://www.livreshebdo.fr/rss.xml', null, 'literature'),
+  'franceinfo-livres': publisher('franceinfo — Livres', 'https://www.franceinfo.fr/culture/livres.rss', null, 'literature'),
+  'voyageurs-du-net': publisher('Voyageurs du Net', 'https://www.voyageurs-du-net.com/rss.xml', null, 'travel'),
+  'routard': publisher('Le Routard', 'https://www.routard.com/rss', null, 'travel'),
+  'reporterre': publisher('Reporterre', 'https://reporterre.net/spip.php?page=backend', null, 'nature'),
+  'natura-sciences': publisher('Natura Sciences', 'https://www.natura-sciences.com/feed', null, 'nature'),
+  'consoglobe': publisher('Consoglobe', 'https://www.consoglobe.com/feed', null, 'nature'),
+  'le-monde-culture': publisher('Le Monde — Culture', 'https://www.lemonde.fr/culture/rss_full.xml', null, 'art'),
+  'beaux-arts': publisher('Beaux Arts Magazine', 'https://www.beauxarts.com/feed/', null, 'art'),
+  'grazia': publisher('Grazia', 'https://www.grazia.fr/feed', null, 'fashion'),
   'le-figaro': publisher('Le Figaro', 'https://www.lefigaro.fr/rss/figaro_actualites.xml'),
   'liberation': publisher('Libération', 'https://www.liberation.fr/arc/outboundfeeds/rss-all/?outputType=xml'),
   'humanite': publisher('L’Humanité', 'https://www.humanite.fr/feed'),
