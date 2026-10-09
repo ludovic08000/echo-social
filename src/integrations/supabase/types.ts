@@ -7754,7 +7754,9 @@ export type Database = {
           creator_id: string
           creator_payout: number
           id: string
+          live_stream_id: string | null
           message: string | null
+          paid_at: string | null
           status: string
           stripe_session_id: string | null
           tipper_id: string
@@ -7767,7 +7769,9 @@ export type Database = {
           creator_id: string
           creator_payout: number
           id?: string
+          live_stream_id?: string | null
           message?: string | null
+          paid_at?: string | null
           status?: string
           stripe_session_id?: string | null
           tipper_id: string
@@ -7780,7 +7784,9 @@ export type Database = {
           creator_id?: string
           creator_payout?: number
           id?: string
+          live_stream_id?: string | null
           message?: string | null
+          paid_at?: string | null
           status?: string
           stripe_session_id?: string | null
           tipper_id?: string
@@ -9160,6 +9166,20 @@ export type Database = {
           p_thread: string
         }
         Returns: string
+      }
+      admin_creator_revenue: {
+        Args: { p_since?: string }
+        Returns: {
+          amount: number
+          commission_amount: number
+          creator_id: string
+          creator_name: string
+          creator_payout: number
+          live_stream_id: string
+          live_title: string
+          paid_at: string
+          tip_id: string
+        }[]
       }
       admin_list_profiles: {
         Args: { p_limit?: number; p_search?: string; p_user_ids?: string[] }
