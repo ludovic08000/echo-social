@@ -1,10 +1,4 @@
-# Chantier Aegis + Libsignal
+# Roadmap
 
-- [x] Conserver Aegis comme autorité appareil unique
-- [x] Conserver Libsignal comme moteur de chiffrement unique
-- [x] Supprimer les anciens fichiers, écrans, API et workflow de récupération appareil
-- [x] Supprimer la pile de chiffrement message remplacée
-- [x] Enrôler directement les nouveaux appareils
-- [x] Borner et tracer les lectures RPC
-- [x] Aligner les tests et les fixtures sur le fil Libsignal
-- [x] Valider typecheck, tests complets, scénarios Libsignal et build
+- [ ] Vérifier limites de durée live Instagram/TikTok (en cours)
+- [ ] Proposer et implémenter une durée max pour les lives créateurs (renouvellement jeton + alerte fin + arrêt auto)
