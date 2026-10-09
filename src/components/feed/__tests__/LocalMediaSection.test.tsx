@@ -83,3 +83,35 @@ describe('partner media UI',()=>{
     expect(screen.getByText('France · Sélection nationale')).toBeInTheDocument();
   });
 });
+describe('news reactions',()=>{
+  const card={id:'r1',discussion_id:'thread-1',title:'Actu réactions',kind:'article',canonical_url:'https://media.invalid/r1',published_at:'2026-10-08',source_name:'Journal'};
+  it('first tap sets 👍, re-tap only opens the picker, choosing replaces instead of stacking',async()=>{
+    mocks.rpc.mockImplementation((name:string,args?:Record<string,unknown>)=>{
+      if(name==='get_news_reactions')return Promise.resolve({data:{counts:{},mine:null},error:null});
+      if(name==='set_news_reaction')return Promise.resolve({data:null,error:null});
+      if(name==='remove_news_reaction')return Promise.resolve({data:null,error:null});
+      return Promise.resolve({data:[card],error:null});
+    });
+    mount();
+    const react=await screen.findByRole('button',{name:'Réagir'});
+    fireEvent.click(react);
+    await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('set_news_reaction',{p_thread:'thread-1',p_reaction:'like'}));
+    expect(mocks.rpc).not.toHaveBeenCalledWith('remove_news_reaction',expect.anything());
+  });
+  it('choosing the same emoji removes it, a different one replaces it',async()=>{
+    mocks.rpc.mockImplementation((name:string)=>{
+      if(name==='get_news_reactions')return Promise.resolve({data:{counts:{love:1},mine:'love'},error:null});
+      return Promise.resolve({data:[card],error:null});
+    });
+    mount();
+    const react=await screen.findByRole('button',{name:/Ma réaction : J'adore/});
+    fireEvent.click(react);
+    const picker=await screen.findByRole('group',{name:'Choisir une réaction'});
+    expect(picker).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Haha'}));
+    await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('set_news_reaction',{p_thread:'thread-1',p_reaction:'haha'}));
+    fireEvent.click(react);
+    fireEvent.click(await screen.findByRole('button',{name:'J\'adore'}));
+    await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('remove_news_reaction',{p_thread:'thread-1'}));
+  });
+});
