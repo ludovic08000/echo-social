@@ -40,6 +40,7 @@ export interface Post {
   media_thumbnail_url?: string | null;
   created_at: string;
   expires_at?: string | null;
+  subscriber_only?: boolean;
   profile: {
     name: string;
     avatar_url: string | null;
@@ -163,7 +164,7 @@ export function useUserPosts(userId: string) {
     queryFn: async () => {
       const { data: posts, error } = await supabase
         .from('posts')
-        .select('id, user_id, body, image_url, media_thumbnail_url, created_at, expires_at')
+        .select('id, user_id, body, image_url, media_thumbnail_url, created_at, expires_at, subscriber_only')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
@@ -205,6 +206,7 @@ export function useUserPosts(userId: string) {
           media_thumbnail_url: post.media_thumbnail_url,
           created_at: post.created_at,
           expires_at: (post as any).expires_at || null,
+          subscriber_only: (post as any).subscriber_only ?? false,
           profile: {
             name: profileData?.name || 'Unknown',
             avatar_url: profileData?.avatar_url || null,
@@ -234,12 +236,14 @@ export function useCreatePost() {
       mediaThumbnailUrl,
       expiresAt,
       publishAt,
+      subscriberOnly,
     }: {
       body: string;
       imageUrl?: string;
       mediaThumbnailUrl?: string;
       expiresAt?: string;
       publishAt?: string;
+      subscriberOnly?: boolean;
     }) => {
       if (!user) throw new Error('Not authenticated');
 
@@ -254,6 +258,8 @@ export function useCreatePost() {
       };
       if (expiresAt) insertData.expires_at = expiresAt;
       if (publishAt) insertData.publish_at = publishAt;
+      // Publication réservée : seuls le créateur et ses abonnés actifs la verront (contrôle en base).
+      if (subscriberOnly) insertData.subscriber_only = true;
 
       const { data, error } = await supabase
         .from('posts')

@@ -59,10 +59,10 @@ export function FanClubPanel({ creatorId, creatorName, isOwnProfile }: FanClubPa
         <div className="premium-card p-6 space-y-3">
           <div className="flex items-center gap-2">
             <Crown className="w-4 h-4 text-primary" />
-            <p className="text-sm font-semibold">Club d\'abonnés</p>
+            <p className="text-sm font-semibold">Club d'abonnés</p>
           </div>
           <p className="text-xs text-muted-foreground">
-            Le badge Créateur à 4,99 €/mois est nécessaire pour ouvrir un club d\'abonnés et recevoir de l\'argent.
+            Le badge Créateur à 4,99 €/mois est nécessaire pour ouvrir un club d'abonnés et recevoir de l\'argent.
           </p>
           <Link
             to="/creator-upgrade"
@@ -79,7 +79,7 @@ export function FanClubPanel({ creatorId, creatorName, isOwnProfile }: FanClubPa
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Crown className="w-4 h-4 text-primary" />
-            <p className="text-sm font-semibold">Mon club d\'abonnés</p>
+            <p className="text-sm font-semibold">Mon club d'abonnés</p>
           </div>
           <span
             className={cn(
