@@ -104,6 +104,7 @@ export function MobileNav() {
                   { path: '/friends', icon: Heart, label: 'Amis' },
                    { path: '#zeus', icon: Bot, label: 'Zeus IA ⚡' },
                    { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
+                   { path: '/admin', icon: Shield, label: 'Admin' },
                    { path: '/settings', icon: Settings, label: 'Réglages' },
                 ].filter((item) => profile?.is_creator || item.path !== '/ads').map((item) => (
                   item.path === '#zeus' ? (
