@@ -63,7 +63,7 @@ export const RSS_CATALOG: Record<string, RssCatalogEntry> = {
   'rmc-sport': publisher('RMC Sport', 'https://rmcsport.bfmtv.com/rss/fil-sport/', null, 'sport'),
   // Subject lanes added 2026-10-09 so every feed priority topic has dedicated
   // sources. URLs verified reachable on 2026-10-09.
-  '01net': publisher('01net', 'https://www.01net.com/rss/info/flux-rss/flux-toutes-les-actualites/', null, 'technology'),
+  'zero1net': publisher('01net', 'https://www.01net.com/rss/info/flux-rss/flux-toutes-les-actualites/', null, 'technology'),
   'numerama': publisher('Numerama', 'https://www.numerama.com/feed/', null, 'technology'),
   'le-monde-pixels': publisher('Le Monde — Pixels', 'https://www.lemonde.fr/pixels/rss_full.xml', null, 'technology'),
   'gamekult': publisher('Gamekult', 'https://www.gamekult.com/feeds/actualite.html', null, 'gaming'),
