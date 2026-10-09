@@ -134,6 +134,13 @@
       "when": 1791507750489,
       "tag": "0018_align_editorial_media_with_user_ml",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791507850581,
+      "tag": "0019_tighten_public_read_policies",
+      "breakpoints": true
     }
   ]
 }

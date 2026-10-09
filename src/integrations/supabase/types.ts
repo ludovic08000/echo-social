@@ -10084,6 +10084,10 @@ export type Database = {
         Returns: boolean
       }
       is_current_login_session_approved: { Args: never; Returns: boolean }
+      is_group_member: {
+        Args: { _group_id: string; _user_id: string }
+        Returns: boolean
+      }
       is_invalid_e2ee_device: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: boolean
