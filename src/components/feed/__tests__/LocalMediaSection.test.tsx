@@ -22,7 +22,7 @@ describe('partner media UI',()=>{
     expect(await screen.findByText('Deuxième actualité')).toBeInTheDocument();
     expect(screen.queryByText('Première actualité')).toBeNull();
     expect(screen.queryByRole('combobox')).toBeNull();
-    expect(screen.getByText('Selon tes choix')).toBeInTheDocument();
+    expect(screen.getByText(/Selon tes choix/)).toBeInTheDocument();
   });
   it('loads contextual news in the background and provides a stable discussion/share link',async()=>{
     mocks.invoke.mockResolvedValue({data:{location:{country:'FR',region:'Grand Est',city:null,source:'network'}},error:null});
@@ -38,7 +38,8 @@ describe('partner media UI',()=>{
     expect(screen.getByText('Ouvrir la discussion en pleine page')).toHaveAttribute('href','/news/durable');
     expect(await screen.findByText('Partager')).toHaveAttribute('href',`${window.location.origin}/news/durable`);
     expect(screen.getByText('Aperçu de l’actualité')).toBeInTheDocument();
-    expect(screen.getByText(/Journal · Science · Article/)).toBeInTheDocument();
+    expect(screen.getByText('Journal')).toBeInTheDocument();
+    expect(screen.getByText(/Science · Article/)).toBeInTheDocument();
   });
   it('always requests automatic context and falls back to France',async()=>{
     mocks.rpc.mockResolvedValue({data:[],error:null});mount();await screen.findByText(/Aucun contenu/);
