@@ -14,6 +14,17 @@ export function formatFanClubPrice(cents: number): string {
   return `${(cents / 100).toFixed(2).replace('.', ',')} €/mois`;
 }
 
+// Commission ForSure de 25 % sur les abonnements des fans : le créateur garde 75 %.
+export const FAN_CLUB_COMMISSION_RATE = 0.25;
+
+export function splitFanClubPayment(amountCents: number): {
+  commissionCents: number;
+  creatorPayoutCents: number;
+} {
+  const commissionCents = Math.round(amountCents * FAN_CLUB_COMMISSION_RATE);
+  return { commissionCents, creatorPayoutCents: amountCents - commissionCents };
+}
+
 // Les fonctions Edge renvoient un message français dans le corps de la réponse :
 // on le lit ici pour que l'utilisateur voie la vraie raison du refus.
 async function readFunctionError(error: unknown): Promise<string> {
