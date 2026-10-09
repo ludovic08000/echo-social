@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
       identity: tokenIdentity,
       name: profile?.name || "Utilisateur",
       metadata: JSON.stringify({ avatar_url: profile?.avatar_url, role }),
-      ttl: "10m",
+      ttl: tokenTtl,
     });
     accessToken.addGrant({
       roomJoin: true,
