@@ -114,6 +114,17 @@ describe('daily RSS normalization', () => {
     expect(Date.parse(recent.expires_at) - Date.parse(recent.published_at)).toBe(7 * 86_400_000);
     expect(await parseRss(rss().replace('Tue, 06 Oct 2026 09:00:00 GMT', staleDate), source, now)).toEqual([]);
   });
+  it('keeps videos fresh for 7 days while articles stay on the 36h window', async () => {
+    const ytSource: RssSource = { ...source, website_host: 'www.youtube.com', allow_excerpt: false, allow_youtube_embed: true };
+    const threeDaysAgo = new Date(now - 3 * 86_400_000).toUTCString();
+    const video = `<item><title>Vidéo test</title><link>https://www.youtube.com/watch?v=ABCDEFGHIJK</link><pubDate>${threeDaysAgo}</pubDate><yt:videoId>ABCDEFGHIJK</yt:videoId></item>`;
+    const [imported] = await parseRss(rss(video), ytSource, now);
+    expect(imported).toBeDefined();
+    expect(imported.kind).toBe('video');
+    expect(imported.youtube_id).toBe('ABCDEFGHIJK');
+    const oldArticle = entry().replace('Tue, 06 Oct 2026 09:00:00 GMT', threeDaysAgo);
+    expect(await parseRss(rss(oldArticle), source, now)).toEqual([]);
+  });
   it('bounds items and sorts recent first', async () => {
     const xml = rss(Array.from({ length: 60 }, (_, i) => entry().replace('/test?', `/test-${i}?`)).join(''));
     expect(await parseRss(xml, source, now)).toHaveLength(50);
