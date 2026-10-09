@@ -97,6 +97,28 @@ serve(async (req) => {
         });
       }
 
+      // Market : le badge Créateur (4,99 €/mois) est obligatoire pour encaisser une vente.
+      const sellerIds = [...new Set(verifiedItems.map((item: any) => item.seller_id).filter(Boolean))];
+      if (sellerIds.length > 0) {
+        const { data: sellerRows, error: sellerErr } = await supabase
+          .from("seller_profiles")
+          .select("id, user_id")
+          .in("id", sellerIds);
+        if (sellerErr) throw new Error(`Vérification des vendeurs impossible : ${sellerErr.message}`);
+        if ((sellerRows?.length ?? 0) !== sellerIds.length) {
+          throw new Error("Un vendeur de ce panier n'a pas de boutique valide.");
+        }
+        for (const sellerRow of sellerRows ?? []) {
+          const { data: badgeOk, error: badgeErr } = await supabase.rpc("has_active_creator_badge", {
+            p_user_id: sellerRow.user_id,
+          });
+          if (badgeErr) throw new Error(`Vérification du badge impossible : ${badgeErr.message}`);
+          if (!badgeOk) {
+            throw new Error("BADGE_REQUIS : ce vendeur n'a pas le badge Créateur actif.");
+          }
+        }
+      }
+
       const subtotal = verifiedItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
       const commission = Math.round(subtotal * COMMISSION_RATE * 100) / 100;
 
