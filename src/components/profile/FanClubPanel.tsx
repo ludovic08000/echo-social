@@ -3,9 +3,8 @@ import { Link } from 'react-router-dom';
 import { Crown, Loader2, Lock, Users } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useStripeSubscription } from '@/hooks/useStripeSubscription';
+import { FAN_CLUB_PRICES, formatFanClubPrice, splitFanClubPayment } from '@/lib/fanClubPayments';
 import {
-  FAN_CLUB_PRICES,
-  formatFanClubPrice,
   useFanClub,
   useFanClubMembers,
   useMyFanSubscription,
