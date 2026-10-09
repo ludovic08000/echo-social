@@ -148,6 +148,13 @@
       "when": 1791508136392,
       "tag": "0020_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791508838632,
+      "tag": "0021_media_priority_topic_matching",
+      "breakpoints": true
     }
   ]
 }
