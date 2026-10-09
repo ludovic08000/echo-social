@@ -230,6 +230,8 @@ export async function fetchRss(source: RssSource, fetcher: typeof fetch = fetch,
   }
   const type = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
   if (response.status !== 200 || !['application/rss+xml', 'application/atom+xml', 'application/xml', 'text/xml'].includes(type ?? '')) {
+    // Diagnostic sans contenu : code et type seulement, jamais le corps.
+    console.warn('[RSS] response rejected', { url, status: response.status, type });
     await response.body?.cancel(); throw new Error('FEED_RESPONSE_REJECTED');
   }
   if (Number(response.headers.get('content-length') ?? 0) > MAX_RSS_BYTES) { await response.body?.cancel(); throw new Error('FEED_TOO_LARGE'); }
