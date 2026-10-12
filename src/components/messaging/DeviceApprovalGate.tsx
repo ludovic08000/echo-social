@@ -7,6 +7,7 @@ import {
   DeviceFinalizationDiagnostics,
   useFinalizationStall,
 } from '@/components/messaging/DeviceFinalizationDiagnostics';
+import { useAccountCryptoGate } from '@/components/messaging/IdentityRecoveryGate';
 
 interface DeviceApprovalGateProps {
   children: ReactNode;
@@ -26,6 +27,51 @@ function Shell({ children, compact }: { children: ReactNode; compact: boolean })
   );
 }
 
+function PendingApprovalBoundary({
+  children,
+  compact,
+  error,
+  failure,
+  diagnostics,
+}: {
+  children: ReactNode;
+  compact: boolean;
+  error: string | null;
+  failure: ReactNode;
+  diagnostics: ReactNode;
+}) {
+  const crypto = useAccountCryptoGate();
+  const approvalPrerequisiteUnlockRequired = error?.startsWith('PIN_UNLOCK_REQUIRED') === true;
+  const cryptoState = crypto.inspection?.state;
+  const accountRecoveryRequired = !error && crypto.loaded && (
+    cryptoState === 'RESTORABLE_IDENTITY'
+    || cryptoState === 'UNRECOVERABLE_SERVER_IDENTITY'
+    || cryptoState === 'INCONSISTENT'
+  );
+
+  // This does not approve the device. It only exposes the existing recovery
+  // gate when the account root key is a prerequisite for the signed approval.
+  // PinValidatedMessaging still refuses to render messaging until the server
+  // confirms approval, binding, Libsignal provisioning and account sync.
+  if (approvalPrerequisiteUnlockRequired || accountRecoveryRequired) {
+    return <>{children}</>;
+  }
+
+  return (
+    <Shell compact={compact}>
+      <div className="flex flex-col items-center gap-3 text-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <p className="text-sm font-medium">Activation de cet appareil…</p>
+        <p className="text-xs text-muted-foreground">
+          Vérification cryptographique et activation automatique en cours.
+        </p>
+        {failure}
+        {diagnostics}
+      </div>
+    </Shell>
+  );
+}
+
 /**
  * Invariant cryptographique : cet écran n'exécute plus aucune transition. Il
  * reflète l'état serveur exposé par l'autorité unique du cycle de vie et sort
@@ -34,8 +80,6 @@ function Shell({ children, compact }: { children: ReactNode; compact: boolean })
  */
 export function DeviceApprovalGate({ children, compact = false }: DeviceApprovalGateProps) {
   const lifecycle = useDeviceLifecycle();
-  const approvalPrerequisiteUnlockRequired = lifecycle.state === 'PENDING_APPROVAL'
-    && lifecycle.error?.startsWith('PIN_UNLOCK_REQUIRED') === true;
 
   const failure = (
     <ErrorBlock error={lifecycle.error} onRetry={lifecycle.retry} />
@@ -112,29 +156,22 @@ export function DeviceApprovalGate({ children, compact = false }: DeviceApproval
     );
   }
 
-  // Invariant cryptographique modifié : plus d'écran d'attente d'approbation.
-  // L'appareil demande son approbation au serveur, qui seul décide.
-  if (lifecycle.state === 'PENDING_APPROVAL' && !approvalPrerequisiteUnlockRequired) {
+  // L'appareil demande son approbation au serveur, qui seul décide. Pour un
+  // compte existant ouvert depuis un lien e-mail dans un nouveau contexte iOS,
+  // la clé de compte n'est plus en mémoire : la frontière dédiée inspecte ce
+  // prérequis et rend la récupération explicite au lieu de tourner indéfiniment.
+  if (lifecycle.state === 'PENDING_APPROVAL') {
     return (
-      <Shell compact={compact}>
-        <div className="flex flex-col items-center gap-3 text-center">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          <p className="text-sm font-medium">Activation de cet appareil…</p>
-          <p className="text-xs text-muted-foreground">
-            Vérification cryptographique et activation automatique en cours.
-          </p>
-          {failure}
-          {diagnostics}
-        </div>
-      </Shell>
+      <PendingApprovalBoundary
+        compact={compact}
+        error={lifecycle.error}
+        failure={failure}
+        diagnostics={diagnostics}
+      >
+        {children}
+      </PendingApprovalBoundary>
     );
   }
-
-  // Exception de prérequis, pas contournement d'approbation : le contrôleur
-  // reste bloqué en PENDING_APPROVAL et la messagerie demeure inaccessible.
-  // On expose seulement PinUnlockGate afin qu'il restaure la clé de compte ou
-  // demande le PIN nécessaire à la signature cryptographique de l'appareil.
-  if (approvalPrerequisiteUnlockRequired) return <>{children}</>;
 
   if (!lifecycle.canPromptForPin) {
     // Invariant cryptographique : cette garde s'arrête exactement à l'étape

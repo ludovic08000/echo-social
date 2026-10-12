@@ -106,7 +106,9 @@ describe('single canonical device lifecycle authority', () => {
   it('exposes only the missing PIN/key prerequisite without bypassing device approval', () => {
     expect(gate).toContain('approvalPrerequisiteUnlockRequired');
     expect(gate).toContain("startsWith('PIN_UNLOCK_REQUIRED')");
-    expect(gate).toContain('if (approvalPrerequisiteUnlockRequired) return <>{children}</>;');
+    expect(gate).toContain('accountRecoveryRequired');
+    expect(gate).toContain("cryptoState === 'RESTORABLE_IDENTITY'");
+    expect(gate).toContain('if (approvalPrerequisiteUnlockRequired || accountRecoveryRequired)');
     expect(controller).toContain('hasPendingApprovalPrerequisite');
     expect(controller).toContain('resumeApprovalAfterPrerequisite');
     expect(controller).toContain("resumeApprovalAfterPrerequisite('account_keys_restored')");
@@ -114,6 +116,8 @@ describe('single canonical device lifecycle authority', () => {
     expect(pinSignal).toContain('subscribeAccountKeysRestored');
     expect(pinSignal).toContain("window.addEventListener('forsure-keys-restored', onRestored)");
     expect(pinSignal).toContain("window.removeEventListener('forsure-keys-restored', onRestored)");
+    expect(pinSignal).toContain("window.addEventListener('forsure:e2ee-unlocked', onRestored)");
+    expect(pinSignal).toContain("window.removeEventListener('forsure:e2ee-unlocked', onRestored)");
     expect(lifecycle).toContain('subscribeAccountKeysRestored:');
   });
 

@@ -77,10 +77,12 @@ export function useAccountCryptoGate(): AccountCryptoGate {
     const onRestored = () => { void refresh(); };
     window.addEventListener('forsure-keys-restored', onRestored);
     window.addEventListener('forsure-keys-unlocked', onRestored);
+    window.addEventListener('forsure:e2ee-unlocked', onRestored);
     window.addEventListener('forsure:e2ee-restore-needed', onRestored);
     return () => {
       window.removeEventListener('forsure-keys-restored', onRestored);
       window.removeEventListener('forsure-keys-unlocked', onRestored);
+      window.removeEventListener('forsure:e2ee-unlocked', onRestored);
       window.removeEventListener('forsure:e2ee-restore-needed', onRestored);
     };
   }, [refresh]);

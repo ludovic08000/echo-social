@@ -100,7 +100,16 @@ export function subscribeAccountKeysRestored(
     listener();
   };
   window.addEventListener('forsure-keys-restored', onRestored);
-  return () => window.removeEventListener('forsure-keys-restored', onRestored);
+  // `dispatchSessionUnlocked` is the canonical signal emitted immediately
+  // after a password/device-store restore. Listening to it prevents an iOS
+  // e-mail navigation from leaving approval blocked while the later
+  // post-restore maintenance event is still pending (or never reaches this
+  // page lifecycle).
+  window.addEventListener('forsure:e2ee-unlocked', onRestored);
+  return () => {
+    window.removeEventListener('forsure-keys-restored', onRestored);
+    window.removeEventListener('forsure:e2ee-unlocked', onRestored);
+  };
 }
 
 export const __test__ = { PIN_STATE_CHANGED_EVENT, SESSION_KEY, PIN_PROTECTION_ENABLED };
