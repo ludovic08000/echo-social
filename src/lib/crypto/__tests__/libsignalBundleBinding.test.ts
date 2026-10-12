@@ -32,7 +32,7 @@ describe('account-authorized device binds the actual Libsignal bundle', () => {
     expect(bytes).toEqual(bundle);
     let a = await wasm.aegis_wasm_session_establish(wasm.aegis_wasm_store_create(101), alice, 1, bob, 2, bytes);
     a = await wasm.aegis_wasm_identity_bind(a, bob, 2, libsignalIdentityFromVerifiedBundle(bytes));
-    let b = stored.slice();
+    let b: Uint8Array = stored.slice();
     for (const plaintext of ['Bonjour 👋', 'Ancienne session toujours lisible']) {
       const [nextA, type, encrypted] = unpack(await wasm.aegis_wasm_message_encrypt(a, alice, 1, bob, 2, new TextEncoder().encode(plaintext)));
       a = nextA;
