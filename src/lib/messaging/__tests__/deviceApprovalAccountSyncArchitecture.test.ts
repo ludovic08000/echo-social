@@ -40,8 +40,10 @@ describe('canonical automatic device approval', () => {
 
   it('derives bootstrap state server-side and root-authorizes secondary devices', () => {
     expect(decision).toContain("rpc('get_device_enrollment_approval_mode'");
-    expect(decision).toContain('prepareDeviceAuthorization');
-    expect(decision).toContain('p_bootstrap_primary: mode.bootstrap_primary');
+    expect(decision).toContain('signDeviceAuthorization');
+    expect(decision).toContain('await loadApprovalAccountKeys(args.userId)');
+    expect(decision).not.toContain('getOrCreate');
+    expect(decision).toContain('p_bootstrap_primary: bootstrapPrimary');
     expect(decision).not.toContain('p_bootstrap_primary: true');
     expect(accountSecurityHardening).toContain('BOOTSTRAP_STATE_MISMATCH');
     expect(accountSecurityHardening).toContain('p_bootstrap_primary is distinct from v_is_first');
@@ -98,21 +100,21 @@ describe('single canonical device lifecycle authority', () => {
 
   it('keeps verification fail-closed and stops the approval gate at the PIN step', () => {
     expect(gate).toContain('Vérification de cet appareil…');
-    expect(gate).toContain('if (!lifecycle.canPromptForPin)');
+    expect(gate).toContain('if (!lifecycle.canPromptForPin || lifecycle.error)');
     expect(gate).not.toContain('canRunCryptoRuntime');
     expect(messagingGate).not.toContain('DeviceAccountBindingGate');
   });
 
   it('exposes only the missing PIN/key prerequisite without bypassing device approval', () => {
-    expect(gate).toContain('approvalPrerequisiteUnlockRequired');
-    expect(gate).toContain("startsWith('PIN_UNLOCK_REQUIRED')");
-    expect(gate).toContain('accountRecoveryRequired');
-    expect(gate).toContain("cryptoState === 'RESTORABLE_IDENTITY'");
-    expect(gate).toContain('if (approvalPrerequisiteUnlockRequired || accountRecoveryRequired)');
+    expect(gate).toContain("lifecycle.state === 'ACCOUNT_RECOVERY_REQUIRED' && !lifecycle.error");
+    expect(gate).not.toContain("startsWith('PIN_UNLOCK_REQUIRED')");
+    expect(gate).not.toContain('useAccountCryptoGate');
+    expect(controller).toContain('api.inspectApproval(this.userId, this.deviceId!)');
     expect(controller).toContain('hasPendingApprovalPrerequisite');
     expect(controller).toContain('resumeApprovalAfterPrerequisite');
     expect(controller).toContain("resumeApprovalAfterPrerequisite('account_keys_restored')");
-    expect(controller).toContain("this.error?.startsWith('PIN_UNLOCK_REQUIRED')");
+    expect(controller).toContain('cause instanceof DeviceApprovalRecoveryRequiredError');
+    expect(controller).toContain("this.approvalPrerequisite === 'account_recovery_required'");
     expect(pinSignal).toContain('subscribeAccountKeysRestored');
     expect(pinSignal).toContain("window.addEventListener('forsure-keys-restored', onRestored)");
     expect(pinSignal).toContain("window.removeEventListener('forsure-keys-restored', onRestored)");

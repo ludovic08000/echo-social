@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveDeviceLifecycleState } from '@/lib/device-manager/deviceLifecycleMachine';
+import { canRunCryptoRuntime, canRunDeviceKeySetup, resolveDeviceLifecycleState } from '@/lib/device-manager/deviceLifecycleMachine';
 
 const readyDevice = {
   deviceId: `dev_${'a'.repeat(32)}`,
@@ -12,6 +12,16 @@ const readyDevice = {
 };
 
 describe('canonical device lifecycle order', () => {
+  it('exposes account recovery without authorizing keys setup or messaging', () => {
+    const { state } = resolveDeviceLifecycleState({
+      authenticated: true, deviceIdStatus: 'ok',
+      deviceRecord: { ...readyDevice, approvalStatus: 'pending' },
+      approvalPrerequisite: 'account_recovery_required', pinUnlocked: true, accountSyncPhase: 'ready',
+    });
+    expect(state).toBe('ACCOUNT_RECOVERY_REQUIRED');
+    expect(canRunCryptoRuntime(state)).toBe(false);
+    expect(canRunDeviceKeySetup(state)).toBe(false);
+  });
   it('reaches messaging ready only with lifecycle ready and account sync ready', () => {
     expect(resolveDeviceLifecycleState({
       authenticated: true,

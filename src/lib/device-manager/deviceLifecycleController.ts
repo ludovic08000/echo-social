@@ -7,9 +7,10 @@
  * leur propre enrôlement/approbation/binding, ce qui provoquait des appels
  * concurrents, des lectures serveur en rafale et des écrans d'attente infinis.
  *
- * Ordre canonique, sans variante ni chemin PIN-first :
+ * La récupération de la clé de compte précède l'approbation secondaire.
+ * Ordre canonique :
  * AUTHENTICATED -> DEVICE_CREDENTIAL_CHECK -> LINK_REQUIRED/PENDING_APPROVAL
- * -> APPROVED_LOCKED -> PIN_UNLOCK -> ACCOUNT_BINDING -> DEVICE_KEY_SETUP
+ * -> ACCOUNT_RECOVERY_REQUIRED (si nécessaire) -> APPROVED_LOCKED -> PIN_UNLOCK -> ACCOUNT_BINDING -> DEVICE_KEY_SETUP
  * -> ACCOUNT_KEY_SYNC -> MESSAGING_READY
  *
  * Le contrôleur ne fabrique jamais un état « ready » : chaque transition est
@@ -33,11 +34,13 @@ import {
   type DeviceLifecycleReason,
   type DeviceLifecycleRecord,
 } from './deviceLifecycleMachine';
+import { DeviceApprovalRecoveryRequiredError, type DeviceApprovalPrerequisite } from './deviceApprovalPrerequisite';
 
 export type DeviceLifecycleStage =
   | 'idle'
   | 'reading'
   | 'enrolling'
+  | 'checking_approval'
   | 'approving'
   | 'binding'
   | 'preparing_keys'
@@ -80,6 +83,7 @@ export interface DeviceLifecycleApi {
     requiresExplicitEnrollment?: boolean;
   }>;
   enroll(userId: string): Promise<unknown>;
+  inspectApproval(userId: string, deviceId: string): Promise<DeviceApprovalPrerequisite>;
   autoApprove(userId: string): Promise<unknown>;
   bind(userId: string): Promise<unknown>;
   prepareKeys(userId: string): Promise<unknown>;
@@ -170,6 +174,8 @@ export class DeviceLifecycleController {
   private manualEnrollmentRequested = false;
   private requiresExplicitEnrollment = false;
   private blockedUntilRetry = false;
+  private approvalPrerequisite: DeviceApprovalPrerequisite = 'unknown';
+  private approvalPrerequisiteRevision = 0;
   private approvalPrerequisiteObserved = false;
   private approvalResumeScheduled = false;
   private disposed = false;
@@ -193,8 +199,8 @@ export class DeviceLifecycleController {
     this.teardown.push(deps.subscribePinUnlocked(userId, (unlocked) => {
       if (this.disposed) return;
       // Un appareil secondaire doit restaurer/déverrouiller la clé de compte
-      // avant de pouvoir signer sa propre demande d'approbation. Cette erreur
-      // est le seul blocage que le signal PIN peut réarmer automatiquement.
+      // avant de pouvoir signer sa propre demande d'approbation. Seul ce
+      // prérequis explicite peut reprendre automatiquement, jamais une erreur serveur.
       // Un évènement `true` répété reste pertinent lorsque le PIN était déjà
       // ouvert mais que la clé de compte vient seulement d'être restaurée.
       const canResumeApproval = unlocked && this.hasPendingApprovalPrerequisite();
@@ -259,6 +265,7 @@ export class DeviceLifecycleController {
     this.error = null;
     if (this.accountSyncPhase === 'failed') this.accountSyncPhase = 'idle';
     this.blockedUntilRetry = false;
+    this.approvalPrerequisite = 'unknown';
     this.traceId = newDeviceFinalizationTraceId();
     this.stepAttempts.clear();
     this.trace('pipeline_retry_requested', 'retry');
@@ -296,8 +303,9 @@ export class DeviceLifecycleController {
   private hasPendingApprovalPrerequisite(): boolean {
     const record = this.record === 'unknown' ? null : this.record;
     return record?.approvalStatus === 'pending'
-      && (this.stage === 'approving'
-        || (this.blockedUntilRetry && this.error?.startsWith('PIN_UNLOCK_REQUIRED') === true));
+      && !this.blockedUntilRetry
+      && (this.stage === 'checking_approval' || this.stage === 'approving'
+        || this.approvalPrerequisite === 'account_recovery_required');
   }
 
   /**
@@ -309,12 +317,9 @@ export class DeviceLifecycleController {
   private resumeApprovalAfterPrerequisite(source: 'pin_unlocked' | 'account_keys_restored'): void {
     if (!this.hasPendingApprovalPrerequisite()) return;
     this.approvalPrerequisiteObserved = true;
+    this.approvalPrerequisiteRevision += 1;
+    this.approvalPrerequisite = 'unknown';
     this.trace('approval_prerequisite_ready', 'retry', { detail: source });
-    if (this.blockedUntilRetry && this.error?.startsWith('PIN_UNLOCK_REQUIRED')) {
-      this.error = null;
-      this.blockedUntilRetry = false;
-      this.publish();
-    }
     if (this.approvalResumeScheduled) return;
     this.approvalResumeScheduled = true;
 
@@ -323,9 +328,8 @@ export class DeviceLifecycleController {
       if (this.disposed || !this.approvalPrerequisiteObserved) return;
       this.approvalPrerequisiteObserved = false;
       const record = this.record === 'unknown' ? null : this.record;
-      if (record?.approvalStatus !== 'pending') return;
-      if (this.error?.startsWith('PIN_UNLOCK_REQUIRED')) this.error = null;
-      this.blockedUntilRetry = false;
+      if (record?.approvalStatus !== 'pending' || this.blockedUntilRetry) return;
+      this.approvalPrerequisite = 'unknown';
       this.publish();
       void this.advance();
     };
@@ -337,7 +341,7 @@ export class DeviceLifecycleController {
 
   private async runPipeline(): Promise<void> {
     // Conserver l'erreur observable et éviter les lectures serveur périodiques
-    // tant qu'aucun retry explicite (ou prérequis PIN ciblé) n'a réarmé le flux.
+    // tant qu'aucun retry explicite n'a réarmé le flux après erreur serveur.
     if (this.blockedUntilRetry) return;
     const pipelineElapsed = startFinalizationTimer();
     setCurrentDeviceFinalizationTraceId(this.traceId);
@@ -398,7 +402,10 @@ export class DeviceLifecycleController {
     // Fail-closed : un appareil révoqué ou rejeté ne se répare jamais tout seul.
     if (record.approvalStatus === 'rejected') return null;
     if (record.revokedAt || record.bindingStatus === 'revoked') return null;
-    if (record.approvalStatus === 'pending') return 'approving';
+    if (record.approvalStatus === 'pending') {
+      if (this.approvalPrerequisite === 'account_recovery_required') return null;
+      return this.approvalPrerequisite === 'ready' ? 'approving' : 'checking_approval';
+    }
     if (record.approvalStatus !== 'approved') return null;
     if (record.isActive !== true) return null;
     if (record.lifecycleStatus === 'revoked') return null;
@@ -426,6 +433,17 @@ export class DeviceLifecycleController {
 
     try {
       const api = this.deps.api;
+      if (action === 'checking_approval') {
+        const revision = this.approvalPrerequisiteRevision;
+        const prerequisite = await withStepTimeout(action,
+          api.inspectApproval(this.userId, this.deviceId!), this.deps.stepTimeoutMs);
+        if (this.disposed) return false;
+        this.approvalPrerequisite = revision === this.approvalPrerequisiteRevision ? prerequisite : 'unknown';
+        this.stage = 'idle';
+        this.publish();
+        this.trace(`step.${action}`, 'success', { attempt, elapsedMs: Date.now() - startedAt, detail: this.approvalPrerequisite });
+        return true;
+      }
       if (action === 'syncing_account') {
         this.accountSyncPhase = 'syncing';
         this.publish();
@@ -458,6 +476,15 @@ export class DeviceLifecycleController {
       this.trace(`step.${action}`, 'success', { attempt, elapsedMs: Date.now() - startedAt });
       return true;
     } catch (cause) {
+      // Une clé verrouillée entre inspection et signature revient à l'étape
+      // de récupération ; ce n'est ni un rejet serveur ni une approbation.
+      if (action === 'approving' && cause instanceof DeviceApprovalRecoveryRequiredError) {
+        this.approvalPrerequisite = 'account_recovery_required';
+        this.stage = 'idle';
+        this.trace(`step.${action}`, 'skipped', { attempt, detail: 'account_recovery_required' });
+        this.publish();
+        return false;
+      }
       // Aucune simulation de succès : l'UI doit afficher l'erreur et un retry.
       if (action === 'syncing_account') this.accountSyncPhase = 'failed';
       this.error = messageOf(cause);
@@ -559,6 +586,8 @@ export class DeviceLifecycleController {
   private setRecord(next: DeviceLifecycleRecord | null): void {
     const signature = recordKey(next);
     if (this.recordSignature === signature) return;
+    if (this.record === 'unknown' || this.record?.deviceId !== next?.deviceId
+        || this.record?.approvalStatus !== next?.approvalStatus) this.approvalPrerequisite = 'unknown';
     this.recordSignature = signature;
     this.record = next;
   }
@@ -569,6 +598,7 @@ export class DeviceLifecycleController {
       deviceRecord: this.record,
       deviceIdStatus: this.deviceIdStatus,
       requiresExplicitEnrollment: this.requiresExplicitEnrollment,
+      approvalPrerequisite: this.approvalPrerequisite,
       pinUnlocked: this.pinUnlocked,
       pinRequired: this.deps.pinRequired,
       accountSyncPhase: this.accountSyncPhase,

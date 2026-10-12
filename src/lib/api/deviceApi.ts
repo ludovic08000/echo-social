@@ -1,4 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
+import { runCrossTabExclusive } from '@/lib/crypto/crossTabLock';
+import { readEnrollmentJournal, writeEnrollmentJournal, clearEnrollmentJournal } from '@/lib/crypto/deviceEnrollmentJournal';
 import {
   backupIosDeviceVaultWithOutcome,
   classifyIosVaultBackupOutcome,
@@ -61,6 +63,7 @@ const DEVICE_ID_RE = /^dev_[a-f0-9]{32}$/;
 // Invariant cryptographique : toutes les vues partagent la même transition
 // active par compte. Aucun binding ni lot de préclés ne peut être publié deux fois.
 const bindInFlight = new Map<string, Promise<DeviceApiRecord>>();
+const enrollmentInFlight = new Map<string, Promise<DeviceApiRecord>>();
 const keySetupInFlight = new Map<string, Promise<DeviceApiRecord>>();
 
 function runDeviceTransitionOnce(
@@ -236,6 +239,14 @@ async function accountHasDeviceHistory(userId: string): Promise<boolean> {
 
 async function getState(userId: string): Promise<DeviceApiSnapshot> {
   setCurrentDeviceUserScope(userId);
+  const journal = await readEnrollmentJournal(userId);
+  if (journal) {
+    const current = peekCurrentDeviceId();
+    if (current && current !== journal.deviceId) throw new Error('DEVICE_ENROLLMENT_JOURNAL_CONFLICT');
+    setCurrentDeviceId(journal.deviceId);
+    // Reprendre et réconcilier la même transaction, même après fermeture de Safari.
+    return { state: 'unregistered', record: null, requiresExplicitEnrollment: false };
+  }
   const deviceId = peekCurrentDeviceId();
   if (!deviceId || !DEVICE_ID_RE.test(deviceId)) {
     const hasDeviceHistory = await accountHasDeviceHistory(userId);
@@ -295,6 +306,17 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
       traceId: getCurrentDeviceFinalizationTraceId(),
     });
 
+  const journal = await readEnrollmentJournal(userId);
+  if (journal) {
+    setCurrentDeviceId(journal.deviceId);
+    const staged = await readDeviceRecord(userId, journal.deviceId);
+    if (staged) return finishEnrolledDevice(userId, journal.deviceId, staged);
+    const settlement = await cancelServerAssignedDeviceEnrollment(journal, 'resume_interrupted_enrollment');
+    if (settlement.status === 'completed') return finishEnrolledDevice(userId, journal.deviceId);
+    await discardCancelledEnrollment(userId, journal.deviceId);
+    throw new Error('DEVICE_ENROLLMENT_CANCELLED_RETRY_REQUIRED');
+  }
+
   const reusedAndroidDeviceId = await adoptReusableAndroidDevice(userId).catch(() => null);
   if (reusedAndroidDeviceId) {
     const existing = await readDeviceRecord(userId, reusedAndroidDeviceId);
@@ -339,6 +361,15 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
     throw new Error(`DEVICE_VAULT_RECOVERY_REQUIRED:${existingIosDevice.deviceId}:${restored}`);
   }
 
+  // Après restauration native, réutiliser l'identité serveur sans générer de clés.
+  const currentId = peekCurrentDeviceId();
+  if (currentId) {
+    const current = await readDeviceRecord(userId, currentId);
+    if (current && !current.revokedAt && current.approvalStatus !== 'rejected') {
+      return finishEnrolledDevice(userId, currentId, current);
+    }
+  }
+
   await traced('device_id_allocate', () => beginExplicitDeviceEnrollment('first_device'));
   let challenge: DeviceEnrollmentChallenge | null = null;
   let deviceId: string | null = null;
@@ -349,6 +380,9 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
       userAgent: typeof navigator === 'undefined' ? null : navigator.userAgent.slice(0, 500),
     }));
     deviceId = setCurrentDeviceId(challenge.deviceId);
+    // Persister le challenge avant toute clé/publication : une réponse perdue ne
+    // doit jamais transformer une inscription valide en perte de clés locales.
+    await writeEnrollmentJournal(userId, challenge);
     const [identity, kx] = await Promise.all([
       traced('signing_identity_create', () => getOrCreateDeviceIdentity(userId, deviceId), deviceId),
       traced('exchange_identity_create', () => getOrCreateDeviceKxKey(deviceId, userId), deviceId),
@@ -365,24 +399,45 @@ async function enroll(userId: string): Promise<DeviceApiRecord> {
       deviceId,
     );
     challenge = null;
-    const record = await readDeviceRecord(userId, deviceId);
-    if (!record || record.approvalStatus !== 'pending') throw new Error('DEVICE_ENROLLMENT_NOT_PENDING');
-    return record;
+    return await finishEnrolledDevice(userId, deviceId);
   } catch (error) {
     if (challenge) {
-      await cancelServerAssignedDeviceEnrollment(
+      const settlement = await cancelServerAssignedDeviceEnrollment(
         challenge,
         error instanceof Error ? error.message.slice(0, 120) : 'DEVICE_ENROLLMENT_FAILED',
-      ).catch(() => undefined);
-    }
-    if (deviceId) {
-      await Promise.allSettled([
-        deleteDeviceIdentity(userId, deviceId),
-        deleteDeviceKxKey(deviceId, userId),
-      ]);
+      ).catch(() => null);
+      if (settlement?.status === 'completed') return finishEnrolledDevice(userId, challenge.deviceId);
+      // Invariant : seules les clés d'une inscription ANNULÉE par le serveur
+      // peuvent être supprimées. Une erreur/expiration réseau n'est pas une annulation.
+      if (settlement?.status === 'cancelled') await discardCancelledEnrollment(userId, challenge.deviceId);
     }
     throw error;
   }
+}
+
+async function discardCancelledEnrollment(userId: string, deviceId: string): Promise<void> {
+  await Promise.all([deleteDeviceIdentity(userId, deviceId), deleteDeviceKxKey(deviceId, userId)]);
+  await clearEnrollmentJournal(userId);
+}
+
+async function finishEnrolledDevice(userId: string, deviceId: string, knownRecord?: DeviceApiRecord): Promise<DeviceApiRecord> {
+  const record = knownRecord ?? await readDeviceRecord(userId, deviceId);
+  if (!record || !['pending', 'approved'].includes(record.approvalStatus ?? '') || record.revokedAt) {
+    throw new Error('DEVICE_ENROLLMENT_NOT_PENDING');
+  }
+  let [identity, kx] = await Promise.all([loadDeviceIdentity(userId, deviceId), loadDeviceKxKey(deviceId, userId)]);
+  if (!identity || !kx) {
+    // Reprise native : restaurer le même coffre, jamais fabriquer d'autres clés.
+    const ios = await ensureIosDeviceVaultRestored(userId);
+    if (ios === 'restored' || await restoreAndroidDeviceVault(userId)) {
+      [identity, kx] = await Promise.all([loadDeviceIdentity(userId, deviceId), loadDeviceKxKey(deviceId, userId)]);
+    }
+  }
+  if (!identity || !kx || identity.publicB64 !== record.deviceSigningKey || kx.publicB64 !== record.devicePublicKey) {
+    throw new Error('DEVICE_AUTO_APPROVAL_LOCAL_IDENTITY_INVALID');
+  }
+  await clearEnrollmentJournal(userId);
+  return record;
 }
 
 /**
@@ -726,7 +781,9 @@ export const deviceApi = {
   getState,
   getCurrentId,
   listDevices,
-  enroll: (userId: string) => withIosDiagnostics('deviceApi.enroll', () => enroll(userId)),
+  enroll: (userId: string) => runDeviceTransitionOnce(enrollmentInFlight, userId, () =>
+    runCrossTabExclusive(`device-enrollment:${userId}`, () =>
+      withIosDiagnostics('deviceApi.enroll', () => enroll(userId)))),
   autoApprove: (userId: string) => withIosDiagnostics('deviceApi.autoApprove', () => autoApprove(userId)),
   bind: (userId: string) => runDeviceTransitionOnce(
     bindInFlight,

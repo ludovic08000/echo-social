@@ -17,6 +17,7 @@ import {
   setCurrentDeviceUserScope,
 } from '@/lib/messaging/currentDevice';
 import { deviceApi } from '@/lib/api/deviceApi';
+import { inspectAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecision';
 import { cryptoApi } from '@/lib/api/cryptoApi';
 import { synchronizeAccountKeysBeforeRuntime } from '@/lib/crypto/accountKeySync';
 import { beginAccountSynchronization, type AccountSyncPhase } from '@/lib/messaging/accountSyncBarrier';
@@ -73,6 +74,7 @@ configureDeviceLifecycleDeps((userId) => ({
   api: {
     getState: (id) => deviceApi.getState(id),
     enroll: (id) => deviceApi.enroll(id),
+    inspectApproval: inspectAutomaticDeviceApproval,
     autoApprove: (id) => deviceApi.autoApprove(id),
     bind: (id) => deviceApi.bind(id),
     prepareKeys: (id) => deviceApi.prepareKeys(id),
@@ -185,16 +187,19 @@ export interface DeviceLifecycleSnapshot {
 }
 
 export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
-  const { user } = useAuth();
+  const { user, loginSecurity } = useAuth();
   const userId = user?.id ?? null;
+  const loginApproved = loginSecurity.status === 'approved';
   const [snapshot, setSnapshot] = useState<ControllerSnapshot>(IDLE_SNAPSHOT);
   const controllerRef = useRef<ReturnType<typeof getDeviceLifecycleController> | null>(null);
 
   useEffect(() => {
-    if (!userId) {
+    // Ne jamais amorcer une RPC d'enrôlement pendant l'approbation de connexion.
+    // Sinon son rejet prématuré reste mémorisé après le clic dans l'e-mail.
+    if (!userId || !loginApproved) {
       controllerRef.current = null;
       resetDeviceLifecycleControllers();
-      setCurrentDeviceUserScope(null);
+      if (!userId) setCurrentDeviceUserScope(null);
       setSnapshot(IDLE_SNAPSHOT);
       return;
     }
@@ -202,23 +207,23 @@ export function useDeviceLifecycle(): DeviceLifecycleSnapshot {
     controllerRef.current = controller;
     setSnapshot(controller.getSnapshot());
     return controller.subscribe(setSnapshot);
-  }, [userId]);
+  }, [userId, loginApproved]);
 
   // Adaptateurs plateforme : strictement no-op hors iOS/Android.
   useEffect(() => {
-    if (!userId || !snapshot.record) return;
+    if (!userId || !loginApproved || !snapshot.record) return;
     void syncIosDeviceAdapter(userId, snapshot.record.deviceId);
     void syncAndroidDeviceAdapter(userId, snapshot.record.deviceId);
-  }, [userId, snapshot.record]);
+  }, [userId, loginApproved, snapshot.record]);
 
   const refresh = useCallback(() => { void controllerRef.current?.refresh(); }, []);
   const retry = useCallback(() => { void controllerRef.current?.retry(); }, []);
   const startEnrollment = useCallback(() => { void controllerRef.current?.startEnrollment(); }, []);
 
   return useMemo(() => ({
-    ...snapshot,
+    ...(userId && loginApproved ? snapshot : IDLE_SNAPSHOT),
     refresh,
     retry,
     startEnrollment,
-  }), [snapshot, refresh, retry, startEnrollment]);
+  }), [snapshot, userId, loginApproved, refresh, retry, startEnrollment]);
 }

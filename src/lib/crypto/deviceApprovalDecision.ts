@@ -2,8 +2,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { hardCrypto } from '@/lib/crypto/cryptoIntegrity';
 import {
   loadDeviceIdentity,
-  prepareDeviceAuthorization,
+  signDeviceAuthorization,
 } from '@/lib/crypto/deviceIdentity';
+import { loadDeviceKxKey } from './deviceKx';
+import { exportPublicKeyBundle, loadIdentityKeys, PinUnlockRequiredError } from './keyManager';
+import { inspectAccountCryptoState } from './accountCryptoState';
+import { DeviceApprovalRecoveryRequiredError, type DeviceApprovalPrerequisite } from '@/lib/device-manager/deviceApprovalPrerequisite';
 import { bufferToBase64, encodeString } from '@/lib/crypto/utils';
 import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 
@@ -42,6 +46,42 @@ function validateTarget(target: PendingDeviceApprovalTarget): void {
   if (!UUID_RE.test(target.challengeId)) throw new Error('DEVICE_APPROVAL_INVALID_CHALLENGE_ID');
 }
 
+async function readApprovalMode(deviceId: string): Promise<boolean> {
+  const { data, error } = await runDeviceRpcWithTimeout('DEVICE_APPROVAL_MODE_FAILED',
+    (signal) => supabase.rpc('get_device_enrollment_approval_mode' as never, {
+      p_device_id: deviceId,
+    } as never).abortSignal(signal));
+  if (error) throw new Error(`DEVICE_APPROVAL_MODE_FAILED:${error.message}`);
+  const mode = data as Record<string, unknown> | null;
+  if (!mode || mode.ok !== true || typeof mode.bootstrap_primary !== 'boolean') {
+    throw new Error(typeof mode?.code === 'string' ? mode.code : 'DEVICE_APPROVAL_MODE_REJECTED');
+  }
+  return mode.bootstrap_primary;
+}
+
+async function loadApprovalAccountKeys(userId: string) {
+  try {
+    const keys = await loadIdentityKeys(userId);
+    if (keys) return keys;
+  } catch (error) {
+    if (!(error instanceof PinUnlockRequiredError)) throw error;
+  }
+  throw new DeviceApprovalRecoveryRequiredError();
+}
+
+export async function inspectAutomaticDeviceApproval(userId: string, deviceId: string): Promise<DeviceApprovalPrerequisite> {
+  if (await readApprovalMode(deviceId)) return 'ready';
+  const account = await inspectAccountCryptoState(userId);
+  if (account.state !== 'READY') return 'account_recovery_required';
+  try {
+    await loadApprovalAccountKeys(userId);
+    return 'ready';
+  } catch (error) {
+    if (error instanceof DeviceApprovalRecoveryRequiredError) return 'account_recovery_required';
+    throw error;
+  }
+}
+
 /**
  * Invariant cryptographique modifié : l'approbation manuelle par un second
  * appareil est supprimée. L'appareil courant signe lui-même sa décision avec
@@ -65,28 +105,25 @@ export async function submitAutomaticDeviceApproval(args: {
   // le premier. Un ancien client ne peut plus forcer le bootstrap en envoyant
   // `true`. Pour un appareil secondaire, la clé racine Aegis doit en plus
   // autoriser explicitement les deux clés publiques de l'appareil.
-  const { data: modeData, error: modeError } = await runDeviceRpcWithTimeout(
-    'DEVICE_APPROVAL_MODE_FAILED',
-    (signal) => supabase.rpc('get_device_enrollment_approval_mode' as never, {
-      p_device_id: args.target.deviceId,
-    } as never).abortSignal(signal),
-  );
-  if (modeError) throw new Error(`DEVICE_APPROVAL_MODE_FAILED:${modeError.message}`);
-  const mode = modeData as Record<string, unknown> | null;
-  if (!mode || mode.ok !== true || typeof mode.bootstrap_primary !== 'boolean') {
-    throw new Error(typeof mode?.code === 'string' ? mode.code : 'DEVICE_APPROVAL_MODE_REJECTED');
-  }
+  const bootstrapPrimary = await readApprovalMode(args.target.deviceId);
 
   let deviceAuthorizationSignature: string | null = null;
-  if (!mode.bootstrap_primary) {
-    const authorization = await prepareDeviceAuthorization(args.userId, args.target.deviceId);
-    if (
-      authorization.deviceSigning.publicB64 !== args.target.deviceSigningKey
-      || authorization.deviceKx.publicB64 !== args.target.devicePublicKey
-    ) {
+  if (!bootstrapPrimary) {
+    // Autoriser un appareil existant ne crée ni ne remplace aucune clé.
+    const accountKeys = await loadApprovalAccountKeys(args.userId);
+    const account = await exportPublicKeyBundle(accountKeys);
+    const kx = await loadDeviceKxKey(args.target.deviceId, args.userId);
+    if (!kx || kx.publicB64 !== args.target.devicePublicKey) {
       throw new Error('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');
     }
-    deviceAuthorizationSignature = authorization.authorizationSignature;
+    deviceAuthorizationSignature = await signDeviceAuthorization({
+      userId: args.userId,
+      deviceId: args.target.deviceId,
+      accountFingerprint: account.fingerprint,
+      accountSigningPrivateKey: accountKeys.signingPrivateKey,
+      devicePublicKey: kx.publicB64,
+      deviceSigningKey: identity.publicB64,
+    });
   }
 
   const signature = bufferToBase64(await hardCrypto.sign(
@@ -104,7 +141,7 @@ export async function submitAutomaticDeviceApproval(args: {
     'DEVICE_APPROVAL_RPC_FAILED',
     (signal) => supabase.rpc('approve_device_enrollment_decision' as never, {
       p_decision: 'approve',
-      p_bootstrap_primary: mode.bootstrap_primary,
+      p_bootstrap_primary: bootstrapPrimary,
       p_approver_device_id: args.target.deviceId,
       p_device_id: args.target.deviceId,
       p_challenge_id: args.target.challengeId,

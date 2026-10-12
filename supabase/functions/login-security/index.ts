@@ -426,55 +426,74 @@ serve(async (req) => {
 
   const contentType = req.headers.get('content-type') || '';
   if (req.method === 'POST' && contentType.includes('application/x-www-form-urlencoded')) {
+    const wantsJson = req.headers.get('accept')?.includes('application/json') === true;
+    const invalidDecision = () => wantsJson
+      ? json(req, 400, { ok: false, code: 'LOGIN_EMAIL_DECISION_INVALID' })
+      : redirect(`${SITE_URL}/login?loginSecurity=expired`);
     const rawForm = await readBoundedBody(req, 4_096);
-    if (rawForm === null) return redirect(`${SITE_URL}/login?loginSecurity=invalid`);
+    if (rawForm === null) return invalidDecision();
     const form = new URLSearchParams(rawForm);
     const action = form.get('action');
     const token = form.get('token') || '';
     const decision = form.get('decision') as Decision | null;
     if (action !== 'email_decision' || !/^[a-f0-9]{64}$/.test(token)
       || !decision || !['approve', 'deny'].includes(decision)) {
-      return redirect(`${SITE_URL}/login?loginSecurity=invalid`);
+      return invalidDecision();
     }
     const tokenHash = await sha256(token);
     const { data: emailToken, error: emailTokenError } = await admin
       .from('login_security_email_tokens')
-      .select('id,user_id,target_session_id,expires_at,consumed_at')
+      .select('id,user_id,target_session_id,expires_at,consumed_at,consumed_decision')
       .eq('token_hash', tokenHash)
       .maybeSingle();
-    if (emailTokenError || !emailToken || emailToken.consumed_at
-      || new Date(emailToken.expires_at).getTime() <= Date.now()) {
-      return redirect(`${SITE_URL}/login?loginSecurity=expired`);
+    if (emailTokenError || !emailToken
+      || !(new Date(emailToken.expires_at).getTime() > Date.now())) {
+      return invalidDecision();
     }
-    const completed = await decide(
+    let completed = !emailToken.consumed_at && await decide(
       emailToken.user_id,
       emailToken.target_session_id,
       decision,
       'email',
     );
-    if (!completed) return redirect(`${SITE_URL}/login?loginSecurity=expired`);
+    // Une réponse perdue peut être relue, mais jamais inverser une décision
+    // ni approuver une autre session. La ligne serveur reste l'autorité.
+    if (!completed && (!emailToken.consumed_at || emailToken.consumed_decision === decision)) {
+      const { data: decidedSession, error: decidedError } = await admin
+        .from('login_security_sessions')
+        .select('status,approved_via,expires_at')
+        .eq('user_id', emailToken.user_id)
+        .eq('session_id', emailToken.target_session_id)
+        .maybeSingle();
+      completed = !decidedError && decidedSession?.status === (decision === 'approve' ? 'approved' : 'denied')
+        && (decision === 'deny' || (decidedSession.approved_via === 'email'
+          && new Date(decidedSession.expires_at).getTime() > Date.now()));
+    }
+    if (!completed) return invalidDecision();
 
     // The pending session row is the concurrency gate. Mark the token consumed
     // after the decision so a transient token update cannot burn a still-pending
     // approval. Replays remain harmless because decide() only mutates pending rows.
-    const now = new Date().toISOString();
-    const { data: consumed, error: consumeError } = await admin
-      .from('login_security_email_tokens')
-      .update({ consumed_at: now, consumed_decision: decision })
-      .eq('id', emailToken.id)
-      .is('consumed_at', null)
-      .select('id')
-      .maybeSingle();
-    if (consumeError || !consumed) {
-      await recordEvent(
-        emailToken.user_id,
-        emailToken.target_session_id,
-        'email_token_consume',
-        'failure',
-        { reason: 'TOKEN_MARK_FAILED', decision },
-      );
+    if (!emailToken.consumed_at) {
+      const now = new Date().toISOString();
+      const { data: consumed, error: consumeError } = await admin
+        .from('login_security_email_tokens')
+        .update({ consumed_at: now, consumed_decision: decision })
+        .eq('id', emailToken.id)
+        .is('consumed_at', null)
+        .select('id')
+        .maybeSingle();
+      if (consumeError || !consumed) {
+        await recordEvent(
+          emailToken.user_id,
+          emailToken.target_session_id,
+          'email_token_consume',
+          'failure',
+          { reason: 'TOKEN_MARK_FAILED', decision },
+        );
+      }
     }
-
+    if (wantsJson) return json(req, 200, { ok: true, decision, targetSessionId: emailToken.target_session_id });
     return decision === 'approve'
       ? redirect(`${SITE_URL}/feed?loginSecurity=approved`)
       : redirect(`${SITE_URL}/login?loginSecurity=denied`);

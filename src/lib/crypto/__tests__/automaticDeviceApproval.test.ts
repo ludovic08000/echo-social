@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rpc = vi.fn();
 const loadDeviceIdentity = vi.fn();
-const prepareDeviceAuthorization = vi.fn();
+const signDeviceAuthorization = vi.fn();
+const loadIdentityKeys = vi.fn();
+const loadDeviceKxKey = vi.fn();
+const inspectAccountCryptoState = vi.fn();
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
@@ -13,14 +16,22 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 vi.mock('@/lib/crypto/deviceIdentity', () => ({
   loadDeviceIdentity: (...a: unknown[]) => loadDeviceIdentity(...a),
-  prepareDeviceAuthorization: (...a: unknown[]) => prepareDeviceAuthorization(...a),
+  signDeviceAuthorization: (...a: unknown[]) => signDeviceAuthorization(...a),
+}));
+vi.mock('@/lib/crypto/deviceKx', () => ({ loadDeviceKxKey: (...a: unknown[]) => loadDeviceKxKey(...a) }));
+vi.mock('@/lib/crypto/accountCryptoState', () => ({ inspectAccountCryptoState: (...a: unknown[]) => inspectAccountCryptoState(...a) }));
+vi.mock('@/lib/crypto/keyManager', () => ({
+  loadIdentityKeys: (...a: unknown[]) => loadIdentityKeys(...a),
+  exportPublicKeyBundle: async () => ({ fingerprint: 'account-fingerprint' }),
+  PinUnlockRequiredError: class extends Error {},
 }));
 vi.mock('@/lib/crypto/cryptoIntegrity', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   hardCrypto: { sign: vi.fn(async () => new Uint8Array(64).fill(7).buffer) },
 }));
 
-import { submitAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecision';
+import { inspectAutomaticDeviceApproval, submitAutomaticDeviceApproval } from '@/lib/crypto/deviceApprovalDecision';
+import { DeviceApprovalRecoveryRequiredError } from '@/lib/device-manager/deviceApprovalPrerequisite';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const DEVICE = `dev_${'a'.repeat(32)}`;
@@ -37,15 +48,41 @@ beforeEach(() => {
   rpc.mockReset();
   loadDeviceIdentity.mockReset();
   loadDeviceIdentity.mockResolvedValue({ publicB64: 'signing-public', privateKey: {} });
-  prepareDeviceAuthorization.mockReset();
-  prepareDeviceAuthorization.mockResolvedValue({
-    deviceSigning: { publicB64: 'signing-public' },
-    deviceKx: { publicB64: 'kx-public' },
-    authorizationSignature: 'account-authorization-signature',
-  });
+  signDeviceAuthorization.mockReset().mockResolvedValue('account-authorization-signature');
+  loadIdentityKeys.mockReset().mockResolvedValue({ signingPrivateKey: {} });
+  loadDeviceKxKey.mockReset().mockResolvedValue({ publicB64: 'kx-public' });
+  inspectAccountCryptoState.mockReset().mockResolvedValue({ state: 'READY' });
 });
 
 describe('automatic device approval', () => {
+  it.each(['RESTORABLE_IDENTITY', 'UNRECOVERABLE_SERVER_IDENTITY', 'INCONSISTENT'])(
+    'requests account recovery before signing a secondary device: %s', async (state) => {
+      rpc.mockResolvedValue({ data: { ok: true, bootstrap_primary: false }, error: null });
+      inspectAccountCryptoState.mockResolvedValue({ state });
+      await expect(inspectAutomaticDeviceApproval(USER, DEVICE)).resolves.toBe('account_recovery_required');
+      expect(signDeviceAuthorization).not.toHaveBeenCalled();
+    });
+
+  it('does not require a nonexistent account key for the first primary device', async () => {
+    rpc.mockResolvedValue({ data: { ok: true, bootstrap_primary: true }, error: null });
+    await expect(inspectAutomaticDeviceApproval(USER, DEVICE)).resolves.toBe('ready');
+    expect(inspectAccountCryptoState).not.toHaveBeenCalled();
+  });
+
+  it('requires the existing account key; never creates a replacement during approval', async () => {
+    rpc.mockResolvedValue({ data: { ok: true, bootstrap_primary: false }, error: null });
+    loadIdentityKeys.mockResolvedValue(null);
+    await expect(submitAutomaticDeviceApproval({ userId: USER, target })).rejects.toBeInstanceOf(DeviceApprovalRecoveryRequiredError);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(signDeviceAuthorization).not.toHaveBeenCalled();
+  });
+
+  it('propagates a storage failure instead of treating it as a missing identity', async () => {
+    rpc.mockResolvedValue({ data: { ok: true, bootstrap_primary: false }, error: null });
+    loadIdentityKeys.mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
+    await expect(inspectAutomaticDeviceApproval(USER, DEVICE)).rejects.toThrow('STORAGE_UNAVAILABLE');
+  });
+
   it('auto-approves a freshly enrolled device through the server RPC', async () => {
     rpc
       .mockResolvedValueOnce({ data: { ok: true, code: 'DEVICE_APPROVAL_MODE', bootstrap_primary: true }, error: null })
@@ -60,7 +97,8 @@ describe('automatic device approval', () => {
     expect(params.p_challenge_id).toBe(CHALLENGE);
     expect(params.p_bootstrap_primary).toBe(true);
     expect(params.p_device_authorization_signature).toBeNull();
-    expect(prepareDeviceAuthorization).not.toHaveBeenCalled();
+    expect(loadIdentityKeys).not.toHaveBeenCalled();
+    expect(signDeviceAuthorization).not.toHaveBeenCalled();
   });
 
   it('auto-approves a device already stuck in pending (secondary role)', async () => {
@@ -98,11 +136,7 @@ describe('automatic device approval', () => {
       data: { ok: true, code: 'DEVICE_APPROVAL_MODE', bootstrap_primary: false },
       error: null,
     });
-    prepareDeviceAuthorization.mockResolvedValue({
-      deviceSigning: { publicB64: 'signing-public' },
-      deviceKx: { publicB64: 'wrong-kx-public' },
-      authorizationSignature: 'account-authorization-signature',
-    });
+    loadDeviceKxKey.mockResolvedValue({ publicB64: 'wrong-kx-public' });
 
     await expect(submitAutomaticDeviceApproval({ userId: USER, target }))
       .rejects.toThrow('DEVICE_AUTHORIZATION_LOCAL_KEY_MISMATCH');

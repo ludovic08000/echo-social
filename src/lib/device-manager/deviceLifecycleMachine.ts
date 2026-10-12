@@ -2,7 +2,7 @@
  * Canonical device lifecycle.
  *
  * AUTHENTICATED -> DEVICE_CREDENTIAL_CHECK -> LINK_REQUIRED/PENDING_APPROVAL
- * -> APPROVED_LOCKED -> PIN_UNLOCK -> ACCOUNT_BINDING -> DEVICE_KEY_SETUP
+ * -> ACCOUNT_RECOVERY_REQUIRED (si nécessaire) -> APPROVED_LOCKED -> PIN_UNLOCK -> ACCOUNT_BINDING -> DEVICE_KEY_SETUP
  * -> ACCOUNT_KEY_SYNC -> MESSAGING_READY
  */
 
@@ -11,6 +11,7 @@ export const AEGIS_DEVICE_LIFECYCLE_ORDER = [
   'DEVICE_CREDENTIAL_CHECK',
   'LINK_REQUIRED',
   'PENDING_APPROVAL',
+  'ACCOUNT_RECOVERY_REQUIRED',
   'APPROVED_LOCKED',
   'PIN_UNLOCK',
   'ACCOUNT_BINDING',
@@ -47,6 +48,7 @@ export interface DeviceLifecycleInput {
   deviceRecord: DeviceLifecycleRecord | null | 'unknown';
   deviceIdStatus: DeviceIdStatus;
   requiresExplicitEnrollment?: boolean;
+  approvalPrerequisite?: import('./deviceApprovalPrerequisite').DeviceApprovalPrerequisite;
   pinUnlocked: boolean;
   pinRequired?: boolean;
   accountSyncPhase: AccountSyncPhaseInput;
@@ -61,6 +63,7 @@ export type DeviceLifecycleReason =
   | 'device_revoked'
   | 'device_inactive'
   | 'awaiting_approval'
+  | 'approval_account_recovery_required'
   | 'awaiting_pin_unlock'
   | 'account_binding_pending'
   | 'device_key_setup_pending'
@@ -93,7 +96,12 @@ export function resolveDeviceLifecycleState(input: DeviceLifecycleInput): Device
   if (record.revokedAt || record.bindingStatus === 'revoked' || record.lifecycleStatus === 'revoked') {
     return { state: 'LINK_REQUIRED', reason: 'device_revoked' };
   }
-  if (record.approvalStatus !== 'approved') return { state: 'PENDING_APPROVAL', reason: 'awaiting_approval' };
+  if (record.approvalStatus !== 'approved') {
+    if (input.approvalPrerequisite === 'account_recovery_required') {
+      return { state: 'ACCOUNT_RECOVERY_REQUIRED', reason: 'approval_account_recovery_required' };
+    }
+    return { state: 'PENDING_APPROVAL', reason: 'awaiting_approval' };
+  }
   if (record.isActive !== true) return { state: 'LINK_REQUIRED', reason: 'device_inactive' };
   if (input.pinRequired !== false && !input.pinUnlocked) {
     return { state: 'APPROVED_LOCKED', reason: 'awaiting_pin_unlock' };
@@ -123,7 +131,7 @@ export function canRunCryptoRuntime(state: AegisDeviceLifecycleState): boolean {
 }
 
 export function canPromptForPin(state: AegisDeviceLifecycleState): boolean {
-  return lifecycleRank(state) >= lifecycleRank('APPROVED_LOCKED');
+  return state === 'ACCOUNT_RECOVERY_REQUIRED' || lifecycleRank(state) >= lifecycleRank('APPROVED_LOCKED');
 }
 
 export function requiresDeviceApprovalUi(state: AegisDeviceLifecycleState): boolean {

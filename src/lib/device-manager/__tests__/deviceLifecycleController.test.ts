@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DeviceApprovalRecoveryRequiredError } from '../deviceApprovalPrerequisite';
 import {
   __deviceLifecycleTestUtils,
   type DeviceLifecycleApi,
@@ -39,6 +40,7 @@ function fakeServer(initial: Row | null) {
   };
   let accountSynced = false;
   const api: DeviceLifecycleApi = {
+    inspectApproval: async () => 'ready',
     getState: async () => { calls.getState += 1; return { record: state.record }; },
     enroll: async () => {
       calls.enroll += 1;
@@ -72,6 +74,52 @@ function fakeServer(initial: Row | null) {
 }
 
 describe('deviceLifecycleController — flux canonique unique', () => {
+  it('attend la restauration avant toute tentative d’approbation secondaire, puis reprend', async () => {
+    const server = fakeServer(row());
+    let restored = false;
+    let notifyRestored: (() => void) | undefined;
+    server.api.inspectApproval = async () => restored ? 'ready' : 'account_recovery_required';
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      pinRequired: true,
+      readPinUnlocked: () => false,
+      subscribeAccountKeysRestored: (_userId, listener) => { notifyRestored = listener; return () => undefined; },
+    });
+    await controller.refresh();
+    expect(controller.getSnapshot().state).toBe('ACCOUNT_RECOVERY_REQUIRED');
+    expect(controller.getSnapshot().canPromptForPin).toBe(true);
+    expect(controller.getSnapshot().canRunCryptoRuntime).toBe(false);
+    expect(server.calls.autoApprove).toBe(0);
+    expect(server.calls.bind).toBe(0);
+    restored = true;
+    notifyRestored?.();
+    await vi.waitFor(() => expect(controller.getSnapshot().state).toBe('APPROVED_LOCKED'));
+    expect(server.calls.autoApprove).toBe(1);
+    expect(server.calls.bind).toBe(0);
+    controller.dispose();
+  });
+
+  it('ne perd pas une restauration pendant l’inspection du prérequis', async () => {
+    const server = fakeServer(row());
+    let resolveInspection: ((value: 'account_recovery_required') => void) | undefined;
+    let notifyRestored: (() => void) | undefined;
+    let calls = 0;
+    server.api.inspectApproval = async () => {
+      calls++;
+      return calls === 1 ? new Promise((resolve) => { resolveInspection = resolve; }) : 'ready';
+    };
+    const controller = __deviceLifecycleTestUtils.create('user-1', {
+      api: server.api,
+      subscribeAccountKeysRestored: (_userId, listener) => { notifyRestored = listener; return () => undefined; },
+    });
+    await vi.waitFor(() => expect(calls).toBe(1));
+    notifyRestored?.();
+    resolveInspection?.('account_recovery_required');
+    await vi.waitFor(() => expect(controller.getSnapshot().state).toBe('MESSAGING_READY'));
+    expect(server.calls.autoApprove).toBe(1);
+    controller.dispose();
+  });
+
   it('enrôle, approuve, lie puis prépare les clés d’un nouvel appareil', async () => {
     const server = fakeServer(null);
     const order: string[] = [];
@@ -81,7 +129,7 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     });
     await controller.refresh();
 
-    expect(order).toEqual(['enrolling', 'approving', 'binding', 'preparing_keys', 'syncing_account']);
+    expect(order).toEqual(['enrolling', 'checking_approval', 'approving', 'binding', 'preparing_keys', 'syncing_account']);
     expect(controller.getSnapshot().state).toBe('MESSAGING_READY');
     expect(controller.getSnapshot().error).toBeNull();
     controller.dispose();
@@ -105,7 +153,7 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     let notifyPinState: ((unlocked: boolean) => void) | undefined;
     server.api.autoApprove = async (userId) => {
       attempts += 1;
-      if (attempts === 1) throw new Error('PIN_UNLOCK_REQUIRED:account_key_locked');
+      if (attempts === 1) throw new DeviceApprovalRecoveryRequiredError();
       return approve(userId);
     };
     const controller = __deviceLifecycleTestUtils.create('user-1', {
@@ -119,8 +167,8 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     });
     await controller.refresh();
 
-    expect(controller.getSnapshot().state).toBe('PENDING_APPROVAL');
-    expect(controller.getSnapshot().error).toContain('PIN_UNLOCK_REQUIRED');
+    expect(controller.getSnapshot().state).toBe('ACCOUNT_RECOVERY_REQUIRED');
+    expect(controller.getSnapshot().error).toBeNull();
     expect(server.calls.bind).toBe(0);
 
     notifyPinState?.(true);
@@ -139,7 +187,7 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     let notifyPinState: ((unlocked: boolean) => void) | undefined;
     server.api.autoApprove = async (userId) => {
       attempts += 1;
-      if (attempts === 1) throw new Error('PIN_UNLOCK_REQUIRED:account_key_restore_required');
+      if (attempts === 1) throw new DeviceApprovalRecoveryRequiredError();
       return approve(userId);
     };
     const controller = __deviceLifecycleTestUtils.create('user-1', {
@@ -153,7 +201,7 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     });
     await controller.refresh();
 
-    expect(controller.getSnapshot().error).toContain('PIN_UNLOCK_REQUIRED');
+    expect(controller.getSnapshot().state).toBe('ACCOUNT_RECOVERY_REQUIRED');
     notifyPinState?.(true);
     await controller.refresh();
 
@@ -170,7 +218,7 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     let notifyKeysRestored: (() => void) | undefined;
     server.api.autoApprove = async (userId) => {
       attempts += 1;
-      if (attempts === 1) throw new Error('PIN_UNLOCK_REQUIRED:account_key_locked');
+      if (attempts === 1) throw new DeviceApprovalRecoveryRequiredError();
       return approve(userId);
     };
     const controller = __deviceLifecycleTestUtils.create('user-1', {
@@ -188,7 +236,7 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     });
     await controller.refresh();
 
-    expect(controller.getSnapshot().error).toContain('PIN_UNLOCK_REQUIRED');
+    expect(controller.getSnapshot().state).toBe('ACCOUNT_RECOVERY_REQUIRED');
     notifyKeysRestored?.();
     await vi.waitFor(() => expect(attempts).toBe(2));
 
@@ -227,7 +275,7 @@ describe('deviceLifecycleController — flux canonique unique', () => {
     const firstRun = controller.refresh();
     await vi.waitFor(() => expect(attempts).toBe(1));
     notifyKeysRestored?.();
-    rejectFirst?.(new Error('PIN_UNLOCK_REQUIRED:account_key_restore_race'));
+    rejectFirst?.(new DeviceApprovalRecoveryRequiredError());
     await firstRun;
     await vi.waitFor(() => expect(attempts).toBe(2));
 

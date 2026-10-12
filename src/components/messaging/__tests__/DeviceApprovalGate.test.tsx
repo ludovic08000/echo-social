@@ -5,14 +5,6 @@ const lifecycleHarness = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
 
-const cryptoHarness = vi.hoisted(() => ({
-  value: {
-    loaded: true,
-    inspection: { state: 'READY' },
-    refresh: vi.fn(),
-  } as Record<string, unknown>,
-}));
-
 vi.mock('@/hooks/useDeviceLifecycle', () => ({
   useDeviceLifecycle: () => lifecycleHarness.value,
 }));
@@ -20,10 +12,6 @@ vi.mock('@/hooks/useDeviceLifecycle', () => ({
 vi.mock('@/components/messaging/DeviceFinalizationDiagnostics', () => ({
   DeviceFinalizationDiagnostics: () => null,
   useFinalizationStall: () => false,
-}));
-
-vi.mock('@/components/messaging/IdentityRecoveryGate', () => ({
-  useAccountCryptoGate: () => cryptoHarness.value,
 }));
 
 import { DeviceApprovalGate } from '@/components/messaging/DeviceApprovalGate';
@@ -44,15 +32,10 @@ function pendingLifecycle(error: string | null) {
 describe('DeviceApprovalGate approval prerequisites', () => {
   beforeEach(() => {
     lifecycleHarness.value = pendingLifecycle(null);
-    cryptoHarness.value = {
-      loaded: true,
-      inspection: { state: 'READY' },
-      refresh: vi.fn(),
-    };
   });
 
   it('exposes the PIN/recovery gate only when approval requires the locked account key', () => {
-    lifecycleHarness.value = pendingLifecycle('PIN_UNLOCK_REQUIRED:account_key_locked');
+    lifecycleHarness.value = { ...pendingLifecycle(null), state: 'ACCOUNT_RECOVERY_REQUIRED', canPromptForPin: true };
 
     render(
       <DeviceApprovalGate>
@@ -76,11 +59,7 @@ describe('DeviceApprovalGate approval prerequisites', () => {
   });
 
   it('opens secure account recovery before approval when an existing identity is restorable', () => {
-    cryptoHarness.value = {
-      loaded: true,
-      inspection: { state: 'RESTORABLE_IDENTITY' },
-      refresh: vi.fn(),
-    };
+    lifecycleHarness.value = { ...pendingLifecycle(null), state: 'ACCOUNT_RECOVERY_REQUIRED', canPromptForPin: true };
 
     render(
       <DeviceApprovalGate>
@@ -92,14 +71,10 @@ describe('DeviceApprovalGate approval prerequisites', () => {
     expect(screen.queryByText('Activation de cet appareil…')).not.toBeInTheDocument();
   });
 
-  it.each(['UNRECOVERABLE_SERVER_IDENTITY', 'INCONSISTENT'])(
-    'exposes the fail-closed identity screen for %s instead of an endless approval spinner',
-    (state) => {
-      cryptoHarness.value = {
-        loaded: true,
-        inspection: { state },
-        refresh: vi.fn(),
-      };
+  it.each(['NOT_AUTHENTICATED', 'DEVICE_STATE_LOOKUP_FAILED'])(
+    'does not open recovery when a server error occurs: %s',
+    (error) => {
+      lifecycleHarness.value = { ...pendingLifecycle(error), state: 'ACCOUNT_RECOVERY_REQUIRED', canPromptForPin: true };
 
       render(
         <DeviceApprovalGate>
@@ -107,18 +82,13 @@ describe('DeviceApprovalGate approval prerequisites', () => {
         </DeviceApprovalGate>,
       );
 
-      expect(screen.getByText('Écran PIN ou restauration')).toBeInTheDocument();
-      expect(screen.queryByText('Activation de cet appareil…')).not.toBeInTheDocument();
+      expect(screen.queryByText('Écran PIN ou restauration')).not.toBeInTheDocument();
+      expect(screen.getByText(error)).toBeInTheDocument();
     },
   );
 
   it('does not expose the PIN gate for an unrelated approval failure', () => {
     lifecycleHarness.value = pendingLifecycle('NOT_AUTHENTICATED');
-    cryptoHarness.value = {
-      loaded: true,
-      inspection: { state: 'RESTORABLE_IDENTITY' },
-      refresh: vi.fn(),
-    };
 
     render(
       <DeviceApprovalGate>

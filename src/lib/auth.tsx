@@ -617,6 +617,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     updateLoginSecurity,
   ]);
 
+  useEffect(() => {
+    const refresh = () => { void refreshLoginSecurity().catch(() => undefined); };
+    window.addEventListener('forsure:login-security-changed', refresh);
+    return () => window.removeEventListener('forsure:login-security-changed', refresh);
+  }, [refreshLoginSecurity]);
+
   const resendLoginApprovalEmail = useCallback(async (): Promise<void> => {
     await resendLoginSecurityEmail();
     await refreshLoginSecurity();
