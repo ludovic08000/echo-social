@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.1"
   }
   public: {
     Tables: {
@@ -2403,6 +2403,8 @@ export type Database = {
       }
       device_libsignal_prekey_bundles: {
         Row: {
+          bundle_signature: string | null
+          bundle_signing_key: string | null
           created_at: string
           device_id: string
           device_number: number
@@ -2415,6 +2417,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          bundle_signature?: string | null
+          bundle_signing_key?: string | null
           created_at?: string
           device_id: string
           device_number: number
@@ -2427,6 +2431,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          bundle_signature?: string | null
+          bundle_signing_key?: string | null
           created_at?: string
           device_id?: string
           device_number?: number
@@ -3821,6 +3827,68 @@ export type Database = {
           mood?: string | null
           title?: string | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      libsignal_prekey_claim_limits: {
+        Row: {
+          claimer_user_id: string
+          claims: number
+          recipient_device_id: string
+          recipient_user_id: string
+          window_started_at: string
+        }
+        Insert: {
+          claimer_user_id: string
+          claims?: number
+          recipient_device_id: string
+          recipient_user_id: string
+          window_started_at?: string
+        }
+        Update: {
+          claimer_user_id?: string
+          claims?: number
+          recipient_device_id?: string
+          recipient_user_id?: string
+          window_started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "libsignal_prekey_claim_limits_recipient_user_id_recipient__fkey"
+            columns: ["recipient_user_id", "recipient_device_id"]
+            isOneToOne: false
+            referencedRelation: "user_devices"
+            referencedColumns: ["user_id", "device_id"]
+          },
+        ]
+      }
+      libsignal_receive_attestations: {
+        Row: {
+          created_at: string
+          device_id: string
+          device_number: number
+          identity_key: string
+          proof: Json
+          registration_id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          device_number: number
+          identity_key: string
+          proof: Json
+          registration_id: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          device_number?: number
+          identity_key?: string
+          proof?: Json
+          registration_id?: number
           user_id?: string
         }
         Relationships: []
@@ -9381,6 +9449,20 @@ export type Database = {
         Args: { p_call_id: string; p_device_id: string }
         Returns: Json
       }
+      aegis_call_invitation_proof_payload: {
+        Args: {
+          p_call_id: string
+          p_call_type: string
+          p_caller_device_id: string
+          p_caller_id: string
+          p_conversation_id: string
+          p_is_group: boolean
+          p_recipient_device_id: string
+          p_recipient_user_id: string
+          p_unsigned_envelope: string
+        }
+        Returns: string
+      }
       aegis_call_latest_for_device: {
         Args: { p_device_id: string }
         Returns: Json
@@ -9599,6 +9681,7 @@ export type Database = {
         Returns: Json
       }
       assert_current_login_session_approved: { Args: never; Returns: undefined }
+      assert_current_messaging_client: { Args: never; Returns: undefined }
       begin_aegis_view_once_consume: {
         Args: { p_device_id: string; p_message_id: string }
         Returns: Json
@@ -9675,6 +9758,7 @@ export type Database = {
           p_user_id: string
         }
         Returns: {
+          bundle_signature: string
           device_number: number
           public_bundle: string
           registration_id: number
@@ -9736,10 +9820,6 @@ export type Database = {
           p_nonce: string
         }
         Returns: Json
-      }
-      count_libsignal_prekey_bundles: {
-        Args: { p_device_id: string }
-        Returns: number
       }
       create_group_conversation: {
         Args: { p_member_ids: string[]; p_name: string }
@@ -10088,6 +10168,14 @@ export type Database = {
         Args: { p_device_id: string; p_user_id: string }
         Returns: number
       }
+      get_libsignal_prekey_inventory: {
+        Args: { p_device_id: string }
+        Returns: Json
+      }
+      get_libsignal_receive_attestation: {
+        Args: { p_device_id: string; p_user_id: string }
+        Returns: Json
+      }
       get_local_partner_media: {
         Args: { p_kind?: string; p_scope?: string }
         Returns: Json
@@ -10306,6 +10394,16 @@ export type Database = {
           public_key_jwk: Json
           retired_at: string
         }[]
+      }
+      libsignal_bundle_binding_payload: {
+        Args: {
+          p_device_id: string
+          p_device_number: number
+          p_public_bundle: string
+          p_registration_id: number
+          p_user_id: string
+        }
+        Returns: string
       }
       list_active_devices_for_user: {
         Args: { p_user_id: string }
@@ -10568,6 +10666,7 @@ export type Database = {
       process_email_queue_cron_tick: { Args: never; Returns: undefined }
       publish_libsignal_prekey_bundle: {
         Args: {
+          p_bundle_signature?: string
           p_device_id: string
           p_device_number: number
           p_kyber_prekey_id: number
@@ -10723,6 +10822,7 @@ export type Database = {
         }
         Returns: Json
       }
+      require_approved_recovery_login: { Args: never; Returns: boolean }
       reset_backup_pin_attempts: {
         Args: { _user_id: string }
         Returns: undefined
