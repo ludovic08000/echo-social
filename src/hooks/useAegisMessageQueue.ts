@@ -157,6 +157,13 @@ export function classifyOutboundFailure(error: unknown): {
 } {
   const raw = error instanceof Error ? error.message : String(error ?? 'Échec de l’envoi chiffré.');
   const text = normalizedErrorText(error);
+  const protocolFailure = [
+    ['aegis_client_update_required', 'Mets ForSure à jour, puis réessaie. Tes messages et tes clés sont conservés.'],
+    ['aegis_peer_device_update_required', 'Le destinataire doit mettre ForSure à jour et ouvrir sa messagerie sur cet appareil.'],
+    ['aegis_libsignal_bundle_binding_invalid', 'La clé de cet appareil ne peut pas être authentifiée. Envoi bloqué par sécurité.'],
+    ['aegis_libsignal_identity_binding_invalid', 'L’identité de la session ne correspond pas à l’appareil approuvé. Envoi bloqué par sécurité.'],
+  ].find(([code]) => text.includes(code));
+  if (protocolFailure) return { status: 'failed_visible', message: protocolFailure[1] };
   const permanent = isAuthenticationError(error) || [
     'verification obligatoire',
     'fingerprint changed',

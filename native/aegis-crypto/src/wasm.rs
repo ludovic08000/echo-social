@@ -3,7 +3,7 @@
 
 use wasm_bindgen::prelude::*;
 use libsignal_protocol::{IdentityKeyPair, ProtocolAddress};
-use crate::{AegisSignalStore, EncryptedMessage, create_device_bundle, decrypt_message, encrypt_message, establish_outbound_session};
+use crate::{AegisSignalStore, EncryptedMessage, bind_remote_identity, create_device_bundle, decrypt_message, encrypt_message, establish_outbound_session};
 
 fn pack(parts: &[&[u8]]) -> Vec<u8> {
     let mut packed = Vec::new();
@@ -46,6 +46,13 @@ fn js_signal(error: libsignal_protocol::SignalProtocolError) -> JsError {
 fn address(name: &str, device_id: u32) -> Result<ProtocolAddress, JsError> {
     let id = device_id.try_into().map_err(|_| JsError::new("AEGIS_DEVICE_ID_INVALID"))?;
     Ok(ProtocolAddress::new(name.to_owned(), id))
+}
+
+#[wasm_bindgen]
+pub async fn aegis_wasm_identity_bind(store: &[u8], remote_name: &str, remote_device: u32, verified_identity: &[u8]) -> Result<Vec<u8>, JsError> {
+    let mut store = AegisSignalStore::deserialize(store).map_err(js_signal)?;
+    bind_remote_identity(&mut store, &address(remote_name, remote_device)?, verified_identity).await.map_err(js_signal)?;
+    store.serialize().map_err(js_signal)
 }
 
 /// Retourne store || bundle public, tous deux encodés par longueur.

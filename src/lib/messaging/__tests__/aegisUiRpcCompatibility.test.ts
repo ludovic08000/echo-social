@@ -84,9 +84,14 @@ describe('Aegis UI and final schema compatibility', () => {
 
   it('marks only visible, decrypted incoming messages as read', () => {
     const source = read('src/components/ChatWidget.tsx');
-    expect(source).toContain("if (document.visibilityState !== 'visible') return;");
-    expect(source).toContain('decryptedCacheRef.current.has(message.id)');
-    expect(source).toContain('void acknowledgeAegisMessages(user.id, readableIncomingIds, true)');
+    const visibility = read('src/lib/messaging/visibleMessageReads.ts');
+    expect(source).toContain('observeVisibleMessageReads');
+    expect(visibility).toContain("document.visibilityState !== 'visible'");
+    expect(visibility).toContain('getBoundingClientRect()');
+    expect(source).toContain('decryptedCacheRef.current.has(messageId)');
+    expect(source).toContain('!read.has(messageId)');
+    expect(source).toContain("state.recipient_user_id === user.id && state.state === 'read'");
+    expect(source).toContain('await acknowledgeAegisMessages(user.id, readableIncomingIds, true)');
     expect(source).toContain('[conversationId, messages, user?.id, cacheVersion, markConversationRead]');
   });
 

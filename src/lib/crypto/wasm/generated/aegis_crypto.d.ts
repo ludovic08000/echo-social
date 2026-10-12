@@ -4,6 +4,7 @@ export function aegis_wasm_abi_version(): number;
 export function aegis_wasm_identity_generate(): Uint8Array;
 export function aegis_wasm_identity_public(secret: Uint8Array): Uint8Array;
 export function aegis_wasm_store_create(registration_id: number): Uint8Array;
+export function aegis_wasm_identity_bind(store: Uint8Array, remote_name: string, remote_device: number, verified_identity: Uint8Array): Promise<Uint8Array>;
 /**
  * Retourne store || bundle public, tous deux encodés par longueur.
  */
@@ -23,19 +24,20 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly aegis_crypto_abi_version: () => number;
-  readonly aegis_crypto_buffer_free: (a: number) => void;
-  readonly aegis_crypto_identity_generate: (a: number, b: number) => number;
-  readonly aegis_crypto_identity_public: (a: number, b: number, c: number) => number;
-  readonly aegis_crypto_last_error_message: () => number;
   readonly aegis_wasm_abi_version: () => number;
   readonly aegis_wasm_bundle_create: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
+  readonly aegis_wasm_identity_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => any;
   readonly aegis_wasm_identity_generate: () => [number, number];
   readonly aegis_wasm_identity_public: (a: number, b: number) => [number, number, number, number];
   readonly aegis_wasm_message_decrypt: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => any;
   readonly aegis_wasm_message_encrypt: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => any;
   readonly aegis_wasm_session_establish: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => any;
   readonly aegis_wasm_store_create: (a: number) => [number, number, number, number];
+  readonly aegis_crypto_abi_version: () => number;
+  readonly aegis_crypto_buffer_free: (a: number) => void;
+  readonly aegis_crypto_identity_generate: (a: number, b: number) => number;
+  readonly aegis_crypto_identity_public: (a: number, b: number, c: number) => number;
+  readonly aegis_crypto_last_error_message: () => number;
   readonly __wbindgen_exn_store: (a: number) => void;
   readonly __externref_table_alloc: () => number;
   readonly __wbindgen_export_2: WebAssembly.Table;

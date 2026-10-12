@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
     resolvePlaintext: vi.fn(),
     pullSealedWakeups: vi.fn(),
     acknowledgeSealedWakeups: vi.fn(),
+    maintainPrekeys: vi.fn(),
   };
 });
 
@@ -32,6 +33,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 vi.mock('@/lib/messaging/aegisDeviceRuntime', () => ({
   ensureAegisDeviceReady: mocks.ensureReady,
 }));
+vi.mock('@/lib/crypto/libsignalProvisioning', () => ({ maintainLibsignalDevice: mocks.maintainPrekeys }));
 
 vi.mock('@/lib/messaging/aegisTransport', () => ({
   callAegisServer: mocks.callAegisServer,
@@ -77,9 +79,21 @@ beforeEach(() => {
   mocks.resolvePlaintext.mockResolvedValue({ text: 'decrypted', mediaKeyB64: null, hidden: false });
   mocks.pullSealedWakeups.mockResolvedValue([]);
   mocks.acknowledgeSealedWakeups.mockResolvedValue(undefined);
+  mocks.maintainPrekeys.mockResolvedValue(undefined);
 });
 
 describe('Aegis durable device inbox client', () => {
+  it('maintains prekeys during receive-only use without delaying delivery', async () => {
+    mocks.maintainPrekeys.mockReturnValueOnce(new Promise(() => {}));
+    await expect(syncAegisDeviceInbox('user-one')).resolves.toEqual([]);
+    expect(mocks.maintainPrekeys).toHaveBeenCalledWith('user-one', 'device-stable');
+  });
+
+  it('keeps inbox synchronization working after a maintenance failure', async () => {
+    mocks.maintainPrekeys.mockRejectedValueOnce(new Error('offline'));
+    await expect(syncAegisDeviceInbox('user-one')).resolves.toEqual([]);
+    expect(mocks.trace).toHaveBeenCalledWith(expect.objectContaining({ stage: 'PREKEY_MAINTENANCE_DEFERRED' }), 'warn');
+  });
   it('shares one server synchronization and wakes the matching bubble', async () => {
     const row = {
       copy_id: 'copy-one',

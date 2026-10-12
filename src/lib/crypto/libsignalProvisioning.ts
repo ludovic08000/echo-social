@@ -3,11 +3,15 @@ import { runDeviceRpcWithTimeout } from '@/lib/api/deviceRpcTimeout';
 import { captureLibsignalStore, createLibsignalBundle, createLibsignalStore } from './libsignalPlatformBridge';
 import { getLibsignalDeviceNumber } from './libsignalDeviceNumber';
 import { bufferToBase64 } from './utils';
+import { loadDeviceIdentity } from './deviceIdentity';
+import { readLibsignalBundleMetadata, signLibsignalBundleBinding } from './libsignalBundleBinding';
 import { getCurrentDeviceFinalizationTraceId, traceFinalizationOperation } from '@/lib/device-manager/deviceFinalizationTrace';
 
 const BUNDLE_BATCH = 20;
 const BUNDLE_PUBLISH_CONCURRENCY = 4;
-const PREKEY_MAINTENANCE_TTL_MS = 12 * 60 * 60 * 1_000;
+// Le stock consommable doit être contrôlé même quand l'utilisateur ne fait que
+// recevoir. Une fenêtre courte évite de masquer son épuisement pendant 12 h.
+const PREKEY_MAINTENANCE_TTL_MS = 5 * 60 * 1_000;
 const PREKEY_MAINTENANCE_RETRY_MS = 60_000;
 const provisioning = new Map<string, Promise<void>>();
 const maintainedAt = new Map<string, number>();
@@ -17,6 +21,16 @@ type RpcResult<T> = {
   data: T;
   error: { message: string } | null;
 };
+
+type AbortableResult<T> = { abortSignal(signal: AbortSignal): PromiseLike<RpcResult<T>> };
+interface ProvisioningRpc {
+  rpc(name: 'get_libsignal_prekey_inventory', args: { p_device_id: string }): AbortableResult<{ total: number; verified: number }>;
+  rpc(name: 'publish_libsignal_prekey_bundle', args: {
+    p_device_id: string; p_device_number: number; p_registration_id: number;
+    p_prekey_id: number; p_signed_prekey_id: number; p_kyber_prekey_id: number; p_public_bundle: string; p_bundle_signature: string;
+  }): AbortableResult<{ ok?: boolean; code?: string } | null>;
+}
+const provisioningRpc = supabase as unknown as ProvisioningRpc;
 
 function randomId(): number {
   const raw = new Uint32Array(1);
@@ -30,22 +44,26 @@ async function publishBundle(args: {
   deviceNumber: number;
   traceId: string;
   attempt: number;
+  signingPrivateKey: CryptoKey;
 }): Promise<void> {
+  const { signingPrivateKey, ...context } = args;
   const preKeyId = randomId();
   const signedPreKeyId = randomId();
   const kyberPreKeyId = randomId();
   const bundle = await traceFinalizationOperation('libsignal.bundle_create_and_seal',
-    () => createLibsignalBundle({ ...args, preKeyId, signedPreKeyId, kyberPreKeyId }), args);
-  // Le premier champ du bundle public contient les cinq u32 LE officiels.
-  const metadataLength = new DataView(bundle.buffer, bundle.byteOffset, 4).getUint32(0, true);
-  if (metadataLength !== 20 || bundle.byteLength < 24) throw new Error('AEGIS_LIBSIGNAL_BUNDLE_METADATA_INVALID');
-  const metadata = new DataView(bundle.buffer, bundle.byteOffset + 4, 20);
-  const registrationId = metadata.getUint32(0, true);
+    () => createLibsignalBundle({ ...context, preKeyId, signedPreKeyId, kyberPreKeyId }), context);
+  const metadata = readLibsignalBundleMetadata(bundle);
+  if (metadata.deviceNumber !== args.deviceNumber || metadata.preKeyId !== preKeyId
+    || metadata.signedPreKeyId !== signedPreKeyId || metadata.kyberPreKeyId !== kyberPreKeyId) {
+    throw new Error('AEGIS_LIBSIGNAL_BUNDLE_METADATA_INVALID');
+  }
+  const { registrationId } = metadata;
   const publicBundle = bufferToBase64(bundle.buffer.slice(bundle.byteOffset, bundle.byteOffset + bundle.byteLength) as ArrayBuffer);
+  const bundleSignature = await signLibsignalBundleBinding({ ...context, registrationId, publicBundle }, signingPrivateKey);
   await traceFinalizationOperation('libsignal.bundle_publish', async () => {
     const result = await runDeviceRpcWithTimeout<RpcResult<{ ok?: boolean; code?: string } | null>>(
       'AEGIS_LIBSIGNAL_BUNDLE_PUBLISH_FAILED',
-      (signal) => (supabase as any).rpc('publish_libsignal_prekey_bundle', {
+      (signal) => provisioningRpc.rpc('publish_libsignal_prekey_bundle', {
         p_device_id: args.deviceId,
         p_device_number: args.deviceNumber,
         p_registration_id: registrationId,
@@ -53,11 +71,12 @@ async function publishBundle(args: {
         p_signed_prekey_id: signedPreKeyId,
         p_kyber_prekey_id: kyberPreKeyId,
         p_public_bundle: publicBundle,
+        p_bundle_signature: bundleSignature,
       }).abortSignal(signal),
     );
     if (result.error || result.data?.ok !== true) throw new Error(result.data?.code ?? result.error?.message ?? 'AEGIS_LIBSIGNAL_BUNDLE_PUBLISH_FAILED');
     return result;
-  }, args);
+  }, context);
 }
 
 /** Crée puis publie un lot complet seulement après scellement de chaque privé. */
@@ -68,25 +87,31 @@ async function provisionDevice(userId: string, deviceId: string): Promise<void> 
     () => getLibsignalDeviceNumber(userId, deviceId),
     context,
   );
-  const { data: countData } = await traceFinalizationOperation('libsignal.bundle_count', async () => {
-    const result = await runDeviceRpcWithTimeout<RpcResult<number>>(
+  const { data: inventory } = await traceFinalizationOperation('libsignal.bundle_count', async () => {
+    const result = await runDeviceRpcWithTimeout<RpcResult<{ total: number; verified: number }>>(
       'AEGIS_LIBSIGNAL_BUNDLE_COUNT_FAILED',
-      (signal) => (supabase as any)
-        .rpc('count_libsignal_prekey_bundles', { p_device_id: deviceId })
+      (signal) => provisioningRpc
+        .rpc('get_libsignal_prekey_inventory', { p_device_id: deviceId })
         .abortSignal(signal),
     );
     if (result.error) throw new Error(`AEGIS_LIBSIGNAL_BUNDLE_COUNT_FAILED:${result.error.message}`);
     return result;
   }, context);
-  const existing = Number(countData ?? 0);
-  if (!Number.isSafeInteger(existing) || existing < 0) throw new Error('AEGIS_LIBSIGNAL_BUNDLE_COUNT_INVALID');
+  const existing = inventory?.verified;
+  const total = inventory?.total;
+  if (!Number.isSafeInteger(existing) || !Number.isSafeInteger(total) || existing < 0 || total < existing) {
+    throw new Error('AEGIS_LIBSIGNAL_BUNDLE_COUNT_INVALID');
+  }
   // Des publics déjà publiés imposent de conserver leurs privés : ne jamais
   // recréer silencieusement une identité sous le même identifiant d'appareil.
-  if (existing > 0) {
+  if (total > 0) {
     await traceFinalizationOperation('libsignal.store_verify',
       () => captureLibsignalStore(userId, deviceId).then(() => undefined), context);
   }
   if (existing >= BUNDLE_BATCH / 2) return;
+  // Une mise à jour ne crée jamais une nouvelle identité d'appareil pour signer.
+  const signing = await loadDeviceIdentity(userId, deviceId);
+  if (!signing) throw new Error('AEGIS_DEVICE_SIGNING_KEY_MISSING');
   const requestedRegistrationId = randomId();
   // La création est déjà idempotente : toute erreur de lecture/scellement doit
   // arrêter la publication, jamais être masquée par le mot « STORE ».
@@ -101,7 +126,7 @@ async function provisionDevice(userId: string, deviceId: string): Promise<void> 
     async () => {
       while (nextBundle < missing) {
         const attempt = ++nextBundle;
-        await publishBundle({ ...context, deviceNumber, attempt });
+        await publishBundle({ ...context, deviceNumber, attempt, signingPrivateKey: signing.privateKey });
       }
     },
   );
@@ -139,10 +164,12 @@ export function provisionLibsignalDevice(userId: string, deviceId: string): Prom
 export function maintainLibsignalDevice(userId: string, deviceId: string): Promise<void> {
   const key = JSON.stringify([userId, deviceId]);
   const now = Date.now();
-  if (now - (maintainedAt.get(key) ?? 0) < PREKEY_MAINTENANCE_TTL_MS) {
+  const lastSuccess = maintainedAt.get(key);
+  const lastFailure = maintenanceFailedAt.get(key);
+  if (lastSuccess !== undefined && now - lastSuccess < PREKEY_MAINTENANCE_TTL_MS) {
     return Promise.resolve();
   }
-  if (now - (maintenanceFailedAt.get(key) ?? 0) < PREKEY_MAINTENANCE_RETRY_MS) {
+  if (lastFailure !== undefined && now - lastFailure < PREKEY_MAINTENANCE_RETRY_MS) {
     return Promise.resolve();
   }
   return provisionLibsignalDevice(userId, deviceId);

@@ -54,6 +54,7 @@ export function saveKnownFingerprint(
   const known = getKnownFingerprints();
   known[storageKey(observerUserId, peerUserId)] = fingerprint;
   localStorage.setItem(KNOWN_FP_KEY, hardGlobals.jsonStringify(known));
+  invalidateFingerprintCheckCache(peerUserId);
 }
 
 const fingerprintCheckCache = new Map<
@@ -77,6 +78,12 @@ export async function saveKnownFingerprintServer(
   try {
     const observerUserId = await getCachedAuthUserId();
     if (!observerUserId) return false;
+    // Seule une décision explicite peut remplacer une identité déjà épinglée.
+    const conflictsWithLocalPin = () => {
+      const known = getKnownFingerprint(observerUserId, peerUserId);
+      return !verifiedByUser && Boolean(known && known !== fingerprint);
+    };
+    if (conflictsWithLocalPin()) return false;
 
     const cacheKey = `${observerUserId}:${peerUserId}:${fingerprint}:${verifiedByUser ? 1 : 0}`;
     const lastSavedAt = fingerprintSaveCache.get(cacheKey);
@@ -103,6 +110,7 @@ export async function saveKnownFingerprintServer(
           ignoreDuplicates: true,
         });
     if (error) throw error;
+    if (conflictsWithLocalPin()) return false;
 
     fingerprintSaveCache.set(cacheKey, Date.now());
     saveKnownFingerprint(observerUserId, peerUserId, fingerprint);
@@ -138,7 +146,7 @@ export async function checkFingerprintChangeWithServer(
   currentFingerprint: string,
 ): Promise<FingerprintCheckResult> {
   const localPrevious = getKnownFingerprint(currentUserId, peerUserId);
-  const cacheKey = `${currentUserId}:${peerUserId}:${currentFingerprint}`;
+  const cacheKey = `${currentUserId}:${peerUserId}:${currentFingerprint}:${localPrevious ?? ''}`;
 
   const cached = fingerprintCheckCache.get(cacheKey);
   if (
@@ -164,7 +172,10 @@ export async function checkFingerprintChangeWithServer(
     // A first contact is persisted before the route becomes ready.
   }
 
-  const previousFingerprint = serverPrevious ?? localPrevious;
+  // Le serveur ne peut pas effacer la confiance locale, même après une réponse
+  // asynchrone ou une vérification effectuée entre-temps dans un autre onglet.
+  const latestLocal = getKnownFingerprint(currentUserId, peerUserId);
+  const previousFingerprint = latestLocal ?? localPrevious ?? serverPrevious;
   if (previousFingerprint && previousFingerprint !== currentFingerprint) {
     await recordChange({
       observerUserId: currentUserId,
@@ -177,7 +188,7 @@ export async function checkFingerprintChangeWithServer(
     return result;
   }
 
-  if (previousFingerprint === currentFingerprint && localPrevious !== currentFingerprint) {
+  if (previousFingerprint === currentFingerprint && !latestLocal) {
     saveKnownFingerprint(currentUserId, peerUserId, currentFingerprint);
   }
 
@@ -204,27 +215,37 @@ export async function assertConversationFingerprintsTrusted(
     .map((participant) => participant.user_id)
     .filter((userId): userId is string => Boolean(userId) && userId !== currentUserId)));
 
-  await Promise.all(peerUserIds.map(async (peerUserId) => {
+  await assertPeerFingerprintsTrusted(currentUserId, peerUserIds);
+}
+
+/** Les appels et les messages utilisent la même décision de confiance locale. */
+export async function assertPeerFingerprintsTrusted(
+  currentUserId: string,
+  peerUserIds: readonly string[],
+): Promise<void> {
+  await Promise.all(Array.from(new Set(peerUserIds)).filter((id) => id !== currentUserId).map(async (peerUserId) => {
     const peerKeys = await fetchPeerPublicKeys(peerUserId, { forceRefresh: true });
     if (!peerKeys) throw new Error('PEER_IDENTITY_BINDING_UNAVAILABLE');
 
-    const check = await checkFingerprintChangeWithServer(
-      currentUserId,
-      peerUserId,
-      peerKeys.fingerprint,
-    );
-    if (check.changed) throw new Error('FINGERPRINT_CHANGED');
-
-    if (!getKnownFingerprint(currentUserId, peerUserId)) {
-      const persisted = await saveKnownFingerprintServer(
-        peerUserId,
-        peerKeys.fingerprint,
-        false,
-      );
-      if (!persisted) throw new Error('FINGERPRINT_TRUST_PERSIST_FAILED');
-      saveKnownFingerprint(currentUserId, peerUserId, peerKeys.fingerprint);
-    }
+    await assertExactPeerFingerprintTrusted(currentUserId, peerUserId, peerKeys.fingerprint);
   }));
+}
+
+/** Épingler l'identité exacte qui a autorisé l'appareil, pas une seconde
+ * lecture du registre susceptible de retourner une autre identité. */
+export async function assertExactPeerFingerprintTrusted(
+  currentUserId: string, peerUserId: string, fingerprint: string,
+): Promise<void> {
+  if (!fingerprint) throw new Error('PEER_IDENTITY_BINDING_UNAVAILABLE');
+  // Le compte local possède déjà sa propre chaîne d'autorisation.
+  if (currentUserId === peerUserId) return;
+  const check = await checkFingerprintChangeWithServer(currentUserId, peerUserId, fingerprint);
+  if (check.changed) throw new Error('FINGERPRINT_CHANGED');
+  if (!getKnownFingerprint(currentUserId, peerUserId)) {
+    const persisted = await saveKnownFingerprintServer(peerUserId, fingerprint, false);
+    if (!persisted) throw new Error('FINGERPRINT_TRUST_PERSIST_FAILED');
+    saveKnownFingerprint(currentUserId, peerUserId, fingerprint);
+  }
 }
 
 export function checkFingerprintChange(

@@ -34,6 +34,29 @@ fn object_array_result<'local>(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_fans_forsure_app_crypto_AegisCryptoNative_identityBind(
+    mut unowned_env: EnvUnowned,
+    _class: JClass,
+    store: JByteArray,
+    remote_name: JString,
+    remote_device: jint,
+    verified_identity: JByteArray,
+) -> jbyteArray {
+    unowned_env.with_env(|env| -> jni::errors::Result<jbyteArray> {
+        let store = env.convert_byte_array(&store)?;
+        let identity = env.convert_byte_array(&verified_identity)?;
+        let remote = remote_name.try_to_string(env)?;
+        match native_api::identity_bind(&store, &remote, remote_device as u32, &identity) {
+            Ok(next) => byte_array_result(env, &next),
+            Err(_) => {
+                env.throw_new(jni_str!("java/lang/RuntimeException"), jni_str!("AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID"))?;
+                Ok(std::ptr::null_mut())
+            }
+        }
+    }).resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_fans_forsure_app_crypto_AegisCryptoNative_abiVersion(
     _env: EnvUnowned,
     _class: JClass,

@@ -7,7 +7,7 @@ use libsignal_protocol::{
     CiphertextMessage, CiphertextMessageType, DeviceId, GenericSignedPreKey, IdentityKey,
     IdentityKeyStore, KeyPair, KyberPreKeyId, KyberPreKeyRecord, KyberPreKeyStore,
     PreKeyBundle, PreKeyId, PreKeyRecord, PreKeySignalMessage, PreKeyStore, ProtocolAddress,
-    PublicKey, SignalMessage, SignalProtocolError, SignedPreKeyId,
+    PublicKey, SessionStore, SignalMessage, SignalProtocolError, SignedPreKeyId,
     SignedPreKeyRecord, SignedPreKeyStore, Timestamp, kem, message_decrypt, message_encrypt,
     process_prekey_bundle,
 };
@@ -71,6 +71,33 @@ impl DevicePreKeyBundle {
 pub struct EncryptedMessage {
     pub message_type: u8,
     pub ciphertext: Vec<u8>,
+}
+
+/// L'appelant doit avoir vérifié la preuve compte → appareil → identité
+/// Libsignal. Aucun remplacement silencieux d'une identité déjà connue.
+pub async fn bind_remote_identity(
+    store: &mut AegisSignalStore,
+    remote: &ProtocolAddress,
+    verified_identity: &[u8],
+) -> Result<()> {
+    // IdentityKey::decode accepte certains encodages étendus ; le contrat
+    // Aegis n'accepte que la clé publique canonique, jamais un record privé.
+    if verified_identity.len() != 33 || verified_identity[0] != 5 {
+        return Err(SignalProtocolError::InvalidArgument("AEGIS_LIBSIGNAL_IDENTITY_INVALID".into()));
+    }
+    let expected = IdentityKey::decode(verified_identity)?;
+    if store.get_identity(remote).await?.is_some_and(|known| known != expected) {
+        return Err(SignalProtocolError::UntrustedIdentity(remote.clone()));
+    }
+    if let Some(session) = store.load_session(remote).await? {
+        if session.remote_identity_key_bytes()?.as_deref() != Some(verified_identity) {
+            return Err(SignalProtocolError::UntrustedIdentity(remote.clone()));
+        }
+    }
+    // Le pin précède le déchiffrement : Libsignal refuse ainsi dès le premier
+    // PreKey une identité différente, au lieu d'appliquer la confiance initiale.
+    store.save_identity(remote, &expected).await?;
+    Ok(())
 }
 
 /// Génère ensemble les clés publiques publiables et leurs records privés.

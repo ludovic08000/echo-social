@@ -130,6 +130,14 @@ Deno.serve(async (req) => {
         return json(400, { error: "INVALID_REQUEST" });
       }
 
+      // Une invitation ou un ancien JWT ne suffit pas : la connexion courante
+      // doit être approuvée avant de délivrer l'accès à un appel privé.
+      diagnostic.step("login_approval");
+      const { data: loginApproved, error: approvalError } = await callerClient.rpc("is_current_login_session_approved");
+      if (approvalError || loginApproved !== true) {
+        return json(403, { error: "LOGIN_SECURITY_APPROVAL_REQUIRED" });
+      }
+
       const { data: call, error: callError } = await adminClient
         .from("active_calls")
         .select("id, conversation_id, caller_id, caller_device_id, room_name, status, protocol_version")
@@ -145,6 +153,17 @@ Deno.serve(async (req) => {
         return json(403, { error: "CALL_NOT_JOINABLE" });
       }
 
+      // Quitter une conversation retire aussi le droit de rejoindre ses appels,
+      // même si une invitation historique existe encore pour cet appareil.
+      const { data: participant, error: participantError } = await adminClient
+        .from("conversation_participants")
+        .select("user_id")
+        .eq("conversation_id", call.conversation_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (participantError) return json(503, { error: "CALL_STATE_LOOKUP_FAILED" });
+      if (!participant) return json(403, { error: "CALL_DEVICE_NOT_INVITED" });
+
       diagnostic.step("device_authorization");
       const { data: authorizedDevice, error: deviceError } = await adminClient
         .from("user_devices")
@@ -153,6 +172,9 @@ Deno.serve(async (req) => {
         .eq("device_id", deviceId)
         .eq("is_active", true)
         .is("revoked_at", null)
+        .is("stale_at", null)
+        .is("crypto_invalid_at", null)
+        .not("account_bound_at", "is", null)
         .eq("approval_status", "approved")
         .eq("binding_status", "bound")
         .eq("routing_status", "ready")

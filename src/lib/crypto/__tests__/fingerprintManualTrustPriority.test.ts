@@ -133,4 +133,69 @@ describe('exact account identity pinning', () => {
 
     expect(mocks.recordIdentityChange).toHaveBeenCalledTimes(1);
   });
+
+  it('never lets the server replace a locally pinned identity without consent', async () => {
+    saveKnownFingerprint('observer-1', 'peer-server-replaced', 'LOCAL-PINNED');
+    mocks.maybeSingle.mockResolvedValue({ data: { fingerprint: 'SERVER-REPLACEMENT' }, error: null });
+
+    await expect(checkFingerprintChangeWithServer(
+      'observer-1', 'peer-server-replaced', 'SERVER-REPLACEMENT',
+    )).resolves.toEqual({ changed: true, previousFp: 'LOCAL-PINNED' });
+    expect(getKnownFingerprints()['observer-1:peer-server-replaced']).toBe('LOCAL-PINNED');
+  });
+
+  it('keeps a locally verified identity usable when the server pin is stale', async () => {
+    saveKnownFingerprint('observer-1', 'peer-server-stale', 'LOCAL-PINNED');
+    mocks.maybeSingle.mockResolvedValue({ data: { fingerprint: 'SERVER-OLD' }, error: null });
+
+    await expect(checkFingerprintChangeWithServer(
+      'observer-1', 'peer-server-stale', 'LOCAL-PINNED',
+    )).resolves.toEqual({ changed: false, previousFp: null });
+  });
+
+  it('does not reuse an approval cached before a local trust change in another tab', async () => {
+    mocks.maybeSingle.mockResolvedValue({ data: { fingerprint: 'FIRST' }, error: null });
+    await checkFingerprintChangeWithServer('observer-1', 'peer-cache', 'FIRST');
+    // Simulate another tab changing shared storage without this module's invalidator.
+    localStorage.setItem('forsure-known-fps', JSON.stringify({ 'observer-1:peer-cache': 'VERIFIED-NEW' }));
+
+    await expect(checkFingerprintChangeWithServer('observer-1', 'peer-cache', 'FIRST'))
+      .resolves.toEqual({ changed: true, previousFp: 'VERIFIED-NEW' });
+  });
+
+  it('rechecks the local pin after an in-flight server lookup', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.maybeSingle.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const check = checkFingerprintChangeWithServer('observer-1', 'peer-race', 'SERVER-KEY');
+    saveKnownFingerprint('observer-1', 'peer-race', 'LOCALLY-VERIFIED');
+    finish({ data: { fingerprint: 'SERVER-KEY' }, error: null });
+
+    await expect(check).resolves.toEqual({ changed: true, previousFp: 'LOCALLY-VERIFIED' });
+    expect(getKnownFingerprints()['observer-1:peer-race']).toBe('LOCALLY-VERIFIED');
+  });
+
+  it('rejects automatic saves that would replace a known local identity', async () => {
+    saveKnownFingerprint('observer-1', 'peer-auto', 'LOCAL-PINNED');
+    await expect(saveKnownFingerprintServer('peer-auto', 'REPLACEMENT')).resolves.toBe(false);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(getKnownFingerprints()['observer-1:peer-auto']).toBe('LOCAL-PINNED');
+  });
+
+  it('does not overwrite a pin created while an automatic save was in flight', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.upsert.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const save = saveKnownFingerprintServer('peer-save-race', 'FIRST');
+    await vi.waitFor(() => expect(mocks.upsert).toHaveBeenCalled());
+    saveKnownFingerprint('observer-1', 'peer-save-race', 'LOCALLY-VERIFIED');
+    finish({ error: null });
+
+    await expect(save).resolves.toBe(false);
+    expect(getKnownFingerprints()['observer-1:peer-save-race']).toBe('LOCALLY-VERIFIED');
+  });
+
+  it('still permits an explicit manual verification of a new identity', async () => {
+    saveKnownFingerprint('observer-1', 'peer-manual', 'OLD');
+    await expect(saveKnownFingerprintServer('peer-manual', 'VERIFIED-NEW', true)).resolves.toBe(true);
+    expect(getKnownFingerprints()['observer-1:peer-manual']).toBe('VERIFIED-NEW');
+  });
 });

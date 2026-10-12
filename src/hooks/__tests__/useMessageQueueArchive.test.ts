@@ -4,6 +4,14 @@ import { isMultiDeviceEnvelopeBody } from '@/lib/messaging/messageCompatibility'
 import { selectInitialDeliveryMode } from '../useMessageQueue';
 import { classifyOutboundFailure } from '../useAegisMessageQueue';
 
+it.each(['AEGIS_CLIENT_UPDATE_REQUIRED','AEGIS_PEER_DEVICE_UPDATE_REQUIRED','AEGIS_LIBSIGNAL_BUNDLE_BINDING_INVALID','AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID'])(
+  'does not endlessly retry a protocol trust/upgrade failure %s', (code) => {
+    const failure = classifyOutboundFailure(new Error(code));
+    expect(failure.status).toBe('failed_visible');
+    expect(failure.message).not.toContain('AEGIS_');
+    expect(failure.message.length).toBeGreaterThan(20);
+  });
+
 describe('useMessageQueue Aegis transport', () => {
   it('uses multi-device key fan-out for every fresh encrypted send', () => {
     expect(selectInitialDeliveryMode({

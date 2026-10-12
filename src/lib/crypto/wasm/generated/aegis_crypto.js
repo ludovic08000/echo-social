@@ -149,22 +149,6 @@ export function aegis_wasm_store_create(registration_id) {
     return v1;
 }
 
-/**
- * Retourne store || bundle public, tous deux encodés par longueur.
- * @param {Uint8Array} store
- * @param {number} device_id
- * @param {number} pre_key_id
- * @param {number} signed_pre_key_id
- * @param {number} kyber_pre_key_id
- * @returns {Promise<Uint8Array>}
- */
-export function aegis_wasm_bundle_create(store, device_id, pre_key_id, signed_pre_key_id, kyber_pre_key_id) {
-    const ptr0 = passArray8ToWasm0(store, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.aegis_wasm_bundle_create(ptr0, len0, device_id, pre_key_id, signed_pre_key_id, kyber_pre_key_id);
-    return ret;
-}
-
 const cachedTextEncoder = new TextEncoder();
 
 if (!('encodeInto' in cachedTextEncoder)) {
@@ -216,6 +200,40 @@ function passStringToWasm0(arg, malloc, realloc) {
     WASM_VECTOR_LEN = offset;
     return ptr;
 }
+/**
+ * @param {Uint8Array} store
+ * @param {string} remote_name
+ * @param {number} remote_device
+ * @param {Uint8Array} verified_identity
+ * @returns {Promise<Uint8Array>}
+ */
+export function aegis_wasm_identity_bind(store, remote_name, remote_device, verified_identity) {
+    const ptr0 = passArray8ToWasm0(store, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(remote_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(verified_identity, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.aegis_wasm_identity_bind(ptr0, len0, ptr1, len1, remote_device, ptr2, len2);
+    return ret;
+}
+
+/**
+ * Retourne store || bundle public, tous deux encodés par longueur.
+ * @param {Uint8Array} store
+ * @param {number} device_id
+ * @param {number} pre_key_id
+ * @param {number} signed_pre_key_id
+ * @param {number} kyber_pre_key_id
+ * @returns {Promise<Uint8Array>}
+ */
+export function aegis_wasm_bundle_create(store, device_id, pre_key_id, signed_pre_key_id, kyber_pre_key_id) {
+    const ptr0 = passArray8ToWasm0(store, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.aegis_wasm_bundle_create(ptr0, len0, device_id, pre_key_id, signed_pre_key_id, kyber_pre_key_id);
+    return ret;
+}
+
 /**
  * @param {Uint8Array} store
  * @param {string} local_name
@@ -290,7 +308,7 @@ function __wbg_adapter_6(arg0, arg1, arg2) {
     wasm.closure119_externref_shim(arg0, arg1, arg2);
 }
 
-function __wbg_adapter_31(arg0, arg1, arg2, arg3) {
+function __wbg_adapter_32(arg0, arg1, arg2, arg3) {
     wasm.closure182_externref_shim(arg0, arg1, arg2, arg3);
 }
 
@@ -354,7 +372,7 @@ function __wbg_get_imports() {
                 const a = state0.a;
                 state0.a = 0;
                 try {
-                    return __wbg_adapter_31(a, state0.b, arg0, arg1);
+                    return __wbg_adapter_32(a, state0.b, arg0, arg1);
                 } finally {
                     state0.a = a;
                 }

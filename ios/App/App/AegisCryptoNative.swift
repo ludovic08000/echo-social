@@ -42,6 +42,25 @@ enum AegisCryptoNative {
         return take(output)
     }
 
+    static func bindIdentity(store: Data, remoteName: String, remoteDevice: UInt32, identity: Data) throws -> Data {
+        try requireAbi()
+        let remote = Data(remoteName.utf8)
+        return try store.withUnsafeBytes { (storeBytes: UnsafeRawBufferPointer) in
+            try remote.withUnsafeBytes { (remoteBytes: UnsafeRawBufferPointer) in
+                try identity.withUnsafeBytes { (identityBytes: UnsafeRawBufferPointer) in
+                    var output = AegisBuffer(data: nil, len: 0)
+                    let status = aegis_crypto_identity_bind(
+                        storeBytes.bindMemory(to: UInt8.self).baseAddress, store.count,
+                        remoteBytes.bindMemory(to: UInt8.self).baseAddress, remote.count, remoteDevice,
+                        identityBytes.bindMemory(to: UInt8.self).baseAddress, identity.count, &output
+                    )
+                    guard status == 0 else { throw nativeError(status) }
+                    return take(output)
+                }
+            }
+        }
+    }
+
     static func createBundle(
         store: Data,
         deviceId: UInt32,

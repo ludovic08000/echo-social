@@ -7,7 +7,7 @@
 //   - flips `included_in_epoch` + `leaf_hash` on the log rows.
 //
 // Server signs the head with an Ed25519 key; the public key is stored in
-// `e2ee_kt_signing_keys` (a fresh key is provisioned on first run).
+// `e2ee_kt_signing_keys` (must match the stable operator-configured key).
 //
 // Auth model: relies on service role (no JWT verification). Lovable Cloud
 // edge functions deploy with verify_jwt = false by default. We additionally
@@ -16,6 +16,7 @@
 // path (Authorization: Bearer <SERVICE_ROLE_KEY>) is accepted.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { assertPublishedSigningKeyMatches, validateTransparencySigningKey } from "../_shared/kt-signing-key.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,7 +51,17 @@ async function sha256(b: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", b));
 }
 
-function canonicalLeafPayload(entry: any): string {
+interface TransparencyEntry {
+  created_at: string;
+  device_id?: string | null;
+  event_type: string;
+  fingerprint?: string | null;
+  id: string | number;
+  identity_epoch?: number | null;
+  payload?: unknown;
+  user_id: string;
+}
+function canonicalLeafPayload(entry: TransparencyEntry): string {
   const sorted = {
     created_at: entry.created_at,
     device_id: entry.device_id ?? null,
@@ -101,45 +112,27 @@ function signedHeadBytes(
   );
 }
 
-async function getOrCreateSigningKey(supabase: any): Promise<{ id: string; privJwk: JsonWebKey; pubJwk: JsonWebKey }> {
-  // Server signing private key lives in env (KT_SIGNING_PRIV_JWK). Bootstrap on first run.
-  const fromEnv = Deno.env.get("KT_SIGNING_PRIV_JWK");
-  if (fromEnv) {
-    const parsed = JSON.parse(fromEnv);
-    const { data: row } = await supabase
+async function getOrCreateSigningKey(supabase: ReturnType<typeof createClient>): Promise<{ id: string; privJwk: JsonWebKey; pubJwk: JsonWebKey }> {
+  const { privJwk, pubJwk } = await validateTransparencySigningKey(Deno.env.get("KT_SIGNING_PRIV_JWK"));
+  const { data: row, error: lookupError } = await supabase
       .from("e2ee_kt_signing_keys")
-      .select("id")
+      .select("id, public_key_jwk")
       .eq("active", true)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (row?.id) {
-      return { id: row.id, privJwk: parsed.priv, pubJwk: parsed.pub };
-    }
-    const { data: ins, error } = await supabase
-      .from("e2ee_kt_signing_keys")
-      .insert({ public_key_jwk: parsed.pub, algorithm: "Ed25519", active: true })
-      .select("id")
-      .single();
-    if (error) throw error;
-    return { id: ins.id, privJwk: parsed.priv, pubJwk: parsed.pub };
+  if (lookupError) throw new Error('KT_SIGNING_KEY_LOOKUP_FAILED');
+  if (row?.id) {
+    assertPublishedSigningKeyMatches(row.public_key_jwk, pubJwk);
+    return { id: row.id, privJwk, pubJwk };
   }
-
-  // Generate ephemeral key (only acceptable for dev/test). Operators should set
-  // KT_SIGNING_PRIV_JWK to keep signatures verifiable across deployments.
-  const kp = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, [
-    "sign",
-    "verify",
-  ])) as CryptoKeyPair;
-  const priv = await crypto.subtle.exportKey("jwk", kp.privateKey);
-  const pub = await crypto.subtle.exportKey("jwk", kp.publicKey);
   const { data: ins, error } = await supabase
     .from("e2ee_kt_signing_keys")
-    .insert({ public_key_jwk: pub, algorithm: "Ed25519", active: true })
+    .insert({ public_key_jwk: pubJwk, algorithm: "Ed25519", active: true })
     .select("id")
     .single();
-  if (error) throw error;
-  return { id: ins.id, privJwk: priv, pubJwk: pub };
+  if (error || !ins?.id) throw new Error('KT_SIGNING_KEY_PUBLISH_FAILED');
+  return { id: ins.id, privJwk, pubJwk };
 }
 
 async function signEd25519(privJwk: JsonWebKey, data: Uint8Array): Promise<string> {

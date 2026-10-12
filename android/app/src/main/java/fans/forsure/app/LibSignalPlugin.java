@@ -77,6 +77,7 @@ public final class LibSignalPlugin extends Plugin {
             result.put("abiVersion", EXPECTED_ABI);
             result.put("pqxdh", true);
             result.put("kyber1024", true);
+            result.put("identityBinding", true);
             call.resolve(result);
         } catch (Throwable error) {
             reject(call, "LIBSIGNAL_NATIVE_UNAVAILABLE", "Native libsignal unavailable", error);
@@ -93,6 +94,24 @@ public final class LibSignalPlugin extends Plugin {
             call.resolve(result);
         } catch (Throwable error) {
             reject(call, "LIBSIGNAL_STORE_CREATE_FAILED", "Failed to create libsignal store", error);
+        }
+    }
+
+    @PluginMethod
+    public void bindIdentity(PluginCall call) {
+        try {
+            requireAbi();
+            byte[] next = AegisCryptoNative.identityBind(
+                fromB64(requiredString(call, "storeB64")),
+                requiredString(call, "remoteUserId"),
+                requiredInt(call, "remoteDeviceNumber"),
+                fromB64(requiredString(call, "identityB64"))
+            );
+            JSObject result = new JSObject();
+            result.put("storeB64", b64(next));
+            call.resolve(result);
+        } catch (Throwable error) {
+            reject(call, "AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID", "AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID", error);
         }
     }
 

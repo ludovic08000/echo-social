@@ -10,7 +10,7 @@ use libsignal_protocol::{IdentityKeyPair, ProtocolAddress};
 use crate::{
     AEGIS_ERR_CRYPTO, AEGIS_ERR_INVALID_INPUT, AEGIS_ERR_NULL_POINTER, AegisBuffer,
     AegisSignalStore, DevicePreKeyBundle, EncryptedMessage, create_device_bundle,
-    decrypt_message, encrypt_message, establish_outbound_session, ffi_guard, input_slice,
+    bind_remote_identity, decrypt_message, encrypt_message, establish_outbound_session, ffi_guard, input_slice,
     owned_buffer, set_error,
 };
 
@@ -154,6 +154,19 @@ pub(crate) fn session_establish(
     signal(store.serialize())
 }
 
+pub(crate) fn identity_bind(
+    store: &[u8],
+    remote_name: &str,
+    remote_device: u32,
+    verified_identity: &[u8],
+) -> NativeResult<Vec<u8>> {
+    let mut store = signal(AegisSignalStore::deserialize(store))?;
+    signal(block_on(bind_remote_identity(
+        &mut store, &address(remote_name, remote_device)?, verified_identity,
+    )))?;
+    signal(store.serialize())
+}
+
 pub(crate) fn message_encrypt(
     store: &[u8],
     local_name: &str,
@@ -199,6 +212,33 @@ pub(crate) fn message_decrypt(
 fn ffi_error(message: String) -> i32 {
     set_error(message);
     AEGIS_ERR_CRYPTO
+}
+
+/// Extension additive de l'ABI : le store retourné reste privé et transitoire
+/// jusqu'au commit atomique de l'opération chiffrer/déchiffrer par le bridge.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aegis_crypto_identity_bind(
+    store: *const u8,
+    store_len: usize,
+    remote_name: *const u8,
+    remote_name_len: usize,
+    remote_device: u32,
+    verified_identity: *const u8,
+    verified_identity_len: usize,
+    out_store: *mut AegisBuffer,
+) -> i32 {
+    ffi_guard(|| {
+        if out_store.is_null() {
+            set_error("pointeur de sortie nul");
+            return Err(AEGIS_ERR_NULL_POINTER);
+        }
+        let store = unsafe { input_slice(store, store_len)? };
+        let remote_name = unsafe { input_utf8(remote_name, remote_name_len)? };
+        let identity = unsafe { input_slice(verified_identity, verified_identity_len)? };
+        let next = identity_bind(store, remote_name, remote_device, identity).map_err(ffi_error)?;
+        unsafe { out_store.write(owned_buffer(next)) };
+        Ok(())
+    })
 }
 
 unsafe fn input_utf8<'a>(data: *const u8, len: usize) -> Result<&'a str, i32> {

@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { traceE2EE } from './e2eeTrace';
+import { MESSAGING_CLIENT_REVISION } from '@/integrations/supabase/messagingRevision';
 
 export type AegisRpcError = {
   code?: string | null;
@@ -94,6 +95,7 @@ async function callGateway<T>(
       headers: {
         authorization: `Bearer ${session.access_token}`,
         'content-type': 'application/json',
+        'x-forsure-messaging-revision': MESSAGING_CLIENT_REVISION,
       },
       body: JSON.stringify(args),
       cache: 'no-store',

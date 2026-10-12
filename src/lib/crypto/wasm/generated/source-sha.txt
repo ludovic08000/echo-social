@@ -1,1 +1,1 @@
-a5b5d9d5c79c42815d33fa7f721580284e45bd35
+9e19cb78 + uncommitted identity binding changes (local build 2026-10-12; not a release)

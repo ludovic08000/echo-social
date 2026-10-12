@@ -10,7 +10,6 @@ import { useAuth } from '@/lib/auth';
 import { UserAvatar } from './UserAvatar';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { GifPicker } from '@/components/chat/GifPicker';
 import { useR2Upload } from '@/hooks/useR2Upload';
 import { toast } from 'sonner';
 import {
@@ -62,8 +61,7 @@ export function CommentsList({ postId }: CommentsListProps) {
   const [newComment, setNewComment] = useState('');
   const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
   const [attachedMedia, setAttachedMedia] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<'image' | 'gif' | 'video' | null>(null);
-  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
   const [uploading, setUploading] = useState(false);
   const [aiLoading, setAiLoading] = useState<'translate' | 'improve' | null>(null);
   const [emojiCategory, setEmojiCategory] = useState(0);
@@ -99,11 +97,7 @@ export function CommentsList({ postId }: CommentsListProps) {
 
     let body = newComment.trim();
     if (attachedMedia) {
-      if (mediaType === 'gif') {
-        body = body ? `${body}\nGIF:${attachedMedia}` : `GIF:${attachedMedia}`;
-      } else {
-        body = body ? `${body}\n${attachedMedia}` : attachedMedia;
-      }
+      body = body ? `${body}\n${attachedMedia}` : attachedMedia;
     }
 
     createComment.mutate(
@@ -133,12 +127,6 @@ export function CommentsList({ postId }: CommentsListProps) {
       if (url) { setAttachedMedia(url); setMediaType(isVideo ? 'video' : 'image'); }
     } catch { toast.error("Erreur lors de l'upload"); }
     finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
-  };
-
-  const handleGifSelect = (gifUrl: string) => {
-    setAttachedMedia(gifUrl);
-    setMediaType('gif');
-    setShowGifPicker(false);
   };
 
   const handleReply = (comment: Comment) => {
@@ -232,12 +220,6 @@ export function CommentsList({ postId }: CommentsListProps) {
         </div>
       )}
 
-      {showGifPicker && (
-        <div className="px-4 pb-2">
-          <GifPicker onSelect={handleGifSelect} onClose={() => setShowGifPicker(false)} />
-        </div>
-      )}
-
       {/* Reply indicator */}
       {replyTo && (
         <div className="flex items-center gap-2 px-4 py-1.5 bg-secondary/30 border-t border-border/20">
@@ -314,7 +296,6 @@ export function CommentsList({ postId }: CommentsListProps) {
                     </div>
                   </PopoverContent>
                 </Popover>
-                <button type="button" onClick={() => setShowGifPicker(!showGifPicker)} className="p-1 rounded-full text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold">GIF</button>
               </div>
             </div>
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2 rounded-full text-muted-foreground hover:text-foreground transition-colors">
@@ -365,7 +346,9 @@ function CommentItem({ comment, isOwner, onDelete, onReply, postId, isReply, par
         body: { message: `Traduis ce texte en français (réponds UNIQUEMENT avec la traduction, rien d'autre) : "${text}"`, context: 'translation' }
       });
       if (data?.reply) setTranslated(data.reply);
-    } catch {} finally { setTranslating(false); }
+    } catch {
+      // Conserver le commentaire original si la traduction est indisponible.
+    } finally { setTranslating(false); }
   };
 
   // Pick a specific reaction emoji: same emoji = remove, different = change

@@ -607,6 +607,18 @@ describe('canonical Aegis outbound transaction engine', () => {
     );
   });
 
+  it.each(['AEGIS_CLIENT_UPDATE_REQUIRED','AEGIS_PEER_DEVICE_UPDATE_REQUIRED','AEGIS_LIBSIGNAL_BUNDLE_BINDING_INVALID','AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID'])(
+    'keeps the draft but stops automatic retry after %s', async (code) => {
+      mocks.buildCopies.mockRejectedValueOnce(new Error(code));
+      await expect(sendAegisOutboundMessage({ conversationId:'44444444-4444-4444-8444-444444444444',
+        senderUserId:COPY.sender_user_id,plaintext:'À conserver',localId:'upgrade-draft',messageId:COPY.message_id,
+      })).rejects.toThrow(code);
+      expect(mocks.sendRpc).not.toHaveBeenCalled();
+      expect(mocks.putOutbox).toHaveBeenLastCalledWith(COPY.sender_user_id,
+        expect.objectContaining({status:'failed_visible',lastError:code,plaintext:'À conserver'}));
+      expect(mocks.deleteOutbox).not.toHaveBeenCalled();
+    });
+
   it('parks an untrusted sender route and requests authenticated self-repair', async () => {
     mocks.sendRpc.mockResolvedValue({
       data: null,

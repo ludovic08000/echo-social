@@ -6,6 +6,7 @@ import initWasm, {
   aegis_wasm_abi_version,
   aegis_wasm_identity_generate,
   aegis_wasm_identity_public,
+  aegis_wasm_identity_bind,
   aegis_wasm_store_create,
   aegis_wasm_bundle_create,
   aegis_wasm_session_establish,
@@ -65,6 +66,14 @@ async function loadStore(userId: string, deviceId: string): Promise<Uint8Array> 
   return new Uint8Array(base64ToBuffer(record.bytes));
 }
 
+async function bindIdentity(store: Uint8Array, remote: LibsignalAddress, identity: Uint8Array): Promise<Uint8Array> {
+  try {
+    return await aegis_wasm_identity_bind(store, remote.userId, remote.deviceNumber, identity);
+  } catch {
+    throw new Error('AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID');
+  }
+}
+
 async function commitStore(userId: string, deviceId: string, bytes: Uint8Array): Promise<void> {
   const id = vaultId(userId, deviceId);
   const record = { bytes: toBase64(bytes) } satisfies SealedLibsignalStore;
@@ -120,24 +129,30 @@ export async function establishLibsignalSession(args: { ownerUserId: string; own
   });
 }
 
-export async function encryptLibsignalMessage(args: { ownerUserId: string; ownerDeviceId: string; local: LibsignalAddress; remote: LibsignalAddress; plaintext: Uint8Array }): Promise<LibsignalCiphertext> {
+export async function encryptLibsignalMessage(args: { ownerUserId: string; ownerDeviceId: string; local: LibsignalAddress; remote: LibsignalAddress; plaintext: Uint8Array; verifiedRemoteIdentity?: Uint8Array }): Promise<LibsignalCiphertext> {
   await initializeAegisWasm();
   return withStoreLock(args.ownerUserId, args.ownerDeviceId, async () => {
-    const store = await loadStore(args.ownerUserId, args.ownerDeviceId);
-  const [nextStore, type, ciphertext] = unpackParts(await aegis_wasm_message_encrypt(store, args.local.userId, args.local.deviceNumber, args.remote.userId, args.remote.deviceNumber, args.plaintext), 3);
-  if (type.length !== 1) throw new Error('AEGIS_LIBSIGNAL_MESSAGE_TYPE_INVALID');
-  await commitStore(args.ownerUserId, args.ownerDeviceId, nextStore);
+    let store = await loadStore(args.ownerUserId, args.ownerDeviceId);
+    if (args.verifiedRemoteIdentity !== undefined) {
+      store = await bindIdentity(store, args.remote, args.verifiedRemoteIdentity);
+    }
+    const [nextStore, type, ciphertext] = unpackParts(await aegis_wasm_message_encrypt(store, args.local.userId, args.local.deviceNumber, args.remote.userId, args.remote.deviceNumber, args.plaintext), 3);
+    if (type.length !== 1) throw new Error('AEGIS_LIBSIGNAL_MESSAGE_TYPE_INVALID');
+    await commitStore(args.ownerUserId, args.ownerDeviceId, nextStore);
     return { messageType: type[0], ciphertext };
   });
 }
 
-export async function decryptLibsignalMessage(args: { ownerUserId: string; ownerDeviceId: string; local: LibsignalAddress; remote: LibsignalAddress; encrypted: LibsignalCiphertext }): Promise<Uint8Array> {
+export async function decryptLibsignalMessage(args: { ownerUserId: string; ownerDeviceId: string; local: LibsignalAddress; remote: LibsignalAddress; encrypted: LibsignalCiphertext; verifiedRemoteIdentity?: Uint8Array }): Promise<Uint8Array> {
   await initializeAegisWasm();
   return withStoreLock(args.ownerUserId, args.ownerDeviceId, async () => {
-    const store = await loadStore(args.ownerUserId, args.ownerDeviceId);
-  const [nextStore, plaintext] = unpackParts(await aegis_wasm_message_decrypt(store, args.local.userId, args.local.deviceNumber, args.remote.userId, args.remote.deviceNumber, args.encrypted.messageType, args.encrypted.ciphertext), 2);
-  // Aucun plaintext n'est rendu si l'avancement du ratchet n'est pas durable.
-  await commitStore(args.ownerUserId, args.ownerDeviceId, nextStore);
+    let store = await loadStore(args.ownerUserId, args.ownerDeviceId);
+    if (args.verifiedRemoteIdentity !== undefined) {
+      store = await bindIdentity(store, args.remote, args.verifiedRemoteIdentity);
+    }
+    const [nextStore, plaintext] = unpackParts(await aegis_wasm_message_decrypt(store, args.local.userId, args.local.deviceNumber, args.remote.userId, args.remote.deviceNumber, args.encrypted.messageType, args.encrypted.ciphertext), 2);
+    // Le pin et le ratchet sont commit ensemble, jamais sur un déchiffrement refusé.
+    await commitStore(args.ownerUserId, args.ownerDeviceId, nextStore);
     return plaintext;
   });
 }

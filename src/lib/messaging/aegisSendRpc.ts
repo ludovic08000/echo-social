@@ -80,6 +80,7 @@ function isExplicitProtocolFailure(error: RpcError): boolean {
   const text = errorText(error);
   return (
     text.includes('e2ee_') ||
+    text.includes('aegis_client_update_required') ||
     text.includes('not_authenticated') ||
     text.includes('sender_not_conversation_participant') ||
     text.includes('message_id_conflict') ||

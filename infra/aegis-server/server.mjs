@@ -101,7 +101,7 @@ function corsHeaders(config, origin, requestId) {
   const allowed = normalizedOrigin && config.allowedOrigins.has(normalizedOrigin) ? origin : '';
   return {
     ...(allowed ? { 'access-control-allow-origin': allowed, vary: 'Origin' } : {}),
-    'access-control-allow-headers': 'authorization, content-type, x-request-id',
+    'access-control-allow-headers': 'authorization, content-type, x-request-id, x-forsure-messaging-revision',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-expose-headers': 'x-request-id, x-aegis-diagnostic-id',
     'cache-control': 'no-store',
@@ -321,6 +321,8 @@ export async function handleAegisRequest(request, response, {
       upstream = await fetchImpl(`${config.supabaseUrl}/rest/v1/rpc/${rpcName}`, {
         method: 'POST',
         headers: {
+          // Relayer la révision déclarée, jamais inventer une mise à jour pour un ancien client.
+          'x-forsure-messaging-revision': String(request.headers?.['x-forsure-messaging-revision'] || '').slice(0, 16),
           apikey: config.supabaseAnonKey,
           authorization,
           'content-type': 'application/json',

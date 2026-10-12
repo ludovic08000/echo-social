@@ -13,7 +13,7 @@ mod store;
 pub use store::AegisSignalStore;
 mod engine;
 pub use engine::{
-    DevicePreKeyBundle, EncryptedMessage, create_device_bundle, decrypt_message,
+    DevicePreKeyBundle, EncryptedMessage, bind_remote_identity, create_device_bundle, decrypt_message,
     encrypt_message, establish_outbound_session,
 };
 
@@ -21,6 +21,8 @@ pub use engine::{
 pub(crate) mod native_api;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_api_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod identity_binding_tests;
 #[cfg(target_os = "android")]
 mod android;
 #[cfg(target_arch = "wasm32")]

@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
 import { xhrFetch } from '@/lib/xhrFetch';
+import { withMessagingRevision } from './messagingRevision';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -133,6 +134,7 @@ function recoverSupabaseAuthAfter401(): void {
 }
 
 const guardedFetch: typeof fetch = async (input, init) => {
+  init = withMessagingRevision(input, init, SUPABASE_URL);
   const url = getRequestUrl(input);
   const signal = getRequestSignal(input, init);
   let response: Response;

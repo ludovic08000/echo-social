@@ -36,6 +36,21 @@ internal static class AegisCryptoNative
     private static extern int aegis_crypto_store_create(uint registrationId, out Buffer store);
 
     [DllImport("aegis_crypto", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int aegis_crypto_identity_bind(
+        byte[] store, nuint storeLength, byte[] remoteName, nuint remoteNameLength,
+        uint remoteDevice, byte[] identity, nuint identityLength, out Buffer nextStore);
+
+    internal static byte[] BindIdentity(byte[] store, string remoteName, uint remoteDevice, byte[] verifiedIdentity)
+    {
+        RequireAbi();
+        var remote = Utf8(remoteName);
+        var status = aegis_crypto_identity_bind(store, (nuint)store.Length, remote, (nuint)remote.Length,
+            remoteDevice, verifiedIdentity, (nuint)verifiedIdentity.Length, out var next);
+        Check(status);
+        return Take(next);
+    }
+
+    [DllImport("aegis_crypto", CallingConvention = CallingConvention.Cdecl)]
     private static extern int aegis_crypto_bundle_create(
         byte[] store, nuint storeLength,
         uint deviceId, uint preKeyId, uint signedPreKeyId, uint kyberPreKeyId,

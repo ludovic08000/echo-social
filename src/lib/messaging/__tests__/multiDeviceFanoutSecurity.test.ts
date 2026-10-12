@@ -118,6 +118,22 @@ describe('multiDeviceFanout security gates', () => {
     ]);
   });
 
+  it.each(['AEGIS_LIBSIGNAL_BUNDLE_BINDING_INVALID','AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID','FINGERPRINT_CHANGED','AEGIS_CLIENT_UPDATE_REQUIRED','AEGIS_PEER_DEVICE_UPDATE_REQUIRED'])(
+    'propagates %s without route refresh or partial success', async (code) => {
+      mocks.resolveFanoutRouteSnapshot.mockResolvedValue({version:'route-version-1',targets:[
+        {userId:'recipient-user',deviceId:'ios-device',devicePublicKey:'ios-key'},
+        {userId:'recipient-user',deviceId:'windows-device',devicePublicKey:'windows-key'},
+      ]});
+      mocks.encryptForLibsignalDevice.mockImplementation(async ({remoteDeviceId}: {remoteDeviceId:string}) => {
+        if (remoteDeviceId==='ios-device') throw new Error(code);
+        return 'aegis.libsignal.3.AQID';
+      });
+      await expect(buildFanoutCopies({messageId:`message-${code}`,conversationId:'conv-1',senderUserId:'sender-user',plaintext:'secret'}))
+        .rejects.toThrow(code);
+      expect(mocks.resolveFanoutRouteSnapshot).toHaveBeenCalledTimes(1);
+      expect(mocks.encryptForLibsignalDevice).toHaveBeenCalledTimes(2);
+    });
+
   it('fails closed after one route refresh when any routed device is not encryptable', async () => {
     mocks.resolveFanoutRouteSnapshot.mockResolvedValue({
       version: 'route-version-1',

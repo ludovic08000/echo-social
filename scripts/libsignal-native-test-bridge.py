@@ -27,6 +27,9 @@ else:
     if op == 'bundle_create':
         for value in [1, 11, 12, 13]: number(value)
         output(); output()
+    elif op == 'identity_bind':
+        blob(request['remote'].encode()); number(1)
+        blob(raw[1]); output()
     else:
         blob(request['local'].encode()); number(1)
         blob(request['remote'].encode()); number(1)

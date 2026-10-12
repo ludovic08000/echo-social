@@ -28,6 +28,13 @@ AEGIS_API int32_t aegis_crypto_identity_public(
 /* Serialized-store API shared by Android, iOS and Windows native bindings. */
 AEGIS_API int32_t aegis_crypto_store_create(
     uint32_t registration_id, AegisBuffer *store);
+/* verified_identity is the canonical 33-byte key authenticated by the caller.
+ * Never persist this intermediate store before encrypt/decrypt also succeeds. */
+AEGIS_API int32_t aegis_crypto_identity_bind(
+    const uint8_t *store, size_t store_len,
+    const uint8_t *remote_name, size_t remote_name_len, uint32_t remote_device,
+    const uint8_t *verified_identity, size_t verified_identity_len,
+    AegisBuffer *next_store);
 AEGIS_API int32_t aegis_crypto_bundle_create(
     const uint8_t *store, size_t store_len,
     uint32_t device_id, uint32_t pre_key_id, uint32_t signed_pre_key_id,

@@ -27,6 +27,11 @@ export type AegisCallErrorCode =
   | 'CALL_CREATE_REJECTED'
   | 'CALL_INVITATION_NOT_FOUND'
   | 'CALL_INVITATION_INVALID'
+  | 'CALL_INVITATION_SIGNATURE_INVALID'
+  | 'CALL_CLIENT_UPDATE_REQUIRED'
+  | 'CALL_IDENTITY_CHANGED'
+  | 'CALL_IDENTITY_UNAVAILABLE'
+  | 'CALL_LOGIN_APPROVAL_REQUIRED'
   | 'CALL_KEY_INVALID'
   | 'CALL_NOT_AUTHENTICATED'
   | 'CALL_AUTH_REFRESH_FAILED'
@@ -60,6 +65,11 @@ const ERROR_CODES = new Set<AegisCallErrorCode>([
   'CALL_CREATE_REJECTED',
   'CALL_INVITATION_NOT_FOUND',
   'CALL_INVITATION_INVALID',
+  'CALL_INVITATION_SIGNATURE_INVALID',
+  'CALL_CLIENT_UPDATE_REQUIRED',
+  'CALL_IDENTITY_CHANGED',
+  'CALL_IDENTITY_UNAVAILABLE',
+  'CALL_LOGIN_APPROVAL_REQUIRED',
   'CALL_KEY_INVALID',
   'CALL_NOT_AUTHENTICATED',
   'CALL_AUTH_REFRESH_FAILED',
@@ -83,6 +93,20 @@ const ERROR_CODES = new Set<AegisCallErrorCode>([
 ]);
 
 const SERVER_CODE_MAP: Record<string, AegisCallErrorCode> = {
+  AEGIS_CLIENT_UPDATE_REQUIRED: 'CALL_CLIENT_UPDATE_REQUIRED',
+  ACCOUNT_IDENTITY_NOT_FOUND: 'CALL_IDENTITY_UNAVAILABLE',
+  ACCOUNT_IDENTITY_BINDING_INVALID: 'CALL_IDENTITY_UNAVAILABLE',
+  DEVICE_REGISTRY_LOOKUP_FAILED: 'CALL_IDENTITY_UNAVAILABLE',
+  DEVICE_NOT_FOUND: 'CALL_IDENTITY_UNAVAILABLE',
+  DEVICE_ROUTE_NOT_AUTHORIZED: 'CALL_IDENTITY_UNAVAILABLE',
+  DEVICE_ACCOUNT_BINDING_REQUIRED: 'CALL_IDENTITY_UNAVAILABLE',
+  DEVICE_ROUTE_NOT_READY: 'CALL_IDENTITY_UNAVAILABLE',
+  DEVICE_AUTHORIZATION_INCOMPLETE: 'CALL_IDENTITY_UNAVAILABLE',
+  DEVICE_AUTHORIZATION_INVALID: 'CALL_IDENTITY_UNAVAILABLE',
+  LOGIN_SECURITY_APPROVAL_REQUIRED: 'CALL_LOGIN_APPROVAL_REQUIRED',
+  FINGERPRINT_CHANGED: 'CALL_IDENTITY_CHANGED',
+  PEER_IDENTITY_BINDING_UNAVAILABLE: 'CALL_IDENTITY_UNAVAILABLE',
+  FINGERPRINT_TRUST_PERSIST_FAILED: 'CALL_IDENTITY_UNAVAILABLE',
   NOT_AUTHENTICATED: 'CALL_NOT_AUTHENTICATED',
   UNAUTHORIZED: 'CALL_NOT_AUTHENTICATED',
   INVALID_REQUEST: 'CALL_INVALID_REQUEST',
@@ -203,6 +227,11 @@ export function callErrorUserMessage(error: unknown): string {
     CALL_STATUS_UPDATE_FAILED: "L'état de l'appel n'a pas pu être mis à jour.",
     CALL_INVITATION_NOT_FOUND: "L'invitation d'appel n'est plus disponible.",
     CALL_INVITATION_INVALID: "L'invitation d'appel ne correspond pas à cette conversation.",
+    CALL_INVITATION_SIGNATURE_INVALID: "L'identité de l'appareil qui appelle n'a pas pu être authentifiée. L'appel a été bloqué par sécurité.",
+    CALL_CLIENT_UPDATE_REQUIRED: "Les deux appareils doivent mettre ForSure à jour, puis démarrer un nouvel appel sécurisé.",
+    CALL_IDENTITY_CHANGED: "L'identité de ton contact a changé. Vérifie son empreinte dans la messagerie avant de l'appeler.",
+    CALL_IDENTITY_UNAVAILABLE: "L'identité sécurisée du contact n'a pas pu être vérifiée. Réessaie dans un instant.",
+    CALL_LOGIN_APPROVAL_REQUIRED: "Confirme cette connexion avant de rejoindre un appel privé.",
   };
   const base = messages[normalized.code] ?? "Impossible de démarrer l'appel sécurisé.";
   return normalized.diagnosticId ? `${base} Diagnostic : ${normalized.diagnosticId}` : base;

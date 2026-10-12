@@ -28,6 +28,7 @@ export type CanonicalDeviceIdentity = {
   deviceId: string;
   devicePublicKey: string;
   deviceSigningKey: string;
+  accountFingerprint: string;
 };
 
 async function readAccountIdentity(userId: string): Promise<AccountIdentityRow> {
@@ -90,6 +91,7 @@ async function verifyCanonicalDevice(
     deviceId: device.device_id,
     devicePublicKey: device.device_public_key!,
     deviceSigningKey: device.device_signing_key!,
+    accountFingerprint: account.fingerprint,
   };
 }
 
@@ -105,6 +107,11 @@ async function readCanonicalDevice(userId: string, deviceId: string): Promise<Ca
   const payload = data as unknown;
   const row = Array.isArray(payload) ? payload[0] : payload;
   if (!row) throw new Error('DEVICE_NOT_FOUND');
+  // Une réponse signée pour un autre appareil n'autorise jamais la route demandée.
+  if ((Array.isArray(payload) && payload.length !== 1)
+    || typeof row !== 'object' || (row as CanonicalDeviceRow).device_id !== deviceId) {
+    throw new Error('DEVICE_AUTHORIZATION_INVALID');
+  }
   return row as unknown as CanonicalDeviceRow;
 }
 
@@ -170,6 +177,7 @@ export async function verifyRouteDeviceIdentityOffline(args: {
     deviceId: args.deviceId,
     devicePublicKey: args.devicePublicKey,
     deviceSigningKey: args.deviceSigningKey,
+    accountFingerprint: args.accountFingerprint,
   };
 }
 
@@ -183,10 +191,11 @@ export async function repairApprovedDeviceTrust(userId: string): Promise<number>
   if (!userId) throw new Error('DEVICE_TRUST_INPUT_INVALID');
   const { data, error } = await supabase.rpc('get_sesame_device_list' as never, { p_user_id: userId } as never);
   if (error) throw new Error('DEVICE_REGISTRY_LOOKUP_FAILED');
-  const rows = Array.isArray(data) ? data : [];
+  const rows: unknown[] = Array.isArray(data) ? data : [];
   const ids = rows
-    .filter((row: any) => row?.is_routable === true && typeof row?.device_id === 'string')
-    .map((row: any) => row.device_id as string);
+    .filter((row): row is { is_routable: true; device_id: string } => row !== null && typeof row === 'object'
+      && 'is_routable' in row && row.is_routable === true && 'device_id' in row && typeof row.device_id === 'string')
+    .map((row) => row.device_id);
   if (ids.length === 0) throw new Error('DEVICE_REGISTRY_CONTAINS_NO_VALID_ROUTE');
 
   let validCount = 0;

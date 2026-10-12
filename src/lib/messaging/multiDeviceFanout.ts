@@ -15,6 +15,12 @@ import { runDeviceSessionJob } from '@/lib/crypto/deviceSessionQueue';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 import { decodeLibsignalWire, decryptFromLibsignalDevice, encryptForLibsignalDevice } from '@/lib/crypto/libsignalRuntime';
 
+function terminalDeviceFailure(error: unknown): string | undefined {
+  const reason = error instanceof Error ? error.message : String(error);
+  return ['AEGIS_LIBSIGNAL_BUNDLE_BINDING_INVALID', 'AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID', 'FINGERPRINT_CHANGED',
+    'AEGIS_CLIENT_UPDATE_REQUIRED', 'AEGIS_PEER_DEVICE_UPDATE_REQUIRED'].find(code => reason.includes(code));
+}
+
 interface FanoutInput {
   messageId: string;
   conversationId: string;
@@ -263,6 +269,8 @@ async function encryptPlaintextForDeviceTargetUnlocked(
     return { encryptedBody, senderDeviceId };
   } catch (error) {
     logCryptoException('fanout', error, { severity: 'error', conversationId: input.conversationId, myDeviceId: senderDeviceId, peerUserId: input.recipientUserId, peerDeviceId: input.recipientDeviceId, metadata: { stage: 'libsignal_encrypt' } });
+    const terminal = terminalDeviceFailure(error);
+    if (terminal) throw new Error(terminal);
     return null;
   }
 
@@ -359,6 +367,7 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
     };
   }
 
+  const terminalFailures: string[] = [];
   const rowResults = await mapWithConcurrency(targets, FANOUT_ENCRYPT_CONCURRENCY, async (dev) => {
     const targetStartedAt = Date.now();
     traceE2EE({ ...baseTrace, stage: 'DEVICE_COPY_ENCRYPT', outcome: 'start', deviceId: senderDeviceId, peerDeviceId: dev.deviceId });
@@ -392,6 +401,8 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
         encrypted_body: encrypted.encryptedBody,
       } as FanoutCopyRow;
     } catch (e) {
+      const terminal = terminalDeviceFailure(e);
+      if (terminal) terminalFailures.push(terminal);
       logCryptoException('fanout', e, {
         severity: 'warning',
         conversationId: input.conversationId,
@@ -405,6 +416,9 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
     }
   });
 
+  // Tous les travaux terminent avant le refus : aucune copie partielle ne part,
+  // et une signature refusée ne devient pas une boucle de réparation de route.
+  if (terminalFailures.length) throw new Error(terminalFailures[0]);
   const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
   if (rows.length !== targets.length) {
     const omittedDeviceIds = targets

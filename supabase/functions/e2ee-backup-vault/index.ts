@@ -240,6 +240,13 @@ Deno.serve(async (req) => {
     const userId = claimsData?.claims?.sub as string | undefined;
     if (claimsError || !userId) return json(req, { error: 'Not authenticated' }, 401);
 
+    // Le miroir R2 applique la même approbation de session que le coffre SQL :
+    // aucun accès, écrasement ou effacement avant l'approbation de cette connexion.
+    const { data: loginApproved, error: approvalError } = await supabase.rpc('is_current_login_session_approved');
+    if (approvalError || loginApproved !== true) {
+      return json(req, { error: 'LOGIN_SECURITY_APPROVAL_REQUIRED' }, 403);
+    }
+
     const rateLimited = await checkRateLimitDB(
       `e2ee-backup-vault:${userId}`,
       RATE_LIMIT,

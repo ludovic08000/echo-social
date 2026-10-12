@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { ensureAegisDeviceReady } from '@/lib/messaging/aegisDeviceRuntime';
+import { maintainLibsignalDevice } from '@/lib/crypto/libsignalProvisioning';
 import {
   callAegisServer,
   getAegisTransportKind,
@@ -174,6 +175,14 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
   if (active) return active;
 
   const operation = (async () => {
+    // Réapprovisionner en réception, sans retarder les capsules déjà chiffrées.
+    // La maintenance est bornée/coalescée et n'altère jamais l'identité existante.
+    void maintainLibsignalDevice(userId, ready.deviceId).catch(() => {
+      traceE2EE({
+        direction: 'receive', component: 'device_inbox',
+        stage: 'PREKEY_MAINTENANCE_DEFERRED', outcome: 'retry',
+      }, 'warn');
+    });
     const { data, error } = await callAegisServer<AegisInboxRow[]>(
       'aegis_sync_device',
       {

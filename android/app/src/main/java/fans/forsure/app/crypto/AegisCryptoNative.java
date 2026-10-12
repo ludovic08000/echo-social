@@ -8,6 +8,7 @@ public final class AegisCryptoNative {
     public static native int abiVersion();
     public static native byte[][] generateIdentity();
     public static native byte[] storeCreate(int registrationId);
+    public static native byte[] identityBind(byte[] store, String remoteName, int remoteDevice, byte[] verifiedIdentity);
     public static native byte[][] bundleCreate(
         byte[] store,
         int deviceId,

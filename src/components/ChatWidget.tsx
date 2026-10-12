@@ -51,7 +51,6 @@ import { useCall, formatCallDuration, type CallEndInfo, generateCallE2EEKey } fr
 import { CallOverlay } from '@/components/CallOverlay';
 import { signalOutgoingCall, endActiveCall } from '@/hooks/useIncomingCall';
 import { callErrorUserMessage } from '@/lib/calls/callDiagnostics';
-import { GifPicker } from '@/components/chat/GifPicker';
 import { VoiceRecorder, VoiceMessagePlayer } from '@/components/chat/VoiceRecorder';
 import { requestVoiceCaptureStream } from '@/lib/messaging/voiceCapture';
 import { buildDocumentBody, parseDocumentBody, isDocumentMime } from '@/lib/messaging/documentMessage';
@@ -66,6 +65,7 @@ import { useE2EE } from '@/hooks/useE2EE';
 import { useMessageQueue } from '@/hooks/useMessageQueue';
 import { useMessageBlock } from '@/hooks/useMessageBlock';
 import { acknowledgeAegisMessages } from '@/lib/messaging/aegisDeviceInbox';
+import { observeVisibleMessageReads } from '@/lib/messaging/visibleMessageReads';
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 import { EncryptionBadge, EncryptionStatusBar } from '@/components/messages/EncryptionBadge';
 import { OutboundStatusIndicator } from '@/components/messages/OutboundStatus';
@@ -403,7 +403,6 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const { mutate: markConversationRead } = useMarkConversationRead();
   const [newMessage, setNewMessage] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
-  const [showGifs, setShowGifs] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [voiceStreamRequest, setVoiceStreamRequest] = useState<Promise<MediaStream> | null>(null);
   const [viewOnceArmed, setViewOnceArmed] = useState(false);
@@ -429,7 +428,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const [isStartingCall, setIsStartingCall] = useState(false);
   const shouldAutoScrollRef = useRef(true);
   const lastScrollSigRef = useRef('');
-  const readReceiptSignatureRef = useRef('');
+  const visibleReadStateRef = useRef({ scope: '', ids: new Set<string>() });
 
   const openVoiceRecorder = useCallback(() => {
     const request = requestVoiceCaptureStream();
@@ -894,34 +893,34 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   }, [messages, bumpCache]);
 
   useEffect(() => {
-    if (!conversationId || !user?.id || !messages?.length) return;
-
-    const markReadableMessages = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (isGhostModeEnabled(user.id)) return;
-      const readableIncomingIds = messages
-        .filter((message) =>
-          message.sender_id !== user.id
-          && message.view_once !== true
-          && decryptedCacheRef.current.has(message.id),
-        )
-        .map((message) => message.id);
-      if (readableIncomingIds.length === 0) return;
-
-      const signature = `${conversationId}:${readableIncomingIds.join(',')}`;
-      if (readReceiptSignatureRef.current === signature) return;
-      readReceiptSignatureRef.current = signature;
-      markConversationRead(conversationId);
-      void acknowledgeAegisMessages(user.id, readableIncomingIds, true).catch(() => {
-        if (readReceiptSignatureRef.current === signature) {
-          readReceiptSignatureRef.current = '';
+    const container = scrollContainerRef.current;
+    if (!conversationId || !user?.id || !messages?.length || !container) return;
+    const incoming = messages.filter((message) => message.sender_id !== user.id && message.view_once !== true);
+    const scope = `${user.id}:${conversationId}`;
+    if (visibleReadStateRef.current.scope !== scope) {
+      visibleReadStateRef.current = { scope, ids: new Set() };
+    }
+    const read = visibleReadStateRef.current.ids;
+    const messageIds = new Set(incoming.map((message) => message.id));
+    for (const id of read) if (!messageIds.has(id)) read.delete(id);
+    for (const message of incoming) {
+      // En groupe, seul l'accusé de cet utilisateur compte, pas celui des autres.
+      if (message.recipient_states.some((state) => state.recipient_user_id === user.id && state.state === 'read')) {
+        read.add(message.id);
+      }
+    }
+    return observeVisibleMessageReads({
+      container,
+      messageIds,
+      canRead: (messageId) => !read.has(messageId) && !isGhostModeEnabled(user.id) && decryptedCacheRef.current.has(messageId),
+      acknowledge: async (readableIncomingIds) => {
+        await acknowledgeAegisMessages(user.id, readableIncomingIds, true);
+        readableIncomingIds.forEach((id) => read.add(id));
+        if (visibleReadStateRef.current.scope === scope && read.size === incoming.length) {
+          markConversationRead(conversationId);
         }
-      });
-    };
-
-    markReadableMessages();
-    document.addEventListener('visibilitychange', markReadableMessages);
-    return () => document.removeEventListener('visibilitychange', markReadableMessages);
+      },
+    });
   }, [conversationId, messages, user?.id, cacheVersion, markConversationRead]);
 
   const handleSend = async (e: React.FormEvent) => {
@@ -1449,6 +1448,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
                   return (
                     <div
                       key={msg.id}
+                      data-aegis-message-id={msg.id}
                       className={cn('flex gap-1.5 relative group', isFirstInGroup ? 'mt-2' : 'mt-0.5')}
                     >
                       <div className="w-6 flex-shrink-0">
@@ -2090,7 +2090,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
       )}
 
       {/* Emoji picker */}
-      {showEmojis && !showGifs && !showVoiceRecorder && (
+      {showEmojis && !showVoiceRecorder && (
         <div className="border-t border-border/20 bg-background">
           <div className="px-1.5 py-2 max-h-[130px] overflow-y-auto scrollbar-thin">
             {EMOJI_CATEGORIES.map((cat) => (
@@ -2112,22 +2112,6 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
             ))}
           </div>
         </div>
-      )}
-
-      {/* GIF picker */}
-      {showGifs && !showVoiceRecorder && (
-        <GifPicker
-          onSelect={async (gifUrl) => {
-            const body = `GIF:${gifUrl}`;
-            if (isZeusConversation) {
-              sendMessage.mutate({ conversationId, body });
-            } else {
-              queue.sendMessage(body).catch(() => toast.error('Erreur envoi GIF'));
-            }
-            setShowGifs(false);
-          }}
-          onClose={() => setShowGifs(false)}
-        />
       )}
 
       {/* Voicemail prompt after missed call */}
@@ -2304,18 +2288,15 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
               >
                 <Eye className="w-5 h-5" />
               </button>
-              <button type="button" onClick={() => { setShowGifs(v => !v); setShowEmojis(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors text-[12px] font-bold", showGifs ? "text-primary" : "text-muted-foreground hover:text-primary")}>
-                GIF
-              </button>
-              <button type="button" onClick={() => { setShowEmojis(v => !v); setShowGifs(false); setShowAIMenu(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+              <button type="button" onClick={() => { setShowEmojis(v => !v); setShowAIMenu(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showEmojis ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 <Smile className="w-5 h-5" />
               </button>
-              <button type="button" onClick={() => { setShowAIMenu(v => !v); setShowEmojis(false); setShowGifs(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showAIMenu ? "text-primary" : "text-muted-foreground hover:text-primary")}>
+              <button type="button" onClick={() => { setShowAIMenu(v => !v); setShowEmojis(false); }} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showAIMenu ? "text-primary" : "text-muted-foreground hover:text-primary")}>
                 {aiLoading ? <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" /> : <Wand2 className="w-5 h-5" />}
               </button>
               <button
                 type="button"
-                onClick={() => { setShowSharePicker(v => !v); setShowEmojis(false); setShowGifs(false); setShowAIMenu(false); }}
+                onClick={() => { setShowSharePicker(v => !v); setShowEmojis(false); setShowAIMenu(false); }}
                 title="Partager du contenu"
                 className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-colors", showSharePicker ? "text-primary" : "text-muted-foreground hover:text-primary")}
               >
@@ -2339,7 +2320,6 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
               onBlur={notifyStopped}
               onFocus={() => {
                 setShowEmojis(false);
-                setShowGifs(false);
                 void queue.prewarmSendPath().catch(() => undefined);
               }}
               placeholder="Aa"

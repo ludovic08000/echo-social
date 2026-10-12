@@ -54,9 +54,10 @@ describe('explicit read receipts and user block architecture', () => {
   it('emits read ACKs only for visible, decrypted, non-view-once messages', () => {
     const widget = read('src/components/ChatWidget.tsx');
 
-    expect(widget).toContain("if (document.visibilityState !== 'visible') return;");
+    expect(widget).toContain('observeVisibleMessageReads');
+    expect(widget).toContain('data-aegis-message-id={msg.id}');
     expect(widget).toContain('message.view_once !== true');
-    expect(widget).toContain('decryptedCacheRef.current.has(message.id)');
+    expect(widget).toContain('decryptedCacheRef.current.has(messageId)');
     expect(widget).toContain('acknowledgeAegisMessages(user.id, readableIncomingIds, true)');
   });
 });

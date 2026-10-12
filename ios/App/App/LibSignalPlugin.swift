@@ -9,6 +9,7 @@ public class LibSignalPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "getCapabilities", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "createStore", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "bindIdentity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "createBundle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "establishSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "encrypt", returnType: CAPPluginReturnPromise),
@@ -68,7 +69,8 @@ public class LibSignalPlugin: CAPPlugin, CAPBridgedPlugin {
                     "platform": "ios",
                     "abiVersion": Int(AegisCryptoNative.expectedAbi),
                     "pqxdh": true,
-                    "kyber1024": true
+                    "kyber1024": true,
+                    "identityBinding": true
                 ])
             } catch {
                 self.reject(call, error, fallback: "LIBSIGNAL_NATIVE_UNAVAILABLE")
@@ -84,6 +86,22 @@ public class LibSignalPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve(["storeB64": store.base64EncodedString()])
             } catch {
                 self.reject(call, error, fallback: "LIBSIGNAL_STORE_CREATE_FAILED")
+            }
+        }
+    }
+
+    @objc func bindIdentity(_ call: CAPPluginCall) {
+        queue.async {
+            do {
+                let next = try AegisCryptoNative.bindIdentity(
+                    store: self.decode(self.requiredString(call, "storeB64")),
+                    remoteName: self.requiredString(call, "remoteUserId"),
+                    remoteDevice: self.requiredUInt32(call, "remoteDeviceNumber"),
+                    identity: self.decode(self.requiredString(call, "identityB64"))
+                )
+                call.resolve(["storeB64": next.base64EncodedString()])
+            } catch {
+                self.reject(call, error, fallback: "AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID")
             }
         }
     }

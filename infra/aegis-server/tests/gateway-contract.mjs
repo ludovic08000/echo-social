@@ -124,12 +124,14 @@ test('RPC forwards the caller token and payload without logging secrets', async 
         'content-type': 'application/json',
         origin: 'https://allowed.test',
         'x-request-id': 'sync-probe-1',
+        'x-forsure-messaging-revision': '1',
       },
       body: JSON.stringify({ p_device_id: 'device-secret', p_limit: 5 }),
     });
     assert.equal(response.status, 200);
     assert.equal(upstreamCall.url, 'https://supabase.test/rest/v1/rpc/aegis_sync_device');
     assert.equal(upstreamCall.options.headers.authorization, 'Bearer jwt-secret');
+    assert.equal(upstreamCall.options.headers['x-forsure-messaging-revision'], '1');
     assert.deepEqual(JSON.parse(upstreamCall.options.body), { p_device_id: 'device-secret', p_limit: 5 });
     const serializedLogs = JSON.stringify(logs);
     assert.equal(serializedLogs.includes('jwt-secret'), false);
@@ -157,6 +159,22 @@ test('upstream PostgreSQL errors preserve the safe error contract', async () => 
     assert.equal(response.status, 403);
     assert.equal((await response.json()).error.code, 'E2EE_DEVICE_NOT_AUTHORIZED');
     assert.equal(logs.at(-1).upstream_status, 403);
+  });
+});
+
+test('gateway never upgrades a missing client revision and allows its browser preflight', async () => {
+  let headers;
+  await withGateway(async (_url, options) => {
+    headers = options.headers;
+    return new Response(JSON.stringify({code:'P0001',message:'AEGIS_CLIENT_UPDATE_REQUIRED'}),{status:400});
+  }, async ({baseUrl}) => {
+    const preflight = await fetch(`${baseUrl}/v1/rpc/aegis_send_message`,{method:'OPTIONS',headers:{origin:'https://allowed.test'}});
+    assert.match(preflight.headers.get('access-control-allow-headers'),/x-forsure-messaging-revision/);
+    const result = await fetch(`${baseUrl}/v1/rpc/aegis_send_message`,{method:'POST',
+      headers:{authorization:'Bearer test',origin:'https://allowed.test','content-type':'application/json'},body:'{}'});
+    assert.equal(headers['x-forsure-messaging-revision'],'');
+    assert.equal(result.status,400);
+    assert.equal((await result.json()).error.message,'AEGIS_CLIENT_UPDATE_REQUIRED');
   });
 });
 

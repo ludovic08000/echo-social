@@ -12,6 +12,7 @@ const USER_B = '22222222-2222-4222-8222-222222222222';
 
 function device(deviceId: string, isRoutable = true): CanonicalRoutableDevice {
   return {
+    accountFingerprint: 'verified-account-fingerprint',
     deviceId,
     devicePublicKey: `public-${deviceId}`,
     deviceSigningKey: `signing-${deviceId}`,

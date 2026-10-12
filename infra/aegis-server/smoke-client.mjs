@@ -115,6 +115,7 @@ export async function requestJson({
     accept: 'application/json',
     'content-type': 'application/json',
     'x-request-id': requestId,
+    'x-forsure-messaging-revision': '1',
   };
   if (accessToken) headers.authorization = `Bearer ${accessToken}`;
   if (origin) headers.origin = origin;

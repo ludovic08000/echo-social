@@ -27,11 +27,13 @@ type NativeCapabilities = {
   abiVersion: number;
   pqxdh?: boolean;
   kyber1024?: boolean;
+  identityBinding?: boolean;
 };
 
 type NativeLibsignalPlugin = {
   getCapabilities(): Promise<NativeCapabilities>;
   createStore(options: { registrationId: number }): Promise<{ storeB64: string }>;
+  bindIdentity(options: { storeB64: string; remoteUserId: string; remoteDeviceNumber: number; identityB64: string }): Promise<{ storeB64: string }>;
   createBundle(options: {
     storeB64: string;
     deviceNumber: number;
@@ -119,6 +121,20 @@ async function loadNativeStore(userId: string, deviceId: string): Promise<string
   const record = await readDeviceVaultRecord(vaultId(userId, deviceId), validStore);
   if (!record) throw new Error('AEGIS_LIBSIGNAL_STORE_MISSING');
   return record.bytes;
+}
+
+async function bindNativeIdentity(store: string, remote: LibsignalAddress, identity?: Uint8Array): Promise<string> {
+  if (identity === undefined) return store;
+  // Un ancien binaire natif ne peut jamais ignorer silencieusement le contrôle.
+  if (!(await requireNativeCapabilities()).identityBinding) throw new Error('AEGIS_CLIENT_UPDATE_REQUIRED');
+  try {
+    const result = await NativeLibsignal.bindIdentity({ storeB64: store, remoteUserId: remote.userId,
+      remoteDeviceNumber: remote.deviceNumber, identityB64: toBase64(identity) });
+    if (!result?.storeB64) throw new Error();
+    return result.storeB64;
+  } catch {
+    throw new Error('AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID');
+  }
 }
 
 async function commitNativeStore(userId: string, deviceId: string, bytes: string): Promise<void> {
@@ -227,11 +243,12 @@ export async function encryptLibsignalMessage(args: {
   local: LibsignalAddress;
   remote: LibsignalAddress;
   plaintext: Uint8Array;
+  verifiedRemoteIdentity?: Uint8Array;
 }): Promise<LibsignalCiphertext> {
   if (!nativePlatform()) return encryptWasmMessage(args);
   await requireNativeCapabilities();
   return withNativeStoreLock(args.ownerUserId, args.ownerDeviceId, async () => {
-    const storeB64 = await loadNativeStore(args.ownerUserId, args.ownerDeviceId);
+    const storeB64 = await bindNativeIdentity(await loadNativeStore(args.ownerUserId, args.ownerDeviceId), args.remote, args.verifiedRemoteIdentity);
     const result = await NativeLibsignal.encrypt({
       storeB64,
       localUserId: args.local.userId,
@@ -256,11 +273,12 @@ export async function decryptLibsignalMessage(args: {
   local: LibsignalAddress;
   remote: LibsignalAddress;
   encrypted: LibsignalCiphertext;
+  verifiedRemoteIdentity?: Uint8Array;
 }): Promise<Uint8Array> {
   if (!nativePlatform()) return decryptWasmMessage(args);
   await requireNativeCapabilities();
   return withNativeStoreLock(args.ownerUserId, args.ownerDeviceId, async () => {
-    const storeB64 = await loadNativeStore(args.ownerUserId, args.ownerDeviceId);
+    const storeB64 = await bindNativeIdentity(await loadNativeStore(args.ownerUserId, args.ownerDeviceId), args.remote, args.verifiedRemoteIdentity);
     const result = await NativeLibsignal.decrypt({
       storeB64,
       localUserId: args.local.userId,
