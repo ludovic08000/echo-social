@@ -45,6 +45,11 @@ function vercelAllowedOrigins(env) {
   const origins = new Set(
     configuredValues(env.AEGIS_ALLOWED_ORIGINS || env.AEGIS_ALLOWED_ORIGIN),
   );
+  // Production must remain reachable even when a Vercel environment variable
+  // is missing or was created before the custom domain was attached. Keep this
+  // list exact: never trust a wildcard or a caller-provided host here.
+  origins.add('https://forsure.fans');
+  origins.add('https://www.forsure.fans');
   // These values are injected by Vercel for the current deployment only.
   // Adding their exact HTTPS origins enables same-origin Preview RPC calls
   // without accepting arbitrary `*.vercel.app` origins.

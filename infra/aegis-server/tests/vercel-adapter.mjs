@@ -51,6 +51,33 @@ test('Vercel adapter accepts the existing public Vite Supabase variables', async
   assert.equal(JSON.parse(response.text).ok, true);
 });
 
+test('Vercel adapter always permits the exact ForSure production origins', async () => {
+  const handler = createVercelAegisHandler('/v1/rpc/aegis_sync_device', {
+    env: {
+      SUPABASE_URL: 'https://supabase.test',
+      SUPABASE_ANON_KEY: 'public-anon-key',
+      AEGIS_ALLOWED_HOSTS: 'aegis.forsure.fans',
+    },
+    logger: () => {},
+    fetchImpl: async () => new Response('[]', { status: 200 }),
+  });
+
+  for (const origin of ['https://forsure.fans', 'https://www.forsure.fans']) {
+    const response = responseRecorder();
+    await handler({
+      method: 'OPTIONS',
+      headers: {
+        host: 'aegis.forsure.fans',
+        origin,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type,x-request-id,x-forsure-messaging-revision',
+      },
+    }, response);
+    assert.equal(response.status, 204);
+    assert.equal(response.headers['access-control-allow-origin'], origin);
+  }
+});
+
 test('Vercel-provided preview host and exact origin are added without wildcard trust', async () => {
   let forwardedBody;
   const previewHost = 'echo-social-preview.vercel.app';
