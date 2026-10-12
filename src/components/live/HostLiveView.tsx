@@ -31,6 +31,7 @@ export function HostLiveView({ live }: HostLiveViewProps) {
   const { data: chatMessages } = useLiveChat(live.id);
   const sendMessage = useSendLiveChatMessage();
   const endLive = useEndLive();
+  const autoEndRef = useRef<(() => void) | null>(null);
 
   // Auto-start recording when stream is ready
   const startRecording = (stream: MediaStream) => {
@@ -104,6 +105,33 @@ export function HostLiveView({ live }: HostLiveViewProps) {
     }
   }, [chatMessages]);
 
+  // Limite de durée : alerte à 5 min de la fin, arrêt automatique à 60 min
+  useEffect(() => {
+    if (!live.started_at) return;
+    const startedAt = new Date(live.started_at).getTime();
+    const WARN_MS = 55 * 60 * 1000;
+    const MAX_MS = 60 * 60 * 1000;
+    let warned = false;
+    let ended = false;
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      if (!warned && elapsed >= WARN_MS) {
+        warned = true;
+        toast({
+          title: 'Plus que 5 minutes de live ⏳',
+          description: 'Ton live se terminera automatiquement. Tu pourras en relancer un juste après.',
+        });
+      }
+      if (!ended && elapsed >= MAX_MS) {
+        ended = true;
+        autoEndRef.current?.();
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 10_000);
+    return () => clearInterval(interval);
+  }, [live.started_at]);
+
   const handleStreamReady = (stream?: MediaStream) => {
     if (stream && stream.getTracks().length > 0) {
       startRecording(stream);
@@ -120,9 +148,9 @@ export function HostLiveView({ live }: HostLiveViewProps) {
     setMessage('');
   };
 
-  const handleEndLive = async () => {
-    if (!confirm('Terminer le live ?')) return;
-    
+  const handleEndLive = async (auto = false) => {
+    if (!auto && !confirm('Terminer le live ?')) return;
+
     setIsEnding(true);
     try {
       // Stop recording first
@@ -151,8 +179,10 @@ export function HostLiveView({ live }: HostLiveViewProps) {
         });
       }
       
-      toast({ 
-        title: recordingUrl ? 'Live terminé et publié dans le feed ! 🎬' : 'Live terminé !' 
+      toast({
+        title: auto
+          ? 'Live terminé : durée maximale atteinte (1 h) ⏳'
+          : recordingUrl ? 'Live terminé et publié dans le feed ! 🎬' : 'Live terminé !'
       });
       navigate('/feed');
     } catch (error) {
@@ -160,6 +190,8 @@ export function HostLiveView({ live }: HostLiveViewProps) {
       setIsEnding(false);
     }
   };
+
+  autoEndRef.current = () => { void handleEndLive(true); };
 
   return (
     <div className="fixed inset-0 bg-black flex flex-col">
@@ -178,8 +210,8 @@ export function HostLiveView({ live }: HostLiveViewProps) {
         {/* Top overlay */}
         <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10">
           <div className="flex items-center justify-between pointer-events-auto">
-            <button 
-              onClick={handleEndLive}
+            <button
+              onClick={() => handleEndLive()}
               disabled={isEnding || isSavingRecording}
               className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500 text-white font-medium"
             >

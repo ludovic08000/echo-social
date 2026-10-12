@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { LocalMediaSection } from '../LocalMediaSection';
-const mocks=vi.hoisted(()=>({rpc:vi.fn(),invoke:vi.fn()}));
+const mocks=vi.hoisted(()=>({rpc:vi.fn((name:string)=>name==='get_news_reactions'?Promise.resolve({data:{counts:{},mine:null},error:null}):Promise.resolve({data:null,error:null})),invoke:vi.fn()}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:mocks.rpc,functions:{invoke:mocks.invoke}}}));
 vi.mock('@/components/ShareButton',()=>({ShareButton:({url}:{url:string})=><a href={url}>Partager</a>}));
 vi.mock('../NewsDiscussionPanel',()=>({NewsDiscussionPanel:()=> <div>Formulaire de commentaires réel</div>}));
@@ -22,7 +22,7 @@ describe('partner media UI',()=>{
     expect(await screen.findByText('Deuxième actualité')).toBeInTheDocument();
     expect(screen.queryByText('Première actualité')).toBeNull();
     expect(screen.queryByRole('combobox')).toBeNull();
-    expect(screen.getByText('Selon tes choix')).toBeInTheDocument();
+    expect(screen.getByText(/Selon tes choix/)).toBeInTheDocument();
   });
   it('loads contextual news in the background and provides a stable discussion/share link',async()=>{
     mocks.invoke.mockResolvedValue({data:{location:{country:'FR',region:'Grand Est',city:null,source:'network'}},error:null});
@@ -32,13 +32,14 @@ describe('partner media UI',()=>{
       body: { context: true, browser: expect.objectContaining({ languages: expect.any(Array) }) },
     }));
     await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('get_contextual_partner_media',{p_scope:'nearby',p_kind:'all',p_country:'FR',p_region:'Grand Est',p_city:null}));
-    expect(screen.getByRole('button',{name:/Commenter et débattre/})).toHaveAttribute('aria-expanded','false');
-    fireEvent.click(screen.getByRole('button',{name:/Commenter et débattre/}));
+    expect(screen.getByRole('button',{name:'Commenter'})).toHaveAttribute('aria-expanded','false');
+    fireEvent.click(screen.getByRole('button',{name:'Commenter'}));
     expect(await screen.findByText('Formulaire de commentaires réel')).toBeInTheDocument();
-    expect(screen.getByText('Ouvrir la discussion')).toHaveAttribute('href','/news/durable');
+    expect(screen.getByText('Ouvrir la discussion en pleine page')).toHaveAttribute('href','/news/durable');
     expect(await screen.findByText('Partager')).toHaveAttribute('href',`${window.location.origin}/news/durable`);
     expect(screen.getByText('Aperçu de l’actualité')).toBeInTheDocument();
-    expect(screen.getByText(/Journal · Science · Article/)).toBeInTheDocument();
+    expect(screen.getByText('Journal')).toBeInTheDocument();
+    expect(screen.getByText(/Science · Article/)).toBeInTheDocument();
   });
   it('always requests automatic context and falls back to France',async()=>{
     mocks.rpc.mockResolvedValue({data:[],error:null});mount();await screen.findByText(/Aucun contenu/);
@@ -81,5 +82,37 @@ describe('partner media UI',()=>{
     expect(mocks.rpc).toHaveBeenCalledWith('get_contextual_partner_media',{p_scope:'nearby',p_kind:'all',p_country:'FR',p_region:'Grand Est',p_city:null});
     expect(screen.queryByRole('group',{name:'Zone des médias'})).toBeNull();
     expect(screen.getByText('France · Sélection nationale')).toBeInTheDocument();
+  });
+});
+describe('news reactions',()=>{
+  const card={id:'r1',discussion_id:'thread-1',title:'Actu réactions',kind:'article',canonical_url:'https://media.invalid/r1',published_at:'2026-10-08',source_name:'Journal'};
+  it('first tap sets 👍, re-tap only opens the picker, choosing replaces instead of stacking',async()=>{
+    mocks.rpc.mockImplementation((name:string,args?:Record<string,unknown>)=>{
+      if(name==='get_news_reactions')return Promise.resolve({data:{counts:{},mine:null},error:null});
+      if(name==='set_news_reaction')return Promise.resolve({data:null,error:null});
+      if(name==='remove_news_reaction')return Promise.resolve({data:null,error:null});
+      return Promise.resolve({data:[card],error:null});
+    });
+    mount();
+    const react=await screen.findByRole('button',{name:'Réagir'});
+    fireEvent.click(react);
+    await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('set_news_reaction',{p_thread:'thread-1',p_reaction:'like'}));
+    expect(mocks.rpc).not.toHaveBeenCalledWith('remove_news_reaction',expect.anything());
+  });
+  it('choosing the same emoji removes it, a different one replaces it',async()=>{
+    mocks.rpc.mockImplementation((name:string)=>{
+      if(name==='get_news_reactions')return Promise.resolve({data:{counts:{love:1},mine:'love'},error:null});
+      return Promise.resolve({data:[card],error:null});
+    });
+    mount();
+    const react=await screen.findByRole('button',{name:/Ma réaction : J'adore/});
+    fireEvent.click(react);
+    const picker=await screen.findByRole('group',{name:'Choisir une réaction'});
+    expect(picker).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Haha'}));
+    await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('set_news_reaction',{p_thread:'thread-1',p_reaction:'haha'}));
+    fireEvent.click(react);
+    fireEvent.click(await screen.findByRole('button',{name:'J\'adore'}));
+    await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('remove_news_reaction',{p_thread:'thread-1'}));
   });
 });

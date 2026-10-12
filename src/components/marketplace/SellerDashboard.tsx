@@ -229,7 +229,7 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
           </div>
           <h2 className="text-xl font-bold">Ouvrir votre boutique</h2>
           <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-            Vendez vos produits, créations ou services à la communauté. Vous touchez 100% du prix de vente — les frais de 5% sont à la charge de l'acheteur.
+            Vendez vos produits, créations ou services à la communauté. ForSure prélève une commission de 25 % sur chaque vente ; vous touchez 75 % du prix.
           </p>
           <div className="flex gap-2 max-w-xs mx-auto">
             <Input

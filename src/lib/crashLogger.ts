@@ -142,6 +142,14 @@ export function installGlobalCrashHandlers() {
   installed = true;
 
   window.addEventListener('error', (e) => {
+    // "ResizeObserver loop completed with undelivered notifications" est un
+    // avertissement bénin de Chromium (boucle de mesure de layout dans des
+    // composants tiers type Radix) : ce n'est pas un crash applicatif et il
+    // ne doit pas faire basculer l'écran en mode erreur.
+    if (/ResizeObserver loop/i.test(e.message || '')) {
+      e.preventDefault();
+      return;
+    }
     captureCrash({
       message: e.message || 'window.error',
       source: 'window.error',

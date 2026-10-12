@@ -32,6 +32,27 @@ describe('recsysV8 helpers', () => {
     expect(post.experiment_variant).toBe('b');
   });
 
+  it('propage la marque « réservé aux abonnés » du fil classé', () => {
+    const reserved = mapFeedRpcRow({
+      id: 'post-2',
+      user_id: 'user-2',
+      body: 'Bilan privé de la semaine',
+      image_url: null,
+      created_at: '2026-07-04T10:00:00Z',
+      subscriber_only: true,
+    });
+    const open = mapFeedRpcRow({
+      id: 'post-3',
+      user_id: 'user-3',
+      body: 'Sondage public',
+      image_url: null,
+      created_at: '2026-07-04T10:00:00Z',
+    });
+
+    expect(reserved.subscriber_only).toBe(true);
+    expect(open.subscriber_only).toBe(false);
+  });
+
   it('builds bounded A/B telemetry events', () => {
     const event = buildFeedExperimentEvent({
       postId: '123',

@@ -2827,6 +2827,128 @@ export type Database = {
         }
         Relationships: []
       }
+      fan_clubs: {
+        Row: {
+          created_at: string
+          creator_id: string
+          description: string | null
+          id: string
+          is_enabled: boolean
+          monthly_price_cents: number
+          stripe_price_id: string | null
+          stripe_product_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          description?: string | null
+          id?: string
+          is_enabled?: boolean
+          monthly_price_cents?: number
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          description?: string | null
+          id?: string
+          is_enabled?: boolean
+          monthly_price_cents?: number
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fan_clubs_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "fan_clubs_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "profiles_public"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "fan_clubs_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "profiles_safe"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "fan_clubs_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "public_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      fan_subscriptions: {
+        Row: {
+          amount_cents: number
+          cancelled_at: string | null
+          commission_cents: number
+          commission_rate: number
+          created_at: string
+          creator_id: string
+          creator_payout_cents: number
+          current_period_end: string | null
+          current_period_start: string | null
+          fan_id: string
+          id: string
+          status: string
+          stripe_customer_id: string | null
+          stripe_price_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          cancelled_at?: string | null
+          commission_cents: number
+          commission_rate?: number
+          created_at?: string
+          creator_id: string
+          creator_payout_cents: number
+          current_period_end?: string | null
+          current_period_start?: string | null
+          fan_id: string
+          id?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          cancelled_at?: string | null
+          commission_cents?: number
+          commission_rate?: number
+          created_at?: string
+          creator_id?: string
+          creator_payout_cents?: number
+          current_period_end?: string | null
+          current_period_start?: string | null
+          fan_id?: string
+          id?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       feed_ai_recommendations: {
         Row: {
           applied_at: string | null
@@ -5600,6 +5722,35 @@ export type Database = {
           },
         ]
       }
+      news_reactions: {
+        Row: {
+          created_at: string
+          reaction: string
+          thread_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          reaction: string
+          thread_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          reaction?: string
+          thread_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_reactions_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "news_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       news_threads: {
         Row: {
           canonical_url: string
@@ -6256,6 +6407,7 @@ export type Database = {
           likes_count: number
           media_thumbnail_url: string | null
           publish_at: string | null
+          subscriber_only: boolean
           user_id: string
         }
         Insert: {
@@ -6268,6 +6420,7 @@ export type Database = {
           likes_count?: number
           media_thumbnail_url?: string | null
           publish_at?: string | null
+          subscriber_only?: boolean
           user_id: string
         }
         Update: {
@@ -6280,6 +6433,7 @@ export type Database = {
           likes_count?: number
           media_thumbnail_url?: string | null
           publish_at?: string | null
+          subscriber_only?: boolean
           user_id?: string
         }
         Relationships: []
@@ -7725,7 +7879,9 @@ export type Database = {
           creator_id: string
           creator_payout: number
           id: string
+          live_stream_id: string | null
           message: string | null
+          paid_at: string | null
           status: string
           stripe_session_id: string | null
           tipper_id: string
@@ -7738,7 +7894,9 @@ export type Database = {
           creator_id: string
           creator_payout: number
           id?: string
+          live_stream_id?: string | null
           message?: string | null
+          paid_at?: string | null
           status?: string
           stripe_session_id?: string | null
           tipper_id: string
@@ -7751,7 +7909,9 @@ export type Database = {
           creator_id?: string
           creator_payout?: number
           id?: string
+          live_stream_id?: string | null
           message?: string | null
+          paid_at?: string | null
           status?: string
           stripe_session_id?: string | null
           tipper_id?: string
@@ -8196,8 +8356,8 @@ export type Database = {
           viral_content_reduce: boolean
           weight_discovery: number
           weight_friends: number
-          weight_news: number
           weight_marketplace: number
+          weight_news: number
         }
         Insert: {
           ai_summaries_enabled?: boolean
@@ -8214,8 +8374,8 @@ export type Database = {
           viral_content_reduce?: boolean
           weight_discovery?: number
           weight_friends?: number
-          weight_news?: number
           weight_marketplace?: number
+          weight_news?: number
         }
         Update: {
           ai_summaries_enabled?: boolean
@@ -8232,8 +8392,8 @@ export type Database = {
           viral_content_reduce?: boolean
           weight_discovery?: number
           weight_friends?: number
-          weight_news?: number
           weight_marketplace?: number
+          weight_news?: number
         }
         Relationships: []
       }
@@ -9132,6 +9292,20 @@ export type Database = {
         }
         Returns: string
       }
+      admin_creator_revenue: {
+        Args: { p_since?: string }
+        Returns: {
+          amount: number
+          commission_amount: number
+          creator_id: string
+          creator_name: string
+          creator_payout: number
+          live_stream_id: string
+          live_title: string
+          paid_at: string
+          tip_id: string
+        }[]
+      }
       admin_list_profiles: {
         Args: { p_limit?: number; p_search?: string; p_user_ids?: string[] }
         Returns: {
@@ -9660,6 +9834,7 @@ export type Database = {
         Returns: Json
       }
       feed_ml_health: { Args: never; Returns: Json }
+      feed_normalize_topic: { Args: { p_topic: string }; Returns: string }
       feed_post_is_eligible_internal: {
         Args: { p_post_id: string; p_viewer_id: string }
         Returns: boolean
@@ -9927,6 +10102,7 @@ export type Database = {
         Args: { p_after_id?: string; p_after_time?: string; p_thread: string }
         Returns: Json
       }
+      get_news_reactions: { Args: { p_thread: string }; Returns: Json }
       get_onboarding_state: { Args: { _user_id: string }; Returns: Json }
       get_own_phone_number: { Args: never; Returns: string }
       get_parental_controls: {
@@ -10060,6 +10236,10 @@ export type Database = {
           user_id: string
         }[]
       }
+      has_active_creator_badge: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       has_backup_pin: { Args: { _user_id?: string }; Returns: boolean }
       has_chat_pin: { Args: { p_user_id: string }; Returns: boolean }
       has_creator_tool_access: { Args: never; Returns: boolean }
@@ -10074,6 +10254,10 @@ export type Database = {
         Args: { p_items: Json; p_partner: string }
         Returns: number
       }
+      is_active_fan: {
+        Args: { p_creator_id: string; p_fan_id: string }
+        Returns: boolean
+      }
       is_ad_set_paid_and_active: {
         Args: { p_ad_set_id: string }
         Returns: boolean
@@ -10083,6 +10267,10 @@ export type Database = {
         Returns: boolean
       }
       is_current_login_session_approved: { Args: never; Returns: boolean }
+      is_group_member: {
+        Args: { _group_id: string; _user_id: string }
+        Returns: boolean
+      }
       is_invalid_e2ee_device: {
         Args: { p_device_id: string; p_user_id: string }
         Returns: boolean
@@ -10355,6 +10543,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      partner_media_detect_topics: {
+        Args: { p_category: string; p_excerpt: string; p_title: string }
+        Returns: string[]
+      }
       partner_media_for_zone: {
         Args: {
           p_city: string
@@ -10489,6 +10681,7 @@ export type Database = {
         }[]
       }
       remove_news_comment: { Args: { p_id: string }; Returns: boolean }
+      remove_news_reaction: { Args: { p_thread: string }; Returns: undefined }
       replace_own_identity_key: {
         Args: {
           p_binding_signature: string
@@ -10551,6 +10744,10 @@ export type Database = {
       set_message_archive_body: {
         Args: { p_archive_body: string; p_message_id: string }
         Returns: boolean
+      }
+      set_news_reaction: {
+        Args: { p_reaction: string; p_thread: string }
+        Returns: undefined
       }
       store_ad_location_context: {
         Args: {

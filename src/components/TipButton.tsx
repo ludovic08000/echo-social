@@ -12,6 +12,8 @@ import { useIsCreatorRevenueEnabled, useCreatorEligibility } from '@/hooks/usePl
 interface TipButtonProps {
   creatorId: string;
   creatorName: string;
+  liveStreamId?: string;
+  className?: string;
 }
 
 const GIFTS = [
@@ -25,7 +27,7 @@ const GIFTS = [
   { emoji: '🦄', label: 'Licorne', amount: 200, color: 'from-fuchsia-500/20 to-pink-500/20 border-fuchsia-500/30' },
 ];
 
-export function TipButton({ creatorId, creatorName }: TipButtonProps) {
+export function TipButton({ creatorId, creatorName, liveStreamId, className }: TipButtonProps) {
   const { user } = useAuth();
   const { enabled: revenueEnabled } = useIsCreatorRevenueEnabled();
   const eligibility = useCreatorEligibility();
@@ -65,6 +67,7 @@ export function TipButton({ creatorId, creatorName }: TipButtonProps) {
         body: {
           amount: finalAmount,
           creator_id: creatorId,
+          live_stream_id: liveStreamId,
           message: showCustom ? '' : `${selectedGift?.emoji} ${selectedGift?.label}`,
         },
       });
@@ -89,7 +92,7 @@ export function TipButton({ creatorId, creatorName }: TipButtonProps) {
       <Button
         variant="ghost"
         size="icon"
-        className="h-10 w-10 rounded-full bg-pink-500/10 hover:bg-pink-500/20 text-pink-500"
+        className={className ?? "h-10 w-10 rounded-full bg-pink-500/10 hover:bg-pink-500/20 text-pink-500"}
         onClick={() => setOpen(true)}
       >
         <Gift className="w-5 h-5" />

@@ -14,3 +14,4 @@ export { SecurityMonitoringSection } from './SecurityMonitoringSection';
 export { CryptoErrorsSection } from './CryptoErrorsSection';
 export { MLFeedSection } from './MLFeedSection';
 export { CommentModerationAlertsSection } from './CommentModerationAlertsSection';
+export { CreatorRevenueSection } from './CreatorRevenueSection';

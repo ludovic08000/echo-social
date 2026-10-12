@@ -22,6 +22,7 @@ export interface FeedRpcRow {
   media_thumbnail_url?: string | null;
   created_at: string;
   expires_at?: string | null;
+  subscriber_only?: boolean | null;
   likes_count?: number | null;
   comments_count?: number | null;
   author_name?: string | null;
@@ -43,6 +44,7 @@ export interface FeedPostView {
   media_thumbnail_url: string | null;
   created_at: string;
   expires_at?: string | null;
+  subscriber_only: boolean;
   profile: {
     name: string;
     avatar_url: string | null;
@@ -77,6 +79,7 @@ export function mapFeedRpcRow(row: FeedRpcRow): FeedPostView {
     media_thumbnail_url: row.media_thumbnail_url || null,
     created_at: row.created_at,
     expires_at: row.expires_at || null,
+    subscriber_only: !!row.subscriber_only,
     profile: {
       name: row.author_name || 'Utilisateur',
       avatar_url: row.author_avatar || null,

@@ -14,6 +14,7 @@ import { useFriendshipStatus } from '@/hooks/useFriendships';
 import { ShareButton } from '@/components/ShareButton';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FanClubPanel } from '@/components/profile/FanClubPanel';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
@@ -496,6 +497,7 @@ export default function Profile() {
     { value: 'overview', label: 'Tout' },
     { value: 'all', label: 'Publications' },
     { value: 'about', label: 'À propos' },
+    { value: 'club', label: 'Club' },
     { value: 'albums', label: 'Albums' },
     { value: 'photos', label: 'Photos' },
     { value: 'reels', label: 'Reels' },
@@ -1005,6 +1007,16 @@ export default function Profile() {
             )
           )}
           
+          {activeTab === 'club' && (
+            <div className="max-w-lg space-y-4">
+              <FanClubPanel
+                creatorId={userId!}
+                creatorName={profile.name || 'ce créateur'}
+                isOwnProfile={isOwnProfile}
+              />
+            </div>
+          )}
+
           {activeTab === 'about' && (
             <div className="max-w-lg space-y-4">
               <ProfileAboutSection
