@@ -9314,10 +9314,6 @@ export type Database = {
       }
     }
     Functions: {
-      admin_aegis_journey: {
-        Args: { p_account?: string; p_before_id?: number; p_outcome?: string }
-        Returns: Json
-      }
       ack_sealed_sender_wakeups: {
         Args: { p_message_ids: string[] }
         Returns: number
@@ -9363,6 +9359,10 @@ export type Database = {
           p_thread: string
         }
         Returns: string
+      }
+      admin_aegis_journey: {
+        Args: { p_account?: string; p_before_id?: number; p_outcome?: string }
+        Returns: Json
       }
       admin_creator_revenue: {
         Args: { p_since?: string }
@@ -10729,6 +10729,16 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
+      }
+      record_aegis_request_event: {
+        Args: {
+          p_duration_ms?: number
+          p_error_code?: string
+          p_request_id: string
+          p_rpc: string
+          p_status: number
+        }
+        Returns: undefined
       }
       record_login_attempt: {
         Args: {
