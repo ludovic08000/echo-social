@@ -78,6 +78,7 @@ import {
 } from '@/lib/messaging/messageCompatibility';
 import { clearE2EETrace, readE2EETrace } from '@/lib/messaging/e2eeTrace';
 import { VALID_RATCHET_COPY } from '@/test/aegisWireFixtures';
+import type { OutboxPayload } from '@/lib/messaging/outboxVault';
 
 const COPY = {
   message_id: '11111111-1111-4111-8111-111111111111',
@@ -607,7 +608,7 @@ describe('canonical Aegis outbound transaction engine', () => {
     );
   });
 
-  it.each(['AEGIS_CLIENT_UPDATE_REQUIRED','AEGIS_PEER_DEVICE_UPDATE_REQUIRED','AEGIS_LIBSIGNAL_BUNDLE_BINDING_INVALID','AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID'])(
+  it.each(['AEGIS_CLIENT_UPDATE_REQUIRED','AEGIS_LIBSIGNAL_BUNDLE_BINDING_INVALID','AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID'])(
     'keeps the draft but stops automatic retry after %s', async (code) => {
       mocks.buildCopies.mockRejectedValueOnce(new Error(code));
       await expect(sendAegisOutboundMessage({ conversationId:'44444444-4444-4444-8444-444444444444',
@@ -617,6 +618,41 @@ describe('canonical Aegis outbound transaction engine', () => {
       expect(mocks.putOutbox).toHaveBeenLastCalledWith(COPY.sender_user_id,
         expect.objectContaining({status:'failed_visible',lastError:code,plaintext:'À conserver'}));
       expect(mocks.deleteOutbox).not.toHaveBeenCalled();
+    });
+
+  it('durably parks a peer upgrade for automatic retry without sending partial copies', async () => {
+    mocks.buildCopies.mockRejectedValueOnce(new Error('AEGIS_PEER_DEVICE_UPDATE_REQUIRED'));
+    await expect(sendAegisOutboundMessage({ conversationId:'44444444-4444-4444-8444-444444444444',
+      senderUserId:COPY.sender_user_id,plaintext:'À conserver',localId:'peer-upgrade-draft',messageId:COPY.message_id,
+    })).rejects.toThrow('AEGIS_PEER_DEVICE_UPDATE_REQUIRED');
+    expect(mocks.sendRpc).not.toHaveBeenCalled();
+    expect(mocks.putOutbox).toHaveBeenLastCalledWith(COPY.sender_user_id,
+      expect.objectContaining({status:'waiting_secure_channel',lastError:'AEGIS_PEER_DEVICE_UPDATE_REQUIRED',
+        plaintext:'À conserver',reservedServerId:COPY.message_id}));
+    expect(mocks.deleteOutbox).not.toHaveBeenCalled();
+  });
+
+  it.each(['waiting_secure_channel', 'failed_visible'] as const)(
+    'resumes a peer-upgrade draft stored as %s with the same ciphertext and message UUID', async (status) => {
+      mocks.buildCopies.mockRejectedValueOnce(new Error('AEGIS_PEER_DEVICE_UPDATE_REQUIRED'));
+      const input = {conversationId:'44444444-4444-4444-8444-444444444444',senderUserId:COPY.sender_user_id,
+        plaintext:'À conserver',localId:'restored-peer-draft',messageId:COPY.message_id};
+      await expect(sendAegisOutboundMessage(input)).rejects.toThrow('AEGIS_PEER_DEVICE_UPDATE_REQUIRED');
+      const durable = mocks.putOutbox.mock.calls[mocks.putOutbox.mock.calls.length - 1][1] as OutboxPayload;
+      mocks.buildCopies.mockResolvedValueOnce({rows:[COPY],hasTargets:true,routeVersion:'attested-route-version'});
+
+      const sent = await sendAegisOutboundMessage({...input,resumePayload:{...durable,status}});
+      expect(sent.id).toBe(durable.reservedServerId);
+      expect(sent.parentBody).toBe(durable.encryptedBody);
+      expect(mocks.encryptArchive).toHaveBeenCalledTimes(1);
+      expect(mocks.buildCopies).toHaveBeenLastCalledWith(expect.objectContaining({
+        messageId:durable.reservedServerId,plaintext:durable.keyCapsule,
+      }));
+      expect(mocks.sendRpc).toHaveBeenCalledTimes(1);
+      expect(mocks.sendRpc).toHaveBeenCalledWith(expect.objectContaining({
+        messageId:durable.reservedServerId,body:durable.encryptedBody,routeVersion:'attested-route-version',
+      }));
+      expect(mocks.deleteOutbox).toHaveBeenCalledWith('restored-peer-draft');
     });
 
   it('parks an untrusted sender route and requests authenticated self-repair', async () => {

@@ -26,11 +26,14 @@ function errorMessage(error: unknown): string {
 }
 
 async function ensureApprovedDeviceTrustWithRepair(userId: string, deviceId: string): Promise<void> {
+  let missingRouteError: unknown;
   try {
     await ensureApprovedDeviceTrust(userId, deviceId);
     return;
   } catch (error) {
-    if (!errorMessage(error).includes('DEVICE_ROUTE_NOT_READY')) throw error;
+    const reason = errorMessage(error);
+    if (reason === 'DEVICE_NOT_FOUND') missingRouteError = error;
+    else if (!reason.includes('DEVICE_ROUTE_NOT_READY')) throw error;
   }
 
   // A device may already be approved + account-bound while its Libsignal bundle
@@ -39,6 +42,14 @@ async function ensureApprovedDeviceTrustWithRepair(userId: string, deviceId: str
   // Dynamic import avoids a static cycle because deviceApi invalidates this
   // runtime after successful key provisioning.
   const { deviceApi } = await import('@/lib/api/deviceApi');
+  if (missingRouteError) {
+    // Le registre public masque les routes non attestées. Seul le propriétaire
+    // du même appareil approuvé peut republier sa preuve avec ses clés locales.
+    const { record, requiresExplicitEnrollment } = await deviceApi.getState(userId);
+    if (requiresExplicitEnrollment || !record || record.deviceId !== deviceId
+      || record.approvalStatus !== 'approved' || !record.isActive || record.revokedAt
+      || record.bindingStatus !== 'bound') throw missingRouteError;
+  }
   await deviceApi.prepareKeys(userId);
 
   // Never trust the repair optimistically. Re-read and re-verify the canonical
@@ -50,7 +61,7 @@ async function ensureApprovedDeviceTrustWithRepair(userId: string, deviceId: str
  * Establishes and verifies the stable Aegis installation before any route or
  * Libsignal work. A stable local DeviceID is not enough: the exact current device
  * must have a valid account authorization, a routable server state and a valid
- * active Libsignal prekey bundle.
+ * persistent signed Libsignal attestation (not a nonempty consumable stock).
  */
 export async function ensureAegisDeviceReady(userId: string): Promise<ReadyDevice> {
   if (!userId) throw new Error('AEGIS_USER_ID_REQUIRED');

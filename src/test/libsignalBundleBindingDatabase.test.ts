@@ -22,6 +22,16 @@ async function claim(conversation=10) {
   return db.query('SELECT * FROM claim_libsignal_prekey_bundle($1,$2,$3,$4)',[uid(2),'ios',uid(conversation),'windows']);
 }
 
+// Exécute les fonctions de production, pas des répliques simplifiées du routeur.
+function migrationFunction(file: string, name: string, delimiter = '$$') {
+  const sql = readFileSync(`supabase/migrations/${file}`, 'utf8');
+  const start = sql.indexOf(`create or replace function public.${name}(`);
+  const body = sql.indexOf(delimiter, start);
+  const end = sql.indexOf(`${delimiter};`, body + delimiter.length);
+  if (start < 0 || body < 0 || end < 0) throw new Error(`Missing SQL function: ${name}`);
+  return sql.slice(start, end + delimiter.length + 1);
+}
+
 describe('strict device-bound prekey migration in PostgreSQL', () => {
   beforeAll(async () => {
     await wasm.default({module_or_path:readFileSync('src/lib/crypto/wasm/generated/aegis_crypto_bg.wasm')});
@@ -46,6 +56,10 @@ describe('strict device-bound prekey migration in PostgreSQL', () => {
         fingerprint text DEFAULT 'fingerprint',identity_binding_signature text DEFAULT 'valid',identity_binding_version integer DEFAULT 1,
         is_active boolean DEFAULT true,created_at timestamptz DEFAULT now());
       CREATE TABLE conversation_participants(conversation_id uuid,user_id uuid);
+      CREATE TABLE aegis_user_route_versions(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+        route_version bigint NOT NULL DEFAULT 1,updated_at timestamptz DEFAULT now());
+      ALTER TABLE aegis_user_route_versions ENABLE ROW LEVEL SECURITY;
+      REVOKE ALL ON aegis_user_route_versions FROM public,anon,authenticated;
       CREATE TABLE device_libsignal_prekey_bundles(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid,device_id text,
         device_number smallint,registration_id bigint,prekey_id bigint,signed_prekey_id bigint,kyber_prekey_id bigint,
         public_bundle text,created_at timestamptz DEFAULT now(),UNIQUE(user_id,device_id,prekey_id));
@@ -74,6 +88,14 @@ describe('strict device-bound prekey migration in PostgreSQL', () => {
     await db.exec(readFileSync('supabase/migrations/20261012105635_protect_libsignal_prekey_availability.sql','utf8'));
     await db.exec(readFileSync('supabase/migrations/20261012112352_bind_libsignal_bundles_to_approved_devices.sql','utf8'));
     await db.exec(readFileSync('supabase/migrations/20261012134736_persist_libsignal_receive_attestations.sql','utf8'));
+    for (const name of ['bump_aegis_user_route_version', 'trg_bump_aegis_signature_route', 'get_aegis_conversation_route_version']) {
+      await db.exec(migrationFunction('20260726120000_aegis_identity_route_stabilization.sql', name));
+    }
+    await db.exec(migrationFunction('20260730090000_aegis_clean_rebuild.sql', 'trg_bump_aegis_device_route'));
+    await db.exec(`CREATE TRIGGER bump_aegis_device_route AFTER INSERT OR UPDATE OR DELETE ON user_devices
+      FOR EACH ROW EXECUTE FUNCTION trg_bump_aegis_device_route()`);
+    await db.exec(migrationFunction('20260813162000_libsignal_protocol_cutover.sql', 'get_libsignal_device_number'));
+    await db.exec(migrationFunction('20260927210000_explicit_message_blocks_and_read_receipts.sql', 'aegis_resolve_conversation_route', '$function$'));
     const payload = libsignalBundleBindingPayload(context());
     expect(await crypto.subtle.verify('Ed25519',key.publicKey,Buffer.from(proof,'base64'),new TextEncoder().encode(payload))).toBe(true);
     await db.query('INSERT INTO test_valid_signatures VALUES($1,$2,$3)',[publicKey,proof,new TextEncoder().encode(payload)]);
@@ -81,7 +103,7 @@ describe('strict device-bound prekey migration in PostgreSQL', () => {
   afterAll(async () => { await db?.close(); });
   beforeEach(async () => {
     await db.exec(`RESET ROLE; TRUNCATE libsignal_receive_attestations,message_device_copies,libsignal_prekey_claim_limits,device_libsignal_prekey_bundles,user_devices,
-      auth.users,user_public_keys,conversation_participants,test_blocks,messages,active_calls;
+      auth.users,user_public_keys,conversation_participants,test_blocks,messages,active_calls,aegis_user_route_versions;
       INSERT INTO auth.users VALUES('${uid(1)}'),('${uid(2)}'),('${uid(3)}');
       INSERT INTO user_public_keys(user_id) VALUES('${uid(1)}'),('${uid(2)}');
       INSERT INTO conversation_participants VALUES('${uid(10)}','${uid(1)}'),('${uid(10)}','${uid(2)}');`);
@@ -236,5 +258,138 @@ describe('strict device-bound prekey migration in PostgreSQL', () => {
     await asUser();
     await expect(db.query('SELECT publish_libsignal_prekey_bundle($1,2,202,21,22,23,$2,$3)',['ios',replacement,signed])).rejects.toThrow('IDENTITY_BINDING_INVALID');
     expect((await readProof()).rows[0].proof.publicBundle).toBe(bundle);
+  });
+
+  describe('global attested Libsignal routing', () => {
+    beforeAll(async () => {
+      await db.exec('RESET ROLE');
+      await db.exec(`INSERT INTO auth.users VALUES('${uid(99)}');
+        INSERT INTO user_devices(user_id,device_id,libsignal_device_number) VALUES('${uid(99)}','migration-fixture',1);
+        INSERT INTO conversation_participants VALUES('${uid(99)}','${uid(99)}')`);
+      await asUser(99);
+      const before = (await db.query<{version:string}>('SELECT get_aegis_conversation_route_version($1) AS version',[uid(99)])).rows[0].version;
+      await db.exec('RESET ROLE');
+      await db.exec(readFileSync('supabase/migrations/20261012183705_require_attested_libsignal_routes.sql','utf8'));
+      expect((await db.query<{version:string}>('SELECT get_aegis_conversation_route_version($1) AS version',[uid(99)])).rows[0].version).not.toBe(before);
+    });
+
+    async function signDevice(user: number, device: string, number: number) {
+      const packed = await wasm.aegis_wasm_bundle_create(wasm.aegis_wasm_store_create(202),number,11,12,13);
+      const n = new DataView(packed.buffer,packed.byteOffset,4).getUint32(0,true);
+      const publicBundle = Buffer.from(packed.slice(n+8)).toString('base64');
+      const ctx = {userId:uid(user),deviceId:device,deviceNumber:number,registrationId:202,publicBundle};
+      const signature = await signLibsignalBundleBinding(ctx,key.privateKey);
+      const payload = new TextEncoder().encode(libsignalBundleBindingPayload(ctx));
+      expect(await crypto.subtle.verify('Ed25519',key.publicKey,Buffer.from(signature,'base64'),payload)).toBe(true);
+      await db.exec('RESET ROLE');
+      await db.query('INSERT INTO test_valid_signatures VALUES($1,$2,$3)',[publicKey,signature,payload]);
+      await asUser(user);
+      await db.query('SELECT publish_libsignal_prekey_bundle($1,$2,202,11,12,13,$3,$4)',[device,number,publicBundle,signature]);
+      return publicBundle;
+    }
+    async function routes(user = 2) {
+      return (await db.query<{device_id:string}>('SELECT device_id FROM get_sesame_device_list($1) WHERE is_routable',[uid(user)])).rows.map(row => row.device_id);
+    }
+    async function version() {
+      return (await db.query<{version:string}>('SELECT get_aegis_conversation_route_version($1) AS version',[uid(10)])).rows[0].version;
+    }
+    it('excludes ten unsigned historical devices while routing both upgraded accounts',async () => {
+      await signDevice(1,'windows',1);
+      await asUser(2); await publish();
+      await db.exec('RESET ROLE');
+      for (const [user,count] of [[1,7],[2,3]]) {
+        for (let n=0;n<count;n++) {
+          await db.query('INSERT INTO user_devices(user_id,device_id,libsignal_device_number,device_signing_key) VALUES($1,$2,$3,$4)',
+            [uid(user),`old-${user}-${n}`,n+10,publicKey]);
+          await db.query('INSERT INTO device_libsignal_prekey_bundles(user_id,device_id,device_number,registration_id,prekey_id,signed_prekey_id,kyber_prekey_id,public_bundle) VALUES($1,$2,$3,202,11,12,13,$4)',
+            [uid(user),`old-${user}-${n}`,n+10,bundle]);
+        }
+      }
+      await db.query('INSERT INTO user_devices(user_id,device_id,libsignal_device_number,device_signing_key) VALUES($1,$2,2,$3)',[uid(1),'android',publicKey]);
+      await signDevice(1,'android',2);
+      expect(await routes(1)).toEqual(['android','windows']);
+      expect(await routes(2)).toEqual(['ios']);
+      const route = (await db.query<{route:{sender_device_routable:boolean;participants:Array<{user_id:string;routable_count:number;total_count:number}>}}>(
+        'SELECT aegis_resolve_conversation_route($1,$2) AS route',[uid(10),'windows'])).rows[0].route;
+      expect(route.sender_device_routable).toBe(true);
+      expect(route.participants).toEqual(expect.arrayContaining([
+        expect.objectContaining({user_id:uid(1),routable_count:2,total_count:9}),
+        expect.objectContaining({user_id:uid(2),routable_count:1,total_count:4}),
+      ]));
+      expect((await claim()).rows).toHaveLength(1);
+      expect((await db.query('SELECT * FROM claim_libsignal_prekey_bundle($1,$2,$3,$4)',[uid(2),'old-2-0',uid(10),'windows'])).rows).toEqual([]);
+      await db.exec('RESET ROLE');
+      expect((await db.query('SELECT count(*)::int AS n FROM device_libsignal_prekey_bundles WHERE bundle_signature IS NULL')).rows).toEqual([{n:10}]);
+      expect((await db.query('SELECT count(*)::int AS n FROM user_devices WHERE revoked_at IS NOT NULL')).rows).toEqual([{n:0}]);
+    });
+
+    it('keeps exhausted signed routes and receive history, without a route-version bump per claim',async () => {
+      await signDevice(1,'windows',1);
+      await asUser(2); await publish(); await asUser(1);
+      const before = await version();
+      expect((await claim()).rows).toHaveLength(1);
+      expect((await claim()).rows).toEqual([]);
+      expect(await routes(2)).toEqual(['ios']);
+      expect(await version()).toBe(before);
+      await addReceivedCopy();
+      expect((await readProof()).rows[0].proof.signature).toBe(proof);
+    });
+
+    it('allows an unsigned installation to publish its own real proof before becoming routable',async () => {
+      expect(await routes(2)).toEqual([]);
+      expect((await db.query('SELECT get_libsignal_device_number($1,$2) AS number',[uid(2),'ios'])).rows).toEqual([{number:2}]);
+      const before = await version();
+      await publish();
+      expect(await routes(2)).toEqual(['ios']);
+      expect(await version()).not.toBe(before);
+      const after = await version();
+      await publish(); // publication idempotente, pas de dérive du cache
+      expect(await version()).toBe(after);
+    });
+
+    it('does not hide a participant with no migrated device as a successfully deliverable route',async () => {
+      await signDevice(1,'windows',1);
+      const route = (await db.query<{route:{participants:unknown[]}}>('SELECT aegis_resolve_conversation_route($1,$2) AS route',[uid(10),'windows'])).rows[0].route;
+      expect(route.participants).toContainEqual(expect.objectContaining({user_id:uid(2),routable_count:0,reason:'DEVICES_NOT_ROUTABLE'}));
+      expect((await claim()).rows).toEqual([]);
+    });
+
+    it.each(["approval_status='pending'",'is_active=false','revoked_at=now()','stale_at=now()',
+      'crypto_invalid_at=now()',"binding_status='unbound'",'account_bound_at=null',"routing_status='repairing'",
+      'libsignal_device_number=null','libsignal_device_number=3',"device_authorization_signature='invalid'",
+      "device_signing_key=repeat('B',44)","device_public_key='replacement'"])(
+      'does not let a retained historical proof authorize a changed device: %s',async (mutation) => {
+        await signDevice(1,'windows',1); await asUser(2); await publish(); await addReceivedCopy();
+        const before = await version();
+        await db.exec(`RESET ROLE; UPDATE user_devices SET ${mutation} WHERE device_id='ios'`);
+        await asUser(1);
+        expect(await routes()).toEqual([]);
+        expect(await version()).not.toBe(before);
+        expect((await claim()).rows).toEqual([]);
+        expect((await readProof()).rows[0].proof.signature).toBe(proof);
+      });
+
+    it.each(["fingerprint='replacement'","identity_key='replacement'","signing_key='replacement'",
+      "identity_binding_signature='invalid'",'is_active=false'])(
+      'requires the current account binding, not only historical approval: %s',async (mutation) => {
+        await publish();
+        await db.exec(`RESET ROLE; UPDATE user_public_keys SET ${mutation} WHERE user_id='${uid(2)}'`);
+        await asUser(1); expect(await routes()).toEqual([]);
+      });
+
+    it.each(['signature','publicBundle','deviceId','deviceSigningKey','accountFingerprint'])(
+      'rejects tampering with the persistent public proof field %s',async (field) => {
+        await publish();
+        await db.exec('RESET ROLE');
+        await db.query('UPDATE libsignal_receive_attestations SET proof=jsonb_set(proof,ARRAY[$1],to_jsonb($2::text))',[field,'tampered']);
+        await asUser(1); expect(await routes()).toEqual([]);
+      });
+
+    it('keeps attestation writes private and denies anonymous routing',async () => {
+      await publish();
+      await expect(db.exec("UPDATE libsignal_receive_attestations SET proof='{}'")).rejects.toThrow(/permission denied/);
+      await db.exec('RESET ROLE; SET ROLE anon');
+      await expect(db.query('SELECT * FROM get_sesame_device_list($1)',[uid(2)])).rejects.toThrow(/permission denied/);
+    });
   });
 });

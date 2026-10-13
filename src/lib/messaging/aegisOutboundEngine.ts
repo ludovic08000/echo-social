@@ -75,13 +75,15 @@ function failureStatus(error: unknown): OutboxStatus {
     text.includes('fingerprint changed') ||
     text.includes('fingerprint_changed') ||
     text.includes('aegis_client_update_required') ||
-    text.includes('aegis_peer_device_update_required') ||
     text.includes('aegis_libsignal_bundle_binding_invalid') ||
     text.includes('aegis_libsignal_identity_binding_invalid')
   ) {
     return 'failed_visible';
   }
   if (
+    // La migration du correspondant attend une nouvelle route signée ; elle
+    // n'est pas un refus de signature et ne doit pas abandonner le brouillon.
+    text.includes('aegis_peer_device_update_required') ||
     text.includes('e2ee_device') ||
     text.includes('e2ee_sender_device_not_trusted') ||
     text.includes('e2ee_sender_device_required') ||

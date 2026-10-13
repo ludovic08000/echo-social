@@ -418,7 +418,16 @@ export async function buildFanoutCopies(input: FanoutInput, routeRefreshAttempt 
 
   // Tous les travaux terminent avant le refus : aucune copie partielle ne part,
   // et une signature refusée ne devient pas une boucle de réparation de route.
-  if (terminalFailures.length) throw new Error(terminalFailures[0]);
+  if (terminalFailures.length) {
+    const terminal = terminalFailures.find(code => code !== 'AEGIS_PEER_DEVICE_UPDATE_REQUIRED')
+      ?? 'AEGIS_PEER_DEVICE_UPDATE_REQUIRED';
+    if (terminal === 'AEGIS_PEER_DEVICE_UPDATE_REQUIRED') {
+      // Une route ancienne peut encore contenir un appareil non migré. La
+      // tentative échoue entière ; la reprise relira l'autorité serveur.
+      invalidateFanoutRoute(input.conversationId, input.senderUserId);
+    }
+    throw new Error(terminal);
+  }
   const rows = rowResults.filter(Boolean) as FanoutCopyRow[];
   if (rows.length !== targets.length) {
     const omittedDeviceIds = targets

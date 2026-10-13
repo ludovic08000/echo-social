@@ -153,5 +153,11 @@ describe('Aegis conversation queue', () => {
     expect(isRetryableOutboundStatus('failed_visible', 'Clé de sécurité du contact modifiée')).toBe(false);
     expect(isRetryableOutboundStatus('failed_visible', 'Failed to fetch')).toBe(true);
     expect(isRetryableOutboundStatus('retry_pending', null)).toBe(true);
+    expect(isRetryableOutboundStatus('failed_visible', 'AEGIS_PEER_DEVICE_UPDATE_REQUIRED')).toBe(true);
+    expect(isRetryableOutboundStatus('waiting_secure_channel', 'AEGIS_PEER_DEVICE_UPDATE_REQUIRED')).toBe(true);
+    for (const error of ['AEGIS_CLIENT_UPDATE_REQUIRED', 'AEGIS_LIBSIGNAL_BUNDLE_BINDING_INVALID',
+      'AEGIS_LIBSIGNAL_IDENTITY_BINDING_INVALID', 'FINGERPRINT_CHANGED', '401 JWT unauthorized']) {
+      expect(isRetryableOutboundStatus('failed_visible', `${error} AEGIS_PEER_DEVICE_UPDATE_REQUIRED`)).toBe(false);
+    }
   });
 });

@@ -148,10 +148,19 @@ export function isRetryableOutboundStatus(status: string, lastError?: string | n
     error.includes('clé de sécurité') ||
     error.includes('safety number') ||
     error.includes('verification obligatoire') ||
-    error.includes('fingerprint changed')
+    error.includes('fingerprint changed') ||
+    error.includes('fingerprint_changed') ||
+    error.includes('aegis_client_update_required') ||
+    error.includes('aegis_libsignal_bundle_binding_invalid') ||
+    error.includes('aegis_libsignal_identity_binding_invalid') ||
+    error.includes('not_authenticated') || error.includes('jwt') || error.includes('401')
   ) {
     return false;
   }
+
+  // Reprend aussi les anciens brouillons scellés que le moteur classait à tort
+  // comme échecs définitifs. Aucun ciphertext ni identifiant n'est remplacé.
+  if (error.includes('aegis_peer_device_update_required')) return true;
 
   return [
     'network',
