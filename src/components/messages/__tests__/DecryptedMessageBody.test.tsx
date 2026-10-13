@@ -4,14 +4,15 @@
  * Validates:
  *  - Cleartext (non-ratchet) bodies render directly.
  *  - Provided `cachedPlaintext` short-circuits decryption.
- *  - When decrypt fails, the component stays SILENT (no "🔒 restoration"
- *    placeholder) — pending queue handles retry off-screen.
- *  - Successful async decrypt updates the rendered text.
- *  - `forsure-decrypt-retry` event triggers a re-render attempt.
+ *  - Missing Aegis copies keep a neutral recovery state, without ciphertext.
+ *  - Real AES-GCM decryption updates the rendered text.
+ *  - `forsure-decrypt-retry` retries the exact message when its copy arrives.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { useState } from 'react';
+
+const mocks = vi.hoisted(() => ({ tryReadDeviceCopy: vi.fn() }));
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
@@ -32,7 +33,17 @@ vi.mock('@/lib/crypto/plaintextStore', () => ({
   loadPlaintextForCiphertext: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/messaging/multiDeviceFanout', () => ({
-  tryReadDeviceCopy: vi.fn().mockResolvedValue(null),
+  tryReadDeviceCopy: mocks.tryReadDeviceCopy,
+  clearDeviceCopyCache: vi.fn(),
+  clearDeviceCopyCacheForMessage: vi.fn(),
+}));
+vi.mock('@/lib/crypto/peerKeyCache', () => ({
+  getCachedAuthUserId: vi.fn().mockResolvedValue(null),
+}));
+vi.mock('@/lib/messaging/archive/archiveKey', () => ({
+  decryptArchive: vi.fn().mockResolvedValue(null),
+  recoverBubbleFromArchive: vi.fn().mockResolvedValue(null),
+  archiveBubbleForUser: vi.fn().mockResolvedValue(false),
 }));
 vi.mock('@/e2ee-session', () => ({
   routeIncoming: vi.fn().mockResolvedValue({ ok: false, plaintext: null }),
@@ -48,11 +59,24 @@ vi.mock('@/lib/crypto/errorLogger', () => ({
 import { DecryptedMessageBody } from '@/components/messages/DecryptedMessageBody';
 import { buildMediaMessageBody } from '@/lib/crypto/mediaEncrypt';
 import { clearMediaKey, getMediaKey } from '@/components/messages/mediaKeyCache';
+import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
+import { clearDecryptionSessionCaches } from '@/components/messages/decryptionService';
+
+const aegisContext = {
+  messageId: '11111111-1111-4111-8111-111111111111',
+  conversationId: '22222222-2222-4222-8222-222222222222',
+  senderId: '33333333-3333-4333-8333-333333333333',
+};
 
 const UNSUPPORTED_ENCRYPTED_BODY = 'legacy.session.AAAA.0.0.IV.CT';
 
 describe('DecryptedMessageBody', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearDecryptionSessionCaches();
+    mocks.tryReadDeviceCopy.mockResolvedValue(null);
+  });
+  afterEach(() => clearDecryptionSessionCaches());
 
   it('renders cleartext directly when body is not encrypted', async () => {
     render(
@@ -168,68 +192,77 @@ describe('DecryptedMessageBody', () => {
     expect(screen.queryByText(/GIF:https/)).not.toBeInTheDocument();
   });
 
-  it.skip('renders the decrypted text when decrypt resolves', async () => {
-    const decrypt = vi.fn().mockResolvedValue({ text: 'decrypted!', incompatible: false });
+  it('renders authenticated plaintext from a real Aegis envelope and device capsule', async () => {
+    const created = await createAegisMessage({ ...aegisContext, plaintext: 'decrypted!' });
+    mocks.tryReadDeviceCopy.mockResolvedValueOnce(created.keyCapsule);
+    const decrypt = vi.fn();
     render(
       <DecryptedMessageBody
-        body={UNSUPPORTED_ENCRYPTED_BODY}
+        body={created.body}
         decrypt={decrypt}
         isEncryptionActive={true}
-        messageId="msg-1"
+        messageId={aegisContext.messageId}
+        senderId={aegisContext.senderId}
       />,
     );
     expect(await screen.findByText('decrypted!')).toBeInTheDocument();
-    expect(decrypt).toHaveBeenCalledWith(UNSUPPORTED_ENCRYPTED_BODY);
-  });
-
-  it.skip('stays silent (no placeholder text) when all decrypt paths fail', async () => {
-    const decrypt = vi.fn().mockResolvedValue({ text: '', incompatible: true });
-    const { container } = render(
-      <DecryptedMessageBody
-        body={UNSUPPORTED_ENCRYPTED_BODY}
-        decrypt={decrypt}
-        isEncryptionActive={true}
-        messageId="msg-fail"
-      />,
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledWith(
+      aegisContext.messageId, aegisContext.senderId, { requestRetry: true },
     );
-
-    // Wait for the inflight promise to settle
-    await waitFor(() => expect(decrypt).toHaveBeenCalled());
-
-    // The hardened UI MUST NOT render the legacy "restoration" placeholder
-    // anywhere — only the invisible '·' spacer is acceptable.
-    const text = container.textContent || '';
-    expect(text).not.toMatch(/restauration nécessaire/i);
-    expect(text).not.toMatch(/Message sécurisé/i);
-    expect(text).not.toMatch(/🔒/);
+    expect(decrypt).not.toHaveBeenCalled();
   });
 
-  it.skip('forsure-decrypt-retry event drops the cache and re-attempts', async () => {
-    let call = 0;
-    const decrypt = vi.fn().mockImplementation(async () => {
-      call += 1;
-      return call === 1
-        ? { text: '', incompatible: true }
-        : { text: 'finally!', incompatible: false };
+  it('shows neutral recovery without leaking the ciphertext or secret after a device-copy miss', async () => {
+    const created = await createAegisMessage({ ...aegisContext, plaintext: 'secret waiting for a capsule' });
+    const decrypt = vi.fn();
+    await act(async () => {
+      render(<DecryptedMessageBody body={created.body} decrypt={decrypt} isEncryptionActive
+        messageId={aegisContext.messageId} senderId={aegisContext.senderId} />);
     });
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Message en cours de récupération…');
+    expect(document.body.textContent).not.toContain('secret waiting for a capsule');
+    expect(document.body.textContent).not.toContain(created.body);
+    expect(decrypt).not.toHaveBeenCalled();
+  });
 
-    render(
-      <DecryptedMessageBody
-        body={UNSUPPORTED_ENCRYPTED_BODY}
-        decrypt={decrypt}
-        isEncryptionActive={true}
-        messageId="msg-retry"
-      />,
-    );
-
-    await waitFor(() => expect(decrypt).toHaveBeenCalledTimes(1));
-
+  it('retries the current Aegis copy after a targeted signal and renders its real plaintext', async () => {
+    const created = await createAegisMessage({ ...aegisContext, plaintext: 'finally!' });
+    mocks.tryReadDeviceCopy.mockResolvedValueOnce(null).mockResolvedValueOnce(created.keyCapsule);
+    await act(async () => {
+      render(<DecryptedMessageBody body={created.body} decrypt={vi.fn()} isEncryptionActive
+        messageId={aegisContext.messageId} senderId={aegisContext.senderId} />);
+    });
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledTimes(1);
     act(() => {
-      window.dispatchEvent(new CustomEvent('forsure-decrypt-retry'));
+      window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+        detail: { messageId: aegisContext.messageId },
+      }));
     });
-
     expect(await screen.findByText('finally!')).toBeInTheDocument();
-    expect(decrypt).toHaveBeenCalledTimes(2);
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects another message capsule and recovers only after the exact authenticated capsule arrives', async () => {
+    const created = await createAegisMessage({ ...aegisContext, plaintext: 'authenticated exact message' });
+    const other = await createAegisMessage({ ...aegisContext,
+      messageId: '44444444-4444-4444-8444-444444444444', plaintext: 'other private message',
+    });
+    mocks.tryReadDeviceCopy.mockResolvedValueOnce(other.keyCapsule).mockResolvedValueOnce(created.keyCapsule);
+    await act(async () => {
+      render(<DecryptedMessageBody body={created.body} decrypt={vi.fn()} isEncryptionActive
+        messageId={aegisContext.messageId} senderId={aegisContext.senderId} />);
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Message en cours de récupération…');
+    expect(screen.queryByText('authenticated exact message')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('other private message');
+    act(() => {
+      window.dispatchEvent(new CustomEvent('forsure-decrypt-retry', {
+        detail: { messageId: aegisContext.messageId },
+      }));
+    });
+    expect(await screen.findByText('authenticated exact message')).toBeInTheDocument();
+    expect(mocks.tryReadDeviceCopy).toHaveBeenCalledTimes(2);
   });
 
   it('isMe self-message: tries plaintext store, stays silent if missing', async () => {
