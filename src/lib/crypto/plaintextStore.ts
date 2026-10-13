@@ -27,6 +27,77 @@ interface StoredEntry {
   ts: number;
 }
 
+interface RetentionEntry {
+  id: string;
+  ephemeral: true;
+  expiresAt: number | null;
+  aliases: string[];
+  pending?: boolean;
+}
+const retentionKey = (id: string) => `retention:${id}`;
+
+async function readRetention(id: string): Promise<RetentionEntry | undefined> {
+  return runTxOn('plaintext-cache', [STORE_MESSAGES], 'readonly', tx =>
+    reqToPromise(tx.objectStore(STORE_MESSAGES).get(retentionKey(id)) as IDBRequest<RetentionEntry | undefined>));
+}
+
+/** Métadonnées seules : les sauvegardes excluent les messages éphémères,
+ * même avant lecture. Une échéance atteinte est un refus durable de restauration. */
+export async function registerPlaintextRetention(messageId: string, body: string | null | undefined, expiresAt: number | null, pending = false): Promise<void> {
+  const aliases = [...new Set([messageId, `aegis-capsule:${messageId}`,
+    ...(body ? [await toCiphertextLookupKey(body)] : [])])];
+  await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', tx => {
+    const store = tx.objectStore(STORE_MESSAGES);
+    const request = store.get(retentionKey(messageId)) as IDBRequest<RetentionEntry | undefined>;
+    request.onsuccess = () => {
+    const existing = request.result;
+    const combined = [...new Set([...aliases, ...(existing?.aliases ?? [])])];
+    // Lecture et écriture dans la même transaction : une réponse tardive ne
+    // peut pas prolonger le délai déjà confirmé par un autre appareil.
+    const expiry = existing?.expiresAt == null ? expiresAt
+      : expiresAt == null ? existing.expiresAt : Math.min(existing.expiresAt, expiresAt);
+    for (const alias of combined) {
+      store.put({ id: retentionKey(alias), ephemeral: true, expiresAt: expiry, aliases: combined,
+        pending: existing ? existing.pending === true && pending : pending } satisfies RetentionEntry);
+      if (expiry !== null && expiry <= Date.now()) {
+        volatileMirror.delete(alias);
+        store.delete(alias);
+      }
+    }
+    };
+  });
+}
+
+/** Seule une ligne serveur non éphémère peut lever l'exclusion provisoire
+ * d'un envoi en attente. Une tombstone ou une politique confirmée est irréversible. */
+export async function confirmPlaintextPermanent(messageId: string | string[]): Promise<void> {
+  await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', tx => {
+    const store = tx.objectStore(STORE_MESSAGES);
+    for (const id of typeof messageId === 'string' ? [messageId] : messageId) {
+    const request = store.get(retentionKey(id)) as IDBRequest<RetentionEntry | undefined>;
+    request.onsuccess = () => {
+      const row = request.result;
+      if (row?.pending === true && row.expiresAt === null) {
+        for (const alias of row.aliases) store.delete(retentionKey(alias));
+      }
+    };
+    }
+  });
+}
+
+async function isCacheExpired(id: string): Promise<boolean> {
+  const retention = await readRetention(id);
+  if (retention?.expiresAt != null && retention.expiresAt <= Date.now()) {
+    volatileMirror.delete(id);
+    return true;
+  }
+  return false;
+}
+
+export async function isPlaintextExpired(messageId: string): Promise<boolean> {
+  return isCacheExpired(messageId);
+}
+
 function warnOnce(message: string, error?: unknown) {
   const now = Date.now();
   if (now - lastIndexedDbWarningAt < 5000) return;
@@ -123,6 +194,7 @@ function entryAAD(id: string): Uint8Array {
 
 async function saveEntry(id: string, plaintext: string): Promise<void> {
   if (!id || !plaintext) return;
+  if (await isCacheExpired(id)) return;
   const key = await getOrCreateDeviceKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt(
@@ -132,12 +204,20 @@ async function saveEntry(id: string, plaintext: string): Promise<void> {
   );
 
   await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readwrite', (tx) => {
-    tx.objectStore(STORE_MESSAGES).put({ id, iv: iv.buffer, ct, ts: Date.now() } satisfies StoredEntry);
+    const store = tx.objectStore(STORE_MESSAGES);
+    const check = store.get(retentionKey(id)) as IDBRequest<RetentionEntry | undefined>;
+    check.onsuccess = () => {
+      if (check.result?.expiresAt != null && check.result.expiresAt <= Date.now()) {
+        volatileMirror.delete(id); store.delete(id); return;
+      }
+      store.put({ id, iv: iv.buffer, ct, ts: Date.now() } satisfies StoredEntry);
+    };
   });
 }
 
 async function loadEntry(id: string): Promise<string | null> {
   if (!id) return null;
+  if (await isCacheExpired(id)) return null;
 
   const entry = await runTxOn('plaintext-cache', [STORE_MESSAGES], 'readonly', (tx) =>
     reqToPromise(tx.objectStore(STORE_MESSAGES).get(id) as IDBRequest<StoredEntry | undefined>),
@@ -166,10 +246,12 @@ export async function exportPlaintextCache(limit = DEFAULT_BACKUP_EXPORT_CAP): P
 
     const exported: PlaintextCacheExportEntry[] = [];
     const recentEntries = entries
+      .filter(entry => !entry.id.startsWith('retention:'))
       .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
       .slice(0, Math.max(0, limit));
 
     for (const entry of recentEntries) {
+      if (await readRetention(entry.id)) continue;
       const plaintext = await loadEntry(entry.id);
       if (plaintext) exported.push({ id: entry.id, plaintext });
     }
@@ -215,9 +297,10 @@ export async function savePlaintextForCiphertext(ciphertextBody: string, plainte
 
 export async function loadPlaintext(messageId: string): Promise<string | null> {
   if (!messageId) return null;
-  const mirror = mirrorGet(messageId);
-  if (mirror !== null) return mirror;
   try {
+    if (await isCacheExpired(messageId)) return null;
+    const mirror = mirrorGet(messageId);
+    if (mirror !== null) return mirror;
     return await loadEntry(messageId);
   } catch (error) {
     warnOnce('[plaintextStore] loadPlaintext skipped safely', error);
@@ -229,6 +312,7 @@ export async function loadPlaintextForCiphertext(ciphertextBody: string): Promis
   if (!ciphertextBody) return null;
   try {
     const id = await toCiphertextLookupKey(ciphertextBody);
+    if (await isCacheExpired(id)) return null;
     const mirror = mirrorGet(id);
     if (mirror !== null) return mirror;
     return await loadEntry(id);

@@ -7,6 +7,8 @@ import {
 } from '@/lib/messaging/aegisTransport';
 import { traceE2EE } from '@/lib/messaging/e2eeTrace';
 import { stageSyncedDeviceCopy } from '@/lib/messaging/multiDeviceFanout';
+import { registerPlaintextRetention, confirmPlaintextPermanent } from '@/lib/crypto/plaintextStore';
+import { isMessageExpired } from '@/lib/messaging/messageRetention';
 import {
   acknowledgeSealedSenderWakeups,
   pullSealedSenderWakeups,
@@ -152,8 +154,8 @@ function schedulePendingMessageRecovery(row: AegisInboxRow, userId: string): voi
  * Pull the current authorized device's pending encrypted capsules.
  *
  * The security-definer RPC authenticates both auth.uid() and DeviceID. The
- * client never enumerates message IDs and never reads message_device_copies or
- * aegis_device_inbox directly.
+ * client only checks retention of IDs returned by that RPC; it never reads
+ * message_device_copies or aegis_device_inbox directly.
  */
 export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRow[]> {
   const startedAt = Date.now();
@@ -192,7 +194,25 @@ export async function syncAegisDeviceInbox(userId: string): Promise<AegisInboxRo
     );
     if (error) throw error;
 
-    const rows = data ?? [];
+    let rows = data ?? [];
+    if (rows.length) {
+      // Avant tout déchiffrement de fond : aucune sauvegarde d'une capsule
+      // éphémère, même si l'utilisateur n'a jamais ouvert cette conversation.
+      const { data: metadata, error: retentionError } = await supabase.from('messages')
+        .select('id,expires_at,retention_after_read_seconds').in('id', rows.map(row => row.message_id));
+      if (retentionError) throw new Error('AEGIS_RETENTION_LOOKUP_FAILED');
+      const retentionRows = metadata as unknown as Array<{ id: string; expires_at: string | null; retention_after_read_seconds: number | null }>;
+      const policies = new Map((retentionRows ?? []).map(row => [row.id, row]));
+      rows = rows.filter(row => {
+        const policy = policies.get(row.message_id);
+        return policy && !isMessageExpired(policy);
+      });
+      await Promise.all(rows.filter(row => policies.get(row.message_id)!.retention_after_read_seconds != null).map(row => {
+        const policy = policies.get(row.message_id)!;
+        return registerPlaintextRetention(row.message_id, row.parent_body, policy.expires_at ? Date.parse(policy.expires_at) : null);
+      }));
+      await confirmPlaintextPermanent(rows.filter(row => policies.get(row.message_id)!.retention_after_read_seconds == null).map(row => row.message_id)).catch(() => undefined);
+    }
     // Tant que le serveur conserve l'état pending, chaque synchronisation peut
     // rejouer la capsule. Elle ne devient livrée qu'après decrypt + stockage + ACK.
     for (const row of rows) {

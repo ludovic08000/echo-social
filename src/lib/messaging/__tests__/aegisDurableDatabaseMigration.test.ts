@@ -113,7 +113,10 @@ describe('Aegis durable inbox client wiring', () => {
   });
 
   it('does not enumerate conversation messages or read sealed copies directly', () => {
-    expect(inboxClient).not.toContain(".from('messages')");
+    expect(inboxClient).toContain(".select('id,expires_at,retention_after_read_seconds').in('id', rows.map(row => row.message_id))");
+    expect(inboxClient).not.toContain(".select('*')");
+    expect(inboxClient).not.toContain(".select('body')");
+    expect(inboxClient).not.toContain(".eq('conversation_id'");
     expect(inboxClient).not.toContain('get_device_copies_for_messages');
     expect(inboxClient).not.toContain(".from('message_device_copies')");
     expect(inboxClient).not.toContain(".from('aegis_device_inbox')");

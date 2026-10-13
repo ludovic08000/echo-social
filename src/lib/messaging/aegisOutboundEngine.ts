@@ -1,6 +1,6 @@
 import { safeUUID } from '@/e2ee-session';
 import { assertConversationFingerprintsTrusted } from '@/lib/crypto/fingerprintTracker';
-import { savePlaintext, savePlaintextForCiphertext } from '@/lib/crypto/plaintextStore';
+import { savePlaintext, savePlaintextForCiphertext, registerPlaintextRetention } from '@/lib/crypto/plaintextStore';
 import { createAegisMessage } from '@/lib/messaging/aegisEnvelope';
 import {
   isAegisAmbiguousTransportFailure,
@@ -249,6 +249,8 @@ export async function sendAegisOutboundMessage(
     await input.onState?.(snapshot);
   };
 
+  // Ne pas exporter le brouillon avant de connaître sa rétention serveur.
+  await registerPlaintextRetention(messageId, parentBody, null, true);
   await traceBlock('OUTBOX_DURABLE_WRITE', () => Promise.all([
     persist(),
     savePlaintext(messageId, input.plaintext),
@@ -497,7 +499,8 @@ export async function sendAegisOutboundMessage(
   // The stable message UUID was cached before the transaction. Only add the
   // ciphertext index after commit; writing the same plaintext row twice wastes
   // IndexedDB work on resource-constrained mobile browsers.
-  void savePlaintextForCiphertext(parentBody, input.plaintext).catch(() => undefined);
+  void registerPlaintextRetention(committedId, parentBody, null, true)
+    .then(() => savePlaintextForCiphertext(parentBody, input.plaintext)).catch(() => undefined);
   if (archiveRequired) {
     let archiveDurable = result.archiveDurable;
     if (archiveDurable) {

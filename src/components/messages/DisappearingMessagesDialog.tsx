@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Timer, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { RETENTION_OPTIONS as OPTIONS, retentionConfirmed } from '@/lib/messaging/messageRetention';
 
 interface DisappearingMessagesDialogProps {
   open: boolean;
@@ -13,48 +14,55 @@ interface DisappearingMessagesDialogProps {
   conversationId: string;
 }
 
-const OPTIONS: Array<{ value: string; label: string; seconds: number | null }> = [
-  { value: 'off', label: 'Désactivé', seconds: null },
-  { value: '24h', label: '24 heures', seconds: 86400 },
-  { value: '7d', label: '7 jours', seconds: 604800 },
-  { value: '30d', label: '30 jours', seconds: 2592000 },
-];
-
 export function DisappearingMessagesDialog({ open, onOpenChange, conversationId }: DisappearingMessagesDialogProps) {
-  const [current, setCurrent] = useState<string>('off');
-  const [loading, setLoading] = useState(false);
+  const [current, setCurrent] = useState<string>('never');
+  const [loadError, setLoadError] = useState(false);
+  const [loading, setLoading] = useState(open);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     setLoading(true);
+    setLoadError(false);
     (async () => {
-      const { data } = await supabase
+      try {
+      const { data, error } = await supabase
         .from('conversations')
-        .select('disappearing_seconds')
+        .select('disappearing_seconds, disappearing_after_read')
         .eq('id', conversationId)
         .maybeSingle();
-      const secs = (data as any)?.disappearing_seconds ?? null;
+      if (cancelled) return;
+      if (error || !data) throw error ?? new Error('CONVERSATION_NOT_FOUND');
+      const row = data as unknown as { disappearing_seconds: number | null; disappearing_after_read: boolean };
+      const secs = row.disappearing_seconds;
       const match = OPTIONS.find(o => o.seconds === secs);
-      setCurrent(match?.value ?? 'off');
-      setLoading(false);
+      setCurrent(!row.disappearing_after_read && secs !== null ? 'legacy' : match?.value ?? 'legacy');
+      } catch {
+        if (!cancelled) setLoadError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
+    return () => { cancelled = true; };
   }, [open, conversationId]);
 
   const save = async () => {
-    setSaving(true);
     const opt = OPTIONS.find(o => o.value === current);
-    const { error } = await supabase
-      .from('conversations')
-      .update({ disappearing_seconds: opt?.seconds ?? null } as any)
-      .eq('id', conversationId);
-    setSaving(false);
-    if (error) {
-      toast.error('Échec de la mise à jour');
-      return;
-    }
-    toast.success(opt?.seconds ? `Messages éphémères : ${opt.label}` : 'Messages éphémères désactivés');
+    if (!opt || loading || loadError || saving) return;
+    setSaving(true);
+    try {
+    const { data, error } = await supabase.rpc('set_conversation_retention' as never, {
+      p_conversation_id: conversationId, p_seconds: opt.seconds,
+    } as never);
+    if (error || !retentionConfirmed(data, opt.seconds)) throw error ?? new Error('RETENTION_UNCONFIRMED');
+    toast.success(opt.seconds === null ? 'Suppression automatique désactivée' : `Suppression : ${opt.label}`);
     onOpenChange(false);
+    } catch {
+      toast.error('Échec de la mise à jour');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -66,7 +74,9 @@ export function DisappearingMessagesDialog({ open, onOpenChange, conversationId 
             Messages éphémères
           </DialogTitle>
           <DialogDescription>
-            Les nouveaux messages disparaîtront automatiquement après la durée choisie. Les messages déjà envoyés ne sont pas affectés.
+            Le délai commence après la lecture confirmée du destinataire (de tous les destinataires dans un groupe).
+            Ce réglage partagé concerne uniquement les nouveaux messages. Les anciens messages ne changent pas.
+            Une capture d’écran ou une copie externe ne peut pas être effacée.
           </DialogDescription>
         </DialogHeader>
 
@@ -74,8 +84,12 @@ export function DisappearingMessagesDialog({ open, onOpenChange, conversationId 
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
+        ) : loadError ? (
+          <p role="alert">Impossible de charger le réglage. Ferme puis rouvre cette fenêtre pour réessayer.</p>
         ) : (
-          <RadioGroup value={current} onValueChange={setCurrent} className="py-2">
+          <>
+          {current === 'legacy' && <p role="status">Ancien délai après envoi actif. Choisis une option pour passer à la suppression après lecture.</p>}
+          <RadioGroup value={current} onValueChange={setCurrent} disabled={saving} className="py-2">
             {OPTIONS.map(opt => (
               <div key={opt.value} className="flex items-center space-x-3 py-1.5">
                 <RadioGroupItem value={opt.value} id={`disappear-${opt.value}`} />
@@ -85,13 +99,14 @@ export function DisappearingMessagesDialog({ open, onOpenChange, conversationId 
               </div>
             ))}
           </RadioGroup>
+          </>
         )}
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
             Annuler
           </Button>
-          <Button onClick={save} disabled={loading || saving}>
+          <Button onClick={save} disabled={loading || saving || loadError || !OPTIONS.some(o => o.value === current)}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             Enregistrer
           </Button>

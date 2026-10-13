@@ -35,7 +35,11 @@ describe('Aegis UI and final schema compatibility', () => {
     expect(source).toContain("callAegisServer<AegisInboxRow[]>(");
     expect(source).toContain("'aegis_sync_device'");
     expect(source).toContain("table: 'messages'");
-    expect(source).not.toContain(".from('messages')");
+    // La seule lecture directe porte sur la rétention des IDs retournés par
+    // l'inbox ; ni contenu, ni capsule, ni archive via un chemin parallèle.
+    expect(source).toContain(".select('id,expires_at,retention_after_read_seconds').in('id', rows.map(row => row.message_id))");
+    expect(source).not.toContain(".select('*')");
+    expect(source).not.toContain(".select('body')");
     expect(source).not.toContain(".from('message_device_copies')");
     expect(source).not.toContain("supabase.rpc('get_device_copies_for_messages'");
     expect(source).not.toContain(".from('aegis_device_inbox')");

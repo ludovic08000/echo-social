@@ -13,6 +13,7 @@ import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
 import { useVersionWatcher } from "@/hooks/useVersionWatcher";
 import { useIncomingCall, endActiveCall } from "@/hooks/useIncomingCall";
+import { useMessageRetention } from '@/hooks/useMessageRetention';
 import { IncomingCallOverlay } from "@/components/IncomingCallOverlay";
 import { useCall } from "@/hooks/useCall";
 import { CallOverlay } from "@/components/CallOverlay";
@@ -123,6 +124,7 @@ const queryClient = new QueryClient();
 
 function IncomingCallHandler() {
   const { user } = useAuth();
+  useMessageRetention(user?.id);
   const { incomingCall, acceptCall, declineCall } = useIncomingCall();
   const { openChat } = useChatWidget();
   const activeIncomingCallIdRef = useRef<string | null>(null);

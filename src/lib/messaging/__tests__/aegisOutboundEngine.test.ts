@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   provision: vi.fn(),
   savePlaintext: vi.fn(),
   savePlaintextForCiphertext: vi.fn(),
+  registerRetention: vi.fn().mockResolvedValue(undefined),
   buildCopies: vi.fn(),
   putOutbox: vi.fn(),
   deleteOutbox: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock('@/lib/crypto/fingerprintTracker', () => ({
 vi.mock('@/lib/crypto/plaintextStore', () => ({
   savePlaintext: mocks.savePlaintext,
   savePlaintextForCiphertext: mocks.savePlaintextForCiphertext,
+  registerPlaintextRetention: mocks.registerRetention,
 }));
 vi.mock('@/lib/messaging/longMessageAttachment', () => ({
   MAX_INLINE_MESSAGE_BODY_BYTES: 2048,

@@ -11,11 +11,14 @@ import {
 } from '@/lib/messaging/multiDeviceFanout';
 import type { Database } from '@/integrations/supabase/types';
 import { purgeMessageLocalState } from '@/lib/messaging/messageLocalCleanup';
+import { registerPlaintextRetention, confirmPlaintextPermanent, isPlaintextExpired } from '@/lib/crypto/plaintextStore';
+import { isMessageExpired } from '@/lib/messaging/messageRetention';
+import { parseAegisMessageEnvelope } from '@/lib/messaging/aegisEnvelope';
 
 // Un seul chemin d'envoi : Aegis et son moteur Libsignal.
 export { useSendMessage } from './useSendMessageSecure';
 
-type MessageRow = Database['public']['Tables']['messages']['Row'];
+type MessageRow = Database['public']['Tables']['messages']['Row'] & { retention_after_read_seconds?: number | null };
 type MessageDeviceCopyRow = Database['public']['Tables']['message_device_copies']['Row'];
 type MessageRecipientStateRow = Database['public']['Tables']['message_recipient_states']['Row'];
 type ProfileSummary = Pick<Database['public']['Tables']['profiles']['Row'], 'name' | 'avatar_url'>;
@@ -177,6 +180,8 @@ export interface Message {
   body: string;
   body_kind?: string | null;
   archive_body?: string | null;
+  expires_at?: string | null;
+  retention_after_read_seconds?: number | null;
   aegis_route_version?: string | null;
   view_once?: boolean;
   view_once_state?: 'pending' | 'consumed' | 'sent';
@@ -212,6 +217,7 @@ export interface Conversation {
     avatar_url: string | null;
   }[];
   last_message?: {
+    id?: string;
     body: string;
     created_at: string;
     sender_id: string;
@@ -272,6 +278,7 @@ export function useConversations() {
             },
             participants: undefined,
             last_message: row.last_message_body ? {
+              id: parseAegisMessageEnvelope(row.last_message_body)?.messageId,
               body: isUnsupportedEncryptedBody(row.last_message_body) ? '🧹 Message incompatible supprimé' : row.last_message_body,
               created_at: row.last_message_at,
               sender_id: row.last_message_sender,
@@ -390,6 +397,10 @@ export function useMessages(conversationId: string) {
         },
         async (payload) => {
           const newMsg = payload.new as MessageRow;
+          if (isMessageExpired(newMsg)) return;
+          if (newMsg.retention_after_read_seconds != null) {
+            await registerPlaintextRetention(newMsg.id, newMsg.body, newMsg.expires_at ? Date.parse(newMsg.expires_at) : null);
+          } else await confirmPlaintextPermanent(newMsg.id).catch(() => undefined);
           const isViewOnce = newMsg.view_once === true;
           if (isUnsupportedEncryptedBody(newMsg.body)) {
             console.warn('[messaging] ignoring unsupported encrypted message without hiding it');
@@ -471,6 +482,21 @@ export function useMessages(conversationId: string) {
             }).catch(() => {});
           }
         }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}`,
+        },
+        async (payload) => {
+          const next = payload.new as MessageRow;
+          if (next.retention_after_read_seconds == null) return;
+          await registerPlaintextRetention(next.id, next.body, next.expires_at ? Date.parse(next.expires_at) : null);
+          const key = messagesKey(conversationId, user.id);
+          queryClient.setQueryData<Message[]>(key, rows => rows?.map(message => message.id === next.id
+            ? { ...message, expires_at: next.expires_at, retention_after_read_seconds: next.retention_after_read_seconds }
+            : message));
+        },
       )
       .on(
         'postgres_changes',
@@ -663,7 +689,16 @@ export function useMessages(conversationId: string) {
       }
 
       // Filter out hidden + incompatible messages locally — no DB writes here.
-      const visibleMessages = messages.filter(m => !hiddenIds.has(m.id));
+      const retainedMessages = messages as MessageRow[];
+      await Promise.all(retainedMessages.filter(m => m.retention_after_read_seconds != null).map(m =>
+        registerPlaintextRetention(m.id, m.body, m.expires_at ? Date.parse(m.expires_at) : null)));
+      await confirmPlaintextPermanent(retainedMessages.filter(m => m.retention_after_read_seconds == null).map(m => m.id)).catch(() => undefined);
+      // Une réponse HTTP commencée avant l'ACK peut arriver après sa tombstone.
+      // L'échéance locale durable gagne sur ces anciennes métadonnées serveur.
+      const expiredLocally = new Set((await Promise.all(retainedMessages
+        .filter(m => m.retention_after_read_seconds != null)
+        .map(async m => await isPlaintextExpired(m.id) ? m.id : null))).filter(Boolean));
+      const visibleMessages = retainedMessages.filter(m => !hiddenIds.has(m.id) && !expiredLocally.has(m.id) && !isMessageExpired(m));
       const compatibleMessages = visibleMessages.filter(m => !isUnsupportedEncryptedBody(m.body));
 
       // Warm only recent Aegis device capsules after a cold reload. Older

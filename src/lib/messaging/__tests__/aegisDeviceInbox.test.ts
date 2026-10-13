@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => {
     pullSealedWakeups: vi.fn(),
     acknowledgeSealedWakeups: vi.fn(),
     maintainPrekeys: vi.fn(),
+    retentionLookup: vi.fn(),
+    registerRetention: vi.fn(),
   };
 });
 
@@ -27,7 +29,12 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     channel: vi.fn(() => mocks.channel),
     removeChannel: mocks.removeChannel,
+    from: () => ({ select: () => ({ in: (_column: string, ids: string[]) => mocks.retentionLookup(ids) }) }),
   },
+}));
+vi.mock('@/lib/crypto/plaintextStore', () => ({
+  registerPlaintextRetention: mocks.registerRetention,
+  confirmPlaintextPermanent: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/messaging/aegisDeviceRuntime', () => ({
@@ -80,9 +87,23 @@ beforeEach(() => {
   mocks.pullSealedWakeups.mockResolvedValue([]);
   mocks.acknowledgeSealedWakeups.mockResolvedValue(undefined);
   mocks.maintainPrekeys.mockResolvedValue(undefined);
+  mocks.registerRetention.mockResolvedValue(undefined);
+  mocks.retentionLookup.mockImplementation((ids: string[]) => Promise.resolve({data: ids.map(id => ({id,expires_at:null,retention_after_read_seconds:null})),error:null}));
 });
 
 describe('Aegis durable device inbox client', () => {
+  it('does not stage an expired capsule or treat a metadata failure as delivery', async () => {
+    const row = { copy_id: 'expired-copy', message_id: 'expired-message', conversation_id: 'conv',
+      sender_user_id: 'user-two', sender_device_id: 'device-two', encrypted_body: 'cipher', parent_body: '{}',
+      created_at: new Date().toISOString(), expires_at: new Date(Date.now()+60000).toISOString() };
+    mocks.callAegisServer.mockResolvedValue({data:[row],error:null});
+    mocks.retentionLookup.mockResolvedValue({data:[{id:row.message_id,expires_at:new Date(Date.now()-1000).toISOString(),retention_after_read_seconds:86400}],error:null});
+    expect(await syncAegisDeviceInbox('user-one')).toEqual([]);
+    expect(mocks.stageCopy).not.toHaveBeenCalled();
+    mocks.retentionLookup.mockResolvedValue({data:null,error:{code:'NETWORK_ERROR'}});
+    await expect(syncAegisDeviceInbox('user-one')).rejects.toThrow('AEGIS_RETENTION_LOOKUP_FAILED');
+    expect(mocks.stageCopy).not.toHaveBeenCalled();
+  });
   it('maintains prekeys during receive-only use without delaying delivery', async () => {
     mocks.maintainPrekeys.mockReturnValueOnce(new Promise(() => {}));
     await expect(syncAegisDeviceInbox('user-one')).resolves.toEqual([]);
