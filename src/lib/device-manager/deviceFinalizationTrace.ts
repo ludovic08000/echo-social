@@ -63,6 +63,8 @@ const TRACE_PREFIX = '[E2EE_TRACE][DEVICE_FINALIZATION]';
 export const DEVICE_FINALIZATION_TRACE_EVENT = 'forsure:device-finalization-trace';
 
 const buffer: DeviceFinalizationTraceEvent[] = [];
+const reportedFailures = new Set<string>();
+const REPORTABLE_STEPS = new Set(['state_lookup', 'step.enrolling', 'step.approving', 'step.binding', 'step.preparing_keys', 'step.syncing_account']);
 let sequence = 0;
 
 /** Référence pseudonymisée courte : ce n'est pas une garantie d'anonymat. */
@@ -212,6 +214,18 @@ export function traceDeviceFinalization(input: DeviceFinalizationTraceInput): De
   const event = sanitizeDeviceFinalizationEvent(input, sequence);
   buffer.push(event);
   if (buffer.length > MAX_EVENTS) buffer.splice(0, buffer.length - MAX_EVENTS);
+  // Observer les blocages avant le PIN, sans importer de secrets ni bloquer le parcours.
+  if ((event.outcome === 'failure' || event.outcome === 'timeout') && REPORTABLE_STEPS.has(event.step)) {
+    const failure = `${event.traceId}:${event.step}`;
+    if (!reportedFailures.has(failure)) {
+      if (reportedFailures.size >= 32) reportedFailures.clear();
+      reportedFailures.add(failure);
+      void import('@/lib/crypto/errorLogger').then(({ logCryptoError }) => logCryptoError({
+        severity: 'error', context: 'unknown', errorCode: event.errorCode ?? 'UNKNOWN_ERROR',
+        errorMessage: 'DEVICE_FINALIZATION_FAILED', metadata: { stage: event.step, elapsedMs: event.elapsedMs ?? 0 },
+      })).catch(() => { /* Diagnostic best-effort, jamais une dépendance d'activation. */ });
+    }
+  }
 
   try {
     if (isE2EEDebugEnabled()) rawConsoleWrite('info', TRACE_PREFIX, event);

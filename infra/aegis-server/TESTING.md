@@ -156,3 +156,36 @@ Client example:
 Use the shared `request_id` to correlate the client, gateway and reverse-proxy
 records. A failing probe exits non-zero, making the client suitable for CI,
 deployment checks and VPS monitoring.
+# Journal administrateur Aegis (Lovable Cloud)
+
+Déploiement ordonné : appliquer `20261013124657_aegis_admin_journey.sql` dans
+Lovable Cloud, déployer `login-security` / `process-email-queue`, puis le client
+admin et la passerelle. Activer `AEGIS_JOURNEY_ENABLED=true` sur la passerelle
+seulement après la migration. Laisser `false` arrête les rapports HTTP sans
+modifier le chiffrement ni les règles d'approbation.
+
+Admin → Sécurité → Parcours Aegis : recherche e-mail/UUID, résultat, pagination
+par horodatage et identifiant, heures locales + UTC. Réservé à un administrateur
+dont la session existe encore côté Auth. La table et les fonctions privilégiées
+sont dans un schéma privé, sans accès direct depuis le client.
+
+Couverture : événements futurs des e-mails de confirmation, décisions de
+connexion, challenges d'enregistrement, transitions appareil, messages stockés,
+rapports de transport et erreurs crypto remontées par les clients. Aucun
+historique n'est inventé. « Accepté fournisseur » n'est pas « livré » ; « stocké »
+n'est pas « lu ». Les rapports transport/client sont déclaratifs et ne peuvent
+jamais autoriser un appareil. Les rejets anonymes / avant le RPC restent dans
+les logs Vercel, sans attribution forcée à un utilisateur.
+
+Le transport transmet uniquement diagnostic UUID, RPC autorisé, statut, code
+normalisé et durée, après émission de la réponse, timeout 500 ms. Sur Vercel,
+`waitUntil` maintient la tâche jusqu'à sa fin sans retarder la réponse. Aucun corps
+de message ni secret n'est journalisé. Une panne de collecte ne bloque pas le
+parcours. Les erreurs de collecte sont visibles sous
+`journey_persistence_failed` / `AEGIS_JOURNEY_CAPTURE_FAILED`.
+
+Rétention : 30 jours, purge quotidienne si `pg_cron` est disponible. Vérifier le
+job `aegis-journey-retention` avant activation ; sans pg_cron, prévoir la même
+purge avec le planificateur Cloud (le panneau masque déjà les événements >30j).
+Retour arrière : `supabase/rollback/aegis_admin_journey.sql` coupe uniquement la
+collecte et conserve les logs ; aucune clé ni donnée de messagerie supprimée.

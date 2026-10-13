@@ -66,8 +66,8 @@ describe('strict device-bound prekey migration in PostgreSQL', () => {
       ALTER TABLE device_libsignal_prekey_bundles ENABLE ROW LEVEL SECURITY;
       REVOKE ALL ON device_libsignal_prekey_bundles FROM public,anon,authenticated;
       CREATE TABLE test_blocks(sender uuid,recipient uuid);
-      CREATE FUNCTION aegis_verify_account_binding(text,text,text,text,integer) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT $4='valid' $$;
-      CREATE FUNCTION aegis_verify_device_authorization(uuid,text,text,text,text,text,text) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT $5='valid' $$;
+      CREATE FUNCTION aegis_verify_account_binding(text,text,text,text,integer) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT $4 IN ('valid','valid-republished') $$;
+      CREATE FUNCTION aegis_verify_device_authorization(uuid,text,text,text,text,text,text) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT $5 IN ('valid','valid-republished') $$;
       CREATE FUNCTION aegis_message_block_reason(uuid,uuid) RETURNS text LANGUAGE sql STABLE AS $$
         SELECT 'blocked'::text FROM test_blocks WHERE sender=$1 AND recipient=$2 LIMIT 1 $$;
       CREATE FUNCTION assert_current_login_session_approved() RETURNS void LANGUAGE plpgsql AS $$ BEGIN
@@ -390,6 +390,55 @@ describe('strict device-bound prekey migration in PostgreSQL', () => {
       await expect(db.exec("UPDATE libsignal_receive_attestations SET proof='{}'")).rejects.toThrow(/permission denied/);
       await db.exec('RESET ROLE; SET ROLE anon');
       await expect(db.query('SELECT * FROM get_sesame_device_list($1)',[uid(2)])).rejects.toThrow(/permission denied/);
+    });
+
+    describe('verified binding republication regression', () => {
+      beforeAll(async () => {
+        await db.exec('RESET ROLE');
+        await db.exec(readFileSync('supabase/migrations/20261013102522_verify_attested_route_binding_signatures.sql','utf8'));
+        await db.exec(migrationFunction('20260811143100_guard_all_device_route_entrypoints.sql', 'get_canonical_remote_device_identity'));
+      });
+
+      it.each(['account','device','both'])('keeps a signed route after valid %s binding republication, with no private state changes',async (which) => {
+        await signDevice(1,'windows',1);
+        await asUser(2); await publish(); await addReceivedCopy();
+        const historical = (await readProof()).rows;
+        await db.exec('RESET ROLE');
+        if (which !== 'device') await db.exec(`UPDATE user_public_keys SET identity_binding_signature='valid-republished' WHERE user_id='${uid(2)}'`);
+        if (which !== 'account') await db.exec("UPDATE user_devices SET device_authorization_signature='valid-republished' WHERE device_id='ios'");
+        await asUser(1);
+        expect(await routes()).toEqual(['ios']);
+        expect((await db.query('SELECT device_id FROM get_canonical_remote_device_identity($1,$2)',[uid(2),'ios'])).rows).toEqual([{device_id:'ios'}]);
+        expect((await readProof()).rows).toEqual(historical);
+        expect((await claim()).rows).toHaveLength(1);
+        expect(await routes()).toEqual(['ios']); // les preuves ne dépendent pas du stock consommable
+      });
+
+      it.each(['accountBindingSignature','deviceAuthorizationSignature','signature','accountSigningKey','accountIdentityKey','accountFingerprint','deviceSigningKey','devicePublicKey'])(
+        'still rejects a forged historical proof field %s',async (field) => {
+          await publish();
+          await db.exec('RESET ROLE');
+          await db.query('UPDATE libsignal_receive_attestations SET proof=jsonb_set(proof,ARRAY[$1],to_jsonb($2::text))',[field,'tampered']);
+          await asUser(1);
+          expect(await routes()).toEqual([]);
+          expect((await db.query('SELECT * FROM get_canonical_remote_device_identity($1,$2)',[uid(2),'ios'])).rows).toEqual([]);
+        });
+
+      it.each(["device_authorization_signature='invalid'", "approval_status='pending'", 'is_active=false',
+        'revoked_at=now()', 'stale_at=now()', 'crypto_invalid_at=now()', "binding_status='unbound'", "routing_status='repairing'"])(
+        'does not let a valid historical proof override current device rejection: %s',async (mutation) => {
+          await publish();
+          await db.exec(`RESET ROLE; UPDATE user_devices SET ${mutation} WHERE device_id='ios'`);
+          await asUser(1); expect(await routes()).toEqual([]);
+        });
+
+      it('still rejects an invalid current account binding and unauthenticated canonical lookup',async () => {
+        await publish();
+        await db.exec(`RESET ROLE; UPDATE user_public_keys SET identity_binding_signature='invalid' WHERE user_id='${uid(2)}'`);
+        await asUser(1); expect(await routes()).toEqual([]);
+        await db.exec("RESET ROLE; SELECT set_config('test.uid','',false); SET ROLE authenticated");
+        await expect(db.query('SELECT * FROM get_canonical_remote_device_identity($1,$2)',[uid(2),'ios'])).rejects.toThrow('NOT_AUTHENTICATED');
+      });
     });
   });
 });

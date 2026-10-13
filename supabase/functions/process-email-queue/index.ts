@@ -1,5 +1,6 @@
 import { sendLovableEmail } from 'npm:@lovable.dev/email-js'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createAegisJourney, approvalEmailSession } from '../_shared/aegisJourney.mjs'
 import {
   configuredServerSecretKeys,
   isAuthorizedServerRequest,
@@ -276,6 +277,9 @@ Deno.serve(async (req) => {
         }
       }
 
+      const approvalSession = approvalEmailSession(payload.message_id)
+      const journey = createAegisJourney()
+      if (approvalSession) journey('approval_email_provider_started', 'start', approvalSession)
       try {
         await sendLovableEmail(
           {
@@ -298,6 +302,8 @@ Deno.serve(async (req) => {
           { apiKey: lovableApiKey, sendUrl: Deno.env.get('LOVABLE_SEND_URL') }
         )
 
+        // Accepté par le fournisseur ne signifie pas reçu dans la boîte du client.
+        if (approvalSession) journey('approval_email_provider_accepted', 'success', approvalSession)
         // Log success
         await supabase.from('email_send_log').insert({
           message_id: payload.message_id,
@@ -316,6 +322,7 @@ Deno.serve(async (req) => {
         }
         totalProcessed++
       } catch (error) {
+        if (approvalSession) journey('approval_email_provider_failed', 'failure', approvalSession)
         const errorMsg = error instanceof Error ? error.message : String(error)
         console.error('Email send failed', {
           queue,

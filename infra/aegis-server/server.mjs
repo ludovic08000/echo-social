@@ -65,6 +65,7 @@ export function loadAegisConfig(env = process.env) {
     upstreamTimeoutMs: parsePositiveInteger(env.AEGIS_UPSTREAM_TIMEOUT_MS, 20_000, 100, 120_000),
     logLevel: env.AEGIS_LOG_LEVEL,
     debugUntil: env.AEGIS_DEBUG_UNTIL,
+    journeyEnabled: env.AEGIS_JOURNEY_ENABLED === 'true',
   };
 }
 
@@ -191,6 +192,7 @@ export async function handleAegisRequest(request, response, {
   fetchImpl = globalThis.fetch,
   logger = defaultLogger,
   pathOverride,
+  registerBackground,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl must be a function');
 
@@ -206,6 +208,8 @@ export async function handleAegisRequest(request, response, {
   let status = 500;
   let errorCode = null;
   let upstreamStatus = null;
+  let reachedDatabase = false;
+  let businessCode = null;
 
   const finishLog = () => {
     logRecord(logger, status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info', 'request_complete', {
@@ -317,6 +321,7 @@ export async function handleAegisRequest(request, response, {
     let upstream;
     let text;
     diagnostic.step('database_rpc');
+    reachedDatabase = true;
     try {
       upstream = await fetchImpl(`${config.supabaseUrl}/rest/v1/rpc/${rpcName}`, {
         method: 'POST',
@@ -350,6 +355,7 @@ export async function handleAegisRequest(request, response, {
       errorCode = data?.code || `UPSTREAM_${upstream.status}`;
       // Le SQLSTATE seul (ex. 42501) ne dit pas quel garde métier a rejeté l'envoi.
       const rejection = diagnosticCode(data?.message);
+      businessCode = rejection === 'UNCLASSIFIED_ERROR' ? errorCode : rejection;
       diagnostic.finish(status, rejection === 'UNCLASSIFIED_ERROR' ? errorCode : rejection);
       writeJson(response, config, origin, requestId, status, {
         error: {
@@ -387,6 +393,22 @@ export async function handleAegisRequest(request, response, {
   } finally {
     diagnostic.finish(status, errorCode);
     finishLog();
+    if (config.journeyEnabled && reachedDatabase) {
+      // Après réponse : échec/timeout du journal sans incidence sur l'envoi.
+      // Pas de service-role ici ; attribution vérifiée dans le RPC Cloud.
+      const persistence = (async () => { try {
+        const persisted = await fetchImpl(`${config.supabaseUrl}/rest/v1/rpc/record_aegis_request_event`, {
+          method: 'POST', headers: { apikey: config.supabaseAnonKey,
+            authorization: String(request.headers?.authorization || ''), 'content-type': 'application/json' },
+          body: JSON.stringify({ p_request_id: diagnostic.id, p_rpc: rpcName, p_status: status,
+            p_error_code: diagnosticCode(businessCode || errorCode), p_duration_ms: Math.round(performance.now()-startedAt) }),
+          signal: AbortSignal.timeout(500), redirect: 'error',
+        });
+        if (!persisted.ok) logRecord(logger, 'warn', 'journey_persistence_failed', { diagnostic_id: diagnostic.id });
+      } catch { logRecord(logger, 'warn', 'journey_persistence_failed', { diagnostic_id: diagnostic.id }); } })();
+      if (registerBackground) registerBackground(persistence);
+      else await persistence;
+    }
   }
 }
 

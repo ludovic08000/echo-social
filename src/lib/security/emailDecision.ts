@@ -1,7 +1,8 @@
 import { readCurrentLoginSecuritySession } from './loginSecurity';
 
 export interface EmailDecisionPayload { token: string; decision: 'approve' | 'deny' }
-export type EmailDecisionOutcome = 'same_session' | 'other_session' | 'denied';
+export type EmailDecisionOutcome = 'same_session' | 'other_session' | 'denied'
+  | 'device_approved_same_session' | 'device_approved_other_session';
 
 export async function completeEmailDecision(payload: EmailDecisionPayload): Promise<EmailDecisionOutcome> {
   const controller = new AbortController();
@@ -31,8 +32,11 @@ export async function completeEmailDecision(payload: EmailDecisionPayload): Prom
       readCurrentLoginSecuritySession().catch(() => null),
       new Promise<null>((resolve) => { readTimeout = setTimeout(() => resolve(null), 5_000); }),
     ]).finally(() => clearTimeout(readTimeout));
-    return current?.status === 'approved' && current.sessionId === result.targetSessionId
-      ? 'same_session' : 'other_session';
+    const sameSession = current?.status === 'approved' && current.sessionId === result.targetSessionId;
+    if (result.deviceApprovalStatus === 'approved') {
+      return sameSession ? 'device_approved_same_session' : 'device_approved_other_session';
+    }
+    return sameSession ? 'same_session' : 'other_session';
   } finally {
     clearTimeout(timeout);
   }

@@ -25,6 +25,20 @@ const env = {
   AEGIS_ALLOWED_HOSTS: 'aegis.forsure.fans',
 };
 
+test('journey persistence is registered with waitUntil without delaying the HTTP response', async () => {
+  let background; let finishPersistence;
+  const pending = new Promise(resolve => { finishPersistence = resolve; });
+  const handler = createVercelAegisHandler('/v1/rpc/aegis_sync_device', {
+    env: {...env,AEGIS_JOURNEY_ENABLED:'true'}, logger:()=>{},
+    registerBackground: promise => { background = promise; },
+    fetchImpl: async url => url.endsWith('record_aegis_request_event') ? pending : new Response('[]',{status:200}),
+  });
+  const response = responseRecorder();
+  await handler({method:'POST',url:'/api/aegis-sync-device',headers:{host:'aegis.forsure.fans',authorization:'Bearer test-token'},body:{}},response);
+  assert.equal(response.status,200); assert.ok(background instanceof Promise);
+  finishPersistence(new Response('null',{status:200})); await background;
+});
+
 test('Vercel health handler serves the Aegis contract on the allowed host', async () => {
   const handler = createVercelAegisHandler('/health', { env, logger: () => {} });
   const response = responseRecorder();

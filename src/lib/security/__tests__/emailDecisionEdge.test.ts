@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as risk from '../../../../supabase/functions/login-security/risk';
+import * as journey from '../../../../supabase/functions/_shared/aegisJourney.mjs';
 
 // Exécute le vrai handler Edge, sans réseau ni modification de comptes réels.
 const compiled = ts.transpileModule(readFileSync('supabase/functions/login-security/index.ts', 'utf8'), {
@@ -72,17 +73,32 @@ beforeEach(() => {
       if (id.endsWith('risk.ts')) return risk;
       if (id.endsWith('cors.ts')) return { getCorsHeaders: () => ({}) };
       if (id.endsWith('network-context.ts')) return {};
+      if (id.endsWith('aegisJourney.mjs')) return journey;
       throw new Error(`Unexpected import: ${id}`);
     },
   });
 });
 
 describe('email decision Edge handler', () => {
+  it('reports only the approved exact device belonging to the email target session', async () => {
+    rows.login_security_sessions[0].device_id = 'target-device';
+    rows.user_devices = [
+      {user_id:userId,device_id:'target-device',approval_status:'approved',is_active:true,revoked_at:null},
+      {user_id:'other-user',device_id:'target-device',approval_status:'pending',is_active:true,revoked_at:null},
+    ];
+    expect(await (await send()).json()).toMatchObject({deviceApprovalStatus:'approved'});
+  });
+  it.each(['pending','revoked','missing'])('does not claim an approved device for %s', async (state) => {
+    rows.login_security_sessions[0].device_id = 'target-device';
+    rows.user_devices = state === 'missing' ? [] : [{user_id:userId,device_id:'target-device',approval_status:state === 'pending' ? 'pending' : 'approved',is_active:state !== 'revoked',revoked_at:null}];
+    rows.user_devices.push({user_id:userId,device_id:'unrelated-device',approval_status:'approved',is_active:true,revoked_at:null});
+    expect(await (await send()).json()).toMatchObject({deviceApprovalStatus:state === 'missing' ? 'unregistered' : state});
+  });
   it('confirms only the target session, and a repeat click is idempotent', async () => {
     rows.login_security_sessions.push({ user_id: userId, session_id: 'other', status: 'pending' });
     const first = await send();
     expect(first.status).toBe(200);
-    expect(await first.json()).toEqual({ ok: true, decision: 'approve', targetSessionId: sessionId });
+    expect(await first.json()).toEqual({ ok: true, decision: 'approve', targetSessionId: sessionId, deviceApprovalStatus:'unregistered' });
     expect((await send()).status).toBe(200);
     expect(mutations).toBe(1);
     expect(rows.login_security_sessions[1].status).toBe('pending');

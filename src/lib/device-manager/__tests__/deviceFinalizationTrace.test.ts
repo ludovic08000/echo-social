@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from '@testing-library/react';
+const journeyLogger = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/crypto/errorLogger', () => ({ logCryptoError: journeyLogger }));
 import {
   DEVICE_FINALIZATION_TRACE_MAX_EVENTS,
   clearDeviceFinalizationTrace,
@@ -16,9 +19,20 @@ const DEVICE_ID = 'ffeb378a-e1b3-4bfb-8c31-72c94e4da14d';
 
 describe('device finalization trace', () => {
   beforeEach(() => {
+    journeyLogger.mockClear();
     clearDeviceFinalizationTrace();
     setCurrentDeviceFinalizationTraceId(null);
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+  it('reports a pre-PIN lookup failure once without identifiers or arbitrary errors', async () => {
+    const input = { traceId: 'dft_admin_journey_test', step: 'state_lookup', outcome: 'failure' as const,
+      userId: USER_ID, deviceId: DEVICE_ID, errorCode: 'SECRET_SENTINEL' };
+    traceDeviceFinalization(input); traceDeviceFinalization(input);
+    await waitFor(() => expect(journeyLogger).toHaveBeenCalledTimes(1));
+    expect(journeyLogger.mock.calls[0][0]).toMatchObject({errorCode:'UNKNOWN_ERROR', metadata:{stage:'state_lookup'}});
+    const serialized = JSON.stringify(journeyLogger.mock.calls);
+    expect(serialized).not.toContain(USER_ID); expect(serialized).not.toContain(DEVICE_ID);
+    expect(serialized).not.toContain('SECRET_SENTINEL');
   });
 
   it('never exposes raw identifiers, secrets or raw server errors', () => {

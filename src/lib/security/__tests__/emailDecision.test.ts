@@ -26,6 +26,16 @@ describe('email approval remains bound to its original session', () => {
     expect(await completeEmailDecision(payload)).toBe('same_session');
     expect(fetchMock.mock.calls[0][1].credentials).toBe('omit');
   });
+  it.each([true,false])('reports a server-approved device without transferring its session (same=%s)', async (same) => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ok:true,decision:'approve',targetSessionId:sessionId,deviceApprovalStatus:'approved'}),{headers:{'content-type':'application/json'}}));
+    h.read.mockResolvedValue(same ? {status:'approved',sessionId} : null);
+    expect(await completeEmailDecision(payload)).toBe(same ? 'device_approved_same_session' : 'device_approved_other_session');
+  });
+  it.each(['pending','revoked','unregistered','unavailable',true])('never claims device approval for status %s', async (deviceApprovalStatus) => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ok:true,decision:'approve',targetSessionId:sessionId,deviceApprovalStatus}),{headers:{'content-type':'application/json'}}));
+    h.read.mockResolvedValue(null);
+    expect(await completeEmailDecision(payload)).toBe('other_session');
+  });
   it.each([
     null,
     { status: 'approved', sessionId: '22222222-2222-4222-8222-222222222222' },

@@ -23,6 +23,7 @@ import { VerificationsSection } from '@/components/admin/VerificationsSection';
 import { ArchivesSection } from '@/components/admin/ArchivesSection';
 import { ZeusSection } from '@/components/admin/ZeusSection';
 import { AuditLogsSection } from '@/components/admin/AuditLogsSection';
+import { AegisJourneySection } from '@/components/admin/AegisJourneySection';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const NAV_GROUPS = [
@@ -69,6 +70,7 @@ const NAV_GROUPS = [
       { key: 'security_ai', label: 'IA Sécurité', icon: ShieldAlert },
       { key: 'security', label: 'Anti-abus', icon: Lock },
       { key: 'crypto_errors', label: 'Erreurs E2EE', icon: KeyRound },
+      { key: 'aegis_journey', label: 'Parcours Aegis', icon: Activity },
       { key: 'audit_logs', label: 'Audit', icon: ScrollText },
     ],
   },
@@ -80,7 +82,7 @@ const NAV_GROUPS = [
   },
 ];
 
-type AdminSection = 'dashboard' | 'health' | 'stats' | 'quality' | 'monitoring' | 'users' | 'posts' | 'reports' | 'comment_alerts' | 'verifications' | 'archives' | 'subscriptions' | 'creator_revenue' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings';
+type AdminSection = 'dashboard' | 'health' | 'stats' | 'quality' | 'monitoring' | 'users' | 'posts' | 'reports' | 'comment_alerts' | 'verifications' | 'archives' | 'subscriptions' | 'creator_revenue' | 'feed_intelligence' | 'ml_feed' | 'ai' | 'zeus' | 'security_ai' | 'security' | 'crypto_errors' | 'audit_logs' | 'settings' | 'aegis_journey';
 
 export default function Admin() {
   const [section, setSection] = useState<AdminSection>('dashboard');
@@ -139,6 +141,7 @@ export default function Admin() {
       case 'security_ai': return <SecurityMonitoringSection />;
       case 'security': return <SecuritySection />;
       case 'crypto_errors': return <CryptoErrorsSection />;
+      case 'aegis_journey': return <AegisJourneySection />;
       case 'settings': return <SettingsSection />;
     }
   };

@@ -8,6 +8,7 @@ import {
   loginDecisionMutation,
 } from './risk.ts';
 import { resolveLoginNetworkContext } from '../_shared/network-context.ts';
+import { createAegisJourney } from '../_shared/aegisJourney.mjs';
 
 type JsonObject = Record<string, unknown>;
 type Decision = 'approve' | 'deny';
@@ -208,6 +209,7 @@ function sessionView(row: JsonObject | null): JsonObject {
 }
 
 serve(async (req) => {
+  const journey = createAegisJourney();
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) });
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
@@ -228,6 +230,7 @@ serve(async (req) => {
     outcome: 'info' | 'success' | 'failure',
     detail: JsonObject = {},
   ) => {
+    journey(eventType, outcome, sessionId);
     await admin.from('login_security_events').insert({
       user_id: userId,
       session_id: sessionId,
@@ -282,6 +285,7 @@ serve(async (req) => {
     timezone: string | null;
     device: string;
   }): Promise<boolean> => {
+    journey('approval_email_requested', 'start', args.sessionId);
     const normalizedEmail = args.email.trim().toLowerCase();
     const { data: existingUnsubscribeToken, error: unsubscribeLookupError } = await admin
       .from('email_unsubscribe_tokens')
@@ -386,6 +390,8 @@ serve(async (req) => {
       },
     });
     if (enqueueError) {
+      journey('approval_email_queue_failed', 'failure', args.sessionId);
+      await recordEvent(args.userId, args.sessionId, 'approval_email_queue_failed', 'failure');
       await admin.from('email_send_log').insert({
         message_id: `${messageId}:enqueue-failure`,
         template_name: 'login_security_approval',
@@ -395,6 +401,8 @@ serve(async (req) => {
       });
       return false;
     }
+    journey('approval_email_queued', 'success', args.sessionId);
+    await recordEvent(args.userId, args.sessionId, 'approval_email_queued', 'success');
     await admin
       .from('login_security_sessions')
       .update({ email_sent_at: now.toISOString(), updated_at: now.toISOString() })
@@ -493,7 +501,29 @@ serve(async (req) => {
         );
       }
     }
-    if (wantsJson) return json(req, 200, { ok: true, decision, targetSessionId: emailToken.target_session_id });
+    if (wantsJson) {
+      let deviceApprovalStatus = 'unavailable';
+      if (decision === 'approve') {
+        try {
+          // Lecture de l'appareil exact lié à la session, sans accorder de droit.
+          const { data: target, error: targetError } = await admin.from('login_security_sessions')
+            .select('status,device_id,expires_at').eq('user_id', emailToken.user_id)
+            .eq('session_id', emailToken.target_session_id).maybeSingle();
+          if (!targetError && target?.status === 'approved' && new Date(target.expires_at).getTime() > Date.now()) {
+            if (!target.device_id) deviceApprovalStatus = 'unregistered';
+            else {
+              const { data: device, error: deviceError } = await admin.from('user_devices')
+                .select('approval_status,is_active,revoked_at').eq('user_id', emailToken.user_id)
+                .eq('device_id', target.device_id).maybeSingle();
+              if (!deviceError) deviceApprovalStatus = !device ? 'unregistered'
+                : device.revoked_at || device.is_active !== true ? 'revoked'
+                : device.approval_status === 'approved' ? 'approved' : 'pending';
+            }
+          }
+        } catch { /* La lecture d'affichage n'annule jamais la décision. */ }
+      }
+      return json(req, 200, { ok: true, decision, targetSessionId: emailToken.target_session_id, deviceApprovalStatus });
+    }
     return decision === 'approve'
       ? redirect(`${SITE_URL}/feed?loginSecurity=approved`)
       : redirect(`${SITE_URL}/login?loginSecurity=denied`);

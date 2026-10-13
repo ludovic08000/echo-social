@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { waitUntil } from '@vercel/functions';
 import { handleAegisRequest, loadAegisConfig } from './server.mjs';
 
 function safeRequestId(value) {
@@ -98,6 +99,7 @@ export function createVercelAegisHandler(path, {
   env = process.env,
   fetchImpl = globalThis.fetch,
   logger = (record) => console.log(JSON.stringify(record)),
+  registerBackground = waitUntil,
 } = {}) {
   return async function handler(request, response) {
     let config;
@@ -113,6 +115,7 @@ export function createVercelAegisHandler(path, {
       fetchImpl,
       logger,
       pathOverride: path,
+      registerBackground,
     });
   };
 }

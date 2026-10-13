@@ -11,6 +11,8 @@ const CODES = new Set(`NOT_FOUND ORIGIN_DENIED NOT_AUTHENTICATED INVALID_JSON BO
 UPSTREAM_TIMEOUT UPSTREAM_UNAVAILABLE UPSTREAM_INVALID_RESPONSE AEGIS_GATEWAY_FAILURE
 E2EE_DEVICE_NOT_AUTHORIZED E2EE_DEVICE_COPIES_UNAVAILABLE AEGIS_PARTIAL_DEVICE_FANOUT
 DEVICE_REVOKED DEVICE_NOT_APPROVED DEVICE_ROUTE_NOT_READY INVALID_REQUEST
+DEVICE_NOT_FOUND AEGIS_PEER_DEVICE_UPDATE_REQUIRED CRYPTO_NOT_READY
+AEGIS_ARCHIVE_REQUIRED DEVICE_LOOKUP_FAILED DEVICE_STATE_LOOKUP_FAILED
 UNAUTHORIZED METHOD_NOT_ALLOWED SEALED_SENDER_UNAVAILABLE INVALID_RECIPIENT CONTEXT_TOO_LARGE
 CONVERSATION_NOT_FOUND CONVERSATION_MEMBERSHIP_DENIED SENDER_NOT_MEMBER RECIPIENT_NOT_MEMBER
 TOKEN_PERSISTENCE_FAILED SENDER_TAG_TOO_LARGE SEALED_HEADER_TOO_LARGE SEALED_PAYLOAD_TOO_LARGE
@@ -80,6 +82,9 @@ export function createAegisDiagnostic(service, {
         failed_check: status >= 400 ? current ?? 'not_checked' : null,
         error_code: status >= 400 ? diagnosticCode(code) : null,
         checks: { ...checks }, ...(debug ? { check_duration_ms: { ...timings } } : {}),
+        started_at: new Date(started).toISOString(),
+        // Les durées restent disponibles sans activer un journal de secrets.
+        step_duration_ms: { ...timings },
       };
       try { logger(record); } catch { /* Ne jamais changer le résultat métier. */ }
       return record;

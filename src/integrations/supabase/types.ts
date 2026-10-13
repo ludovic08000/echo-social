@@ -9314,6 +9314,10 @@ export type Database = {
       }
     }
     Functions: {
+      admin_aegis_journey: {
+        Args: { p_account?: string; p_before_id?: number; p_outcome?: string }
+        Returns: Json
+      }
       ack_sealed_sender_wakeups: {
         Args: { p_message_ids: string[] }
         Returns: number
