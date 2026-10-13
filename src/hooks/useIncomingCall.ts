@@ -9,13 +9,13 @@ import {
 } from '@/lib/calls/aegisCallProtocol';
 import { AegisCallError, normalizeAegisCallError, traceCall } from '@/lib/calls/callDiagnostics';
 import { isAegisCallingEnabled } from '@/lib/calls/callPolicy';
+import { installNotificationAudioUnlock, resumeNotificationAudio } from '@/lib/notificationAudio';
 
-let sharedAudioContext: AudioContext | null = null;
-
-function createRingtone(): { play: () => void; stop: () => void } {
+export function createRingtone(): { play: () => void; stop: () => void } {
   let context: AudioContext | null = null;
   let interval: ReturnType<typeof setInterval> | null = null;
   let stopped = true;
+  let generation = 0;
 
   const pulse = () => {
     if (stopped || !context) return;
@@ -34,24 +34,24 @@ function createRingtone(): { play: () => void; stop: () => void } {
 
   return {
     play: () => {
+      if (!stopped) return;
       stopped = false;
+      const currentGeneration = ++generation;
       try {
-        const legacyWindow = window as typeof window & { webkitAudioContext?: typeof AudioContext };
-        const AudioContextConstructor = window.AudioContext ?? legacyWindow.webkitAudioContext;
-        if (!AudioContextConstructor) return;
-        context = sharedAudioContext ?? new AudioContextConstructor();
-        sharedAudioContext = context;
-        void context.resume().then(() => {
-          if (stopped) return;
+        void resumeNotificationAudio().then((readyContext) => {
+          if (stopped || currentGeneration !== generation) return;
+          context = readyContext;
+          if (!context) { stopped = true; return; }
           pulse();
           interval = setInterval(pulse, 1800);
-        });
+        }).catch(() => { if (currentGeneration === generation) stopped = true; });
       } catch {
         // Incoming-call UI remains available when audio playback is blocked.
       }
     },
     stop: () => {
       stopped = true;
+      generation++;
       if (interval) clearInterval(interval);
       interval = null;
     },
@@ -79,6 +79,7 @@ type IncomingCallPhase = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended';
 
 export function useIncomingCall() {
   const { user } = useAuth();
+  useEffect(installNotificationAudioUnlock, []);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const incomingCallRef = useRef<IncomingCall | null>(null);
   const phaseRef = useRef<IncomingCallPhase>('idle');

@@ -2,16 +2,7 @@ import { useCallback, useRef, useEffect } from 'react';
 import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 import { useVoiceSettings, shouldSpeak } from '@/hooks/useVoiceSettings';
 import { readLocalWellbeingPrefs } from '@/hooks/useWellbeingPreferences';
-
-// Simple tone generator using Web Audio API
-const audioCtxRef: { current: AudioContext | null } = { current: null };
-
-function getAudioCtx() {
-  if (!audioCtxRef.current) {
-    audioCtxRef.current = new AudioContext();
-  }
-  return audioCtxRef.current;
-}
+import { installNotificationAudioUnlock, resumeNotificationAudio } from '@/lib/notificationAudio';
 
 type SoundType = 'default' | 'soft' | 'bright' | 'bubble' | 'chime';
 
@@ -23,9 +14,10 @@ const SOUND_CONFIGS: Record<SoundType, { freq: number; freq2?: number; duration:
   chime: { freq: 1047, freq2: 1319, duration: 0.25, type: 'sine', gain: 0.2 },
 };
 
-function playTone(soundType: SoundType = 'default') {
+async function playTone(soundType: SoundType = 'default') {
   try {
-    const ctx = getAudioCtx();
+    const ctx = await resumeNotificationAudio();
+    if (!ctx) return;
     const config = SOUND_CONFIGS[soundType] || SOUND_CONFIGS.default;
     const now = ctx.currentTime;
 
@@ -194,6 +186,7 @@ function isTabActive(): boolean {
 
 export function useNotificationSound() {
   const { data: settings } = useNotificationSettings();
+  useEffect(installNotificationAudioUnlock, []);
 
   const playNotificationSound = useCallback((category?: string) => {
     if (readLocalWellbeingPrefs().focusModeEnabled) return;
@@ -225,6 +218,10 @@ export function useRealtimeNotificationSound() {
   const lastPlayedRef = useRef(0);
   const pendingRef = useRef<PendingNotif[]>([]);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    pendingRef.current = [];
+  }, []);
 
   // Pre-load voices
   useEffect(() => {

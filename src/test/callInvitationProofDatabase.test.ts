@@ -60,7 +60,7 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
       GRANT USAGE ON SCHEMA auth,public TO anon,authenticated;
       CREATE TABLE auth.users(id uuid PRIMARY KEY);
       CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('test.uid',true),'')::uuid $$;
-      CREATE TABLE active_calls(id uuid PRIMARY KEY, conversation_id uuid, caller_id uuid, callee_id uuid,
+      CREATE TABLE active_calls(id uuid PRIMARY KEY, conversation_id text, caller_id uuid, callee_id uuid,
         caller_ids uuid[],is_group boolean,room_id uuid,call_type text,status text,created_at timestamptz DEFAULT now(),
         answered_at timestamptz,ended_at timestamptz);
       ALTER TABLE active_calls ENABLE ROW LEVEL SECURITY;
@@ -89,6 +89,7 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
     const original = readFileSync('supabase/migrations/20260730090000_aegis_clean_rebuild.sql', 'utf8');
     await db.exec(original.slice(original.indexOf('-- Stage 5:'), original.indexOf('-- Stage 6:')));
     await db.exec(readFileSync('supabase/migrations/20261012115746_authenticate_call_invitations.sql', 'utf8'));
+    await db.exec(readFileSync('supabase/migrations/20261013140030_fix_call_invitation_conversation_type.sql', 'utf8'));
     recipient = await crypto.subtle.generateKey('X25519', true, ['deriveBits']) as CryptoKeyPair;
     mediaKey = bytes(32);
     const wire = await sealCallKeyForDevice({ ...context, callerDeviceId: callerDevice,
@@ -117,6 +118,20 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
       [context.callId, context.conversationId, context.callerId, callerDevice, context.callType, context.isGroup,
         context.recipientUserId, context.recipientDeviceId, envelope.split('.').slice(0, 5).join('.')]);
     expect(result.rows[0].payload).toBe(payload);
+  });
+  it('reproduces the production failure on rollback and recovers without changing keys or rows', async () => {
+    await db.exec('RESET ROLE');
+    await db.exec(readFileSync('supabase/rollback/fix_call_invitation_conversation_type.sql', 'utf8'));
+    try {
+      await asUser();
+      await expect(create()).rejects.toThrow('aegis_call_invitation_proof_payload(uuid, text');
+      expect(await counts()).toEqual({ calls: 0, invitations: 0 });
+    } finally {
+      await db.exec('RESET ROLE');
+      await db.exec(readFileSync('supabase/migrations/20261013140030_fix_call_invitation_conversation_type.sql', 'utf8'));
+    }
+    await asUser();
+    expect((await create()).rows[0].result.ok).toBe(true);
   });
   it('creates, reads, accepts and closes a signed call using the existing RPCs', async () => {
     expect((await create()).rows[0].result.ok).toBe(true);
