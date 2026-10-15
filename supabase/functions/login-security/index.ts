@@ -763,7 +763,7 @@ serve(async (req) => {
     const language = stringField(body, 'language', 32) || null;
     const { data: previous } = await admin
       .from('login_security_sessions')
-      .select('country_code,approved_at')
+      .select('country_code,region,city,user_agent_summary,approved_at')
       .eq('user_id', user.id)
       .eq('status', 'approved')
       .neq('session_id', sessionId)
@@ -771,13 +771,30 @@ serve(async (req) => {
       .order('approved_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+    const { count: recentSuspiciousAttempts } = await admin
+      .from('login_security_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .neq('session_id', sessionId)
+      .in('status', ['pending', 'denied'])
+      .gte('created_at', tenMinutesAgo);
+    const currentBrowser = summarizeUserAgent(context.userAgent);
     const risk = assessLoginRisk({
       trustedDeviceProof: Boolean(proof),
       initialAccountBootstrap,
       previousCountry: previous?.country_code || null,
       currentCountry: context.country,
+      previousRegion: previous?.region || null,
+      currentRegion: context.region,
+      previousCity: previous?.city || null,
+      currentCity: context.city,
+      previousBrowser: previous?.user_agent_summary || null,
+      currentBrowser,
+      previousApprovedAt: previous?.approved_at || null,
+      recentSuspiciousAttempts: recentSuspiciousAttempts || 0,
     });
-    const { status, riskLevel, reasons, countryChanged } = risk;
+    const { status, riskLevel, riskScore, reasons, countryChanged } = risk;
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + (status === 'approved'
       ? 30 * 24 * 60 * 60_000
@@ -797,7 +814,7 @@ serve(async (req) => {
       city: context.city,
       ip_hash: ipHash,
       user_agent_hash: userAgentHash,
-      user_agent_summary: summarizeUserAgent(context.userAgent),
+      user_agent_summary: currentBrowser,
       timezone,
       language,
       device_proof_verified_at: proof ? now : null,
@@ -822,6 +839,8 @@ serve(async (req) => {
       known_device: Boolean(proof),
       initial_account_bootstrap: initialAccountBootstrap,
       country_changed: countryChanged,
+      risk_score: riskScore,
+      recent_suspicious_attempts: recentSuspiciousAttempts || 0,
     });
     if (status === 'pending') {
       const oneHourAgo = new Date(Date.now() - 60 * 60_000).toISOString();

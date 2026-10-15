@@ -15,6 +15,7 @@ describe('login-security risk policy', () => {
     })).toEqual({
       status: 'approved',
       riskLevel: 'low',
+      riskScore: 0,
       reasons: [],
       countryChanged: false,
     });
@@ -52,6 +53,56 @@ describe('login-security risk policy', () => {
     })).toMatchObject({
       status: 'pending',
       reasons: ['UNVERIFIED_DEVICE'],
+    });
+  });
+
+  it('does not block a trusted device for a city or region change alone', () => {
+    expect(assessLoginRisk({
+      trustedDeviceProof: true,
+      previousCountry: 'FR',
+      currentCountry: 'FR',
+      previousRegion: 'Grand Est',
+      currentRegion: 'Île-de-France',
+      previousCity: 'Reims',
+      currentCity: 'Paris',
+    })).toMatchObject({
+      status: 'approved',
+      riskLevel: 'medium',
+      riskScore: 15,
+      reasons: ['REGION_CHANGED'],
+    });
+  });
+
+  it('steps up only when several medium signals agree', () => {
+    expect(assessLoginRisk({
+      trustedDeviceProof: true,
+      previousCountry: 'FR',
+      currentCountry: 'FR',
+      previousRegion: 'Grand Est',
+      currentRegion: 'Île-de-France',
+      previousBrowser: 'Safari · iOS',
+      currentBrowser: 'Chrome · Windows',
+      recentSuspiciousAttempts: 2,
+    })).toMatchObject({
+      status: 'pending',
+      riskLevel: 'high',
+      riskScore: 60,
+      reasons: ['REGION_CHANGED', 'BROWSER_CHANGED', 'REPEATED_RECENT_ATTEMPTS'],
+    });
+  });
+
+  it('marks a fast country change as an additional risk signal', () => {
+    const nowMs = Date.parse('2026-10-15T10:00:00.000Z');
+    expect(assessLoginRisk({
+      trustedDeviceProof: true,
+      previousCountry: 'FR',
+      currentCountry: 'US',
+      previousApprovedAt: '2026-10-15T08:00:00.000Z',
+      nowMs,
+    })).toMatchObject({
+      status: 'pending',
+      riskScore: 80,
+      reasons: ['COUNTRY_CHANGED', 'RAPID_COUNTRY_CHANGE'],
     });
   });
 

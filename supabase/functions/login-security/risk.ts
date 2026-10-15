@@ -1,4 +1,11 @@
-export type LoginRiskReason = 'UNVERIFIED_DEVICE' | 'COUNTRY_CHANGED';
+export type LoginRiskReason =
+  | 'UNVERIFIED_DEVICE'
+  | 'COUNTRY_CHANGED'
+  | 'RAPID_COUNTRY_CHANGE'
+  | 'REGION_CHANGED'
+  | 'CITY_CHANGED'
+  | 'BROWSER_CHANGED'
+  | 'REPEATED_RECENT_ATTEMPTS';
 
 export type LoginSecuritySessionStatus =
   | 'approved'
@@ -27,7 +34,8 @@ export function effectiveLoginSecurityStatus(
 
 export interface LoginRiskAssessment {
   status: 'approved' | 'pending';
-  riskLevel: 'low' | 'high';
+  riskLevel: 'low' | 'medium' | 'high';
+  riskScore: number;
   reasons: LoginRiskReason[];
   countryChanged: boolean;
 }
@@ -69,19 +77,58 @@ export function assessLoginRisk(args: {
   initialAccountBootstrap?: boolean;
   previousCountry: string | null;
   currentCountry: string | null;
+  previousRegion?: string | null;
+  currentRegion?: string | null;
+  previousCity?: string | null;
+  currentCity?: string | null;
+  previousBrowser?: string | null;
+  currentBrowser?: string | null;
+  previousApprovedAt?: string | null;
+  recentSuspiciousAttempts?: number;
+  nowMs?: number;
 }): LoginRiskAssessment {
+  const normalize = (value: string | null | undefined) => value?.trim().toLocaleLowerCase('en') || null;
   const previousCountry = args.previousCountry?.trim().toUpperCase() || null;
   const currentCountry = args.currentCountry?.trim().toUpperCase() || null;
   const countryChanged = Boolean(
     previousCountry && currentCountry && previousCountry !== currentCountry,
   );
+  const regionChanged = Boolean(
+    !countryChanged && normalize(args.previousRegion) && normalize(args.currentRegion)
+      && normalize(args.previousRegion) !== normalize(args.currentRegion),
+  );
+  const cityChanged = Boolean(
+    !countryChanged && !regionChanged && normalize(args.previousCity) && normalize(args.currentCity)
+      && normalize(args.previousCity) !== normalize(args.currentCity),
+  );
+  const browserChanged = Boolean(
+    normalize(args.previousBrowser) && normalize(args.currentBrowser)
+      && normalize(args.previousBrowser) !== normalize(args.currentBrowser),
+  );
+  const nowMs = args.nowMs ?? Date.now();
+  const previousApprovedMs = args.previousApprovedAt ? Date.parse(args.previousApprovedAt) : Number.NaN;
+  const rapidCountryChange = countryChanged && Number.isFinite(previousApprovedMs)
+    && nowMs - previousApprovedMs >= 0
+    && nowMs - previousApprovedMs <= 6 * 60 * 60_000;
   const reasons: LoginRiskReason[] = [];
-  if (!args.trustedDeviceProof && !args.initialAccountBootstrap) reasons.push('UNVERIFIED_DEVICE');
-  if (countryChanged) reasons.push('COUNTRY_CHANGED');
-  const status = reasons.length === 0 ? 'approved' : 'pending';
+  let riskScore = 0;
+  const add = (reason: LoginRiskReason, score: number) => {
+    reasons.push(reason);
+    riskScore += score;
+  };
+  if (!args.trustedDeviceProof && !args.initialAccountBootstrap) add('UNVERIFIED_DEVICE', 70);
+  if (countryChanged) add('COUNTRY_CHANGED', 60);
+  if (rapidCountryChange) add('RAPID_COUNTRY_CHANGE', 20);
+  if (regionChanged) add('REGION_CHANGED', 15);
+  if (cityChanged) add('CITY_CHANGED', 5);
+  if (browserChanged) add('BROWSER_CHANGED', 20);
+  if ((args.recentSuspiciousAttempts || 0) >= 2) add('REPEATED_RECENT_ATTEMPTS', 25);
+  riskScore = Math.min(100, riskScore);
+  const status = riskScore >= 50 ? 'pending' : 'approved';
   return {
     status,
-    riskLevel: status === 'approved' ? 'low' : 'high',
+    riskLevel: status === 'pending' ? 'high' : riskScore > 0 ? 'medium' : 'low',
+    riskScore,
     reasons,
     countryChanged,
   };
