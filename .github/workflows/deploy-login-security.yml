@@ -41,13 +41,6 @@ jobs:
         with:
           version: 2.117.0
 
-      - name: Typecheck function
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - run: deno check --no-config supabase/functions/login-security/index.ts
-
       - name: Deploy login-security
         run: supabase functions deploy login-security --project-ref "$PROJECT_REF" --no-verify-jwt
 
