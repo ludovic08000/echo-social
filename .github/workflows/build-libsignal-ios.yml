@@ -32,11 +32,17 @@ permissions:
 
 jobs:
   ios-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [social, messenger]
     runs-on: macos-26
     timeout-minutes: 120
     env:
       CARGO_BUILD_JOBS: "2"
       RUSTUP_TOOLCHAIN: nightly-2026-07-15
+      FORSURE_APP_VARIANT: ${{ matrix.variant }}
+      VITE_APP_VARIANT: ${{ matrix.variant }}
 
     steps:
       - name: Check out Echo Social
@@ -66,7 +72,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-native-build-log
+          name: ios-native-build-log-${{ matrix.variant }}
           path: ios-native-build.log
           if-no-files-found: warn
           retention-days: 7
@@ -75,14 +81,18 @@ jobs:
         run: |
           ditto -c -k --sequesterRsrc --keepParent build/ios/AegisCrypto.xcframework build/ios/AegisCrypto.xcframework.zip
           shasum -a 256 build/ios/AegisCrypto.xcframework.zip > build/ios/AegisCrypto.xcframework.zip.sha256
+          ditto -c -k --sequesterRsrc --keepParent build/ios/${{ matrix.variant }}-device/Build/Products/Release-iphoneos/App.app build/ios/forsure-${{ matrix.variant }}-unsigned-device.app.zip
+          ditto -c -k --sequesterRsrc --keepParent build/ios/${{ matrix.variant }}-simulator/Build/Products/Debug-iphonesimulator/App.app build/ios/forsure-${{ matrix.variant }}-simulator.app.zip
 
       - name: Upload integrated iOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-libsignal-ios-integrated
+          name: aegis-libsignal-ios-integrated-${{ matrix.variant }}
           path: |
             build/ios/AegisCrypto.xcframework.zip
             build/ios/AegisCrypto.xcframework.zip.sha256
+            build/ios/forsure-${{ matrix.variant }}-unsigned-device.app.zip
+            build/ios/forsure-${{ matrix.variant }}-simulator.app.zip
             native/aegis-crypto/bindings/ios/AegisCryptoNative.swift
             ios/App/App.xcodeproj/project.pbxproj
             ios/App/App/AegisCryptoNative.swift

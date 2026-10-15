@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import { IS_MESSENGER_APP } from '@/lib/applicationVariant';
 
 export interface NegotiationProduct {
   id: string;
@@ -41,11 +42,11 @@ export function ChatWidgetProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const closeChat = useCallback(() => {
-    setState({ isOpen: false, conversationId: null, isMinimized: false, negotiationProduct: null });
+    setState({ isOpen: IS_MESSENGER_APP, conversationId: null, isMinimized: false, negotiationProduct: null });
   }, []);
 
   const minimizeChat = useCallback(() => {
-    setState(prev => ({ ...prev, isMinimized: true }));
+    setState(prev => ({ ...prev, isMinimized: !IS_MESSENGER_APP }));
   }, []);
 
   const restoreChat = useCallback(() => {

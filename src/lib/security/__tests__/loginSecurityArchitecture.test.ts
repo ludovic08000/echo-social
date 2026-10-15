@@ -63,16 +63,15 @@ describe('risk-based login security architecture', () => {
     expect(client).toContain("action: 'challenge'");
   });
 
-  it('bootstraps only a freshly confirmed account with no prior security or Aegis history', () => {
+  it('bootstraps only a freshly confirmed account with no prior security session', () => {
     expect(edge).toContain('canBootstrapInitialAccountSession');
     expect(edge).toContain(".from('login_security_sessions')");
-    expect(edge).toContain(".from('user_devices')");
-    expect(edge).toContain(".from('user_public_keys')");
+    expect(edge).toContain('The authoritative boundary is an earlier security session');
     expect(edge).toContain("'initial_account_bootstrap'");
     expect(riskPolicy).toContain('isRecentInitialAccountBootstrap');
     expect(riskPolicy).toContain('nowMs - confirmedAtMs <= maxAgeMs');
     expect(riskPolicy).toContain('createdAtMs <= confirmedAtMs');
-    expect(riskPolicy).toContain('input.hasPriorLoginSession || input.hasDeviceHistory || input.hasAccountIdentity');
+    expect(riskPolicy).toContain('if (input.hasPriorLoginSession) return false');
   });
 
   it('blocks key restoration and the crypto runtime until login approval', () => {

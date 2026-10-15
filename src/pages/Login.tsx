@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { APPLICATION_HOME } from '@/lib/applicationVariant';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, ShieldCheck, MessageCircle, Network } from 'lucide-react';
 import forsureBanner from '@/assets/forsure-loader.png';
@@ -64,7 +65,7 @@ export default function Login() {
   if (user) {
     const rawNext = new URLSearchParams(location.search).get('next');
     const safeNext = rawNext && /^\/(?!\/)/.test(rawNext) ? rawNext : null;
-    const from = safeNext || (location.state as { from?: string })?.from || '/feed';
+    const from = safeNext || (location.state as { from?: string })?.from || APPLICATION_HOME;
     return <Navigate to={from} replace />;
   }
 

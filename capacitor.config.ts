@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'fans.forsure.app',
-  appName: 'Forsure',
+  appId: process.env.FORSURE_APP_VARIANT === 'messenger' ? 'fans.forsure.messenger' : 'fans.forsure.app',
+  appName: process.env.FORSURE_APP_VARIANT === 'messenger' ? 'ForSure Messages' : 'Forsure',
   webDir: 'dist',
   plugins: {
     CapacitorHttp: {

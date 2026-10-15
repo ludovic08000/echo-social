@@ -3,6 +3,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+VARIANT="${FORSURE_APP_VARIANT:-social}"
+case "$VARIANT" in
+  social) BUNDLE_ID="fans.forsure.app"; DISPLAY_NAME="Forsure" ;;
+  messenger) BUNDLE_ID="fans.forsure.messenger"; DISPLAY_NAME="ForSure Messages" ;;
+  *) echo "Unknown application variant" >&2; exit 1 ;;
+esac
+export VITE_APP_VARIANT="$VARIANT" FORSURE_APP_VARIANT="$VARIANT"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "bootstrap-ios-native.sh requires macOS/Xcode" >&2
@@ -98,6 +105,7 @@ cp -R build/ios/AegisCrypto.xcframework ios/App/Frameworks/
 
 ruby -e 'require "xcodeproj"' 2>/dev/null || gem install xcodeproj --no-document
 ruby scripts/integrate-ios-native.rb
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" ios/App/App/Info.plist
 
 # Build the CocoaPods workspace so Capacitor dependencies are built too.
 XCODE_CONTAINER=(-project ios/App/App.xcodeproj)
@@ -115,7 +123,15 @@ xcodebuild \
   -configuration Debug \
   -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath "build/ios/$VARIANT-simulator" \
+  PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
   CODE_SIGNING_ALLOWED=NO \
   build
+
+# Produit appareil non signé : une signature Apple reste nécessaire pour installer.
+xcodebuild "${XCODE_CONTAINER[@]}" -scheme App -configuration Release \
+  -sdk iphoneos -destination 'generic/platform=iOS' \
+  -derivedDataPath "build/ios/$VARIANT-device" \
+  PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" CODE_SIGNING_ALLOWED=NO build
 
 echo "iOS native libsignal integration built successfully."

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { APPLICATION_HOME } from '@/lib/applicationVariant';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/hooks/useProfile';
@@ -107,7 +108,7 @@ export function PublicOnlyRoute({ children }: ProtectedRouteProps) {
   // Aegis restoration continue in background; their privileged runtimes keep
   // their own approval/readiness gates.
   if (user && !isRecoveryPending()) {
-    const from = (location.state as { from?: string })?.from || '/feed';
+    const from = (location.state as { from?: string })?.from || APPLICATION_HOME;
     return <Navigate to={from} replace />;
   }
 

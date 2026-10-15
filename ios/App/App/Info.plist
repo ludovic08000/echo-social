@@ -32,6 +32,10 @@
 	</array>
 	<key>NSContactsUsageDescription</key>
 	<string>Forsure utilise vos contacts uniquement pour retrouver vos amis deja inscrits.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ForSure utilise le microphone pour vos appels et messages vocaux.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ForSure utilise la caméra pour vos appels vidéo et photos.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Forsure utilise Face ID pour proteger vos cles de messagerie chiffree.</string>
 	<key>UISupportedInterfaceOrientations</key>

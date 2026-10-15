@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { IS_MESSENGER_APP } from '@/lib/applicationVariant';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
@@ -2461,7 +2462,7 @@ export function ChatWidget() {
   }
 
   // Mobile open: full-screen overlay
-  if (isMobile) {
+  if (isMobile || IS_MESSENGER_APP) {
     return (
       <div className="fixed inset-0 z-[80] bg-background flex flex-col animate-in slide-in-from-right-4 duration-200 overflow-hidden">
         <MessagingPinGate compact>

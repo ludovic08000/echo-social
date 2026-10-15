@@ -8,6 +8,7 @@
 import { useEffect } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useChatWidget } from '@/components/ChatWidgetContext';
+import { IS_MESSENGER_APP } from '@/lib/applicationVariant';
 
 export default function Messages() {
   const { conversationId } = useParams<{ conversationId?: string }>();
@@ -17,5 +18,6 @@ export default function Messages() {
     openChat(conversationId);
   }, [conversationId, openChat]);
 
-  return <Navigate to="/feed" replace />;
+  // Même runtime de chat, sans monter le feed dans l'application indépendante.
+  return IS_MESSENGER_APP ? <main className="min-h-screen bg-background" aria-label="ForSure Messages" /> : <Navigate to="/feed" replace />;
 }

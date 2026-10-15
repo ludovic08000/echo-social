@@ -1,10 +1,11 @@
 apply plugin: 'com.android.application'
+def messengerApp = project.findProperty('forsureVariant') == 'messenger'
 
 android {
     namespace = "fans.forsure.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "fans.forsure.app"
+        applicationId messengerApp ? "fans.forsure.messenger" : "fans.forsure.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -21,6 +22,10 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+    // Le namespace Java reste stable ; Android isole les données par applicationId.
+    defaultConfig {
+        manifestPlaceholders = [forsureAppName: messengerApp ? 'ForSure Messages' : 'Forsure']
     }
     compileOptions {
         coreLibraryDesugaringEnabled true

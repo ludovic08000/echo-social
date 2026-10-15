@@ -577,29 +577,20 @@ serve(async (req) => {
   };
 
   const canBootstrapInitialAccountSession = async (): Promise<boolean> => {
-    const [priorSessions, deviceHistory, accountIdentity] = await Promise.all([
-      admin
-        .from('login_security_sessions')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .neq('session_id', sessionId),
-      admin
-        .from('user_devices')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id),
-      admin
-        .from('user_public_keys')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id),
-    ]);
-    if (priorSessions.error || deviceHistory.error || accountIdentity.error) return false;
+    // Aegis can create the account identity and the first pending device before
+    // login-security runs. Their presence is therefore not proof of an older
+    // login. The authoritative boundary is an earlier security session.
+    const priorSessions = await admin
+      .from('login_security_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .neq('session_id', sessionId);
+    if (priorSessions.error) return false;
 
     return isRecentInitialAccountBootstrap({
       accountCreatedAt: user.created_at || null,
       emailConfirmedAt: user.email_confirmed_at || null,
       hasPriorLoginSession: (priorSessions.count || 0) > 0,
-      hasDeviceHistory: (deviceHistory.count || 0) > 0,
-      hasAccountIdentity: (accountIdentity.count || 0) > 0,
     });
   };
 

@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/toaster";
+import { IS_MESSENGER_APP } from '@/lib/applicationVariant';
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -303,7 +304,22 @@ function AppContent() {
                   <LoginApprovalInbox />
                   <RoutedErrorBoundary>
                     <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-12 h-12 rounded-full bg-pulse-gradient animate-pulse-slow" /></div>}>
-                      <Routes>
+                      {IS_MESSENGER_APP ? <Routes>
+                        <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
+                        <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
+                        <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
+                        <Route path="/reset-password" element={<ResetPassword />} />
+                        <Route path="/onboarding" element={<Onboarding />} />
+                        <Route path="/auth/confirm" element={<AuthConfirmPage />} />
+                        <Route path="/legal" element={<LegalTerms />} />
+                        <Route path="/legal/terms" element={<LegalTerms />} />
+                        <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+                        <Route path="/privacy" element={<PrivacyPolicy />} />
+                        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                        <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+                        <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+                        <Route path="*" element={<Navigate to="/messages" replace />} />
+                      </Routes> : <Routes>
                     <Route path="/" element={<Navigate to="/feed" replace />} />
                     <Route path="/landing" element={<Landing />} />
                     <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
@@ -358,7 +374,7 @@ function AppContent() {
                     <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                     <Route path="/unsubscribe" element={<Unsubscribe />} />
                     <Route path="*" element={<NotFound />} />
-                      </Routes>
+                      </Routes>}
                     </Suspense>
                   </RoutedErrorBoundary>
                   <ChatWidget />

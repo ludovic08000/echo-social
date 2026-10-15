@@ -61,8 +61,6 @@ describe('login-security risk policy', () => {
       accountCreatedAt: '2026-10-08T17:50:00.000Z',
       emailConfirmedAt: '2026-10-08T17:55:00.000Z',
       hasPriorLoginSession: false,
-      hasDeviceHistory: false,
-      hasAccountIdentity: false,
       nowMs: now,
     });
 
@@ -84,8 +82,15 @@ describe('login-security risk policy', () => {
       accountCreatedAt: '2026-10-01T10:00:00.000Z',
       emailConfirmedAt: '2026-10-08T17:55:00.000Z',
       hasPriorLoginSession: false,
-      hasDeviceHistory: false,
-      hasAccountIdentity: false,
+      nowMs: Date.parse('2026-10-08T18:00:00.000Z'),
+    })).toBe(true);
+  });
+
+  it('does not mistake Aegis artifacts created during signup for an older device', () => {
+    expect(isRecentInitialAccountBootstrap({
+      accountCreatedAt: '2026-10-08T17:50:00.000Z',
+      emailConfirmedAt: '2026-10-08T17:55:00.000Z',
+      hasPriorLoginSession: false,
       nowMs: Date.parse('2026-10-08T18:00:00.000Z'),
     })).toBe(true);
   });
@@ -94,15 +99,11 @@ describe('login-security risk policy', () => {
     ['an old confirmation', { emailConfirmedAt: '2026-10-08T16:00:00.000Z' }],
     ['an unconfirmed email', { emailConfirmedAt: null }],
     ['a previous login session', { hasPriorLoginSession: true }],
-    ['device history', { hasDeviceHistory: true }],
-    ['an existing account identity', { hasAccountIdentity: true }],
   ])('fails closed for %s', (_label, overrides) => {
     expect(isRecentInitialAccountBootstrap({
       accountCreatedAt: '2026-10-08T17:50:00.000Z',
       emailConfirmedAt: '2026-10-08T17:55:00.000Z',
       hasPriorLoginSession: false,
-      hasDeviceHistory: false,
-      hasAccountIdentity: false,
       nowMs: Date.parse('2026-10-08T18:00:00.000Z'),
       ...overrides,
     })).toBe(false);

@@ -36,20 +36,21 @@ export interface InitialAccountBootstrapInput {
   accountCreatedAt: string | null;
   emailConfirmedAt: string | null;
   hasPriorLoginSession: boolean;
-  hasDeviceHistory: boolean;
-  hasAccountIdentity: boolean;
   nowMs?: number;
   maxAgeMs?: number;
 }
 
 /**
  * Premier accès uniquement : l'adresse vient d'être confirmée et aucun état
- * Aegis ou de connexion n'existe encore. La fraîcheur porte sur la preuve
- * e-mail, pas sur la création du compte : une personne peut légitimement
- * confirmer plus tard son inscription sans recevoir un second e-mail.
+ * de connexion n'existe encore. Les clés et la ligne du premier appareil
+ * peuvent déjà avoir été créées par l'initialisation Aegis avant cette
+ * évaluation : elles ne doivent donc jamais disqualifier le premier accès.
+ * La fraîcheur porte sur la preuve e-mail, pas sur la création du compte :
+ * une personne peut légitimement confirmer plus tard son inscription sans
+ * recevoir un second e-mail.
  */
 export function isRecentInitialAccountBootstrap(input: InitialAccountBootstrapInput): boolean {
-  if (input.hasPriorLoginSession || input.hasDeviceHistory || input.hasAccountIdentity) return false;
+  if (input.hasPriorLoginSession) return false;
 
   const nowMs = input.nowMs ?? Date.now();
   const maxAgeMs = input.maxAgeMs ?? 30 * 60_000;

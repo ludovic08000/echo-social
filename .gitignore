@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+build/mobile/
+build/ios/
 *.local
 
 # Rust build outputs (native bridge and vendored reference implementation)
