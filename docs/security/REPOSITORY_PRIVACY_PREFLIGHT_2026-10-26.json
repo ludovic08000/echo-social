@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-26",
+  "repository": "ludovic08000/echo-social",
+  "authorization": "Prepare only. User authorized the preflight, not the visibility change.",
+  "status": "prepared_with_unresolved_prerequisites",
+  "visibilityChanged": false,
+  "publicMetadata": {
+    "checkedAt": "2026-10-26T17:21:14.844Z",
+    "source": "https://api.github.com/repos/ludovic08000/echo-social",
+    "httpStatus": 200,
+    "visibility": "public",
+    "defaultBranch": "main",
+    "ownerType": "User",
+    "hasPages": false,
+    "forks": 0,
+    "stars": 0,
+    "watchers": 0,
+    "githubLicenseDetection": "NOASSERTION",
+    "licenseDetectionCaveat": "GitHub classification is not a license waiver. Local LICENSE and package.json declare AGPL-3.0-only."
+  },
+  "lovableReadOnlyInspection": {
+    "projectId": "14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907",
+    "projectName": "Echo Social",
+    "repository": "ludovic08000/echo-social",
+    "branch": "main",
+    "connectionStatus": "Connected",
+    "syncStatus": "In sync with GitHub",
+    "hideLovableBadge": true,
+    "publicRemixing": false,
+    "publicTrustCenter": false,
+    "settingsChanged": false,
+    "caveat": "UI status does not prove the GitHub App's private-repository scope or identify the synced SHA. Existing unrelated pending changes were not submitted or published."
+  },
+  "licenseFindings": {
+    "projectLicense": "AGPL-3.0-only",
+    "files": ["LICENSE", "package.json", "THIRD_PARTY_NOTICES.md", "third_party/libsignal/LICENSE"],
+    "thirdPartyNotices": "Includes official libsignal and adapted Signal Desktop code under AGPL-3.0-only.",
+    "existingSourceOffer": "src/components/messages/EncryptionBadge.tsx links to https://github.com/ludovic08000/echo-social as the Aegis source.",
+    "blockingPrerequisite": "Before restricting this URL, establish and test a compliant Corresponding Source offer for the exact deployed version, retaining licenses, notices, modifications and required build sources. A private development repository does not remove source obligations.",
+    "possiblePlan": "Keep internal operations/history in a private development repository, and separately provide the required source for deployed releases. Determine the covered scope and distribution process before changing visibility; do not assume only the unmodified libsignal sources suffice.",
+    "legalReview": "This is an engineering preflight, not legal advice or a license-compliance certification."
+  },
+  "unverifiedPrerequisites": [
+    "GitHub admin access: browser shows Sign in; local gh CLI is unauthenticated; connected GitHub read tool unavailable.",
+    "Existing collaborators and their roles, GitHub App repository selection for Lovable and Vercel, deploy keys and other integrations.",
+    "GitHub plan and private-repository ruleset/branch-protection support, Actions quota, code-scanning and secret-protection availability.",
+    "A tested replacement source-code offer before the currently public AGPL source link becomes inaccessible.",
+    "Explicit authorization for the actual visibility change after the preflight is resolved."
+  ],
+  "controlledProcedure": [
+    "Authenticate normally to GitHub as the repository administrator; never share a password or token in chat.",
+    "Record existing collaborators, permissions, rulesets and integrations without exporting credentials. Check existing Lovable and Vercel GitHub App access to this exact repository.",
+    "Resolve and verify the license/source-offer prerequisite; do not remove third-party notices or crypto features.",
+    "Confirm plan impact and no Pages dependency again immediately before changing visibility.",
+    "With explicit approval, change visibility on the existing repository only; do not delete, recreate, transfer, disconnect or rename the repository.",
+    "Verify anonymous code access is denied, authorized collaborators still work, Lovable stays Connected/In sync on main, and a controlled preview can build. Keep production publication separate.",
+    "If integration access breaks, stop publication and repair the existing integration. Do not automatically reopen the repository publicly or grant broader access; either requires a separate authorization."
+  ],
+  "limits": [
+    "Zero visible forks does not exclude prior clones, archives or other copies of public code.",
+    "Changing visibility does not erase copies, revoke a previously granted license or rotate any exposed credential.",
+    "Browser bundles, network endpoints and mandatory provider/license notices remain observable.",
+    "No secret, account, session, encryption key, collaborator or production service was modified in this preflight."
+  ],
+  "references": [
+    "https://docs.lovable.dev/integrations/github",
+    "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility",
+    "https://raw.githubusercontent.com/signalapp/libsignal/main/LICENSE"
+  ]
+}

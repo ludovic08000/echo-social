@@ -1,0 +1,92 @@
+{
+  "scope": "ForSure local ISO 27001 readiness remediation, not certification",
+  "date": "2026-10-26",
+  "head": "43c39f8c6f64992dc3427f0ee90178dc207d6b56",
+  "dirtyWorktree": true,
+  "preservesEarlierUnpublishedChanges": true,
+  "merged": false,
+  "pushed": false,
+  "published": false,
+  "cloudMigrationsApplied": false,
+  "keysChanged": false,
+  "messagingWireProtocolChanged": false,
+  "environment": { "node": "24.15.0", "npm": "11.12.1", "platform": "Windows" },
+  "tests": {
+    "fullRegression": {
+      "command": "npx vitest run --maxWorkers=1 --silent --reporter=json --outputFile=.tmp/iso-remediation-final-verified-20261026.json",
+      "environmentNote": "TEMP, TMP and TMPDIR scoped to the workspace test directory, not changed globally",
+      "testFiles": 296,
+      "total": 2067,
+      "passed": 2066,
+      "failed": 0,
+      "skipped": 1,
+      "success": true,
+      "startedAtUnixMs": 1793031236008,
+      "completedAtUnixMs": 1793031506255.8079,
+      "rawReport": ".tmp/iso-remediation-final-verified-20261026.json"
+    },
+    "aegisServer": { "command": "npm test", "cwd": "infra/aegis-server", "passed": 37, "failed": 0, "usesSyntheticUpstreams": true },
+    "libsignalWasm": { "command": "npm run test:libsignal-wasm", "directionsPassed": 6, "failed": 0, "realWasm": true, "provesProductionDelivery": false },
+    "typecheck": { "command": "npm run typecheck", "exitCode": 0 },
+    "build": { "command": "npm run build", "exitCode": 0, "includesDeviceApprovalTests": true, "includesLibsignalWasm": true, "includesTypecheck": true, "includesBrowserBoundary": true },
+    "scopedEslint": { "exitCode": 0, "globalLintClaimed": false },
+    "gitDiffCheck": { "exitCode": 0 },
+    "staticJsonLdBlocks": { "valid": 5 },
+    "workflowYamlAndSecurityInvariants": { "valid": true, "immutableActionCommitsVerified": true, "writeToken": false, "ciRunActuallyDispatched": false }
+  },
+  "dependencyAudit": {
+    "command": "npm audit --include=dev --audit-level=high --json",
+    "exitCode": 0,
+    "critical": 0,
+    "high": 0,
+    "moderate": 11,
+    "low": 0,
+    "total": 11,
+    "remainingPackages": ["@capacitor/cli", "@esbuild-kit/core-utils", "@esbuild-kit/esm-loader", "@tailwindcss/typography", "drizzle-kit", "esbuild", "postcss-selector-parser", "react-router", "react-router-dom", "uuid", "xcode"],
+    "productionTreeSnapshot": { "command": "npm audit --omit=dev --json", "critical": 0, "high": 0, "moderate": 5, "low": 1, "total": 6 },
+    "countsAreRegistrySnapshotsNotConfirmedExploits": true,
+    "moderateRisksAccepted": false,
+    "sbomGeneration": { "format": "CycloneDX", "specVersion": "1.5", "components": 1028, "commandExitCode": 0 },
+    "changedPackageVersions": 46,
+    "addedPackagePaths": 3,
+    "removedPackagePaths": 12
+  },
+  "localBuild": {
+    "version": "1793031149102",
+    "builtAt": "2026-10-26T16:12:29.102Z",
+    "sha256": {
+      "package.json": "21482e0d8302c0093f6c944777d2d76a2d1a6ffed87d734cca518a5164ee33ac",
+      "package-lock.json": "a9a37632639213c6b547e88ec03d56da7eca3b7b901c38ed94d3b373b140df74",
+      "dist/index.html": "b4820041045cf7a4b42a5823c103c1fa5eff3b700bf2216e2a4fa9bff54f8b82",
+      "dist/version.json": "741133f854157dcf70e53d6152782b12589e8dbfa9296c3f23fb13895251290e",
+      "supabase/functions/_shared/generated/mcp-handler.mjs": "d0d55103246e5776562e4370a57a13b7d3778a5a15adfaa3d8a130364e3fc8e0"
+    },
+    "warnings": ["large chunks and mixed static/dynamic imports", "Tailwind ambiguous class", "PostCSS from option warning", "vendor pure annotation warnings"]
+  },
+  "productionReadOnlyProbe": {
+    "checkedAt": "2026-10-26T16:13:34.268Z",
+    "authHealth": 200,
+    "authSettings": 200,
+    "frontend": 200,
+    "servedVersion": "1792045424013",
+    "matchesLocalBuild": false,
+    "releaseVerified": false,
+    "failures": ["CSP_HTTP_FRAME_ANCESTORS_MISSING_OR_PERMISSIVE", "X_FRAME_OPTIONS_MISSING_OR_PERMISSIVE", "SERVED_BUILD_MISMATCH"]
+  },
+  "intermediateFailures": [
+    { "type": "test infrastructure", "description": "Vitest 4 EPERM rename in sandbox default temp directory; zero tests executed in that attempt", "resolution": "workspace-scoped temporary directory; final complete run passed" },
+    { "type": "migration compatibility", "description": "Zod errors alias removed and Node/ES lib types no longer implicitly supplied by Vitest", "resolution": "issues API and explicit type libraries, with targeted regression test; typecheck and final build passed" },
+    { "type": "test timeout", "description": "Python DB-IP builder exceeded its 15 second child timeout during an earlier concurrent run", "resolution": "passed isolated, then passed in the complete single-worker regression without increasing timeouts or skipping the test" }
+  ],
+  "openGates": [
+    "controlled staging and production delivery of earlier authorization/payment corrections",
+    "HTTP anti-framing on actual Lovable frontend hosting, with authorized preview compatibility",
+    "moderate dependency findings and runtime reachability assessment",
+    "admin MFA enrollment and recovery verified before enforcement",
+    "isolated full restoration exercise, media/configuration coverage and agreed RTO/RPO",
+    "operational monitoring, credit alerts and response ownership",
+    "management-approved SMSI, full SoA, supplier contracts, privacy assessments, internal audit and management review",
+    "R2 remediation remains deferred, not risk-accepted"
+  ],
+  "isoCertificationReady": false
+}

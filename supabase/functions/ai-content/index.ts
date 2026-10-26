@@ -1,23 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 // Rate limiting per user
-const rateLimiter = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 20; // 20 requests per minute
-const RATE_WINDOW_MS = 60 * 1000;
-
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = rateLimiter.get(userId);
-  if (!entry || now > entry.resetAt) {
-    rateLimiter.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_LIMIT) return false;
-  entry.count++;
-  return true;
-}
 
 const MAX_TEXT_LENGTH = 5000;
 const ALLOWED_ACTIONS = ["summarize", "translate", "improve", "correct"];
@@ -49,11 +35,8 @@ serve(async (req) => {
     }
 
     // Rate limit
-    if (!checkRateLimit(user.id)) {
-      return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez dans un moment" }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const quotaDenial = await checkRateLimitDB(`ai-content:${user.id}`, 20, 60, corsHeaders);
+    if (quotaDenial) return quotaDenial;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {

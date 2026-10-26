@@ -1,8 +1,8 @@
 # Forsure
 
-> Le premier réseau social intelligent et sécurisé : vous contrôlez l'algorithme du fil d'actualité, vos messages sont chiffrés de bout en bout avec Libsignal (PQXDH + Double Ratchet), zéro publicité, zéro tracking.
+> ForSure : un réseau social avec un fil réglable, des outils de bien-être et une messagerie privée chiffrée.
 
-Forsure est un réseau social français destiné au grand public. Il propose un fil d'actualité dont l'algorithme est paramétrable par l'utilisateur, une messagerie chiffrée niveau Signal, des lives vidéo en 1080×1920, un marketplace européen, des appels audio/vidéo chiffrés, des chaînes TV thématiques, des jeux multijoueur et un assistant IA (Zeus / Gemini 2.5). Le modèle économique repose sur un abonnement Créateur (5 €/mois), une commission marketplace (5 %) et les pourboires (15 %).
+ForSure permet de partager des publications, de discuter, de suivre des actualités et de choisir ses préférences de feed. Le service propose également des lives, un marketplace, des appels et un assistant IA. Les publicités sont identifiées et leur personnalisation est facultative, distincte des choix du feed. Les conditions, tarifs et informations sur les prestataires sont décrits dans les pages du service et les documents légaux.
 
 ## Pages
 
@@ -10,9 +10,9 @@ Forsure est un réseau social français destiné au grand public. Il propose un 
 - [Landing](/landing): page de présentation produit et inscription.
 - [À propos](/a-propos): mission, équipe et philosophie de Forsure.
 - [Réseau social sécurisé](/reseau-social-securise): détails sur la sécurité et la vie privée.
-- [Messagerie chiffrée](/messagerie-chiffree): moteur Libsignal (PQXDH + Double Ratchet) et chiffrement de bout en bout.
+- [Messagerie chiffrée](/messagerie-chiffree): présentation de la messagerie privée.
 - [IA et modération](/ia-moderation): rôle de l'IA Zeus et règles de modération automatisée.
-- [Protection des données](/protection-donnees): engagements RGPD et politique zéro tracking.
+- [Protection des données](/protection-donnees): informations sur les traitements de données et les choix de confidentialité.
 - [Feed intelligent](/feed-intelligent): comment l'utilisateur contrôle son algorithme.
 - [Inscription](/signup): création d'un compte Forsure.
 - [Connexion](/login): accès à un compte existant.

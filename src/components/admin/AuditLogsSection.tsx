@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Search, Download, ScrollText, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { csvCell } from '@/lib/csvCell';
 
 const EVENT_TYPES = [
   { value: 'all', label: 'Tous les événements' },
@@ -94,7 +95,7 @@ export function AuditLogsSection() {
         l.target_user_id ? (data.profiles[l.target_user_id] || l.target_user_id) : '',
         l.status || '',
         l.reason_code || '',
-      ].map(v => `"${v}"`).join(','))
+      ].map(csvCell).join(','))
     ].join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv' });

@@ -6,7 +6,7 @@
 // All writes go to the DB first; the cache is updated on success.
 // ────────────────────────────────────────────────────────
 
-import { supabase } from '@/integrations/supabase/client';
+import { readFeedPreferences, writeFeedPreferences } from '@/lib/feedApi';
 import type { ContentPrefs, FeedWeights } from '@/lib/feedAlgorithm';
 
 const PREFS_KEY = 'content-prefs';
@@ -89,13 +89,7 @@ function writeCache(prefs: ContentPrefs, weights: FeedWeights, userId?: string) 
  */
 export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
   try {
-    const { data, error } = await supabase
-      .from('user_feed_preferences')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error) return;
+    const data = await readFeedPreferences(userId);
 
     if (data) {
       const { prefs, weights } = rowToPrefs(data as unknown as Row);
@@ -119,8 +113,7 @@ export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
       // Fall back to defaults when the legacy cache cannot be read.
     }
 
-    await supabase.from('user_feed_preferences').upsert({
-      user_id: userId,
+    const saved = await writeFeedPreferences(userId, {
       feed_algorithm: localPrefs.feedAlgorithm,
       ai_summaries_enabled: localPrefs.aiSummariesEnabled,
       auto_translate_enabled: localPrefs.autoTranslateEnabled,
@@ -134,9 +127,10 @@ export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
       weight_discovery: localWeights.discovery,
       weight_news: localWeights.news,
       weight_marketplace: localWeights.marketplace,
-    });
+    }, true);
 
-    writeCache(localPrefs, localWeights, userId);
+    const { prefs, weights } = rowToPrefs(saved);
+    writeCache(prefs, weights, userId);
   } catch {
     // Network/offline: keep current cache
   }
@@ -151,25 +145,16 @@ export async function saveFeedPrefs(
   userId: string,
   patch: Partial<ContentPrefs> & Partial<{ weights: FeedWeights }>,
 ): Promise<void> {
-  // Read current (cache) to merge
-  let currentPrefs = DEFAULT_PREFS;
-  let currentWeights = DEFAULT_WEIGHTS;
-  try {
-    const sp = localStorage.getItem(PREFS_KEY);
-    if (sp) currentPrefs = { ...DEFAULT_PREFS, ...JSON.parse(sp) };
-    const sw = localStorage.getItem(WEIGHTS_KEY);
-    if (sw) currentWeights = { ...DEFAULT_WEIGHTS, ...JSON.parse(sw) };
-  } catch {
-    // The server row remains authoritative when local cache is unavailable.
-  }
+  // Merge against this account's server row. A failed read must not overwrite
+  // saved choices with defaults or another account's local cache.
+  const serverRow = await readFeedPreferences(userId);
+  const { prefs: currentPrefs, weights: currentWeights } = serverRow
+    ? rowToPrefs(serverRow) : { prefs: DEFAULT_PREFS, weights: DEFAULT_WEIGHTS };
 
   const nextPrefs: ContentPrefs = { ...currentPrefs, ...patch };
   const nextWeights: FeedWeights = patch.weights ? { ...currentWeights, ...patch.weights } : currentWeights;
 
-  const { data, error } = await supabase
-    .from('user_feed_preferences')
-    .upsert({
-      user_id: userId,
+  const data = await writeFeedPreferences(userId, {
       feed_algorithm: nextPrefs.feedAlgorithm,
       ai_summaries_enabled: nextPrefs.aiSummariesEnabled,
       auto_translate_enabled: nextPrefs.autoTranslateEnabled,
@@ -183,11 +168,7 @@ export async function saveFeedPrefs(
       weight_discovery: nextWeights.discovery,
       weight_news: nextWeights.news,
       weight_marketplace: nextWeights.marketplace,
-    })
-    .select('*')
-    .maybeSingle();
-
-  if (error) throw error;
+    });
 
   // Use the server-validated row (it may have clamped values)
   if (data) {

@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { safeServerErrorMeta, safeServerLog } from "../_shared/aegis-privacy.ts";
+import { decideMessageRequest } from "../_shared/message-request.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
 
@@ -53,33 +54,7 @@ Deno.serve(async (req) => {
       return json(corsHeaders, 400, { error: "INVALID_CONVERSATION" });
     }
 
-    const admin = createClient(supabaseUrl, serviceKey);
-    const { data: participant, error: participantError } = await admin
-      .from("conversation_participants")
-      .select("id")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (participantError) {
-      safeServerLog("message-request", "PARTICIPANT_LOOKUP_FAILED", safeServerErrorMeta(participantError));
-      return json(corsHeaders, 500, { error: "INTERNAL" });
-    }
-    if (!participant) return json(corsHeaders, 403, { error: "NOT_PARTICIPANT" });
-
-    const nextStatus = action === "accept_request" ? "delivered" : "blocked";
-    const { error: updateError } = await admin
-      .from("messages")
-      .update({ status: nextStatus })
-      .eq("conversation_id", conversationId)
-      .eq("status", "pending");
-    if (updateError) {
-      safeServerLog("message-request", "STATUS_UPDATE_FAILED", safeServerErrorMeta(updateError));
-      return json(corsHeaders, 500, { error: "INTERNAL" });
-    }
-
-    return json(corsHeaders, 200, action === "accept_request"
-      ? { accepted: true }
-      : { rejected: true });
+    return decideMessageRequest(req,request,corsHeaders);
   } catch (error) {
     safeServerLog("message-request", "UNHANDLED", safeServerErrorMeta(error));
     return json(corsHeaders, 500, { error: "INTERNAL" });

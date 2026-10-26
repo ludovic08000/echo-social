@@ -6,9 +6,11 @@ import type { ToolContext } from "@lovable.dev/mcp-js";
  * RLS therefore runs as that user — never use a service-role key here.
  */
 export function supabaseForUser(ctx: ToolContext) {
+  const publicKey=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY;
+  if(!process.env.SUPABASE_URL||!publicKey)throw new Error('MCP_PUBLIC_CLIENT_NOT_CONFIGURED');
   return createClient(
     process.env.SUPABASE_URL!,
-    process.env.SUPABASE_PUBLISHABLE_KEY!,
+    publicKey,
     {
       global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
       auth: { persistSession: false, autoRefreshToken: false },

@@ -1,3 +1,9 @@
+ARCHIVE NON EXÉCUTABLE — retirée du répertoire public local le 26 octobre 2026.
+La suppression sur le site servi nécessite encore une publication vérifiée.
+Ancien outil de maintenance non référencé par l'application. Ne pas republier :
+il modifiait les sessions et identifiants locaux au chargement de la page.
+Le déplacement de ce fichier n'efface aucune donnée de navigateur.
+
 <!doctype html>
 <html lang="fr">
   <head>

@@ -5,11 +5,9 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-let rateLimitRpcUnavailable = false;
-
 /**
  * Check and apply rate limit using persistent DB storage.
- * @returns null if allowed, or a Response(429) if rate-limited.
+ * @returns null only on explicit authorization; 429 on quota exhaustion, 503 on an unavailable authority.
  */
 export async function checkRateLimit(
   key: string,
@@ -17,10 +15,6 @@ export async function checkRateLimit(
   windowSeconds: number,
   headers: Record<string, string>,
 ): Promise<Response | null> {
-  if (rateLimitRpcUnavailable) {
-    return null;
-  }
-
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -34,18 +28,11 @@ export async function checkRateLimit(
     });
 
     if (error) {
-      const missingRpc = error.message.includes("Could not find the function public.check_rate_limit");
-      if (missingRpc) {
-        rateLimitRpcUnavailable = true;
-        console.warn("[rate-limit] check_rate_limit RPC unavailable — skipping DB-backed rate limiting");
-        return null;
-      }
-
-      console.error("[rate-limit] DB check failed, allowing request:", error.message);
-      return null; // Fail open on DB errors to avoid blocking legitimate users
+      console.error("[rate-limit] DB authority unavailable:", error.code ?? "RPC_ERROR");
+      return unavailable(headers);
     }
 
-    if (!allowed) {
+    if (allowed === false) {
       return new Response(
         JSON.stringify({ error: "Too many requests", retry_after: windowSeconds }),
         {
@@ -59,11 +46,18 @@ export async function checkRateLimit(
       );
     }
 
-    return null;
-  } catch (err) {
-    console.error("[rate-limit] Unexpected error, allowing request:", err);
-    return null; // Fail open
+    // Une panne, une réponse vide ou un schéma incompatible n'est jamais une autorisation.
+    return allowed === true ? null : unavailable(headers);
+  } catch {
+    console.error("[rate-limit] DB authority request failed");
+    return unavailable(headers);
   }
+}
+
+function unavailable(headers: Record<string, string>): Response {
+  return new Response(JSON.stringify({
+    error: "Vérification du quota temporairement indisponible", code: "RATE_LIMIT_UNAVAILABLE", retry_after: 5,
+  }), { status: 503, headers: { ...headers, "Content-Type": "application/json", "Retry-After": "5", "Cache-Control": "no-store" } });
 }
 
 /**

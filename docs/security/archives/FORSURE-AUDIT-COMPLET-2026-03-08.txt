@@ -1,3 +1,7 @@
+ARCHIVE HISTORIQUE — retirée du répertoire public le 26 octobre 2026.
+Ce document ancien ne prouve pas l'état actuel de la sécurité. Ne pas republier
+dans public/ ou dist/. Son historique reste présent dans le dépôt Git.
+
 ================================================================================
                     FORSURE — DOCUMENT TECHNIQUE COMPLET
                  Fonctionnalités, Sécurité & Architecture

@@ -48,7 +48,8 @@ describe('feed visibility and stable cursor boundary', () => {
 
     expect(pageSignature?.[1]).toContain('p_cursor uuid');
     expect(pageSignature?.[1]).not.toContain('p_user_id');
-    expect(usePostsSource).toContain("supabase.rpc('get_ranked_feed_page'");
+    expect(usePostsSource).toContain('fetchFeedPage(cursor, PAGE_SIZE, user?.id ?? null)');
+    expect(usePostsSource).not.toContain('supabase.rpc(');
     expect(usePostsSource).not.toContain('get_feed_posts_v8');
     expect(usePostsSource).not.toContain("supabase.rpc('get_feed_posts'");
     expect(usePostsSource).not.toContain(".from('posts')");

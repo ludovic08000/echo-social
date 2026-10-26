@@ -17,6 +17,12 @@ type LoginError = Error & {
   status?: number;
 };
 
+// Un échec de transport ne prouve ni un blocage du navigateur ni un déverrouillage serveur.
+const NETWORK_UNAVAILABLE_NOTICE = {
+  title: 'Service de connexion injoignable',
+  description: 'Impossible de joindre le service de connexion. Le réseau ou le serveur peut être indisponible. Réessayez sans effacer les données de votre navigateur.',
+};
+
 function isInvalidCredentialError(error: Error): boolean {
   const authError = error as LoginError;
   const code = authError.code?.toLowerCase() ?? '';
@@ -30,7 +36,8 @@ function isNetworkError(error: Error): boolean {
   const authError = error as LoginError;
   const code = authError.code?.toLowerCase() ?? '';
   const message = authError.message.toLowerCase();
-  return error.name === 'TypeError'
+  return error.name === 'AuthRetryableFetchError'
+    || error.name === 'NetworkError'
     || error.name === 'TimeoutError'
     || code.includes('network')
     || code.includes('fetch')
@@ -102,15 +109,15 @@ export default function Login() {
           return;
         }
 
-        // Transport, extension, confirmation d'email ou autre erreur non liée
+        // Transport, confirmation d'email ou autre erreur non liée
         // au mot de passe : ne jamais l'enregistrer comme tentative abusive.
         resetLoginAttempts();
         setLockoutSeconds(0);
         const networkFailure = isNetworkError(error);
         toast({
-          title: networkFailure ? 'Connexion réseau bloquée' : t('login.error'),
+          title: networkFailure ? NETWORK_UNAVAILABLE_NOTICE.title : t('login.error'),
           description: networkFailure
-            ? 'Le navigateur ou une extension bloque la connexion au serveur. Le verrouillage du compte a été annulé.'
+            ? NETWORK_UNAVAILABLE_NOTICE.description
             : error.message || t('login.errorDesc'),
           variant: 'destructive',
         });
@@ -125,9 +132,12 @@ export default function Login() {
       console.warn('[AUTH] sign-in request failed unexpectedly', normalizedError);
       resetLoginAttempts();
       setLockoutSeconds(0);
+      const networkFailure = isNetworkError(normalizedError);
       toast({
-        title: 'Connexion réseau bloquée',
-        description: 'La connexion au serveur a échoué. Aucun verrouillage de compte n’a été appliqué.',
+        title: networkFailure ? NETWORK_UNAVAILABLE_NOTICE.title : t('login.error'),
+        description: networkFailure
+          ? NETWORK_UNAVAILABLE_NOTICE.description
+          : 'La connexion a échoué. Réessayez dans un instant.',
         variant: 'destructive',
       });
     } finally {

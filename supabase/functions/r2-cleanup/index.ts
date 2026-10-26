@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 /**
- * R2 Cleanup – finds orphaned media URLs in the database and deletes them from R2.
+ * R2 inventory only. Legacy public URLs do not prove ownership or safe deletion.
  * 
  * Scans all tables/columns that store R2 URLs, checks if the referenced file
  * still has a valid DB row, and deletes orphaned files from R2.
@@ -11,7 +11,9 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 // All table+column combos that may hold R2 URLs
 const MEDIA_COLUMNS: { table: string; column: string }[] = [
   { table: "posts", column: "image_url" },
+  { table: "posts", column: "media_thumbnail_url" },
   { table: "profiles", column: "avatar_url" },
+  { table: "profiles", column: "cover_url" },
   { table: "albums", column: "cover_url" },
   { table: "album_media", column: "media_url" },
   { table: "ad_campaigns", column: "image_url" },
@@ -23,8 +25,12 @@ const MEDIA_COLUMNS: { table: string; column: string }[] = [
   { table: "live_streams", column: "thumbnail_url" },
   { table: "live_streams", column: "recording_url" },
   { table: "messages", column: "image_url" },
-  { table: "products", column: "image_url" },
-  { table: "stories", column: "media_url" },
+  { table: "products", column: "thumbnail_url" },
+  { table: "products", column: "images" },
+  { table: "stories", column: "image_url" },
+  { table: "ads", column: "image_url" },
+  { table: "ads", column: "video_url" },
+  { table: "messages", column: "document_url" },
 ];
 
 Deno.serve(async (req) => {
@@ -32,6 +38,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+  if(req.method!=="POST")return new Response(null,{status:405,headers:{...corsHeaders,Allow:"POST"}});
 
   try {
     // Auth: require admin or service role
@@ -72,22 +79,17 @@ Deno.serve(async (req) => {
     // Step 1: Collect all R2 URLs currently referenced in the DB
     const referencedUrls = new Set<string>();
 
+    const addReference=(value:unknown)=>{
+      if(typeof value==="string" && value.startsWith(`${r2PublicUrl}/`))referencedUrls.add(value);
+      if(Array.isArray(value))for(const entry of value)addReference(entry);
+    };
     for (const { table, column } of MEDIA_COLUMNS) {
-      const { data, error } = await supabase
-        .from(table)
-        .select(column)
-        .not(column, "is", null);
-
-      if (error) {
-        console.error(`Error scanning ${table}.${column}:`, error.message);
-        continue;
-      }
-
-      for (const row of data || []) {
-        const val = (row as Record<string, string>)[column];
-        if (val && typeof val === "string" && val.includes(r2PublicUrl)) {
-          referencedUrls.add(val);
-        }
+      for(let start=0;;start+=1000){
+        const {data,error}=await supabase.from(table).select(column).not(column,"is",null)
+          .order("id").range(start,start+999);
+        if(error)throw new Error(`MEDIA_INVENTORY_INCOMPLETE:${table}.${column}`);
+        for(const row of data??[])addReference((row as Record<string,unknown>)[column]);
+        if(!data || data.length<1000)break;
       }
     }
 
@@ -150,35 +152,13 @@ Deno.serve(async (req) => {
     const orphaned: string[] = [];
     for (const key of keys) {
       const fullUrl = `${r2PublicUrl}/${key}`;
-      if (!referencedUrls.has(fullUrl)) {
+      if (!referencedUrls.has(fullUrl) && !/(^|\/)(e2ee-backups|aegis-backups|backups)(\/|$)|\.enc(?:\.|$)/i.test(key)) {
         orphaned.push(key);
       }
     }
 
-    // Step 4: Delete orphaned files
-    let deleted = 0;
-    for (const key of orphaned) {
-      try {
-        const delUrl = `${endpoint}/${bucketName}/${key}`;
-        const delNow = new Date();
-        const delDateStamp = delNow.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-        const delShortDate = delDateStamp.substring(0, 8);
-        const delScope = `${delShortDate}/auto/s3/aws4_request`;
-
-        const delHeaders: Record<string, string> = {
-          host,
-          "x-amz-content-sha256": emptyHash,
-          "x-amz-date": delDateStamp,
-        };
-
-        const delAuth = await sign("DELETE", `/${bucketName}/${key}`, delHeaders, emptyHash, delDateStamp, delShortDate, delScope, accessKeyId, secretAccessKey);
-
-        await fetch(delUrl, { method: "DELETE", headers: { ...delHeaders, Authorization: delAuth } });
-        deleted++;
-      } catch (e) {
-        console.error(`Failed to delete ${key}:`, e);
-      }
-    }
+    // Absence de reference ne signifie pas autorisation de suppression.
+    const deleted = 0;
 
     return new Response(
       JSON.stringify({
@@ -186,6 +166,9 @@ Deno.serve(async (req) => {
         referenced: referencedUrls.size,
         orphaned: orphaned.length,
         deleted,
+        dry_run: true,
+        deletion_disabled: true,
+        listing_complete: !xmlText.includes("<IsTruncated>true</IsTruncated>"),
         orphaned_keys: orphaned.slice(0, 50), // show first 50
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -14,7 +14,7 @@
     "test:device-approval": "vitest run src/lib/crypto/__tests__/deviceEnrollmentGate.test.ts src/lib/messaging/__tests__/stableDeviceIdentityArchitecture.test.ts src/lib/messaging/__tests__/accountSyncBarrier.test.ts src/lib/messaging/__tests__/deviceApprovalAccountSyncArchitecture.test.ts",
     "test:pin-safety": "vitest run --maxWorkers=1 src/hooks/__tests__/useChatPinLocal.test.ts src/components/messaging/__tests__/PinUnlockGate.test.tsx src/lib/crypto/__tests__/aegisPinContinuityVault.test.ts src/lib/crypto/__tests__/aegisPinRecoveryContinuity.test.ts src/lib/crypto/__tests__/chatPinRecoverySafetyContract.test.ts src/lib/crypto/__tests__/chatPinResetClient.test.ts",
     "test:libsignal-wasm": "node scripts/verify-libsignal-wasm.mjs",
-    "build": "npm run test:device-approval && npm run test:libsignal-wasm && npm run typecheck && node scripts/generate-version.mjs && vite build && npm run verify:browser-boundary",
+    "build": "npm run test:device-approval && npm run test:libsignal-wasm && npm run typecheck && node scripts/generate-version.mjs && vite build && npm run verify:browser-boundary && npm run verify:public-build",
     "build:dev": "npm run test:device-approval && npm run typecheck && node scripts/generate-version.mjs && vite build --mode development && npm run verify:browser-boundary",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -23,15 +23,19 @@
     "test:discovery-db": "node scripts/test-discovery-database.mjs",
     "test:positive-media-db": "node scripts/test-positive-editorial-media-database.mjs",
     "test:watch": "vitest",
-    "verify:browser-boundary": "node scripts/assert-aegis-browser-boundary.mjs"
+    "verify:browser-boundary": "node scripts/assert-aegis-browser-boundary.mjs",
+    "verify:public-build": "node scripts/verify-public-build.mjs",
+    "verify:served-security": "node scripts/verify-served-security.mjs",
+    "verify:service-readiness": "node scripts/verify-service-readiness.mjs",
+    "security:audit": "npm audit --include=dev --audit-level=high"
   },
   "dependencies": {
     "@capacitor-community/contacts": "^7.1.0",
-    "@capacitor/android": "^8.0.2",
+    "@capacitor/android": "8.5.3",
     "@capacitor/app": "^7.0.0",
-    "@capacitor/cli": "^8.0.2",
-    "@capacitor/core": "^8.0.2",
-    "@capacitor/ios": "^8.0.2",
+    "@capacitor/cli": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3",
     "@capacitor/preferences": "^7.0.0",
     "@capacitor/share": "^8.0.1",
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -81,7 +85,7 @@
     "livekit-client": "^2.17.2",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
-    "pdfjs-dist": "^5.7.284",
+    "pdfjs-dist": "6.4.299",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
@@ -91,14 +95,14 @@
     "react-image-crop": "^11.0.10",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^2.1.9",
-    "react-router-dom": "^6.30.1",
+    "react-router-dom": "6.30.6",
     "recharts": "^2.15.4",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
     "vite-plugin-pwa": "1.2.0",
-    "zod": "^3.25.76"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
@@ -114,6 +118,7 @@
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
+    "esbuild": "0.25.12",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
@@ -126,7 +131,17 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vite": "^5.4.19",
-    "vitest": "^3.2.4"
+    "vite": "6.4.4",
+    "vitest": "4.1.12"
+  },
+  "overrides": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "zod@>=4 <5": "4.6.7",
+    "glob@>=10 <11": "10.5.0",
+    "lodash": "4.18.1",
+    "tar": "7.5.22",
+    "minimatch@>=3 <4": "3.1.5",
+    "minimatch@>=9 <10": "9.0.9",
+    "minimatch@>=10 <11": "10.2.6"
   }
 }

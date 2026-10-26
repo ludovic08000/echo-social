@@ -3,14 +3,18 @@
  * Lazy-imported to keep bundle small for users who never send a PDF.
  */
 export async function generatePdfThumbnail(file: File): Promise<Blob | null> {
+  let dispose: (()=>Promise<void>) | undefined;
   try {
     const pdfjs = await import('pdfjs-dist');
-    // Ship the worker as a module URL. pdfjs-dist v5 exports the worker
+    // Ship the worker from the same patched package as a module URL.
     // path; without setting it, we'd block the main thread on parse.
     pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
 
     const buf = await file.arrayBuffer();
-    const doc = await pdfjs.getDocument({ data: buf }).promise;
+    // Parser corrigé, rendu canvas uniquement ; aucun script de formulaire n'est activé.
+    const task=pdfjs.getDocument({data:buf,enableXfa:false,stopAtErrors:true,maxImageSize:16_777_216,canvasMaxAreaInBytes:16_777_216});
+    dispose=()=>task.destroy();
+    const doc = await task.promise;
     const page = await doc.getPage(1);
     const viewport = page.getViewport({ scale: 1 });
     const targetW = 240;
@@ -29,6 +33,8 @@ export async function generatePdfThumbnail(file: File): Promise<Blob | null> {
     );
   } catch {
     return null;
+  } finally {
+    await dispose?.().catch(()=>undefined);
   }
 }
 

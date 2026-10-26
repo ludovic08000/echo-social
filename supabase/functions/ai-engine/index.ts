@@ -1,7 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { logAIEvent } from "../_shared/aiEngineLog.ts";
+import { requireAdmin } from "../_shared/auth-guard.ts";
 
 const AI_ENGINE_ACTION_MODULE: Record<string, string> = {
   moderate: "ai-moderator",
@@ -19,28 +21,10 @@ const AI_ENGINE_ACTION_MODULE: Record<string, string> = {
   get_feedback_history: "ai-moderator",
 };
 
-const rateLimiter = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 15;
-const RATE_WINDOW_MS = 60 * 1000;
 
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = rateLimiter.get(userId);
-  if (!entry || now > entry.resetAt) {
-    rateLimiter.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_LIMIT) return false;
-  entry.count++;
-  return true;
-}
-
-function hashContent(text: string): string {
-  let h = 0;
-  for (let i = 0; i < text.length; i++) {
-    h = ((h << 5) - h + text.charCodeAt(i)) | 0;
-  }
-  return h.toString(36);
+async function hashContent(text: string): Promise<string> {
+  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(`ai-engine:moderation:policy-20261018:${text}`));
+  return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
 }
 
 function safeJson(value: unknown, maxLen = 8000): string {
@@ -103,9 +87,8 @@ async function handle(req: Request): Promise<Response> {
       return new Response(JSON.stringify({ error: "Non authentifié" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    if (!checkRateLimit(authUser.id)) {
-      return new Response(JSON.stringify({ error: "Trop de requêtes IA, réessayez dans un moment" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
+    const quotaDenial = await checkRateLimitDB(`ai-engine:${authUser.id}`, 15, 60, corsHeaders);
+    if (quotaDenial) return quotaDenial;
 
     const body = await req.json();
     const { action, text, context, feedback } = body;
@@ -119,7 +102,7 @@ async function handle(req: Request): Promise<Response> {
     }
 
     if (action === "moderate" && safeText) {
-      const contentHash = hashContent(safeText.trim().toLowerCase());
+      const contentHash = await hashContent(safeText.trim().toLowerCase());
       const { data: cached } = await supabase
         .from("ai_moderation_cache")
         .select("result")
@@ -252,6 +235,8 @@ Focus on defensive fixes: RLS, auth, CSP, upload validation, rate limit, secrets
         break;
       }
       case "learn_feedback": {
+        const admin=await requireAdmin(req,corsHeaders);
+        if(!admin.ok)return admin.response;
         if (feedback && user_id) {
           const { data: insertedFeedback } = await supabase.from("ai_feedback").insert({ user_id, original_text: feedback.originalText || "", ai_decision: feedback.aiDecision || "", human_decision: feedback.humanDecision || "", reason: feedback.reason || "" }).select("id").single();
           const { data: recentFeedback } = await supabase.from("ai_feedback").select("original_text, ai_decision, human_decision, reason").order("created_at", { ascending: false }).limit(20);
@@ -280,7 +265,7 @@ Focus on defensive fixes: RLS, auth, CSP, upload validation, rate limit, secrets
     const result = await callAI(LOVABLE_API_KEY, systemPrompt, userPrompt, model);
 
     if (action === "moderate" && result && safeText) {
-      const contentHash = hashContent(safeText.trim().toLowerCase());
+      const contentHash = await hashContent(safeText.trim().toLowerCase());
       await supabase.from("ai_moderation_cache").upsert({ content_hash: contentHash, result, expires_at: new Date(Date.now() + 6 * 3600000).toISOString() }, { onConflict: "content_hash" }).select();
     }
 

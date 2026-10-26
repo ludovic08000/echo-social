@@ -166,22 +166,10 @@ ${order.tracking_number ? `<p style="margin-bottom:16px"><strong>N° de suivi :<
   const markAsDelivered = async (order: any) => {
     setMarkingDelivered(order.id);
     try {
-      const { error: orderError } = await supabase
-        .from('orders')
-        .update({ status: 'delivered' as any, delivered_at: new Date().toISOString() })
-        .eq('id', order.id);
+      const { data, error: orderError } = await (supabase as any).rpc('mark_seller_order_delivered', { p_order: order.id });
       if (orderError) throw orderError;
-
-      const productIds = (order.order_items || []).map((item: any) => item.product_id).filter(Boolean);
-      if (productIds.length > 0) {
-        const { error: productError } = await supabase
-          .from('products')
-          .update({ is_active: false })
-          .in('id', productIds);
-        if (productError) console.error('Failed to deactivate products:', productError);
-      }
-
-      toast.success('Commande marquée comme livrée !');
+      if (typeof data?.order_delivered !== 'boolean') throw new Error('Confirmation de livraison indisponible');
+      toast.success(data.order_delivered ? 'Commande marquée comme livrée !' : 'Vos articles sont marqués comme livrés.');
       refetchOrders();
     } catch (e: any) {
       toast.error(e.message || 'Erreur');

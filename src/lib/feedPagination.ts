@@ -94,5 +94,5 @@ export function readRankedFeedPage<T>(
 export function isFeedCursorError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const e = error as { code?: string; message?: string };
-  return e.code === '22023' && /feed cursor/i.test(e.message ?? '');
+  return e.code === 'FEED_CURSOR_EXPIRED' || (e.code === '22023' && /feed cursor/i.test(e.message ?? ''));
 }

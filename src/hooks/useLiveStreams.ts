@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
+import { LIVE_PUBLIC_COLUMNS } from '@/lib/publicSelections';
 
 export interface LiveStream {
   id: string;
@@ -121,7 +122,7 @@ export function useLiveStreams() {
       // 1. Récupérer les lives actifs
       const { data: lives, error } = await supabase
         .from('live_streams')
-        .select('*')
+        .select(LIVE_PUBLIC_COLUMNS)
         .eq('is_active', true)
         .order('viewer_count', { ascending: false });
 
@@ -191,7 +192,7 @@ export function useLiveStream(liveId: string | undefined) {
 
       const { data, error } = await supabase
         .from('live_streams')
-        .select('*')
+        .select(LIVE_PUBLIC_COLUMNS)
         .eq('id', liveId)
         .single();
 
@@ -362,7 +363,7 @@ export function useStartLive() {
           started_at: new Date().toISOString(),
           stream_key: crypto.randomUUID(),
         })
-        .select()
+        .select(LIVE_PUBLIC_COLUMNS)
         .single();
 
       if (error) throw error;

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { aiShareablePosts } from "../_shared/ai-privacy.ts";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, getClientIP } from "../_shared/rate-limit.ts";
 
@@ -133,7 +134,7 @@ async function aiScorePosts(
   aiPersonalizationAllowed: boolean
 ): Promise<Record<string, number>> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  if (!LOVABLE_API_KEY || posts.length === 0) return {};
+  if (!aiPersonalizationAllowed || !LOVABLE_API_KEY || posts.length === 0) return {};
 
   // Prepare compact post summaries for AI — body_preview is sanitized + truncated
   const postSummaries = posts.slice(0, 40).map((p: any) => ({
@@ -241,7 +242,7 @@ async function aiRecommend(
   aiPersonalizationAllowed: boolean
 ): Promise<string[]> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  if (!LOVABLE_API_KEY || candidatePosts.length === 0) return [];
+  if (!aiPersonalizationAllowed || !LOVABLE_API_KEY || candidatePosts.length === 0) return [];
 
   // Filter out already seen
   const unseen = candidatePosts.filter(p => !seenPostIds.has(p.id)).slice(0, 30);
@@ -351,12 +352,13 @@ Deno.serve(async (req) => {
     const action = body.action;
 
     // Privacy-aware: check if user opted out of AI personalization (post body forwarding)
-    const { data: privacyRow } = await supabase
+    const { data: privacyRow, error: privacyError } = await supabase
       .from("privacy_settings")
-      .select("ai_personalization_enabled")
+      .select("ai_personalization_enabled,ai_data_sharing_enabled")
       .eq("user_id", user.id)
       .maybeSingle();
-    const aiPersonalizationAllowed = (privacyRow as any)?.ai_personalization_enabled !== false;
+    const aiPersonalizationAllowed = !privacyError && privacyRow?.ai_data_sharing_enabled === true
+      && privacyRow?.ai_personalization_enabled !== false;
 
     // ══════════════════════════════
     // TRACK — Record behavior signal
@@ -404,7 +406,7 @@ Deno.serve(async (req) => {
       const profile = await buildUserProfile(supabase, user.id);
 
       // Fetch posts data
-      const { data: posts } = await supabase
+      const { data: posts } = await userClient
         .from("posts")
         .select("id, user_id, body, image_url, created_at, likes_count, comments_count")
         .in("id", postIds.slice(0, 50));
@@ -433,7 +435,7 @@ Deno.serve(async (req) => {
       }));
 
       // AI scoring (privacy-aware)
-      const aiScores = await aiScorePosts(profile, enrichedPosts, user.id, aiPersonalizationAllowed);
+      const aiScores = await aiScorePosts(profile, await aiShareablePosts(supabase,enrichedPosts), user.id, aiPersonalizationAllowed);
 
       return new Response(JSON.stringify({ scores: aiScores, profile_summary: {
         interests: profile.topInterests.slice(0, 5),
@@ -474,7 +476,7 @@ Deno.serve(async (req) => {
       });
 
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600_000).toISOString();
-      const { data: candidates } = await supabase
+      const { data: candidates } = await userClient
         .from("posts")
         .select("id, user_id, body, image_url, created_at, likes_count, comments_count")
         .gte("created_at", thirtyDaysAgo)
@@ -486,7 +488,7 @@ Deno.serve(async (req) => {
         (p: any) => !friendIds.has(p.user_id) && p.user_id !== user.id
       );
 
-      const recommendedIds = await aiRecommend(profile, discoveryPosts, seenPostIds, aiPersonalizationAllowed);
+      const recommendedIds = await aiRecommend(profile, await aiShareablePosts(supabase,discoveryPosts), seenPostIds, aiPersonalizationAllowed);
 
       return new Response(JSON.stringify({
         recommended_post_ids: recommendedIds,

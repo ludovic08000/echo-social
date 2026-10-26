@@ -14,6 +14,7 @@ import {
   isFeedCursorError,
 } from '@/lib/feedPagination';
 import { emitFeedPerformanceMetric } from '@/hooks/useFeedPerformance';
+import { fetchFeedPage } from '@/lib/feedApi';
 
 // One-shot sync per user. Pages await the same promise so the first request
 // cannot race against stale local preferences.
@@ -76,7 +77,7 @@ async function runTimedFeedRpc<T extends FeedRpcResponse>(
       ? result.data as { items?: unknown }
       : null;
     emitFeedPerformanceMetric('rpc_latency', feedClockNow() - startedAt, {
-      source: 'get_ranked_feed_page',
+      source: 'feed-api',
       page: cursor === null ? 'initial' : 'next',
       outcome: result.error ? 'error' : 'success',
       row_count: Array.isArray(payload?.items) ? payload.items.length : 0,
@@ -85,7 +86,7 @@ async function runTimedFeedRpc<T extends FeedRpcResponse>(
     return result;
   } catch (error) {
     emitFeedPerformanceMetric('rpc_latency', feedClockNow() - startedAt, {
-      source: 'get_ranked_feed_page',
+      source: 'feed-api',
       page: cursor === null ? 'initial' : 'next',
       outcome: 'exception',
       target_max_ms: 350,
@@ -110,11 +111,8 @@ export function usePosts() {
       // The initial snapshot must see any one-time migration of local preferences.
       // Subsequent pages only read the immutable server snapshot.
       if (cursor === null) await preferencesReady;
-      const result = await runTimedFeedRpc(cursor, () =>
-        supabase.rpc('get_ranked_feed_page', {
-          p_limit: PAGE_SIZE,
-          p_cursor: cursor,
-        }),
+      const result = await runTimedFeedRpc(cursor,
+        async () => ({ data: await fetchFeedPage(cursor, PAGE_SIZE, user?.id ?? null), error: null }),
       );
 
       if (result.error) throw result.error;
@@ -139,7 +137,9 @@ export function usePosts() {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
-    retry: (attempt, error) => !isFeedCursorError(error) && attempt < 2,
+    retry: (attempt, error) => !isFeedCursorError(error)
+      && !['UNAUTHORIZED', 'FORBIDDEN', 'SESSION_CHANGED', 'RATE_LIMITED'].includes((error as { code?: string })?.code ?? '')
+      && attempt < 2,
   });
   const expiresAt = query.data?.pages[0]?.snapshotExpiresAt;
   useEffect(() => {

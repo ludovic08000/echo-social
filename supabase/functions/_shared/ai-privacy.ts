@@ -21,27 +21,53 @@ export const MAX_BODY_PREVIEW = 200;
 
 /**
  * Returns true when the user has opted-in to sharing personal signals with
- * external AI services. Defaults to TRUE on lookup failure so existing flows
- * (moderation, recommendations) keep working — the privacy gate is opt-OUT.
+ * external AI services. An unavailable preference never authorizes sharing.
  */
 export async function aiDataSharingEnabled(userId: string): Promise<boolean> {
-  if (!userId) return true;
+  if (!userId) return false;
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("privacy_settings")
       .select("ai_data_sharing_enabled")
       .eq("user_id", userId)
       .maybeSingle();
-    if (!data) return true;
-    return data.ai_data_sharing_enabled !== false;
+    if (error || !data) return false;
+    return data.ai_data_sharing_enabled === true;
   } catch (err) {
-    console.warn("[ai-privacy] lookup failed, defaulting to enabled:", err);
-    return true;
+    console.warn("[ai-privacy] lookup unavailable; personal sharing disabled");
+    return false;
   }
+}
+
+/** Only already-authorized posts whose authors allow external AI sharing. */
+export async function aiShareablePosts(db: any, posts: any[]): Promise<any[]> {
+  const ids=[...new Set(posts.map(post=>post.user_id).filter(Boolean))];
+  if(!ids.length)return [];
+  const {data,error}=await db.from("privacy_settings").select("user_id,ai_data_sharing_enabled").in("user_id",ids);
+  if(error)return [];
+  const allowed=new Set((data??[]).filter((row:any)=>row.ai_data_sharing_enabled===true).map((row:any)=>row.user_id));
+  return posts.filter(post=>allowed.has(post.user_id));
+}
+
+/** Re-check current public eligibility immediately before an external training batch. */
+export async function publicTrainingPosts(db:any,posts:any[]):Promise<any[]>{
+  if(!posts.length)return [];
+  const {data:current,error}=await db.from("posts").select("id,user_id,subscriber_only,publish_at,expires_at")
+    .in("id",posts.map(post=>post.id));
+  if(error||!current?.length)return [];
+  const ids=[...new Set(current.map((post:any)=>post.user_id))];
+  const prefs=await db.from("privacy_settings").select("user_id,ai_data_sharing_enabled,ai_personalization_enabled,profile_visibility,posts_visibility").in("user_id",ids);
+  if(prefs.error)return [];
+  const allowed=new Set((prefs.data??[]).filter((p:any)=>p.ai_data_sharing_enabled===true&&p.ai_personalization_enabled===true
+    &&p.profile_visibility==="public"&&p.posts_visibility==="public").map((p:any)=>p.user_id));
+  const now=Date.now();
+  const currentIds=new Set(current.filter((post:any)=>allowed.has(post.user_id)&&post.subscriber_only!==true
+    &&(!post.publish_at||Date.parse(post.publish_at)<=now)&&(!post.expires_at||Date.parse(post.expires_at)>now)).map((post:any)=>post.id));
+  return posts.filter(post=>currentIds.has(post.id));
 }
 
 /**

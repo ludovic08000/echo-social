@@ -1,21 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { paymentReturnOrigin } from "../_shared/payment-authority.ts";
 
 // Rate limiting
-const tipTracker = new Map<string, { count: number; resetAt: number }>();
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = tipTracker.get(userId);
-  if (!entry || now > entry.resetAt) {
-    tipTracker.set(userId, { count: 1, resetAt: now + 60000 });
-    return true;
-  }
-  if (entry.count >= 5) return false; // max 5 tips per minute
-  entry.count++;
-  return true;
-}
 
 serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -38,11 +28,8 @@ serve(async (req) => {
     if (authErr || !user?.email) throw new Error("Non connecté");
 
     // Rate limit
-    if (!checkRateLimit(user.id)) {
-      return new Response(JSON.stringify({ error: "Trop de requêtes" }), {
-        status: 429, headers: { ...cors, "Content-Type": "application/json" },
-      });
-    }
+    const quotaDenial = await checkRateLimitDB(`create-tip:${user.id}`, 5, 60, cors);
+    if (quotaDenial) return quotaDenial;
 
     const { amount, creator_id, message, live_stream_id } = await req.json();
 
@@ -86,7 +73,7 @@ serve(async (req) => {
     let customerId: string | undefined;
     if (customers.data.length > 0) customerId = customers.data[0].id;
 
-    const origin = req.headers.get("origin") || "https://calm-connect-05.lovable.app";
+    const origin = paymentReturnOrigin(req);
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,

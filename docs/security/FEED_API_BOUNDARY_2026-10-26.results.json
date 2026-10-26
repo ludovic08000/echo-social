@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-26",
+  "status": "local_verified_not_deployed",
+  "repository": "echo-social",
+  "baseCommit": "43c39f8c6f64992dc3427f0ee90178dc207d6b56",
+  "scope": "Main feed API, preferences, telemetry and public build metadata; pre-existing security changes preserved",
+  "cloudProvider": "Lovable Cloud",
+  "checks": {
+    "fullVitest": {
+      "passed": 2111,
+      "failed": 0,
+      "skipped": 1,
+      "files": 302,
+      "startedAt": "2026-10-26T16:48:51.404Z",
+      "finishedAt": "2026-10-26T16:54:48.801Z",
+      "rawReport": ".tmp/feed-api-final-regression-20261026.json",
+      "skippedTest": "matches the original City Lite MMDB through the production reader in all ten languages"
+    },
+    "newTargetedTests": { "passed": 45, "includedInFullVitest": true },
+    "isolatedFeedPostgres": { "passed": 70, "authAndQuota": "fixtures, not Cloud production" },
+    "deviceApprovalTests": { "passed": 37 },
+    "realLibsignalWasmDirections": { "passed": 6 },
+    "denoCheck": "passed with SDK 2.117.0 and system CA; no TLS bypass",
+    "applicationTypecheck": "passed",
+    "scopedEslint": "passed",
+    "productionBuild": "passed with existing bundling/PostCSS/Tailwind warnings",
+    "aegisPwaMcpBoundary": "passed",
+    "publicBuildBoundary": "passed: no source maps, source map references or editor instrumentation"
+  },
+  "localBuild": {
+    "version": "1793033256055",
+    "builtAt": "2026-10-26T16:47:36.055Z",
+    "indexHtmlSha256": "9a24e67db44aafeab22e012017b92b8a637602bd49208d43e73964d1fac77ca7"
+  },
+  "sha256": {
+    "supabase/functions/feed-api/index.ts": "42b2bd223b4db89eb1e5498e7c900251fe8be27f5af19cda56c50da89c8e0b29",
+    "supabase/functions/_shared/feed-api-contract.ts": "b284d3575057ba4a15933bfc1339bb33ede48c59e6d8d32ef5107c4fa655d34b",
+    "supabase/functions/_shared/feed-api-handler.ts": "11156dc2b55e7573faaf09a9a8d9087523c93348f0b9763b0efa21d1b97a4e08",
+    "src/lib/feedApi.ts": "b54889f9d29d6f6fd169b72204decaf485a1daf0513f81baf6c6411f2b49199c",
+    "src/lib/feedPreferences.ts": "c61523773fe526f14c03a012080384412f179f028f0a35c34b18f6e5ba1131f7",
+    "src/hooks/usePosts.ts": "eea67933bab90bdc76159e48a58a6e9fca6f33fdb05842d30fa289917ae8f30f",
+    "src/hooks/useMLTracker.ts": "d63a86e7dc6e2a9a65144ec2b0d5e7ec2841bdad0c42241dd53e844bb989dd6b",
+    "vite.config.ts": "35b8554307f473bb4ed58bc68dff3db7d4ddce0cc9f6dfd074c292fa3575137a"
+  },
+  "production": {
+    "pushed": false,
+    "merged": false,
+    "apiDeployed": false,
+    "frontendPublished": false,
+    "apiCustomDomainConfigured": false,
+    "productionLatencyVerified": false,
+    "badgeSetting": "Hide Lovable badge observed enabled in project settings; not changed in this task"
+  },
+  "limitations": [
+    "Browser code, network calls and some provider domains remain observable",
+    "Compatibility RPCs and non-feed APIs have not been revoked or comprehensively migrated",
+    "Cloud quota migration and API must be verified before publishing the new frontend",
+    "Secondary guest per-IP quota requires trusted gateway headers; independent global guest ceiling is enforced",
+    "Global anonymous ceiling must be capacity-tested before larger-scale release",
+    "No production load test, signed mobile test or ISO certification claimed"
+  ]
+}

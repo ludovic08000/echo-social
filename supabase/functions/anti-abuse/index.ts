@@ -230,27 +230,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      // If multi-account, flag both
-      if (multiAccountDetected) {
-        for (const linkedId of linkedAccounts) {
-          await supabase
-            .from("trust_scores")
-            .update({
-              is_flagged: true,
-              flag_reason: "Multi-account detected",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("user_id", linkedId);
-        }
-        await supabase
-          .from("trust_scores")
-          .update({
-            is_flagged: true,
-            flag_reason: "Multi-account detected",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", user.id);
-      }
+      // Les empreintes sont des signaux, pas une autorite pour sanctionner un autre compte.
 
       return new Response(
         JSON.stringify({
@@ -319,23 +299,7 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
 
-      // Auto-flag if many reports
-      const { count } = await supabase
-        .from("abuse_reports")
-        .select("id", { count: "exact", head: true })
-        .eq("reported_user_id", reportedUserId)
-        .eq("status", "pending");
-
-      if (count && count >= 5) {
-        await supabase
-          .from("trust_scores")
-          .update({
-            is_flagged: true,
-            flag_reason: `Multiple abuse reports (${count})`,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", reportedUserId);
-      }
+      // Les signalements restent en attente de revue ; leur nombre ne prouve pas un abus.
 
       return new Response(JSON.stringify({ report: data }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

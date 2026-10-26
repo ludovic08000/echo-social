@@ -1,27 +1,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { aiShareablePosts } from "../_shared/ai-privacy.ts";
 
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')!;
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 // Rate limiting per user
-const rateLimiter = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 5;
-const RATE_WINDOW_MS = 60 * 1000;
-
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = rateLimiter.get(userId);
-  if (!entry || now > entry.resetAt) {
-    rateLimiter.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_LIMIT) return false;
-  entry.count++;
-  return true;
-}
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -49,11 +36,8 @@ Deno.serve(async (req) => {
     }
 
     // Rate limit
-    if (!checkRateLimit(user.id)) {
-      return new Response(JSON.stringify({ error: 'Trop de requêtes' }), {
-        status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const quotaDenial = await checkRateLimitDB(`photo-guard:${user.id}`, 5, 60, corsHeaders);
+    if (quotaDenial) return quotaDenial;
 
     const { action, imageUrl } = await req.json();
     // SECURITY: userId is ALWAYS derived from JWT, never from client
@@ -122,13 +106,15 @@ Respond in JSON format:
       const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
       // Get recent profiles with avatars (exclude the authenticated user)
-      const { data: profiles } = await serviceClient
+      const { data: candidates } = await serviceClient
         .from('profiles')
         .select('user_id,name,avatar_url')
         .not('avatar_url', 'is', null)
         .neq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);
+      const profiles=(await aiShareablePosts(serviceClient,candidates??[]))
+        .filter((profile: any) => typeof profile.avatar_url === 'string' && profile.avatar_url.trim().length > 0).slice(0, 10);
 
       if (!profiles?.length) {
         return new Response(JSON.stringify({ success: true, duplicates: [], message: 'Pas assez de profils pour comparer' }), {
@@ -149,7 +135,7 @@ Respond in JSON format:
         });
       }
 
-      const otherAvatars = profiles.slice(0, 10).map((p: any) => p.avatar_url).filter(Boolean);
+      const otherAvatars = profiles.map((p: any) => p.avatar_url);
       
       const comparePrompt = `I will show you multiple profile photos. The FIRST image is the target photo we're investigating. The remaining images are from other users on the platform.
 

@@ -136,7 +136,7 @@ serve(async (req) => {
     const { action, text, post_id, feedback } = await req.json();
 
     // metrics action leaks model accuracy/confidence — admin only.
-    if (action === "metrics") {
+    if (action === "metrics" || action === "feedback") {
       const adminGuard = await requireAdmin(req, corsHeaders);
       if (!("userId" in adminGuard)) return adminGuard.response;
     }
@@ -201,14 +201,7 @@ serve(async (req) => {
       const latency = Math.round(performance.now() - start);
 
       // Log prediction
-      let userId: string | null = null;
-      if (authHeader) {
-        const authClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-          global: { headers: { Authorization: authHeader } },
-        });
-        const { data: { user } } = await authClient.auth.getUser();
-        userId = user?.id || null;
-      }
+      const userId = authed.userId;
 
       if (userId) {
         await supabase.from("ml_predictions").insert({
@@ -236,30 +229,14 @@ serve(async (req) => {
     }
 
     if (action === "feedback" && feedback) {
-      // Training feedback loop
-      if (!authHeader) {
-        return new Response(JSON.stringify({ error: "Auth requise" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      const authClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: { user } } = await authClient.auth.getUser();
-      if (!user) {
-        return new Response(JSON.stringify({ error: "Non authentifié" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
+      // Les labels d'entrainement confirmes restent une decision de moderation autorisee.
       await supabase.from("ml_training_feedback").insert({
         prediction_id: feedback.prediction_id || null,
         domain: "moderation",
         original_label: feedback.original_label,
         corrected_label: feedback.corrected_label,
         feedback_source: "human",
-        reviewer_id: user.id,
+        reviewer_id: authed.userId,
         reason: feedback.reason,
       });
 

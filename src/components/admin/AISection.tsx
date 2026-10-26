@@ -15,7 +15,7 @@ export function AISection() {
   const { data: agents, isLoading: agentsLoading } = useQuery({
     queryKey: ['admin-ai-agents'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('ai_agents').select('*').order('sort_order');
+      const { data, error } = await supabase.from('ai_agents').select('id,name,slug,icon,is_premium,category,is_active,free_messages_per_day').order('sort_order');
       if (error) throw error;
       return data;
     },

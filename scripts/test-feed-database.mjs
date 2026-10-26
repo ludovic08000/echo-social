@@ -4,6 +4,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { createFeedHandler } from '../supabase/functions/_shared/feed-api-handler.ts';
 const db = new PGlite();
 const read = (name) => readFileSync(new URL('../supabase/migrations/' + name, import.meta.url), 'utf8');
 const uid = (n) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0');
@@ -220,7 +221,53 @@ try {
   await assert.rejects(()=>db.query("SELECT feed_evaluation_slates(50,now()+interval '1 second')"),/invalid evaluation time/); checks++;
   await db.query("UPDATE feed_rank_snapshots SET expires_at=now()-interval '1 second' WHERE id=$1",[evaluationSnapshot]);
   assert.equal((await replayExport()).slates.length,0); checks++;
-  console.log(`Feed SQL: ${checks} functional checks passed (isolated PostgreSQL).`);
+  // Exercise the actual HTTP handler against the real cursor/visibility/event SQL.
+  // Auth tokens here are fixtures; real JWT verification is tested separately.
+  const api = createFeedHandler({
+    async authenticate(request) {
+      const viewerId = request.headers.get('authorization') === 'Bearer fixture-other' ? uid(5) : uid(1);
+      return {
+        viewerId,
+        async rpc(name, args) {
+          try {
+            const data = await db.transaction(async tx => {
+              await tx.query("SELECT set_config('request.jwt.claim.sub', $1, true)", [viewerId]);
+              if (name === 'get_ranked_feed_page') return (await tx.query('SELECT get_ranked_feed_page($1,$2) AS result', [args.p_limit, args.p_cursor])).rows[0].result;
+              if (name === 'ml_ingest_feed_events') return (await tx.query('SELECT ml_ingest_feed_events($1) AS result', [JSON.stringify(args.p_events)])).rows[0].result;
+              throw new Error('unexpected RPC');
+            });
+            return { data, error: null };
+          } catch (error) { return { data: null, error }; }
+        },
+        readPreferences() { throw new Error('not part of this SQL fixture'); },
+        writePreferences() { throw new Error('not part of this SQL fixture'); },
+      };
+    },
+    async rateLimit() { return null; },
+  });
+  const apiCall = (body, other = false) => api(new Request('https://fixture.invalid/feed', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://forsure.fans', Authorization: other ? 'Bearer fixture-other' : 'Bearer fixture-viewer' },
+    body: JSON.stringify(body),
+  }));
+  let apiResponse = await apiCall({ action: 'page', limit: 4 });
+  assert.equal(apiResponse.status, 200); checks++;
+  const apiPage = await apiResponse.json();
+  assert.equal(apiPage.items.length, 4); checks++;
+  assert.ok(apiPage.items.every(p => p.exposure_id && !('final_score' in p) && !('experiment_variant' in p))); checks++;
+  assert.equal((await apiCall({ action: 'page', limit: 4, cursor: apiPage.next_cursor }, true)).status, 409); checks++;
+  const blockedCreator = apiPage.items[0].user_id;
+  await db.query('INSERT INTO user_message_blocks VALUES($1,$2)', [uid(1), blockedCreator]);
+  const nextApiPage = await (await apiCall({ action: 'page', limit: 4, cursor: apiPage.next_cursor })).json();
+  assert.ok(nextApiPage.items.every(p => p.user_id !== blockedCreator)); checks++;
+  assert.equal(new Set([...apiPage.items, ...nextApiPage.items].map(p => p.id)).size, apiPage.items.length + nextApiPage.items.length); checks++;
+  await db.query('DELETE FROM user_message_blocks WHERE blocker_user_id=$1 AND blocked_user_id=$2', [uid(1), blockedCreator]);
+  const apiEvent = { event_id: uid(999), post_id: apiPage.items[0].id, exposure_id: apiPage.items[0].exposure_id, event_type: 'save' };
+  assert.equal((await (await apiCall({ action: 'events', events: [apiEvent] })).json()).accepted, 1); checks++;
+  assert.equal((await (await apiCall({ action: 'events', events: [apiEvent] })).json()).accepted, 0); checks++;
+  assert.equal((await (await apiCall({ action: 'events', events: [{ ...apiEvent, event_id: uid(1000) }] }, true)).json()).accepted, 0); checks++;
+  await db.query('UPDATE privacy_settings SET analytics_enabled=false WHERE user_id=$1', [uid(1)]);
+  assert.equal((await (await apiCall({ action: 'events', events: [{ ...apiEvent, event_id: uid(1001), event_type: 'share' }] })).json()).accepted, 0); checks++;
+  console.log(`Feed SQL/API: ${checks} functional checks passed (isolated PostgreSQL, fixture Auth and quotas).`);
 } catch (error) {
   console.error(error.message, error.detail ?? '', error.where ?? '');
   process.exitCode = 1;

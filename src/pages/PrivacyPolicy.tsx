@@ -8,7 +8,7 @@ export default function PrivacyPolicy() {
     <div className="min-h-screen bg-background">
       <SEOHead
         title="Politique de Confidentialité"
-        description="Politique de confidentialité Forsure : zéro revente de données, conformité RGPD, chiffrement bout en bout. Vos données personnelles restent les vôtres."
+        description="Politique de confidentialité Forsure : données utilisées, stockage dans le navigateur, sauvegardes chiffrées et exercice de vos droits."
         url="https://forsure.fans/privacy"
         noindex
       />
@@ -23,7 +23,7 @@ export default function PrivacyPolicy() {
           <Shield className="w-8 h-8 text-primary" />
           <h1 className="text-3xl font-bold">Politique de Confidentialité</h1>
         </div>
-        <p className="text-sm text-muted-foreground mb-8">Dernière mise à jour : 5 octobre 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Dernière mise à jour : 26 octobre 2026</p>
 
         <div className="prose prose-invert max-w-none space-y-8 text-foreground/90">
 
@@ -48,7 +48,7 @@ export default function PrivacyPolicy() {
               <li>✅ <strong>Personnalisation publicitaire facultative</strong> : uniquement pour les adultes ayant donné un accord distinct, retirable dans les paramètres</li>
               <li>🚫 <strong>Aucun shadow banning</strong> — si un contenu est modéré, vous êtes notifié avec le motif</li>
               <li>✅ <strong>Transparence totale</strong> sur les données collectées et leur usage</li>
-              <li>✅ <strong>Suppression immédiate</strong> de vos données sur simple demande</li>
+              <li>✅ <strong>Demande de suppression</strong> depuis les paramètres ou auprès du contact indiqué ci-dessous, avec suivi des données et copies concernées</li>
               <li>✅ <strong>Adresses e-mail masquées</strong> dans l'interface (ex : jo***@gmail.com) pour renforcer votre vie privée</li>
             </ul>
           </section>
@@ -98,7 +98,7 @@ export default function PrivacyPolicy() {
 
             <h3 className="text-lg font-medium text-foreground mt-4">3.5. Données techniques et de sécurité</h3>
             <ul className="list-disc pl-6 space-y-1">
-              <li>Adresse IP et logs de connexion (obligation légale LCEN — conservés 12 mois)</li>
+              <li>Adresse IP et journaux techniques de connexion, utilisés pour la sécurité et selon les obligations de conservation applicables</li>
               <li>User-agent du navigateur</li>
               <li>Empreinte de l'appareil (à des fins exclusivement anti-fraude, pour détecter les usurpations d'identité et comptes multiples abusifs)</li>
               <li>Clés publiques cryptographiques (pour le chiffrement de bout en bout des messages)</li>
@@ -115,11 +115,11 @@ export default function PrivacyPolicy() {
             <p>Forsure intègre un assistant IA (<strong>Zeus</strong>), des agents IA spécialisés, ainsi qu'un <strong>moteur IA de sécurité auto-apprenant</strong>. Ces outils :</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>Utilisent vos messages <strong>uniquement dans le cadre de votre conversation</strong></li>
-              <li>Ne stockent <strong>aucun historique</strong> à des fins d'entraînement de modèles tiers</li>
+              <li>Peuvent transmettre les demandes que vous leur adressez à un prestataire IA ; ne leur communiquez pas de secrets ou de données sensibles inutiles</li>
               <li>Aident à la modération de contenu de manière transparente avec possibilité de recours humain</li>
               <li>L'assistant IA vendeur (coach) analyse uniquement les données de votre boutique pour vous conseiller</li>
               <li>Le moteur IA de sécurité détecte les menaces (DDoS, intrusions, abus) et génère des rapports d'incidents automatisés, sans analyser vos contenus personnels</li>
-              <li>L'IA apprend localement des patterns de menaces pour réduire la dépendance aux services tiers, <strong>sans utiliser de données utilisateurs</strong></li>
+              <li>Les traitements de sécurité et les recommandations utilisent des données techniques ou d'activité selon leur finalité ; ils ne constituent pas une analyse du contenu des messages privés chiffrés</li>
             </ul>
 
             <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
@@ -127,7 +127,7 @@ export default function PrivacyPolicy() {
             </h3>
             <ul className="list-disc pl-6 space-y-1">
               <li><strong>Chiffrement de bout en bout (E2EE)</strong> pour les conversations privées 1-à-1 via <strong>Libsignal avec PQXDH + Double Ratchet</strong></li>
-              <li>Les clés privées ne quittent <strong>jamais votre appareil</strong> — Forsure ne peut pas lire vos messages chiffrés</li>
+              <li>Le chiffrement et le déchiffrement s'effectuent sur les appareils. La sauvegarde de continuité peut envoyer au serveur un <strong>coffre chiffré contenant les clés</strong>, et non ces clés en clair. La restauration nécessite les éléments de déverrouillage du compte.</li>
               <li>Vérification d'identité cryptographique par empreinte de clé (fingerprint) pour détecter les changements d'appareil</li>
               <li>Protection locale d'accès à la messagerie par <strong>code PIN dédié</strong> (le PIN de messagerie n'est pas une clé de récupération distante)</li>
               <li>Les appels audio/vidéo transitent par une infrastructure sécurisée (LiveKit)</li>
@@ -170,7 +170,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold text-foreground">5. Protection des mineurs</h2>
             <p>Forsure accorde une importance particulière à la <strong>protection des utilisateurs de moins de 18 ans</strong> :</p>
             <ul className="list-disc pl-6 space-y-2">
-              <li>Vérification d'âge obligatoire à l'inscription (13 ans minimum, conformément au RGPD)</li>
+              <li>Âge minimum annoncé par le service : 13 ans. Les conditions du consentement d'un mineur dépendent du pays et du traitement ; ce seuil ne constitue pas à lui seul une validation juridique de tous les usages.</li>
               <li>Le contrôle parental par code PIN est désactivé et n’applique plus de filtrage automatique au feed ou à la messagerie</li>
               <li>Paramètres de confidentialité, blocage et signalement accessibles à chaque utilisateur</li>
               <li>Bouton de signalement spécifique pour les interactions impliquant un mineur</li>
@@ -193,22 +193,23 @@ export default function PrivacyPolicy() {
           <section>
             <h2 className="text-xl font-semibold text-foreground">7. Durée de conservation</h2>
             <ul className="list-disc pl-6 space-y-1">
-              <li>Données de compte : durée de l'inscription + 30 jours après suppression</li>
-              <li>Logs de connexion et empreintes d'appareil : <strong>12 mois</strong> (obligation légale LCEN)</li>
-              <li>Contenus supprimés : effacés sous 30 jours via processus automatisé</li>
-              <li>Clés cryptographiques : supprimées avec le compte</li>
+              <li>Les durées dépendent de la finalité : fonctionnement du compte, sécurité, preuve d'une opération ou obligation légale. Un délai unique ne s'applique pas à toutes les données.</li>
+              <li>Les journaux de diagnostic du parcours Aegis ont un nettoyage programmé à 30 jours ; ce délai n'est pas celui de l'ensemble des journaux de la plateforme.</li>
+              <li>La suppression du compte n'atteste pas l'effacement immédiat de toutes les copies : médias chez les prestataires, sauvegardes et données soumises à une conservation légale nécessitent un suivi distinct.</li>
+              <li>Les copies locales du navigateur et les copies déjà reçues par un destinataire ne sont pas automatiquement effacées à distance.</li>
               <li>Données de commande marketplace : conformément aux obligations comptables légales</li>
               <li>Archives d'usurpation d'identité : conservées à des fins de prévention et obligations légales</li>
-              <li>Patterns de sécurité IA : conservés de manière anonymisée (aucune donnée personnelle)</li>
+              <li>Les données techniques de sécurité restent des données personnelles lorsqu'elles permettent de relier une activité à un compte ou à un appareil.</li>
             </ul>
           </section>
 
           {/* 8. Cookies */}
           <section>
-            <h2 className="text-xl font-semibold text-foreground">8. Cookies</h2>
-            <p>Forsure utilise <strong>uniquement des cookies techniques</strong> strictement nécessaires :</p>
+            <h2 className="text-xl font-semibold text-foreground">8. Stockage dans le navigateur et cookies</h2>
+            <p>Le site utilise plusieurs mécanismes de stockage, qui ne sont pas tous des cookies :</p>
             <ul className="list-disc pl-6 space-y-1">
-              <li>Cookie d'authentification (session utilisateur) — <strong>Secure, HttpOnly, SameSite=Strict</strong></li>
+              <li>Sur le site web, la session d'authentification est conservée dans <strong>localStorage</strong> par le client d'authentification. Ce stockage est accessible au JavaScript du site : il ne bénéficie pas de la protection <strong>HttpOnly</strong> d'un cookie.</li>
+              <li>IndexedDB et les stockages locaux servent notamment au coffre chiffré, aux données de messagerie et à la continuité de l'appareil. Les effacer peut rendre des données locales indisponibles si leur sauvegarde et leur restauration n'ont pas été vérifiées.</li>
               <li>Préférences d'affichage (thème clair/sombre, langue)</li>
             </ul>
             <p className="mt-2">Les lecteurs vidéo partenaires YouTube ne sont chargés qu'après votre clic, en mode de confidentialité avancé. Leur chargement transmet notamment votre IP à YouTube et reste soumis aux règles de ce fournisseur.</p>
@@ -253,7 +254,7 @@ export default function PrivacyPolicy() {
               <li>Architecture <strong>prête pour le post-quantique</strong> (PQXDH)</li>
               <li>Chiffrement des données en transit (TLS/HTTPS)</li>
               <li>Sauvegarde chiffrée des clés avec transfert sécurisé entre appareils</li>
-              <li>Hachage des codes PIN via PBKDF2 côté serveur</li>
+              <li>Protection locale par PIN et coffre de continuité chiffré ; le PIN n'est pas une clé de récupération distante</li>
             </ul>
 
             <h3 className="text-lg font-medium text-foreground mt-4 flex items-center gap-2">
@@ -278,7 +279,7 @@ export default function PrivacyPolicy() {
               <li>Détection automatique d'usurpation d'identité avec archivage légal des preuves</li>
               <li>Système de bannissement multi-niveaux (utilisateur, e-mail, IP) en cas d'abus</li>
               <li>Modération IA avec feedback humain et <strong>règles auto-apprises</strong></li>
-              <li>Protection anti-capture d'écran sur les contenus sensibles (photos protégées)</li>
+              <li>Mesures d'affichage pour les contenus sensibles : un navigateur ne peut pas garantir l'interdiction des captures d'écran ou de leur photographie</li>
               <li><strong>IA SOC (Security Operations Center)</strong> : monitoring continu, analyse des menaces et alertes d'intrusion en temps réel</li>
               <li>Anti-spam : rate limiting par action (30 msg/min max), détection de doublons, cooldown entre envois</li>
               <li>Politique de sécurité du contenu (CSP) stricte interdisant l'exécution de scripts non autorisés</li>
@@ -314,20 +315,23 @@ export default function PrivacyPolicy() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">12. Transferts de données</h2>
-            <p>Les données sont hébergées au sein de l'Union Européenne. Les fichiers médias (photos, vidéos) sont stockés sur une infrastructure cloud sécurisée (Cloudflare R2).</p>
-            <p>Aucun transfert hors UE n'est effectué sans garanties appropriées (clauses contractuelles types, Art. 46 RGPD).</p>
+            <p>ForSure s'appuie sur plusieurs infrastructures : Lovable Cloud pour le service applicatif et les données, Vercel pour la passerelle Aegis, ainsi que les prestataires de médias, d'appels et de paiement décrits ci-dessous. Cela ne signifie pas que tous les traitements et sous-traitants sont situés en France ou exclusivement dans l'Union européenne.</p>
+            <p>Les régions de traitement et les garanties de transfert doivent être vérifiées pour chaque prestataire et chaque fonctionnalité. Cette page ne remplace pas les engagements contractuels et l'analyse des transferts de l'éditeur.</p>
           </section>
 
           {/* 13. Sous-traitants */}
           <section>
             <h2 className="text-xl font-semibold text-foreground">13. Sous-traitants</h2>
             <ul className="list-disc pl-6 space-y-1">
+              <li><strong>Lovable Cloud</strong> : hébergement du service, authentification, base de données et fonctions backend ; passerelle IA pour les fonctionnalités qui l'utilisent</li>
+              <li><strong>Vercel</strong> : hébergement de la passerelle Aegis et journaux techniques associés</li>
               <li><strong>Stripe</strong> : traitement des paiements (marketplace, abonnements, pourboires)</li>
               <li><strong>Cloudflare R2</strong> : stockage sécurisé des fichiers médias</li>
               <li><strong>LiveKit</strong> : infrastructure d'appels audio/vidéo en temps réel</li>
               <li><strong>Google</strong> : authentification OAuth (si vous choisissez la connexion Google)</li>
+              <li><strong>DB-IP</strong> : source de l'estimation géographique approximative ; l'API peut recevoir votre IP lorsque la base locale n'est pas disponible pour les actualités</li>
             </ul>
-            <p className="mt-2">Chaque sous-traitant est soumis à des engagements contractuels conformes au RGPD (Art. 28).</p>
+            <p className="mt-2">L'inventaire contractuel doit aussi couvrir les prestataires d'e-mail, de notifications et les fournisseurs de modèles effectivement utilisés via la passerelle IA. Leur identité, leurs régions et leurs durées de conservation doivent être confirmées par l'éditeur ; aucune certification de ces contrats n'est affirmée ici.</p>
           </section>
 
           {/* 14. Notifications */}

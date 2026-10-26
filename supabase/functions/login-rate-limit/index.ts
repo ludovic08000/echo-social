@@ -1,6 +1,7 @@
 // Server-side anti-bruteforce gate for login.
 // - check: returns whether the IP/email pair may attempt to log in now
-// - record: stores the outcome of an attempt (success/failure)
+// - record: logs success only after Auth verifies the caller and matching e-mail.
+// Failed browser declarations are not authentication evidence; native Auth owns brute-force protection.
 // Email is hashed (SHA-256) before storage; raw email never persisted.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -27,6 +28,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+  if(req.method!=="POST")return new Response(null,{status:405,headers:corsHeaders});
 
   try {
     const { action, email, success } = await req.json().catch(() => ({}));
@@ -42,6 +44,21 @@ Deno.serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    if(action==="record"){
+      if(success!==true)return new Response(JSON.stringify({ok:true,recorded:false,reason:"UNVERIFIED_CLIENT_OUTCOME"}),{
+        status:202,headers:{...corsHeaders,"Content-Type":"application/json"},
+      });
+      const authorization=req.headers.get("Authorization");
+      if(!authorization?.startsWith("Bearer "))return new Response(null,{status:401,headers:corsHeaders});
+      const reader=createClient(Deno.env.get("SUPABASE_URL")!,Deno.env.get("SUPABASE_ANON_KEY")!,{
+        global:{headers:{Authorization:authorization}},
+      });
+      const {data,error}=await reader.auth.getUser(authorization.slice(7));
+      if(error||!data?.user)return new Response(null,{status:401,headers:corsHeaders});
+      if(data.user.email?.trim().toLowerCase()!==email.trim().toLowerCase())
+        return new Response(null,{status:403,headers:corsHeaders});
     }
 
     const ip = getClientIP(req);
@@ -62,29 +79,23 @@ Deno.serve(async (req) => {
         // Fail-open but log — never block legitimate users on infra failure
         console.error("[login-rate-limit] check failed", error.message);
         return new Response(
-          JSON.stringify({ allowed: true, retry_after_seconds: 0, degraded: true }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          JSON.stringify({ allowed: null, retry_after_seconds: 0, degraded: true }),
+          { status:503,headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      return new Response(JSON.stringify(data ?? { allowed: true }), {
+      return new Response(JSON.stringify(data ?? { allowed: null, degraded:true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // record
-    if (typeof success !== "boolean") {
-      return new Response(JSON.stringify({ error: "Missing success flag" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    await admin.rpc("record_login_attempt", {
+    // Auth success is not device approval: this log never changes the device registry.
+    const {error:recordError}=await admin.rpc("record_login_attempt", {
       p_ip: ip,
       p_email_hash: emailHash,
-      p_success: success,
+      p_success: true,
       p_user_agent: ua,
     });
+    if(recordError)throw new Error("LOGIN_AUDIT_UNAVAILABLE");
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -92,8 +103,8 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error("[login-rate-limit]", err);
     return new Response(
-      JSON.stringify({ allowed: true, degraded: true }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({ allowed: null, degraded: true }),
+      { status:503,headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });

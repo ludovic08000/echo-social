@@ -34,6 +34,8 @@ export function ZeusSection() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingProposals, setPendingProposals] = useState<Map<string, { action: string; key: string; updates: any; reason: string }>>(new Map());
   const [appliedProposals, setAppliedProposals] = useState<Set<string>>(new Set());
+  const [applyingProposals, setApplyingProposals] = useState<Set<string>>(new Set());
+  const proposalRequests = useRef(new Set<string>());
   const [rejectedProposals, setRejectedProposals] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -158,17 +160,25 @@ export function ZeusSection() {
 
   const applyProposal = useCallback(async (proposalId: string) => {
     const proposal = pendingProposals.get(proposalId);
-    if (!proposal) return;
+    if (!proposal || proposalRequests.current.has(proposalId) || appliedProposals.has(proposalId)) return;
+    proposalRequests.current.add(proposalId);
+    setApplyingProposals(prev => new Set(prev).add(proposalId));
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Session expirée, reconnectez-vous.');
       const resp = await fetch(ZEUS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ domain: 'admin', action: 'apply_proposal', proposalAction: proposal.action, key: proposal.key, updates: proposal.updates, reason: proposal.reason }) });
       if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Erreur');
-      await resp.json().catch(() => null);
+      const result = await resp.json().catch(() => null);
+      if (result?.success !== true || result?.applied !== true) throw new Error('Application non confirmée par le serveur.');
       setAppliedProposals(prev => new Set(prev).add(proposalId));
       setMessages(prev => [...prev, { role: 'system', content: `✅ **Proposition appliquée** : ${proposal.reason}` }]);
       toast({ title: '✅ Proposition Zeus appliquée' });
     } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
-  }, [pendingProposals]);
+    finally {
+      proposalRequests.current.delete(proposalId);
+      setApplyingProposals(prev => { const next = new Set(prev); next.delete(proposalId); return next; });
+    }
+  }, [pendingProposals, appliedProposals]);
 
   const rejectProposal = useCallback((proposalId: string) => {
     setRejectedProposals(prev => new Set(prev).add(proposalId));
@@ -198,8 +208,8 @@ export function ZeusSection() {
               : isRejected ? <Badge variant="outline" className="text-red-400 border-red-500/30">❌ Refusée</Badge>
               : proposalId ? (
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => applyProposal(proposalId)} className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs h-7">✅ Valider</Button>
-                  <Button size="sm" variant="outline" onClick={() => rejectProposal(proposalId)} className="gap-1 text-xs h-7 border-red-500/30 text-red-400 hover:bg-red-500/10">❌ Refuser</Button>
+                  <Button size="sm" disabled={applyingProposals.has(proposalId)} onClick={() => applyProposal(proposalId)} className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs h-7">{applyingProposals.has(proposalId) ? 'Application…' : '✅ Valider'}</Button>
+                  <Button size="sm" disabled={applyingProposals.has(proposalId)} variant="outline" onClick={() => rejectProposal(proposalId)} className="gap-1 text-xs h-7 border-red-500/30 text-red-400 hover:bg-red-500/10">❌ Refuser</Button>
                 </div>
               ) : null}
           </div>
@@ -207,7 +217,7 @@ export function ZeusSection() {
       }
       return <SafeMarkdown key={i}>{part}</SafeMarkdown>;
     });
-  }, [pendingProposals, appliedProposals, rejectedProposals, applyProposal, rejectProposal]);
+  }, [pendingProposals, appliedProposals, applyingProposals, rejectedProposals, applyProposal, rejectProposal]);
 
   const streamSSE = async (resp: Response, prefix = '') => {
     let content = ''; const reader = resp.body!.getReader(); const decoder = new TextDecoder(); let buf = '';

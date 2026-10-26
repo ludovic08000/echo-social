@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
     // ── PARALLEL DB QUERIES (was sequential — 6 queries → now 3 parallel groups) ──
     const [postsResult, friendshipsData, trustScoresData] = await Promise.all([
       // 1. Posts with denormalized counts (no need for separate likes/comments queries)
-      supabase
+      userClient
         .from("posts")
         .select("id, user_id, body, image_url, created_at, likes_count, comments_count")
         .gte("created_at", sevenDaysAgo)

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { requireAuthenticated } from "../_shared/auth-guard.ts";
 import { crypto } from "https://deno.land/std@0.190.0/crypto/mod.ts";
 import { encode as hexEncode } from "https://deno.land/std@0.190.0/encoding/hex.ts";
 
@@ -53,8 +54,7 @@ async function callMondialRelaySoap(method: string, params: Record<string, strin
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Mondial Relay SOAP error ${response.status}: ${text.substring(0, 500)}`);
+      throw new Error(`Mondial Relay SOAP error ${response.status}`);
     }
 
     return await response.text();
@@ -107,6 +107,11 @@ serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const enseigne = (Deno.env.get("MONDIAL_RELAY_ENSEIGNE") ?? "").trim();
@@ -171,26 +176,12 @@ serve(async (req) => {
         throw new Error("Configuration Mondial Relay manquante");
       }
 
-      const authHeader = req.headers.get("Authorization");
-      if (!authHeader?.startsWith("Bearer ")) throw new Error("Non authentifié");
+      const auth = await requireAuthenticated(req, corsHeaders);
+      if (!auth.ok) return auth.response;
 
       const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-      const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-
-      // Verify JWT and identify caller
-      const userClient = createClient(supabaseUrl, anonKey, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const token = authHeader.replace("Bearer ", "");
-      const { data: claims, error: authError } = await userClient.auth.getClaims(token);
-      if (authError || !claims?.claims?.sub) {
-        return new Response(JSON.stringify({ error: "Non authentifié" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const callerId = claims.claims.sub as string;
+      const callerId = auth.userId;
 
       const supabase = createClient(supabaseUrl, serviceKey);
 
@@ -201,7 +192,7 @@ serve(async (req) => {
       // Get order + items with seller info
       const { data: order } = await supabase
         .from("orders")
-        .select("*, order_items(*, products(seller_id))")
+        .select("*, order_items(*)")
         .eq("id", order_id)
         .single();
 
@@ -210,12 +201,27 @@ serve(async (req) => {
       // Verify caller is a seller on this order
       const sellerIds = new Set<string>(
         (order.order_items ?? [])
-          .map((it: any) => it?.products?.seller_id)
+          .map((it: any) => it?.seller_id)
           .filter(Boolean),
       );
-      if (!sellerIds.has(callerId)) {
+      // seller_id référence une boutique, pas auth.users ; vérifier son propriétaire réel.
+      const { data: seller, error: sellerError } = await supabase.from("seller_profiles")
+        .select("id").eq("user_id", callerId).in("id", [...sellerIds]).limit(1).maybeSingle();
+      if (sellerError) throw new Error("Vérification du vendeur indisponible");
+      if (!seller) {
         return new Response(JSON.stringify({ error: "Accès refusé" }), {
           status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!order.payment_verified_at || !["paid", "processing", "shipped", "delivered"].includes(order.status)) {
+        return new Response(JSON.stringify({ error: "Paiement non confirmé par le serveur" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (order.tracking_number) {
+        return new Response(JSON.stringify({ tracking_number: order.tracking_number, label_url: order.shipping_label_url }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -351,23 +357,40 @@ serve(async (req) => {
       ];
       params.Security = buildSignatureFromOrderedFields(shipmentOrderedValues, privateKey);
 
-      console.log("SOAP create_shipment - enseigne:", enseigne, "order:", orderNo);
+      const claimId = globalThis.crypto.randomUUID();
+      const { data: claim, error: claimError } = await supabase.rpc("claim_marketplace_shipment", {
+        p_order: order_id, p_caller: callerId, p_claim: claimId,
+      });
+      if (claimError || typeof claim?.claimed !== 'boolean') {
+        return new Response(JSON.stringify({ error: "Réservation de l'expédition indisponible" }), {
+          status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!claim.claimed) {
+        if (claim.tracking_number) return new Response(JSON.stringify({ tracking_number: claim.tracking_number, label_url: claim.label_url }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+        return new Response(JSON.stringify({ error: "Une création d'étiquette est déjà en cours ou à vérifier. Contactez le support avant de réessayer." }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
+      // Ne jamais relâcher automatiquement cette réservation après un timeout/crash :
+      // le transporteur peut avoir créé une étiquette sans que sa réponse nous parvienne.
       const xml = await callMondialRelaySoap("WSI2_CreationEtiquette", params);
       const stat = extractXmlValue(xml, 'STAT');
 
       if (stat !== '0' && stat !== '') {
-        const errorDetail = extractXmlValue(xml, 'Erreur') || extractXmlValue(xml, 'Message') || '';
-        console.error("SOAP create label error:", { stat, errorDetail, xml: xml.substring(0, 1000) });
-        throw new Error(`Mondial Relay erreur création étiquette (code ${stat})${errorDetail ? ` : ${errorDetail}` : ''}`);
+        console.error("Shipment carrier rejected request", { stat, order_id, claimId });
+        throw new Error("Création d'étiquette non confirmée. Contactez le support avant de réessayer.");
       }
 
       const expeditionNum = extractXmlValue(xml, 'ExpeditionNum');
       let labelUrl = extractXmlValue(xml, 'URL_Etiquette');
 
       if (!expeditionNum) {
-        console.error("No expedition number in SOAP response:", xml.substring(0, 2000));
-        throw new Error("Numéro d'expédition non trouvé dans la réponse");
+        console.error("Shipment response missing tracking", { order_id, claimId });
+        throw new Error("Création d'étiquette non confirmée. Contactez le support avant de réessayer.");
       }
 
       // Make label URL absolute
@@ -375,17 +398,14 @@ serve(async (req) => {
         labelUrl = `https://www.mondialrelay.fr${labelUrl}`;
       }
 
-      // Update order
-      await supabase
-        .from("orders")
-        .update({
-          tracking_number: expeditionNum,
-          shipping_label_url: labelUrl,
-          shipping_weight_grams: weight,
-          shipped_at: new Date().toISOString(),
-          status: "shipped",
-        })
-        .eq("id", order_id);
+      // Étiquette et état de réservation sont enregistrés dans la même transaction.
+      const { data: saved, error: shipmentWriteError } = await supabase.rpc("complete_marketplace_shipment", {
+        p_order: order_id, p_claim: claimId, p_tracking: expeditionNum, p_label: labelUrl, p_weight: weight,
+      });
+      if (shipmentWriteError || saved !== true) {
+        console.error("Shipment reconciliation required", { order_id, claimId, tracking_number: expeditionNum });
+        throw new Error("Expédition créée mais enregistrement indisponible ; contacter le support avant de réessayer");
+      }
 
       return new Response(JSON.stringify({ tracking_number: expeditionNum, label_url: labelUrl }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -398,8 +418,30 @@ serve(async (req) => {
         throw new Error("Configuration Mondial Relay manquante");
       }
 
+      const auth = await requireAuthenticated(req, corsHeaders);
+      if (!auth.ok) return auth.response;
       const { tracking_number } = body;
-      if (!tracking_number) throw new Error("Numéro de suivi requis");
+      if (typeof tracking_number !== "string" || !/^[a-zA-Z0-9-]{6,40}$/.test(tracking_number)) {
+        return new Response(JSON.stringify({ error: "Numéro de suivi invalide" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Connaître un numéro ne suffit pas : la commande doit être visible avec le JWT du demandeur.
+      const reader = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: `Bearer ${auth.token}` } },
+      });
+      const { data: visibleOrder, error: visibilityError } = await reader.from("orders")
+        .select("id").eq("tracking_number", tracking_number).limit(1).maybeSingle();
+      if (visibilityError) {
+        return new Response(JSON.stringify({ error: "Vérification du suivi indisponible" }), {
+          status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!visibleOrder) {
+        return new Response(JSON.stringify({ error: "Suivi introuvable ou inaccessible" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       const params: Record<string, string> = {
         Enseigne: enseigne,

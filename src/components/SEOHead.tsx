@@ -14,8 +14,8 @@ interface SEOHeadProps {
 const SITE_NAME = 'Forsure';
 const SITE_BASE = 'https://forsure.fans';
 const DEFAULT_IMAGE = `${SITE_BASE}/og-image.jpg`;
-const DEFAULT_DESC = "Forsure : réseau social éthique français, sans pub ni tracking. Messagerie chiffrée, lives, marketplace et appels vidéo.";
-const DEFAULT_TITLE = 'Forsure — Réseau social éthique sans pub';
+const DEFAULT_DESC = "Forsure : un réseau social avec un fil réglable, une messagerie privée, des lives et un marketplace. Des choix de personnalisation distincts.";
+const DEFAULT_TITLE = 'Forsure — Votre fil, vos choix';
 
 function buildTitle(title?: string): string {
   if (!title) return DEFAULT_TITLE;

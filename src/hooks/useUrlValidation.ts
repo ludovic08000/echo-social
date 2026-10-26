@@ -9,7 +9,7 @@ export function useUrlValidation() {
         if (result.success) {
           return { valid: true };
         }
-        return { valid: false, error: result.error.errors[0]?.message || 'URL invalide' };
+        return { valid: false, error: result.error.issues[0]?.message || 'URL invalide' };
       },
 
       validateOptionalUrl: (url?: string): { valid: boolean; error?: string } => {
@@ -20,7 +20,7 @@ export function useUrlValidation() {
         if (result.success) {
           return { valid: true };
         }
-        return { valid: false, error: result.error.errors[0]?.message || 'URL invalide' };
+        return { valid: false, error: result.error.issues[0]?.message || 'URL invalide' };
       },
 
       sanitizeUrl: (url: string): string | null => {

@@ -15,6 +15,14 @@ it('allows cryptographic WASM without JavaScript eval or inline scripts', () => 
   expect(directives.get('frame-src')).toEqual(['https://www.youtube-nocookie.com']);
 });
 
+it('blocks ForSure itself from being embedded by another site at the HTTP boundary', () => {
+  const config = JSON.parse(readFileSync('vercel.json', 'utf8'));
+  const global = config.headers.find((rule: { source: string }) => rule.source === '/(.*)');
+  const headers = new Map(global.headers.map(({ key, value }: { key: string; value: string }) => [key, value]));
+  expect(headers.get('Content-Security-Policy')).toBe("frame-ancestors 'none'");
+  expect(headers.get('X-Frame-Options')).toBe('DENY');
+});
+
 it('allows login approval forms only on ForSure and its Lovable backend', () => {
   const html = readFileSync('index.html', 'utf8');
   const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];

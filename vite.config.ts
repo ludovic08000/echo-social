@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
-import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/supabase/vite";
+import { secureMcpPlugin } from "./scripts/secure-mcp";
 
 const retiredFactorStem = ["web", "authn"].join("");
 const retiredFactorClassStem = ["Web", "Authn"].join("");
@@ -99,20 +99,16 @@ export default defineConfig(({ mode }) => ({
     modulePreload: { polyfill: false },
     rollupOptions: {
       output: {
-        entryFileNames: `assets/index-aegis-v1-[hash].js`,
-        chunkFileNames: `assets/[name]-aegis-v1-[hash].js`,
-        assetFileNames: `assets/[name]-aegis-v1-[hash][extname]`,
+        entryFileNames: `assets/app-[hash].js`,
+        chunkFileNames: `assets/module-[hash].js`,
+        assetFileNames: `assets/resource-[hash][extname]`,
       },
     },
   },
   plugins: [
     disableUnusedSupabaseHardwareFactor(),
     react(),
-    // mcp-js 0.24 externalizes a Windows drive path instead of bundling it.
-    // Keep the checked-in standalone function on Windows; Linux/Lovable builds
-    // still regenerate it from src/lib/mcp and the production assertion below
-    // rejects any local absolute path before a release can complete.
-    process.platform !== "win32" && mcpPlugin(),
+    secureMcpPlugin(),
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",

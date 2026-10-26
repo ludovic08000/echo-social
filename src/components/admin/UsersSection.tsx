@@ -99,10 +99,11 @@ export function UsersSection() {
       const { data, error } = await supabase.functions.invoke('admin-delete-user', { body: { target_user_id: userId } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      if (data?.success !== true || data?.auth_deleted !== true) throw new Error('Suppression non confirmée par le serveur.');
       return data;
     },
     onSuccess: (data) => {
-      toast({ title: '🗑️ Utilisateur supprimé', description: data?.warning || 'Compte et données supprimés.' });
+      toast({ title: '🗑️ Compte supprimé', description: data.message });
       setDeleteTarget(null);
       setDeleteConfirm('');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
@@ -258,7 +259,7 @@ export function UsersSection() {
           {deleteTarget && (
             <>
               <p className="text-sm text-muted-foreground">
-                Suppression de <strong className="text-foreground">{deleteTarget.name}</strong> et toutes ses données. <strong>Irréversible.</strong>
+                Suppression du compte de <strong className="text-foreground">{deleteTarget.name}</strong> et des données liées par la base. Les fichiers externes et les données soumises à rétention ne sont pas purgés par cette action. <strong>Irréversible.</strong>
               </p>
               <div className="space-y-2">
                 <p className="text-sm font-medium">Tapez <strong>SUPPRIMER</strong> :</p>

@@ -1,6 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { aiDataSharingEnabled } from "../_shared/ai-privacy.ts";
+import { ownsAgentConversation, reserveAgentUsage, type AgentUsageLease } from "../_shared/ai-agent-authority.ts";
+import { checkRateLimit } from "../_shared/rate-limit.ts";
 
 const ACTION_SYSTEM_PROMPT = `
 
@@ -132,6 +135,7 @@ function detectSearchIntent(message: string): { isSearch: boolean; query: string
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  let usageLease: AgentUsageLease | undefined;
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -158,6 +162,8 @@ serve(async (req) => {
       });
     }
     const userId: string = claimsData.claims.sub as string;
+    const burstDenial=await checkRateLimit(`agent-chat:${userId}`,20,60,corsHeaders);
+    if(burstDenial)return burstDenial;
 
     // Parse and validate input
     let body: any;
@@ -209,37 +215,6 @@ serve(async (req) => {
       });
     }
 
-    const today = new Date().toISOString().split("T")[0];
-    const { data: usage } = await supabase
-      .from("ai_agent_usage")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("agent_id", agent_id)
-      .eq("usage_date", today)
-      .maybeSingle();
-
-    const currentCount = usage?.message_count || 0;
-
-    // Check if user has an active Creator subscription (bypass limit)
-    const { data: subscription } = await supabase
-      .from("creator_subscriptions")
-      .select("status")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .maybeSingle();
-
-    const isSubscribed = !!subscription;
-
-    if (!isSubscribed && currentCount >= agent.free_messages_per_day) {
-      return new Response(JSON.stringify({
-        error: "limit_reached",
-        message: `Tu as atteint ta limite de ${agent.free_messages_per_day} messages gratuits par jour. Passe à l'abonnement Créateur pour des messages illimités ! 🚀`,
-        is_premium: agent.is_premium,
-      }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     // ── ADMIN GATE: Only admins can use neural-engine context ──
     let isAdmin = false;
     if (context === "neural-engine") {
@@ -260,17 +235,16 @@ serve(async (req) => {
     // ── Conversation ownership check ──
     let convId = conversation_id;
     if (convId) {
-      const { data: convOwner } = await supabase
-        .from("ai_agent_conversations")
-        .select("user_id")
-        .eq("id", convId)
-        .single();
-      if (!convOwner || convOwner.user_id !== userId) {
+      if (!await ownsAgentConversation(supabase,userId,agent_id,convId)) {
         return new Response(JSON.stringify({ error: "Conversation introuvable ou accès refusé" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
+    const reservation=await reserveAgentUsage(supabase,userId,agent_id,corsHeaders);
+    if(reservation.denial)return reservation.denial;
+    usageLease=reservation.lease;
+    const personalSharingAllowed=await aiDataSharingEnabled(userId);
     if (!convId) {
       const { data: conv } = await supabase
         .from("ai_agent_conversations")
@@ -292,14 +266,14 @@ serve(async (req) => {
 
     // ── Fetch user context for Zeus (recent posts, profile, neural engine, MEMORY) ──
     let userContext = "";
-    if (agent.slug === "zeus-companion") {
+    if (agent.slug === "zeus-companion" && personalSharingAllowed) {
       const [postsRes, profileRes, metricsRes, feedConfigRes, reportsRes, usageStatsRes, memoriesRes] = await Promise.all([
         supabase.from("posts").select("body, image_url, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(10),
         supabase.from("profiles").select("name, bio, mood_emoji, city").eq("user_id", userId).maybeSingle(),
-        supabase.from("ai_metrics_log").select("metric_type, value, module_id, created_at").order("created_at", { ascending: false }).limit(50),
+        isAdmin ? supabase.from("ai_metrics_log").select("metric_type, value, module_id, created_at").order("created_at", { ascending: false }).limit(50) : Promise.resolve({data:[]}),
         supabase.from("feed_algorithm_config").select("key, value, description").order("key"),
-        supabase.from("abuse_reports").select("report_type, status, created_at").order("created_at", { ascending: false }).limit(20),
-        supabase.from("ai_agent_usage").select("usage_date, message_count").order("usage_date", { ascending: false }).limit(7),
+        isAdmin ? supabase.from("abuse_reports").select("report_type, status, created_at").order("created_at", { ascending: false }).limit(20) : Promise.resolve({data:[]}),
+        supabase.from("ai_agent_usage").select("usage_date, message_count").eq("user_id",userId).order("usage_date", { ascending: false }).limit(7),
         // Fetch all memories for this user
         supabase.from("zeus_memory").select("id, category, content, importance, created_at").eq("user_id", userId).order("importance", { ascending: false }).limit(50),
       ]);
@@ -409,7 +383,7 @@ serve(async (req) => {
       // ── Marketplace search ──
       const { isSearch, query } = detectSearchIntent(sanitizedMessage);
       if (isSearch && query.length > 0) {
-        const searchTerms = query.split(' ').filter(t => t.length > 2).slice(0, 5);
+        const searchTerms = query.replace(/[^\p{L}\p{N}\s-]/gu,' ').split(/\s+/).filter(t => t.length > 2).slice(0, 5);
         let productQuery = supabase
           .from("products")
           .select("id, title, price, thumbnail_url, city, condition, category, description, rating_average, images")
@@ -524,7 +498,8 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
 
     const aiMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
-      ...(history || []).map((m: any) => ({ role: m.role, content: m.content })),
+      ...(history || []).filter((m:any)=>["user","assistant"].includes(m.role)&&typeof m.content==="string")
+        .map((m: any) => ({ role: m.role, content: m.content.slice(0,10000) })),
     ];
 
     // Tool definitions
@@ -577,7 +552,7 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
           },
         },
       },
-    ];
+    ].filter(tool=>personalSharingAllowed||tool.function.name!=="save_memory");
 
     // First call with tools
     let response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -656,6 +631,7 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
           }
 
           if (tc.function.name === "save_memory") {
+            if(!personalSharingAllowed)return {role:"tool",tool_call_id:tc.id,content:JSON.stringify({saved:false,reason:"PERSONALIZATION_DISABLED"})};
             try {
               const { content: memContent, category, importance } = args;
               if (!memContent || memContent.length < 3) {
@@ -718,12 +694,13 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
 
           if (tc.function.name === "forget_memory") {
             try {
-              const keyword = args.memory_content_keyword || "";
+              const keyword = typeof args.memory_content_keyword === "string" ? args.memory_content_keyword.trim() : "";
+              if(keyword.length<3||keyword.length>200)return {role:"tool",tool_call_id:tc.id,content:JSON.stringify({deleted:false,error:"INVALID_MEMORY_KEYWORD"})};
               const { data: matches } = await supabase
                 .from("zeus_memory")
                 .select("id, content")
                 .eq("user_id", userId)
-                .ilike("content", `%${keyword}%`);
+                .ilike("content", `%${keyword.replace(/[\\%_]/g,"\\$&")}%`);
 
               if (matches && matches.length > 0) {
                 const ids = matches.map((m: any) => m.id);
@@ -771,14 +748,7 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
 
     // Zeus reste dans son espace IA ; aucun envoi en clair dans la messagerie E2EE.
 
-    // Update usage
-    if (usage) {
-      await supabase.from("ai_agent_usage").update({ message_count: currentCount + 1 }).eq("id", usage.id);
-    } else {
-      await supabase.from("ai_agent_usage").insert({
-        user_id: userId, agent_id, usage_date: today, message_count: 1,
-      });
-    }
+    await usageLease.commit();
 
     // Simulate SSE streaming by chunking the final content
     const encoder = new TextEncoder();
@@ -809,5 +779,7 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  } finally {
+    await usageLease?.close().catch(()=>console.error("[agent-chat] quota release unconfirmed"));
   }
 });

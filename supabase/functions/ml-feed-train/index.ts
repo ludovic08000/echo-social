@@ -1,5 +1,6 @@
 // ML Feed trainer: hourly job that learns user preferences and post features
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.0";
+import { publicTrainingPosts } from "../_shared/ai-privacy.ts";
 import {
   evaluateMmrShadow,
   parsePgVector,
@@ -314,7 +315,13 @@ Deno.serve(async (req) => {
     const EXTRACT_CONCURRENCY = 5;
     for (let i = 0; i < toExtract.length; i += EXTRACT_CONCURRENCY) {
       if (overBudget()) throw new Error("TRAINING_BUDGET_EXHAUSTED");
-      const chunk = toExtract.slice(i, i + EXTRACT_CONCURRENCY);
+      const proposed=toExtract.slice(i,i+EXTRACT_CONCURRENCY);
+      const chunk = await publicTrainingPosts(supabase,proposed);
+      const allowedIds=new Set(chunk.map(post=>post.id));
+      for(const post of proposed.filter(post=>!allowedIds.has(post.id))){
+        const skipped=await supabase.rpc("finish_feed_feature_job",{p_post:post.id,p_revision:post.revision,p_features:null});
+        if(skipped.error)throw skipped.error;
+      }
       const embeddingTexts = chunk.map(post => trainingSnippet(post.body));
       const [features, embeddings] = await Promise.all([
         Promise.all(chunk.map(post => extractFeatures(post))),

@@ -180,9 +180,7 @@ Deno.serve(async (req) => {
 
     // Action
     let action: "allow"|"log"|"penalize"|"ban" = "allow";
-    if (confidence >= 85 && category !== "benign") action = "ban";
-    else if (confidence >= 60 && category !== "benign") action = "penalize";
-    else if (confidence >= 30 && category !== "benign") action = "log";
+    if (confidence >= 30 && category !== "benign") action = "log";
 
     const payloadHash = sample ? await sha256(sample) : null;
 
@@ -214,18 +212,7 @@ Deno.serve(async (req) => {
       }).then(() => {}, () => {});
     }
 
-    // Enforcement
-    if (action === "ban" && ip !== "unknown" && mode !== "test") {
-      await supabase.from("banned_ips").insert({
-        ip, reason: `AI Shield (${decidedBy}): ${category} (${confidence})`,
-        banned_until: new Date(Date.now() + 24 * 3600_000).toISOString(),
-        severity: "critical",
-      }).then(() => {}, () => {});
-      await supabase.from("security_incidents").insert({
-        type: category, severity: "critical", source_ip: ip,
-        details: { reason, endpoint, decided_by: decidedBy, confidence, ua: ua.slice(0, 200) },
-      }).then(() => {}, () => {});
-    }
+    // Aucune sanction globale sur une observation declarative sans preuve serveur.
 
     supabase.from("ai_engine_events").insert({
       module: "ai_threat_shield",
@@ -235,7 +222,7 @@ Deno.serve(async (req) => {
     }).then(() => {}, () => {});
 
     return new Response(
-      JSON.stringify({ action, category, confidence, decided_by: decidedBy, detector, reason, model_version: model.version, ml_prob: mlProb }),
+      JSON.stringify({ action, enforcement: "review_only", category, confidence, decided_by: decidedBy, detector, reason, model_version: model.version, ml_prob: mlProb }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {

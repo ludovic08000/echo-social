@@ -6,6 +6,7 @@ import {
   buildInclusionProof,
   verifyInclusionProof,
   signedHeadBytes,
+  nodeHash,
 } from '../ktMerkle';
 
 async function makeLeaves(n: number) {
@@ -92,5 +93,19 @@ describe('Lot L6 — KT Merkle helpers', () => {
     expect(new TextDecoder().decode(a)).toBe(new TextDecoder().decode(b));
     expect(new TextDecoder().decode(a)).toContain('"epoch":"7"');
     expect(new TextDecoder().decode(a)).toContain('"prev_epoch":"6"');
+  });
+
+  it('rejects malformed hashes, directions and unbounded proofs without coercion', async () => {
+    const hash=await leafHash('valid');
+    expect(await verifyInclusionProof(hash,[],hash)).toBe(true);
+    expect(await verifyInclusionProof('zz'.repeat(32),[],hash)).toBe(false);
+    expect(await verifyInclusionProof(hash,[{sibling:hash,position:'invalid'}] as any,hash)).toBe(false);
+    expect(await verifyInclusionProof(hash,new Array(65).fill({sibling:hash,position:'left'}),hash)).toBe(false);
+    await expect(nodeHash('zz'.repeat(32),hash)).rejects.toThrow('KT_INVALID_HEX');
+  });
+  it('does not invent an inclusion proof for an invalid leaf index',async()=>{
+    const {levels}=await buildMerkleTree(await makeLeaves(3));
+    for(const index of [-1,0.5,3,Infinity])expect(()=>buildInclusionProof(levels,index)).toThrow('KT_INVALID_PROOF_INDEX');
+    expect(()=>buildInclusionProof([],0)).toThrow('KT_INVALID_PROOF_INDEX');
   });
 });

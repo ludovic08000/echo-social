@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { SELLER_PUBLIC_COLUMNS } from '@/lib/publicSelections';
+import type { Tables } from '@/integrations/supabase/types';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
@@ -77,13 +79,9 @@ export function useSellerProfile() {
     queryKey: ['seller-profile', user?.id],
     queryFn: async () => {
       if (!user) return null;
-      const { data, error } = await supabase
-        .from('seller_profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const { data, error } = await (supabase.rpc as any)('my_seller_profile');
       if (error) throw error;
-      return data;
+      return data as Tables<'seller_profiles'> | null;
     },
     enabled: !!user,
   });
@@ -118,7 +116,7 @@ export function useCreateSellerProfile() {
       const { data, error } = await supabase
         .from('seller_profiles')
         .insert({ user_id: user.id, store_name: storeName })
-        .select()
+        .select(SELLER_PUBLIC_COLUMNS)
         .single();
       if (error) throw error;
       return data;

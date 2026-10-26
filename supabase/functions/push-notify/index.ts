@@ -4,6 +4,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { allowedPushEndpoint } from "../_shared/push-endpoint.ts";
 import {
   buildPrivacySafePushPayload,
   normalizeAegisPushKind,
@@ -284,7 +285,8 @@ Deno.serve(async (req) => {
           expired.push(subscription.id);
           continue;
         }
-        const endpoint = new URL(subscription.endpoint);
+        const endpoint = allowedPushEndpoint(subscription.endpoint);
+        if(!endpoint){safeServerLog("push","UNTRUSTED_ENDPOINT",{kind});continue;}
         const jwt = await buildVapidJwt(
           `${endpoint.protocol}//${endpoint.host}`,
           vapidSubject,
@@ -297,6 +299,8 @@ Deno.serve(async (req) => {
         );
         const response = await fetch(subscription.endpoint, {
           method: "POST",
+          redirect: "error",
+          signal: AbortSignal.timeout(10_000),
           headers: {
             Authorization: `vapid t=${jwt}, k=${vapidPublic}`,
             "Content-Encoding": "aes128gcm",

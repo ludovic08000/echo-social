@@ -1,7 +1,7 @@
 // Lot L6 — Key Transparency: publish a Merkle epoch.
 //
 // Reads pending rows from `e2ee_transparency_log` (where included_in_epoch IS NULL),
-// hashes them in canonical form, builds an RFC 6962-style Merkle tree, and writes:
+// hashes them in canonical form, keeps ForSure's duplicate-right Merkle shape, and atomically writes:
 //   - a signed `e2ee_kt_tree_heads` row,
 //   - one `e2ee_kt_leaves` row per included entry,
 //   - flips `included_in_epoch` + `leaf_hash` on the log rows.
@@ -149,6 +149,7 @@ async function signEd25519(privJwk: JsonWebKey, data: Uint8Array): Promise<strin
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return new Response(null, { status: 405, headers: { ...corsHeaders, Allow: "POST" } });
 
   const cronSecret = Deno.env.get("KT_CRON_SECRET");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -190,22 +191,25 @@ Deno.serve(async (req) => {
     }
 
     // 2) Compute leaf hashes.
-    const leaves: { id: number; hash: string }[] = [];
+    const leaves: { id: string; hash: string }[] = [];
     for (const row of pending) {
+      if (typeof row.id === 'number' && !Number.isSafeInteger(row.id)) throw new Error('KT_LOG_ID_UNSAFE');
       const h = await leafHash(canonicalLeafPayload(row));
-      leaves.push({ id: row.id as number, hash: h });
+      leaves.push({ id: String(row.id), hash: h });
     }
     const root = await buildRoot(leaves.map((l) => l.hash));
 
     // 3) Pick next epoch number + prev.
-    const { data: prevHead } = await supabase
+    const { data: prevHead, error: previousError } = await supabase
       .from("e2ee_kt_tree_heads")
       .select("epoch")
       .order("epoch", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (previousError) throw new Error('KT_PREVIOUS_HEAD_UNAVAILABLE');
     const epoch = prevHead?.epoch ? Number(prevHead.epoch) + 1 : 1;
     const prevEpoch = prevHead?.epoch ?? null;
+    if (!Number.isSafeInteger(epoch)) throw new Error('KT_EPOCH_UNSAFE');
 
     // 4) Sign head.
     const { id: keyId, privJwk } = await getOrCreateSigningKey(supabase);
@@ -214,37 +218,18 @@ Deno.serve(async (req) => {
       signedHeadBytes(epoch, root, leaves.length, prevEpoch === null ? null : Number(prevEpoch)),
     );
 
-    // 5) Insert head + leaves + flip log entries.
-    const { error: hErr } = await supabase.from("e2ee_kt_tree_heads").insert({
-      epoch,
-      root_hash: root,
-      leaf_count: leaves.length,
-      prev_epoch: prevEpoch,
-      signing_key_id: keyId,
-      signature,
+    // Tête, feuilles et annotations sont un seul commit : aucun succès partiel.
+    const { data: committed, error: publishError } = await supabase.rpc('publish_transparency_epoch', {
+      p_epoch: epoch, p_prev_epoch: prevEpoch, p_root: root,
+      p_signing_key: keyId, p_signature: signature, p_leaves: leaves,
     });
-    if (hErr) throw hErr;
-
-    const leafRows = leaves.map((l, i) => ({
-      epoch,
-      leaf_index: i,
-      log_id: l.id,
-      leaf_hash: l.hash,
-    }));
-    // Chunk inserts to keep payloads reasonable.
-    for (let i = 0; i < leafRows.length; i += 500) {
-      const chunk = leafRows.slice(i, i + 500);
-      const { error: lErr } = await supabase.from("e2ee_kt_leaves").insert(chunk);
-      if (lErr) throw lErr;
+    if (publishError) {
+      if (publishError.code === '40001') return new Response(JSON.stringify({ error: 'KT_EPOCH_RACE', retryable: true }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+      throw new Error('KT_PUBLICATION_FAILED');
     }
-
-    // Update log rows with their leaf hash + epoch.
-    for (const l of leaves) {
-      await supabase
-        .from("e2ee_transparency_log")
-        .update({ leaf_hash: l.hash, included_in_epoch: epoch })
-        .eq("id", l.id);
-    }
+    if (committed !== true) throw new Error('KT_PUBLICATION_UNCONFIRMED');
 
     return new Response(
       JSON.stringify({

@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
       );
       const { data: friendProfiles } = await serviceClient
         .from("profiles")
-        .select("name, city")
+        .select("name")
         .in("user_id", friendIds);
       exportData.friends = friendProfiles;
     }

@@ -5,6 +5,7 @@ import { isAnalyticsEnabled } from "@/lib/privacyPreferences";
 import { FeedEventQueue, dwellSignal } from "@/lib/feedTelemetry";
 import type { FeedSignalType } from "@/lib/recsysV8";
 import { emitFeedPerformanceMetric } from './useFeedPerformance';
+import { sendFeedEvents } from '@/lib/feedApi';
 
 const queue = new FeedEventQueue();
 const exposures = new Map<string, string>();
@@ -25,8 +26,7 @@ async function flush() {
     const { data, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) throw sessionError;
     if (data.session?.user.id !== owner || queuedUser !== owner || !isAnalyticsEnabled(owner)) return;
-    const { error } = await supabase.rpc("ml_ingest_feed_events" as never, { p_events: events } as never);
-    if (error) throw error;
+    await sendFeedEvents(events, owner);
   });
   failures = success ? 0 : failures + 1;
   if (failures >= 6) { queue.clear(); failures = 0; return; }

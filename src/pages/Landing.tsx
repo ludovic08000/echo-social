@@ -29,31 +29,31 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
 }
 
 const features = [
-  { icon: MessageCircle, title: 'Messagerie privée', desc: 'Échangez en toute confidentialité avec vos proches. Messages texte, vocaux, GIFs et appels vidéo intégrés.' },
+  { icon: MessageCircle, title: 'Messagerie privée', desc: 'Échangez avec vos proches. Messages texte, vocaux et appels vidéo intégrés.' },
   { icon: Video, title: 'Live streaming gratuit', desc: 'Lancez un live en un clic, interagissez avec votre audience en temps réel. Aucun abonnement requis.' },
   { icon: Tv, title: 'Canaux TV personnalisés', desc: 'Créez votre propre chaîne, publiez du contenu vidéo et construisez votre communauté de fans.' },
   { icon: Store, title: 'Marketplace intégré', desc: 'Vendez et achetez directement sur la plateforme. Paiement sécurisé et suivi de livraison inclus.' },
-  { icon: Shield, title: 'Vie privée respectée', desc: 'Zéro cookie de tracking, zéro publicité ciblée. Vos données personnelles ne sont jamais vendues.' },
+  { icon: Shield, title: 'Vie privée respectée', desc: 'Pas de revente de données. La personnalisation publicitaire est facultative et distincte des recommandations du feed.' },
   { icon: Users, title: 'Communauté bienveillante', desc: 'Modération IA avancée, protection des mineurs et outils anti-harcèlement intégrés.' },
 ];
 
 const advantages = [
-  { icon: Lock, title: 'Sans publicité ni tracking', desc: 'Contrairement à Facebook et Instagram, Forsure ne monétise pas vos données. Profitez d\'une expérience 100% sans pub.' },
+  { icon: Lock, title: 'Des choix transparents', desc: 'Les publicités sont identifiées. Leurs réglages de personnalisation sont distincts de vos choix pour le fil d\'actualité.' },
   { icon: Heart, title: 'Éthique par design', desc: 'Pas d\'algorithme addictif. Forsure privilégie votre bien-être numérique avec des outils de détox et de contrôle du temps d\'écran.' },
   { icon: Zap, title: 'Tout-en-un', desc: 'Messagerie, live, vidéos, marketplace, jeux, challenges... Tout ce dont vous avez besoin, dans une seule application.' },
-  { icon: Globe, title: '100% français', desc: 'Conçu et hébergé en France, Forsure respecte le RGPD et les réglementations européennes sur la protection des données.' },
+  { icon: Globe, title: 'Une initiative française', desc: 'Retrouvez les informations sur les données, les prestataires techniques et vos droits dans la politique de confidentialité.' },
 ];
 
 const faqItems = [
   { q: 'Forsure est-il gratuit ?', a: 'Oui, Forsure est entièrement gratuit. L\'inscription, la messagerie, le live streaming, les jeux multijoueurs et toutes les fonctionnalités de base sont accessibles sans frais. Des options premium optionnelles sont disponibles pour les créateurs de contenu (abonnements, badge vérifié).' },
-  { q: 'En quoi Forsure est différent de Facebook ou Instagram ?', a: 'Forsure est un réseau social éthique qui ne vend aucune donnée, n\'utilise aucun tracking publicitaire et ne pratique aucun shadow banning. Vos messages privés sont chiffrés de bout en bout par Libsignal avec PQXDH + Double Ratchet, vos cookies sont sécurisés (HttpOnly, Secure, SameSite=Strict) et vous gardez le contrôle total de vos données. De plus, Forsure intègre un marketplace, des jeux, des lives, des défis et un assistant IA (Zeus).' },
-  { q: 'Comment mes messages sont-ils protégés ?', a: 'Vos conversations privées 1-à-1 bénéficient d\'un chiffrement de bout en bout (E2EE) assuré par Libsignal avec PQXDH + Double Ratchet. Vos clés privées ne quittent jamais votre appareil. Vous pouvez vérifier l\'identité de vos contacts via une empreinte cryptographique et protéger l\'accès à votre messagerie par un code PIN dédié.' },
-  { q: 'Comment Forsure protège ma vie privée ?', a: 'Aucun cookie publicitaire, aucune revente de données, aucun profilage commercial. Les cookies techniques sont protégés (Secure, HttpOnly, SameSite=Strict). Vous pouvez configurer la visibilité de votre profil, de vos publications, de votre statut en ligne, activer le mode fantôme, et exporter ou supprimer toutes vos données à tout moment (RGPD). Un bandeau de consentement cookies vous est présenté dès la première visite.' },
+  { q: 'En quoi Forsure est différent de Facebook ou Instagram ?', a: 'Forsure associe un fil d\'actualité réglable, des outils de bien-être et une messagerie privée chiffrée. La personnalisation publicitaire est facultative et séparée des recommandations. Le service comprend aussi un marketplace, des jeux, des lives, des défis et un assistant IA (Zeus).' },
+  { q: 'Comment mes messages sont-ils protégés ?', a: 'Les conversations privées 1-à-1 utilisent Libsignal avec PQXDH + Double Ratchet. Une sauvegarde de continuité peut conserver un coffre chiffré contenant les clés, sans les transmettre en clair. Vous pouvez vérifier les empreintes de vos contacts et protéger l\'accès local par un PIN. N\'effacez pas le navigateur sans avoir vérifié la sauvegarde et la restauration.' },
+  { q: 'Comment Forsure protège ma vie privée ?', a: 'Vous pouvez régler la visibilité de votre profil et de vos publications, ainsi que les choix de personnalisation. La session web utilise localStorage, accessible au JavaScript du site, et non un cookie HttpOnly. Les paramètres proposent l\'export et la demande de suppression ; les copies, médias et conservations légales nécessitent un suivi distinct. La politique de confidentialité décrit ces traitements.' },
   { q: 'Comment les utilisateurs sont-ils protégés ?', a: 'Forsure combine signalement, blocage, modération des contenus et outils de bien-être numérique. Le contrôle parental par code PIN est désactivé et n’impose plus de restriction au compte, au feed ou à la messagerie.' },
   { q: 'Forsure est-il sécurisé contre les attaques ?', a: 'Oui. Forsure dispose d\'une protection DDoS avec rate limiting adaptatif et pénalités progressives, d\'une IA de monitoring de sécurité (SOC) auto-apprenante qui analyse les menaces en temps réel, d\'un score de confiance (Trust Score) pour détecter les comportements suspects, et d\'une politique CSP stricte contre les injections de scripts. Les inscriptions sont protégées par vérification MX, honeypot anti-bot et politique de mot de passe stricte.' },
-  { q: 'Forsure est-il disponible sur mobile ?', a: 'Oui, Forsure est accessible sur tous les navigateurs mobiles et est optimisé comme une application web progressive (PWA). Des applications iOS et Android natives sont également disponibles pour une expérience optimale avec notifications push.' },
+  { q: 'Forsure est-il disponible sur mobile ?', a: 'Forsure est accessible dans les navigateurs mobiles et comme application web progressive (PWA). La disponibilité d\'une application native dépend de sa publication effective dans les boutiques ; une compilation de test ne constitue pas une publication.' },
   { q: 'Puis-je gagner de l\'argent sur Forsure ?', a: 'Oui ! Les créateurs peuvent monétiser leur audience grâce aux abonnements premium, aux tips (pourboires) de la communauté et au marketplace intégré avec suivi de commande, négociation de prix et coach IA vendeur. Les paiements sont traités de manière sécurisée via Stripe — Forsure ne stocke aucune donnée bancaire.' },
-  { q: 'Qu\'est-ce que Zeus, l\'assistant IA ?', a: 'Zeus est votre compagnon IA intégré. Il vous aide à découvrir la plateforme, répond à vos questions, peut créer du contenu pour vous et accompagne les vendeurs du marketplace avec un coach IA dédié. Zeus n\'utilise vos messages que dans le cadre de votre conversation et ne stocke aucun historique à des fins d\'entraînement.' },
+  { q: 'Qu\'est-ce que Zeus, l\'assistant IA ?', a: 'Zeus répond à vos demandes, vous aide à créer du contenu et accompagne les vendeurs. Les demandes adressées aux fonctionnalités IA peuvent être transmises à un prestataire via la passerelle IA. N\'y saisissez pas de secrets ou de données sensibles inutiles.' },
 ];
 
 export default function Landing() {
@@ -77,8 +77,8 @@ export default function Landing() {
   return (
     <div className="min-h-screen relative flex flex-col overflow-x-hidden bg-background">
       <SEOHead
-        title="Réseau social intelligent et sécurisé — Algorithme contrôlé, sans pub"
-        description="Forsure : le réseau social intelligent et sécurisé où vous contrôlez l'algorithme. 100% gratuit, sans publicité ni tracking. Alternative éthique à Facebook, Instagram, TikTok."
+        title="Réseau social — Votre fil, vos choix"
+        description="Forsure : un réseau social avec un fil réglable, des outils de bien-être et une messagerie privée. Inscription gratuite, choix de personnalisation distincts."
         url="https://forsure.fans/"
         jsonLd={{
           '@context': 'https://schema.org',
@@ -86,7 +86,7 @@ export default function Landing() {
           name: 'Forsure',
           alternateName: 'Forsure — Réseau social éthique',
           url: 'https://forsure.fans/',
-          description: "Forsure est le réseau social intelligent et sécurisé où vous contrôlez l'algorithme. 100% gratuit, sans publicité ni tracking.",
+          description: "Forsure : un fil réglable, des outils de bien-être et une messagerie privée. Inscription gratuite, choix de personnalisation distincts.",
           inLanguage: 'fr-FR',
           publisher: { '@type': 'Organization', name: 'Forsure', url: 'https://forsure.fans' },
           potentialAction: {
@@ -111,7 +111,7 @@ export default function Landing() {
           
           <h1 className="text-2xl sm:text-4xl md:text-5xl font-display font-bold tracking-tight text-foreground mb-4 sm:mb-5 leading-tight break-words">
             Le réseau social éthique,{' '}
-            <span className="text-gradient-gold">sans publicité ni tracking</span>
+            <span className="text-gradient-gold">à votre rythme, selon vos choix</span>
           </h1>
           
           <p className="text-base sm:text-xl text-muted-foreground mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
@@ -166,7 +166,7 @@ export default function Landing() {
           </h2>
           <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto">
             Forsure est une plateforme sociale complète qui combine messagerie privée, live streaming, 
-            partage de vidéos, marketplace et bien plus — le tout sans publicité.
+            partage de vidéos, marketplace et bien plus — avec des réglages de personnalisation distincts.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((f) => (
@@ -288,12 +288,12 @@ export default function Landing() {
           </h2>
           <p className="text-muted-foreground leading-relaxed text-sm sm:text-base">
             Forsure est né d'une conviction simple : un réseau social peut exister sans exploiter ses utilisateurs. 
-            Conçu et hébergé en France, Forsure respecte le RGPD et toutes les réglementations européennes. 
-            Notre modèle économique repose sur des abonnements premium optionnels pour les créateurs de contenu, 
+            ForSure est une initiative française utilisant plusieurs prestataires cloud décrits dans sa politique de confidentialité.
+            Notre modèle économique comprend des abonnements premium optionnels pour les créateurs de contenu et des publicités identifiées,
             et non sur la vente de vos données personnelles. Que vous soyez un particulier qui souhaite rester 
             en contact avec ses proches, un créateur de contenu à la recherche d'une plateforme de live streaming 
             gratuite, ou un vendeur qui veut lancer sa boutique en ligne sur un marketplace social — Forsure 
-            est la plateforme qu'il vous faut. Rejoignez des milliers d'utilisateurs qui ont déjà fait le choix 
+            est une plateforme pour vous retrouver. Rejoignez une communauté qui fait le choix
             d'un réseau social respectueux de leur vie privée.
           </p>
         </div>
@@ -311,7 +311,7 @@ export default function Landing() {
             </a>
           </div>
           <p className="text-xs text-muted-foreground text-center leading-relaxed max-w-xl">
-            <strong>Forsure</strong> — Réseau social éthique français gratuit sans publicité. 
+            <strong>Forsure</strong> — Réseau social français, inscription gratuite et choix de personnalisation.
             Alternative à Facebook, Instagram, TikTok, Snapchat et Twitter/X. 
             Messagerie chiffrée, live streaming, marketplace, appels vidéo, canaux TV, jeux multijoueur. 
             Contact : <a href="mailto:dpo@forsure.fans" className="underline hover:text-primary">dpo@forsure.fans</a>

@@ -1,5 +1,10 @@
 # Architecture du feed et exploitation
 
+> Mise à jour locale du 26 octobre 2026 : le feed principal, ses préférences et sa télémétrie
+> passent désormais par une [frontière API Lovable Cloud explicite](../security/FEED_API_BOUNDARY_2026-10-26.md).
+> Le classement décrit ci-dessous reste inchangé. L'API doit être livrée et vérifiée avant le
+> nouveau client ; aucune publication n'est attestée par cette note.
+
 > Mise à jour du 7 octobre 2026 : l'adaptateur IPinfo **de découverte/publicité**
 > décrit dans l'historique ci-dessous est remplacé par DB-IP City Lite gratuit,
 > sans appel à une API IP tierce. Voir [le guide d'intégration DB-IP](../../scripts/geoip/README.md)

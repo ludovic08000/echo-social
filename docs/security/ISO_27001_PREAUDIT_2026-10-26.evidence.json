@@ -1,0 +1,104 @@
+{
+  "assessmentDate": "2026-10-26",
+  "timezone": "Europe/Paris",
+  "kind": "technical-and-documentary-readiness-assessment-not-certification",
+  "scope": {
+    "productionOrigin": "https://forsure.fans",
+    "cloudProvider": "Lovable Cloud",
+    "projectId": "14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907",
+    "localHead": "43c39f8c6f64992dc3427f0ee90178dc207d6b56",
+    "localTreeHasPreexistingChanges": true,
+    "pilotModified": false,
+    "r2ActiveTesting": false,
+    "exhaustiveAnnexAControlAudit": false
+  },
+  "standards": ["ISO/IEC 27001:2022", "ISO/IEC 27001:2022/Amd 1:2024"],
+  "supportingReferencesNotSeparatelyCertified": ["ISO/IEC 27002:2022", "ISO/IEC 27701:2025"],
+  "tests": {
+    "vitest": {"passed": 2049, "failed": 0, "skipped": 1, "report": ".tmp/iso-readiness-regression-20261026.json"},
+    "typecheckExitCode": 0,
+    "aegisGateway": {"passed": 37, "failed": 0, "initialSandboxLocalhostDenied": true, "rerunWithLocalhostAccessPassed": true},
+    "realLibsignalWasmDirectionsPassed": 6,
+    "productionMessageOrCallTestPerformed": false,
+    "restoreTestPerformed": false,
+    "buildRerunDuringThisAssessment": false,
+    "globalLintRerun": false
+  },
+  "servedBuild": {
+    "checkedAtUtc": "2026-10-26T15:37:32.041Z",
+    "status": 200,
+    "version": "1792045424013",
+    "builtAt": "2026-10-15T06:23:44.013Z"
+  },
+  "headers": {
+    "path": "/feed",
+    "httpStatus": 200,
+    "checkerExitCode": 1,
+    "failures": ["CSP_HTTP_FRAME_ANCESTORS_MISSING_OR_PERMISSIVE", "X_FRAME_OPTIONS_MISSING_OR_PERMISSIVE"]
+  },
+  "anonymousColumnChecks": {
+    "method": "HEAD",
+    "limit": 0,
+    "rowsOrValuesRead": false,
+    "readableRowsProven": false,
+    "results": [
+      {"table": "live_streams", "column": "stream_key", "status": 200, "checkedAtUtc": "2026-10-26T15:30:21.107Z"},
+      {"table": "seller_profiles", "column": "total_revenue", "status": 200, "checkedAtUtc": "2026-10-26T15:30:21.451Z"},
+      {"table": "ai_agents", "column": "system_prompt", "status": 200, "checkedAtUtc": "2026-10-26T15:30:21.791Z"}
+    ]
+  },
+  "cloudSecurityPanelObservation": {
+    "newScanTriggered": false,
+    "critical": 11,
+    "warning": 17,
+    "info": 2,
+    "total": 30,
+    "deepScanAgeDisplayed": "8 days",
+    "quickScanAgeDisplayed": "15 minutes",
+    "panelDependencyPackages": 72,
+    "panelDependencyKnownIssues": 102,
+    "notAllFindingsIndependentlyValidated": true,
+    "findingsMayOverlap": true,
+    "findingsIgnoredOrFixed": false
+  },
+  "npmAuditLocalOmitDev": {
+    "registry": "https://registry.npmjs.org",
+    "usesSystemCertificateAuthorities": true,
+    "tlsValidationDisabled": false,
+    "exitCode": 1,
+    "packageCounts": {"critical": 1, "high": 13, "moderate": 11, "low": 2, "info": 0, "total": 27},
+    "isExploitCount": false,
+    "publishedRuntimeCoverageProven": false,
+    "criticalExample": {
+      "package": "proxy-addr",
+      "installedVersion": "2.0.7",
+      "parent": "express@5.2.1",
+      "ancestor": "@modelcontextprotocol/sdk@1.32.1",
+      "advisory": "https://github.com/jshttp/proxy-addr/security/advisories/GHSA-jqcg-44mw-7w3h",
+      "vulnerableProxyTrustConfigurationDemonstrated": false
+    }
+  },
+  "cloudBackupsPanel": {
+    "backupPresenceVerified": true,
+    "latestObservedUtc": "2026-10-26T15:25:00Z",
+    "precedingObservedUtc": "2026-10-23T13:20:33Z",
+    "earliestVisibleDate": "2026-10-12",
+    "storageFileCoverageByDatabaseBackup": false,
+    "restoreInitiated": false,
+    "rpoRtoProven": false
+  },
+  "authRecoveryObservedEarlierSameDay": {
+    "dnsInitiallyNxDomain": true,
+    "cloudWakingStateObserved": true,
+    "healthHttpStatusAfterRecovery": 200,
+    "settingsHttpStatusAfterRecovery": 200,
+    "authAllowedOrigin": "https://forsure.fans",
+    "exactAdministrativeSuspensionReasonVerified": false
+  },
+  "applicationSourceChangesDuringAudit": false,
+  "cloudConfigurationChanged": false,
+  "migrationsApplied": false,
+  "deploymentPerformed": false,
+  "certificationGranted": false,
+  "overallConclusion": "readiness-not-demonstrated-open-technical-gaps-and-management-evidence-required"
+}

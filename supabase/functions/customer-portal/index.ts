@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { paymentReturnOrigin } from "../_shared/payment-authority.ts";
 
 serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -33,7 +34,7 @@ serve(async (req) => {
     }
 
     const customerId = customers.data[0].id;
-    const origin = req.headers.get("origin") || "https://calm-connect-05.lovable.app";
+    const origin = paymentReturnOrigin(req);
 
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: customerId,

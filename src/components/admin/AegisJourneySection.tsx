@@ -12,6 +12,8 @@ type JourneyEvent = {
   request_id: string | null; duration_ms: number | null;
 };
 const LABELS: Record<string, string> = {
+  auth_password_verified: 'Mot de passe vérifié par Auth (pas une approbation d’appareil)',
+  auth_password_rejected: 'Mot de passe refusé par Auth',
   client_state_lookup: 'Client : lecture de l’appareil échouée', 'client_step.enrolling': 'Client : enregistrement appareil bloqué',
   'client_step.approving': 'Client : approbation appareil bloquée', 'client_step.binding': 'Client : liaison appareil bloquée',
   'client_step.preparing_keys': 'Client : préparation des clés bloquée', 'client_step.syncing_account': 'Client : synchronisation du compte bloquée',

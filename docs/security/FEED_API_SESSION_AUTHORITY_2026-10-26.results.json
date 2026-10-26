@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-26",
+  "status": "local_verified_not_deployed",
+  "cloudProvider": "Lovable Cloud",
+  "baseCommit": "43c39f8c6f64992dc3427f0ee90178dc207d6b56",
+  "scope": "Live Auth session check for all five authenticated feed-api operations; no device/key/login-approval changes",
+  "migration": "20261026170313_feed_api_active_session_authority.sql",
+  "checks": {
+    "redBeforeAdapterChange": { "passed": 20, "failed": 12, "report": ".tmp/feed-session-red.json" },
+    "targetedAfterChange": { "passed": 70, "failed": 0, "files": 7, "report": ".tmp/feed-session-targeted.json" },
+    "addedTests": 25,
+    "isolatedSessionPostgresTests": 14,
+    "isolatedFeedSqlHttpChecks": 70,
+    "fullVitest": {
+      "passed": 2136,
+      "failed": 0,
+      "skipped": 1,
+      "files": 303,
+      "startedAt": "2026-10-26T17:05:28.011Z",
+      "finishedAt": "2026-10-26T17:09:56.199Z",
+      "rawReport": ".tmp/feed-session-final-regression-20261026.json",
+      "rawReportSha256": "ffa368f2a0c3adfe3ff0ae6191dec5461ab0acbffb5b0ac0f5925cc4758bb258",
+      "skippedTest": "matches the original City Lite MMDB through the production reader in all ten languages"
+    },
+    "scopedEslint": "passed",
+    "denoTypecheck": "passed with system CA; no TLS bypass",
+    "applicationTypecheck": "passed",
+    "productionBuild": "passed with pre-existing bundling/PostCSS/Tailwind warnings",
+    "deviceApprovalTests": 37,
+    "realLibsignalWasmDirections": 6,
+    "aegisPwaMcpBoundary": "passed",
+    "publicBuildBoundary": "passed",
+    "gitDiffWhitespace": "passed; existing CRLF warnings"
+  },
+  "localBuild": {
+    "version": "1793034638330",
+    "builtAt": "2026-10-26T17:10:38.330Z",
+    "indexHtmlSha256": "0c28a45a5b4372388852c10b4ae628c1b52d8212088c384d0f7f72d4cd30b68f"
+  },
+  "sha256": {
+    "supabase/functions/feed-api/index.ts": "5f2953b1b54bdd9944fcfd68946ac4cd98277fba8803cba3bc70ca9c5b860a90",
+    "supabase/migrations/20261026170313_feed_api_active_session_authority.sql": "ce9f177c682f15a559a6bf0ec696d067dea8df16cfcb731146dd0e10d0b7acb8",
+    "src/test/feedApiCloudAdapter.test.ts": "644f9a74d7be8dffb517cf729f95f2103128343520b00bef6944925580dd68c9",
+    "src/test/feedApiSessionDatabase.test.ts": "b3c74e8aea4f9d04d56a570a94093762132c129e58dbcee53e89678ae86cdafb"
+  },
+  "production": {
+    "pushed": false,
+    "merged": false,
+    "migrationApplied": false,
+    "apiDeployed": false,
+    "frontendPublished": false,
+    "serverSessionBehaviorVerified": false,
+    "connectorReadAttempt": "Lovable get_project returned tool unavailable; no live schema or account/session data read"
+  },
+  "limitations": [
+    "Cloud migration, privileges, API delivery and real session revocation smoke test remain unverified",
+    "Legacy direct RPCs and non-feed APIs retain their existing permissions and are outside this new guard",
+    "Session check and content operation are separate requests; in-flight operations are not retroactively cancelled",
+    "JWT signature/Auth are mocked in adapter tests; SQL tests execute the actual migration in isolated PostgreSQL",
+    "No production latency/load or physical iOS/Android/Windows validation performed",
+    "No new inactivity policy, protection against theft of an active session, or ISO certification claimed"
+  ],
+  "rollout": [
+    "Inspect Cloud schema and existing feed/quota/RLS dependencies; do not bulk-apply unrelated pending migrations",
+    "Apply only the reviewed additive session migration and verify access with a consenting test account",
+    "Deploy feed-api and its shared modules after the migration",
+    "Verify live guest/valid/invalid/revoked session, ownership, quotas, cursor, preferences and origin paths before publishing the client",
+    "Retain previous compatible artifacts and test rollback on the isolated pilot; never bypass failed session checks or erase keys"
+  ]
+}

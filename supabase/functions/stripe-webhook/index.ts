@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { isCreatorPrice, settleMarketplacePayment } from "../_shared/payment-authority.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -29,6 +30,7 @@ serve(async (req) => {
     });
   }
 
+  let claimedEventId: string | null = null;
   try {
     const body = await req.text();
     const event: Stripe.Event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
@@ -41,14 +43,14 @@ serve(async (req) => {
       { p_event_id: event.id, p_event_type: event.type }
     );
     if (idemErr) {
-      console.error("[stripe-webhook] idempotence check failed", idemErr.message);
-      // Fail-open on infra error; Stripe will retry on non-200
+      throw idemErr;
     } else if (isNew === false) {
       console.log(`[stripe-webhook] event ${event.id} already processed — skipping`);
       return new Response(JSON.stringify({ received: true, duplicate: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    claimedEventId = event.id;
 
     if (event.type === "checkout_sessions.completed" || event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -191,17 +193,26 @@ serve(async (req) => {
       }
       // ── SUBSCRIPTION (Creator) ──
       else if (!session.metadata?.order_id && session.metadata?.user_id && session.mode === "subscription") {
+        const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+        if (!subscriptionId || session.payment_status !== "paid") throw new Error("CREATOR_PAYMENT_UNCONFIRMED");
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const creatorItems = subscription.items?.data ?? [];
+        if (subscription.status !== "active" || creatorItems.length !== 1
+          || !isCreatorPrice(creatorItems[0].price) || creatorItems[0].quantity !== 1) {
+          throw new Error("CREATOR_PRICE_MISMATCH");
+        }
         const userId = session.metadata.user_id;
         console.log(`Processing creator subscription for user ${userId}`);
 
         // Activate creator status
-        await supabase
+        const { error: creatorProfileError } = await supabase
           .from("profiles")
           .update({ is_creator: true, creator_since: new Date().toISOString(), creator_tier: "creator" })
           .eq("user_id", userId);
+        if (creatorProfileError) throw creatorProfileError;
 
         // Upsert creator_subscriptions
-        await supabase.from("creator_subscriptions").upsert({
+        const { error: creatorSubscriptionError } = await supabase.from("creator_subscriptions").upsert({
           user_id: userId,
           status: "active",
           plan: "creator_monthly",
@@ -212,6 +223,7 @@ serve(async (req) => {
           current_period_start: new Date().toISOString(),
           current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         }, { onConflict: "user_id" });
+        if (creatorSubscriptionError) throw creatorSubscriptionError;
 
         console.log(`✅ Creator activated for user ${userId}`);
       }
@@ -231,7 +243,7 @@ serve(async (req) => {
 
         const { data: order } = await supabase
           .from("orders")
-          .select("id, status, buyer_id")
+          .select("*")
           .eq("id", orderId)
           .single();
 
@@ -242,68 +254,9 @@ serve(async (req) => {
           });
         }
 
-        if (order.status === "paid" || order.status === "shipped" || order.status === "delivered") {
-          console.log(`Order ${orderId} already processed (status: ${order.status})`);
-          return new Response(JSON.stringify({ received: true }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+        if (!(await settleMarketplacePayment(supabase, stripe, order, session))) {
+          throw new Error("ORDER_PAYMENT_UNCONFIRMED");
         }
-
-        const paymentIntentId =
-          typeof session.payment_intent === "string"
-            ? session.payment_intent
-            : session.payment_intent?.id || null;
-
-        await supabase
-          .from("orders")
-          .update({
-            status: "paid",
-            paid_at: new Date().toISOString(),
-            payment_intent_id: paymentIntentId,
-          })
-          .eq("id", orderId);
-
-        await supabase
-          .from("order_items")
-          .update({ status: "paid" })
-          .eq("order_id", orderId);
-
-        const { data: orderItems } = await supabase
-          .from("order_items")
-          .select("product_id, quantity, seller_id")
-          .eq("order_id", orderId);
-
-        if (orderItems) {
-          for (const item of orderItems) {
-            // Atomic decrement (no read-then-update race). NULL stock = unlimited → no-op.
-            const { error: stockErr } = await supabase.rpc("decrement_product_stock", {
-              p_product_id: item.product_id,
-              p_quantity: item.quantity,
-            });
-            if (stockErr) {
-              console.error(`[stripe-webhook] stock decrement failed for ${item.product_id}`, stockErr.message);
-            }
-          }
-
-          const sellerIds = [...new Set(orderItems.map((i) => i.seller_id).filter(Boolean))];
-          for (const sellerId of sellerIds) {
-            const { data: sellerProfile } = await supabase
-              .from("seller_profiles")
-              .select("user_id")
-              .eq("id", sellerId)
-              .single();
-
-            if (sellerProfile) {
-              await supabase.from("notifications").insert({
-                user_id: sellerProfile.user_id,
-                actor_id: order.buyer_id,
-                type: "sale",
-              });
-            }
-          }
-        }
-
-        await supabase.from("cart_items").delete().eq("user_id", order.buyer_id);
         console.log(`✅ Order ${orderId} marked as paid via webhook`);
       }
     }
@@ -451,6 +404,8 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
+    // Un traitement échoué ne doit jamais être mémorisé comme réussi : Stripe doit pouvoir le rejouer.
+    if (claimedEventId) await supabase.from("stripe_processed_events").delete().eq("event_id", claimedEventId);
     console.error("Stripe webhook error:", error);
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 400,

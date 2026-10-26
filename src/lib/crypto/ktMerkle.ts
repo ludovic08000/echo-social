@@ -1,5 +1,5 @@
 /**
- * Lot L6 — Key Transparency: Merkle helpers (RFC 6962-style).
+ * Lot L6 — Key Transparency: ForSure historical duplicate-right Merkle format.
  *
  * Domain separation:
  *   leafHash(data)      = SHA256(0x00 || data)
@@ -34,7 +34,7 @@ function bytesToHex(bytes: Uint8Array): string {
 
 function hexToBytes(hex: string): Uint8Array {
   const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-  if (clean.length % 2 !== 0) throw new Error('KT_INVALID_HEX');
+  if (!/^(?:[0-9a-fA-F]{2})*$/.test(clean)) throw new Error('KT_INVALID_HEX');
   const out = new Uint8Array(clean.length / 2);
   for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
   return out;
@@ -91,9 +91,8 @@ export async function nodeHash(leftHex: string, rightHex: string): Promise<strin
  * Build a Merkle tree from an ordered list of leaf hashes (hex).
  * Returns the root hash and the per-level arrays (level 0 = leaves).
  *
- * RFC 6962 convention: when a level has an odd count, the lone right node
- * is duplicated implicitly (its parent = nodeHash(node, node)). That keeps
- * proofs stable even for non-power-of-two leaf counts.
+ * ForSure's existing convention duplicates the last node on odd levels.
+ * This is not RFC 6962's tree shape. Keep published roots byte-compatible.
  */
 export async function buildMerkleTree(
   leafHashes: string[],
@@ -122,7 +121,8 @@ export type MerkleProofStep = { sibling: string; position: 'left' | 'right' };
 
 /** Inclusion proof for the leaf at `index`. Walk bottom-up. */
 export function buildInclusionProof(levels: string[][], index: number): MerkleProofStep[] {
-  if (levels.length === 0 || levels[0].length === 0) return [];
+  if (!Number.isSafeInteger(index)||index<0||!levels[0]?.length||index>=levels[0].length)
+    throw new Error('KT_INVALID_PROOF_INDEX');
   const proof: MerkleProofStep[] = [];
   let idx = index;
   for (let level = 0; level < levels.length - 1; level++) {
@@ -142,6 +142,10 @@ export async function verifyInclusionProof(
   proof: MerkleProofStep[],
   expectedRoot: string,
 ): Promise<boolean> {
+  // Refuser les encodages ambigus sans changer une seule racine ou clé existante.
+  const validHash=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value);
+  if(!validHash(leaf)||!validHash(expectedRoot)||!Array.isArray(proof)||proof.length>64
+    ||proof.some(step=>!step||!validHash(step.sibling)||!['left','right'].includes(step.position)))return false;
   let acc = leaf;
   for (const step of proof) {
     acc = step.position === 'left'

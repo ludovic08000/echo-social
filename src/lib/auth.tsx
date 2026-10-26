@@ -127,9 +127,9 @@ async function checkLoginRateLimit(email: string): Promise<Error | null> {
   return null;
 }
 
-async function recordLoginAttempt(email: string, success: boolean): Promise<void> {
+async function recordLoginSuccess(email: string): Promise<void> {
   await supabase.functions.invoke('login-rate-limit', {
-    body: { action: 'record', email, success },
+    body: { action: 'record', email, success: true },
   }).catch(() => undefined);
 }
 
@@ -511,7 +511,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: normalizedEmail,
         password,
       });
-      void recordLoginAttempt(normalizedEmail, !error && Boolean(data.user));
+      if(!error && data.user && data.session)void recordLoginSuccess(normalizedEmail);
 
       if (!error && data.user && data.session) {
         // The password is kept in memory only. A suspicious login must be

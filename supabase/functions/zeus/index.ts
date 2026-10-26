@@ -1,6 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.0";
+import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { logAIEvent, zeusModuleId } from "../_shared/aiEngineLog.ts";
+import { decideMessageRequest } from "../_shared/message-request.ts";
+import { userChatHistory } from "../_shared/ai-input.ts";
+import { ownsAgentConversation, reserveAgentUsage } from "../_shared/ai-agent-authority.ts";
+import { aiDataSharingEnabled, aiShareablePosts } from "../_shared/ai-privacy.ts";
+import { ownedModerationContent, recordOwnedModeration } from "../_shared/owned-moderation.ts";
+import { feedConfigProposal, proposedFeedUpdate } from "../_shared/ai-admin-proposal.ts";
 
 // ═══════════════════════════════════════════════════════════════
 // ⚡ ZEUS — ForSure Central AI Engine
@@ -19,18 +26,6 @@ function safeGatewayErrorPreview(raw: string): string {
 }
 
 // ── Rate limiting ──
-const rateLimiter = new Map<string, { count: number; resetAt: number }>();
-function checkRateLimit(userId: string, limit = 20): boolean {
-  const now = Date.now();
-  const entry = rateLimiter.get(userId);
-  if (!entry || now > entry.resetAt) {
-    rateLimiter.set(userId, { count: 1, resetAt: now + 60_000 });
-    return true;
-  }
-  if (entry.count >= limit) return false;
-  entry.count++;
-  return true;
-}
 
 // ── Helpers ──
 async function hashContent(content: string): Promise<string> {
@@ -201,113 +196,6 @@ Format JSON obligatoire:
   return new Response(JSON.stringify({ improved_text: raw.trim() || text, detected_language: "unknown", corrections: [], tone: "neutral" }), { headers: { ...cors, "Content-Type": "application/json" } });
 }
 
-// ── MODERATION: moderate_message, accept_request, reject_request ──
-async function handleModeration(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
-  const { action } = body;
-
-  if (action === "moderate_message") {
-    const { messageBody, messageId } = body;
-    if (!messageBody || typeof messageBody !== "string") return new Response(JSON.stringify({ error: "messageBody required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-
-    // Skip system messages
-    if (messageBody.startsWith("📞 CALL:") || messageBody.startsWith("🎙️ voice:") || messageBody === "📷 Photo") {
-      return new Response(JSON.stringify({ safe: true, reason: null }), { headers: { ...cors, "Content-Type": "application/json" } });
-    }
-
-    // Check if recipient is minor
-    let recipientIsMinor = false;
-    if (messageId) {
-      const { data: msg } = await supabase.from("messages").select("conversation_id").eq("id", messageId).maybeSingle();
-      if (msg) {
-        const { data: other } = await supabase.from("conversation_participants").select("user_id").eq("conversation_id", msg.conversation_id).neq("user_id", userId).maybeSingle();
-        if (other) {
-          const { data: mc } = await supabase.from("parental_controls").select("is_active").eq("user_id", other.user_id).eq("is_active", true).maybeSingle();
-          recipientIsMinor = !!mc;
-          if (recipientIsMinor) await supabase.from("minor_contact_logs").insert({ adult_user_id: userId, minor_user_id: other.user_id, contact_type: "message" });
-        }
-      }
-    }
-
-    // Basic moderation for short messages (unless minor)
-    if (messageBody.length < 15 && !recipientIsMinor) {
-      const result = basicModeration(messageBody);
-      if (!result.safe && messageId) await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
-      return new Response(JSON.stringify(result), { headers: { ...cors, "Content-Type": "application/json" } });
-    }
-
-    // Cache check
-    const cacheKey = recipientIsMinor ? `minor:${messageBody}` : messageBody;
-    const contentHash = await hashContent(cacheKey);
-    const { data: cached } = await supabase.from("ai_moderation_cache").select("result").eq("content_hash", contentHash).gt("expires_at", new Date().toISOString()).maybeSingle();
-    if (cached) {
-      const r = cached.result as any;
-      if (!r.safe && messageId) await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
-      return new Response(JSON.stringify(r), { headers: { ...cors, "Content-Type": "application/json" } });
-    }
-
-    // AI fallback
-    if (!apiKey) {
-      const result = recipientIsMinor ? basicMinorModeration(messageBody) : basicModeration(messageBody);
-      if (!result.safe && messageId) await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
-      return new Response(JSON.stringify(result), { headers: { ...cors, "Content-Type": "application/json" } });
-    }
-
-    const systemPrompt = recipientIsMinor
-      ? `Tu es un système de protection des mineurs pour un réseau social français.
-Analyse les messages envoyés par des adultes à des mineurs de moins de 16 ans.
-Détecte : grooming (flatterie, "notre secret"), isolation ("ne dis pas à tes parents"), personal_info (demande adresse/école/photos), inappropriate (contenu sexuel), manipulation (chantage), scam, harassment.
-En cas de doute, signale. La sécurité du mineur prime.`
-      : `Tu es un modérateur de contenu pour un réseau social français.
-Catégories dangereuses : spam, harassment, scam, explicit, threats, hate_speech, unsolicited_ads.`;
-
-    const categories = recipientIsMinor
-      ? ["grooming", "isolation", "personal_info", "inappropriate", "manipulation", "scam", "harassment", "safe"]
-      : ["spam", "harassment", "scam", "explicit", "threats", "hate_speech", "unsolicited_ads", "safe"];
-
-    const resp = await callAI(apiKey, {
-      model: "google/gemini-3-flash-preview",
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: `Analyse ce message : "${messageBody.slice(0, 500)}"` }],
-      tools: [{ type: "function", function: { name: "moderation_result", description: "Moderation result", parameters: { type: "object", properties: { safe: { type: "boolean" }, reason: { type: "string" }, category: { type: "string", enum: categories }, confidence: { type: "number" }, severity: { type: "string", enum: ["low","medium","high","critical"] } }, required: ["safe","category","confidence","severity"], additionalProperties: false } } }],
-      tool_choice: { type: "function", function: { name: "moderation_result" } },
-    });
-
-    if (!resp.ok) {
-      const result = recipientIsMinor ? basicMinorModeration(messageBody) : basicModeration(messageBody);
-      if (!result.safe && messageId) await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
-      return new Response(JSON.stringify(result), { headers: { ...cors, "Content-Type": "application/json" } });
-    }
-
-    const aiData = await resp.json();
-    let modResult = { safe: true, reason: null as string | null, category: "safe", confidence: 50, severity: "low" };
-    try { const tc = aiData.choices?.[0]?.message?.tool_calls?.[0]; if (tc?.function?.arguments) modResult = JSON.parse(tc.function.arguments); } catch {}
-
-    await supabase.from("ai_moderation_cache").insert({ content_hash: contentHash, result: modResult, expires_at: new Date(Date.now() + (recipientIsMinor ? 3600000 : 21600000)).toISOString() });
-
-    const threshold = recipientIsMinor ? 50 : 70;
-    if (!modResult.safe && modResult.confidence >= threshold && messageId) {
-      await supabase.from("messages").update({ status: "blocked" }).eq("id", messageId);
-      await supabase.from("trust_scores").update({ is_flagged: true, flag_reason: `${recipientIsMinor ? "⚠️ MINOR" : "Blocked"}: ${modResult.category}`, updated_at: new Date().toISOString() }).eq("user_id", userId);
-      if (recipientIsMinor && ["critical","high"].includes(modResult.severity)) {
-        await supabase.from("abuse_reports").insert({ reporter_id: userId, reported_user_id: userId, report_type: `ai_minor_${modResult.category}`, description: `[AUTO] ${modResult.reason}. Sévérité: ${modResult.severity}` });
-      }
-    }
-
-    return new Response(JSON.stringify({ safe: modResult.safe, reason: modResult.reason, category: modResult.category, minorProtection: recipientIsMinor }), { headers: { ...cors, "Content-Type": "application/json" } });
-  }
-
-  // accept / reject request
-  if (action === "accept_request" || action === "reject_request") {
-    const { conversationId } = body;
-    if (!conversationId) return new Response(JSON.stringify({ error: "conversationId required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-    const { data: p } = await supabase.from("conversation_participants").select("id").eq("conversation_id", conversationId).eq("user_id", userId).maybeSingle();
-    if (!p) return new Response(JSON.stringify({ error: "Pas participant" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
-    const newStatus = action === "accept_request" ? "delivered" : "blocked";
-    await supabase.from("messages").update({ status: newStatus }).eq("conversation_id", conversationId).eq("status", "pending");
-    return new Response(JSON.stringify({ [action === "accept_request" ? "accepted" : "rejected"]: true }), { headers: { ...cors, "Content-Type": "application/json" } });
-  }
-
-  return new Response(JSON.stringify({ error: "Unknown moderation action" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-}
 
 // ── ADS: chat, generate_ad, moderate_ad, generate_image, translate ──
 async function handleAds(apiKey: string, body: any, cors: Record<string, string>) {
@@ -356,7 +244,7 @@ async function handleAds(apiKey: string, body: any, cors: Record<string, string>
       model: "google/gemini-3-flash-preview",
       messages: [
         { role: "system", content: `Tu es l'assistant publicitaire IA de ForSure Ads. Aide à créer des pubs performantes. Concis, pro, en français.${langInstruction}` },
-        ...body.messages,
+        ...userChatHistory(body.messages),
       ],
       tools: [{ type: "function", function: { name: "generate_ad_campaign", description: "Génère une campagne pub complète", parameters: { type: "object", properties: { title: { type: "string" }, body: { type: "string" }, cta_text: { type: "string" }, target_age_min: { type: "number" }, target_age_max: { type: "number" }, target_gender: { type: "string", enum: ["all","male","female"] }, target_interests: { type: "array", items: { type: "string" } }, recommended_duration: { type: "string" }, image_prompt: { type: "string" }, summary: { type: "string" } }, required: ["title","body","cta_text","target_age_min","target_age_max","target_gender","recommended_duration","image_prompt","summary"], additionalProperties: false } } }],
     });
@@ -420,7 +308,7 @@ async function handleSeller(apiKey: string, body: any, userId: string, supabase:
       model: "google/gemini-3-flash-preview",
       messages: [
         { role: "system", content: `Coach IA marketplace pour "${ctx.sellerName || "Vendeur"}". ${ctx.totalSales || 0} ventes, ${ctx.productCount || 0} produits.\nCatalogue:\n${products}\n${marketData}\nConseils concrets en français.` },
-        ...(body.messages || []),
+        ...userChatHistory(body.messages),
       ],
       stream: true,
     });
@@ -452,7 +340,8 @@ async function handlePhotoGuard(apiKey: string, body: any, userId: string, supab
   if (action === "compare_photos") {
     const { data: myProfile } = await supabase.from("profiles").select("avatar_url").eq("user_id", userId).single();
     if (!myProfile?.avatar_url) return new Response(JSON.stringify({ success: true, has_duplicates: false, matches: [], summary: "Pas de photo" }), { headers: { ...cors, "Content-Type": "application/json" } });
-    const { data: profiles } = await supabase.from("profiles").select("user_id,name,avatar_url").not("avatar_url", "is", null).neq("user_id", userId).order("created_at", { ascending: false }).limit(10);
+    const { data: candidates } = await supabase.from("profiles").select("user_id,name,avatar_url").not("avatar_url", "is", null).neq("user_id", userId).order("created_at", { ascending: false }).limit(10);
+    const profiles=await aiShareablePosts(supabase,candidates??[]);
     if (!profiles?.length) return new Response(JSON.stringify({ success: true, has_duplicates: false, matches: [], summary: "Pas assez de profils" }), { headers: { ...cors, "Content-Type": "application/json" } });
     const avatars = profiles.map((p: any) => p.avatar_url).filter(Boolean);
     const prompt = `First image is target. Check if SAME PERSON or SAME PHOTO in others. JSON: { has_duplicates: bool, matches: [{ image_index: n, confidence: 0-100, match_type: "same_photo"|"same_person"|"similar" }], summary: "..." }`;
@@ -480,15 +369,12 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
   const { data: agent } = await supabase.from("ai_agents").select("*").eq("id", agent_id).eq("is_active", true).single();
   if (!agent) return new Response(JSON.stringify({ error: "Agent introuvable" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
 
-  const today = new Date().toISOString().split("T")[0];
-  const [{ data: usage }, { data: subscription }] = await Promise.all([
-    supabase.from("ai_agent_usage").select("*").eq("user_id", userId).eq("agent_id", agent_id).eq("usage_date", today).maybeSingle(),
-    supabase.from("creator_subscriptions").select("status").eq("user_id", userId).eq("status", "active").maybeSingle(),
-  ]);
-  const isSubscribed = !!subscription;
-  if (!isSubscribed && (usage?.message_count || 0) >= agent.free_messages_per_day) {
-    return new Response(JSON.stringify({ error: "limit_reached", message: `Limite de ${agent.free_messages_per_day} messages/jour atteinte.`, is_premium: agent.is_premium }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
-  }
+  if(conversation_id&&!await ownsAgentConversation(supabase,userId,agent_id,conversation_id))
+    return new Response(JSON.stringify({error:"Conversation introuvable ou accès refusé"}),{status:403,headers:{...cors,"Content-Type":"application/json"}});
+  const reservation=await reserveAgentUsage(supabase,userId,agent_id,cors);
+  if(reservation.denial)return reservation.denial;
+  const lease=reservation.lease;
+  try {
 
   let convId = conversation_id;
   if (!convId) { const { data: conv } = await supabase.from("ai_agent_conversations").insert({ user_id: userId, agent_id, title: message.substring(0, 60) }).select("id").single(); convId = conv?.id; }
@@ -498,11 +384,11 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
   // Inject user's conversations so Zeus can send messages
   let conversationsContext = "";
   try {
-    const { data: userConvs } = await supabase
+    const { data: userConvs } = (await aiDataSharingEnabled(userId)) ? await supabase
       .from("conversation_participants")
       .select("conversation_id, conversations(id, name, is_group)")
       .eq("user_id", userId)
-      .limit(30);
+      .limit(30) : {data:[]};
     if (userConvs?.length) {
       // Get peer names for 1:1 conversations
       const convIds = userConvs.map((c: any) => c.conversation_id);
@@ -524,13 +410,12 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
     }
   } catch { /* ignore */ }
 
-  const resp = await callAI(apiKey, { model: "google/gemini-3-flash-preview", messages: [{ role: "system", content: agent.system_prompt + ACTION_SYSTEM_PROMPT + conversationsContext }, ...(history || []).map((m: any) => ({ role: m.role, content: m.content }))], stream: true });
+  const resp = await callAI(apiKey, { model: "google/gemini-3-flash-preview", messages: [{ role: "system", content: agent.system_prompt + ACTION_SYSTEM_PROMPT + conversationsContext }, ...(history || []).filter((m:any)=>["user","assistant"].includes(m.role)&&typeof m.content==="string").map((m: any) => ({ role: m.role, content: m.content.slice(0,10000) }))], stream: true });
   const errResp = aiError(resp.status, cors);
   if (errResp) return errResp;
   if (!resp.ok) throw new Error("AI error");
 
-  if (usage) await supabase.from("ai_agent_usage").update({ message_count: (usage.message_count || 0) + 1 }).eq("id", usage.id);
-  else await supabase.from("ai_agent_usage").insert({ user_id: userId, agent_id, usage_date: today, message_count: 1 });
+  await lease.commit();
 
   // Stream and save response
   const reader = resp.body!.getReader();
@@ -563,6 +448,9 @@ async function handleAgentChat(apiKey: string, body: any, userId: string, supaba
   });
 
   return new Response(stream, { headers: { ...cors, "Content-Type": "text/event-stream", "X-Conversation-Id": convId } });
+  } finally {
+    await lease.close().catch(()=>console.error("[zeus-agent] quota release unconfirmed"));
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -636,7 +524,7 @@ const ZEUS_TOOLS = [
   },
   {
     type: "function", function: {
-      name: "update_algorithm_config", description: "Modifier un paramètre de l'algorithme du feed. Change la valeur d'une clé de config. Exemples : augmenter friend_boost, réduire spam_penalty, changer les positions marketplace.",
+      name: "update_algorithm_config", description: "Préparer une proposition de configuration du feed, sans l'appliquer. Le bouton de validation humain est obligatoire pour toute écriture.",
       parameters: {
         type: "object",
         properties: {
@@ -687,10 +575,11 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
         if (args.query) q = q.ilike("name", `%${args.query}%`);
         if (args.profile_type) q = q.eq("profile_type", args.profile_type);
         const { data } = await q.limit(15);
-        return JSON.stringify({ users: (data || []).map((u: any) => ({ ...u, user_id: u.user_id.slice(0, 12) + "..." })) });
+        return JSON.stringify({ users: data || [] });
       }
       case "get_user_details": {
         const uid = args.user_id;
+        if (typeof uid !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid)) return JSON.stringify({error:'EXACT_USER_ID_REQUIRED'});
         const [profileRes, trustRes, reportsRes, ordersRes, postsRes, friendsRes] = await Promise.all([
           supabase.from("profiles").select("*").eq("user_id", uid).maybeSingle(),
           supabase.from("trust_scores").select("*").eq("user_id", uid).maybeSingle(),
@@ -904,30 +793,8 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
         return JSON.stringify({ config: data || [] });
       }
       case "update_algorithm_config": {
-        // Read current value
-        const { data: current, error: readErr } = await supabase
-          .from("feed_algorithm_config")
-          .select("value")
-          .eq("key", args.key)
-          .maybeSingle();
-        if (readErr || !current) return JSON.stringify({ error: `Config "${args.key}" introuvable` });
-
-        // Merge updates
-        const merged = { ...current.value, ...args.updates };
-        const { error: updateErr } = await supabase
-          .from("feed_algorithm_config")
-          .update({ value: merged, updated_at: new Date().toISOString() })
-          .eq("key", args.key);
-        if (updateErr) return JSON.stringify({ error: updateErr.message });
-
-        return JSON.stringify({
-          success: true,
-          key: args.key,
-          reason: args.reason,
-          previous: current.value,
-          new_value: merged,
-          changed_fields: Object.keys(args.updates),
-        });
+        // L'injection d'instructions dans le contexte ne peut pas remplacer le clic humain.
+        return JSON.stringify(proposedFeedUpdate(args));
       }
       case "run_security_audit": {
         const scope = args.scope || "all";
@@ -1142,8 +1009,8 @@ async function executeZeusTool(name: string, args: any, supabase: any): Promise<
 
 async function handleAdmin(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
   // Verify admin role
-  const { data: roleData } = await supabase.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
-  if (!roleData) return new Response(JSON.stringify({ error: "Accès admin requis" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+  const { data: roleData, error: roleError } = await supabase.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
+  if (roleError || !roleData) return new Response(JSON.stringify({ error: "Accès admin requis" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
 
   const { action } = body;
 
@@ -1154,67 +1021,41 @@ async function handleAdmin(apiKey: string, body: any, userId: string, supabase: 
       .split("|")[0]
       .replace(/[`\s]/g, "")
       .replace(/\.$/, "");
-    if (normalizedProposalAction === 'update_algorithm_config' && key && updates) {
-      const { data: current } = await supabase.from("feed_algorithm_config").select("value").eq("key", key).maybeSingle();
+    if (normalizedProposalAction === 'update_algorithm_config') {
+      const proposal = feedConfigProposal(key, updates, reason);
+      if (!proposal) return new Response(JSON.stringify({ error: 'INVALID_FEED_PROPOSAL' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+      const { data: current, error: readError } = await supabase.from("feed_algorithm_config").select("value").eq("key", proposal.key).maybeSingle();
+      if (readError) return new Response(JSON.stringify({error:'FEED_CONFIG_LOOKUP_UNAVAILABLE'}),{status:503,headers:{...cors,'Content-Type':'application/json'}});
       if (!current) return new Response(JSON.stringify({ error: `Config "${key}" introuvable` }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
-      const merged = { ...current.value, ...updates };
-      const { error } = await supabase.from("feed_algorithm_config").update({ value: merged, updated_at: new Date().toISOString(), updated_by: userId }).eq("key", key);
-      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-      return new Response(JSON.stringify({ success: true, key, reason, new_value: merged }), { headers: { ...cors, "Content-Type": "application/json" } });
+      const { data: applied, error } = await supabase.rpc('apply_admin_feed_config_update', {
+        p_actor:userId,p_key:proposal.key,p_updates:proposal.updates,p_expected:current.value,p_reason:proposal.reason,
+      });
+      if (error || !applied || typeof applied.applied !== 'boolean') return new Response(JSON.stringify({ error: 'FEED_UPDATE_NOT_CONFIRMED' }), { status: 503, headers: { ...cors, 'Content-Type': 'application/json' } });
+      if (!applied.applied) return new Response(JSON.stringify({ error: 'FEED_CONFIG_CHANGED_REVIEW_AGAIN' }), { status: 409, headers: { ...cors, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ success: true, applied: true, key: proposal.key, reason: proposal.reason, new_value: applied.new_value }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     if (normalizedProposalAction === 'whitelist_staff' && key === 'trust_score_override' && updates?.user_id) {
       const rawUserId = String(updates.user_id).trim();
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-      let resolvedUserId = rawUserId;
-      if (!uuidRegex.test(rawUserId)) {
-        const prefix = rawUserId.replace(/\.\.\.$/, "").replace(/[^0-9a-f-]/gi, "");
-        if (!prefix) {
-          return new Response(JSON.stringify({ error: "user_id invalide pour whitelist_staff" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-        }
+      const resolvedUserId = rawUserId;
+      if (!uuidRegex.test(rawUserId)) return new Response(JSON.stringify({ error: 'EXACT_USER_ID_REQUIRED' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-        const { data: candidatesRaw, error: findErr } = await supabase
-          .from("profiles")
-          .select("user_id")
-          .limit(1000);
+      const targetTrustScore = updates.trust_score ?? 100;
+      if (typeof targetTrustScore !== 'number' || !Number.isInteger(targetTrustScore) || targetTrustScore < 0 || targetTrustScore > 100) return new Response(JSON.stringify({ error: 'TRUST_SCORE_INVALID' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+      const {data:target,error:targetError}=await supabase.from('profiles').select('user_id').eq('user_id',resolvedUserId).maybeSingle();
+      if(targetError)return new Response(JSON.stringify({error:'TARGET_LOOKUP_UNAVAILABLE'}),{status:503,headers:{...cors,'Content-Type':'application/json'}});
+      if(!target)return new Response(JSON.stringify({error:'TARGET_NOT_FOUND'}),{status:404,headers:{...cors,'Content-Type':'application/json'}});
+      const {data:saved,error:writeError}=await supabase.from('trust_scores').upsert({
+        user_id:resolvedUserId,trust_score:targetTrustScore,is_flagged:false,flag_reason:'staff_whitelisted',updated_at:new Date().toISOString(),
+      },{onConflict:'user_id'}).select('user_id').single();
+      if(writeError||saved?.user_id!==resolvedUserId)return new Response(JSON.stringify({error:'TRUST_SCORE_WRITE_NOT_CONFIRMED'}),{status:503,headers:{...cors,'Content-Type':'application/json'}});
 
-        if (findErr) return new Response(JSON.stringify({ error: findErr.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-        const candidates = (candidatesRaw || []).filter((c: any) => String(c.user_id).toLowerCase().startsWith(prefix.toLowerCase()));
-        if (!candidates?.length) return new Response(JSON.stringify({ error: "Aucun utilisateur trouvé pour ce préfixe user_id" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
-        if (candidates.length > 1) return new Response(JSON.stringify({ error: "Préfixe user_id ambigu, utilisez un ID complet" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-        resolvedUserId = candidates[0].user_id;
-      }
-
-      const targetTrustScore = Number(updates.trust_score ?? 100);
-      const { data: existing } = await supabase.from("trust_scores").select("id").eq("user_id", resolvedUserId).maybeSingle();
-
-      if (existing?.id) {
-        const { error } = await supabase
-          .from("trust_scores")
-          .update({
-            trust_score: targetTrustScore,
-            is_flagged: false,
-            flag_reason: "staff_whitelisted",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", resolvedUserId);
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-      } else {
-        const { error } = await supabase.from("trust_scores").insert({
-          user_id: resolvedUserId,
-          trust_score: targetTrustScore,
-          is_flagged: false,
-          flag_reason: "staff_whitelisted",
-        });
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-      }
-
-      return new Response(JSON.stringify({ success: true, action: "whitelist_staff", user_id: resolvedUserId, trust_score: targetTrustScore, reason }), { headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ success: true, applied: true, action: "whitelist_staff", user_id: resolvedUserId, trust_score: targetTrustScore, reason }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    // Generic proposals that don't need DB changes — just acknowledge
-    return new Response(JSON.stringify({ success: true, action: normalizedProposalAction, message: "Proposition notée et validée par l'admin.", key, reason }), { headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: 'PROPOSAL_ACTION_UNSUPPORTED', applied: false }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
   }
 
   if (action === "chat") {
@@ -1697,7 +1538,10 @@ function basicMinorModeration(text: string): { safe: boolean; reason: string | n
 
 // ── POST MODERATION: Check posts for hate speech, harmful content ──
 async function handlePostModeration(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
-  const { postId, text, imageUrl } = body;
+  const loaded = await ownedModerationContent(supabase,userId,'post',body,cors);
+  if (loaded.denial) return loaded.denial;
+  const content = loaded.content!;
+  const { text, imageUrl } = content;
   if (!text && !imageUrl) return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
 
   // Quick basic check first
@@ -1706,10 +1550,9 @@ async function handlePostModeration(apiKey: string, body: any, userId: string, s
     if (!basic.safe) {
       // Record strike
       const zeusMsg = `Hey ! 🙏 J'ai remarqué que ton contenu contient des éléments qui ne respectent pas notre communauté (${basic.reason}). ForSure est un espace bienveillant. Si ça se reproduit, ton compte pourrait être suspendu. N'hésite pas à reformuler, je suis là pour t'aider ! ⚡`;
-      if (postId) {
-        await supabase.from("content_strikes").insert({ user_id: userId, post_id: postId, reason: basic.reason, severity: "warning", zeus_message: zeusMsg });
-      }
-      return new Response(JSON.stringify({ safe: false, reason: basic.reason, zeus_message: zeusMsg }), { headers: { ...cors, "Content-Type": "application/json" } });
+      const stored = await recordOwnedModeration(supabase,userId,content,{reason:basic.reason!,severity:'warning',category:basic.category,reply:zeusMsg},cors);
+      if (stored.denial) return stored.denial;
+      return new Response(JSON.stringify({ safe: false, reason: stored.reason, category:stored.category, zeus_message: stored.zeus_reply, persisted:stored.persisted, replayed:stored.replayed, strike_count:stored.strike_count }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
   }
 
@@ -1744,48 +1587,36 @@ async function handlePostModeration(apiKey: string, body: any, userId: string, s
 
     const errResp = aiError(resp.status, cors);
     if (errResp) return errResp;
-    if (!resp.ok) return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+    if (!resp.ok) return new Response(JSON.stringify({ error: 'MODERATION_UNAVAILABLE' }), { status:503,headers: { ...cors, "Content-Type": "application/json" } });
 
     const data = await resp.json();
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
     if (toolCall?.function?.name === "moderate_post") {
       try {
         const result = JSON.parse(toolCall.function.arguments);
-        if (!result.safe) {
-          // Check strike count for escalation
-          const { count } = await supabase.from("content_strikes").select("*", { count: "exact", head: true }).eq("user_id", userId);
-          const strikeCount = count || 0;
-
-          let zeusMsg: string;
-          if (strikeCount >= 2) {
-            zeusMsg = `⚠️ C'est la ${strikeCount + 1}ème fois que je détecte du contenu inapproprié (${result.reason_fr}). Ton compte risque d'être suspendu. Je t'encourage vraiment à exprimer tes idées de manière respectueuse. Je suis là si tu veux en parler ! ⚡`;
-          } else {
-            zeusMsg = `Hey ! 🙏 Ton contenu semble contenir ${result.reason_fr}. ForSure est un espace de bienveillance et de respect mutuel. Je t'invite à reformuler pour que ta voix soit entendue positivement. Si tu as besoin d'en discuter, je suis là ! ⚡`;
-          }
-
-          if (postId) {
-            await supabase.from("content_strikes").insert({
-              user_id: userId, post_id: postId, reason: result.reason_fr, severity: result.severity, zeus_message: zeusMsg,
-            });
-          }
-
-          return new Response(JSON.stringify({ safe: false, reason: result.reason_fr, category: result.category, zeus_message: zeusMsg, strike_count: strikeCount + 1 }), { headers: { ...cors, "Content-Type": "application/json" } });
+        if (result.safe === true) return new Response(JSON.stringify({safe:true,scope:'text_only',image_checked:false}),{headers:{...cors,'Content-Type':'application/json'}});
+        if (result.safe === false && typeof result.reason_fr === 'string' && result.reason_fr.trim()) {
+          const zeusMsg = `Hey ! 🙏 Ton contenu semble contenir ${result.reason_fr}. ForSure est un espace de bienveillance et de respect mutuel. Je t'invite à reformuler pour que ta voix soit entendue positivement. Si tu as besoin d'en discuter, je suis là ! ⚡`;
+          const stored = await recordOwnedModeration(supabase,userId,content,{reason:result.reason_fr,severity:result.severity,category:result.category,reply:zeusMsg},cors);
+          if (stored.denial) return stored.denial;
+          return new Response(JSON.stringify({ safe: false, reason: stored.reason, category: stored.category, zeus_message: stored.zeus_reply, strike_count:stored.strike_count,persisted:stored.persisted,replayed:stored.replayed }), { headers: { ...cors, "Content-Type": "application/json" } });
         }
       } catch {}
     }
+    return new Response(JSON.stringify({error:'MODERATION_RESULT_INVALID'}),{status:503,headers:{...cors,'Content-Type':'application/json'}});
   }
 
-  return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ safe: true,scope:'text_only',image_checked:false }), { headers: { ...cors, "Content-Type": "application/json" } });
 }
 
 // ═══════════════════════════════════════════════════════════════
 // COMMENT MODERATION — Auto reply + admin escalation
 // ═══════════════════════════════════════════════════════════════
 async function handleCommentModeration(apiKey: string, body: any, userId: string, supabase: any, cors: Record<string, string>) {
-  const { commentId, postId, text } = body;
-  if (!commentId || !text) {
-    return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
-  }
+  const loaded = await ownedModerationContent(supabase,userId,'comment',body,cors);
+  if (loaded.denial) return loaded.denial;
+  const content = loaded.content!;
+  const { text } = content;
 
   let unsafe = false;
   let reason = "";
@@ -1835,13 +1666,15 @@ async function handleCommentModeration(apiKey: string, body: any, userId: string
 
     const errResp = aiError(resp.status, cors);
     if (errResp) return errResp;
+    if (!resp.ok) return new Response(JSON.stringify({error:'MODERATION_UNAVAILABLE'}),{status:503,headers:{...cors,'Content-Type':'application/json'}});
     if (resp.ok) {
       const data = await resp.json();
       const tc = data.choices?.[0]?.message?.tool_calls?.[0];
       if (tc?.function?.name === "moderate_comment") {
         try {
           const r = JSON.parse(tc.function.arguments);
-          if (!r.safe) {
+          if (r.safe === true) return new Response(JSON.stringify({safe:true}),{headers:{...cors,'Content-Type':'application/json'}});
+          if (r.safe === false && typeof r.reason_fr === 'string' && r.reason_fr.trim()) {
             unsafe = true;
             reason = r.reason_fr;
             category = r.category;
@@ -1850,6 +1683,7 @@ async function handleCommentModeration(apiKey: string, body: any, userId: string
           }
         } catch {}
       }
+      if (!unsafe) return new Response(JSON.stringify({error:'MODERATION_RESULT_INVALID'}),{status:503,headers:{...cors,'Content-Type':'application/json'}});
     }
   }
 
@@ -1857,67 +1691,20 @@ async function handleCommentModeration(apiKey: string, body: any, userId: string
     return new Response(JSON.stringify({ safe: true }), { headers: { ...cors, "Content-Type": "application/json" } });
   }
 
-  // 3) Count prior strikes for this user
-  const { count } = await supabase
-    .from("content_strikes")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId);
-  const strikeCount = (count || 0) + 1;
-
-  // 4) Compose Zeus reply (apaisant)
-  let zeusReply: string;
-  if (severity === "critical" || strikeCount >= 3) {
-    zeusReply = `⚡ Hey, je comprends que tu puisses ressentir des choses fortes — c'est humain. Mais ce commentaire dépasse une limite (${reason}). Je transmets aux modérateurs pour qu'ils regardent calmement. En attendant, prends une grande respiration 🌿 — on est plus forts quand on s'écoute. Si tu veux en parler, je suis là.`;
-  } else if (strikeCount === 2) {
-    zeusReply = `🙏 Hey, je remarque que tes mots peuvent blesser (${reason}). Je sais que ce n'est peut-être pas l'intention — reformule, et ta voix portera mieux. ForSure reste un espace bienveillant. Je suis là si tu veux échanger ⚡`;
-  } else {
-    zeusReply = `Hey ⚡ J'ai lu ton commentaire et certains mots peuvent heurter (${reason}). Pas de jugement — juste une invitation à reformuler avec plus de douceur. Ton point de vue compte, exprime-le pour qu'il soit entendu 🌿`;
-  }
-
-  // 5) Insert Zeus reply as a child comment
-  if (postId) {
-    await supabase.from("comments").insert({
-      post_id: postId,
-      parent_id: commentId,
-      user_id: null,
-      is_zeus_reply: true,
-      body: zeusReply,
-    });
-  }
-
-  // 6) Record strike
-  await supabase.from("content_strikes").insert({
-    user_id: userId,
-    post_id: postId || null,
-    reason,
-    severity,
-    zeus_message: zeusReply,
-  });
-
-  // 7) Escalate to admin if severe or repeated
-  const shouldEscalate = severity === "critical" || strikeCount >= 3;
-  if (shouldEscalate) {
-    await supabase.from("comment_moderation_alerts").insert({
-      user_id: userId,
-      comment_id: commentId,
-      post_id: postId || null,
-      evidence_text: text,
-      category,
-      severity,
-      ai_reasoning: aiReasoning,
-      strike_count: strikeCount,
-      status: "pending",
-    });
-  }
+  const zeusReply = `Hey ⚡ J'ai lu ton commentaire et certains mots peuvent heurter (${reason}). Pas de jugement — juste une invitation à reformuler avec plus de douceur. Ton point de vue compte, exprime-le pour qu'il soit entendu 🌿`;
+  const stored = await recordOwnedModeration(supabase,userId,content,{reason,severity,category,reply:zeusReply,reasoning:aiReasoning},cors);
+  if (stored.denial) return stored.denial;
 
   return new Response(JSON.stringify({
     safe: false,
-    reason,
-    category,
-    severity,
-    zeus_reply: zeusReply,
-    strike_count: strikeCount,
-    escalated: shouldEscalate,
+    reason:stored.reason,
+    category:stored.category,
+    severity:stored.severity,
+    zeus_reply: stored.zeus_reply,
+    strike_count: stored.strike_count,
+    escalated: stored.escalated,
+    persisted: stored.persisted,
+    replayed: stored.replayed,
   }), { headers: { ...cors, "Content-Type": "application/json" } });
 }
 
@@ -1993,9 +1780,8 @@ Deno.serve(async (req) => {
 
     // Rate limit per domain
     const limitMap: Record<string, number> = { content: 20, post: 15, moderation: 30, ads: 10, seller: 10, photo: 5, agent: 20, admin: 30, "post-moderation": 30, "comment-moderation": 60 };
-    if (!checkRateLimit(`${user.id}:${domain}`, limitMap[domain] || 15)) {
-      return new Response(JSON.stringify({ error: "Trop de requêtes, réessayez." }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
-    }
+    const quotaDenial = await checkRateLimitDB(`zeus:${user.id}:${domain}`, limitMap[domain] || 15, 60, cors);
+    if (quotaDenial) return quotaDenial;
 
     const __startedAt = performance.now();
     const __moduleId = zeusModuleId(domain, action);
@@ -2005,7 +1791,7 @@ Deno.serve(async (req) => {
       switch (domain) {
         case "content": __resp = await handleContent(LOVABLE_API_KEY, body, cors); break;
         case "post": __resp = await handlePostAssistant(LOVABLE_API_KEY, body, cors); break;
-        case "moderation": __resp = await handleModeration(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
+        case "moderation": __resp = await decideMessageRequest(req, body, cors); break;
         case "post-moderation": __resp = await handlePostModeration(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
         case "comment-moderation": __resp = await handleCommentModeration(LOVABLE_API_KEY, body, user.id, supabase, cors); break;
         case "ads": __resp = await handleAds(LOVABLE_API_KEY, body, cors); break;

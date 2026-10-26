@@ -20,7 +20,7 @@ export default function LegalTerms() {
         </Link>
 
         <h1 className="text-3xl font-bold mb-8">Conditions Générales d'Utilisation</h1>
-        <p className="text-sm text-muted-foreground mb-6">Dernière mise à jour : 3 avril 2026</p>
+        <p className="text-sm text-muted-foreground mb-6">Dernière mise à jour : 26 octobre 2026</p>
 
         <div className="prose prose-invert max-w-none space-y-6 text-foreground/90">
           <section>
@@ -35,7 +35,7 @@ export default function LegalTerms() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 3 — Inscription</h2>
-            <p>L'inscription est gratuite et ouverte à toute personne physique âgée d'au moins 13 ans, conformément au Règlement Général sur la Protection des Données (RGPD) et à la loi n° 78-17 du 6 janvier 1978 relative à l'informatique, aux fichiers et aux libertés. L'utilisateur s'engage à fournir des informations exactes.</p>
+            <p>L'inscription est gratuite et l'âge minimum annoncé par le service est de 13 ans. Les conditions du consentement d'un mineur varient selon le pays et le traitement ; cet âge ne constitue pas une autorisation générale de tous les traitements. L'utilisateur s'engage à fournir des informations exactes.</p>
             <p>L'inscription inclut une <strong>vérification du domaine e-mail</strong> (MX check), une protection anti-bot et une politique de mot de passe stricte (10 caractères minimum, complexité requise). L'adresse e-mail doit être confirmée avant toute utilisation du service.</p>
           </section>
 
@@ -47,7 +47,7 @@ export default function LegalTerms() {
               <li><strong>Ne jamais vendre ni transmettre vos données à des tiers</strong> à des fins commerciales ou publicitaires</li>
               <li>Ne procéder à <strong>aucun tracking publicitaire</strong></li>
               <li>Permettre à tout moment l'exercice de vos droits : accès, rectification, effacement (droit à l'oubli), portabilité, opposition et limitation du traitement</li>
-              <li>Supprimer vos données dans un délai de 30 jours après suppression du compte</li>
+              <li>Traiter les demandes d'effacement et suivre séparément les médias, sauvegardes et données soumis à une conservation légale</li>
             </ul>
             <p>Pour exercer vos droits, contactez-nous à : <strong>dpo@forsure.fans</strong></p>
           </section>
@@ -58,7 +58,7 @@ export default function LegalTerms() {
             <ul className="list-disc pl-6 space-y-1">
               <li>Nom, adresse e-mail (inscription)</li>
               <li>Contenus publiés (textes, images, vidéos)</li>
-              <li>Données de connexion (adresse IP, logs) conservées 12 mois conformément à la LCEN</li>
+              <li>Données de connexion (adresse IP, journaux) utilisées pour la sécurité, avec des durées adaptées à leur finalité et aux obligations applicables</li>
               <li>Empreintes d'appareil (à des fins exclusivement anti-fraude)</li>
               <li>Clés publiques cryptographiques (pour le chiffrement de bout en bout)</li>
             </ul>
@@ -66,8 +66,8 @@ export default function LegalTerms() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-foreground">Article 6 — Cookies</h2>
-            <p>Forsure utilise uniquement des cookies techniques strictement nécessaires au fonctionnement du service (authentification, session), protégés par les attributs <strong>Secure, HttpOnly et SameSite=Strict</strong>. Aucun cookie publicitaire ou de traçage n'est utilisé, conformément à la directive ePrivacy et aux recommandations de la CNIL.</p>
+            <h2 className="text-xl font-semibold text-foreground">Article 6 — Stockage dans le navigateur</h2>
+            <p>La session web est conservée dans <strong>localStorage</strong>, accessible au JavaScript du site, et non dans un cookie d'authentification HttpOnly. Les préférences et le coffre chiffré utilisent aussi les stockages locaux du navigateur. Effacer ces stockages peut faire perdre des données locales si leur sauvegarde et leur restauration n'ont pas été vérifiées. Les traitements facultatifs et les lecteurs partenaires sont décrits dans la <Link to="/privacy" className="text-primary underline">politique de confidentialité</Link>.</p>
           </section>
 
           <section>
@@ -82,7 +82,7 @@ export default function LegalTerms() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 9 — Sécurité des communications</h2>
-            <p>Les messages privés en conversation 1-à-1 bénéficient d'un <strong>chiffrement de bout en bout (E2EE)</strong> assuré par Libsignal avec PQXDH + Double Ratchet. Les clés privées ne sont jamais transmises au serveur. L'accès à la messagerie peut être protégé par un code PIN dédié.</p>
+            <p>Les messages privés en conversation 1-à-1 bénéficient d'un <strong>chiffrement de bout en bout (E2EE)</strong> assuré par Libsignal avec PQXDH + Double Ratchet. La sauvegarde de continuité peut transmettre un coffre contenant les clés sous forme chiffrée, pas les clés en clair. L'accès à la messagerie peut être protégé par un code PIN dédié.</p>
             <p>L'architecture est conçue pour être <strong>prête pour le post-quantique</strong> (PQXDH).</p>
           </section>
 
@@ -101,7 +101,7 @@ export default function LegalTerms() {
 
           <section>
             <h2 className="text-xl font-semibold text-foreground">Article 11 — Suppression de compte</h2>
-            <p>Conformément au RGPD (Art. 17 — Droit à l'effacement), tout utilisateur peut demander la suppression de son compte et de l'ensemble de ses données personnelles. La suppression est effective immédiatement et les données sont purgées sous 30 jours via un processus automatisé.</p>
+            <p>Tout utilisateur peut demander la suppression de son compte depuis les paramètres ou auprès de dpo@forsure.fans. La fermeture du compte ne prouve pas l'effacement immédiat de toutes les copies : les médias externes, sauvegardes et éventuelles conservations légales font l'objet d'un suivi distinct. Les copies déjà reçues par d'autres utilisateurs ne peuvent pas toutes être effacées à distance.</p>
           </section>
 
           <section>

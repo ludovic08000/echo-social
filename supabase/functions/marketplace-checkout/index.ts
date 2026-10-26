@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { paymentReturnOrigin, settleMarketplacePayment } from "../_shared/payment-authority.ts";
 
 // Commission ForSure de 25 % prélevée sur le vendeur : l'acheteur paie le prix affiché.
 const COMMISSION_RATE = 0.25;
@@ -57,11 +58,12 @@ serve(async (req) => {
     if (action === "create_checkout") {
       const { items, relay } = body;
 
-      if (!items?.length) throw new Error("Panier vide");
+      if (!Array.isArray(items) || !items.length || items.length > 100) throw new Error("Panier invalide");
+      if (new Set(items.map((item: any) => item.product_id)).size !== items.length) throw new Error("Produit dupliqué");
 
       // Validate items have required fields
       for (const item of items) {
-        if (!item.product_id || !item.quantity || item.quantity < 1) {
+        if (!item.product_id || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 1000) {
           throw new Error("Données produit invalides");
         }
       }
@@ -163,7 +165,7 @@ serve(async (req) => {
         });
       }
 
-      const origin = req.headers.get("origin") || "https://calm-connect-05.lovable.app";
+      const origin = paymentReturnOrigin(req);
 
       // Generate order number
       const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
@@ -204,7 +206,7 @@ serve(async (req) => {
         const itemSubtotal = item.price * item.quantity;
         const itemCommission = Math.round(itemSubtotal * COMMISSION_RATE * 100) / 100;
 
-        await supabase.from("order_items").insert({
+        const { error: itemError } = await supabase.from("order_items").insert({
           order_id: order.id,
           product_id: item.product_id,
           seller_id: item.seller_id,
@@ -216,6 +218,7 @@ serve(async (req) => {
           seller_payout: itemSubtotal - itemCommission,
           status: "pending",
         });
+        if (itemError) throw itemError;
       }
 
       // Find or create Stripe customer
@@ -231,6 +234,8 @@ serve(async (req) => {
         customer_email: customerId ? undefined : userEmail,
         line_items: lineItems,
         mode: "payment",
+        client_reference_id: userId,
+        payment_intent_data: { metadata: { user_id: userId, order_id: order.id } },
         phone_number_collection: { enabled: false },
         success_url: `${origin}/marketplace?order_success=${order.id}`,
         cancel_url: `${origin}/marketplace?order_canceled=true`,
@@ -241,13 +246,13 @@ serve(async (req) => {
         },
       });
 
-      // Store payment intent reference
-      if (session.payment_intent) {
-        await supabase
-          .from("orders")
-          .update({ payment_intent_id: session.payment_intent as string })
-          .eq("id", order.id);
-      }
+      // Même avant paiement, la commande est liée à une seule session Stripe créée par ce serveur.
+      const { error: bindingError } = await supabase.from("orders").update({
+        stripe_checkout_session_id: session.id,
+        stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id ?? customerId ?? null,
+        payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null,
+      }).eq("id", order.id).eq("status", "pending");
+      if (bindingError) throw bindingError;
 
       return new Response(JSON.stringify({ url: session.url, orderId: order.id }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -269,76 +274,10 @@ serve(async (req) => {
 
       if (!order) throw new Error("Commande introuvable");
 
-      if (order.status === "paid") {
-        return new Response(JSON.stringify({ paid: true, order }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      // Check with Stripe if payment succeeded
-      if (order.payment_intent_id) {
-        const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id);
-        if (pi.status === "succeeded") {
-          await supabase
-            .from("orders")
-            .update({ status: "paid", paid_at: new Date().toISOString() })
-            .eq("id", orderId);
-
-          await supabase
-            .from("order_items")
-            .update({ status: "paid" })
-            .eq("order_id", orderId);
-
-          // Notify sellers
-          const { data: orderItems } = await supabase
-            .from("order_items")
-            .select("seller_id")
-            .eq("order_id", orderId);
-          const sellerIds = [...new Set((orderItems || []).map((i: any) => i.seller_id))];
-          for (const sellerId of sellerIds) {
-            const { data: sellerProfile } = await supabase
-              .from("seller_profiles")
-              .select("user_id")
-              .eq("id", sellerId)
-              .single();
-            if (sellerProfile) {
-              await supabase.from("notifications").insert({
-                user_id: sellerProfile.user_id,
-                actor_id: userId,
-                type: "sale",
-              });
-            }
-          }
-
-          // Decrement stock for purchased products
-          const { data: paidItems } = await supabase
-            .from("order_items")
-            .select("product_id, quantity")
-            .eq("order_id", orderId);
-          if (paidItems) {
-            for (const pi of paidItems) {
-              const { data: prod } = await supabase
-                .from("products")
-                .select("stock_quantity")
-                .eq("id", pi.product_id)
-                .single();
-              if (prod?.stock_quantity !== null && prod?.stock_quantity !== undefined) {
-                await supabase
-                  .from("products")
-                  .update({ stock_quantity: Math.max(0, prod.stock_quantity - pi.quantity) })
-                  .eq("id", pi.product_id);
-              }
-            }
-          }
-
-          // Clear the buyer's cart
-          await supabase.from("cart_items").delete().eq("user_id", userId);
-
-          return new Response(JSON.stringify({ paid: true }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
+      const paid = await settleMarketplacePayment(supabase, stripe, order);
+      if (paid) return new Response(JSON.stringify({ paid: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
 
       return new Response(JSON.stringify({ paid: false, status: order.status }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -360,11 +299,24 @@ serve(async (req) => {
       if (negError || !neg) throw new Error("Négociation introuvable");
       if (neg.buyer_id !== userId) throw new Error("Vous n'êtes pas l'acheteur de cette négociation");
       if (neg.status !== "accepted") throw new Error("Cette négociation n'est pas acceptée");
+      if (neg.order_id) {
+        const { data: existing } = await supabase.from("orders").select("*")
+          .eq("id",neg.order_id).eq("buyer_id",userId).maybeSingle();
+        if(existing?.status==="pending" && existing.stripe_checkout_session_id){
+          const checkout=await stripe.checkout.sessions.retrieve(existing.stripe_checkout_session_id);
+          if(checkout.status==="open" && checkout.metadata?.order_id===existing.id && checkout.metadata?.user_id===userId){
+            return new Response(JSON.stringify({url:checkout.url,orderId:existing.id}),{headers:{...corsHeaders,"Content-Type":"application/json"}});
+          }
+        }
+        throw new Error("NEGOTIATION_CHECKOUT_ALREADY_CREATED");
+      }
 
       const product = neg.products;
       if (!product) throw new Error("Produit introuvable");
+      if (product.stock_quantity !== null && product.stock_quantity < 1) throw new Error("Stock insuffisant");
 
       const agreedPrice = Number(neg.offered_price);
+      if (!Number.isFinite(agreedPrice) || agreedPrice <= 0) throw new Error("Prix négocié invalide");
       const commission = Math.round(agreedPrice * COMMISSION_RATE * 100) / 100;
 
       // Calculate shipping
@@ -412,7 +364,7 @@ serve(async (req) => {
       if (orderError) throw new Error(`Erreur création commande: ${orderError.message}`);
 
       const itemCommission = Math.round(agreedPrice * COMMISSION_RATE * 100) / 100;
-      await supabase.from("order_items").insert({
+      const { error: itemError } = await supabase.from("order_items").insert({
         order_id: order.id,
         product_id: product.id,
         seller_id: product.seller_id,
@@ -424,15 +376,19 @@ serve(async (req) => {
         seller_payout: agreedPrice - itemCommission,
         status: "pending",
       });
+      if (itemError) throw itemError;
 
-      // Update negotiation with order_id
-      await supabase.from("negotiations").update({ order_id: order.id, status: "paid" }).eq("id", negotiationId);
+      const { data: claimedNegotiation, error: negotiationError } = await supabase.from("negotiations")
+        .update({ order_id: order.id }).eq("id", negotiationId).eq("status", "accepted")
+        .is("order_id",null).select("id").maybeSingle();
+      if (negotiationError) throw negotiationError;
+      if(!claimedNegotiation)throw new Error("NEGOTIATION_CHECKOUT_ALREADY_CREATED");
 
       const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
       let customerId: string | undefined;
       if (customers.data.length > 0) customerId = customers.data[0].id;
 
-      const origin = req.headers.get("origin") || "https://calm-connect-05.lovable.app";
+      const origin = paymentReturnOrigin(req);
 
       const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
         {
@@ -464,15 +420,20 @@ serve(async (req) => {
         customer_email: customerId ? undefined : userEmail,
         line_items: lineItems,
         mode: "payment",
+        client_reference_id: userId,
+        payment_intent_data: { metadata: { user_id: userId, order_id: order.id } },
         phone_number_collection: { enabled: false },
         success_url: `${origin}/marketplace?order_success=${order.id}`,
         cancel_url: `${origin}/marketplace?order_canceled=true`,
         metadata: { user_id: userId, order_id: order.id, order_number: orderNumber, negotiation_id: negotiationId },
       });
 
-      if (session.payment_intent) {
-        await supabase.from("orders").update({ payment_intent_id: session.payment_intent as string }).eq("id", order.id);
-      }
+      const { error: bindingError } = await supabase.from("orders").update({
+        stripe_checkout_session_id: session.id,
+        stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id ?? customerId ?? null,
+        payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null,
+      }).eq("id", order.id).eq("status", "pending");
+      if (bindingError) throw bindingError;
 
       return new Response(JSON.stringify({ url: session.url, orderId: order.id }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -3,10 +3,7 @@ import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { ddosShield } from "../_shared/ddos-shield.ts";
-
-// Whitelist of allowed Stripe price IDs
-const ALLOWED_PRICE_IDS = new Set<string>();
-// We allow any valid Stripe price ID format but verify it exists server-side
+import { creatorPriceId, isCreatorPrice, paymentReturnOrigin } from "../_shared/payment-authority.ts";
 
 serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -40,11 +37,11 @@ serve(async (req) => {
     if (!priceId || typeof priceId !== "string") throw new Error("Price ID required");
 
     // Validate price ID format (Stripe price IDs start with "price_")
-    if (!priceId.startsWith("price_")) throw new Error("Invalid price ID format");
+    if (priceId !== creatorPriceId()) throw new Error("Invalid price ID");
 
     // Verify price exists in Stripe (server-side validation)
     const price = await stripe.prices.retrieve(priceId);
-    if (!price || !price.active) throw new Error("Prix invalide ou inactif");
+    if (!isCreatorPrice(price)) throw new Error("Prix invalide ou inactif");
 
     // Check if Stripe customer exists
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
@@ -63,7 +60,7 @@ serve(async (req) => {
       }
     }
 
-    const origin = req.headers.get("origin") || "https://calm-connect-05.lovable.app";
+    const origin = paymentReturnOrigin(req);
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -73,7 +70,9 @@ serve(async (req) => {
       phone_number_collection: { enabled: false },
       success_url: `${origin}/creator-upgrade?success=true`,
       cancel_url: `${origin}/creator-upgrade?canceled=true`,
-      metadata: { user_id: user.id },
+      client_reference_id: user.id,
+      metadata: { type: "creator_subscription", user_id: user.id },
+      subscription_data: { metadata: { type: "creator_subscription", user_id: user.id } },
     });
 
     return new Response(JSON.stringify({ url: session.url }), {
