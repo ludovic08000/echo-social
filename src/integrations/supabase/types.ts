@@ -1988,6 +1988,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          disappearing_after_read: boolean
           disappearing_seconds: number | null
           enable_sender_keys: boolean
           id: string
@@ -1998,6 +1999,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          disappearing_after_read?: boolean
           disappearing_seconds?: number | null
           enable_sender_keys?: boolean
           id?: string
@@ -2008,6 +2010,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          disappearing_after_read?: boolean
           disappearing_seconds?: number | null
           enable_sender_keys?: boolean
           id?: string
@@ -4571,6 +4574,27 @@ export type Database = {
         }
         Relationships: []
       }
+      message_expiration_tombstones: {
+        Row: {
+          conversation_id: string
+          expired_at: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          expired_at: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          expired_at?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       message_reactions: {
         Row: {
           created_at: string
@@ -4701,6 +4725,8 @@ export type Database = {
           expires_at: string | null
           id: string
           image_url: string | null
+          retention_after_read_seconds: number | null
+          retention_started_at: string | null
           sender_id: string
           status: string
           view_once: boolean
@@ -4722,6 +4748,8 @@ export type Database = {
           expires_at?: string | null
           id?: string
           image_url?: string | null
+          retention_after_read_seconds?: number | null
+          retention_started_at?: string | null
           sender_id: string
           status?: string
           view_once?: boolean
@@ -4743,6 +4771,8 @@ export type Database = {
           expires_at?: string | null
           id?: string
           image_url?: string | null
+          retention_after_read_seconds?: number | null
+          retention_started_at?: string | null
           sender_id?: string
           status?: string
           view_once?: boolean
@@ -10851,6 +10881,10 @@ export type Database = {
         Returns: Json
       }
       security_monitor_cron_tick: { Args: never; Returns: undefined }
+      set_conversation_retention: {
+        Args: { p_conversation_id: string; p_seconds: number }
+        Returns: Json
+      }
       set_discovery_preferences: {
         Args: { p_preferences: Json }
         Returns: Json
