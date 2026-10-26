@@ -281,6 +281,13 @@
       "when": 1793040748006,
       "tag": "0039_align_call_fanout_with_canonical_routes",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793047941368,
+      "tag": "0040_allow_post_author_insert_returning",
+      "breakpoints": true
     }
   ]
 }
