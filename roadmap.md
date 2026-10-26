@@ -8,5 +8,5 @@
 - [ ] Publier le frontend (cartes média style publication, filtre bien-être, limite live 1 h, club d'abonnés) — en attente de feu vert utilisateur
 - [ ] Live à vie : 2,99 €/live en paiement unique (même pour un créateur badgé) — à construire
 
-- [ ] Masquer le badge Lovable (attente approbation)
+- [x] Masquer le badge Lovable
 - [ ] Première campagne publicitaire : objectif, public, type
