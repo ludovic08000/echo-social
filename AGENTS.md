@@ -12,3 +12,4 @@
 - Edge Functions importent le code commun uniquement depuis `supabase/functions/_shared/`, jamais depuis le dossier d'une autre fonction : le déploiement Cloud n'emporte que la fonction ciblée et `_shared`.
 - Post visibility rules must be enforced inside `public.feed_eligible_post_ids_internal`, not only in `posts` RLS: the ranked feed RPCs are SECURITY DEFINER and read `posts` while bypassing RLS.
 - Deno resolves Edge Function npm dependencies automatically through the root deno.json; browser dependency installation alone does not resolve versioned npm specifiers.
+- MCP bundling resolves every SDK import to the audited root package and verifies real paths afterwards, so dependency-manager symlinks cannot select a nested SDK.
