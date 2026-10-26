@@ -38,7 +38,7 @@ function computeTrustScore(data: {
 }
 
 // ─── Reusable service-role client ───
-let _supabase: ReturnType<typeof createClient> | null = null;
+let _supabase: ReturnType<typeof createClient<any, "public">> | null = null;
 function getServiceClient() {
   if (!_supabase) {
     _supabase = createClient(

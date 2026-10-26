@@ -201,10 +201,10 @@ Deno.serve(async (req) => {
 
 // ─── Crypto helpers ───
 async function sha256Hex(data: Uint8Array): Promise<string> {
-  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", data)));
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(data))));
 }
 async function hmacSha256(key: Uint8Array | ArrayBuffer, message: string): Promise<Uint8Array> {
-  const cryptoKey = await crypto.subtle.importKey("raw", key instanceof Uint8Array ? key : new Uint8Array(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const cryptoKey = await crypto.subtle.importKey("raw", new Uint8Array(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(message)));
 }
 function toHex(arr: Uint8Array): string {

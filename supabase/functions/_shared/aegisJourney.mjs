@@ -11,6 +11,7 @@ export function createAegisJourney({ logger = r => console.log(JSON.stringify(r)
   const requestId = globalThis.crypto.randomUUID();
   const started = now();
   let sequence = 0;
+  /** @param {string} event @param {string} outcome @param {string | null} [sessionId] */
   return (event, outcome, sessionId = null) => {
     if (!EVENTS.has(event) || !OUTCOMES.has(outcome)) return;
     const time = now();

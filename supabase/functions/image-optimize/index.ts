@@ -192,7 +192,7 @@ Deno.serve(async (req) => {
     if (width) responseHeaders["X-Resize-Width"] = String(width);
     if (height) responseHeaders["X-Resize-Height"] = String(height);
 
-    return new Response(imageData, { headers: responseHeaders });
+    return new Response(new Uint8Array(imageData), { headers: responseHeaders });
   } catch (err) {
     console.error(
       "image-optimize failed",
