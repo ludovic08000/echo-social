@@ -9923,6 +9923,10 @@ export type Database = {
       }
       ddos_cleanup: { Args: never; Returns: undefined }
       deactivate_own_creator_profile: { Args: never; Returns: boolean }
+      decide_direct_message_request: {
+        Args: { p_accept: boolean; p_conversation_id: string }
+        Returns: number
+      }
       decrement_product_stock: {
         Args: { p_product_id: string; p_quantity: number }
         Returns: boolean
