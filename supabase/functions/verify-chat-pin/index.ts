@@ -105,7 +105,8 @@ async function hashRecoveryCode(code: string, salt: Uint8Array): Promise<string>
   const derived = await crypto.subtle.deriveBits(
     {
       name: "PBKDF2",
-      salt,
+      // Copie exacte : le sel reste inchangé, seul son type mémoire est précisé.
+      salt: new Uint8Array(salt),
       iterations: PBKDF2_ITERATIONS,
       hash: "SHA-256",
     },

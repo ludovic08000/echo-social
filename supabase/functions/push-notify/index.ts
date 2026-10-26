@@ -88,9 +88,10 @@ async function hkdf(
   info: Uint8Array,
   length: number,
 ): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
+  // Copie exacte des octets : aucun changement du protocole Web Push.
+  const key = await crypto.subtle.importKey("raw", new Uint8Array(ikm), "HKDF", false, ["deriveBits"]);
   return new Uint8Array(await crypto.subtle.deriveBits(
-    { name: "HKDF", hash: "SHA-256", salt, info },
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(salt), info: new Uint8Array(info) },
     key,
     length * 8,
   ));
@@ -109,7 +110,7 @@ async function encryptAes128Gcm(
   const ephPubRaw = new Uint8Array(await crypto.subtle.exportKey("raw", eph.publicKey));
   const recipientPub = await crypto.subtle.importKey(
     "raw",
-    p256dhRaw,
+    new Uint8Array(p256dhRaw),
     { name: "ECDH", namedCurve: "P-256" },
     false,
     [],
@@ -129,11 +130,11 @@ async function encryptAes128Gcm(
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const cek = await hkdf(salt, ikm, enc.encode("Content-Encoding: aes128gcm\0"), 16);
   const nonce = await hkdf(salt, ikm, enc.encode("Content-Encoding: nonce\0"), 12);
-  const aesKey = await crypto.subtle.importKey("raw", cek, { name: "AES-GCM" }, false, ["encrypt"]);
+  const aesKey = await crypto.subtle.importKey("raw", new Uint8Array(cek), { name: "AES-GCM" }, false, ["encrypt"]);
   const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: nonce },
+    { name: "AES-GCM", iv: new Uint8Array(nonce) },
     aesKey,
-    concat(payload, new Uint8Array([0x02])),
+    new Uint8Array(concat(payload, new Uint8Array([0x02]))),
   ));
   const rs = new Uint8Array(4);
   new DataView(rs.buffer).setUint32(0, 4096, false);

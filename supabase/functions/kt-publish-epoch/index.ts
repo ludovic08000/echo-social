@@ -48,7 +48,7 @@ function concatBytes(...arr: Uint8Array[]) {
   return out;
 }
 async function sha256(b: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", b));
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(b)));
 }
 
 interface TransparencyEntry {
@@ -112,7 +112,7 @@ function signedHeadBytes(
   );
 }
 
-async function getOrCreateSigningKey(supabase: ReturnType<typeof createClient>): Promise<{ id: string; privJwk: JsonWebKey; pubJwk: JsonWebKey }> {
+async function getOrCreateSigningKey(supabase: ReturnType<typeof createClient<any, "public">>): Promise<{ id: string; privJwk: JsonWebKey; pubJwk: JsonWebKey }> {
   const { privJwk, pubJwk } = await validateTransparencySigningKey(Deno.env.get("KT_SIGNING_PRIV_JWK"));
   const { data: row, error: lookupError } = await supabase
       .from("e2ee_kt_signing_keys")
@@ -143,7 +143,8 @@ async function signEd25519(privJwk: JsonWebKey, data: Uint8Array): Promise<strin
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign({ name: "Ed25519" }, key, data);
+  // Copie exacte des octets dans un ArrayBuffer accepté par WebCrypto.
+  const sig = await crypto.subtle.sign({ name: "Ed25519" }, key, new Uint8Array(data));
   return bytesToHex(new Uint8Array(sig));
 }
 

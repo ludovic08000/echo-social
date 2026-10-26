@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Restore preview checks: Deno dependency resolution and source-only type corrections, without frontend publication.
+
 - [x] Vérifier limites de durée live Instagram/TikTok
 - [x] Limite live 1 h : jeton 75 min + rejet >60 min (livekit-token déployée), alerte 5 min + arrêt auto (HostLiveView), cron horaire end-stale-lives (jobid 264), tests 2/2
 - [x] Badge Créateur 4,99 €/mois + 25 % sur pourboires et Market

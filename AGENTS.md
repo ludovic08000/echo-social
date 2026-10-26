@@ -11,3 +11,4 @@
 - Afficher « Appareil approuvé » seulement après lecture serveur de l'appareil exact lié à la session cible, actif et non révoqué ; l'approbation de connexion seule ne suffit pas. Toujours informer l'utilisateur du succès confirmé.
 - Edge Functions importent le code commun uniquement depuis `supabase/functions/_shared/`, jamais depuis le dossier d'une autre fonction : le déploiement Cloud n'emporte que la fonction ciblée et `_shared`.
 - Post visibility rules must be enforced inside `public.feed_eligible_post_ids_internal`, not only in `posts` RLS: the ranked feed RPCs are SECURITY DEFINER and read `posts` while bypassing RLS.
+- Deno resolves Edge Function npm dependencies automatically through the root deno.json; browser dependency installation alone does not resolve versioned npm specifiers.
