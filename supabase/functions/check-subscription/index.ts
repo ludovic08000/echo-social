@@ -43,9 +43,9 @@ serve(async (req) => {
 
     const customerId = customers.data[0].id;
     const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "active", limit: 100 });
-    const match = subscriptions.data.flatMap((subscription) =>
-      subscription.items.data.map((item) => ({ subscription, item, plan: creatorPlanForPrice(item.price) })))
-      .find((candidate) => candidate.plan !== null && candidate.subscription.current_period_end * 1000 > Date.now());
+    const match = subscriptions.data.flatMap((subscription: { current_period_end: number; items: { data: Array<{ price: Stripe.Price }> } }) =>
+      subscription.items.data.map((item: { price: Stripe.Price }) => ({ subscription, item, plan: creatorPlanForPrice(item.price) })))
+      .find((candidate: { plan: ReturnType<typeof creatorPlanForPrice>; subscription: { current_period_end: number } }) => candidate.plan !== null && candidate.subscription.current_period_end * 1000 > Date.now());
     const hasActiveSub = Boolean(match);
     let productId = null;
     let priceId = null;
