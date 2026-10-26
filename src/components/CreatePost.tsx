@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { uploadToR2 } from '@/lib/r2';
 import { generateVideoThumbnail } from '@/lib/videoThumbnail';
 import { isVideoCompatible } from '@/lib/videoCompat';
-import { compressImageForUpload } from '@/lib/messaging/compressImage';
+import { createFeedImageVariants } from '@/lib/feedImageVariants';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { UserAvatar } from './UserAvatar';
@@ -221,20 +221,27 @@ export function CreatePost() {
           thumbnailUrl = uploadedThumbnailUrl;
         } else {
           setUploadStep('Optimisation de l\'image…');
-          const optimizedImage = await compressImageForUpload(media, {
-            maxDimension: 1920,
-            quality: 0.82,
-          });
+          const { display, thumbnail } = await createFeedImageVariants(media);
           setUploadStep('Envoi de l\'image…');
           let lastImgProgress = 0;
-          const { url } = await uploadToR2(optimizedImage, 'post-images', undefined, (p) => {
-            const now = Date.now();
-            if (now - lastImgProgress > 250 || p.percent === 100) {
-              lastImgProgress = now;
-              setUploadPercent(p.percent);
-            }
-          });
-          imageUrl = url;
+          const thumbnailUpload = thumbnail
+            ? uploadToR2(thumbnail, 'thumbnails').then(({ url }) => url).catch((error) => {
+                console.warn('Image thumbnail upload failed', error);
+                return null;
+              })
+            : Promise.resolve(null);
+          const [imageResult, uploadedThumbnailUrl] = await Promise.all([
+            uploadToR2(display, 'post-images', undefined, (p) => {
+              const now = Date.now();
+              if (now - lastImgProgress > 250 || p.percent === 100) {
+                lastImgProgress = now;
+                setUploadPercent(p.percent);
+              }
+            }),
+            thumbnailUpload,
+          ]);
+          imageUrl = imageResult.url;
+          thumbnailUrl = uploadedThumbnailUrl;
         }
       }
 

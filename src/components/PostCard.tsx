@@ -130,7 +130,13 @@ export const PostCard = memo(function PostCard({
     () => post.image_url ? imagePresets.postThumbnail(post.image_url) || post.image_url : null,
     [post.image_url],
   );
-  const [renderedImageUrl, setRenderedImageUrl] = useState(optimizedPostImage);
+  const progressivePostImage = useMemo(
+    () => !isVideoPost && post.media_thumbnail_url
+      ? imagePresets.postThumbnail(post.media_thumbnail_url) || post.media_thumbnail_url
+      : optimizedPostImage,
+    [isVideoPost, optimizedPostImage, post.media_thumbnail_url],
+  );
+  const [renderedImageUrl, setRenderedImageUrl] = useState(progressivePostImage);
 
   const { data: videoViewCount } = useQuery({
     queryKey: ['post-views', post.id],
@@ -168,9 +174,35 @@ export const PostCard = memo(function PostCard({
     mediaMeasured.current = false;
     setVideoError(false);
     setImageError(false);
-    setRenderedImageUrl(optimizedPostImage);
+    setRenderedImageUrl(progressivePostImage);
     setViewTracked(false);
-  }, [optimizedPostImage, post.id]);
+  }, [progressivePostImage, post.id]);
+
+  // Paint the small API-uploaded variant first. Only after it is visible do we
+  // spend bandwidth on the full feed image, which avoids competing downloads
+  // on mobile while preserving the original quality on settled cards.
+  useEffect(() => {
+    if (
+      !mediaLoaded ||
+      isVideoPost ||
+      !optimizedPostImage ||
+      !progressivePostImage ||
+      progressivePostImage === optimizedPostImage ||
+      renderedImageUrl !== progressivePostImage
+    ) return;
+
+    let cancelled = false;
+    const fullImage = new Image();
+    fullImage.decoding = 'async';
+    fullImage.onload = () => {
+      if (!cancelled) setRenderedImageUrl(optimizedPostImage);
+    };
+    fullImage.src = optimizedPostImage;
+    return () => {
+      cancelled = true;
+      fullImage.onload = null;
+    };
+  }, [isVideoPost, mediaLoaded, optimizedPostImage, progressivePostImage, renderedImageUrl]);
 
   useEffect(() => {
     if (!post.expires_at) return;
