@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
-import { mkdir,readFile,writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir,readFile,realpath,writeFile } from 'node:fs/promises';
+import { resolve,sep } from 'node:path';
 import { isBuiltin } from 'node:module';
 import type { Plugin } from 'vite';
 
@@ -37,7 +37,9 @@ export function secureMcpPlugin(): Plugin {
         .filter(entry => entry.external && !isBuiltin(entry.path));
       if (external.length) throw new Error('MCP_UNBUNDLED_DEPENDENCY:'+external.map(entry=>entry.path).join(','));
       const sdkInputs=Object.keys(result.metafile!.inputs).filter(file=>file.replace(/\\/g,'/').includes('/@modelcontextprotocol/sdk/'));
-      if(!sdkInputs.length||sdkInputs.some(file=>!file.replace(/\\/g,'/').startsWith('node_modules/@modelcontextprotocol/sdk/')))
+      const sdkRoot=await realpath(resolve(config.root,'node_modules/@modelcontextprotocol/sdk'));
+      const resolvedSdkInputs=await Promise.all(sdkInputs.map(file=>realpath(resolve(config.root,file))));
+      if(!resolvedSdkInputs.length||resolvedSdkInputs.some(file=>file!==sdkRoot&&!file.startsWith(`${sdkRoot}${sep}`)))
         throw new Error('MCP_UNEXPECTED_NESTED_SDK');
       await mkdir(resolve(config.root,'supabase/functions/_shared/generated'),{recursive:true});
       for(const output of result.outputFiles!){

@@ -1,8 +1,21 @@
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile, stat } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const outputRoot = process.argv[2] ? resolve(process.argv[2]) : fileURLToPath(new URL("../dist/", import.meta.url));
+// Lovable appends its own Vite flags to `build:dev`. npm forwards those flags to
+// the last command in the chain, so they must never be interpreted as a build
+// output directory. An explicit positional directory remains supported.
+const defaultOutputRoot = fileURLToPath(new URL("../dist/", import.meta.url));
+const requestedOutputRoot = process.argv[2]?.startsWith("-") ? undefined : process.argv[2];
+let outputRoot = defaultOutputRoot;
+if (requestedOutputRoot) {
+  const candidate = resolve(requestedOutputRoot);
+  try {
+    if ((await stat(candidate)).isDirectory()) outputRoot = candidate;
+  } catch {
+    // npm may forward only the value of a Lovable/Vite flag. It is not output.
+  }
+}
 const mcpFunctionPath = fileURLToPath(new URL("../supabase/functions/mcp/index.ts", import.meta.url));
 const textExtensions = new Set([".css", ".html", ".js", ".json", ".mjs", ".webmanifest"]);
 const forbiddenPatterns = [
