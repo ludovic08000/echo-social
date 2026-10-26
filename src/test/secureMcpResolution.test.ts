@@ -15,13 +15,15 @@ vi.mock('esbuild', () => ({
     };
   }),
 }));
-vi.mock('node:fs/promises', async (importOriginal) => ({
-  ...await importOriginal<typeof import('node:fs/promises')>(),
-  readFile: vi.fn(async (path: string) => path.endsWith('config.toml') ? 'project_id = "testproject"' : '{"version":"1.32.1"}'),
-  realpath: vi.fn(async (path: string) => path),
-  mkdir: vi.fn(),
-  writeFile: vi.fn(),
-}));
+vi.mock('node:fs/promises', () => {
+  const mocked = {
+    readFile: vi.fn(async (path: string) => path.endsWith('config.toml') ? 'project_id = "testproject"' : '{"version":"1.32.1"}'),
+    realpath: vi.fn(async (path: string) => path),
+    mkdir: vi.fn(),
+    writeFile: vi.fn(),
+  };
+  return { ...mocked, default: mocked };
+});
 
 async function configure() {
   const hook = secureMcpPlugin().configResolved;
