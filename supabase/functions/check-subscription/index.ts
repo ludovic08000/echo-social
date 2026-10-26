@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { creatorPriceId } from "../_shared/payment-authority.ts";
+import { creatorPlanForPrice } from "../_shared/payment-authority.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -42,29 +42,29 @@ serve(async (req) => {
     }
 
     const customerId = customers.data[0].id;
-    const subscriptions = await stripe.subscriptions.list({
-      customer: customerId,
-      status: "active",
-      price: creatorPriceId(),
-      limit: 1,
-    });
-
-    const hasActiveSub = subscriptions.data.length > 0;
+    const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "active", limit: 100 });
+    const match = subscriptions.data.flatMap((subscription) =>
+      subscription.items.data.map((item) => ({ subscription, item, plan: creatorPlanForPrice(item.price) })))
+      .find((candidate) => candidate.plan !== null && candidate.subscription.current_period_end * 1000 > Date.now());
+    const hasActiveSub = Boolean(match);
     let productId = null;
     let priceId = null;
     let subscriptionEnd = null;
 
-    if (hasActiveSub) {
-      const subscription = subscriptions.data[0];
+    let plan = null;
+    if (match) {
+      const { subscription, item } = match;
       subscriptionEnd = new Date(subscription.current_period_end * 1000).toISOString();
-      productId = subscription.items.data[0].price.product;
-      priceId = subscription.items.data[0].price.id;
+      productId = item.price.product;
+      priceId = item.price.id;
+      plan = match.plan;
     }
 
     return new Response(JSON.stringify({
       subscribed: hasActiveSub,
       product_id: productId,
       price_id: priceId,
+      plan,
       subscription_end: subscriptionEnd,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

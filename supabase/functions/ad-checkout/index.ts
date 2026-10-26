@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { hasActiveCreatorSubscription } from "../_shared/payment-authority.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -33,14 +34,8 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     );
 
-    const { data: profile, error: profileError } = await serviceClient
-      .from("profiles")
-      .select("is_creator")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (profileError) throw new Error("Vérification du compte créateur indisponible");
-    if (profile?.is_creator !== true) {
-      return new Response(JSON.stringify({ error: "Accès réservé aux comptes créateur", code: "CREATOR_ACCOUNT_REQUIRED" }), {
+    if (!(await hasActiveCreatorSubscription(serviceClient, user.id))) {
+      return new Response(JSON.stringify({ error: "Abonnement créateur actif requis", code: "CREATOR_SUBSCRIPTION_REQUIRED" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 403,
       });

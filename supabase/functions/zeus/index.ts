@@ -8,6 +8,7 @@ import { ownsAgentConversation, reserveAgentUsage } from "../_shared/ai-agent-au
 import { aiDataSharingEnabled, aiShareablePosts } from "../_shared/ai-privacy.ts";
 import { ownedModerationContent, recordOwnedModeration } from "../_shared/owned-moderation.ts";
 import { feedConfigProposal, proposedFeedUpdate } from "../_shared/ai-admin-proposal.ts";
+import { hasActiveCreatorSubscription } from "../_shared/payment-authority.ts";
 
 // ═══════════════════════════════════════════════════════════════
 // ⚡ ZEUS — ForSure Central AI Engine
@@ -1721,13 +1722,8 @@ async function enforceCreatorDomainAccess(
 ): Promise<Response | null> {
   if (!CREATOR_ONLY_DOMAINS.has(domain)) return null;
 
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("is_creator")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) {
+  let valid = false;
+  try { valid = await hasActiveCreatorSubscription(supabase, userId); } catch (error) {
     console.error("Creator access lookup failed:", error.message);
     return new Response(JSON.stringify({ error: "Vérification du compte créateur indisponible" }), {
       status: 503,
@@ -1735,10 +1731,10 @@ async function enforceCreatorDomainAccess(
     });
   }
 
-  if ((profile as { is_creator?: boolean } | null)?.is_creator !== true) {
+  if (!valid) {
     return new Response(JSON.stringify({
-      error: "Accès réservé aux comptes créateur",
-      code: "CREATOR_ACCOUNT_REQUIRED",
+      error: "Abonnement créateur actif requis",
+      code: "CREATOR_SUBSCRIPTION_REQUIRED",
     }), {
       status: 403,
       headers: { ...cors, "Content-Type": "application/json" },

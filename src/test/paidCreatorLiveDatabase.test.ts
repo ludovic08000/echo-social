@@ -71,10 +71,10 @@ describe('paid creator live policy in PostgreSQL', () => {
 
   it('rejects expired, unverified or wrong-plan subscriptions', async () => {
     const cases = [
-      ['active', 'creator_monthly', 'sub_paid', "now() - interval '1 minute'"],
-      ['active', 'creator_monthly', null, "now() + interval '1 day'"],
+      ['active', 'creator_essential', 'sub_paid', "now() - interval '1 minute'"],
+      ['active', 'creator_essential', null, "now() + interval '1 day'"],
       ['active', 'free', 'sub_paid', "now() + interval '1 day'"],
-      ['cancelled', 'creator_monthly', 'sub_paid', "now() + interval '1 day'"],
+      ['cancelled', 'creator_essential', 'sub_paid', "now() + interval '1 day'"],
     ] as const;
 
     for (const [status, plan, stripeId, period] of cases) {
@@ -92,7 +92,7 @@ describe('paid creator live policy in PostgreSQL', () => {
   it('allows only the paying creator to create their own live', async () => {
     await db.query(
       `insert into public.creator_subscriptions(user_id,status,plan,stripe_subscription_id,current_period_end)
-       values($1,'active','creator_monthly','sub_paid',now() + interval '1 day')`,
+       values($1,'active','creator_essential','sub_paid',now() + interval '1 day')`,
       [actorId],
     );
     await db.exec('set role authenticated');
@@ -104,7 +104,7 @@ describe('paid creator live policy in PostgreSQL', () => {
     await db.exec('set role authenticated');
     await expect(db.query(
       `insert into public.creator_subscriptions(user_id,status,plan,stripe_subscription_id,current_period_end)
-       values($1,'active','creator_monthly','forged',now() + interval '1 year')`,
+       values($1,'active','creator_essential','forged',now() + interval '1 year')`,
       [actorId],
     )).rejects.toThrow(/permission denied/);
   });

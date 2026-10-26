@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
           .select("user_id")
           .eq("user_id", userId)
           .eq("status", "active")
-          .eq("plan", "creator_monthly")
+          .in("plan", ["creator_essential", "creator_pro", "creator_studio"])
           .not("stripe_subscription_id", "is", null)
           .gt("current_period_end", new Date().toISOString())
           .maybeSingle();

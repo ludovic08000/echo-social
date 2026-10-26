@@ -17,19 +17,19 @@ describe('creator-only ads and AI agents architecture', () => {
   });
 
   it('enforces creator access in database policies and cloud functions', () => {
-    const migration = readSource('supabase/migrations/20260930120400_restrict_creator_ads_and_agents.sql');
+    const migration = readSource('supabase/migrations/20261026235000_require_paid_creator_subscription_for_ads.sql');
     const zeus = readSource('supabase/functions/zeus/index.ts');
     const checkout = readSource('supabase/functions/ad-checkout/index.ts');
     const stripeWebhook = readSource('supabase/functions/stripe-webhook/index.ts');
 
     expect(migration).toContain('security definer');
-    expect(migration).toContain('profile.is_creator is true');
-    expect(migration).toContain('Creator advertisers manage own ads');
-    expect(migration).toContain('Creators manage their agent conversations');
-    expect(migration).toContain('AD_PAYMENT_STATE_SERVER_ONLY');
-    expect(migration).toContain("and paid_at is not null");
+    expect(migration).toContain("subscription.status = 'active'");
+    expect(migration).toContain("subscription.plan in ('creator_essential', 'creator_pro', 'creator_studio')");
+    expect(migration).toContain('subscription.stripe_subscription_id is not null');
+    expect(migration).toContain('subscription.current_period_end > now()');
     expect(zeus).toContain('CREATOR_ONLY_DOMAINS = new Set(["ads", "agent"])');
-    expect(zeus).toContain('CREATOR_ACCOUNT_REQUIRED');
+    expect(zeus).toContain('CREATOR_SUBSCRIPTION_REQUIRED');
+    expect(checkout).toContain('hasActiveCreatorSubscription');
     expect(checkout).toContain('.eq("advertiser_id", user.id)');
     expect(checkout).toContain('const numAmount = Number(campaign.budget)');
     expect(checkout).toContain('idempotencyKey: `forsure-ad-campaign-${campaign_id}`');

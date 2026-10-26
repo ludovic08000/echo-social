@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { isCreatorPlan, type CreatorPlanId } from '@/lib/creatorPlans';
 
 // Stripe IDs for ForSure Créateur
 export const CREATOR_PLAN = {
@@ -13,6 +14,7 @@ interface SubscriptionState {
   productId: string | null;
   priceId: string | null;
   subscriptionEnd: string | null;
+  plan: CreatorPlanId | null;
   loading: boolean;
 }
 
@@ -23,6 +25,7 @@ export function useStripeSubscription() {
     productId: null,
     priceId: null,
     subscriptionEnd: null,
+    plan: null,
     loading: true,
   });
 
@@ -41,6 +44,7 @@ export function useStripeSubscription() {
           productId: data.product_id || null,
           priceId: data.price_id || null,
           subscriptionEnd: data.subscription_end || null,
+          plan: isCreatorPlan(data.plan) ? data.plan : null,
           loading: false,
         });
         return;
@@ -56,7 +60,7 @@ export function useStripeSubscription() {
 
       const periodEnd = dbSub?.current_period_end ? new Date(dbSub.current_period_end).getTime() : 0;
       if (
-        dbSub?.plan === 'creator_monthly'
+        isCreatorPlan(dbSub?.plan)
         && Boolean(dbSub.stripe_subscription_id)
         && Number.isFinite(periodEnd)
         && periodEnd > Date.now()
@@ -66,6 +70,7 @@ export function useStripeSubscription() {
           productId: CREATOR_PLAN.product_id,
           priceId: CREATOR_PLAN.price_id,
           subscriptionEnd: dbSub.current_period_end || null,
+          plan: dbSub.plan,
           loading: false,
         });
         return;
@@ -76,6 +81,7 @@ export function useStripeSubscription() {
         productId: null,
         priceId: null,
         subscriptionEnd: null,
+        plan: null,
         loading: false,
       });
     } catch {
@@ -94,12 +100,12 @@ export function useStripeSubscription() {
     return () => clearInterval(interval);
   }, [user, checkSubscription]);
 
-  const isCreatorSubscriber = state.subscribed && state.productId === CREATOR_PLAN.product_id;
+  const isCreatorSubscriber = state.subscribed && state.plan !== null;
 
-  const startCheckout = async () => {
+  const startCheckout = async (plan: CreatorPlanId) => {
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { priceId: CREATOR_PLAN.price_id },
+        body: { plan },
       });
       if (error) throw error;
       if (data?.url) {

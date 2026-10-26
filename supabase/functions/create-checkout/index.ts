@@ -3,7 +3,7 @@ import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { ddosShield } from "../_shared/ddos-shield.ts";
-import { creatorPriceId, isCreatorPrice, paymentReturnOrigin } from "../_shared/payment-authority.ts";
+import { creatorPlanForPrice, creatorPriceId, CREATOR_PLANS, paymentReturnOrigin, type CreatorPlan } from "../_shared/payment-authority.ts";
 
 serve(async (req) => {
   const cors = getCorsHeaders(req);
@@ -33,15 +33,15 @@ serve(async (req) => {
       apiVersion: "2025-08-27.basil",
     });
 
-    const { priceId } = await req.json();
-    if (!priceId || typeof priceId !== "string") throw new Error("Price ID required");
-
-    // Validate price ID format (Stripe price IDs start with "price_")
-    if (priceId !== creatorPriceId()) throw new Error("Invalid price ID");
+    const { plan } = await req.json();
+    if (!plan || !(plan in CREATOR_PLANS)) throw new Error("Invalid creator plan");
+    const creatorPlan = plan as CreatorPlan;
+    const priceId = creatorPriceId(creatorPlan);
+    if (!priceId) throw new Error("CREATOR_PLAN_UNAVAILABLE");
 
     // Verify price exists in Stripe (server-side validation)
     const price = await stripe.prices.retrieve(priceId);
-    if (!isCreatorPrice(price)) throw new Error("Prix invalide ou inactif");
+    if (creatorPlanForPrice(price) !== creatorPlan) throw new Error("Prix invalide ou inactif");
 
     // Check if Stripe customer exists
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
@@ -49,13 +49,8 @@ serve(async (req) => {
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
 
-      const subs = await stripe.subscriptions.list({
-        customer: customerId,
-        price: priceId,
-        status: "active",
-        limit: 1,
-      });
-      if (subs.data.length > 0) {
+      const subs = await stripe.subscriptions.list({ customer: customerId, status: "active", limit: 100 });
+      if (subs.data.some((sub) => sub.items.data.some((item) => creatorPlanForPrice(item.price)))) {
         throw new Error("Vous avez déjà un abonnement actif");
       }
     }
@@ -68,11 +63,11 @@ serve(async (req) => {
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
       phone_number_collection: { enabled: false },
-      success_url: `${origin}/creator-upgrade?success=true`,
-      cancel_url: `${origin}/creator-upgrade?canceled=true`,
+      success_url: `${origin}/creator?success=true`,
+      cancel_url: `${origin}/creator?canceled=true`,
       client_reference_id: user.id,
-      metadata: { type: "creator_subscription", user_id: user.id },
-      subscription_data: { metadata: { type: "creator_subscription", user_id: user.id } },
+      metadata: { type: "creator_subscription", user_id: user.id, plan: creatorPlan },
+      subscription_data: { metadata: { type: "creator_subscription", user_id: user.id, plan: creatorPlan } },
     });
 
     return new Response(JSON.stringify({ url: session.url }), {
@@ -80,7 +75,7 @@ serve(async (req) => {
     });
   } catch (error) {
     const msg = (error as Error).message;
-    const isValidation = ["Price ID", "User not authenticated", "Vous avez déjà", "Invalid price", "Prix invalide"].some(s => msg.includes(s));
+    const isValidation = ["creator plan", "CREATOR_PLAN_UNAVAILABLE", "User not authenticated", "Vous avez déjà", "Prix invalide"].some(s => msg.includes(s));
     return new Response(JSON.stringify({ error: msg }), {
       headers: { ...cors, "Content-Type": "application/json" },
       status: isValidation ? 400 : 500,

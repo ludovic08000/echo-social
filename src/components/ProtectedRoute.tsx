@@ -6,6 +6,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { AgeFlaggedScreen } from '@/components/AgeFlaggedScreen';
 import { supabase } from '@/integrations/supabase/client';
 import { detectAndStoreRecoveryFromHash, isRecoveryPending, setRecoveryFlag } from '@/lib/authRecovery';
+import { useStripeSubscription } from '@/hooks/useStripeSubscription';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -68,7 +69,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
 function CreatorAccessGate({ children }: ProtectedRouteProps) {
   const location = useLocation();
-  const { data: profile, isLoading } = useProfile();
+  const { isCreatorSubscriber, loading: isLoading } = useStripeSubscription();
 
   if (isLoading) {
     return (
@@ -81,7 +82,7 @@ function CreatorAccessGate({ children }: ProtectedRouteProps) {
     );
   }
 
-  if (!profile?.is_creator) {
+  if (!isCreatorSubscriber) {
     return <Navigate to="/creator" state={{ from: location.pathname, creatorRequired: true }} replace />;
   }
 

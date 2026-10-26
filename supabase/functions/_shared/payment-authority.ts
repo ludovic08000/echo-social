@@ -1,11 +1,42 @@
 // Les droits et montants sont décidés par le serveur, jamais par le prix ou l'état fourni par le navigateur.
+export type CreatorPlan = "creator_essential" | "creator_pro" | "creator_studio";
 export const DEFAULT_CREATOR_PRICE_ID = "price_1UOT8Q6wgOEGAgcGDX1iQ2Lt";
-export const creatorPriceId = () => Deno.env.get("STRIPE_CREATOR_PRICE_ID") || DEFAULT_CREATOR_PRICE_ID;
 
-export function isCreatorPrice(price: any): boolean {
-  return price?.id === creatorPriceId() && price.active === true && price.currency === "eur"
-    && price.unit_amount === 499 && price.recurring?.interval === "month"
-    && (price.recurring.interval_count ?? 1) === 1;
+export const CREATOR_PLANS: Record<CreatorPlan, { env: string; amount: number; fallback?: string }> = {
+  creator_essential: {
+    env: "STRIPE_CREATOR_ESSENTIAL_PRICE_ID",
+    amount: 499,
+    fallback: Deno.env.get("STRIPE_CREATOR_PRICE_ID") || DEFAULT_CREATOR_PRICE_ID,
+  },
+  creator_pro: { env: "STRIPE_CREATOR_PRO_PRICE_ID", amount: 999 },
+  creator_studio: { env: "STRIPE_CREATOR_STUDIO_PRICE_ID", amount: 1999 },
+};
+
+export const creatorPriceId = (plan: CreatorPlan): string | null =>
+  Deno.env.get(CREATOR_PLANS[plan].env) || CREATOR_PLANS[plan].fallback || null;
+
+export function creatorPlanForPrice(price: any): CreatorPlan | null {
+  for (const [plan, config] of Object.entries(CREATOR_PLANS) as Array<[CreatorPlan, typeof CREATOR_PLANS[CreatorPlan]]>) {
+    const expectedId = creatorPriceId(plan);
+    if (expectedId && price?.id === expectedId && price.active === true && price.currency === "eur"
+      && price.unit_amount === config.amount && price.recurring?.interval === "month"
+      && (price.recurring.interval_count ?? 1) === 1) return plan;
+  }
+  return null;
+}
+
+export const isCreatorPrice = (price: any): boolean => creatorPlanForPrice(price) !== null;
+
+export async function hasActiveCreatorSubscription(db: any, userId: string): Promise<boolean> {
+  const { data, error } = await db.from("creator_subscriptions")
+    .select("status, plan, stripe_subscription_id, current_period_end")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.status === "active"
+    && ["creator_essential", "creator_pro", "creator_studio"].includes(data.plan)
+    && Boolean(data.stripe_subscription_id)
+    && new Date(data.current_period_end ?? 0).getTime() > Date.now();
 }
 
 export function paymentReturnOrigin(req: Request): string {

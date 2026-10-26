@@ -1,5 +1,9 @@
 begin;
 
+update public.creator_subscriptions
+set plan = 'creator_essential'
+where plan = 'creator_monthly';
+
 -- Only Stripe-backed creator subscriptions may create a live or replay.
 -- Reading, joining, chatting, ending and deleting an owned live keep their
 -- existing behavior. The payment authority remains the Stripe webhook.
@@ -17,7 +21,7 @@ with check (
     from public.creator_subscriptions subscription
     where subscription.user_id = (select auth.uid())
       and subscription.status = 'active'
-      and subscription.plan = 'creator_monthly'
+      and subscription.plan in ('creator_essential', 'creator_pro', 'creator_studio')
       and subscription.stripe_subscription_id is not null
       and subscription.current_period_end > now()
   )

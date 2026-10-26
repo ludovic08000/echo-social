@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { CREATOR_PLANS, type CreatorPlanId } from '@/lib/creatorPlans';
 
 const BENEFITS = [
   { icon: Crown, title: 'Badge Créateur 👑', description: 'Un badge distinctif sur votre profil et vos publications' },
@@ -53,7 +54,7 @@ function ThresholdRow({ icon: Icon, label, current, target, met }: {
 
 export default function CreatorUpgrade() {
   const { user } = useAuth();
-  const { isCreatorSubscriber, subscriptionEnd, loading, startCheckout, openPortal, checkSubscription } = useStripeSubscription();
+  const { isCreatorSubscriber, subscriptionEnd, plan: activePlan, loading, startCheckout, openPortal, checkSubscription } = useStripeSubscription();
   const { enabled: revenueEnabled, userCount, threshold, loading: statsLoading } = useIsCreatorRevenueEnabled();
   const eligibility = useCreatorEligibility();
   const [searchParams] = useSearchParams();
@@ -68,10 +69,10 @@ export default function CreatorUpgrade() {
     }
   }, [searchParams, checkSubscription]);
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (plan: CreatorPlanId) => {
     if (!user) { toast.error('Vous devez être connecté'); return; }
     setCheckoutLoading(true);
-    try { await startCheckout(); }
+    try { await startCheckout(plan); }
     catch (err: any) { toast.error(err.message || 'Erreur lors du paiement'); }
     finally { setCheckoutLoading(false); }
   };
@@ -95,7 +96,7 @@ export default function CreatorUpgrade() {
           </p>
         </motion.div>
 
-        {/* Price card */}
+        {/* Price cards */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
           className={cn('rounded-2xl p-6 text-center border', isCreatorSubscriber
             ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/30'
@@ -107,22 +108,34 @@ export default function CreatorUpgrade() {
               <div className="flex items-center justify-center gap-2 text-green-600 font-semibold mb-1">
                 <Sparkles className="w-5 h-5" /> Abonnement actif
               </div>
+              {activePlan && <p className="text-sm font-semibold">{CREATOR_PLANS.find((item) => item.id === activePlan)?.name}</p>}
               {subscriptionEnd && (
                 <p className="text-xs text-muted-foreground">
                   Prochain renouvellement : {new Date(subscriptionEnd).toLocaleDateString('fr-FR', { dateStyle: 'long' })}
                 </p>
               )}
             </>
-          ) : (
-            <>
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-4xl font-bold">4,99€</span>
-                <span className="text-muted-foreground">/mois</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">Annulable à tout moment</p>
-            </>
-          )}
+          ) : <p className="text-sm font-semibold">Choisissez l’offre adaptée à votre activité</p>}
         </motion.div>
+
+        {!isCreatorSubscriber && !loading && (
+          <div className="grid gap-3">
+            {CREATOR_PLANS.map((creatorPlan) => (
+              <div key={creatorPlan.id} className="rounded-2xl border border-border bg-card p-5 space-y-3">
+                <div className="flex items-end justify-between gap-3">
+                  <div><h2 className="font-bold text-lg">{creatorPlan.name}</h2><p className="text-xs text-muted-foreground">Annulable à tout moment</p></div>
+                  <div className="font-bold text-2xl">{creatorPlan.price}<span className="text-xs text-muted-foreground font-normal">/mois</span></div>
+                </div>
+                <ul className="space-y-1 text-sm text-muted-foreground">
+                  {creatorPlan.features.map((feature) => <li key={feature}>✓ {feature}</li>)}
+                </ul>
+                <Button className="w-full" onClick={() => handleCheckout(creatorPlan.id)} disabled={checkoutLoading}>
+                  Choisir {creatorPlan.name}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Benefits */}
         <div className="space-y-3">
@@ -259,23 +272,7 @@ export default function CreatorUpgrade() {
                 <RefreshCw className="w-3 h-3 mr-2" /> Actualiser le statut
               </Button>
             </>
-          ) : (
-            <>
-              <Button
-                className="w-full h-12 text-base font-semibold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-0 rounded-xl shadow-lg shadow-amber-500/25"
-                onClick={handleCheckout} disabled={checkoutLoading}
-              >
-                {checkoutLoading ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <><Crown className="w-5 h-5 mr-2" /> Devenir Créateur — 4,99€/mois</>
-                )}
-              </Button>
-              <p className="text-[10px] text-muted-foreground text-center">
-                Paiement sécurisé via Stripe. Annulable à tout moment.
-              </p>
-            </>
-          )}
+          ) : <p className="text-[10px] text-muted-foreground text-center">Paiement sécurisé via Stripe. Annulable à tout moment.</p>}
         </motion.div>
       </div>
     </AppLayout>

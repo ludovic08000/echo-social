@@ -14,7 +14,7 @@ const landing = readFileSync('src/pages/Landing.tsx', 'utf8');
 describe('paid creator live access architecture', () => {
   it('uses Stripe-backed, active and unexpired server state for live creation', () => {
     expect(migration).toContain('subscription.status = \'active\'');
-    expect(migration).toContain("subscription.plan = 'creator_monthly'");
+    expect(migration).toContain("subscription.plan in ('creator_essential', 'creator_pro', 'creator_studio')");
     expect(migration).toContain('subscription.stripe_subscription_id is not null');
     expect(migration).toContain('subscription.current_period_end > now()');
     expect(migration).toContain('(select auth.uid()) = user_id');
@@ -29,7 +29,7 @@ describe('paid creator live access architecture', () => {
   it('rechecks subscription before issuing a host publishing token', () => {
     expect(tokenFunction).toContain('diagnostic.step("creator_subscription")');
     expect(tokenFunction).toContain('.eq("status", "active")');
-    expect(tokenFunction).toContain('.eq("plan", "creator_monthly")');
+    expect(tokenFunction).toContain('.in("plan", ["creator_essential", "creator_pro", "creator_studio"])');
     expect(tokenFunction).toContain('.not("stripe_subscription_id", "is", null)');
     expect(tokenFunction).toContain('.gt("current_period_end", new Date().toISOString())');
     expect(tokenFunction).toContain('LIVE_CREATOR_SUBSCRIPTION_REQUIRED');

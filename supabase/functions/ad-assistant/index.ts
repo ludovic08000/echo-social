@@ -3,6 +3,7 @@ import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.93.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { userChatHistory } from "../_shared/ai-input.ts";
+import { hasActiveCreatorSubscription } from "../_shared/payment-authority.ts";
 
 // Rate limiting per user
 
@@ -89,18 +90,14 @@ serve(async (req) => {
     }
 
     const serviceClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: profile, error: profileError } = await serviceClient
-      .from("profiles")
-      .select("is_creator")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (profileError) {
+    let hasCreatorSubscription = false;
+    try { hasCreatorSubscription = await hasActiveCreatorSubscription(serviceClient, user.id); } catch {
       return new Response(JSON.stringify({ error: "Vérification du compte créateur indisponible" }), {
         status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (profile?.is_creator !== true) {
-      return new Response(JSON.stringify({ error: "Accès réservé aux comptes créateur", code: "CREATOR_ACCOUNT_REQUIRED" }), {
+    if (!hasCreatorSubscription) {
+      return new Response(JSON.stringify({ error: "Abonnement créateur actif requis", code: "CREATOR_SUBSCRIPTION_REQUIRED" }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

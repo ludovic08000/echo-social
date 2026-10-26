@@ -14,24 +14,24 @@ it('actual checkout rejects another active price before creating a session',asyn
   let handler:(req:Request)=>Promise<Response>=async()=>new Response();
   const create=vi.fn();const retrieve=vi.fn();
   function Stripe(){return {prices:{retrieve},checkout:{sessions:{create}}}}
-  new Function('serve','Stripe','createClient','getCorsHeaders','ddosShield','creatorPriceId','isCreatorPrice','paymentReturnOrigin','Deno',code('create-checkout/index.ts'))(
+  new Function('serve','Stripe','createClient','getCorsHeaders','ddosShield','creatorPlanForPrice','creatorPriceId','CREATOR_PLANS','paymentReturnOrigin','Deno',code('create-checkout/index.ts'))(
     (fn:typeof handler)=>{handler=fn},Stripe,()=>({auth:{getUser:async()=>({data:{user},error:null})}}),()=>({}),async()=>null,
-    policy.creatorPriceId,policy.isCreatorPrice,policy.paymentReturnOrigin,env,
+    policy.creatorPlanForPrice,policy.creatorPriceId,policy.CREATOR_PLANS,policy.paymentReturnOrigin,env,
   );
-  const response=await handler(new Request('https://local.invalid',{method:'POST',headers:{Authorization:'Bearer synthetic','Content-Type':'application/json'},body:JSON.stringify({priceId:'price_cheaper_fan'})}));
+  const response=await handler(new Request('https://local.invalid',{method:'POST',headers:{Authorization:'Bearer synthetic','Content-Type':'application/json'},body:JSON.stringify({plan:'creator_unknown'})}));
   expect(response.status).toBe(400);expect(create).not.toHaveBeenCalled();expect(retrieve).not.toHaveBeenCalled();
 });
 it('actual checkout binds the correct plan and buyer to server metadata and trusted return URLs',async()=>{
   let handler:(req:Request)=>Promise<Response>=async()=>new Response();
   const create=vi.fn().mockResolvedValue({url:'https://checkout.stripe.com/synthetic'});
   function Stripe(){return {prices:{retrieve:async()=>price},customers:{list:async()=>({data:[]})},checkout:{sessions:{create}}}}
-  new Function('serve','Stripe','createClient','getCorsHeaders','ddosShield','creatorPriceId','isCreatorPrice','paymentReturnOrigin','Deno',code('create-checkout/index.ts'))(
+  new Function('serve','Stripe','createClient','getCorsHeaders','ddosShield','creatorPlanForPrice','creatorPriceId','CREATOR_PLANS','paymentReturnOrigin','Deno',code('create-checkout/index.ts'))(
     (fn:typeof handler)=>{handler=fn},Stripe,()=>({auth:{getUser:async()=>({data:{user},error:null})}}),()=>({}),async()=>null,
-    policy.creatorPriceId,policy.isCreatorPrice,policy.paymentReturnOrigin,env,
+    policy.creatorPlanForPrice,policy.creatorPriceId,policy.CREATOR_PLANS,policy.paymentReturnOrigin,env,
   );
-  const response=await handler(new Request('https://local.invalid',{method:'POST',headers:{Authorization:'Bearer synthetic','Content-Type':'application/json',Origin:'https://evil.invalid'},body:JSON.stringify({priceId:price.id})}));
+  const response=await handler(new Request('https://local.invalid',{method:'POST',headers:{Authorization:'Bearer synthetic','Content-Type':'application/json',Origin:'https://evil.invalid'},body:JSON.stringify({plan:'creator_essential'})}));
   expect(response.status).toBe(200);
-  expect(create.mock.calls[0][0]).toMatchObject({client_reference_id:user.id,metadata:{type:'creator_subscription',user_id:user.id},success_url:'https://forsure.fans/creator-upgrade?success=true'});
+  expect(create.mock.calls[0][0]).toMatchObject({client_reference_id:user.id,metadata:{type:'creator_subscription',user_id:user.id,plan:'creator_essential'},success_url:'https://forsure.fans/creator?success=true'});
 });
 async function webhookFixture(validPrice:boolean,writeError=false){
   let handler:(req:Request)=>Promise<Response>=async()=>new Response();
@@ -43,9 +43,9 @@ async function webhookFixture(validPrice:boolean,writeError=false){
   }};
   const session={mode:'subscription',payment_status:'paid',subscription:'sub_synthetic',customer:'cus_synthetic',metadata:{type:'creator_subscription',user_id:user.id}};
   function Stripe(){return {webhooks:{constructEvent:()=>({id:'evt_synthetic',type:'checkout.session.completed',data:{object:session}})},
-    subscriptions:{retrieve:async()=>({status:'active',items:{data:[{quantity:1,price:validPrice?price:{...price,id:'price_cheaper_fan',unit_amount:199}}]}})}}}
-  new Function('serve','Stripe','createClient','getCorsHeaders','isCreatorPrice','settleMarketplacePayment','Deno','console',code('stripe-webhook/index.ts'))(
-    (fn:typeof handler)=>{handler=fn},Stripe,()=>client,()=>({}),policy.isCreatorPrice,vi.fn(),env,quiet,
+    subscriptions:{retrieve:async()=>({status:'active',current_period_start:1_700_000_000,current_period_end:1_702_592_000,items:{data:[{quantity:1,price:validPrice?price:{...price,id:'price_cheaper_fan',unit_amount:199}}]}})}}}
+  new Function('serve','Stripe','createClient','getCorsHeaders','creatorPlanForPrice','CREATOR_PLANS','settleMarketplacePayment','Deno','console',code('stripe-webhook/index.ts'))(
+    (fn:typeof handler)=>{handler=fn},Stripe,()=>client,()=>({}),policy.creatorPlanForPrice,policy.CREATOR_PLANS,vi.fn(),env,quiet,
   );
   const response=await handler(new Request('https://local.invalid',{method:'POST',headers:{'stripe-signature':'synthetic-signature'},body:'synthetic-event'}));
   return {response,writes};

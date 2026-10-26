@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { isCreatorPrice, settleMarketplacePayment } from "../_shared/payment-authority.ts";
+import { creatorPlanForPrice, CREATOR_PLANS, settleMarketplacePayment } from "../_shared/payment-authority.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -197,8 +197,8 @@ serve(async (req) => {
         if (!subscriptionId || session.payment_status !== "paid") throw new Error("CREATOR_PAYMENT_UNCONFIRMED");
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         const creatorItems = subscription.items?.data ?? [];
-        if (subscription.status !== "active" || creatorItems.length !== 1
-          || !isCreatorPrice(creatorItems[0].price) || creatorItems[0].quantity !== 1) {
+        const creatorPlan = creatorItems.length === 1 ? creatorPlanForPrice(creatorItems[0].price) : null;
+        if (subscription.status !== "active" || !creatorPlan || creatorItems[0].quantity !== 1) {
           throw new Error("CREATOR_PRICE_MISMATCH");
         }
         const userId = session.metadata.user_id;
@@ -207,7 +207,7 @@ serve(async (req) => {
         // Activate creator status
         const { error: creatorProfileError } = await supabase
           .from("profiles")
-          .update({ is_creator: true, creator_since: new Date().toISOString(), creator_tier: "creator" })
+          .update({ is_creator: true, creator_since: new Date().toISOString(), creator_tier: creatorPlan })
           .eq("user_id", userId);
         if (creatorProfileError) throw creatorProfileError;
 
@@ -215,13 +215,13 @@ serve(async (req) => {
         const { error: creatorSubscriptionError } = await supabase.from("creator_subscriptions").upsert({
           user_id: userId,
           status: "active",
-          plan: "creator_monthly",
-          price_cents: 499,
+          plan: creatorPlan,
+          price_cents: CREATOR_PLANS[creatorPlan].amount,
           currency: "eur",
           stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id || null,
           stripe_subscription_id: typeof session.subscription === "string" ? session.subscription : session.subscription?.id || null,
-          current_period_start: new Date().toISOString(),
-          current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
         }, { onConflict: "user_id" });
         if (creatorSubscriptionError) throw creatorSubscriptionError;
 
@@ -391,9 +391,19 @@ serve(async (req) => {
             .eq("id", fanRow.id);
           console.log(`✅ Fan subscription ${subId} updated (${subscription.status})`);
         } else {
+          const item = subscription.items.data.length === 1 ? subscription.items.data[0] : null;
+          const creatorPlan = item ? creatorPlanForPrice(item.price) : null;
+          const nextStatus = subscription.status === "active" ? "active"
+            : subscription.status === "past_due" ? "past_due" : "cancelled";
           await supabase
             .from("creator_subscriptions")
-            .update({ current_period_start: periodStart, current_period_end: periodEnd })
+            .update({
+              status: nextStatus,
+              plan: creatorPlan ?? undefined,
+              price_cents: creatorPlan ? CREATOR_PLANS[creatorPlan].amount : undefined,
+              current_period_start: periodStart,
+              current_period_end: periodEnd,
+            })
             .eq("stripe_subscription_id", subId);
           console.log(`✅ Creator subscription ${subId} period refreshed`);
         }
