@@ -302,6 +302,13 @@
       "when": 1793052443440,
       "tag": "0042_restrict_live_creation_to_paid_creators",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793052458393,
+      "tag": "0043_require_paid_creator_subscription_for_ads",
+      "breakpoints": true
     }
   ]
 }
