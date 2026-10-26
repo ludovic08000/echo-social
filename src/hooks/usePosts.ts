@@ -271,9 +271,13 @@ export function useCreatePost() {
       return data;
     },
     onSuccess: (newPost) => {
-      // Immediately prepend the new post to the feed cache so it shows without refresh
-      queryClient.setQueriesData<any>(
-        { queryKey: ['posts', 'friends-feed'] },
+      // Keep the author's freshly published post at the top of their active
+      // feed. A normal invalidation refetches immediately and replaces this
+      // optimistic page with the server snapshot, where the new post can be
+      // ranked lower even though publication succeeded.
+      const authorFeedKey = ['posts', 'friends-feed', user?.id];
+      queryClient.setQueryData<any>(
+        authorFeedKey,
         (old: any) => {
           if (!old?.pages) return old;
           // Build a minimal enriched post for the cache
@@ -305,8 +309,17 @@ export function useCreatePost() {
           };
         }
       );
-      // Also invalidate to get accurate data on next fetch
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      // Mark the ranked snapshot stale without refetching over the optimistic
+      // item. The next explicit feed refresh will request a fresh snapshot.
+      queryClient.invalidateQueries({
+        queryKey: authorFeedKey,
+        exact: true,
+        refetchType: 'none',
+      });
+      // Profile pages should still refresh immediately with the new post.
+      if (user?.id) {
+        queryClient.invalidateQueries({ queryKey: ['posts', 'user', user.id] });
+      }
     },
   });
 }
