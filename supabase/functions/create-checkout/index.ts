@@ -50,7 +50,7 @@ serve(async (req) => {
       customerId = customers.data[0].id;
 
       const subs = await stripe.subscriptions.list({ customer: customerId, status: "active", limit: 100 });
-      if (subs.data.some((sub) => sub.items.data.some((item) => creatorPlanForPrice(item.price)))) {
+      if (subs.data.some((sub: { items: { data: Array<{ price: Stripe.Price }> } }) => sub.items.data.some((item: { price: Stripe.Price }) => creatorPlanForPrice(item.price)))) {
         throw new Error("Vous avez déjà un abonnement actif");
       }
     }

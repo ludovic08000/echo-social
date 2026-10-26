@@ -1724,7 +1724,7 @@ async function enforceCreatorDomainAccess(
 
   let valid = false;
   try { valid = await hasActiveCreatorSubscription(supabase, userId); } catch (error) {
-    console.error("Creator access lookup failed:", error.message);
+    console.error("Creator access lookup failed:", error instanceof Error ? error.message : "Unknown error");
     return new Response(JSON.stringify({ error: "Vérification du compte créateur indisponible" }), {
       status: 503,
       headers: { ...cors, "Content-Type": "application/json" },
