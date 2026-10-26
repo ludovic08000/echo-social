@@ -327,9 +327,6 @@ export function CreatePost() {
       setPublishAsReplay(false);
       setReplayTitle('');
 
-      // Scroll to top so user sees the new post immediately
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-
       // If on the dedicated create page, navigate back to feed
       if (window.location.pathname === '/create-post') {
         navigate('/feed');

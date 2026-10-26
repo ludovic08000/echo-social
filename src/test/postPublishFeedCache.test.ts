@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 describe('post publication feed cache contract', () => {
   const source = readFileSync('src/hooks/usePosts.ts', 'utf8');
+  const createPostComponent = readFileSync('src/components/CreatePost.tsx', 'utf8');
 
   it('keeps a successful author post visible instead of refetching over it', () => {
     const createPostSource = source.slice(
@@ -18,5 +19,9 @@ describe('post publication feed cache contract', () => {
 
   it('still refreshes the author profile post list', () => {
     expect(source).toContain("queryClient.invalidateQueries({ queryKey: ['posts', 'user', user.id] })");
+  });
+
+  it('does not force the feed to jump to the top after publication', () => {
+    expect(createPostComponent).not.toMatch(/window\.scrollTo\(\{\s*top:\s*0/);
   });
 });
