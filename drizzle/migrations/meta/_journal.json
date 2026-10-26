@@ -239,6 +239,20 @@
       "when": 1793038899326,
       "tag": "0033_harden_remaining_social_and_ai_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793038929373,
+      "tag": "0034_serialize_marketplace_shipment_creation",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793038942824,
+      "tag": "0035_atomic_transparency_epoch_publication",
+      "breakpoints": true
     }
   ]
 }

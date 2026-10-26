@@ -4426,6 +4426,41 @@ export type Database = {
           },
         ]
       }
+      marketplace_shipment_claims: {
+        Row: {
+          claim_id: string
+          completed_at: string | null
+          created_at: string
+          order_id: string
+          requested_by: string
+          state: string
+        }
+        Insert: {
+          claim_id: string
+          completed_at?: string | null
+          created_at?: string
+          order_id: string
+          requested_by: string
+          state?: string
+        }
+        Update: {
+          claim_id?: string
+          completed_at?: string | null
+          created_at?: string
+          order_id?: string
+          requested_by?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_shipment_claims_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       media_partners: {
         Row: {
           active: boolean
@@ -9881,6 +9916,10 @@ export type Database = {
           registration_id: number
         }[]
       }
+      claim_marketplace_shipment: {
+        Args: { p_caller: string; p_claim: string; p_order: string }
+        Returns: Json
+      }
       claim_partner_rss_sources: { Args: { p_limit?: number }; Returns: Json }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {
@@ -9926,6 +9965,16 @@ export type Database = {
           p_sender_device_id: string
         }
         Returns: Json
+      }
+      complete_marketplace_shipment: {
+        Args: {
+          p_claim: string
+          p_label: string
+          p_order: string
+          p_tracking: string
+          p_weight: number
+        }
+        Returns: boolean
       }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
       complete_user_device_enrollment: {
@@ -10587,6 +10636,7 @@ export type Database = {
         Args: { p_error?: string; p_request_id: string; p_status: string }
         Returns: Json
       }
+      mark_seller_order_delivered: { Args: { p_order: string }; Returns: Json }
       mark_user_crypto_ready: {
         Args: { p_fingerprint: string }
         Returns: {
@@ -10813,6 +10863,17 @@ export type Database = {
           p_signing_key: string
         }
         Returns: Json
+      }
+      publish_transparency_epoch: {
+        Args: {
+          p_epoch: number
+          p_leaves: Json
+          p_prev_epoch: number
+          p_root: string
+          p_signature: string
+          p_signing_key: string
+        }
+        Returns: boolean
       }
       purge_old_ai_engine_events: { Args: never; Returns: undefined }
       purge_old_audit_logs: { Args: never; Returns: undefined }
