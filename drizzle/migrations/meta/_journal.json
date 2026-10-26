@@ -253,6 +253,13 @@
       "when": 1793038942824,
       "tag": "0035_atomic_transparency_epoch_publication",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793038963848,
+      "tag": "0036_auth_verified_password_attempt_audit",
+      "breakpoints": true
     }
   ]
 }

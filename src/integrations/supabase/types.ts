@@ -10512,6 +10512,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      hook_password_verification_audit: { Args: { event: Json }; Returns: Json }
       import_partner_media: {
         Args: { p_items: Json; p_partner: string }
         Returns: number
