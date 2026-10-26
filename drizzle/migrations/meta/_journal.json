@@ -295,6 +295,13 @@
       "when": 1793049791108,
       "tag": "0041_pin_recent_own_post_in_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1793052443440,
+      "tag": "0042_restrict_live_creation_to_paid_creators",
+      "breakpoints": true
     }
   ]
 }
