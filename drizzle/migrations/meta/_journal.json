@@ -211,6 +211,13 @@
       "when": 1793038787977,
       "tag": "0029_secure_social_and_privileged_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793038821373,
+      "tag": "0030_secure_post_visibility_and_private_columns",
+      "breakpoints": true
     }
   ]
 }

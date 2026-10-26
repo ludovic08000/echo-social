@@ -9780,6 +9780,7 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: undefined
       }
+      can_read_social_post: { Args: { p_post_id: string }; Returns: boolean }
       can_view_order: {
         Args: { _buyer_id: string; _order_id: string }
         Returns: boolean
@@ -10706,6 +10707,7 @@ export type Database = {
         }
         Returns: number
       }
+      my_seller_profile: { Args: never; Returns: Json }
       news_thread_readable: {
         Args: { p_thread: string; p_user: string }
         Returns: boolean
@@ -10954,6 +10956,10 @@ export type Database = {
           p_payment_intent_id: string
           p_session_id: string
         }
+        Returns: boolean
+      }
+      social_post_access_internal: {
+        Args: { p_post_id: string; p_viewer_id: string }
         Returns: boolean
       }
       store_ad_location_context: {
