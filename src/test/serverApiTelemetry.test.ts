@@ -13,10 +13,21 @@ describe('server API telemetry', () => {
 
     expect(response.headers.get('x-request-id')).toBe('req-safe-1');
     expect(response.headers.get('server-timing')).toMatch(/^total;dur=\d/);
+    expect(response.headers.get('access-control-expose-headers')).toBe('X-Request-ID, Server-Timing');
     expect(logger).toHaveBeenCalledWith(expect.objectContaining({
       event: 'api_request', service: 'feed', operation: 'page', request_id: 'req-safe-1',
       status: 503, outcome: 'failure', failed_stage: 'database', error_code: 'FEED_UNAVAILABLE',
     }));
+  });
+
+  it('preserves existing exposed diagnostic headers', () => {
+    const telemetry = createApiTelemetry(new Request('https://example.test'), 'marketplace', vi.fn());
+    const response = telemetry.finish(new Response(null, { headers: {
+      'Access-Control-Expose-Headers': 'x-aegis-diagnostic-id',
+    } }));
+    expect(response.headers.get('access-control-expose-headers')).toBe(
+      'x-aegis-diagnostic-id, X-Request-ID, Server-Timing',
+    );
   });
 
   it('rejects unsafe caller correlation identifiers', () => {

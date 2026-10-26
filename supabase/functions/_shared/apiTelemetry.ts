@@ -57,6 +57,11 @@ export function createApiTelemetry(
       const headers = new Headers(response.headers);
       headers.set('X-Request-ID', requestId);
       headers.set('Server-Timing', `total;dur=${durationMs}`);
+      const exposed = new Set((headers.get('Access-Control-Expose-Headers') ?? '')
+        .split(',').map((value) => value.trim()).filter(Boolean));
+      exposed.add('X-Request-ID');
+      exposed.add('Server-Timing');
+      headers.set('Access-Control-Expose-Headers', [...exposed].join(', '));
       return new Response(response.body, { status, statusText: response.statusText, headers });
     },
   };
