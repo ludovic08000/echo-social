@@ -197,6 +197,83 @@
       "when": 1791512270652,
       "tag": "0027_enforce_subscriber_only_in_ranked_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793038758700,
+      "tag": "0028_secure_marketplace_payment_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793038787977,
+      "tag": "0029_secure_social_and_privileged_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793038821373,
+      "tag": "0030_secure_post_visibility_and_private_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793038844293,
+      "tag": "0031_revoke_sensitive_columns_after_client_rollout",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793038848504,
+      "tag": "0032_harden_distributed_rate_limit_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793038899326,
+      "tag": "0033_harden_remaining_social_and_ai_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793038929373,
+      "tag": "0034_serialize_marketplace_shipment_creation",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793038942824,
+      "tag": "0035_atomic_transparency_epoch_publication",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793038963848,
+      "tag": "0036_auth_verified_password_attempt_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793039003200,
+      "tag": "0037_harden_ai_action_and_moderation_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793039007116,
+      "tag": "0038_feed_api_active_session_authority",
+      "breakpoints": true
     }
   ]
 }

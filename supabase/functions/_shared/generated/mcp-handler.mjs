@@ -36,7 +36,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// node_modules/tslib/tslib.es6.mjs
+// ../persist/node_modules/tslib/tslib.es6.mjs
 var tslib_es6_exports = {};
 __export(tslib_es6_exports, {
   __addDisposableResource: () => __addDisposableResource,
@@ -475,7 +475,7 @@ function __rewriteRelativeImportExtension(path, preserveJsx) {
 }
 var extendStatics, __assign, __createBinding, __setModuleDefault, ownKeys, _SuppressedError, tslib_es6_default;
 var init_tslib_es6 = __esm({
-  "node_modules/tslib/tslib.es6.mjs"() {
+  "../persist/node_modules/tslib/tslib.es6.mjs"() {
     extendStatics = function(d, b) {
       extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
         d2.__proto__ = b2;
@@ -561,9 +561,9 @@ var init_tslib_es6 = __esm({
   }
 });
 
-// node_modules/@supabase/functions-js/dist/main/helper.js
+// ../persist/node_modules/@supabase/functions-js/dist/main/helper.js
 var require_helper = __commonJS({
-  "node_modules/@supabase/functions-js/dist/main/helper.js"(exports) {
+  "../persist/node_modules/@supabase/functions-js/dist/main/helper.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.resolveFetch = void 0;
@@ -577,9 +577,9 @@ var require_helper = __commonJS({
   }
 });
 
-// node_modules/@supabase/functions-js/dist/main/types.js
+// ../persist/node_modules/@supabase/functions-js/dist/main/types.js
 var require_types = __commonJS({
-  "node_modules/@supabase/functions-js/dist/main/types.js"(exports) {
+  "../persist/node_modules/@supabase/functions-js/dist/main/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionRegion = exports.FunctionsHttpError = exports.FunctionsRelayError = exports.FunctionsFetchError = exports.FunctionsError = void 0;
@@ -637,9 +637,9 @@ var require_types = __commonJS({
   }
 });
 
-// node_modules/@supabase/functions-js/dist/main/FunctionsClient.js
+// ../persist/node_modules/@supabase/functions-js/dist/main/FunctionsClient.js
 var require_FunctionsClient = __commonJS({
-  "node_modules/@supabase/functions-js/dist/main/FunctionsClient.js"(exports) {
+  "../persist/node_modules/@supabase/functions-js/dist/main/FunctionsClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionsClient = void 0;
@@ -923,9 +923,9 @@ var require_FunctionsClient = __commonJS({
   }
 });
 
-// node_modules/@supabase/functions-js/dist/main/index.js
+// ../persist/node_modules/@supabase/functions-js/dist/main/index.js
 var require_main = __commonJS({
-  "node_modules/@supabase/functions-js/dist/main/index.js"(exports) {
+  "../persist/node_modules/@supabase/functions-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionRegion = exports.FunctionsRelayError = exports.FunctionsHttpError = exports.FunctionsFetchError = exports.FunctionsError = exports.FunctionsClient = void 0;
@@ -952,9 +952,9 @@ var require_main = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js
 var require_websocket_factory = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebSocketFactory = void 0;
@@ -1063,9 +1063,9 @@ Suggested solution: ${env2.workaround}`;
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/version.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/version.js
 var require_version = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/version.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/version.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.version = void 0;
@@ -1073,9 +1073,9 @@ var require_version = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/constants.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/constants.js
 var require_constants = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/constants.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/constants.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CONNECTION_STATE = exports.TRANSPORTS = exports.CHANNEL_EVENTS = exports.CHANNEL_STATES = exports.SOCKET_STATES = exports.MAX_PUSH_BUFFER_SIZE = exports.WS_CLOSE_NORMAL = exports.POSTGRES_CHANGES_WAIT_ERROR_GRACE = exports.DEFAULT_POSTGRES_CHANGES_WAIT_TIMEOUT = exports.DEFAULT_TIMEOUT = exports.VERSION = exports.DEFAULT_VSN = exports.VSN_2_0_0 = exports.VSN_1_0_0 = exports.DEFAULT_VERSION = void 0;
@@ -1123,9 +1123,9 @@ var require_constants = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/serializer.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/serializer.js
 var require_serializer = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/serializer.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/serializer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var Serializer = class {
@@ -1277,9 +1277,9 @@ var require_serializer = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/transformers.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/transformers.js
 var require_transformers = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/transformers.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/transformers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.httpEndpointURL = exports.toTimestampString = exports.toArray = exports.toJson = exports.toNumber = exports.toBoolean = exports.convertCell = exports.convertColumn = exports.convertChangeData = exports.PostgresTypes = void 0;
@@ -1456,9 +1456,9 @@ var require_transformers = __commonJS({
   }
 });
 
-// node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js
+// ../persist/node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js
 var require_phoenix_cjs = __commonJS({
-  "node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js"(exports, module) {
+  "../persist/node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js"(exports, module) {
     "use strict";
     var __defProp2 = Object.defineProperty;
     var __getOwnPropDesc2 = Object.getOwnPropertyDescriptor;
@@ -3308,9 +3308,9 @@ var require_phoenix_cjs = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js
 var require_presenceAdapter = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var phoenix_1 = require_phoenix_cjs();
@@ -3408,9 +3408,9 @@ var require_presenceAdapter = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js
 var require_RealtimePresence = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.REALTIME_PRESENCE_LISTEN_EVENTS = void 0;
@@ -3452,9 +3452,9 @@ var require_RealtimePresence = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js
 var require_normalizeChannelError = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.normalizeChannelError = normalizeChannelError;
@@ -3478,9 +3478,9 @@ var require_normalizeChannelError = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js
 var require_channelAdapter = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var constants_1 = require_constants();
@@ -3585,9 +3585,9 @@ var require_channelAdapter = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/RealtimePostgresFilterBuilder.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/RealtimePostgresFilterBuilder.js
 var require_RealtimePostgresFilterBuilder = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/RealtimePostgresFilterBuilder.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/RealtimePostgresFilterBuilder.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.postgresChangesFilter = exports.RealtimePostgresFilterBuilder = void 0;
@@ -3709,9 +3709,9 @@ var require_RealtimePostgresFilterBuilder = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js
 var require_RealtimeChannel = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.REALTIME_CHANNEL_STATES = exports.REALTIME_SUBSCRIBE_STATES = exports.REALTIME_LISTEN_TYPES = exports.REALTIME_POSTGRES_CHANGES_LISTEN_EVENT = exports.postgresChangesFilter = exports.RealtimePostgresFilterBuilder = void 0;
@@ -3890,9 +3890,9 @@ var require_RealtimeChannel = __commonJS({
         const newPostgresBindings = [];
         for (let i = 0; i < bindingsLen; i++) {
           const clientPostgresBinding = clientPostgresBindings[i];
-          const { filter: { event, schema, table, filter } } = clientPostgresBinding;
+          const { filter: { event, schema, table: table2, filter } } = clientPostgresBinding;
           const serverPostgresFilter = postgres_changes && postgres_changes[i];
-          if (serverPostgresFilter && serverPostgresFilter.event === event && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.schema, schema) && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.table, table) && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.filter, filter)) {
+          if (serverPostgresFilter && serverPostgresFilter.event === event && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.schema, schema) && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.table, table2) && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.filter, filter)) {
             newPostgresBindings.push(Object.assign(Object.assign({}, clientPostgresBinding), { id: serverPostgresFilter.id }));
           } else {
             this.unsubscribe();
@@ -4399,10 +4399,10 @@ var require_RealtimeChannel = __commonJS({
         this.channelAdapter.updatePayloadTransform((event, payload, ref) => {
           if (typeof payload === "object" && "ids" in payload) {
             const postgresChanges = payload.data;
-            const { schema, table, commit_timestamp, type, errors } = postgresChanges;
+            const { schema, table: table2, commit_timestamp, type, errors } = postgresChanges;
             const enrichedPayload = {
               schema,
-              table,
+              table: table2,
               commit_timestamp,
               eventType: type,
               new: {},
@@ -4464,9 +4464,9 @@ var require_RealtimeChannel = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js
 var require_socketAdapter = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var phoenix_1 = require_phoenix_cjs();
@@ -4585,9 +4585,9 @@ var require_socketAdapter = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js
 var require_RealtimeClient = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -4605,26 +4605,26 @@ var require_RealtimeClient = __commonJS({
     var RECONNECT_INTERVALS = [1e3, 2e3, 5e3, 1e4];
     var DEFAULT_RECONNECT_FALLBACK = 1e4;
     function createMemorySessionStorage() {
-      const store = /* @__PURE__ */ new Map();
+      const store2 = /* @__PURE__ */ new Map();
       return {
         get length() {
-          return store.size;
+          return store2.size;
         },
         clear() {
-          store.clear();
+          store2.clear();
         },
         getItem(key) {
-          return store.has(key) ? store.get(key) : null;
+          return store2.has(key) ? store2.get(key) : null;
         },
         key(index) {
           var _a3;
-          return (_a3 = Array.from(store.keys())[index]) !== null && _a3 !== void 0 ? _a3 : null;
+          return (_a3 = Array.from(store2.keys())[index]) !== null && _a3 !== void 0 ? _a3 : null;
         },
         removeItem(key) {
-          store.delete(key);
+          store2.delete(key);
         },
         setItem(key, value) {
-          store.set(key, String(value));
+          store2.set(key, String(value));
         }
       };
     }
@@ -5265,9 +5265,9 @@ var require_RealtimeClient = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/index.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/index.js
 var require_main2 = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/index.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebSocketFactory = exports.REALTIME_CHANNEL_STATES = exports.REALTIME_SUBSCRIBE_STATES = exports.REALTIME_PRESENCE_LISTEN_EVENTS = exports.REALTIME_POSTGRES_CHANGES_LISTEN_EVENT = exports.REALTIME_LISTEN_TYPES = exports.postgresChangesFilter = exports.RealtimePostgresFilterBuilder = exports.RealtimeClient = exports.RealtimeChannel = exports.RealtimePresence = void 0;
@@ -5304,9 +5304,9 @@ var require_main2 = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/version.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/version.js
 var require_version2 = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/version.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/version.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.version = void 0;
@@ -5314,9 +5314,9 @@ var require_version2 = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/constants.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/constants.js
 var require_constants2 = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/constants.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/constants.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.JWKS_TTL = exports.PKCE_MAX_CONCURRENT_FLOWS = exports.PKCE_FLOW_ID_PARAM = exports.BASE64URL_REGEX = exports.API_VERSIONS = exports.API_VERSION_HEADER_NAME = exports.NETWORK_FAILURE = exports.DEFAULT_HEADERS = exports.AUDIENCE = exports.STORAGE_KEY = exports.GOTRUE_URL = exports.REFRESH_FAILURE_COOLDOWN_MS = exports.EXPIRY_MARGIN_MS = exports.AUTO_REFRESH_TICK_THRESHOLD = exports.AUTO_REFRESH_TICK_DURATION_MS = void 0;
@@ -5348,9 +5348,9 @@ var require_constants2 = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/errors.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/errors.js
 var require_errors = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/errors.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/errors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AuthInvalidJwtError = exports.AuthWeakPasswordError = exports.AuthRefreshDiscardedError = exports.AuthRetryableFetchError = exports.AuthPKCECodeVerifierMissingError = exports.AuthPKCEGrantCodeExchangeError = exports.AuthImplicitGrantRedirectError = exports.AuthInvalidCredentialsError = exports.AuthInvalidTokenResponseError = exports.AuthSessionMissingError = exports.CustomAuthError = exports.AuthUnknownError = exports.AuthApiError = exports.AuthError = void 0;
@@ -5506,9 +5506,9 @@ var require_errors = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/base64url.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/base64url.js
 var require_base64url = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/base64url.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/base64url.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.byteToBase64URL = byteToBase64URL;
@@ -5696,9 +5696,9 @@ var require_base64url = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/helpers.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/helpers.js
 var require_helpers = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/helpers.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/helpers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.pkceVerifierSlotKey = exports.Deferred = exports.removeItemAsync = exports.getItemAsync = exports.setItemAsync = exports.looksLikeFetchResponse = exports.resolveFetch = exports.supportsLocalStorage = exports.isBrowser = void 0;
@@ -6112,9 +6112,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/fetch.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/fetch.js
 var require_fetch = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/fetch.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/fetch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.handleError = handleError2;
@@ -6299,9 +6299,9 @@ var require_fetch = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/types.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/types.js
 var require_types2 = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/types.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SIGN_OUT_SCOPES = void 0;
@@ -6309,9 +6309,9 @@ var require_types2 = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js
 var require_GoTrueAdminApi = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -7389,31 +7389,31 @@ var require_GoTrueAdminApi = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/local-storage.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/local-storage.js
 var require_local_storage = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/local-storage.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/local-storage.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.memoryLocalStorageAdapter = memoryLocalStorageAdapter;
-    function memoryLocalStorageAdapter(store = {}) {
+    function memoryLocalStorageAdapter(store2 = {}) {
       return {
         getItem: (key) => {
-          return store[key] || null;
+          return store2[key] || null;
         },
         setItem: (key, value) => {
-          store[key] = value;
+          store2[key] = value;
         },
         removeItem: (key) => {
-          delete store[key];
+          delete store2[key];
         }
       };
     }
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/locks.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/locks.js
 var require_locks = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/locks.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/locks.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ProcessLockAcquireTimeoutError = exports.NavigatorLockAcquireTimeoutError = exports.LockAcquireTimeoutError = exports.internals = void 0;
@@ -7587,9 +7587,9 @@ var require_locks = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/polyfills.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/polyfills.js
 var require_polyfills = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/polyfills.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/polyfills.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.polyfillGlobalThis = polyfillGlobalThis;
@@ -7614,9 +7614,9 @@ var require_polyfills = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js
 var require_ethereum = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getAddress = getAddress;
@@ -7692,9 +7692,9 @@ ${suffix}`;
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js
 var require_webauthn_errors = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebAuthnUnknownError = exports.WebAuthnError = void 0;
@@ -7883,9 +7883,9 @@ var require_webauthn_errors = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/webauthn.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/webauthn.js
 var require_webauthn = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/webauthn.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/webauthn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebAuthnApi = exports.DEFAULT_REQUEST_OPTIONS = exports.DEFAULT_CREATION_OPTIONS = exports.webAuthnAbortService = exports.WebAuthnAbortService = exports.identifyAuthenticationError = exports.identifyRegistrationError = exports.isWebAuthnError = exports.WebAuthnError = void 0;
@@ -8442,9 +8442,9 @@ var require_webauthn = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/GoTrueClient.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js
 var require_GoTrueClient = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/GoTrueClient.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -13836,9 +13836,9 @@ var require_GoTrueClient = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js
 var require_AuthAdminApi = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -13848,9 +13848,9 @@ var require_AuthAdminApi = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/AuthClient.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/AuthClient.js
 var require_AuthClient = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/AuthClient.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/AuthClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -13860,9 +13860,9 @@ var require_AuthClient = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/index.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/index.js
 var require_main3 = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/index.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.processLock = exports.lockInternals = exports.NavigatorLockAcquireTimeoutError = exports.navigatorLock = exports.AuthClient = exports.AuthAdminApi = exports.GoTrueClient = exports.GoTrueAdminApi = void 0;
@@ -13906,9 +13906,9 @@ var init_unavailable = __esm({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/code.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/code.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/code.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.regexpCode = exports.getEsmExportName = exports.getProperty = exports.safeStringify = exports.stringify = exports.strConcat = exports.addCodeArg = exports.str = exports._ = exports.nil = exports._Code = exports.Name = exports.IDENTIFIER = exports._CodeOrName = void 0;
@@ -14060,9 +14060,9 @@ var require_code = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/scope.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/scope.js
 var require_scope = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/scope.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/scope.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ValueScope = exports.ValueScopeName = exports.Scope = exports.varKinds = exports.UsedValueState = void 0;
@@ -14205,9 +14205,9 @@ var require_scope = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/index.js
 var require_codegen = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/index.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/codegen/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.or = exports.and = exports.not = exports.CodeGen = exports.operators = exports.varKinds = exports.ValueScopeName = exports.ValueScope = exports.Scope = exports.Name = exports.regexpCode = exports.stringify = exports.getProperty = exports.nil = exports.strConcat = exports.str = exports._ = void 0;
@@ -14925,9 +14925,9 @@ var require_codegen = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/util.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/util.js
 var require_util = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/util.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/util.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.checkStrictMode = exports.getErrorPath = exports.Type = exports.useFunc = exports.setEvaluated = exports.evaluatedPropsToName = exports.mergeEvaluated = exports.eachItem = exports.unescapeJsonPointer = exports.escapeJsonPointer = exports.escapeFragment = exports.unescapeFragment = exports.schemaRefOrVal = exports.schemaHasRulesButRef = exports.schemaHasRules = exports.checkUnknownRules = exports.alwaysValidSchema = exports.toHash = void 0;
@@ -15092,9 +15092,9 @@ var require_util = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/names.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/names.js
 var require_names = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/names.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/names.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -15131,9 +15131,9 @@ var require_names = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/errors.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/errors.js
 var require_errors2 = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/errors.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/errors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.extendErrors = exports.resetErrorsCount = exports.reportExtraError = exports.reportError = exports.keyword$DataError = exports.keywordError = void 0;
@@ -15253,9 +15253,9 @@ var require_errors2 = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/boolSchema.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/boolSchema.js
 var require_boolSchema = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/boolSchema.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/boolSchema.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.boolOrEmptySchema = exports.topBoolOrEmptySchema = void 0;
@@ -15304,9 +15304,9 @@ var require_boolSchema = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/rules.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/rules.js
 var require_rules = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/rules.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/rules.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getRules = exports.isJSONType = void 0;
@@ -15335,9 +15335,9 @@ var require_rules = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/applicability.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/applicability.js
 var require_applicability = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/applicability.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/applicability.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.shouldUseRule = exports.shouldUseGroup = exports.schemaHasRulesForType = void 0;
@@ -15358,9 +15358,9 @@ var require_applicability = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/dataType.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/dataType.js
 var require_dataType = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/dataType.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/dataType.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.reportTypeError = exports.checkDataTypes = exports.checkDataType = exports.coerceAndCheckDataType = exports.getJSONTypes = exports.getSchemaTypes = exports.DataType = void 0;
@@ -15542,9 +15542,9 @@ var require_dataType = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/defaults.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/defaults.js
 var require_defaults = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/defaults.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/defaults.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.assignDefaults = void 0;
@@ -15579,9 +15579,9 @@ var require_defaults = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/code.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/code.js
 var require_code2 = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/code.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/code.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateUnion = exports.validateArray = exports.usePattern = exports.callValidateCode = exports.schemaProperties = exports.allSchemaProperties = exports.noPropertyInData = exports.propertyInData = exports.isOwnProperty = exports.hasPropFunc = exports.reportMissingProp = exports.checkMissingProp = exports.checkReportMissingProp = void 0;
@@ -15712,9 +15712,9 @@ var require_code2 = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/keyword.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/keyword.js
 var require_keyword = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/keyword.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/keyword.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateKeywordUsage = exports.validSchemaType = exports.funcKeywordCode = exports.macroKeywordCode = void 0;
@@ -15830,9 +15830,9 @@ var require_keyword = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/subschema.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/subschema.js
 var require_subschema = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/subschema.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/subschema.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.extendSubschemaMode = exports.extendSubschemaData = exports.getSubschema = void 0;
@@ -15913,9 +15913,9 @@ var require_subschema = __commonJS({
   }
 });
 
-// node_modules/fast-deep-equal/index.js
+// ../persist/node_modules/fast-deep-equal/index.js
 var require_fast_deep_equal = __commonJS({
-  "node_modules/fast-deep-equal/index.js"(exports, module) {
+  "../persist/node_modules/fast-deep-equal/index.js"(exports, module) {
     "use strict";
     module.exports = function equal(a, b) {
       if (a === b) return true;
@@ -15948,9 +15948,9 @@ var require_fast_deep_equal = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/json-schema-traverse/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/node_modules/json-schema-traverse/index.js
 var require_json_schema_traverse = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/json-schema-traverse/index.js"(exports, module) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/node_modules/json-schema-traverse/index.js"(exports, module) {
     "use strict";
     var traverse = module.exports = function(schema, opts, cb) {
       if (typeof opts == "function") {
@@ -16036,9 +16036,9 @@ var require_json_schema_traverse = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/resolve.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/resolve.js
 var require_resolve = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/resolve.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/resolve.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getSchemaRefs = exports.resolveUrl = exports.normalizeId = exports._getFullPath = exports.getFullPath = exports.inlineRef = void 0;
@@ -16192,9 +16192,9 @@ var require_resolve = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/index.js
 var require_validate = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/index.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/validate/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getData = exports.KeywordCxt = exports.validateFunctionCode = void 0;
@@ -16700,9 +16700,9 @@ var require_validate = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/validation_error.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/validation_error.js
 var require_validation_error = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/validation_error.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/validation_error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var ValidationError = class extends Error {
@@ -16716,9 +16716,9 @@ var require_validation_error = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/ref_error.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/ref_error.js
 var require_ref_error = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/ref_error.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/ref_error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var resolve_1 = require_resolve();
@@ -16733,9 +16733,9 @@ var require_ref_error = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/index.js
 var require_compile = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/index.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/compile/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.resolveSchema = exports.getCompilingSchema = exports.resolveRef = exports.compileSchema = exports.SchemaEnv = void 0;
@@ -16957,9 +16957,9 @@ var require_compile = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/refs/data.json
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/refs/data.json
 var require_data = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/refs/data.json"(exports, module) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/refs/data.json"(exports, module) {
     module.exports = {
       $id: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#",
       description: "Meta-schema for $data reference (JSON AnySchema extension proposal)",
@@ -16976,34 +16976,12 @@ var require_data = __commonJS({
   }
 });
 
-// node_modules/fast-uri/lib/utils.js
+// ../persist/node_modules/fast-uri/lib/utils.js
 var require_utils = __commonJS({
-  "node_modules/fast-uri/lib/utils.js"(exports, module) {
+  "../persist/node_modules/fast-uri/lib/utils.js"(exports, module) {
     "use strict";
     var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
     var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
-    var isPort = RegExp.prototype.test.bind(/^\d*$/u);
-    var isHexPair = RegExp.prototype.test.bind(/^[\da-f]{2}$/iu);
-    var isUnreserved = RegExp.prototype.test.bind(/^[\da-z\-._~]$/iu);
-    var isPathCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:@/]$/u);
-    var isQueryFragmentCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:@/?]$/u);
-    var isUserinfoCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:]$/u);
-    var BYTE_HEX = new Array(256);
-    {
-      const HEX_DIGITS = "0123456789ABCDEF";
-      for (let i = 0; i < 256; i++) {
-        BYTE_HEX[i] = "%" + HEX_DIGITS[i >> 4] + HEX_DIGITS[i & 15];
-      }
-    }
-    function percentEncodeNonAscii(cp) {
-      if (cp < 2048) {
-        return BYTE_HEX[192 | cp >> 6] + BYTE_HEX[128 | cp & 63];
-      }
-      if (cp < 65536) {
-        return BYTE_HEX[224 | cp >> 12] + BYTE_HEX[128 | cp >> 6 & 63] + BYTE_HEX[128 | cp & 63];
-      }
-      return BYTE_HEX[240 | cp >> 18] + BYTE_HEX[128 | cp >> 12 & 63] + BYTE_HEX[128 | cp >> 6 & 63] + BYTE_HEX[128 | cp & 63];
-    }
     function stringArrayToHexStripped(input2) {
       let acc = "";
       let code = 0;
@@ -17028,105 +17006,91 @@ var require_utils = __commonJS({
       }
       return acc;
     }
-    var isHextet = RegExp.prototype.test.bind(/^[\dA-Fa-f]{1,4}$/);
-    var isIPvFuture = RegExp.prototype.test.bind(/^[vV][\dA-Fa-f]+\.[A-Za-z\d\-._~!$&'()*+,;=:]+$/);
-    var isZoneCharacter = RegExp.prototype.test.bind(/^[A-Za-z\d\-._~]$/);
     var nonSimpleDomain = RegExp.prototype.test.bind(/[^!"$&'()*+,\-.;=_`a-z{}~]/u);
-    function isZoneIdentifier(zone) {
-      if (zone.length === 0) return false;
-      for (let i = 0; i < zone.length; i++) {
-        if (isZoneCharacter(zone[i])) continue;
-        if (zone[i] === "%" && i + 2 < zone.length && isHexPair(zone.slice(i + 1, i + 3))) {
-          i += 2;
-          continue;
+    function consumeIsZone(buffer) {
+      buffer.length = 0;
+      return true;
+    }
+    function consumeHextets(buffer, address, output2) {
+      if (buffer.length) {
+        const hex3 = stringArrayToHexStripped(buffer);
+        if (hex3 !== "") {
+          address.push(hex3);
+        } else {
+          output2.error = true;
+          return false;
         }
-        return false;
+        buffer.length = 0;
       }
       return true;
     }
-    function compressIPv6ZeroRun(hextets) {
-      let bestStart = -1;
-      let bestLength = 0;
-      let runStart = -1;
-      let runLength = 0;
-      for (let i = 0; i < hextets.length; i++) {
-        if (hextets[i] === "0") {
-          if (runStart === -1) runStart = i;
-          runLength++;
-          if (runLength > bestLength) {
-            bestLength = runLength;
-            bestStart = runStart;
-          }
-        } else {
-          runStart = -1;
-          runLength = 0;
-        }
-      }
-      if (bestLength < 2) return hextets.join(":");
-      const head2 = hextets.slice(0, bestStart).join(":");
-      const tail = hextets.slice(bestStart + bestLength).join(":");
-      return head2 + "::" + tail;
-    }
-    function normalizeIPv6Address(input2) {
-      const compression = input2.indexOf("::");
-      if (compression !== -1 && input2.indexOf("::", compression + 1) !== -1) return void 0;
-      const left = compression === -1 ? input2.split(":") : input2.slice(0, compression).split(":");
-      const right = compression === -1 ? [] : input2.slice(compression + 2).split(":");
-      if (compression !== -1) {
-        if (left.length === 1 && left[0] === "") left.length = 0;
-        if (right.length === 1 && right[0] === "") right.length = 0;
-      }
-      const parts = left.concat(right);
-      let hextetCount = 0;
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        if (part === "") return void 0;
-        if (part.indexOf(".") !== -1) {
-          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv4(part)) return void 0;
-          hextetCount += 2;
+    function getIPV6(input2) {
+      let tokenCount = 0;
+      const output2 = { error: false, address: "", zone: "" };
+      const address = [];
+      const buffer = [];
+      let endipv6Encountered = false;
+      let endIpv6 = false;
+      let consume = consumeHextets;
+      for (let i = 0; i < input2.length; i++) {
+        const cursor = input2[i];
+        if (cursor === "[" || cursor === "]") {
           continue;
         }
-        if (!isHextet(part)) return void 0;
-        parts[i] = parseInt(part, 16).toString(16);
-        hextetCount++;
+        if (cursor === ":") {
+          if (endipv6Encountered === true) {
+            endIpv6 = true;
+          }
+          if (!consume(buffer, address, output2)) {
+            break;
+          }
+          if (++tokenCount > 7) {
+            output2.error = true;
+            break;
+          }
+          if (i > 0 && input2[i - 1] === ":") {
+            endipv6Encountered = true;
+          }
+          address.push(":");
+          continue;
+        } else if (cursor === "%") {
+          if (!consume(buffer, address, output2)) {
+            break;
+          }
+          consume = consumeIsZone;
+        } else {
+          buffer.push(cursor);
+          continue;
+        }
       }
-      if (compression === -1) {
-        if (hextetCount !== 8) return void 0;
-        return compressIPv6ZeroRun(parts);
+      if (buffer.length) {
+        if (consume === consumeIsZone) {
+          output2.zone = buffer.join("");
+        } else if (endIpv6) {
+          address.push(buffer.join(""));
+        } else {
+          address.push(stringArrayToHexStripped(buffer));
+        }
       }
-      if (hextetCount >= 8) return void 0;
-      const expanded = parts.slice(0, left.length);
-      for (let i = hextetCount; i < 8; i++) expanded.push("0");
-      for (let i = left.length; i < parts.length; i++) expanded.push(parts[i]);
-      return compressIPv6ZeroRun(expanded);
+      output2.address = address.join("");
+      return output2;
     }
     function normalizeIPv6(host) {
-      const bracketed = host[0] === "[" && host[host.length - 1] === "]";
-      const hasBracket = host[0] === "[" || host[host.length - 1] === "]";
-      if (hasBracket && !bracketed) return { host, isIPV6: false, error: true };
-      let input2 = bracketed ? host.slice(1, -1) : host;
-      if (bracketed && isIPvFuture(input2)) {
-        input2 = input2.toLowerCase();
-        return { host: `[${input2}]`, escapedHost: input2, isIPV6: false, isIPVFuture: true };
+      if (findToken(host, ":") < 2) {
+        return { host, isIPV6: false };
       }
-      if (findToken(input2, ":") < 2) {
-        return { host, isIPV6: false, error: bracketed };
+      const ipv63 = getIPV6(host);
+      if (!ipv63.error) {
+        let newHost = ipv63.address;
+        let escapedHost = ipv63.address;
+        if (ipv63.zone) {
+          newHost += "%" + ipv63.zone;
+          escapedHost += "%25" + ipv63.zone;
+        }
+        return { host: newHost, isIPV6: true, escapedHost };
+      } else {
+        return { host, isIPV6: false };
       }
-      let zoneIdentifier = "";
-      const zoneSeparator = input2.indexOf("%");
-      if (zoneSeparator !== -1) {
-        const separatorLength = input2.slice(zoneSeparator, zoneSeparator + 3).toLowerCase() === "%25" ? 3 : 1;
-        zoneIdentifier = input2.slice(zoneSeparator + separatorLength);
-        if (!isZoneIdentifier(zoneIdentifier)) return { host, isIPV6: false, error: true };
-        input2 = input2.slice(0, zoneSeparator);
-      }
-      const address = normalizeIPv6Address(input2);
-      if (address === void 0) return { host, isIPV6: false, error: true };
-      return {
-        host: address + (zoneIdentifier ? "%" + zoneIdentifier : ""),
-        escapedHost: address + (zoneIdentifier ? "%25" + zoneIdentifier : ""),
-        isIPV6: true
-      };
     }
     function findToken(str, token) {
       let ind = 0;
@@ -17210,298 +17174,57 @@ var require_utils = __commonJS({
       }
       return output2.join("");
     }
-    function removeDotSegmentsRelative(path) {
-      if (path === "" || path[0] === "/") {
-        return removeDotSegments(path);
+    function normalizeComponentEncoding(component, esc2) {
+      const func = esc2 !== true ? escape : unescape;
+      if (component.scheme !== void 0) {
+        component.scheme = func(component.scheme);
       }
-      const segments = path.split("/");
-      const last = segments.length - 1;
-      const output2 = [];
-      let trailingDirectory = false;
-      for (let i = 0; i <= last; i++) {
-        const segment = segments[i];
-        if (segment === "." || segment === "..") {
-          if (segment === "..") {
-            if (output2.length !== 0 && output2[output2.length - 1] !== "..") {
-              output2.pop();
-            } else {
-              output2.push("..");
-            }
-          }
-          trailingDirectory = i === last;
-        } else {
-          output2.push(segment);
-        }
+      if (component.userinfo !== void 0) {
+        component.userinfo = func(component.userinfo);
       }
-      if (trailingDirectory && output2[output2.length - 1] !== "..") {
-        output2.push("");
+      if (component.host !== void 0) {
+        component.host = func(component.host);
       }
-      if (output2.length === 0 || output2[0] === "" || output2[0].includes(":")) {
-        output2.unshift(".");
+      if (component.path !== void 0) {
+        component.path = func(component.path);
       }
-      return output2.join("/");
-    }
-    var HOST_DELIMS = { "@": "%40", "/": "%2F", "?": "%3F", "#": "%23", ":": "%3A" };
-    var HOST_DELIM_RE = /[@/?#:]/g;
-    var HOST_DELIM_NO_COLON_RE = /[@/?#]/g;
-    function reescapeHostDelimiters(host, isIP) {
-      const re = isIP ? HOST_DELIM_NO_COLON_RE : HOST_DELIM_RE;
-      re.lastIndex = 0;
-      return host.replace(re, (ch) => HOST_DELIMS[ch]);
-    }
-    function normalizePercentEncoding(input2, decodeUnreserved = false) {
-      if (input2.indexOf("%") === -1) {
-        return input2;
+      if (component.query !== void 0) {
+        component.query = func(component.query);
       }
-      let output2 = "";
-      for (let i = 0; i < input2.length; i++) {
-        if (input2[i] === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            const normalizedHex = hex3.toUpperCase();
-            const decoded = String.fromCharCode(parseInt(normalizedHex, 16));
-            if (decodeUnreserved && isUnreserved(decoded)) {
-              output2 += decoded;
-            } else {
-              output2 += "%" + normalizedHex;
-            }
-            i += 2;
-            continue;
-          }
-        }
-        output2 += input2[i];
+      if (component.fragment !== void 0) {
+        component.fragment = func(component.fragment);
       }
-      return output2;
-    }
-    function normalizePathEncoding(input2) {
-      let output2 = "";
-      for (let i = 0; i < input2.length; i++) {
-        const ch = input2[i];
-        if (ch === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            const normalizedHex = hex3.toUpperCase();
-            const decoded = String.fromCharCode(parseInt(normalizedHex, 16));
-            if (decoded !== "." && isUnreserved(decoded)) {
-              output2 += decoded;
-            } else {
-              output2 += "%" + normalizedHex;
-            }
-            i += 2;
-            continue;
-          }
-        }
-        if (isPathCharacter(ch)) {
-          output2 += ch;
-        } else {
-          const code = input2.charCodeAt(i);
-          if (code < 128) {
-            output2 += isEscapeSafe(code) ? ch : BYTE_HEX[code];
-          } else if (code < 55296 || code > 57343) {
-            output2 += percentEncodeNonAscii(code);
-          } else if (code <= 56319 && i + 1 < input2.length) {
-            const low = input2.charCodeAt(i + 1);
-            if (low >= 56320 && low <= 57343) {
-              output2 += percentEncodeNonAscii(65536 + (code - 55296 << 10) + (low - 56320));
-              i++;
-            } else {
-              output2 += percentEncodeNonAscii(65533);
-            }
-          } else {
-            output2 += percentEncodeNonAscii(65533);
-          }
-        }
-      }
-      return output2;
-    }
-    function serializePathEncoding(input2, pathNoScheme = false) {
-      let output2 = "";
-      let firstSegment = pathNoScheme && input2[0] !== "/";
-      for (let i = 0; i < input2.length; i++) {
-        const ch = input2[i];
-        if (ch === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            output2 += "%" + hex3.toUpperCase();
-            i += 2;
-            continue;
-          }
-        }
-        if (ch === "/") {
-          firstSegment = false;
-        }
-        if (isPathCharacter(ch) && (ch !== ":" || !firstSegment)) {
-          output2 += ch;
-        } else {
-          const code = input2.charCodeAt(i);
-          if (code < 128) {
-            output2 += BYTE_HEX[code];
-          } else if (code < 55296 || code > 57343) {
-            output2 += percentEncodeNonAscii(code);
-          } else if (code <= 56319 && i + 1 < input2.length) {
-            const low = input2.charCodeAt(i + 1);
-            if (low >= 56320 && low <= 57343) {
-              output2 += percentEncodeNonAscii(65536 + (code - 55296 << 10) + (low - 56320));
-              i++;
-            } else {
-              output2 += percentEncodeNonAscii(65533);
-            }
-          } else {
-            output2 += percentEncodeNonAscii(65533);
-          }
-        }
-      }
-      return output2;
-    }
-    function encodeComponent(input2, isAllowed) {
-      let output2 = "";
-      for (let i = 0; i < input2.length; i++) {
-        const ch = input2[i];
-        if (ch === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            output2 += "%" + hex3.toUpperCase();
-            i += 2;
-            continue;
-          }
-        }
-        if (isAllowed(ch)) {
-          output2 += ch;
-        } else {
-          const code = input2.charCodeAt(i);
-          if (code < 128) {
-            output2 += BYTE_HEX[code];
-          } else if (code < 55296 || code > 57343) {
-            output2 += percentEncodeNonAscii(code);
-          } else if (code <= 56319 && i + 1 < input2.length) {
-            const low = input2.charCodeAt(i + 1);
-            if (low >= 56320 && low <= 57343) {
-              output2 += percentEncodeNonAscii(65536 + (code - 55296 << 10) + (low - 56320));
-              i++;
-            } else {
-              output2 += percentEncodeNonAscii(65533);
-            }
-          } else {
-            output2 += percentEncodeNonAscii(65533);
-          }
-        }
-      }
-      return output2;
-    }
-    function encodeUserinfo(input2) {
-      return encodeComponent(input2, isUserinfoCharacter);
-    }
-    function encodeQuery(input2) {
-      return encodeComponent(input2, isQueryFragmentCharacter);
-    }
-    function encodeFragment(input2) {
-      return encodeComponent(input2, isQueryFragmentCharacter);
-    }
-    function isEscapeSafe(cp) {
-      return cp >= 48 && cp <= 57 || cp >= 65 && cp <= 90 || cp >= 97 && cp <= 122 || cp === 42 || cp === 43 || cp === 45 || cp === 46 || cp === 47 || cp === 64 || cp === 95;
-    }
-    function normalizeQueryFragmentEncoding(input2) {
-      let output2 = "";
-      for (let i = 0; i < input2.length; i++) {
-        const ch = input2[i];
-        if (ch === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            const normalizedHex = hex3.toUpperCase();
-            const decoded = String.fromCharCode(parseInt(normalizedHex, 16));
-            if (isUnreserved(decoded)) {
-              output2 += decoded;
-            } else {
-              output2 += "%" + normalizedHex;
-            }
-            i += 2;
-            continue;
-          }
-        }
-        if (isQueryFragmentCharacter(ch)) {
-          output2 += ch;
-        } else {
-          const code = input2.charCodeAt(i);
-          if (code < 128) {
-            output2 += isEscapeSafe(code) ? ch : BYTE_HEX[code];
-          } else if (code < 55296 || code > 57343) {
-            output2 += percentEncodeNonAscii(code);
-          } else if (code <= 56319 && i + 1 < input2.length) {
-            const low = input2.charCodeAt(i + 1);
-            if (low >= 56320 && low <= 57343) {
-              output2 += percentEncodeNonAscii(65536 + (code - 55296 << 10) + (low - 56320));
-              i++;
-            } else {
-              output2 += percentEncodeNonAscii(65533);
-            }
-          } else {
-            output2 += percentEncodeNonAscii(65533);
-          }
-        }
-      }
-      return output2;
-    }
-    function escapePreservingEscapes(input2) {
-      let output2 = "";
-      for (let i = 0; i < input2.length; i++) {
-        if (input2[i] === "%" && i + 2 < input2.length) {
-          const hex3 = input2.slice(i + 1, i + 3);
-          if (isHexPair(hex3)) {
-            output2 += "%" + hex3.toUpperCase();
-            i += 2;
-            continue;
-          }
-        }
-        output2 += escape(input2[i]);
-      }
-      return output2;
+      return component;
     }
     function recomposeAuthority(component) {
       const uriTokens = [];
       if (component.userinfo !== void 0) {
-        uriTokens.push(encodeUserinfo(component.userinfo));
+        uriTokens.push(component.userinfo);
         uriTokens.push("@");
       }
       if (component.host !== void 0) {
-        let host = component.host;
+        let host = unescape(component.host);
         if (!isIPv4(host)) {
-          let ipV6res = normalizeIPv6(host);
-          if (ipV6res.isIPV6 !== true && ipV6res.isIPVFuture !== true) {
-            host = normalizePercentEncoding(host, true);
-            ipV6res = normalizeIPv6(host);
-          }
-          if (ipV6res.isIPV6 === true || ipV6res.isIPVFuture === true) {
+          const ipV6res = normalizeIPv6(host);
+          if (ipV6res.isIPV6 === true) {
             host = `[${ipV6res.escapedHost}]`;
           } else {
-            host = reescapeHostDelimiters(host, false);
+            host = component.host;
           }
         }
         uriTokens.push(host);
       }
       if (typeof component.port === "number" || typeof component.port === "string") {
-        const port = String(component.port);
-        if (!isPort(port)) {
-          throw new TypeError("URI port is malformed.");
-        }
         uriTokens.push(":");
-        uriTokens.push(port);
+        uriTokens.push(String(component.port));
       }
       return uriTokens.length ? uriTokens.join("") : void 0;
     }
     module.exports = {
       nonSimpleDomain,
       recomposeAuthority,
-      reescapeHostDelimiters,
-      normalizePercentEncoding,
-      normalizePathEncoding,
-      serializePathEncoding,
-      normalizeQueryFragmentEncoding,
-      encodeUserinfo,
-      encodeQuery,
-      encodeFragment,
-      escapePreservingEscapes,
+      normalizeComponentEncoding,
       removeDotSegments,
-      removeDotSegmentsRelative,
       isIPv4,
       isUUID,
       normalizeIPv6,
@@ -17510,12 +17233,12 @@ var require_utils = __commonJS({
   }
 });
 
-// node_modules/fast-uri/lib/schemes.js
+// ../persist/node_modules/fast-uri/lib/schemes.js
 var require_schemes = __commonJS({
-  "node_modules/fast-uri/lib/schemes.js"(exports, module) {
+  "../persist/node_modules/fast-uri/lib/schemes.js"(exports, module) {
     "use strict";
     var { isUUID } = require_utils();
-    var URN_REG = /^([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-./:;=@]|%[\da-f]{2})+)$/iu;
+    var URN_REG = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu;
     var supportedSchemeNames = (
       /** @type {const} */
       [
@@ -17576,10 +17299,9 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        const [path, query] = wsComponent.resourceName.split("?");
         wsComponent.path = path && path !== "/" ? path : void 0;
-        wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
+        wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
       wsComponent.fragment = void 0;
@@ -17591,7 +17313,7 @@ var require_schemes = __commonJS({
         return urnComponent;
       }
       const matches = urnComponent.path.match(URN_REG);
-      if (matches && matches[0] === urnComponent.path) {
+      if (matches) {
         const scheme = options.scheme || urnComponent.scheme || "urn";
         urnComponent.nid = matches[1].toLowerCase();
         urnComponent.nss = matches[2];
@@ -17721,27 +17443,16 @@ var require_schemes = __commonJS({
   }
 });
 
-// node_modules/fast-uri/index.js
+// ../persist/node_modules/fast-uri/index.js
 var require_fast_uri = __commonJS({
-  "node_modules/fast-uri/index.js"(exports, module) {
+  "../persist/node_modules/fast-uri/index.js"(exports, module) {
     "use strict";
-    var { normalizeIPv6, removeDotSegments, removeDotSegmentsRelative, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = require_utils();
+    var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizeComponentEncoding, isIPv4, nonSimpleDomain } = require_utils();
     var { SCHEMES, getSchemeHandler } = require_schemes();
-    var VALID_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*$/u;
-    var MALFORMED_SCHEME_ERROR = "URI scheme is malformed.";
-    var MALFORMED_HOST_ERROR = "URI host is malformed.";
-    var FORBIDDEN_DOMAIN_HOST_CHARACTER = /[\0-\x20"#/:<>?@[\\\]^`{|}\x7F]/u;
-    function validateScheme(scheme) {
-      const stringScheme = String(scheme);
-      if (!VALID_SCHEME.test(stringScheme)) {
-        throw new TypeError(MALFORMED_SCHEME_ERROR);
-      }
-      return stringScheme;
-    }
     function normalize(uri, options) {
       if (typeof uri === "string") {
         uri = /** @type {T} */
-        normalizeString(uri, options);
+        serialize(parse3(uri, options), options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
         parse3(serialize(uri, options), options);
@@ -17750,37 +17461,7 @@ var require_fast_uri = __commonJS({
     }
     function resolve(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
-      const {
-        parsed: baseParsed,
-        malformedAuthorityOrPort: baseMalformed,
-        malformedPercentEncoding: baseMalformedPercentEncoding,
-        malformedSchemeSpecific: baseMalformedSchemeSpecific,
-        malformedHost: baseMalformedHost,
-        malformedScheme: baseMalformedScheme
-      } = parseWithStatus(baseURI, schemelessOptions);
-      const {
-        parsed: relativeParsed,
-        malformedAuthorityOrPort: relativeMalformed,
-        malformedPercentEncoding: relativeMalformedPercentEncoding,
-        malformedSchemeSpecific: relativeMalformedSchemeSpecific,
-        malformedHost: relativeMalformedHost,
-        malformedScheme: relativeMalformedScheme
-      } = parseWithStatus(relativeURI, schemelessOptions);
-      if (baseMalformed || relativeMalformed || baseMalformedPercentEncoding || relativeMalformedPercentEncoding || baseMalformedSchemeSpecific || relativeMalformedSchemeSpecific || baseMalformedHost || relativeMalformedHost || baseMalformedScheme || relativeMalformedScheme) {
-        throw new Error(baseParsed.error || relativeParsed.error || "URI is malformed.");
-      }
-      const resolved = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
-      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved.scheme);
-      const resolvedHost = resolved.host;
-      const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv4(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
-      if (hasForbiddenDomainHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP)) {
-        throw new Error(MALFORMED_HOST_ERROR);
-      }
-      canonicalizeHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
-      const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !/\P{ASCII}/u.test(resolvedHost);
-      if (resolved.error && !encodedASCIIHost) {
-        throw new Error(resolved.error);
-      }
+      const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
@@ -17817,15 +17498,14 @@ var require_fast_uri = __commonJS({
             if (relative.path[0] === "/") {
               target.path = removeDotSegments(relative.path);
             } else {
-              const baseHasAuthority = base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0;
-              if (baseHasAuthority && !base.path) {
+              if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
                 target.path = "/" + relative.path;
               } else if (!base.path) {
                 target.path = relative.path;
               } else {
                 target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
               }
-              target.path = base.scheme === void 0 && !baseHasAuthority && target.path[0] !== "/" ? removeDotSegmentsRelative(target.path) : removeDotSegments(target.path);
+              target.path = removeDotSegments(target.path);
             }
             target.query = relative.query;
           }
@@ -17839,9 +17519,19 @@ var require_fast_uri = __commonJS({
       return target;
     }
     function equal(uriA, uriB, options) {
-      const normalizedA = normalizeComparableURI(uriA, options);
-      const normalizedB = normalizeComparableURI(uriB, options);
-      return normalizedA !== void 0 && normalizedB !== void 0 && normalizedA === normalizedB;
+      if (typeof uriA === "string") {
+        uriA = unescape(uriA);
+        uriA = serialize(normalizeComponentEncoding(parse3(uriA, options), true), { ...options, skipEscape: true });
+      } else if (typeof uriA === "object") {
+        uriA = serialize(normalizeComponentEncoding(uriA, true), { ...options, skipEscape: true });
+      }
+      if (typeof uriB === "string") {
+        uriB = unescape(uriB);
+        uriB = serialize(normalizeComponentEncoding(parse3(uriB, options), true), { ...options, skipEscape: true });
+      } else if (typeof uriB === "object") {
+        uriB = serialize(normalizeComponentEncoding(uriB, true), { ...options, skipEscape: true });
+      }
+      return uriA.toLowerCase() === uriB.toLowerCase();
     }
     function serialize(cmpts, opts) {
       const component = {
@@ -17862,23 +17552,19 @@ var require_fast_uri = __commonJS({
       };
       const options = Object.assign({}, opts);
       const uriTokens = [];
-      if (component.scheme) {
-        component.scheme = validateScheme(component.scheme);
-      }
       const schemeHandler = getSchemeHandler(options.scheme || component.scheme);
       if (schemeHandler && schemeHandler.serialize) schemeHandler.serialize(component, options);
-      const hasAuthority = component.userinfo !== void 0 || component.host !== void 0 || component.port !== void 0;
-      const schemelessReference = (component.scheme === void 0 || options.reference === "suffix") && !hasAuthority;
-      const pathNoScheme = !options.skipEscape && schemelessReference;
       if (component.path !== void 0) {
         if (!options.skipEscape) {
-          component.path = serializePathEncoding(component.path, pathNoScheme);
+          component.path = escape(component.path);
+          if (component.scheme !== void 0) {
+            component.path = component.path.split("%3A").join(":");
+          }
         } else {
-          component.path = normalizePercentEncoding(component.path);
+          component.path = unescape(component.path);
         }
       }
       if (options.reference !== "suffix" && component.scheme) {
-        component.scheme = validateScheme(component.scheme);
         uriTokens.push(component.scheme, ":");
       }
       const authority = recomposeAuthority(component);
@@ -17894,10 +17580,7 @@ var require_fast_uri = __commonJS({
       if (component.path !== void 0) {
         let s = component.path;
         if (!options.absolutePath && (!schemeHandler || !schemeHandler.absolutePath)) {
-          s = schemelessReference && s[0] !== "/" ? removeDotSegmentsRelative(s) : removeDotSegments(s);
-        }
-        if (schemelessReference) {
-          s = serializePathEncoding(s, true);
+          s = removeDotSegments(s);
         }
         if (authority === void 0 && s[0] === "/" && s[1] === "/") {
           s = "/%2F" + s.slice(2);
@@ -17905,73 +17588,15 @@ var require_fast_uri = __commonJS({
         uriTokens.push(s);
       }
       if (component.query !== void 0) {
-        uriTokens.push("?", encodeQuery(component.query));
+        uriTokens.push("?", component.query);
       }
       if (component.fragment !== void 0) {
-        uriTokens.push("#", encodeFragment(component.fragment));
+        uriTokens.push("#", component.fragment);
       }
       return uriTokens.join("");
     }
     var URI_PARSE = /^(?:([^#/:?]+):)?(?:\/\/((?:([^#/?@]*)@)?(\[[^#/?\]]+\]|[^#/:?]*)(?::(\d*))?))?([^#?]*)(?:\?([^#]*))?(?:#((?:.|[\n\r])*))?/u;
-    var AUTHORITY_PREFIX = /^(?:[^#/:?]+:)?\/\/([^/?#]*)/;
-    var AUTHORITY_INTRODUCER_REGION = /^(?:[^#/:?]+:)?([/\\\t\n\r]*)/;
-    function getParseError(parsed, matches) {
-      if (matches[2] !== void 0 && parsed.path && parsed.path[0] !== "/") {
-        return 'URI path must start with "/" when authority is present.';
-      }
-      if (typeof parsed.port === "number" && (parsed.port < 0 || parsed.port > 65535)) {
-        return "URI port is malformed.";
-      }
-      return void 0;
-    }
-    function hasMalformedPercentEncoding(component) {
-      if (component === void 0) return false;
-      let percent = component.indexOf("%");
-      while (percent !== -1) {
-        if (percent + 2 >= component.length || !/^[\da-f]{2}$/iu.test(component.slice(percent + 1, percent + 3))) {
-          return true;
-        }
-        percent = component.indexOf("%", percent + 3);
-      }
-      return false;
-    }
-    function isIPLiteral(host) {
-      return host[0] === "[" && host[host.length - 1] === "]";
-    }
-    function hasMalformedComponentPercentEncoding(matches) {
-      const host = matches[4];
-      return hasMalformedPercentEncoding(matches[3]) || host !== void 0 && !isIPLiteral(host) && hasMalformedPercentEncoding(host) || hasMalformedPercentEncoding(matches[6]) || hasMalformedPercentEncoding(matches[7]) || hasMalformedPercentEncoding(matches[8]);
-    }
-    function canonicalizeHost(parsed, options, schemeHandler, isIP) {
-      if (hasForbiddenDomainHost(parsed, options, schemeHandler, isIP)) {
-        parsed.error = parsed.error || MALFORMED_HOST_ERROR;
-        return true;
-      }
-      if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport) && parsed.host && !isIPLiteral(parsed.host) && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP === false && nonSimpleDomain(parsed.host)) {
-        let url2;
-        try {
-          url2 = new URL("http://" + parsed.host);
-        } catch (e) {
-          parsed.error = parsed.error || "Host's domain name can not be converted to ASCII: " + e;
-          return true;
-        }
-        if (!isHostOnlyURL(url2)) {
-          parsed.error = parsed.error || MALFORMED_HOST_ERROR;
-          return true;
-        }
-        parsed.host = url2.hostname;
-      }
-      return false;
-    }
-    function hasForbiddenDomainHost(parsed, options, schemeHandler, isIP) {
-      return Boolean(
-        parsed.host && isIP === false && !isIPLiteral(parsed.host) && (options.domainHost || schemeHandler && schemeHandler.domainHost) && FORBIDDEN_DOMAIN_HOST_CHARACTER.test(parsed.host)
-      );
-    }
-    function isHostOnlyURL(url2) {
-      return url2.username === "" && url2.password === "" && url2.port === "" && url2.pathname === "/" && url2.search === "" && url2.hash === "" && url2.hostname !== "";
-    }
-    function parseWithStatus(uri, opts) {
+    function parse3(uri, opts) {
       const options = Object.assign({}, opts);
       const parsed = {
         scheme: void 0,
@@ -17982,37 +17607,12 @@ var require_fast_uri = __commonJS({
         query: void 0,
         fragment: void 0
       };
-      let malformedAuthorityOrPort = false;
-      let malformedPercentEncoding = false;
-      let malformedSchemeSpecific = false;
-      let malformedHost = false;
-      let malformedIPLiteral = false;
-      let malformedScheme = false;
       let isIP = false;
       if (options.reference === "suffix") {
         if (options.scheme) {
           uri = options.scheme + ":" + uri;
         } else {
           uri = "//" + uri;
-        }
-      }
-      const authorityMatch = uri.match(AUTHORITY_PREFIX);
-      if (authorityMatch !== null && authorityMatch[1].indexOf("\\") !== -1) {
-        parsed.error = "URI authority must not contain a literal backslash.";
-        malformedAuthorityOrPort = true;
-      }
-      const introducerMatch = uri.match(AUTHORITY_INTRODUCER_REGION);
-      if (introducerMatch !== null) {
-        const region = introducerMatch[1];
-        const normalizedRegion = region.replace(/[\t\n\r]/g, "");
-        if (normalizedRegion.length >= 2) {
-          if (normalizedRegion.slice(0, 2) !== "//") {
-            parsed.error = parsed.error || "URI authority must not contain a literal backslash.";
-            malformedAuthorityOrPort = true;
-          } else if (region.length !== normalizedRegion.length) {
-            parsed.error = parsed.error || "URI authority introducer must not contain whitespace.";
-            malformedAuthorityOrPort = true;
-          }
         }
       }
       const matches = uri.match(URI_PARSE);
@@ -18024,39 +17624,15 @@ var require_fast_uri = __commonJS({
         parsed.path = matches[6] || "";
         parsed.query = matches[7];
         parsed.fragment = matches[8];
-        if (parsed.scheme !== void 0) {
-          if (VALID_SCHEME.test(parsed.scheme)) {
-            parsed.scheme = parsed.scheme.toLowerCase();
-          } else {
-            parsed.error = parsed.error || MALFORMED_SCHEME_ERROR;
-            malformedScheme = true;
-          }
-        }
-        malformedPercentEncoding = hasMalformedComponentPercentEncoding(matches);
-        if (malformedPercentEncoding) {
-          parsed.error = parsed.error || "URI contains malformed percent-encoding.";
-        }
         if (isNaN(parsed.port)) {
           parsed.port = matches[5];
-        }
-        const parseError = getParseError(parsed, matches);
-        if (parseError !== void 0) {
-          parsed.error = parsed.error || parseError;
-          malformedAuthorityOrPort = true;
         }
         if (parsed.host) {
           const ipv4result = isIPv4(parsed.host);
           if (ipv4result === false) {
-            const bracketedIPLiteral = isIPLiteral(parsed.host);
-            const hasIPLiteralBracket = parsed.host.indexOf("[") !== -1 || parsed.host.indexOf("]") !== -1;
             const ipv6result = normalizeIPv6(parsed.host);
-            isIP = ipv6result.isIPV6 || ipv6result.isIPVFuture === true;
-            malformedIPLiteral = hasIPLiteralBracket && (!bracketedIPLiteral || ipv6result.error === true);
-            parsed.host = isIP ? ipv6result.host : ipv6result.host.toLowerCase();
-            if (malformedIPLiteral) {
-              parsed.error = parsed.error || MALFORMED_HOST_ERROR;
-              malformedAuthorityOrPort = true;
-            }
+            parsed.host = ipv6result.host.toLowerCase();
+            isIP = ipv6result.isIPV6;
           } else {
             isIP = true;
           }
@@ -18074,67 +17650,38 @@ var require_fast_uri = __commonJS({
           parsed.error = parsed.error || "URI is not a " + options.reference + " reference.";
         }
         const schemeHandler = getSchemeHandler(options.scheme || parsed.scheme);
-        if (!malformedIPLiteral) {
-          malformedHost = canonicalizeHost(parsed, options, schemeHandler, isIP);
-        }
-        if (uri.indexOf("%") !== -1 && parsed.host !== void 0 && !malformedIPLiteral) {
-          let host = isIP ? parsed.host : normalizePercentEncoding(parsed.host, true);
-          if (!isIP) {
-            host = normalizePercentEncoding(host.toLowerCase());
+        if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport)) {
+          if (parsed.host && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP === false && nonSimpleDomain(parsed.host)) {
+            try {
+              parsed.host = URL.domainToASCII(parsed.host.toLowerCase());
+            } catch (e) {
+              parsed.error = parsed.error || "Host's domain name can not be converted to ASCII: " + e;
+            }
           }
-          parsed.host = isIP || options.scheme !== "null" ? reescapeHostDelimiters(host, isIP) : host;
         }
         if (!schemeHandler || schemeHandler && !schemeHandler.skipNormalize) {
-          if (parsed.path) {
-            parsed.path = normalizePathEncoding(parsed.path);
+          if (uri.indexOf("%") !== -1) {
+            if (parsed.scheme !== void 0) {
+              parsed.scheme = unescape(parsed.scheme);
+            }
+            if (parsed.host !== void 0) {
+              parsed.host = unescape(parsed.host);
+            }
           }
-          if (parsed.query) {
-            parsed.query = normalizeQueryFragmentEncoding(parsed.query);
+          if (parsed.path) {
+            parsed.path = escape(unescape(parsed.path));
           }
           if (parsed.fragment) {
-            parsed.fragment = normalizeQueryFragmentEncoding(parsed.fragment);
+            parsed.fragment = encodeURI(decodeURIComponent(parsed.fragment));
           }
         }
         if (schemeHandler && schemeHandler.parse) {
           schemeHandler.parse(parsed, options);
-          if (schemeHandler === SCHEMES.urn && parsed.nid === void 0) {
-            malformedSchemeSpecific = true;
-          }
         }
       } else {
         parsed.error = parsed.error || "URI can not be parsed.";
       }
-      return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
-    }
-    function parse3(uri, opts) {
-      return parseWithStatus(uri, opts).parsed;
-    }
-    function normalizeString(uri, opts) {
-      return normalizeStringWithStatus(uri, opts).normalized;
-    }
-    function normalizeStringWithStatus(uri, opts) {
-      const { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme } = parseWithStatus(uri, opts);
-      return {
-        normalized: malformedAuthorityOrPort || malformedPercentEncoding || malformedSchemeSpecific || malformedHost || malformedScheme ? uri : serialize(parsed, opts),
-        malformedAuthorityOrPort,
-        malformedPercentEncoding,
-        malformedSchemeSpecific,
-        malformedHost,
-        malformedScheme
-      };
-    }
-    function normalizeComparableURI(uri, opts) {
-      if (typeof uri !== "string" && typeof uri !== "object") {
-        return void 0;
-      }
-      let value;
-      try {
-        value = typeof uri === "string" ? uri : serialize(uri, opts);
-      } catch {
-        return void 0;
-      }
-      const { normalized, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme } = normalizeStringWithStatus(value, opts);
-      return malformedAuthorityOrPort || malformedPercentEncoding || malformedSchemeSpecific || malformedHost || malformedScheme ? void 0 : normalized;
+      return parsed;
     }
     var fastUri = {
       SCHEMES,
@@ -18151,9 +17698,9 @@ var require_fast_uri = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/uri.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/uri.js
 var require_uri = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/uri.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/uri.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var uri = require_fast_uri();
@@ -18162,9 +17709,9 @@ var require_uri = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/core.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/core.js
 var require_core = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/core.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/core.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = void 0;
@@ -18773,9 +18320,9 @@ var require_core = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/id.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/id.js
 var require_id = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/id.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/id.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var def = {
@@ -18788,9 +18335,9 @@ var require_id = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/ref.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/ref.js
 var require_ref = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/ref.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/ref.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.callRef = exports.getValidate = void 0;
@@ -18910,9 +18457,9 @@ var require_ref = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/index.js
 var require_core2 = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/index.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/core/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var id_1 = require_id();
@@ -18931,9 +18478,9 @@ var require_core2 = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitNumber.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitNumber.js
 var require_limitNumber = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -18963,9 +18510,9 @@ var require_limitNumber = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/multipleOf.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/multipleOf.js
 var require_multipleOf = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -18991,9 +18538,9 @@ var require_multipleOf = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/ucs2length.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/ucs2length.js
 var require_ucs2length = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/ucs2length.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/ucs2length.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     function ucs2length(str) {
@@ -19017,9 +18564,9 @@ var require_ucs2length = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitLength.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitLength.js
 var require_limitLength = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -19049,9 +18596,9 @@ var require_limitLength = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/pattern.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/pattern.js
 var require_pattern = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -19086,9 +18633,9 @@ var require_pattern = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitProperties.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitProperties.js
 var require_limitProperties = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -19115,9 +18662,9 @@ var require_limitProperties = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/required.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/required.js
 var require_required = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/required.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/required.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -19197,9 +18744,9 @@ var require_required = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitItems.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitItems.js
 var require_limitItems = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -19226,9 +18773,9 @@ var require_limitItems = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/equal.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/equal.js
 var require_equal = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/equal.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/runtime/equal.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var equal = require_fast_deep_equal();
@@ -19237,9 +18784,9 @@ var require_equal = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
 var require_uniqueItems = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var dataType_1 = require_dataType();
@@ -19304,9 +18851,9 @@ var require_uniqueItems = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/const.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/const.js
 var require_const = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/const.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/const.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -19333,9 +18880,9 @@ var require_const = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/enum.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/enum.js
 var require_enum = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/enum.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/enum.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -19382,9 +18929,9 @@ var require_enum = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/index.js
 var require_validation = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/index.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/validation/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var limitNumber_1 = require_limitNumber();
@@ -19420,9 +18967,9 @@ var require_validation = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
 var require_additionalItems = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateAdditionalItems = void 0;
@@ -19473,9 +19020,9 @@ var require_additionalItems = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/items.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/items.js
 var require_items = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/items.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/items.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateTuple = void 0;
@@ -19530,9 +19077,9 @@ var require_items = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
 var require_prefixItems = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var items_1 = require_items();
@@ -19547,9 +19094,9 @@ var require_prefixItems = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/items2020.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/items2020.js
 var require_items2020 = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -19582,9 +19129,9 @@ var require_items2020 = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/contains.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/contains.js
 var require_contains = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -19676,9 +19223,9 @@ var require_contains = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/dependencies.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/dependencies.js
 var require_dependencies = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateSchemaDeps = exports.validatePropertyDeps = exports.error = void 0;
@@ -19770,9 +19317,9 @@ var require_dependencies = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
 var require_propertyNames = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -19813,9 +19360,9 @@ var require_propertyNames = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
 var require_additionalProperties = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -19919,9 +19466,9 @@ var require_additionalProperties = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/properties.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/properties.js
 var require_properties = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var validate_1 = require_validate();
@@ -19977,9 +19524,9 @@ var require_properties = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
 var require_patternProperties = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -20051,9 +19598,9 @@ var require_patternProperties = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/not.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/not.js
 var require_not = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/not.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/not.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util();
@@ -20082,9 +19629,9 @@ var require_not = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/anyOf.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/anyOf.js
 var require_anyOf = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code2();
@@ -20099,9 +19646,9 @@ var require_anyOf = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/oneOf.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/oneOf.js
 var require_oneOf = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -20157,9 +19704,9 @@ var require_oneOf = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/allOf.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/allOf.js
 var require_allOf = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util();
@@ -20184,9 +19731,9 @@ var require_allOf = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/if.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/if.js
 var require_if = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/if.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/if.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -20253,9 +19800,9 @@ var require_if = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/thenElse.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/thenElse.js
 var require_thenElse = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util();
@@ -20271,9 +19818,9 @@ var require_thenElse = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/index.js
 var require_applicator = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/index.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/applicator/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var additionalItems_1 = require_additionalItems();
@@ -20319,9 +19866,9 @@ var require_applicator = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/format/format.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/format/format.js
 var require_format = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/format/format.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/format/format.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -20409,9 +19956,9 @@ var require_format = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/format/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/format/index.js
 var require_format2 = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/format/index.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/format/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var format_1 = require_format();
@@ -20420,9 +19967,9 @@ var require_format2 = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/metadata.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/metadata.js
 var require_metadata = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/metadata.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/metadata.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.contentVocabulary = exports.metadataVocabulary = void 0;
@@ -20443,9 +19990,9 @@ var require_metadata = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/draft7.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/draft7.js
 var require_draft7 = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/draft7.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/draft7.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var core_1 = require_core2();
@@ -20465,9 +20012,9 @@ var require_draft7 = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/discriminator/types.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/discriminator/types.js
 var require_types3 = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DiscrError = void 0;
@@ -20479,9 +20026,9 @@ var require_types3 = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/discriminator/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/discriminator/index.js
 var require_discriminator = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen();
@@ -20584,9 +20131,9 @@ var require_discriminator = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/refs/json-schema-draft-07.json
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/refs/json-schema-draft-07.json
 var require_json_schema_draft_07 = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/refs/json-schema-draft-07.json"(exports, module) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/refs/json-schema-draft-07.json"(exports, module) {
     module.exports = {
       $schema: "http://json-schema.org/draft-07/schema#",
       $id: "http://json-schema.org/draft-07/schema#",
@@ -20741,9 +20288,9 @@ var require_json_schema_draft_07 = __commonJS({
   }
 });
 
-// node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/ajv.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/ajv.js
 var require_ajv = __commonJS({
-  "node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/ajv.js"(exports, module) {
+  "../persist/node_modules/@modelcontextprotocol/sdk/node_modules/ajv/dist/ajv.js"(exports, module) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MissingRefError = exports.ValidationError = exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = exports.Ajv = void 0;
@@ -20811,9 +20358,9 @@ var require_ajv = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/dist/formats.js
+// ../persist/node_modules/ajv-formats/dist/formats.js
 var require_formats = __commonJS({
-  "node_modules/ajv-formats/dist/formats.js"(exports) {
+  "../persist/node_modules/ajv-formats/dist/formats.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.formatNames = exports.fastFormats = exports.fullFormats = void 0;
@@ -21014,9 +20561,9 @@ var require_formats = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/code.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/code.js
 var require_code3 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/code.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/code.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.regexpCode = exports.getEsmExportName = exports.getProperty = exports.safeStringify = exports.stringify = exports.strConcat = exports.addCodeArg = exports.str = exports._ = exports.nil = exports._Code = exports.Name = exports.IDENTIFIER = exports._CodeOrName = void 0;
@@ -21168,9 +20715,9 @@ var require_code3 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/scope.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/scope.js
 var require_scope2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/scope.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/scope.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ValueScope = exports.ValueScopeName = exports.Scope = exports.varKinds = exports.UsedValueState = void 0;
@@ -21313,9 +20860,9 @@ var require_scope2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/index.js
 var require_codegen2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/index.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/codegen/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.or = exports.and = exports.not = exports.CodeGen = exports.operators = exports.varKinds = exports.ValueScopeName = exports.ValueScope = exports.Scope = exports.Name = exports.regexpCode = exports.stringify = exports.getProperty = exports.nil = exports.strConcat = exports.str = exports._ = void 0;
@@ -22033,9 +21580,9 @@ var require_codegen2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/util.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/util.js
 var require_util2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/util.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/util.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.checkStrictMode = exports.getErrorPath = exports.Type = exports.useFunc = exports.setEvaluated = exports.evaluatedPropsToName = exports.mergeEvaluated = exports.eachItem = exports.unescapeJsonPointer = exports.escapeJsonPointer = exports.escapeFragment = exports.unescapeFragment = exports.schemaRefOrVal = exports.schemaHasRulesButRef = exports.schemaHasRules = exports.checkUnknownRules = exports.alwaysValidSchema = exports.toHash = void 0;
@@ -22200,9 +21747,9 @@ var require_util2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/names.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/names.js
 var require_names2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/names.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/names.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -22239,9 +21786,9 @@ var require_names2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/errors.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/errors.js
 var require_errors3 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/errors.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/errors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.extendErrors = exports.resetErrorsCount = exports.reportExtraError = exports.reportError = exports.keyword$DataError = exports.keywordError = void 0;
@@ -22361,9 +21908,9 @@ var require_errors3 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/boolSchema.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/boolSchema.js
 var require_boolSchema2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/boolSchema.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/boolSchema.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.boolOrEmptySchema = exports.topBoolOrEmptySchema = void 0;
@@ -22412,9 +21959,9 @@ var require_boolSchema2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/rules.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/rules.js
 var require_rules2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/rules.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/rules.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getRules = exports.isJSONType = void 0;
@@ -22443,9 +21990,9 @@ var require_rules2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/applicability.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/applicability.js
 var require_applicability2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/applicability.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/applicability.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.shouldUseRule = exports.shouldUseGroup = exports.schemaHasRulesForType = void 0;
@@ -22466,9 +22013,9 @@ var require_applicability2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/dataType.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/dataType.js
 var require_dataType2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/dataType.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/dataType.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.reportTypeError = exports.checkDataTypes = exports.checkDataType = exports.coerceAndCheckDataType = exports.getJSONTypes = exports.getSchemaTypes = exports.DataType = void 0;
@@ -22650,9 +22197,9 @@ var require_dataType2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/defaults.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/defaults.js
 var require_defaults2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/defaults.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/defaults.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.assignDefaults = void 0;
@@ -22687,9 +22234,9 @@ var require_defaults2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/code.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/code.js
 var require_code4 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/code.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/code.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateUnion = exports.validateArray = exports.usePattern = exports.callValidateCode = exports.schemaProperties = exports.allSchemaProperties = exports.noPropertyInData = exports.propertyInData = exports.isOwnProperty = exports.hasPropFunc = exports.reportMissingProp = exports.checkMissingProp = exports.checkReportMissingProp = void 0;
@@ -22820,9 +22367,9 @@ var require_code4 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/keyword.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/keyword.js
 var require_keyword2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/keyword.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/keyword.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateKeywordUsage = exports.validSchemaType = exports.funcKeywordCode = exports.macroKeywordCode = void 0;
@@ -22938,9 +22485,9 @@ var require_keyword2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/subschema.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/subschema.js
 var require_subschema2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/subschema.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/subschema.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.extendSubschemaMode = exports.extendSubschemaData = exports.getSubschema = void 0;
@@ -23021,9 +22568,9 @@ var require_subschema2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/json-schema-traverse/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/node_modules/json-schema-traverse/index.js
 var require_json_schema_traverse2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/json-schema-traverse/index.js"(exports, module) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/node_modules/json-schema-traverse/index.js"(exports, module) {
     "use strict";
     var traverse = module.exports = function(schema, opts, cb) {
       if (typeof opts == "function") {
@@ -23109,9 +22656,9 @@ var require_json_schema_traverse2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/resolve.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/resolve.js
 var require_resolve2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/resolve.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/resolve.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getSchemaRefs = exports.resolveUrl = exports.normalizeId = exports._getFullPath = exports.getFullPath = exports.inlineRef = void 0;
@@ -23265,9 +22812,9 @@ var require_resolve2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/index.js
 var require_validate2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/index.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/validate/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getData = exports.KeywordCxt = exports.validateFunctionCode = void 0;
@@ -23773,9 +23320,9 @@ var require_validate2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/runtime/validation_error.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/runtime/validation_error.js
 var require_validation_error2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/runtime/validation_error.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/runtime/validation_error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var ValidationError = class extends Error {
@@ -23789,9 +23336,9 @@ var require_validation_error2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/ref_error.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/ref_error.js
 var require_ref_error2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/ref_error.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/ref_error.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var resolve_1 = require_resolve2();
@@ -23806,9 +23353,9 @@ var require_ref_error2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/compile/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/index.js
 var require_compile2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/compile/index.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/compile/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.resolveSchema = exports.getCompilingSchema = exports.resolveRef = exports.compileSchema = exports.SchemaEnv = void 0;
@@ -24030,9 +23577,9 @@ var require_compile2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/refs/data.json
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/refs/data.json
 var require_data2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/refs/data.json"(exports, module) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/refs/data.json"(exports, module) {
     module.exports = {
       $id: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#",
       description: "Meta-schema for $data reference (JSON AnySchema extension proposal)",
@@ -24049,9 +23596,9 @@ var require_data2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/runtime/uri.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/runtime/uri.js
 var require_uri2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/runtime/uri.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/runtime/uri.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var uri = require_fast_uri();
@@ -24060,9 +23607,9 @@ var require_uri2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/core.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/core.js
 var require_core3 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/core.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/core.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = void 0;
@@ -24671,9 +24218,9 @@ var require_core3 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/id.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/id.js
 var require_id2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/id.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/id.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var def = {
@@ -24686,9 +24233,9 @@ var require_id2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/ref.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/ref.js
 var require_ref2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/ref.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/ref.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.callRef = exports.getValidate = void 0;
@@ -24808,9 +24355,9 @@ var require_ref2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/index.js
 var require_core4 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/index.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/core/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var id_1 = require_id2();
@@ -24829,9 +24376,9 @@ var require_core4 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitNumber.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitNumber.js
 var require_limitNumber2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitNumber.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -24861,9 +24408,9 @@ var require_limitNumber2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/multipleOf.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/multipleOf.js
 var require_multipleOf2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/multipleOf.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -24889,9 +24436,9 @@ var require_multipleOf2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/runtime/ucs2length.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/runtime/ucs2length.js
 var require_ucs2length2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/runtime/ucs2length.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/runtime/ucs2length.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     function ucs2length(str) {
@@ -24915,9 +24462,9 @@ var require_ucs2length2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitLength.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitLength.js
 var require_limitLength2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitLength.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -24947,9 +24494,9 @@ var require_limitLength2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/pattern.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/pattern.js
 var require_pattern2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/pattern.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code4();
@@ -24984,9 +24531,9 @@ var require_pattern2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitProperties.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitProperties.js
 var require_limitProperties2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitProperties.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -25013,9 +24560,9 @@ var require_limitProperties2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/required.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/required.js
 var require_required2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/required.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/required.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code4();
@@ -25095,9 +24642,9 @@ var require_required2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitItems.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitItems.js
 var require_limitItems2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/limitItems.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -25124,9 +24671,9 @@ var require_limitItems2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/runtime/equal.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/runtime/equal.js
 var require_equal2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/runtime/equal.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/runtime/equal.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var equal = require_fast_deep_equal();
@@ -25135,9 +24682,9 @@ var require_equal2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
 var require_uniqueItems2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/uniqueItems.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var dataType_1 = require_dataType2();
@@ -25202,9 +24749,9 @@ var require_uniqueItems2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/const.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/const.js
 var require_const2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/const.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/const.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -25231,9 +24778,9 @@ var require_const2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/enum.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/enum.js
 var require_enum2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/enum.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/enum.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -25280,9 +24827,9 @@ var require_enum2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/index.js
 var require_validation2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/index.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/validation/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var limitNumber_1 = require_limitNumber2();
@@ -25318,9 +24865,9 @@ var require_validation2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
 var require_additionalItems2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/additionalItems.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateAdditionalItems = void 0;
@@ -25371,9 +24918,9 @@ var require_additionalItems2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/items.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/items.js
 var require_items2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/items.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/items.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateTuple = void 0;
@@ -25428,9 +24975,9 @@ var require_items2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
 var require_prefixItems2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/prefixItems.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var items_1 = require_items2();
@@ -25445,9 +24992,9 @@ var require_prefixItems2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/items2020.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/items2020.js
 var require_items20202 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/items2020.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -25480,9 +25027,9 @@ var require_items20202 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/contains.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/contains.js
 var require_contains2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/contains.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -25574,9 +25121,9 @@ var require_contains2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/dependencies.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/dependencies.js
 var require_dependencies2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/dependencies.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.validateSchemaDeps = exports.validatePropertyDeps = exports.error = void 0;
@@ -25668,9 +25215,9 @@ var require_dependencies2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
 var require_propertyNames2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/propertyNames.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -25711,9 +25258,9 @@ var require_propertyNames2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
 var require_additionalProperties2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code4();
@@ -25817,9 +25364,9 @@ var require_additionalProperties2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/properties.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/properties.js
 var require_properties2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/properties.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var validate_1 = require_validate2();
@@ -25875,9 +25422,9 @@ var require_properties2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
 var require_patternProperties2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/patternProperties.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code4();
@@ -25949,9 +25496,9 @@ var require_patternProperties2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/not.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/not.js
 var require_not2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/not.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/not.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util2();
@@ -25980,9 +25527,9 @@ var require_not2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/anyOf.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/anyOf.js
 var require_anyOf2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/anyOf.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var code_1 = require_code4();
@@ -25997,9 +25544,9 @@ var require_anyOf2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/oneOf.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/oneOf.js
 var require_oneOf2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/oneOf.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -26055,9 +25602,9 @@ var require_oneOf2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/allOf.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/allOf.js
 var require_allOf2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/allOf.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util2();
@@ -26082,9 +25629,9 @@ var require_allOf2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/if.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/if.js
 var require_if2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/if.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/if.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -26151,9 +25698,9 @@ var require_if2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/thenElse.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/thenElse.js
 var require_thenElse2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/thenElse.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util2();
@@ -26169,9 +25716,9 @@ var require_thenElse2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/index.js
 var require_applicator2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/index.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/applicator/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var additionalItems_1 = require_additionalItems2();
@@ -26217,9 +25764,9 @@ var require_applicator2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/format/format.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/format/format.js
 var require_format3 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/format/format.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/format/format.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -26307,9 +25854,9 @@ var require_format3 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/format/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/format/index.js
 var require_format4 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/format/index.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/format/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var format_1 = require_format3();
@@ -26318,9 +25865,9 @@ var require_format4 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/metadata.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/metadata.js
 var require_metadata2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/metadata.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/metadata.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.contentVocabulary = exports.metadataVocabulary = void 0;
@@ -26341,9 +25888,9 @@ var require_metadata2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/draft7.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/draft7.js
 var require_draft72 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/draft7.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/draft7.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var core_1 = require_core4();
@@ -26363,9 +25910,9 @@ var require_draft72 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/discriminator/types.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/discriminator/types.js
 var require_types4 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/discriminator/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DiscrError = void 0;
@@ -26377,9 +25924,9 @@ var require_types4 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/discriminator/index.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/discriminator/index.js
 var require_discriminator2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/vocabularies/discriminator/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var codegen_1 = require_codegen2();
@@ -26482,9 +26029,9 @@ var require_discriminator2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/refs/json-schema-draft-07.json
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/refs/json-schema-draft-07.json
 var require_json_schema_draft_072 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/refs/json-schema-draft-07.json"(exports, module) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/refs/json-schema-draft-07.json"(exports, module) {
     module.exports = {
       $schema: "http://json-schema.org/draft-07/schema#",
       $id: "http://json-schema.org/draft-07/schema#",
@@ -26639,9 +26186,9 @@ var require_json_schema_draft_072 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/node_modules/ajv/dist/ajv.js
+// ../persist/node_modules/ajv-formats/node_modules/ajv/dist/ajv.js
 var require_ajv2 = __commonJS({
-  "node_modules/ajv-formats/node_modules/ajv/dist/ajv.js"(exports, module) {
+  "../persist/node_modules/ajv-formats/node_modules/ajv/dist/ajv.js"(exports, module) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MissingRefError = exports.ValidationError = exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = exports.Ajv = void 0;
@@ -26709,9 +26256,9 @@ var require_ajv2 = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/dist/limit.js
+// ../persist/node_modules/ajv-formats/dist/limit.js
 var require_limit = __commonJS({
-  "node_modules/ajv-formats/dist/limit.js"(exports) {
+  "../persist/node_modules/ajv-formats/dist/limit.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.formatLimitDefinition = void 0;
@@ -26781,9 +26328,9 @@ var require_limit = __commonJS({
   }
 });
 
-// node_modules/ajv-formats/dist/index.js
+// ../persist/node_modules/ajv-formats/dist/index.js
 var require_dist = __commonJS({
-  "node_modules/ajv-formats/dist/index.js"(exports, module) {
+  "../persist/node_modules/ajv-formats/dist/index.js"(exports, module) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var formats_1 = require_formats();
@@ -26823,9 +26370,9 @@ var require_dist = __commonJS({
   }
 });
 
-// node_modules/content-type/index.js
+// ../persist/node_modules/content-type/index.js
 var require_content_type = __commonJS({
-  "node_modules/content-type/index.js"(exports) {
+  "../persist/node_modules/content-type/index.js"(exports) {
     "use strict";
     var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
     var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
@@ -26927,7 +26474,7 @@ var require_content_type = __commonJS({
   }
 });
 
-// node_modules/@lovable.dev/mcp-js/dist/logger-2OXtfiIW.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/logger-2OXtfiIW.js
 var DEFAULT_METRICS_ENDPOINT = "https://api.lovable.dev/v1/app-mcp-usage";
 var METRICS_API_KEY_ENV_VAR = "LOVABLE_API_KEY";
 function assertMetricsEndpoint(endpoint) {
@@ -27030,7 +26577,7 @@ function describeError(err) {
   return { value: String(err) };
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/context-CIpPzN7P.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/context-CIpPzN7P.js
 var ToolContext = class {
   #auth;
   constructor(auth2) {
@@ -27073,7 +26620,7 @@ var ToolContext = class {
   }
 };
 
-// node_modules/@lovable.dev/mcp-js/dist/index.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/index.js
 function assertUniqueNames(mcp) {
   const seen = /* @__PURE__ */ new Set();
   for (const tool of mcp.tools) {
@@ -27189,7 +26736,7 @@ function issuer(options) {
 var oauth = Object.freeze({ issuer });
 var auth = Object.freeze({ oauth });
 
-// node_modules/@supabase/supabase-js/dist/index.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/index.mjs
 var dist_exports = {};
 __export(dist_exports, {
   FunctionRegion: () => import_functions_js.FunctionRegion,
@@ -27203,16 +26750,16 @@ __export(dist_exports, {
   createClient: () => createClient
 });
 
-// node_modules/@supabase/supabase-js/dist/tracingRegistry.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/tracingRegistry.mjs
 var EXTRACTOR_KEY = Symbol.for("@supabase/supabase-js.traceContextExtractor");
 function getTraceContextExtractor() {
   return globalThis[EXTRACTOR_KEY];
 }
 
-// node_modules/@supabase/supabase-js/dist/index.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/index.mjs
 var import_functions_js = __toESM(require_main(), 1);
 
-// node_modules/@supabase/postgrest-js/dist/index.mjs
+// ../persist/node_modules/@supabase/postgrest-js/dist/index.mjs
 var PostgrestError = class extends Error {
   /**
   * @example
@@ -31110,10 +30657,10 @@ var PostgrestClient = class PostgrestClient2 {
   }
 };
 
-// node_modules/@supabase/supabase-js/dist/index.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/index.mjs
 var import_realtime_js = __toESM(require_main2(), 1);
 
-// node_modules/iceberg-js/dist/index.mjs
+// ../persist/node_modules/iceberg-js/dist/index.mjs
 var IcebergError = class extends Error {
   constructor(message2, opts) {
     super(message2);
@@ -31646,7 +31193,7 @@ var IcebergRestCatalog = class {
   }
 };
 
-// node_modules/@supabase/storage-js/dist/index.mjs
+// ../persist/node_modules/@supabase/storage-js/dist/index.mjs
 function _typeof2(o) {
   "@babel/helpers - typeof";
   return _typeof2 = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
@@ -34617,7 +34164,7 @@ var StorageClient = class extends StorageBucketApi {
   }
 };
 
-// node_modules/@supabase/supabase-js/dist/index.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/index.mjs
 var import_auth_js = __toESM(require_main3(), 1);
 __reExport(dist_exports, __toESM(require_main2(), 1));
 __reExport(dist_exports, __toESM(require_main3(), 1));
@@ -35407,7 +34954,7 @@ var get_my_profile_default = defineTool({
   }
 });
 
-// node_modules/zod/v4/classic/external.js
+// ../persist/node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
   $brand: () => $brand,
@@ -35670,7 +35217,7 @@ __export(external_exports, {
   xor: () => xor
 });
 
-// node_modules/zod/v4/core/index.js
+// ../persist/node_modules/zod/v4/core/index.js
 var core_exports2 = {};
 __export(core_exports2, {
   $ZodAny: () => $ZodAny,
@@ -35987,7 +35534,7 @@ __export(core_exports2, {
   withParser: () => withParser
 });
 
-// node_modules/zod/v4/core/util.js
+// ../persist/node_modules/zod/v4/core/util.js
 var util_exports = {};
 __export(util_exports, {
   BIGINT_FORMAT_RANGES: () => BIGINT_FORMAT_RANGES,
@@ -36729,9 +36276,9 @@ var Class = class {
   constructor(..._args) {
   }
 };
-function members(proto, table) {
-  for (const key in table) {
-    const desc = Object.getOwnPropertyDescriptor(table, key);
+function members(proto, table2) {
+  for (const key in table2) {
+    const desc = Object.getOwnPropertyDescriptor(table2, key);
     if (desc.get)
       Object.defineProperty(proto, key, { ...desc, enumerable: false });
     else
@@ -36746,10 +36293,10 @@ function hide(inst, key, value) {
   return own(inst, key, value, false);
 }
 // @__NO_SIDE_EFFECTS__
-function derived(computes, table) {
+function derived(computes, table2) {
   for (const key in computes) {
     const compute = computes[key];
-    Object.defineProperty(table, key, {
+    Object.defineProperty(table2, key, {
       configurable: true,
       enumerable: true,
       get() {
@@ -36760,7 +36307,7 @@ function derived(computes, table) {
       }
     });
   }
-  return table;
+  return table2;
 }
 function defineBound(proto, key, fn) {
   Object.defineProperty(proto, key, {
@@ -36843,7 +36390,7 @@ function constantCatch(value) {
   return fn;
 }
 
-// node_modules/zod/v4/core/core.js
+// ../persist/node_modules/zod/v4/core/core.js
 var _a;
 var NEVER = /* @__PURE__ */ Object.freeze({
   status: "aborted"
@@ -36965,7 +36512,7 @@ function config(newConfig) {
   return globalConfig;
 }
 
-// node_modules/zod/v4/core/errors.js
+// ../persist/node_modules/zod/v4/core/errors.js
 function _getMessage() {
   const internals = this._zod;
   internals.message ?? (internals.message = JSON.stringify(internals.def, jsonStringifyReplacer, 2));
@@ -37157,7 +36704,7 @@ function prettifyError(error62) {
   return lines.join("\n");
 }
 
-// node_modules/zod/v4/core/parse.js
+// ../persist/node_modules/zod/v4/core/parse.js
 function finalizeParams(callee, params) {
   return { callee: params?.callee ?? callee, Err: params?.Err };
 }
@@ -37317,7 +36864,7 @@ var _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
 };
 var safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync($ZodRealError);
 
-// node_modules/zod/v4/core/regexes.js
+// ../persist/node_modules/zod/v4/core/regexes.js
 var regexes_exports = {};
 __export(regexes_exports, {
   anyString: () => anyString,
@@ -37489,7 +37036,7 @@ var sha512_hex = /^[0-9a-fA-F]{128}$/;
 var sha512_base64 = /* @__PURE__ */ fixedBase64(86, "==");
 var sha512_base64url = /* @__PURE__ */ fixedBase64url(86);
 
-// node_modules/zod/v4/core/checks.js
+// ../persist/node_modules/zod/v4/core/checks.js
 var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   var _a3;
   inst._zod ?? (inst._zod = {});
@@ -37965,7 +37512,7 @@ var $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (ins
   };
 });
 
-// node_modules/zod/v4/core/doc.js
+// ../persist/node_modules/zod/v4/core/doc.js
 var Doc = class {
   constructor(args = [], closed = {}) {
     this.content = [];
@@ -38006,14 +37553,14 @@ ${content.join("\n")}
   }
 };
 
-// node_modules/zod/v4/core/versions.js
+// ../persist/node_modules/zod/v4/core/versions.js
 var version3 = {
   major: 4,
   minor: 6,
   patch: 7
 };
 
-// node_modules/zod/v4/core/schemas.js
+// ../persist/node_modules/zod/v4/core/schemas.js
 var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a3;
   inst ?? (inst = {});
@@ -40455,7 +40002,7 @@ function handleRefineResult(result, payload, input2, inst) {
   }
 }
 
-// node_modules/zod/v4/core/memoizer.js
+// ../persist/node_modules/zod/v4/core/memoizer.js
 var $ZodCyclicError = class extends Error {
   constructor() {
     super(`Cannot parse a reference cycle that closes through a transform`);
@@ -40475,9 +40022,9 @@ var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
 function isRecursive(inst, stack, resolve) {
-  const cached2 = recursive.get(inst);
-  if (cached2 !== void 0)
-    return cached2 ? PROVEN : NONE;
+  const cached3 = recursive.get(inst);
+  if (cached3 !== void 0)
+    return cached3 ? PROVEN : NONE;
   if (stack.has(inst))
     return PROVEN;
   stack.add(inst);
@@ -40732,7 +40279,7 @@ function isBackEdge(ctx, value) {
   return backEdges !== void 0 && isRef(value) && backEdges.has(value);
 }
 
-// node_modules/zod/v4/locales/index.js
+// ../persist/node_modules/zod/v4/locales/index.js
 var locales_exports = {};
 __export(locales_exports, {
   ar: () => ar_default,
@@ -40800,7 +40347,7 @@ __export(locales_exports, {
   zhTW: () => zh_TW_default
 });
 
-// node_modules/zod/v4/locales/ar.js
+// ../persist/node_modules/zod/v4/locales/ar.js
 var error = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0641", verb: "\u0623\u0646 \u064A\u062D\u0648\u064A" },
@@ -40912,7 +40459,7 @@ function ar_default() {
   };
 }
 
-// node_modules/zod/v4/locales/az.js
+// ../persist/node_modules/zod/v4/locales/az.js
 var error2 = () => {
   const Sizable = {
     string: { unit: "simvol", verb: "olmal\u0131d\u0131r" },
@@ -41023,7 +40570,7 @@ function az_default() {
   };
 }
 
-// node_modules/zod/v4/locales/be.js
+// ../persist/node_modules/zod/v4/locales/be.js
 function getBelarusianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -41192,7 +40739,7 @@ function be_default() {
   };
 }
 
-// node_modules/zod/v4/locales/bg.js
+// ../persist/node_modules/zod/v4/locales/bg.js
 var error4 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0430", verb: "\u0434\u0430 \u0441\u044A\u0434\u044A\u0440\u0436\u0430" },
@@ -41318,7 +40865,7 @@ function bg_default() {
   };
 }
 
-// node_modules/zod/v4/locales/bn.js
+// ../persist/node_modules/zod/v4/locales/bn.js
 var error5 = () => {
   const Sizable = {
     string: { unit: "\u0985\u0995\u09CD\u09B7\u09B0", verb: "\u09A5\u09BE\u0995\u09A4\u09C7 \u09B9\u09AC\u09C7" },
@@ -41432,7 +40979,7 @@ function bn_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ca.js
+// ../persist/node_modules/zod/v4/locales/ca.js
 var error6 = () => {
   const Sizable = {
     string: { unit: "car\xE0cters", verb: "contenir" },
@@ -41546,7 +41093,7 @@ function ca_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ckb.js
+// ../persist/node_modules/zod/v4/locales/ckb.js
 var error7 = () => {
   const Sizable = {
     string: { unit: "\u067E\u06CC\u062A", verb: "\u0628\u06CE\u062A" },
@@ -41679,7 +41226,7 @@ function ckb_default() {
   };
 }
 
-// node_modules/zod/v4/locales/cs.js
+// ../persist/node_modules/zod/v4/locales/cs.js
 var error8 = () => {
   const Sizable = {
     string: { unit: "znak\u016F", verb: "m\xEDt" },
@@ -41796,7 +41343,7 @@ function cs_default() {
   };
 }
 
-// node_modules/zod/v4/locales/da.js
+// ../persist/node_modules/zod/v4/locales/da.js
 var error9 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "havde" },
@@ -41917,7 +41464,7 @@ function da_default() {
   };
 }
 
-// node_modules/zod/v4/locales/de.js
+// ../persist/node_modules/zod/v4/locales/de.js
 var error10 = () => {
   const Sizable = {
     string: { unit: "Zeichen", verb: "zu haben" },
@@ -42031,7 +41578,7 @@ function de_default() {
   };
 }
 
-// node_modules/zod/v4/locales/el.js
+// ../persist/node_modules/zod/v4/locales/el.js
 var error11 = () => {
   const Sizable = {
     string: { unit: "\u03C7\u03B1\u03C1\u03B1\u03BA\u03C4\u03AE\u03C1\u03B5\u03C2", verb: "\u03BD\u03B1 \u03AD\u03C7\u03B5\u03B9" },
@@ -42144,7 +41691,7 @@ function el_default() {
   };
 }
 
-// node_modules/zod/v4/locales/en.js
+// ../persist/node_modules/zod/v4/locales/en.js
 var error12 = () => {
   const Sizable = {
     string: { unit: "characters", verb: "to have" },
@@ -42269,7 +41816,7 @@ function en_default() {
   };
 }
 
-// node_modules/zod/v4/locales/eo.js
+// ../persist/node_modules/zod/v4/locales/eo.js
 var error13 = () => {
   const Sizable = {
     string: { unit: "karaktrojn", verb: "havi" },
@@ -42384,7 +41931,7 @@ function eo_default() {
   };
 }
 
-// node_modules/zod/v4/locales/es.js
+// ../persist/node_modules/zod/v4/locales/es.js
 var error14 = () => {
   const Sizable = {
     string: { unit: "caracteres", verb: "tener" },
@@ -42521,7 +42068,7 @@ function es_default() {
   };
 }
 
-// node_modules/zod/v4/locales/fa.js
+// ../persist/node_modules/zod/v4/locales/fa.js
 var error15 = () => {
   const Sizable = {
     string: { unit: "\u06A9\u0627\u0631\u0627\u06A9\u062A\u0631", verb: "\u062F\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u062F" },
@@ -42641,7 +42188,7 @@ function fa_default() {
   };
 }
 
-// node_modules/zod/v4/locales/fi.js
+// ../persist/node_modules/zod/v4/locales/fi.js
 var error16 = () => {
   const Sizable = {
     string: { unit: "merkki\xE4", subject: "merkkijonon" },
@@ -42759,7 +42306,7 @@ function fi_default() {
   };
 }
 
-// node_modules/zod/v4/locales/fr.js
+// ../persist/node_modules/zod/v4/locales/fr.js
 var error17 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -42889,7 +42436,7 @@ function fr_default() {
   };
 }
 
-// node_modules/zod/v4/locales/fr-CA.js
+// ../persist/node_modules/zod/v4/locales/fr-CA.js
 var error18 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -43002,7 +42549,7 @@ function fr_CA_default() {
   };
 }
 
-// node_modules/zod/v4/locales/gu.js
+// ../persist/node_modules/zod/v4/locales/gu.js
 var error19 = () => {
   const Sizable = {
     string: { unit: "\u0A85\u0A95\u0ACD\u0AB7\u0AB0", verb: "\u0AB9\u0ACB\u0AB5\u0ABE \u0A9C\u0ACB\u0A88\u0A8F" },
@@ -43116,7 +42663,7 @@ function gu_default() {
   };
 }
 
-// node_modules/zod/v4/locales/he.js
+// ../persist/node_modules/zod/v4/locales/he.js
 var error20 = () => {
   const TypeNames = {
     string: { label: "\u05DE\u05D7\u05E8\u05D5\u05D6\u05EA", gender: "f" },
@@ -43318,7 +42865,7 @@ function he_default() {
   };
 }
 
-// node_modules/zod/v4/locales/hi.js
+// ../persist/node_modules/zod/v4/locales/hi.js
 var error21 = () => {
   const Sizable = {
     string: { unit: "\u0905\u0915\u094D\u0937\u0930", verb: "\u0930\u0916\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F" },
@@ -43430,7 +42977,7 @@ function hi_default() {
   };
 }
 
-// node_modules/zod/v4/locales/hr.js
+// ../persist/node_modules/zod/v4/locales/hr.js
 var error22 = () => {
   const Sizable = {
     string: { unit: "znakova", verb: "imati" },
@@ -43557,7 +43104,7 @@ function hr_default() {
   };
 }
 
-// node_modules/zod/v4/locales/hu.js
+// ../persist/node_modules/zod/v4/locales/hu.js
 var error23 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "legyen" },
@@ -43671,7 +43218,7 @@ function hu_default() {
   };
 }
 
-// node_modules/zod/v4/locales/hy.js
+// ../persist/node_modules/zod/v4/locales/hy.js
 function getArmenianPlural(count, one, many) {
   return Math.abs(count) === 1 ? one : many;
 }
@@ -43830,7 +43377,7 @@ function hy_default() {
   };
 }
 
-// node_modules/zod/v4/locales/id.js
+// ../persist/node_modules/zod/v4/locales/id.js
 var error25 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "memiliki" },
@@ -43942,7 +43489,7 @@ function id_default() {
   };
 }
 
-// node_modules/zod/v4/locales/is.js
+// ../persist/node_modules/zod/v4/locales/is.js
 var error26 = () => {
   const Sizable = {
     string: { unit: "stafi", verb: "a\xF0 hafa" },
@@ -44057,7 +43604,7 @@ function is_default() {
   };
 }
 
-// node_modules/zod/v4/locales/it.js
+// ../persist/node_modules/zod/v4/locales/it.js
 var error27 = () => {
   const Sizable = {
     string: { unit: "caratteri", verb: "avere" },
@@ -44171,7 +43718,7 @@ function it_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ja.js
+// ../persist/node_modules/zod/v4/locales/ja.js
 var error28 = () => {
   const Sizable = {
     string: { unit: "\u6587\u5B57", verb: "\u3067\u3042\u308B" },
@@ -44284,7 +43831,7 @@ function ja_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ka.js
+// ../persist/node_modules/zod/v4/locales/ka.js
 var error29 = () => {
   const Sizable = {
     string: { unit: "\u10E1\u10D8\u10DB\u10D1\u10DD\u10DA\u10DD", verb: "\u10E3\u10DC\u10D3\u10D0 \u10E8\u10D4\u10D8\u10EA\u10D0\u10D5\u10D3\u10D4\u10E1" },
@@ -44402,7 +43949,7 @@ function ka_default() {
   };
 }
 
-// node_modules/zod/v4/locales/km.js
+// ../persist/node_modules/zod/v4/locales/km.js
 var error30 = () => {
   const Sizable = {
     string: { unit: "\u178F\u17BD\u17A2\u1780\u17D2\u179F\u179A", verb: "\u1782\u17BD\u179A\u1798\u17B6\u1793" },
@@ -44518,12 +44065,12 @@ function km_default() {
   };
 }
 
-// node_modules/zod/v4/locales/kh.js
+// ../persist/node_modules/zod/v4/locales/kh.js
 function kh_default() {
   return km_default();
 }
 
-// node_modules/zod/v4/locales/kn.js
+// ../persist/node_modules/zod/v4/locales/kn.js
 var error31 = () => {
   const Sizable = {
     string: { unit: "\u0C85\u0C95\u0CCD\u0CB7\u0CB0\u0C97\u0CB3\u0CC1", verb: "\u0CB9\u0CCA\u0C82\u0CA6\u0CB2\u0CC1" },
@@ -44639,7 +44186,7 @@ function kn_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ko.js
+// ../persist/node_modules/zod/v4/locales/ko.js
 var error32 = () => {
   const Sizable = {
     string: { unit: "\uBB38\uC790", verb: "to have" },
@@ -44756,7 +44303,7 @@ function ko_default() {
   };
 }
 
-// node_modules/zod/v4/locales/lt.js
+// ../persist/node_modules/zod/v4/locales/lt.js
 var capitalizeFirstCharacter = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
@@ -44964,7 +44511,7 @@ function lt_default() {
   };
 }
 
-// node_modules/zod/v4/locales/mk.js
+// ../persist/node_modules/zod/v4/locales/mk.js
 var error34 = () => {
   const Sizable = {
     string: { unit: "\u0437\u043D\u0430\u0446\u0438", verb: "\u0434\u0430 \u0438\u043C\u0430\u0430\u0442" },
@@ -45079,7 +44626,7 @@ function mk_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ms.js
+// ../persist/node_modules/zod/v4/locales/ms.js
 var error35 = () => {
   const Sizable = {
     string: { unit: "aksara", verb: "mempunyai" },
@@ -45192,7 +44739,7 @@ function ms_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ne.js
+// ../persist/node_modules/zod/v4/locales/ne.js
 var error36 = () => {
   const Sizable = {
     string: { unit: "\u0905\u0915\u094D\u0937\u0930", verb: "\u0939\u0941\u0928\u0941\u092A\u0930\u094D\u091B" },
@@ -45304,7 +44851,7 @@ function ne_default() {
   };
 }
 
-// node_modules/zod/v4/locales/nl.js
+// ../persist/node_modules/zod/v4/locales/nl.js
 var error37 = () => {
   const Sizable = {
     string: { unit: "tekens", verb: "heeft" },
@@ -45420,7 +44967,7 @@ function nl_default() {
   };
 }
 
-// node_modules/zod/v4/locales/nn.js
+// ../persist/node_modules/zod/v4/locales/nn.js
 var error38 = () => {
   const Sizable = {
     string: { unit: "teikn", verb: "\xE5 ha" },
@@ -45534,7 +45081,7 @@ function nn_default() {
   };
 }
 
-// node_modules/zod/v4/locales/no.js
+// ../persist/node_modules/zod/v4/locales/no.js
 var error39 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "\xE5 ha" },
@@ -45648,7 +45195,7 @@ function no_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ota.js
+// ../persist/node_modules/zod/v4/locales/ota.js
 var error40 = () => {
   const Sizable = {
     string: { unit: "harf", verb: "olmal\u0131d\u0131r" },
@@ -45763,7 +45310,7 @@ function ota_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ps.js
+// ../persist/node_modules/zod/v4/locales/ps.js
 var error41 = () => {
   const Sizable = {
     string: { unit: "\u062A\u0648\u06A9\u064A", verb: "\u0648\u0644\u0631\u064A" },
@@ -45883,7 +45430,7 @@ function ps_default() {
   };
 }
 
-// node_modules/zod/v4/locales/pl.js
+// ../persist/node_modules/zod/v4/locales/pl.js
 var error42 = () => {
   const Sizable = {
     string: { unit: "znak\xF3w", verb: "mie\u0107" },
@@ -45998,7 +45545,7 @@ function pl_default() {
   };
 }
 
-// node_modules/zod/v4/locales/pt.js
+// ../persist/node_modules/zod/v4/locales/pt.js
 var error43 = () => {
   const Sizable = {
     string: { unit: "caracteres" },
@@ -46142,7 +45689,7 @@ function pt_default() {
   };
 }
 
-// node_modules/zod/v4/locales/pt-BR.js
+// ../persist/node_modules/zod/v4/locales/pt-BR.js
 var error44 = () => {
   const Sizable = {
     string: { unit: "caracteres" },
@@ -46287,7 +45834,7 @@ function pt_BR_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ro.js
+// ../persist/node_modules/zod/v4/locales/ro.js
 var error45 = () => {
   const Sizable = {
     string: { unit: "caractere", verb: "s\u0103 aib\u0103" },
@@ -46410,7 +45957,7 @@ function ro_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ru.js
+// ../persist/node_modules/zod/v4/locales/ru.js
 function getRussianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -46579,7 +46126,7 @@ function ru_default() {
   };
 }
 
-// node_modules/zod/v4/locales/sk.js
+// ../persist/node_modules/zod/v4/locales/sk.js
 var error47 = () => {
   const Sizable = {
     string: { unit: "znakov", verb: "ma\u0165" },
@@ -46696,7 +46243,7 @@ function sk_default() {
   };
 }
 
-// node_modules/zod/v4/locales/sl.js
+// ../persist/node_modules/zod/v4/locales/sl.js
 var error48 = () => {
   const Sizable = {
     string: { unit: "znakov", verb: "imeti" },
@@ -46811,7 +46358,7 @@ function sl_default() {
   };
 }
 
-// node_modules/zod/v4/locales/sv.js
+// ../persist/node_modules/zod/v4/locales/sv.js
 var error49 = () => {
   const Sizable = {
     string: { unit: "tecken", verb: "att ha" },
@@ -46927,7 +46474,7 @@ function sv_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ta.js
+// ../persist/node_modules/zod/v4/locales/ta.js
 var error50 = () => {
   const Sizable = {
     string: { unit: "\u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0B95\u0BCD\u0B95\u0BB3\u0BCD", verb: "\u0B95\u0BCA\u0BA3\u0BCD\u0B9F\u0BBF\u0BB0\u0BC1\u0B95\u0BCD\u0B95 \u0BB5\u0BC7\u0BA3\u0BCD\u0B9F\u0BC1\u0BAE\u0BCD" },
@@ -47043,7 +46590,7 @@ function ta_default() {
   };
 }
 
-// node_modules/zod/v4/locales/tg.js
+// ../persist/node_modules/zod/v4/locales/tg.js
 var error51 = () => {
   const Sizable = {
     string: { unit: "\u0430\u043B\u043E\u043C\u0430\u0442", verb: "\u0434\u043E\u0448\u0442\u0430 \u0431\u043E\u0448\u0430\u0434" },
@@ -47160,7 +46707,7 @@ function tg_default() {
   };
 }
 
-// node_modules/zod/v4/locales/th.js
+// ../persist/node_modules/zod/v4/locales/th.js
 var error52 = () => {
   const Sizable = {
     string: { unit: "\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23", verb: "\u0E04\u0E27\u0E23\u0E21\u0E35" },
@@ -47276,7 +46823,7 @@ function th_default() {
   };
 }
 
-// node_modules/zod/v4/locales/tk.js
+// ../persist/node_modules/zod/v4/locales/tk.js
 var error53 = () => {
   const Sizable = {
     string: { unit: "simwol", verb: "bolmaly" },
@@ -47384,7 +46931,7 @@ function tk_default() {
   };
 }
 
-// node_modules/zod/v4/locales/tr.js
+// ../persist/node_modules/zod/v4/locales/tr.js
 var error54 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "olmal\u0131" },
@@ -47495,7 +47042,7 @@ function tr_default() {
   };
 }
 
-// node_modules/zod/v4/locales/uk.js
+// ../persist/node_modules/zod/v4/locales/uk.js
 var error55 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0456\u0432", verb: "\u043C\u0430\u0442\u0438\u043C\u0435" },
@@ -47609,12 +47156,12 @@ function uk_default() {
   };
 }
 
-// node_modules/zod/v4/locales/ua.js
+// ../persist/node_modules/zod/v4/locales/ua.js
 function ua_default() {
   return uk_default();
 }
 
-// node_modules/zod/v4/locales/ur.js
+// ../persist/node_modules/zod/v4/locales/ur.js
 var error56 = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0648\u0641", verb: "\u06C1\u0648\u0646\u0627" },
@@ -47730,7 +47277,7 @@ function ur_default() {
   };
 }
 
-// node_modules/zod/v4/locales/uz.js
+// ../persist/node_modules/zod/v4/locales/uz.js
 var error57 = () => {
   const Sizable = {
     string: { unit: "belgi", verb: "bo\u2018lishi kerak" },
@@ -47844,7 +47391,7 @@ function uz_default() {
   };
 }
 
-// node_modules/zod/v4/locales/vi.js
+// ../persist/node_modules/zod/v4/locales/vi.js
 var error58 = () => {
   const Sizable = {
     string: { unit: "k\xFD t\u1EF1", verb: "c\xF3" },
@@ -47958,7 +47505,7 @@ function vi_default() {
   };
 }
 
-// node_modules/zod/v4/locales/zh-CN.js
+// ../persist/node_modules/zod/v4/locales/zh-CN.js
 var error59 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u7B26", verb: "\u5305\u542B" },
@@ -48073,7 +47620,7 @@ function zh_CN_default() {
   };
 }
 
-// node_modules/zod/v4/locales/zh-TW.js
+// ../persist/node_modules/zod/v4/locales/zh-TW.js
 var error60 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u5143", verb: "\u64C1\u6709" },
@@ -48186,7 +47733,7 @@ function zh_TW_default() {
   };
 }
 
-// node_modules/zod/v4/locales/yo.js
+// ../persist/node_modules/zod/v4/locales/yo.js
 var error61 = () => {
   const Sizable = {
     string: { unit: "\xE0mi", verb: "n\xED" },
@@ -48299,7 +47846,7 @@ function yo_default() {
   };
 }
 
-// node_modules/zod/v4/core/registries.js
+// ../persist/node_modules/zod/v4/core/registries.js
 var _a2;
 var $output = /* @__PURE__ */ Symbol("ZodOutput");
 var $input = /* @__PURE__ */ Symbol("ZodInput");
@@ -48349,7 +47896,7 @@ function registry() {
 (_a2 = globalThis).__zod_globalRegistry ?? (_a2.__zod_globalRegistry = registry());
 var globalRegistry = globalThis.__zod_globalRegistry;
 
-// node_modules/zod/v4/core/compile.js
+// ../persist/node_modules/zod/v4/core/compile.js
 var INVALID = Symbol.for("zod.compile.invalid");
 var FALLBACK_FLAG = Symbol.for("zod.compile.fallback");
 var ZodCompileAsyncError = class extends Error {
@@ -49959,7 +49506,7 @@ function generateTransformCheck(doc, ctx, schema, accessor) {
   return accessor;
 }
 
-// node_modules/zod/v4/core/api.js
+// ../persist/node_modules/zod/v4/core/api.js
 function snapshotChecks(def) {
   if (def.checks)
     def.checks = [...def.checks];
@@ -51018,7 +50565,7 @@ function _stringFormat(Class2, format, fnOrRegex, _params = {}) {
   return inst;
 }
 
-// node_modules/zod/v4/core/to-json-schema.js
+// ../persist/node_modules/zod/v4/core/to-json-schema.js
 function assignProps(target, ...sources) {
   for (const source of sources) {
     for (const key of Reflect.ownKeys(source)) {
@@ -51548,7 +51095,7 @@ var createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) =
   return finalize(ctx, schema);
 };
 
-// node_modules/zod/v4/core/json-schema-processors.js
+// ../persist/node_modules/zod/v4/core/json-schema-processors.js
 var narrowMin = (agg, key, value) => {
   if (agg[key] === void 0 || value > agg[key])
     agg[key] = value;
@@ -52296,7 +51843,7 @@ function toJSONSchema(input2, params) {
   return finalize(ctx, input2);
 }
 
-// node_modules/zod/v4/core/json-schema-generator.js
+// ../persist/node_modules/zod/v4/core/json-schema-generator.js
 var JSONSchemaGenerator = class {
   /** @deprecated Access via ctx instead */
   get metadataRegistry() {
@@ -52374,10 +51921,10 @@ var JSONSchemaGenerator = class {
   }
 };
 
-// node_modules/zod/v4/core/json-schema.js
+// ../persist/node_modules/zod/v4/core/json-schema.js
 var json_schema_exports = {};
 
-// node_modules/zod/v4/classic/schemas.js
+// ../persist/node_modules/zod/v4/classic/schemas.js
 var schemas_exports2 = {};
 __export(schemas_exports2, {
   ZodAny: () => ZodAny,
@@ -52558,7 +52105,7 @@ __export(schemas_exports2, {
   xor: () => xor
 });
 
-// node_modules/zod/v4/classic/checks.js
+// ../persist/node_modules/zod/v4/classic/checks.js
 var checks_exports2 = {};
 __export(checks_exports2, {
   endsWith: () => _endsWith,
@@ -52593,7 +52140,7 @@ __export(checks_exports2, {
   uppercase: () => _uppercase
 });
 
-// node_modules/zod/v4/classic/errors.js
+// ../persist/node_modules/zod/v4/classic/errors.js
 var _installedErrorProtos = /* @__PURE__ */ new WeakSet([Object.prototype, Error.prototype]);
 function _lazyMethod(proto, key, make) {
   Object.defineProperty(proto, key, {
@@ -52639,7 +52186,7 @@ var ZodRealError = /* @__PURE__ */ $constructor("ZodError", initializer2, void 0
   Parent: Error
 });
 
-// node_modules/zod/v4/classic/parse.js
+// ../persist/node_modules/zod/v4/classic/parse.js
 var parse2 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
@@ -52653,7 +52200,7 @@ var safeDecode2 = /* @__PURE__ */ _safeDecode(ZodRealError);
 var safeEncodeAsync2 = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
 var safeDecodeAsync2 = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 
-// node_modules/zod/v4/classic/schemas.js
+// ../persist/node_modules/zod/v4/classic/schemas.js
 function _ensureDefaultLocale() {
   if (!globalConfig.localeError)
     config(en_default());
@@ -54118,7 +53665,7 @@ function preprocess(fn, schema) {
   });
 }
 
-// node_modules/zod/v4/classic/compat.js
+// ../persist/node_modules/zod/v4/classic/compat.js
 var ZodIssueCode = {
   invalid_type: "invalid_type",
   too_big: "too_big",
@@ -54144,7 +53691,7 @@ var ZodFirstPartyTypeKind;
 /* @__PURE__ */ (function(ZodFirstPartyTypeKind3) {
 })(ZodFirstPartyTypeKind || (ZodFirstPartyTypeKind = {}));
 
-// node_modules/zod/v4/classic/iso.js
+// ../persist/node_modules/zod/v4/classic/iso.js
 var iso_exports = {};
 __export(iso_exports, {
   ZodISODate: () => ZodISODate,
@@ -54169,7 +53716,7 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
-// node_modules/zod/v4/classic/from-json-schema.js
+// ../persist/node_modules/zod/v4/classic/from-json-schema.js
 var z = {
   ...schemas_exports2,
   ...checks_exports2,
@@ -54902,7 +54449,7 @@ function fromJSONSchema(schema, params) {
   return convertSchema(normalized, ctx);
 }
 
-// node_modules/zod/v4/core/visit.js
+// ../persist/node_modules/zod/v4/core/visit.js
 var RESOLVING = Symbol("z.visit/resolving");
 function visit(schema, fnOrHandlers) {
   const fn = typeof fnOrHandlers === "function" ? fnOrHandlers : (node2, rewritten) => {
@@ -54911,15 +54458,15 @@ function visit(schema, fnOrHandlers) {
   };
   const cache2 = /* @__PURE__ */ new Map();
   function run(s) {
-    const cached2 = cache2.get(s);
-    if (cached2 === RESOLVING) {
+    const cached3 = cache2.get(s);
+    if (cached3 === RESOLVING) {
       return new $ZodLazy({
         type: "lazy",
         getter: () => cache2.get(s)
       });
     }
-    if (cached2 !== void 0)
-      return cached2;
+    if (cached3 !== void 0)
+      return cached3;
     cache2.set(s, RESOLVING);
     const inner = mapInner(s);
     const mapped = fn(inner, inner !== s);
@@ -55057,7 +54604,7 @@ function visit(schema, fnOrHandlers) {
   return run(schema);
 }
 
-// node_modules/zod/v4/classic/deep-partial.js
+// ../persist/node_modules/zod/v4/classic/deep-partial.js
 function deepPartial(schema) {
   return visit(schema, {
     object: (s) => s.partial(),
@@ -55069,7 +54616,7 @@ function deepPartial(schema) {
   });
 }
 
-// node_modules/zod/v4/classic/in-out.js
+// ../persist/node_modules/zod/v4/classic/in-out.js
 function withChecks(side, checks) {
   if (!checks?.length)
     return side;
@@ -55099,7 +54646,7 @@ function output(schema) {
   });
 }
 
-// node_modules/zod/v4/classic/coerce.js
+// ../persist/node_modules/zod/v4/classic/coerce.js
 var coerce_exports = {};
 __export(coerce_exports, {
   bigint: () => bigint3,
@@ -55233,15 +54780,16 @@ var mcp_default = defineMcp({
   tools: [get_my_profile_default, update_my_profile_default, list_my_posts_default, create_post_default, list_notifications_default]
 });
 
-// node_modules/@lovable.dev/mcp-js/dist/package-DudvPdrW.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/package-DudvPdrW.js
 var version4 = "0.24.0";
 
-// node_modules/@lovable.dev/mcp-js/dist/metadata-path-CAkNcfyY.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/metadata-path-CAkNcfyY.js
 var OAUTH_PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
 
-// node_modules/jose/dist/webapi/lib/buffer_utils.js
+// ../persist/node_modules/jose/dist/webapi/lib/buffer_utils.js
 var encoder = new TextEncoder();
 var decoder = new TextDecoder();
+var strictDecoder = new TextDecoder("utf-8", { fatal: true });
 var MAX_INT32 = 2 ** 32;
 function concat(...buffers) {
   const size = buffers.reduce((acc, { length }) => acc + length, 0);
@@ -55265,123 +54813,31 @@ function encode3(string4) {
   return bytes;
 }
 
-// node_modules/jose/dist/webapi/lib/base64.js
-function decodeBase64(encoded) {
-  if (Uint8Array.fromBase64) {
-    return Uint8Array.fromBase64(encoded);
-  }
-  const binary = atob(encoded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-// node_modules/jose/dist/webapi/util/base64url.js
-function decode3(input2) {
-  if (Uint8Array.fromBase64) {
-    return Uint8Array.fromBase64(typeof input2 === "string" ? input2 : decoder.decode(input2), {
-      alphabet: "base64url"
-    });
-  }
-  let encoded = input2;
-  if (encoded instanceof Uint8Array) {
-    encoded = decoder.decode(encoded);
-  }
-  encoded = encoded.replace(/-/g, "+").replace(/_/g, "/");
-  try {
-    return decodeBase64(encoded);
-  } catch {
-    throw new TypeError("The input to be decoded is not correctly encoded.");
-  }
-}
-
-// node_modules/jose/dist/webapi/lib/crypto_key.js
+// ../persist/node_modules/jose/dist/webapi/lib/crypto_key.js
 var unusable = (name, prop = "algorithm.name") => new TypeError(`CryptoKey does not support this operation, its ${prop} must be ${name}`);
-var isAlgorithm = (algorithm, name) => algorithm.name === name;
-function getHashLength(hash2) {
-  return parseInt(hash2.name.slice(4), 10);
-}
-function checkHashLength(algorithm, expected) {
-  const actual = getHashLength(algorithm.hash);
-  if (actual !== expected)
-    throw unusable(`SHA-${expected}`, "algorithm.hash");
-}
-function getNamedCurve(alg) {
-  switch (alg) {
-    case "ES256":
-      return "P-256";
-    case "ES384":
-      return "P-384";
-    case "ES512":
-      return "P-521";
-    default:
-      throw new Error("unreachable");
-  }
-}
 function checkUsage(key, usage) {
   if (usage && !key.usages.includes(usage)) {
     throw new TypeError(`CryptoKey does not support this operation, its usages must include ${usage}.`);
   }
 }
-function checkSigCryptoKey(key, alg, usage) {
-  switch (alg) {
-    case "HS256":
-    case "HS384":
-    case "HS512": {
-      if (!isAlgorithm(key.algorithm, "HMAC"))
-        throw unusable("HMAC");
-      checkHashLength(key.algorithm, parseInt(alg.slice(2), 10));
-      break;
-    }
-    case "RS256":
-    case "RS384":
-    case "RS512": {
-      if (!isAlgorithm(key.algorithm, "RSASSA-PKCS1-v1_5"))
-        throw unusable("RSASSA-PKCS1-v1_5");
-      checkHashLength(key.algorithm, parseInt(alg.slice(2), 10));
-      break;
-    }
-    case "PS256":
-    case "PS384":
-    case "PS512": {
-      if (!isAlgorithm(key.algorithm, "RSA-PSS"))
-        throw unusable("RSA-PSS");
-      checkHashLength(key.algorithm, parseInt(alg.slice(2), 10));
-      break;
-    }
-    case "Ed25519":
-    case "EdDSA": {
-      if (!isAlgorithm(key.algorithm, "Ed25519"))
-        throw unusable("Ed25519");
-      break;
-    }
-    case "ML-DSA-44":
-    case "ML-DSA-65":
-    case "ML-DSA-87": {
-      if (!isAlgorithm(key.algorithm, alg))
-        throw unusable(alg);
-      break;
-    }
-    case "ES256":
-    case "ES384":
-    case "ES512": {
-      if (!isAlgorithm(key.algorithm, "ECDSA"))
-        throw unusable("ECDSA");
-      const expected = getNamedCurve(alg);
-      const actual = key.algorithm.namedCurve;
-      if (actual !== expected)
-        throw unusable(expected, "algorithm.namedCurve");
-      break;
-    }
-    default:
-      throw new TypeError("CryptoKey does not support this operation");
+function checkCryptoKey(key, expected, usage) {
+  const algorithm = key.algorithm;
+  if (algorithm.name !== expected.name) {
+    throw unusable(expected.name);
+  }
+  if (expected.hash && algorithm.hash?.name !== expected.hash) {
+    throw unusable(expected.hash, "algorithm.hash");
+  }
+  if (expected.namedCurve && algorithm.namedCurve !== expected.namedCurve) {
+    throw unusable(expected.namedCurve, "algorithm.namedCurve");
+  }
+  if (expected.length !== void 0 && algorithm.length !== expected.length) {
+    throw unusable(expected.length, "algorithm.length");
   }
   checkUsage(key, usage);
 }
 
-// node_modules/jose/dist/webapi/lib/invalid_key_input.js
+// ../persist/node_modules/jose/dist/webapi/lib/invalid_key_input.js
 function message(msg, actual, ...types) {
   types = types.filter(Boolean);
   if (types.length > 2) {
@@ -55403,10 +54859,9 @@ function message(msg, actual, ...types) {
   }
   return msg;
 }
-var invalidKeyInput = (actual, ...types) => message("Key must be ", actual, ...types);
 var withAlg = (alg, actual, ...types) => message(`Key for the ${alg} algorithm must be `, actual, ...types);
 
-// node_modules/jose/dist/webapi/util/errors.js
+// ../persist/node_modules/jose/dist/webapi/util/errors.js
 var JOSEError = class extends Error {
   static code = "ERR_JOSE_GENERIC";
   code = "ERR_JOSE_GENERIC";
@@ -55470,7 +54925,8 @@ var JWKSNoMatchingKey = class extends JOSEError {
   }
 };
 var JWKSMultipleMatchingKeys = class extends JOSEError {
-  [Symbol.asyncIterator];
+  [Symbol.asyncIterator] = async function* () {
+  };
   static code = "ERR_JWKS_MULTIPLE_MATCHING_KEYS";
   code = "ERR_JWKS_MULTIPLE_MATCHING_KEYS";
   constructor(message2 = "multiple matching keys found in the JSON Web Key Set", options) {
@@ -55485,7 +54941,7 @@ var JWSSignatureVerificationFailed = class extends JOSEError {
   }
 };
 
-// node_modules/jose/dist/webapi/lib/is_key_like.js
+// ../persist/node_modules/jose/dist/webapi/lib/is_key_like.js
 var isCryptoKey = (key) => {
   if (key?.[Symbol.toStringTag] === "CryptoKey")
     return true;
@@ -55498,17 +54954,46 @@ var isCryptoKey = (key) => {
 var isKeyObject = (key) => key?.[Symbol.toStringTag] === "KeyObject";
 var isKeyLike = (key) => isCryptoKey(key) || isKeyObject(key);
 
-// node_modules/jose/dist/webapi/lib/helpers.js
-var unprotected = Symbol();
-function decodeBase64url(value, label, ErrorClass) {
+// ../persist/node_modules/jose/dist/webapi/lib/base64.js
+function decodeBase64(encoded) {
+  if (Uint8Array.fromBase64) {
+    return Uint8Array.fromBase64(encoded);
+  }
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// ../persist/node_modules/jose/dist/webapi/util/base64url.js
+function decode3(input2) {
+  if (Uint8Array.fromBase64) {
+    try {
+      return Uint8Array.fromBase64(typeof input2 === "string" ? input2 : decoder.decode(input2), {
+        alphabet: "base64url"
+      });
+    } catch (cause) {
+      throw new TypeError("The input to be decoded is not correctly encoded.", { cause });
+    }
+  }
+  let encoded = input2;
+  if (encoded instanceof Uint8Array) {
+    encoded = decoder.decode(encoded);
+  }
+  if (encoded.includes("+") || encoded.includes("/")) {
+    throw new TypeError("The input to be decoded is not correctly encoded.");
+  }
+  encoded = encoded.replace(/-/g, "+").replace(/_/g, "/");
   try {
-    return decode3(value);
+    return decodeBase64(encoded);
   } catch {
-    throw new ErrorClass(`Failed to base64url decode the ${label}`);
+    throw new TypeError("The input to be decoded is not correctly encoded.");
   }
 }
 
-// node_modules/jose/dist/webapi/lib/type_checks.js
+// ../persist/node_modules/jose/dist/webapi/lib/type_checks.js
 var isObjectLike = (value) => typeof value === "object" && value !== null;
 function isObject2(input2) {
   if (!isObjectLike(input2) || Object.prototype.toString.call(input2) !== "[object Object]") {
@@ -55549,372 +55034,273 @@ var isPrivateJWK = (key) => key.kty !== "oct" && (key.kty === "AKP" && typeof ke
 var isPublicJWK = (key) => key.kty !== "oct" && key.d === void 0 && key.priv === void 0;
 var isSecretJWK = (key) => key.kty === "oct" && typeof key.k === "string";
 
-// node_modules/jose/dist/webapi/lib/signing.js
-function checkKeyLength(alg, key) {
-  if (alg.startsWith("RS") || alg.startsWith("PS")) {
-    const { modulusLength } = key.algorithm;
-    if (typeof modulusLength !== "number" || modulusLength < 2048) {
-      throw new TypeError(`${alg} requires key modulusLength to be 2048 bits or larger`);
-    }
-  }
-}
-function subtleAlgorithm(alg, algorithm) {
-  const hash2 = `SHA-${alg.slice(-3)}`;
-  switch (alg) {
-    case "HS256":
-    case "HS384":
-    case "HS512":
-      return { hash: hash2, name: "HMAC" };
-    case "PS256":
-    case "PS384":
-    case "PS512":
-      return { hash: hash2, name: "RSA-PSS", saltLength: parseInt(alg.slice(-3), 10) >> 3 };
-    case "RS256":
-    case "RS384":
-    case "RS512":
-      return { hash: hash2, name: "RSASSA-PKCS1-v1_5" };
-    case "ES256":
-    case "ES384":
-    case "ES512":
-      return { hash: hash2, name: "ECDSA", namedCurve: algorithm.namedCurve };
-    case "Ed25519":
-    case "EdDSA":
-      return { name: "Ed25519" };
-    case "ML-DSA-44":
-    case "ML-DSA-65":
-    case "ML-DSA-87":
-      return { name: alg };
-    default:
-      throw new JOSENotSupported(`alg ${alg} is not supported either by JOSE or your javascript runtime`);
-  }
-}
-async function getSigKey(alg, key, usage) {
-  if (key instanceof Uint8Array) {
-    if (!alg.startsWith("HS")) {
-      throw new TypeError(invalidKeyInput(key, "CryptoKey", "KeyObject", "JSON Web Key"));
-    }
-    return crypto.subtle.importKey("raw", key, { hash: `SHA-${alg.slice(-3)}`, name: "HMAC" }, false, [usage]);
-  }
-  checkSigCryptoKey(key, alg, usage);
-  return key;
-}
-async function verify(alg, key, signature, data) {
-  const cryptoKey = await getSigKey(alg, key, "verify");
-  checkKeyLength(alg, cryptoKey);
-  const algorithm = subtleAlgorithm(alg, cryptoKey.algorithm);
+// ../persist/node_modules/jose/dist/webapi/lib/helpers.js
+var unprotected = Symbol();
+function decodeBase64url(value, label, ErrorClass) {
   try {
-    return await crypto.subtle.verify(algorithm, cryptoKey, signature, data);
+    return decode3(value);
   } catch {
-    return false;
+    throw new ErrorClass(`Failed to base64url decode the ${label}`);
   }
+}
+function encodeBase64url(value, label, ErrorClass) {
+  try {
+    return encode3(value);
+  } catch {
+    throw new ErrorClass(`The ${label} is not a valid base64url string`);
+  }
+}
+function parseJoseHeader(b64, ErrorClass, message2) {
+  let parsed;
+  try {
+    parsed = JSON.parse(strictDecoder.decode(decode3(b64)));
+  } catch {
+    throw new ErrorClass(message2);
+  }
+  if (!isObject2(parsed)) {
+    throw new ErrorClass(message2);
+  }
+  return parsed;
 }
 
-// node_modules/jose/dist/webapi/lib/jwk_to_key.js
+// ../persist/node_modules/jose/dist/webapi/lib/jwk_to_key.js
 var unsupportedAlg = 'Invalid or unsupported JWK "alg" (Algorithm) Parameter value';
-function subtleMapping(jwk) {
-  let algorithm;
-  let keyUsages;
-  switch (jwk.kty) {
-    case "AKP": {
-      switch (jwk.alg) {
-        case "ML-DSA-44":
-        case "ML-DSA-65":
-        case "ML-DSA-87":
-          algorithm = { name: jwk.alg };
-          keyUsages = jwk.priv ? ["sign"] : ["verify"];
-          break;
-        default:
-          throw new JOSENotSupported(unsupportedAlg);
-      }
-      break;
-    }
-    case "RSA": {
-      switch (jwk.alg) {
-        case "PS256":
-        case "PS384":
-        case "PS512":
-          algorithm = { name: "RSA-PSS", hash: `SHA-${jwk.alg.slice(-3)}` };
-          keyUsages = jwk.d ? ["sign"] : ["verify"];
-          break;
-        case "RS256":
-        case "RS384":
-        case "RS512":
-          algorithm = { name: "RSASSA-PKCS1-v1_5", hash: `SHA-${jwk.alg.slice(-3)}` };
-          keyUsages = jwk.d ? ["sign"] : ["verify"];
-          break;
-        case "RSA-OAEP":
-        case "RSA-OAEP-256":
-        case "RSA-OAEP-384":
-        case "RSA-OAEP-512":
-          algorithm = {
-            name: "RSA-OAEP",
-            hash: `SHA-${parseInt(jwk.alg.slice(-3), 10) || 1}`
-          };
-          keyUsages = jwk.d ? ["decrypt", "unwrapKey"] : ["encrypt", "wrapKey"];
-          break;
-        default:
-          throw new JOSENotSupported(unsupportedAlg);
-      }
-      break;
-    }
-    case "EC": {
-      switch (jwk.alg) {
-        case "ES256":
-        case "ES384":
-        case "ES512":
-          algorithm = {
-            name: "ECDSA",
-            namedCurve: { ES256: "P-256", ES384: "P-384", ES512: "P-521" }[jwk.alg]
-          };
-          keyUsages = jwk.d ? ["sign"] : ["verify"];
-          break;
-        case "ECDH-ES":
-        case "ECDH-ES+A128KW":
-        case "ECDH-ES+A192KW":
-        case "ECDH-ES+A256KW":
-          algorithm = { name: "ECDH", namedCurve: jwk.crv };
-          keyUsages = jwk.d ? ["deriveBits"] : [];
-          break;
-        default:
-          throw new JOSENotSupported(unsupportedAlg);
-      }
-      break;
-    }
-    case "OKP": {
-      switch (jwk.alg) {
-        case "Ed25519":
-        case "EdDSA":
-          algorithm = { name: "Ed25519" };
-          keyUsages = jwk.d ? ["sign"] : ["verify"];
-          break;
-        case "ECDH-ES":
-        case "ECDH-ES+A128KW":
-        case "ECDH-ES+A192KW":
-        case "ECDH-ES+A256KW":
-          algorithm = { name: jwk.crv };
-          keyUsages = jwk.d ? ["deriveBits"] : [];
-          break;
-        default:
-          throw new JOSENotSupported(unsupportedAlg);
-      }
-      break;
-    }
-    default:
-      throw new JOSENotSupported('Invalid or unsupported JWK "kty" (Key Type) Parameter value');
+function subtleParams(entry, jwk) {
+  if (!entry.kty.includes(jwk.kty)) {
+    throw new JOSENotSupported(unsupportedAlg);
   }
-  return { algorithm, keyUsages };
+  return entry.subtleFor?.({ kty: jwk.kty, crv: jwk.crv }) ?? entry.subtle;
 }
-async function jwkToKey(jwk) {
-  if (!jwk.alg) {
-    throw new TypeError('"alg" argument is required when "jwk.alg" is not present');
+async function jwkToKey(entry, jwk) {
+  if (jwk.kty === "RSA" && "oth" in jwk && jwk.oth !== void 0) {
+    throw new JOSENotSupported('RSA JWK "oth" (Other Primes Info) Parameter value is not supported');
   }
-  const { algorithm, keyUsages } = subtleMapping(jwk);
+  const algorithm = subtleParams(entry, jwk);
+  const isPrivate = !!(jwk.d || jwk.priv);
+  const keyUsages = isPrivate ? entry.usages.private : entry.usages.public;
   const keyData = { ...jwk };
   if (keyData.kty !== "AKP") {
     delete keyData.alg;
   }
   delete keyData.use;
-  return crypto.subtle.importKey("jwk", keyData, algorithm, jwk.ext ?? (jwk.d || jwk.priv ? false : true), jwk.key_ops ?? keyUsages);
+  return crypto.subtle.importKey("jwk", keyData, algorithm, jwk.ext ?? (isPrivate ? false : true), jwk.key_ops ?? keyUsages);
 }
 
-// node_modules/jose/dist/webapi/lib/normalize_key.js
-var unusableForAlg = "given KeyObject instance cannot be used for this algorithm";
-var cache;
-var handleJWK = async (key, jwk, alg, freeze = false) => {
-  cache ||= /* @__PURE__ */ new WeakMap();
-  let cached2 = cache.get(key);
-  if (cached2?.[alg]) {
-    return cached2[alg];
+// ../persist/node_modules/jose/dist/webapi/lib/key.js
+var tag = (key) => key[Symbol.toStringTag];
+var jwkMatchesOp = (entry, key, usage) => {
+  const { alg } = entry;
+  if (key.use !== void 0) {
+    let expected;
+    switch (usage) {
+      case "sign":
+      case "verify":
+        expected = "sig";
+        break;
+      case "encrypt":
+      case "decrypt":
+        expected = "enc";
+        break;
+    }
+    if (key.use !== expected) {
+      throw new TypeError(`Invalid key for this operation, its "use" must be "${expected}" when present`);
+    }
   }
-  const cryptoKey = await jwkToKey({ ...jwk, alg });
-  if (freeze)
-    Object.freeze(key);
-  if (!cached2) {
-    cache.set(key, { [alg]: cryptoKey });
-  } else {
-    cached2[alg] = cryptoKey;
+  if (key.alg !== void 0 && key.alg !== alg) {
+    throw new TypeError(`Invalid key for this operation, its "alg" must be "${alg}" when present`);
   }
-  return cryptoKey;
+  if (Array.isArray(key.key_ops)) {
+    const expectedKeyOp = usage === "encrypt" || usage === "decrypt" ? entry.keyOps?.[usage] : usage;
+    if (expectedKeyOp && key.key_ops?.includes?.(expectedKeyOp) === false) {
+      throw new TypeError(`Invalid key for this operation, its "key_ops" must include "${expectedKeyOp}" when present`);
+    }
+  }
+  return true;
 };
-var handleKeyObject = (keyObject, alg) => {
-  cache ||= /* @__PURE__ */ new WeakMap();
-  let cached2 = cache.get(keyObject);
-  if (cached2?.[alg]) {
-    return cached2[alg];
-  }
-  const isPublic = keyObject.type === "public";
-  const extractable = isPublic ? true : false;
-  let cryptoKey;
-  if (keyObject.asymmetricKeyType === "x25519") {
-    switch (alg) {
-      case "ECDH-ES":
-      case "ECDH-ES+A128KW":
-      case "ECDH-ES+A192KW":
-      case "ECDH-ES+A256KW":
-        break;
-      default:
-        throw new TypeError(unusableForAlg);
-    }
-    cryptoKey = keyObject.toCryptoKey(keyObject.asymmetricKeyType, extractable, isPublic ? [] : ["deriveBits"]);
-  }
-  if (keyObject.asymmetricKeyType === "ed25519") {
-    if (alg !== "EdDSA" && alg !== "Ed25519") {
-      throw new TypeError(unusableForAlg);
-    }
-    cryptoKey = keyObject.toCryptoKey(keyObject.asymmetricKeyType, extractable, [
-      isPublic ? "verify" : "sign"
-    ]);
-  }
-  switch (keyObject.asymmetricKeyType) {
-    case "ml-dsa-44":
-    case "ml-dsa-65":
-    case "ml-dsa-87": {
-      if (alg !== keyObject.asymmetricKeyType.toUpperCase()) {
-        throw new TypeError(unusableForAlg);
-      }
-      cryptoKey = keyObject.toCryptoKey(keyObject.asymmetricKeyType, extractable, [
-        isPublic ? "verify" : "sign"
-      ]);
-    }
-  }
-  if (keyObject.asymmetricKeyType === "rsa") {
-    let hash2;
-    switch (alg) {
-      case "RSA-OAEP":
-        hash2 = "SHA-1";
-        break;
-      case "RS256":
-      case "PS256":
-      case "RSA-OAEP-256":
-        hash2 = "SHA-256";
-        break;
-      case "RS384":
-      case "PS384":
-      case "RSA-OAEP-384":
-        hash2 = "SHA-384";
-        break;
-      case "RS512":
-      case "PS512":
-      case "RSA-OAEP-512":
-        hash2 = "SHA-512";
-        break;
-      default:
-        throw new TypeError(unusableForAlg);
-    }
-    if (alg.startsWith("RSA-OAEP")) {
-      return keyObject.toCryptoKey({
-        name: "RSA-OAEP",
-        hash: hash2
-      }, extractable, isPublic ? ["encrypt"] : ["decrypt"]);
-    }
-    cryptoKey = keyObject.toCryptoKey({
-      name: alg.startsWith("PS") ? "RSA-PSS" : "RSASSA-PKCS1-v1_5",
-      hash: hash2
-    }, extractable, [isPublic ? "verify" : "sign"]);
-  }
-  if (keyObject.asymmetricKeyType === "ec") {
-    const nist = /* @__PURE__ */ new Map([
-      ["prime256v1", "P-256"],
-      ["secp384r1", "P-384"],
-      ["secp521r1", "P-521"]
-    ]);
-    const namedCurve = nist.get(keyObject.asymmetricKeyDetails?.namedCurve);
-    if (!namedCurve) {
-      throw new TypeError(unusableForAlg);
-    }
-    const expectedCurve = { ES256: "P-256", ES384: "P-384", ES512: "P-521" };
-    if (expectedCurve[alg] && namedCurve === expectedCurve[alg]) {
-      cryptoKey = keyObject.toCryptoKey({
-        name: "ECDSA",
-        namedCurve
-      }, extractable, [isPublic ? "verify" : "sign"]);
-    }
-    if (alg.startsWith("ECDH-ES")) {
-      cryptoKey = keyObject.toCryptoKey({
-        name: "ECDH",
-        namedCurve
-      }, extractable, isPublic ? [] : ["deriveBits"]);
-    }
-  }
-  if (!cryptoKey) {
-    throw new TypeError(unusableForAlg);
-  }
-  if (!cached2) {
-    cache.set(keyObject, { [alg]: cryptoKey });
-  } else {
-    cached2[alg] = cryptoKey;
-  }
-  return cryptoKey;
-};
-async function normalizeKey(key, alg) {
-  if (key instanceof Uint8Array) {
-    return key;
-  }
-  if (isCryptoKey(key)) {
-    return key;
-  }
-  if (isKeyObject(key)) {
-    if (key.type === "secret") {
-      return key.export();
-    }
-    if ("toCryptoKey" in key && typeof key.toCryptoKey === "function") {
-      try {
-        return handleKeyObject(key, alg);
-      } catch (err) {
-        if (err instanceof TypeError) {
-          throw err;
-        }
-      }
-    }
-    let jwk = key.export({ format: "jwk" });
-    return handleJWK(key, jwk, alg);
-  }
+var symmetricTypeCheck = (entry, key, usage) => {
+  const { alg } = entry;
+  if (key instanceof Uint8Array)
+    return { kind: BYTES, key };
   if (isJWK(key)) {
-    if (key.k) {
-      return decode3(key.k);
-    }
-    return handleJWK(key, key, alg, true);
+    if (isSecretJWK(key) && jwkMatchesOp(entry, key, usage))
+      return { kind: JWK, key };
+    throw new TypeError(`JSON Web Key for symmetric algorithms must have JWK "kty" (Key Type) equal to "oct" and the JWK "k" (Key Value) present`);
   }
-  throw new Error("unreachable");
+  if (!isKeyLike(key)) {
+    throw new TypeError(withAlg(alg, key, "CryptoKey", "KeyObject", "JSON Web Key", "Uint8Array"));
+  }
+  if (key.type !== "secret") {
+    throw new TypeError(`${tag(key)} instances for symmetric algorithms must be of type "secret"`);
+  }
+  return isCryptoKey(key) ? { kind: CRYPTO, key } : { kind: KEYOBJECT, key };
+};
+var asymmetricTypeCheck = (entry, key, usage) => {
+  const { alg } = entry;
+  if (isJWK(key)) {
+    switch (usage) {
+      case "decrypt":
+      case "sign":
+        if (isPrivateJWK(key) && jwkMatchesOp(entry, key, usage))
+          return { kind: JWK, key };
+        throw new TypeError(`JSON Web Key for this operation must be a private JWK`);
+      case "encrypt":
+      case "verify":
+        if (isPublicJWK(key) && jwkMatchesOp(entry, key, usage))
+          return { kind: JWK, key };
+        throw new TypeError(`JSON Web Key for this operation must be a public JWK`);
+    }
+  }
+  if (!isKeyLike(key)) {
+    throw new TypeError(withAlg(alg, key, "CryptoKey", "KeyObject", "JSON Web Key"));
+  }
+  if (key.type === "secret") {
+    throw new TypeError(`${tag(key)} instances for asymmetric algorithms must not be of type "secret"`);
+  }
+  if (key.type === "public") {
+    switch (usage) {
+      case "sign":
+        throw new TypeError(`${tag(key)} instances for asymmetric algorithm signing must be of type "private"`);
+      case "decrypt":
+        throw new TypeError(`${tag(key)} instances for asymmetric algorithm decryption must be of type "private"`);
+    }
+  }
+  if (key.type === "private") {
+    switch (usage) {
+      case "verify":
+        throw new TypeError(`${tag(key)} instances for asymmetric algorithm verifying must be of type "public"`);
+      case "encrypt":
+        throw new TypeError(`${tag(key)} instances for asymmetric algorithm encryption must be of type "public"`);
+    }
+  }
+  return isCryptoKey(key) ? { kind: CRYPTO, key } : { kind: KEYOBJECT, key };
+};
+var BYTES = Symbol();
+var CRYPTO = Symbol();
+var KEYOBJECT = Symbol();
+var JWK = Symbol();
+function checkKeyType(entry, key, usage) {
+  return entry.symmetric ? symmetricTypeCheck(entry, key, usage) : asymmetricTypeCheck(entry, key, usage);
+}
+var cache;
+var nist = {
+  __proto__: null,
+  prime256v1: "P-256",
+  secp384r1: "P-384",
+  secp521r1: "P-521"
+};
+function cached2(key, alg) {
+  cache ||= /* @__PURE__ */ new WeakMap();
+  return cache.get(key)?.[alg];
+}
+function store(key, alg, cryptoKey) {
+  const entry = cache.get(key);
+  if (entry) {
+    entry[alg] = cryptoKey;
+  } else {
+    cache.set(key, { [alg]: cryptoKey });
+  }
+  return cryptoKey;
+}
+var handleJWK = async (key, jwk, entry) => {
+  const hit = cached2(key, entry.alg);
+  if (hit)
+    return hit;
+  const cryptoKey = await jwkToKey(entry, { ...jwk, alg: entry.alg });
+  return store(key, entry.alg, cryptoKey);
+};
+var handleKeyObject = (keyObject, entry) => {
+  const hit = cached2(keyObject, entry.alg);
+  if (hit)
+    return hit;
+  const isPublic = keyObject.type === "public";
+  const usages = isPublic ? entry.usages.public : entry.usages.private;
+  const { asymmetricKeyType } = keyObject;
+  const crv = nist[keyObject.asymmetricKeyDetails?.namedCurve];
+  const params = entry.subtleFor?.({ crv, asymmetricKeyType }) ?? entry.subtle;
+  return store(keyObject, entry.alg, keyObject.toCryptoKey(params, isPublic, usages));
+};
+async function prepareKey(entry, key, usage) {
+  const tagged = checkKeyType(entry, key, usage);
+  switch (tagged.kind) {
+    case BYTES:
+    case CRYPTO:
+      return tagged.key;
+    case JWK: {
+      if (tagged.key.k) {
+        return decode3(tagged.key.k);
+      }
+      if (!Object.isFrozen(tagged.key)) {
+        const { key_ops } = tagged.key;
+        if (Array.isArray(key_ops))
+          Object.freeze(key_ops);
+        Object.freeze(tagged.key);
+      }
+      return handleJWK(tagged.key, tagged.key, entry);
+    }
+    case KEYOBJECT: {
+      const keyObject = tagged.key;
+      if (keyObject.type === "secret") {
+        return keyObject.export();
+      }
+      if ("toCryptoKey" in keyObject && typeof keyObject.toCryptoKey === "function") {
+        return handleKeyObject(keyObject, entry);
+      }
+      return handleJWK(keyObject, keyObject.export({ format: "jwk" }), entry);
+    }
+  }
 }
 
-// node_modules/jose/dist/webapi/key/import.js
-async function importJWK(jwk, alg, options) {
-  if (!isObject2(jwk)) {
-    throw new TypeError("JWK must be an object");
+// ../persist/node_modules/jose/dist/webapi/lib/key_descriptor.js
+function table(entries) {
+  const out = { __proto__: null };
+  for (const alg of Object.keys(entries)) {
+    out[alg] = { ...entries[alg], alg };
   }
-  let ext;
-  alg ??= jwk.alg;
-  ext ??= options?.extractable ?? jwk.ext;
-  switch (jwk.kty) {
-    case "oct":
-      if (typeof jwk.k !== "string" || !jwk.k) {
-        throw new TypeError('missing "k" (Key Value) Parameter value');
-      }
-      return decode3(jwk.k);
-    case "RSA":
-      if ("oth" in jwk && jwk.oth !== void 0) {
-        throw new JOSENotSupported('RSA JWK "oth" (Other Primes Info) Parameter value is not supported');
-      }
-      return jwkToKey({ ...jwk, alg, ext });
-    case "AKP": {
-      if (typeof jwk.alg !== "string" || !jwk.alg) {
-        throw new TypeError('missing "alg" (Algorithm) Parameter value');
-      }
-      if (alg !== void 0 && alg !== jwk.alg) {
-        throw new TypeError("JWK alg and alg option value mismatch");
-      }
-      return jwkToKey({ ...jwk, ext });
-    }
-    case "EC":
-    case "OKP":
-      return jwkToKey({ ...jwk, alg, ext });
-    default:
-      throw new JOSENotSupported('Unsupported "kty" (Key Type) Parameter value');
+  return out;
+}
+
+// ../persist/node_modules/jose/dist/webapi/lib/signing.js
+function checkModulusLength(alg, key) {
+  const { modulusLength } = key.algorithm;
+  if (typeof modulusLength !== "number" || modulusLength < 2048) {
+    throw new TypeError(`${alg} requires key modulusLength to be 2048 bits or larger`);
+  }
+}
+function checkSigCryptoKey(entry, key, usage) {
+  checkCryptoKey(key, entry.subtle, usage);
+  if (entry.minModulusLength) {
+    checkModulusLength(entry.alg, key);
+  }
+}
+async function getSigKey(entry, key, usage) {
+  if (key instanceof Uint8Array) {
+    return crypto.subtle.importKey("raw", key, entry.subtle, false, [
+      usage
+    ]);
+  }
+  checkSigCryptoKey(entry, key, usage);
+  return key;
+}
+async function verify(entry, key, signature, data) {
+  const cryptoKey = await getSigKey(entry, key, "verify");
+  try {
+    return await crypto.subtle.verify(entry.operation, cryptoKey, signature, data);
+  } catch {
+    return false;
   }
 }
 
-// node_modules/jose/dist/webapi/lib/validate_crit.js
+// ../persist/node_modules/jose/dist/webapi/lib/options.js
+var JWS_RECOGNIZED = /* @__PURE__ */ new Map([["b64", true]]);
+function validateAlgorithms(option, algorithms) {
+  if (algorithms !== void 0 && (!Array.isArray(algorithms) || algorithms.some((s) => typeof s !== "string"))) {
+    throw new TypeError(`"${option}" option must be an array of strings`);
+  }
+  if (!algorithms) {
+    return void 0;
+  }
+  return new Set(algorithms);
+}
 function validateCrit(Err, recognizedDefault, recognizedOption, protectedHeader, joseHeader) {
   if (joseHeader.crit !== void 0 && protectedHeader?.crit === void 0) {
     throw new Err('"crit" (Critical) Header Parameter MUST be integrity protected');
@@ -55945,174 +55331,102 @@ function validateCrit(Err, recognizedDefault, recognizedOption, protectedHeader,
   return new Set(protectedHeader.crit);
 }
 
-// node_modules/jose/dist/webapi/lib/validate_algorithms.js
-function validateAlgorithms(option, algorithms) {
-  if (algorithms !== void 0 && (!Array.isArray(algorithms) || algorithms.some((s) => typeof s !== "string"))) {
-    throw new TypeError(`"${option}" option must be an array of strings`);
+// ../persist/node_modules/jose/dist/webapi/lib/jws_algorithms.js
+var sig = { public: ["verify"], private: ["sign"] };
+function hmac(bits) {
+  const subtle = { name: "HMAC", hash: `SHA-${bits}` };
+  return { kty: ["oct"], symmetric: true, subtle, operation: subtle, usages: sig };
+}
+function rsa(name, bits, saltLength) {
+  const subtle = { name, hash: `SHA-${bits}` };
+  return {
+    kty: ["RSA"],
+    subtle,
+    operation: saltLength ? { ...subtle, saltLength } : subtle,
+    usages: sig,
+    minModulusLength: 2048
+  };
+}
+function ecdsa(crv, bits) {
+  return {
+    kty: ["EC"],
+    crv,
+    subtle: { name: "ECDSA", namedCurve: crv },
+    operation: { name: "ECDSA", hash: `SHA-${bits}` },
+    usages: sig
+  };
+}
+function eddsa() {
+  const subtle = { name: "Ed25519" };
+  return {
+    kty: ["OKP"],
+    crv: "Ed25519",
+    subtle,
+    operation: subtle,
+    usages: sig
+  };
+}
+function mldsa(name) {
+  const subtle = { name };
+  return {
+    kty: ["AKP"],
+    subtle,
+    operation: subtle,
+    usages: sig
+  };
+}
+var JWS = table({
+  HS256: hmac(256),
+  HS384: hmac(384),
+  HS512: hmac(512),
+  RS256: rsa("RSASSA-PKCS1-v1_5", 256),
+  RS384: rsa("RSASSA-PKCS1-v1_5", 384),
+  RS512: rsa("RSASSA-PKCS1-v1_5", 512),
+  PS256: rsa("RSA-PSS", 256, 32),
+  PS384: rsa("RSA-PSS", 384, 48),
+  PS512: rsa("RSA-PSS", 512, 64),
+  ES256: ecdsa("P-256", 256),
+  ES384: ecdsa("P-384", 384),
+  ES512: ecdsa("P-521", 512),
+  EdDSA: eddsa(),
+  Ed25519: eddsa(),
+  "ML-DSA-44": mldsa("ML-DSA-44"),
+  "ML-DSA-65": mldsa("ML-DSA-65"),
+  "ML-DSA-87": mldsa("ML-DSA-87")
+});
+function jwsAlgorithm(alg) {
+  const entry = JWS[alg];
+  if (!entry) {
+    throw new JOSENotSupported(`alg ${alg} is not supported either by JOSE or your javascript runtime`);
   }
-  if (!algorithms) {
-    return void 0;
-  }
-  return new Set(algorithms);
+  return entry;
+}
+function maybeJWSAlgorithm(alg) {
+  return JWS[alg];
 }
 
-// node_modules/jose/dist/webapi/lib/check_key_type.js
-var tag = (key) => key?.[Symbol.toStringTag];
-var jwkMatchesOp = (alg, key, usage) => {
-  if (key.use !== void 0) {
-    let expected;
-    switch (usage) {
-      case "sign":
-      case "verify":
-        expected = "sig";
-        break;
-      case "encrypt":
-      case "decrypt":
-        expected = "enc";
-        break;
-    }
-    if (key.use !== expected) {
-      throw new TypeError(`Invalid key for this operation, its "use" must be "${expected}" when present`);
-    }
-  }
-  if (key.alg !== void 0 && key.alg !== alg) {
-    throw new TypeError(`Invalid key for this operation, its "alg" must be "${alg}" when present`);
-  }
-  if (Array.isArray(key.key_ops)) {
-    let expectedKeyOp;
-    switch (true) {
-      case (usage === "sign" || usage === "verify"):
-      case alg === "dir":
-      case alg.includes("CBC-HS"):
-        expectedKeyOp = usage;
-        break;
-      case alg.startsWith("PBES2"):
-        expectedKeyOp = "deriveBits";
-        break;
-      case /^A\d{3}(?:GCM)?(?:KW)?$/.test(alg):
-        if (!alg.includes("GCM") && alg.endsWith("KW")) {
-          expectedKeyOp = usage === "encrypt" ? "wrapKey" : "unwrapKey";
-        } else {
-          expectedKeyOp = usage;
-        }
-        break;
-      case (usage === "encrypt" && alg.startsWith("RSA")):
-        expectedKeyOp = "wrapKey";
-        break;
-      case usage === "decrypt":
-        expectedKeyOp = alg.startsWith("RSA") ? "unwrapKey" : "deriveBits";
-        break;
-    }
-    if (expectedKeyOp && key.key_ops?.includes?.(expectedKeyOp) === false) {
-      throw new TypeError(`Invalid key for this operation, its "key_ops" must include "${expectedKeyOp}" when present`);
-    }
-  }
-  return true;
-};
-var symmetricTypeCheck = (alg, key, usage) => {
-  if (key instanceof Uint8Array)
-    return;
-  if (isJWK(key)) {
-    if (isSecretJWK(key) && jwkMatchesOp(alg, key, usage))
-      return;
-    throw new TypeError(`JSON Web Key for symmetric algorithms must have JWK "kty" (Key Type) equal to "oct" and the JWK "k" (Key Value) present`);
-  }
-  if (!isKeyLike(key)) {
-    throw new TypeError(withAlg(alg, key, "CryptoKey", "KeyObject", "JSON Web Key", "Uint8Array"));
-  }
-  if (key.type !== "secret") {
-    throw new TypeError(`${tag(key)} instances for symmetric algorithms must be of type "secret"`);
-  }
-};
-var asymmetricTypeCheck = (alg, key, usage) => {
-  if (isJWK(key)) {
-    switch (usage) {
-      case "decrypt":
-      case "sign":
-        if (isPrivateJWK(key) && jwkMatchesOp(alg, key, usage))
-          return;
-        throw new TypeError(`JSON Web Key for this operation must be a private JWK`);
-      case "encrypt":
-      case "verify":
-        if (isPublicJWK(key) && jwkMatchesOp(alg, key, usage))
-          return;
-        throw new TypeError(`JSON Web Key for this operation must be a public JWK`);
-    }
-  }
-  if (!isKeyLike(key)) {
-    throw new TypeError(withAlg(alg, key, "CryptoKey", "KeyObject", "JSON Web Key"));
-  }
-  if (key.type === "secret") {
-    throw new TypeError(`${tag(key)} instances for asymmetric algorithms must not be of type "secret"`);
-  }
-  if (key.type === "public") {
-    switch (usage) {
-      case "sign":
-        throw new TypeError(`${tag(key)} instances for asymmetric algorithm signing must be of type "private"`);
-      case "decrypt":
-        throw new TypeError(`${tag(key)} instances for asymmetric algorithm decryption must be of type "private"`);
-    }
-  }
-  if (key.type === "private") {
-    switch (usage) {
-      case "verify":
-        throw new TypeError(`${tag(key)} instances for asymmetric algorithm verifying must be of type "public"`);
-      case "encrypt":
-        throw new TypeError(`${tag(key)} instances for asymmetric algorithm encryption must be of type "public"`);
-    }
-  }
-};
-function checkKeyType(alg, key, usage) {
-  switch (alg.substring(0, 2)) {
-    case "A1":
-    case "A2":
-    case "di":
-    case "HS":
-    case "PB":
-      symmetricTypeCheck(alg, key, usage);
-      break;
-    default:
-      asymmetricTypeCheck(alg, key, usage);
-  }
+// ../persist/node_modules/jose/dist/webapi/lib/jws_verify.js
+function prepareVerify(options) {
+  return {
+    algorithms: options && validateAlgorithms("algorithms", options.algorithms),
+    crit: options?.crit
+  };
 }
-
-// node_modules/jose/dist/webapi/jws/flattened/verify.js
-async function flattenedVerify(jws, key, options) {
-  if (!isObject2(jws)) {
-    throw new JWSInvalid("Flattened JWS must be an object");
-  }
-  if (jws.protected === void 0 && jws.header === void 0) {
-    throw new JWSInvalid('Flattened JWS must have either of the "protected" or "header" members');
-  }
-  if (jws.protected !== void 0 && typeof jws.protected !== "string") {
-    throw new JWSInvalid("JWS Protected Header incorrect type");
-  }
-  if (jws.payload === void 0) {
-    throw new JWSInvalid("JWS Payload missing");
-  }
-  if (typeof jws.signature !== "string") {
-    throw new JWSInvalid("JWS Signature missing or incorrect type");
-  }
-  if (jws.header !== void 0 && !isObject2(jws.header)) {
-    throw new JWSInvalid("JWS Unprotected Header incorrect type");
-  }
+async function verifySignature(jws, shared, key) {
   let parsedProt = {};
   if (jws.protected) {
-    try {
-      const protectedHeader = decode3(jws.protected);
-      parsedProt = JSON.parse(decoder.decode(protectedHeader));
-    } catch {
-      throw new JWSInvalid("JWS Protected Header is invalid");
+    parsedProt = parseJoseHeader(jws.protected, JWSInvalid, "JWS Protected Header is invalid");
+  }
+  let joseHeader;
+  if (jws.header !== void 0) {
+    if (!isDisjoint(parsedProt, jws.header)) {
+      throw new JWSInvalid("JWS Protected and JWS Unprotected Header Parameter names must be disjoint");
     }
+    joseHeader = { ...parsedProt, ...jws.header };
+  } else {
+    joseHeader = parsedProt;
   }
-  if (!isDisjoint(parsedProt, jws.header)) {
-    throw new JWSInvalid("JWS Protected and JWS Unprotected Header Parameter names must be disjoint");
-  }
-  const joseHeader = {
-    ...parsedProt,
-    ...jws.header
-  };
-  const extensions = validateCrit(JWSInvalid, /* @__PURE__ */ new Map([["b64", true]]), options?.crit, parsedProt, joseHeader);
+  const extensions = validateCrit(JWSInvalid, JWS_RECOGNIZED, shared.crit, parsedProt, joseHeader);
   let b64 = true;
   if (extensions.has("b64")) {
     b64 = parsedProt.b64;
@@ -56124,8 +55438,7 @@ async function flattenedVerify(jws, key, options) {
   if (typeof alg !== "string" || !alg) {
     throw new JWSInvalid('JWS "alg" (Algorithm) Header Parameter missing or invalid');
   }
-  const algorithms = options && validateAlgorithms("algorithms", options.algorithms);
-  if (algorithms && !algorithms.has(alg)) {
+  if (shared.algorithms && !shared.algorithms.has(alg)) {
     throw new JOSEAlgNotAllowed('"alg" (Algorithm) Header Parameter value not allowed');
   }
   if (b64) {
@@ -56140,11 +55453,11 @@ async function flattenedVerify(jws, key, options) {
     key = await key(parsedProt, jws);
     resolvedKey = true;
   }
-  checkKeyType(alg, key, "verify");
-  const data = concat(jws.protected !== void 0 ? encode3(jws.protected) : new Uint8Array(), encode3("."), typeof jws.payload === "string" ? b64 ? encode3(jws.payload) : encoder.encode(jws.payload) : jws.payload);
+  const entry = jwsAlgorithm(alg);
+  const data = concat(jws.protected !== void 0 ? encode3(jws.protected) : new Uint8Array(), encode3("."), typeof jws.payload === "string" ? b64 ? shared.b64p ??= encodeBase64url(jws.payload, "payload", JWSInvalid) : encoder.encode(jws.payload) : jws.payload);
   const signature = decodeBase64url(jws.signature, "signature", JWSInvalid);
-  const k = await normalizeKey(key, alg);
-  const verified = await verify(alg, k, signature, data);
+  const k = await prepareKey(entry, key, "verify");
+  const verified = await verify(entry, k, signature, data);
   if (!verified) {
     throw new JWSSignatureVerificationFailed();
   }
@@ -56156,21 +55469,9 @@ async function flattenedVerify(jws, key, options) {
   } else {
     payload = jws.payload;
   }
-  const result = { payload };
-  if (jws.protected !== void 0) {
-    result.protectedHeader = parsedProt;
-  }
-  if (jws.header !== void 0) {
-    result.unprotectedHeader = jws.header;
-  }
-  if (resolvedKey) {
-    return { ...result, key: k };
-  }
-  return result;
+  return { payload, parsedProt, b64, key: k, resolvedKey };
 }
-
-// node_modules/jose/dist/webapi/jws/compact/verify.js
-async function compactVerify(jws, key, options) {
+async function verifyCompact(jws, shared, key) {
   if (jws instanceof Uint8Array) {
     jws = decoder.decode(jws);
   }
@@ -56181,15 +55482,10 @@ async function compactVerify(jws, key, options) {
   if (length !== 3) {
     throw new JWSInvalid("Invalid Compact JWS");
   }
-  const verified = await flattenedVerify({ payload, protected: protectedHeader, signature }, key, options);
-  const result = { payload: verified.payload, protectedHeader: verified.protectedHeader };
-  if (typeof key === "function") {
-    return { ...result, key: verified.key };
-  }
-  return result;
+  return verifySignature({ payload, protected: protectedHeader, signature }, shared, key);
 }
 
-// node_modules/jose/dist/webapi/lib/jwt_claims_set.js
+// ../persist/node_modules/jose/dist/webapi/lib/jwt_claims_set.js
 var epoch = (date5) => Math.floor(date5.getTime() / 1e3);
 var minute = 60;
 var hour = minute * 60;
@@ -56246,6 +55542,12 @@ function secs(str) {
   }
   return numericDate;
 }
+function validateInput(label, input2) {
+  if (!Number.isFinite(input2)) {
+    throw new TypeError(`Invalid ${label} input`);
+  }
+  return input2;
+}
 var normalizeTyp = (value) => {
   if (value.includes("/")) {
     return value.toLowerCase();
@@ -56264,7 +55566,7 @@ var checkAudiencePresence = (audPayload, audOption) => {
 function validateClaimsSet(protectedHeader, encodedPayload, options = {}) {
   let payload;
   try {
-    payload = JSON.parse(decoder.decode(encodedPayload));
+    payload = JSON.parse(strictDecoder.decode(encodedPayload));
   } catch {
   }
   if (!isObject2(payload)) {
@@ -56289,13 +55591,13 @@ function validateClaimsSet(protectedHeader, encodedPayload, options = {}) {
       throw new JWTClaimValidationFailed(`missing required "${claim2}" claim`, payload, claim2, "missing");
     }
   }
-  if (issuer2 && !(Array.isArray(issuer2) ? issuer2 : [issuer2]).includes(payload.iss)) {
+  if (issuer2 !== void 0 && !(Array.isArray(issuer2) ? issuer2 : [issuer2]).includes(payload.iss)) {
     throw new JWTClaimValidationFailed('unexpected "iss" claim value', payload, "iss", "check_failed");
   }
-  if (subject && payload.sub !== subject) {
+  if (subject !== void 0 && payload.sub !== subject) {
     throw new JWTClaimValidationFailed('unexpected "sub" claim value', payload, "sub", "check_failed");
   }
-  if (audience && !checkAudiencePresence(payload.aud, typeof audience === "string" ? [audience] : audience)) {
+  if (audience !== void 0 && !checkAudiencePresence(payload.aud, typeof audience === "string" ? [audience] : audience)) {
     throw new JWTClaimValidationFailed('unexpected "aud" claim value', payload, "aud", "check_failed");
   }
   let tolerance;
@@ -56312,9 +55614,10 @@ function validateClaimsSet(protectedHeader, encodedPayload, options = {}) {
     default:
       throw new TypeError("Invalid clockTolerance option type");
   }
+  validateInput("clockTolerance option", tolerance);
   const { currentDate } = options;
-  const now = epoch(currentDate || /* @__PURE__ */ new Date());
-  if ((payload.iat !== void 0 || maxTokenAge) && typeof payload.iat !== "number") {
+  const now = validateInput("currentDate option", epoch(currentDate || /* @__PURE__ */ new Date()));
+  if ((payload.iat !== void 0 || maxTokenAge !== void 0) && typeof payload.iat !== "number") {
     throw new JWTClaimValidationFailed('"iat" claim must be a number', payload, "iat", "invalid");
   }
   if (payload.nbf !== void 0) {
@@ -56333,7 +55636,7 @@ function validateClaimsSet(protectedHeader, encodedPayload, options = {}) {
       throw new JWTExpired('"exp" claim timestamp check failed', payload, "exp", "check_failed");
     }
   }
-  if (maxTokenAge) {
+  if (maxTokenAge !== void 0) {
     const age = now - payload.iat;
     const max = typeof maxTokenAge === "number" ? maxTokenAge : secs(maxTokenAge);
     if (age - tolerance > max) {
@@ -56346,43 +55649,39 @@ function validateClaimsSet(protectedHeader, encodedPayload, options = {}) {
   return payload;
 }
 
-// node_modules/jose/dist/webapi/jwt/verify.js
+// ../persist/node_modules/jose/dist/webapi/jwt/verify.js
 async function jwtVerify(jwt2, key, options) {
-  const verified = await compactVerify(jwt2, key, options);
-  if (verified.protectedHeader.crit?.includes("b64") && verified.protectedHeader.b64 === false) {
+  const verified = await verifyCompact(jwt2, prepareVerify(options), key);
+  if (!verified.b64) {
     throw new JWTInvalid("JWTs MUST NOT use unencoded payload");
   }
-  const payload = validateClaimsSet(verified.protectedHeader, verified.payload, options);
-  const result = { payload, protectedHeader: verified.protectedHeader };
+  const payload = validateClaimsSet(verified.parsedProt, verified.payload, options);
+  const result = { payload, protectedHeader: verified.parsedProt };
   if (typeof key === "function") {
     return { ...result, key: verified.key };
   }
   return result;
 }
 
-// node_modules/jose/dist/webapi/jwks/local.js
-function getKtyFromAlg(alg) {
-  switch (typeof alg === "string" && alg.slice(0, 2)) {
-    case "RS":
-    case "PS":
-      return "RSA";
-    case "ES":
-      return "EC";
-    case "Ed":
-      return "OKP";
-    case "ML":
-      return "AKP";
-    default:
-      throw new JOSENotSupported('Unsupported "alg" value for a JSON Web Key Set');
+// ../persist/node_modules/jose/dist/webapi/jwks/local.js
+function signatureAlgorithm(alg) {
+  const entry = typeof alg === "string" ? maybeJWSAlgorithm(alg) : void 0;
+  if (!entry || entry.symmetric) {
+    throw new JOSENotSupported('Unsupported "alg" value for a JSON Web Key Set');
   }
+  return entry;
 }
 function isJWKSLike(jwks) {
-  return jwks && typeof jwks === "object" && Array.isArray(jwks.keys) && jwks.keys.every(isJWKLike);
+  if (!jwks || typeof jwks !== "object") {
+    return false;
+  }
+  const { keys } = jwks;
+  return Array.isArray(keys) && keys.every(isJWKLike);
 }
 function isJWKLike(key) {
   return isObject2(key);
 }
-var LocalJWKSet = class {
+var LocalJWKSetImpl = class {
   #jwks;
   #cached = /* @__PURE__ */ new WeakMap();
   constructor(jwks) {
@@ -56396,13 +55695,13 @@ var LocalJWKSet = class {
   }
   async getKey(protectedHeader, token) {
     const { alg, kid } = { ...protectedHeader, ...token?.header };
-    const kty = getKtyFromAlg(alg);
+    const entry = signatureAlgorithm(alg);
     const candidates = this.#jwks.keys.filter((jwk2) => {
-      let candidate = kty === jwk2.kty;
+      let candidate = entry.kty.includes(jwk2.kty);
       if (candidate && typeof kid === "string") {
         candidate = kid === jwk2.kid;
       }
-      if (candidate && (typeof jwk2.alg === "string" || kty === "AKP")) {
+      if (candidate && (typeof jwk2.alg === "string" || jwk2.kty === "AKP")) {
         candidate = alg === jwk2.alg;
       }
       if (candidate && typeof jwk2.use === "string") {
@@ -56411,22 +55710,8 @@ var LocalJWKSet = class {
       if (candidate && Array.isArray(jwk2.key_ops)) {
         candidate = jwk2.key_ops.includes("verify");
       }
-      if (candidate) {
-        switch (alg) {
-          case "ES256":
-            candidate = jwk2.crv === "P-256";
-            break;
-          case "ES384":
-            candidate = jwk2.crv === "P-384";
-            break;
-          case "ES512":
-            candidate = jwk2.crv === "P-521";
-            break;
-          case "Ed25519":
-          case "EdDSA":
-            candidate = jwk2.crv === "Ed25519";
-            break;
-        }
+      if (candidate && entry.crv) {
+        candidate = jwk2.crv === entry.crv;
       }
       return candidate;
     });
@@ -56440,29 +55725,29 @@ var LocalJWKSet = class {
       error62[Symbol.asyncIterator] = async function* () {
         for (const jwk2 of candidates) {
           try {
-            yield await importWithAlgCache(_cached, jwk2, alg);
+            yield await importWithAlgCache(_cached, jwk2, entry);
           } catch {
           }
         }
       };
       throw error62;
     }
-    return importWithAlgCache(this.#cached, jwk, alg);
+    return importWithAlgCache(this.#cached, jwk, entry);
   }
 };
-async function importWithAlgCache(cache2, jwk, alg) {
-  const cached2 = cache2.get(jwk) || cache2.set(jwk, {}).get(jwk);
-  if (cached2[alg] === void 0) {
-    const key = await importJWK({ ...jwk, ext: true }, alg);
-    if (key instanceof Uint8Array || key.type !== "public") {
+async function importWithAlgCache(cache2, jwk, entry) {
+  const cached3 = cache2.get(jwk) || cache2.set(jwk, {}).get(jwk);
+  if (cached3[entry.alg] === void 0) {
+    const key = await jwkToKey(entry, { ...jwk, alg: entry.alg, ext: true });
+    if (key.type !== "public") {
       throw new JWKSInvalid("JSON Web Key Set members must be public keys");
     }
-    cached2[alg] = key;
+    cached3[entry.alg] = key;
   }
-  return cached2[alg];
+  return cached3[entry.alg];
 }
 function createLocalJWKSet(jwks) {
-  const set2 = new LocalJWKSet(jwks);
+  const set2 = new LocalJWKSetImpl(jwks);
   const localJWKSet = async (protectedHeader, token) => set2.getKey(protectedHeader, token);
   Object.defineProperties(localJWKSet, {
     jwks: {
@@ -56475,7 +55760,7 @@ function createLocalJWKSet(jwks) {
   return localJWKSet;
 }
 
-// node_modules/jose/dist/webapi/util/decode_protected_header.js
+// ../persist/node_modules/jose/dist/webapi/util/decode_protected_header.js
 function decodeProtectedHeader(token) {
   let protectedB64u;
   if (typeof token === "string") {
@@ -56491,21 +55776,14 @@ function decodeProtectedHeader(token) {
       throw new TypeError("Token does not contain a Protected Header");
     }
   }
-  try {
-    if (typeof protectedB64u !== "string" || !protectedB64u) {
-      throw new Error();
-    }
-    const result = JSON.parse(decoder.decode(decode3(protectedB64u)));
-    if (!isObject2(result)) {
-      throw new Error();
-    }
-    return result;
-  } catch {
-    throw new TypeError("Invalid Token or Protected Header formatting");
+  const invalid = "Invalid Token or Protected Header formatting";
+  if (typeof protectedB64u !== "string" || !protectedB64u) {
+    throw new TypeError(invalid);
   }
+  return parseJoseHeader(protectedB64u, TypeError, invalid);
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/cors-Ftb-tw1d.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/cors-Ftb-tw1d.js
 var JSON_HEADERS = { "Content-Type": "application/json" };
 function headResponse(response) {
   return new Response(null, {
@@ -57304,14 +56582,14 @@ function corsPreflightResponse(allowMethods) {
   });
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/content-D5LJAHyM.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/content-D5LJAHyM.js
 function extractTextContent(content) {
   if (!content) return void 0;
   const text = content.filter((block) => block.type === "text").map((block) => block.text).join("\n").trim();
   return text.length > 0 ? text : void 0;
 }
 
-// node_modules/zod/v3/helpers/util.js
+// ../persist/node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -57445,7 +56723,7 @@ var getParsedType2 = (data) => {
   }
 };
 
-// node_modules/zod/v3/ZodError.js
+// ../persist/node_modules/zod/v3/ZodError.js
 var ZodIssueCode2 = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -57574,7 +56852,7 @@ ZodError2.create = (issues) => {
   return error62;
 };
 
-// node_modules/zod/v3/locales/en.js
+// ../persist/node_modules/zod/v3/locales/en.js
 var errorMap = (issue2, _ctx) => {
   let message2;
   switch (issue2.code) {
@@ -57677,13 +56955,13 @@ var errorMap = (issue2, _ctx) => {
 };
 var en_default2 = errorMap;
 
-// node_modules/zod/v3/errors.js
+// ../persist/node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default2;
 function getErrorMap2() {
   return overrideErrorMap;
 }
 
-// node_modules/zod/v3/helpers/parseUtil.js
+// ../persist/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -57792,14 +57070,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// node_modules/zod/v3/helpers/errorUtil.js
+// ../persist/node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message2) => typeof message2 === "string" ? { message: message2 } : message2 || {};
   errorUtil2.toString = (message2) => typeof message2 === "string" ? message2 : message2?.message;
 })(errorUtil || (errorUtil = {}));
 
-// node_modules/zod/v3/types.js
+// ../persist/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -61207,7 +60485,7 @@ var nullableType = ZodNullable2.create;
 var preprocessType = ZodEffects.createWithPreprocess;
 var pipelineType = ZodPipeline.create;
 
-// node_modules/zod/v4/mini/schemas.js
+// ../persist/node_modules/zod/v4/mini/schemas.js
 var ZodMiniType = /* @__PURE__ */ $constructor("ZodMiniType", (inst, def) => {
   if (!inst._zod)
     throw new Error("Uninitialized schema in ZodMiniType.");
@@ -61273,7 +60551,7 @@ function object2(shape, params) {
   return new ZodMiniObject(def);
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
 function isZ4Schema(s) {
   const schema = s;
   return !!schema._zod;
@@ -61433,7 +60711,7 @@ function getLiteralValue(schema) {
   return void 0;
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
 var LATEST_PROTOCOL_VERSION = "2025-11-25";
 var DEFAULT_NEGOTIATED_PROTOCOL_VERSION = "2025-03-26";
 var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
@@ -62966,12 +62244,12 @@ var UrlElicitationRequiredError = class extends McpError {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
 function isTerminal(status) {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
-// node_modules/zod-to-json-schema/dist/esm/Options.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/Options.js
 var ignoreOverride = Symbol("Let zodToJsonSchema decide on which parser to use");
 var defaultOptions = {
   name: void 0,
@@ -63005,7 +62283,7 @@ var getDefaultOptions = (options) => typeof options === "string" ? {
   ...options
 };
 
-// node_modules/zod-to-json-schema/dist/esm/Refs.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/Refs.js
 var getRefs = (options) => {
   const _options = getDefaultOptions(options);
   const currentPath = _options.name !== void 0 ? [..._options.basePath, _options.definitionPath, _options.name] : _options.basePath;
@@ -63026,7 +62304,7 @@ var getRefs = (options) => {
   };
 };
 
-// node_modules/zod-to-json-schema/dist/esm/errorMessages.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/errorMessages.js
 function addErrorMessage(res, key, errorMessage, refs) {
   if (!refs?.errorMessages)
     return;
@@ -63042,7 +62320,7 @@ function setResponseValueAndErrors(res, key, value, errorMessage, refs) {
   addErrorMessage(res, key, errorMessage, refs);
 }
 
-// node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
 var getRelativePath = (pathA, pathB) => {
   let i = 0;
   for (; i < pathA.length && i < pathB.length; i++) {
@@ -63052,7 +62330,7 @@ var getRelativePath = (pathA, pathB) => {
   return [(pathA.length - i).toString(), ...pathB.slice(i)].join("/");
 };
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/any.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/any.js
 function parseAnyDef(refs) {
   if (refs.target !== "openAi") {
     return {};
@@ -63068,7 +62346,7 @@ function parseAnyDef(refs) {
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/array.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/array.js
 function parseArrayDef(def, refs) {
   const res = {
     type: "array"
@@ -63092,7 +62370,7 @@ function parseArrayDef(def, refs) {
   return res;
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js
 function parseBigintDef(def, refs) {
   const res = {
     type: "integer",
@@ -63138,24 +62416,24 @@ function parseBigintDef(def, refs) {
   return res;
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js
 function parseBooleanDef() {
   return {
     type: "boolean"
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/branded.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/branded.js
 function parseBrandedDef(_def, refs) {
   return parseDef(_def.type._def, refs);
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/catch.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/catch.js
 var parseCatchDef = (def, refs) => {
   return parseDef(def.innerType._def, refs);
 };
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/date.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/date.js
 function parseDateDef(def, refs, overrideDateStrategy) {
   const strategy = overrideDateStrategy ?? refs.dateStrategy;
   if (Array.isArray(strategy)) {
@@ -63214,7 +62492,7 @@ var integerDateParser = (def, refs) => {
   return res;
 };
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/default.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/default.js
 function parseDefaultDef(_def, refs) {
   return {
     ...parseDef(_def.innerType._def, refs),
@@ -63222,12 +62500,12 @@ function parseDefaultDef(_def, refs) {
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/effects.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/effects.js
 function parseEffectsDef(_def, refs) {
   return refs.effectStrategy === "input" ? parseDef(_def.schema._def, refs) : parseAnyDef(refs);
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/enum.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/enum.js
 function parseEnumDef(def) {
   return {
     type: "string",
@@ -63235,7 +62513,7 @@ function parseEnumDef(def) {
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js
 var isJsonSchema7AllOfType = (type) => {
   if ("type" in type && type.type === "string")
     return false;
@@ -63277,7 +62555,7 @@ function parseIntersectionDef(def, refs) {
   } : void 0;
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/literal.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/literal.js
 function parseLiteralDef(def, refs) {
   const parsedType2 = typeof def.value;
   if (parsedType2 !== "bigint" && parsedType2 !== "number" && parsedType2 !== "boolean" && parsedType2 !== "string") {
@@ -63297,7 +62575,7 @@ function parseLiteralDef(def, refs) {
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/string.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/string.js
 var emojiRegex2 = void 0;
 var zodPatterns = {
   /**
@@ -63622,7 +62900,7 @@ function stringifyRegExpWithFlags(regex, refs) {
   return pattern;
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/record.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/record.js
 function parseRecordDef(def, refs) {
   if (refs.target === "openAi") {
     console.warn("Warning: OpenAI may not support records in schemas! Try an array of key-value pairs instead.");
@@ -63674,7 +62952,7 @@ function parseRecordDef(def, refs) {
   return schema;
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/map.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/map.js
 function parseMapDef(def, refs) {
   if (refs.mapStrategy === "record") {
     return parseRecordDef(def, refs);
@@ -63699,7 +62977,7 @@ function parseMapDef(def, refs) {
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js
 function parseNativeEnumDef(def) {
   const object3 = def.values;
   const actualKeys = Object.keys(def.values).filter((key) => {
@@ -63713,7 +62991,7 @@ function parseNativeEnumDef(def) {
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/never.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/never.js
 function parseNeverDef(refs) {
   return refs.target === "openAi" ? void 0 : {
     not: parseAnyDef({
@@ -63723,7 +63001,7 @@ function parseNeverDef(refs) {
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/null.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/null.js
 function parseNullDef(refs) {
   return refs.target === "openApi3" ? {
     enum: ["null"],
@@ -63733,7 +63011,7 @@ function parseNullDef(refs) {
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/union.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/union.js
 var primitiveMappings = {
   ZodString: "string",
   ZodNumber: "number",
@@ -63801,7 +63079,7 @@ var asAnyOf = (def, refs) => {
   return anyOf.length ? { anyOf } : void 0;
 };
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js
 function parseNullableDef(def, refs) {
   if (["ZodString", "ZodNumber", "ZodBigInt", "ZodBoolean", "ZodNull"].includes(def.innerType._def.typeName) && (!def.innerType._def.checks || !def.innerType._def.checks.length)) {
     if (refs.target === "openApi3") {
@@ -63833,7 +63111,7 @@ function parseNullableDef(def, refs) {
   return base && { anyOf: [base, { type: "null" }] };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/number.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/number.js
 function parseNumberDef(def, refs) {
   const res = {
     type: "number"
@@ -63882,7 +63160,7 @@ function parseNumberDef(def, refs) {
   return res;
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/object.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/object.js
 function parseObjectDef(def, refs) {
   const forceOptionalIntoNullable = refs.target === "openAi";
   const result = {
@@ -63952,7 +63230,7 @@ function safeIsOptional(schema) {
   }
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/optional.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/optional.js
 var parseOptionalDef = (def, refs) => {
   if (refs.currentPath.toString() === refs.propertyPath?.toString()) {
     return parseDef(def.innerType._def, refs);
@@ -63971,7 +63249,7 @@ var parseOptionalDef = (def, refs) => {
   } : parseAnyDef(refs);
 };
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js
 var parsePipelineDef = (def, refs) => {
   if (refs.pipeStrategy === "input") {
     return parseDef(def.in._def, refs);
@@ -63991,12 +63269,12 @@ var parsePipelineDef = (def, refs) => {
   };
 };
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/promise.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/promise.js
 function parsePromiseDef(def, refs) {
   return parseDef(def.type._def, refs);
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/set.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/set.js
 function parseSetDef(def, refs) {
   const items = parseDef(def.valueType._def, {
     ...refs,
@@ -64016,7 +63294,7 @@ function parseSetDef(def, refs) {
   return schema;
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js
 function parseTupleDef(def, refs) {
   if (def.rest) {
     return {
@@ -64044,24 +63322,24 @@ function parseTupleDef(def, refs) {
   }
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js
 function parseUndefinedDef(refs) {
   return {
     not: parseAnyDef(refs)
   };
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js
 function parseUnknownDef(refs) {
   return parseAnyDef(refs);
 }
 
-// node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js
 var parseReadonlyDef = (def, refs) => {
   return parseDef(def.innerType._def, refs);
 };
 
-// node_modules/zod-to-json-schema/dist/esm/selectParser.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/selectParser.js
 var selectParser = (def, typeName, refs) => {
   switch (typeName) {
     case ZodFirstPartyTypeKind2.ZodString:
@@ -64137,7 +63415,7 @@ var selectParser = (def, typeName, refs) => {
   }
 };
 
-// node_modules/zod-to-json-schema/dist/esm/parseDef.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/parseDef.js
 function parseDef(def, refs, forceResolution = false) {
   const seenItem = refs.seen.get(def);
   if (refs.override) {
@@ -64193,7 +63471,7 @@ var addMeta = (def, refs, jsonSchema) => {
   return jsonSchema;
 };
 
-// node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js
+// ../persist/node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js
 var zodToJsonSchema = (schema, options) => {
   const refs = getRefs(options);
   let definitions = typeof options === "object" && options.definitions ? Object.entries(options.definitions).reduce((acc, [name2, schema2]) => ({
@@ -64255,7 +63533,7 @@ var zodToJsonSchema = (schema, options) => {
   return combined;
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
 function mapMiniTarget(t) {
   if (!t)
     return "draft-7";
@@ -64297,7 +63575,7 @@ function parseWithCompat(schema, data) {
   return result.data;
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
 var DEFAULT_REQUEST_TIMEOUT_MSEC = 6e4;
 var Protocol = class {
   constructor(_options) {
@@ -64542,13 +63820,13 @@ var Protocol = class {
     const capturedTransport = this._transport;
     const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
     const sessionId = capturedTransport?.sessionId;
-    const store = this._taskStore;
+    const store2 = this._taskStore;
     let relatedTaskFound = true;
     let relatedTaskLookup;
-    if (relatedTaskId && store && this._taskMessageQueue && sessionId !== void 0) {
+    if (relatedTaskId && store2 && this._taskMessageQueue && sessionId !== void 0) {
       relatedTaskFound = false;
       relatedTaskLookup = (async () => {
-        if (!await store.getTask(relatedTaskId, sessionId)) {
+        if (!await store2.getTask(relatedTaskId, sessionId)) {
           throw new McpError(ErrorCode.InvalidParams, `Task not found: ${relatedTaskId}`);
         }
         relatedTaskFound = true;
@@ -65274,7 +64552,7 @@ function mergeCapabilities(base, additional) {
   return result;
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
 var import_ajv = __toESM(require_ajv(), 1);
 var import_ajv_formats = __toESM(require_dist(), 1);
 function createDefaultAjvInstance() {
@@ -65342,7 +64620,7 @@ var AjvJsonSchemaValidator = class {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
 var ExperimentalServerTasks = class {
   constructor(_server) {
     this._server = _server;
@@ -65555,7 +64833,7 @@ var ExperimentalServerTasks = class {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
 function assertToolsCallTaskCapability(requests, method, entityName) {
   if (!requests) {
     throw new Error(`${entityName} does not support task creation (required for ${method})`);
@@ -65590,7 +64868,7 @@ function assertClientRequestTaskCapability(requests, method, entityName) {
   }
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
 var Server = class extends Protocol {
   /**
    * Initializes this server with the given name and version information.
@@ -65961,7 +65239,7 @@ var Server = class extends Protocol {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/completable.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/server/completable.js
 var COMPLETABLE_SYMBOL = Symbol.for("mcp.completable");
 function isCompletable(schema) {
   return !!schema && typeof schema === "object" && COMPLETABLE_SYMBOL in schema;
@@ -65975,7 +65253,7 @@ var McpZodTypeKind;
   McpZodTypeKind2["Completable"] = "McpCompletable";
 })(McpZodTypeKind || (McpZodTypeKind = {}));
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/toolNameValidation.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/toolNameValidation.js
 var TOOL_NAME_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
 function validateToolName(name) {
   const warnings = [];
@@ -66033,7 +65311,7 @@ function validateAndWarnToolName(name) {
   return result.isValid;
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/mcp-server.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/mcp-server.js
 var ExperimentalMcpServerTasks = class {
   constructor(_mcpServer) {
     this._mcpServer = _mcpServer;
@@ -66048,7 +65326,7 @@ var ExperimentalMcpServerTasks = class {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
 function toolInputElementCount(value, max) {
   let count = 0;
   const stack = [value];
@@ -66880,7 +66158,7 @@ var EMPTY_COMPLETION_RESULT = {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/mediaType.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/shared/mediaType.js
 var import_content_type = __toESM(require_content_type(), 1);
 function mediaTypeEssence(header) {
   if (!header) {
@@ -66903,7 +66181,7 @@ function isJsonContentType(header) {
   return mediaTypeEssence(header) === "application/json";
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/requestBody.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/server/requestBody.js
 var DEFAULT_MAX_REQUEST_BODY_SIZE = 4 * 1024 * 1024;
 var MAX_BATCH_SIZE = 100;
 function requestBodyTooLargeMessage(maxBytes) {
@@ -66947,7 +66225,7 @@ async function readRequestBody(request, maxBytes = DEFAULT_MAX_REQUEST_BODY_SIZE
   return { tooLarge: false, text: text + decoder2.decode() };
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/sseKeepAlive.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/server/sseKeepAlive.js
 var DEFAULT_SSE_KEEP_ALIVE_MS = 15e3;
 var MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 function armSseKeepAlive(intervalMs, onTick) {
@@ -66959,7 +66237,7 @@ function armSseKeepAlive(intervalMs, onTick) {
   return timer;
 }
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/webStandardStreamableHttp.js
+// ../persist/node_modules/@modelcontextprotocol/sdk/dist/esm/server/webStandardStreamableHttp.js
 var WebStandardStreamableHTTPServerTransport = class {
   constructor(options = {}) {
     this._started = false;
@@ -67702,7 +66980,7 @@ data:
   }
 };
 
-// node_modules/@lovable.dev/mcp-js/dist/mcp-BarAJ9N0.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/mcp-BarAJ9N0.js
 function adaptToolToSdkCallback(tool, auth2, recorder) {
   const endUserId = auth2?.principal.sub;
   return (async (first) => {
@@ -67807,7 +67085,7 @@ function createMcpProtocolHandler(mcp, options = {}) {
   };
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/protocols/oauth-metadata.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/protocols/oauth-metadata.js
 function notFound() {
   return withCors(new Response(JSON.stringify({ error: "not found" }), {
     status: 404,
@@ -67856,7 +67134,7 @@ function createOAuthProtectedResourceMetadataHandler(mcp, options = {}) {
   };
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/list-tools-BrSIMpBi.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/list-tools-BrSIMpBi.js
 function shapeToJsonSchema(shape) {
   if (!shape) return null;
   try {
@@ -67898,7 +67176,7 @@ function createListToolsHandler(mcp, options = {}) {
   };
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/rest-Be8uOb6r.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/rest-Be8uOb6r.js
 var MAX_REFLECTED_TOOL_NAME = 256;
 function safeReflectName(name) {
   const text = String(name);
@@ -68009,7 +67287,7 @@ function createInvokeToolHandler(mcp, options = {}) {
   };
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/forwarded--h4efJy-.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/forwarded--h4efJy-.js
 function applyForwardedOrigin(request, options) {
   const proto = options.trustForwardedProto ? firstForwardedValue(request, "x-forwarded-proto") : void 0;
   const host = options.trustForwardedHost ? firstForwardedValue(request, "x-forwarded-host") : void 0;
@@ -68031,13 +67309,13 @@ function firstForwardedValue(request, header) {
   return value ? value : void 0;
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/paths-IS65L6TA.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/paths-IS65L6TA.js
 var FUNCTIONS_MOUNT_PREFIX = "/functions/v1/";
 function assertFunctionName(value, label = "functionName") {
   if (!/^[a-zA-Z0-9_-]+$/.test(value)) throw new Error(`@lovable.dev/mcp-js: ${label} must be a single path segment matching [A-Za-z0-9_-], got ${JSON.stringify(value)}`);
 }
 
-// node_modules/@lovable.dev/mcp-js/dist/stacks/supabase/index.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/stacks/supabase/index.js
 function deriveResourcePath(options) {
   if (options.resourcePath !== void 0) return options.resourcePath;
   if (options.functionName === void 0) return void 0;

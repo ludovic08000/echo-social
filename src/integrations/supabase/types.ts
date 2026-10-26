@@ -1248,6 +1248,41 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_usage_reservations: {
+        Row: {
+          agent_id: string
+          created_at: string
+          request_id: string
+          state: string
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          request_id: string
+          state?: string
+          usage_date: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          request_id?: string
+          state?: string
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_reservations_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       album_media: {
         Row: {
           album_id: string
@@ -4112,6 +4147,7 @@ export type Database = {
       }
       login_attempts: {
         Row: {
+          authority: string
           created_at: string
           email_hash: string | null
           id: string
@@ -4120,6 +4156,7 @@ export type Database = {
           user_agent: string | null
         }
         Insert: {
+          authority?: string
           created_at?: string
           email_hash?: string | null
           id?: string
@@ -4128,6 +4165,7 @@ export type Database = {
           user_agent?: string | null
         }
         Update: {
+          authority?: string
           created_at?: string
           email_hash?: string | null
           id?: string
@@ -4352,6 +4390,76 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      marketplace_payment_receipts: {
+        Row: {
+          amount_cents: number
+          currency: string
+          order_id: string
+          payment_intent_id: string
+          session_id: string
+          verified_at: string
+        }
+        Insert: {
+          amount_cents: number
+          currency: string
+          order_id: string
+          payment_intent_id: string
+          session_id: string
+          verified_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          currency?: string
+          order_id?: string
+          payment_intent_id?: string
+          session_id?: string
+          verified_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_payment_receipts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_shipment_claims: {
+        Row: {
+          claim_id: string
+          completed_at: string | null
+          created_at: string
+          order_id: string
+          requested_by: string
+          state: string
+        }
+        Insert: {
+          claim_id: string
+          completed_at?: string | null
+          created_at?: string
+          order_id: string
+          requested_by: string
+          state?: string
+        }
+        Update: {
+          claim_id?: string
+          completed_at?: string | null
+          created_at?: string
+          order_id?: string
+          requested_by?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_shipment_claims_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       media_partners: {
         Row: {
@@ -6072,6 +6180,7 @@ export type Database = {
           packing_video_url: string | null
           paid_at: string | null
           payment_intent_id: string | null
+          payment_verified_at: string | null
           shipped_at: string | null
           shipping_address: Json | null
           shipping_label_url: string | null
@@ -6084,6 +6193,8 @@ export type Database = {
           shipping_relay_postcode: string | null
           shipping_weight_grams: number | null
           status: Database["public"]["Enums"]["order_status"]
+          stripe_checkout_session_id: string | null
+          stripe_customer_id: string | null
           subtotal: number
           total: number
           tracking_number: string | null
@@ -6103,6 +6214,7 @@ export type Database = {
           packing_video_url?: string | null
           paid_at?: string | null
           payment_intent_id?: string | null
+          payment_verified_at?: string | null
           shipped_at?: string | null
           shipping_address?: Json | null
           shipping_label_url?: string | null
@@ -6115,6 +6227,8 @@ export type Database = {
           shipping_relay_postcode?: string | null
           shipping_weight_grams?: number | null
           status?: Database["public"]["Enums"]["order_status"]
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
           subtotal: number
           total: number
           tracking_number?: string | null
@@ -6134,6 +6248,7 @@ export type Database = {
           packing_video_url?: string | null
           paid_at?: string | null
           payment_intent_id?: string | null
+          payment_verified_at?: string | null
           shipped_at?: string | null
           shipping_address?: Json | null
           shipping_label_url?: string | null
@@ -6146,6 +6261,8 @@ export type Database = {
           shipping_relay_postcode?: string | null
           shipping_weight_grams?: number | null
           status?: Database["public"]["Enums"]["order_status"]
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
           subtotal?: number
           total?: number
           tracking_number?: string | null
@@ -9678,6 +9795,30 @@ export type Database = {
           total_calls: number
         }[]
       }
+      apply_admin_feed_config_update: {
+        Args: {
+          p_actor: string
+          p_expected: Json
+          p_key: string
+          p_reason: string
+          p_updates: Json
+        }
+        Returns: Json
+      }
+      apply_owned_content_moderation: {
+        Args: {
+          p_actor: string
+          p_category: string
+          p_content: string
+          p_expected_body: string
+          p_kind: string
+          p_reason: string
+          p_reasoning: string
+          p_reply: string
+          p_severity: string
+        }
+        Returns: Json
+      }
       apply_security_auto_mitigations: { Args: never; Returns: Json }
       approve_device_enrollment_decision:
         | {
@@ -9736,6 +9877,7 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: undefined
       }
+      can_read_social_post: { Args: { p_post_id: string }; Returns: boolean }
       can_view_order: {
         Args: { _buyer_id: string; _order_id: string }
         Returns: boolean
@@ -9798,6 +9940,10 @@ export type Database = {
           registration_id: number
         }[]
       }
+      claim_marketplace_shipment: {
+        Args: { p_caller: string; p_claim: string; p_order: string }
+        Returns: Json
+      }
       claim_partner_rss_sources: { Args: { p_limit?: number }; Returns: Json }
       cleanup_ai_cache: { Args: never; Returns: undefined }
       cleanup_current_user_stale_devices: {
@@ -9844,6 +9990,16 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_marketplace_shipment: {
+        Args: {
+          p_claim: string
+          p_label: string
+          p_order: string
+          p_tracking: string
+          p_weight: number
+        }
+        Returns: boolean
+      }
       complete_onboarding: { Args: { _user_id: string }; Returns: boolean }
       complete_user_device_enrollment: {
         Args: {
@@ -9879,6 +10035,10 @@ export type Database = {
       }
       ddos_cleanup: { Args: never; Returns: undefined }
       deactivate_own_creator_profile: { Args: never; Returns: boolean }
+      decide_direct_message_request: {
+        Args: { p_accept: boolean; p_conversation_id: string }
+        Returns: number
+      }
       decrement_product_stock: {
         Args: { p_product_id: string; p_quantity: number }
         Returns: boolean
@@ -9937,6 +10097,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      feed_api_session_active: { Args: never; Returns: boolean }
       feed_eligible_post_ids_internal: {
         Args: { p_post_ids: string[]; p_viewer_id: string }
         Returns: {
@@ -10013,6 +10174,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      finish_ai_agent_usage: {
+        Args: { p_request_id: string; p_success: boolean }
+        Returns: boolean
       }
       finish_feed_feature_job: {
         Args: { p_features: Json; p_post: string; p_revision: string }
@@ -10372,6 +10537,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      hook_password_verification_audit: { Args: { event: Json }; Returns: Json }
       import_partner_media: {
         Args: { p_items: Json; p_partner: string }
         Returns: number
@@ -10496,6 +10662,7 @@ export type Database = {
         Args: { p_error?: string; p_request_id: string; p_status: string }
         Returns: Json
       }
+      mark_seller_order_delivered: { Args: { p_order: string }; Returns: Json }
       mark_user_crypto_ready: {
         Args: { p_fingerprint: string }
         Returns: {
@@ -10658,6 +10825,7 @@ export type Database = {
         }
         Returns: number
       }
+      my_seller_profile: { Args: never; Returns: Json }
       news_thread_readable: {
         Args: { p_thread: string; p_user: string }
         Returns: boolean
@@ -10721,6 +10889,17 @@ export type Database = {
           p_signing_key: string
         }
         Returns: Json
+      }
+      publish_transparency_epoch: {
+        Args: {
+          p_epoch: number
+          p_leaves: Json
+          p_prev_epoch: number
+          p_root: string
+          p_signature: string
+          p_signing_key: string
+        }
+        Returns: boolean
       }
       purge_old_ai_engine_events: { Args: never; Returns: undefined }
       purge_old_audit_logs: { Args: never; Returns: undefined }
@@ -10867,6 +11046,10 @@ export type Database = {
         Returns: Json
       }
       require_approved_recovery_login: { Args: never; Returns: boolean }
+      reserve_ai_agent_usage: {
+        Args: { p_agent_id: string; p_request_id: string; p_user_id: string }
+        Returns: Json
+      }
       reset_backup_pin_attempts: {
         Args: { _user_id: string }
         Returns: undefined
@@ -10896,6 +11079,21 @@ export type Database = {
       set_news_reaction: {
         Args: { p_reaction: string; p_thread: string }
         Returns: undefined
+      }
+      settle_marketplace_payment: {
+        Args: {
+          p_amount_cents: number
+          p_buyer_id: string
+          p_currency: string
+          p_order_id: string
+          p_payment_intent_id: string
+          p_session_id: string
+        }
+        Returns: boolean
+      }
+      social_post_access_internal: {
+        Args: { p_post_id: string; p_viewer_id: string }
+        Returns: boolean
       }
       store_ad_location_context: {
         Args: {

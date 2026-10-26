@@ -1,7 +1,7 @@
 {
   "version": 1,
   "sdk_version": "0.24.0",
-  "path": "/functions/v1/mcp",
+  "path": "/mcp",
   "auth": {
     "type": "oauth",
     "issuer": "https://vkpmoqfzrihcijjochks.supabase.co/auth/v1",
@@ -43,9 +43,11 @@
           "openWorldHint": false
         },
         "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
           "type": "object",
           "properties": {
             "name": {
+              "description": "Display name.",
               "anyOf": [
                 {
                   "type": "string",
@@ -55,10 +57,10 @@
                 {
                   "type": "null"
                 }
-              ],
-              "description": "Display name."
+              ]
             },
             "bio": {
+              "description": "Short biography.",
               "anyOf": [
                 {
                   "type": "string",
@@ -67,10 +69,10 @@
                 {
                   "type": "null"
                 }
-              ],
-              "description": "Short biography."
+              ]
             },
             "city": {
+              "description": "City shown on the profile.",
               "anyOf": [
                 {
                   "type": "string",
@@ -79,23 +81,23 @@
                 {
                   "type": "null"
                 }
-              ],
-              "description": "City shown on the profile."
+              ]
             },
             "website_url": {
+              "description": "Public website URL.",
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "uri",
-                  "maxLength": 300
+                  "maxLength": 300,
+                  "format": "uri"
                 },
                 {
                   "type": "null"
                 }
-              ],
-              "description": "Public website URL."
+              ]
             },
             "mood_emoji": {
+              "description": "Mood emoji.",
               "anyOf": [
                 {
                   "type": "string",
@@ -104,10 +106,10 @@
                 {
                   "type": "null"
                 }
-              ],
-              "description": "Mood emoji."
+              ]
             },
             "mood_text": {
+              "description": "Short mood text.",
               "anyOf": [
                 {
                   "type": "string",
@@ -116,12 +118,9 @@
                 {
                   "type": "null"
                 }
-              ],
-              "description": "Short mood text."
+              ]
             }
-          },
-          "additionalProperties": false,
-          "$schema": "http://json-schema.org/draft-07/schema#"
+          }
         },
         "outputSchema": null
       },
@@ -135,17 +134,16 @@
           "openWorldHint": false
         },
         "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
           "type": "object",
           "properties": {
             "limit": {
+              "description": "How many posts to return (default 10).",
               "type": "integer",
               "minimum": 1,
-              "maximum": 50,
-              "description": "How many posts to return (default 10)."
+              "maximum": 50
             }
-          },
-          "additionalProperties": false,
-          "$schema": "http://json-schema.org/draft-07/schema#"
+          }
         },
         "outputSchema": null
       },
@@ -160,6 +158,7 @@
           "openWorldHint": false
         },
         "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
           "type": "object",
           "properties": {
             "body": {
@@ -169,35 +168,29 @@
               "description": "The post text."
             },
             "image_url": {
+              "description": "Optional image URL to attach.",
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "uri",
-                  "maxLength": 1000
+                  "maxLength": 1000,
+                  "format": "uri"
                 },
                 {
                   "type": "null"
                 }
-              ],
-              "description": "Optional image URL to attach."
+              ]
             },
             "publish_at": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Optional ISO 8601 datetime to schedule the post instead of publishing immediately."
+              "description": "Optional ISO 8601 datetime to schedule the post instead of publishing immediately.",
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
             "body"
-          ],
-          "additionalProperties": false,
-          "$schema": "http://json-schema.org/draft-07/schema#"
+          ]
         },
         "outputSchema": null
       },
@@ -211,21 +204,20 @@
           "openWorldHint": false
         },
         "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
           "type": "object",
           "properties": {
             "unread_only": {
-              "type": "boolean",
-              "description": "Return only unread notifications (default false)."
+              "description": "Return only unread notifications (default false).",
+              "type": "boolean"
             },
             "limit": {
+              "description": "How many notifications to return (default 20).",
               "type": "integer",
               "minimum": 1,
-              "maximum": 50,
-              "description": "How many notifications to return (default 20)."
+              "maximum": 50
             }
-          },
-          "additionalProperties": false,
-          "$schema": "http://json-schema.org/draft-07/schema#"
+          }
         },
         "outputSchema": null
       }
