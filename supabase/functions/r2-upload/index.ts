@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createApiTelemetry } from "../_shared/apiTelemetry.ts";
 
 // ─── Security constants ───
 const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB absolute max
@@ -114,7 +115,7 @@ function sanitizePath(input: string): string {
     .replace(/^\//, "");
 }
 
-Deno.serve(async (req) => {
+async function handleR2Upload(req: Request) {
   const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") {
@@ -345,8 +346,8 @@ Deno.serve(async (req) => {
     });
 
     if (!r2Response.ok) {
-      const errorText = await r2Response.text();
-      console.error("R2 upload error:", errorText);
+      await r2Response.body?.cancel().catch(() => {});
+      console.error(JSON.stringify({ event: 'r2_upstream_failure', status: r2Response.status }));
       throw new Error(`R2 upload failed: ${r2Response.status}`);
     }
 
@@ -362,6 +363,24 @@ Deno.serve(async (req) => {
       JSON.stringify({ error: (error as Error).message }),
       { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
+  }
+}
+
+Deno.serve(async (req) => {
+  const telemetry = createApiTelemetry(req, 'media');
+  telemetry.operation(req.method.toLowerCase());
+  telemetry.stage('media_gateway');
+  try {
+    const response = await handleR2Upload(req);
+    return telemetry.finish(response, {
+      method: req.method,
+      request_bytes: Number(req.headers.get('content-length') ?? 0) || 0,
+    });
+  } catch {
+    return telemetry.finish(new Response(JSON.stringify({ error: 'Media service unavailable' }), {
+      status: 500,
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+    }), { method: req.method }, 'MEDIA_INTERNAL_ERROR');
   }
 });
 

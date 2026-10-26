@@ -4,6 +4,7 @@ import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
 import { xhrFetch } from '@/lib/xhrFetch';
 import { withMessagingRevision } from './messagingRevision';
+import { emitApiPerformance } from '@/lib/apiTelemetry';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -138,6 +139,8 @@ const guardedFetch: typeof fetch = async (input, init) => {
   const url = getRequestUrl(input);
   const signal = getRequestSignal(input, init);
   let response: Response;
+  const startedAt = performance.now();
+  let transport: 'fetch' | 'xhr' = 'fetch';
 
   try {
     // Always prefer the browser's captured Fetch implementation. Supabase Auth
@@ -147,13 +150,22 @@ const guardedFetch: typeof fetch = async (input, init) => {
     // An aborted request is intentional cancellation, not a transport failure.
     // Retrying it through XHR reuses the already-aborted signal and turns one
     // cancellation into repeated RPC/key/fanout failures across the app.
-    if (isAbortFailure(error, signal)) throw error;
+    if (isAbortFailure(error, signal)) {
+      emitApiPerformance(url, null, startedAt, transport, true);
+      throw error;
+    }
 
     console.warn('[Supabase] fetch failed; retrying once with XHR transport', {
       url,
       error,
     });
-    response = await xhrFetch(input, init);
+    transport = 'xhr';
+    try {
+      response = await xhrFetch(input, init);
+    } catch (xhrError) {
+      emitApiPerformance(url, null, startedAt, transport, true);
+      throw xhrError;
+    }
   }
 
   try {
@@ -171,6 +183,7 @@ const guardedFetch: typeof fetch = async (input, init) => {
   } catch {
     // Response inspection is best-effort and must not break the request.
   }
+  emitApiPerformance(url, response, startedAt, transport);
   return response;
 };
 

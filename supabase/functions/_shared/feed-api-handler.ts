@@ -1,5 +1,6 @@
 import { getCorsHeaders } from './cors.ts';
 import { parseFeedRequest, publicFeedPage, publicPreferences, type FeedPreferences } from './feed-api-contract.ts';
+import { createApiTelemetry } from './apiTelemetry.ts';
 
 type Result = { data: unknown; error: { code?: string; message?: string } | null };
 export interface FeedContext {
@@ -59,7 +60,9 @@ const ERRORS: Record<string, [number, string]> = {
 
 export function createFeedHandler(deps: FeedDependencies) {
   return async (req: Request): Promise<Response> => {
-    const requestId = crypto.randomUUID();
+    const telemetry = createApiTelemetry(req, 'feed');
+    const requestId = telemetry.requestId;
+    const run = async (): Promise<Response> => {
     const origin = req.headers.get('origin');
     const cors = getCorsHeaders(req);
     // Native app origins are not identities. Every private action still verifies its JWT.
@@ -81,10 +84,14 @@ export function createFeedHandler(deps: FeedDependencies) {
     });
     const work = async (): Promise<Response> => {
       try {
+        telemetry.stage('request_parse');
         const input = parseFeedRequest(await readJson(req, controller.signal));
+        telemetry.operation(input.action);
+        telemetry.stage('authentication');
         const context = await deps.authenticate(req, controller.signal);
         if (!context || (input.action !== 'page' && !context.viewerId)) return fail('UNAUTHORIZED');
         controller.signal.throwIfAborted();
+        telemetry.stage('rate_limit');
         const limited = await deps.rateLimit(req, context.viewerId, input.action, headers, controller.signal);
         if (limited) {
           // A limiter failure must never become permission to continue.
@@ -94,6 +101,7 @@ export function createFeedHandler(deps: FeedDependencies) {
           { status, headers: { ...headers, 'Retry-After': status === 429 ? '60' : '5' } });
         }
         controller.signal.throwIfAborted();
+        telemetry.stage('database');
         const result = input.action === 'page'
           ? await context.rpc('get_ranked_feed_page', { p_limit: input.limit, p_cursor: input.cursor })
           : input.action === 'events'
@@ -123,5 +131,14 @@ export function createFeedHandler(deps: FeedDependencies) {
     };
     try { return await Promise.race([work(), deadline]); }
     finally { clearTimeout(timeout!); }
+    };
+    try {
+      return telemetry.finish(await run());
+    } catch {
+      return telemetry.finish(new Response(JSON.stringify({
+        error: { code: 'FEED_UNAVAILABLE', message: ERRORS.FEED_UNAVAILABLE[1] },
+        request_id: requestId,
+      }), { status: 503, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }), {}, 'FEED_UNAVAILABLE');
+    }
   };
 }

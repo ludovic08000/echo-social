@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 import { MAX_OUTGOING_ATTACHMENT_CIPHERTEXT_BYTES } from "../_shared/attachment-limits.ts";
+import { createApiTelemetry } from "../_shared/apiTelemetry.ts";
 
 /**
  * r2-presign: Returns a presigned PUT URL so the client can upload
@@ -71,7 +72,7 @@ function cors(req: Request): Record<string, string> {
   };
 }
 
-Deno.serve(async (req) => {
+async function handleR2Presign(req: Request) {
   const h = cors(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: h });
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...h, "Content-Type": "application/json" } });
@@ -181,6 +182,20 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: msg }), {
       status: 400, headers: { ...cors(req), "Content-Type": "application/json" },
     });
+  }
+}
+
+Deno.serve(async (req) => {
+  const telemetry = createApiTelemetry(req, 'media');
+  telemetry.operation('presign');
+  telemetry.stage('presign');
+  try {
+    return telemetry.finish(await handleR2Presign(req), { method: req.method });
+  } catch {
+    return telemetry.finish(new Response(JSON.stringify({ error: 'Media service unavailable' }), {
+      status: 500,
+      headers: { ...cors(req), 'Content-Type': 'application/json' },
+    }), { method: req.method }, 'MEDIA_INTERNAL_ERROR');
   }
 });
 

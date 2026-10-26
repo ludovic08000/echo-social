@@ -4,6 +4,7 @@ import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { paymentReturnOrigin, settleMarketplacePayment } from "../_shared/payment-authority.ts";
+import { createApiTelemetry } from "../_shared/apiTelemetry.ts";
 
 // Commission ForSure de 25 % prélevée sur le vendeur : l'acheteur paie le prix affiché.
 const COMMISSION_RATE = 0.25;
@@ -18,7 +19,7 @@ function estimateRelayShipping(weightGrams: number): number {
   return Math.round((base + extra) * 100) / 100;
 }
 
-serve(async (req) => {
+async function handleMarketplaceCheckout(req: Request) {
   const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") {
@@ -75,7 +76,9 @@ serve(async (req) => {
         .select("id, title, price, seller_id, thumbnail_url, weight_grams, stock_quantity, is_active")
         .in("id", productIds);
 
-      console.log("Product query:", { productIds, prodError, count: dbProducts?.length });
+      console.log(JSON.stringify({ event: 'marketplace_product_lookup',
+        outcome: prodError ? 'failure' : 'success', requested_count: productIds.length,
+        returned_count: dbProducts?.length ?? 0, error_code: prodError?.code ?? null }));
       if (prodError) throw new Error(`Erreur DB produits: ${prodError.message}`);
       if (!dbProducts?.length) throw new Error(`Produits introuvables pour IDs: ${productIds.join(", ")}`);
 
@@ -460,5 +463,26 @@ serve(async (req) => {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+}
+
+serve(async (req) => {
+  const telemetry = createApiTelemetry(req, 'marketplace');
+  let action = 'unknown';
+  if (req.method === 'POST') {
+    try {
+      const candidate = (await req.clone().json())?.action;
+      if (typeof candidate === 'string') action = candidate;
+    } catch { /* The business handler returns the validation error. */ }
+  }
+  telemetry.operation(action);
+  telemetry.stage('checkout');
+  try {
+    return telemetry.finish(await handleMarketplaceCheckout(req), { action });
+  } catch {
+    return telemetry.finish(new Response(JSON.stringify({ error: 'Marketplace service unavailable' }), {
+      status: 500,
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+    }), { action }, 'MARKETPLACE_INTERNAL_ERROR');
   }
 });

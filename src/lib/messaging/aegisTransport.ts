@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { traceE2EE } from './e2eeTrace';
 import { MESSAGING_CLIENT_REVISION } from '@/integrations/supabase/messagingRevision';
+import { emitApiPerformance } from '@/lib/apiTelemetry';
 
 export type AegisRpcError = {
   code?: string | null;
@@ -89,8 +90,10 @@ async function callGateway<T>(
 
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 20_000);
+  const requestUrl = `${baseUrl}/v1/rpc/${name}`;
+  const startedAt = performance.now();
   try {
-    const response = await fetch(`${baseUrl}/v1/rpc/${name}`, {
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${session.access_token}`,
@@ -102,6 +105,7 @@ async function callGateway<T>(
       credentials: gatewayCredentials(baseUrl),
       signal: controller.signal,
     });
+    emitApiPerformance(requestUrl, response, startedAt, 'fetch');
     traceE2EE({ direction: name === 'aegis_sync_device' ? 'receive' : 'send', component: 'aegis_transport',
       stage: `${name}.HTTP_RESPONSE`, transport: 'aegis_server', outcome: response.ok ? 'ok' : 'error',
       diagnosticId: response.headers.get('x-aegis-diagnostic-id') ?? undefined,
@@ -121,6 +125,7 @@ async function callGateway<T>(
     }
     return { data: payload.data ?? null, error: payload.error ?? null };
   } catch (error) {
+    emitApiPerformance(requestUrl, null, startedAt, 'fetch', true);
     return {
       data: null,
       error: {
