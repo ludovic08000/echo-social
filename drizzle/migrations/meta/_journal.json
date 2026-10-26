@@ -218,6 +218,20 @@
       "when": 1793038821373,
       "tag": "0030_secure_post_visibility_and_private_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793038844293,
+      "tag": "0031_revoke_sensitive_columns_after_client_rollout",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793038848504,
+      "tag": "0032_harden_distributed_rate_limit_authority",
+      "breakpoints": true
     }
   ]
 }
