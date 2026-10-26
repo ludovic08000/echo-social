@@ -18,7 +18,7 @@ export function secureMcpPlugin(): Plugin {
       const result = await build({
         absWorkingDir: config.root,
         // Tous les imports, même via un lien Deno, utilisent le seul SDK audité ; le contrôle final reste fermé.
-        alias: { '@modelcontextprotocol/sdk': sdkRoot },
+        alias: { '@modelcontextprotocol/sdk': resolve(sdkRoot, 'dist/esm') },
         stdin: {
           contents: `import mcp from './src/lib/mcp/index.ts';\nimport {createSupabaseHandler} from '@lovable.dev/mcp-js/stacks/supabase';\nexport default createSupabaseHandler(mcp,{functionName:'mcp'});`,
           resolveDir: config.root, sourcefile: 'forsure-mcp-handler.ts', loader: 'ts',

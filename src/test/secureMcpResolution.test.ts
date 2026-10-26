@@ -15,7 +15,8 @@ vi.mock('esbuild', () => ({
     };
   }),
 }));
-vi.mock('node:fs/promises', () => ({
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  ...await importOriginal<typeof import('node:fs/promises')>(),
   readFile: vi.fn(async (path: string) => path.endsWith('config.toml') ? 'project_id = "testproject"' : '{"version":"1.32.1"}'),
   realpath: vi.fn(async (path: string) => path),
   mkdir: vi.fn(),
@@ -32,7 +33,7 @@ describe('audited MCP SDK resolution', () => {
   it('forces transitive SDK imports to the audited root', async () => {
     state.nested = false;
     await configure();
-    expect(state.options?.alias).toEqual({ '@modelcontextprotocol/sdk': resolve('/project/node_modules/@modelcontextprotocol/sdk') });
+    expect(state.options?.alias).toEqual({ '@modelcontextprotocol/sdk': resolve('/project/node_modules/@modelcontextprotocol/sdk/dist/esm') });
   });
   it('still rejects a nested Deno SDK in bundle inputs', async () => {
     state.nested = true;
