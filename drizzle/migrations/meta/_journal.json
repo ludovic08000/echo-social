@@ -274,6 +274,13 @@
       "when": 1793039007116,
       "tag": "0038_feed_api_active_session_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793040748006,
+      "tag": "0039_align_call_fanout_with_canonical_routes",
+      "breakpoints": true
     }
   ]
 }
