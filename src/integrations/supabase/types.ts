@@ -4353,6 +4353,41 @@ export type Database = {
         }
         Relationships: []
       }
+      marketplace_payment_receipts: {
+        Row: {
+          amount_cents: number
+          currency: string
+          order_id: string
+          payment_intent_id: string
+          session_id: string
+          verified_at: string
+        }
+        Insert: {
+          amount_cents: number
+          currency: string
+          order_id: string
+          payment_intent_id: string
+          session_id: string
+          verified_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          currency?: string
+          order_id?: string
+          payment_intent_id?: string
+          session_id?: string
+          verified_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_payment_receipts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       media_partners: {
         Row: {
           active: boolean
@@ -6072,6 +6107,7 @@ export type Database = {
           packing_video_url: string | null
           paid_at: string | null
           payment_intent_id: string | null
+          payment_verified_at: string | null
           shipped_at: string | null
           shipping_address: Json | null
           shipping_label_url: string | null
@@ -6084,6 +6120,8 @@ export type Database = {
           shipping_relay_postcode: string | null
           shipping_weight_grams: number | null
           status: Database["public"]["Enums"]["order_status"]
+          stripe_checkout_session_id: string | null
+          stripe_customer_id: string | null
           subtotal: number
           total: number
           tracking_number: string | null
@@ -6103,6 +6141,7 @@ export type Database = {
           packing_video_url?: string | null
           paid_at?: string | null
           payment_intent_id?: string | null
+          payment_verified_at?: string | null
           shipped_at?: string | null
           shipping_address?: Json | null
           shipping_label_url?: string | null
@@ -6115,6 +6154,8 @@ export type Database = {
           shipping_relay_postcode?: string | null
           shipping_weight_grams?: number | null
           status?: Database["public"]["Enums"]["order_status"]
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
           subtotal: number
           total: number
           tracking_number?: string | null
@@ -6134,6 +6175,7 @@ export type Database = {
           packing_video_url?: string | null
           paid_at?: string | null
           payment_intent_id?: string | null
+          payment_verified_at?: string | null
           shipped_at?: string | null
           shipping_address?: Json | null
           shipping_label_url?: string | null
@@ -6146,6 +6188,8 @@ export type Database = {
           shipping_relay_postcode?: string | null
           shipping_weight_grams?: number | null
           status?: Database["public"]["Enums"]["order_status"]
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
           subtotal?: number
           total?: number
           tracking_number?: string | null
@@ -10896,6 +10940,17 @@ export type Database = {
       set_news_reaction: {
         Args: { p_reaction: string; p_thread: string }
         Returns: undefined
+      }
+      settle_marketplace_payment: {
+        Args: {
+          p_amount_cents: number
+          p_buyer_id: string
+          p_currency: string
+          p_order_id: string
+          p_payment_intent_id: string
+          p_session_id: string
+        }
+        Returns: boolean
       }
       store_ad_location_context: {
         Args: {

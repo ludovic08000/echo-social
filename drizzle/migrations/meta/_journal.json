@@ -197,6 +197,13 @@
       "when": 1791512270652,
       "tag": "0027_enforce_subscriber_only_in_ranked_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793038758700,
+      "tag": "0028_secure_marketplace_payment_authority",
+      "breakpoints": true
     }
   ]
 }
