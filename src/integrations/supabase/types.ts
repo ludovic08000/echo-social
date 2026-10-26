@@ -1248,6 +1248,41 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_usage_reservations: {
+        Row: {
+          agent_id: string
+          created_at: string
+          request_id: string
+          state: string
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          request_id: string
+          state?: string
+          usage_date: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          request_id?: string
+          state?: string
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_reservations_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       album_media: {
         Row: {
           album_id: string
@@ -4112,6 +4147,7 @@ export type Database = {
       }
       login_attempts: {
         Row: {
+          authority: string
           created_at: string
           email_hash: string | null
           id: string
@@ -4120,6 +4156,7 @@ export type Database = {
           user_agent: string | null
         }
         Insert: {
+          authority?: string
           created_at?: string
           email_hash?: string | null
           id?: string
@@ -4128,6 +4165,7 @@ export type Database = {
           user_agent?: string | null
         }
         Update: {
+          authority?: string
           created_at?: string
           email_hash?: string | null
           id?: string
@@ -10063,6 +10101,10 @@ export type Database = {
         }
         Returns: Json
       }
+      finish_ai_agent_usage: {
+        Args: { p_request_id: string; p_success: boolean }
+        Returns: boolean
+      }
       finish_feed_feature_job: {
         Args: { p_features: Json; p_post: string; p_revision: string }
         Returns: boolean
@@ -10917,6 +10959,10 @@ export type Database = {
         Returns: Json
       }
       require_approved_recovery_login: { Args: never; Returns: boolean }
+      reserve_ai_agent_usage: {
+        Args: { p_agent_id: string; p_request_id: string; p_user_id: string }
+        Returns: Json
+      }
       reset_backup_pin_attempts: {
         Args: { _user_id: string }
         Returns: undefined

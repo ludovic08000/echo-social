@@ -232,6 +232,13 @@
       "when": 1793038848504,
       "tag": "0032_harden_distributed_rate_limit_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793038899326,
+      "tag": "0033_harden_remaining_social_and_ai_authority",
+      "breakpoints": true
     }
   ]
 }
