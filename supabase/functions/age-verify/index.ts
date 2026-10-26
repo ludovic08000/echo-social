@@ -42,6 +42,8 @@ Deno.serve(async (req) => {
       });
     }
 
+    const userId = user.id;
+
     // Cached application bundles may still call this endpoint. Fail open with
     // a stable, non-mutating response so an ordinary photo can never lock an account.
     return new Response(JSON.stringify({ status: 'retired', flagged: false }), {
@@ -55,7 +57,7 @@ Deno.serve(async (req) => {
     const { data: profile } = await serviceClient
       .from('profiles')
       .select('age_verified, age_verification_status, date_of_birth')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single();
 
     if (profile?.age_verified || profile?.age_verification_status === 'pending') {
@@ -73,8 +75,9 @@ Deno.serve(async (req) => {
 
     // Calculate declared age
     let declaredAge = 99;
-    if (profile?.date_of_birth) {
-      const dob = new Date(profile.date_of_birth);
+    const dateOfBirth = profile?.date_of_birth;
+    if (dateOfBirth) {
+      const dob = new Date(dateOfBirth as string);
       const today = new Date();
       declaredAge = today.getFullYear() - dob.getFullYear();
       const m = today.getMonth() - dob.getMonth();
@@ -83,7 +86,7 @@ Deno.serve(async (req) => {
 
     // Only check users who declared 16+ (minors already have protections)
     if (declaredAge < 16) {
-      await serviceClient.from('profiles').update({ age_verified: true, age_verification_status: 'verified' }).eq('user_id', user.id);
+      await serviceClient.from('profiles').update({ age_verified: true, age_verification_status: 'verified' }).eq('user_id', userId);
       return new Response(JSON.stringify({ status: 'minor_declared', flagged: false }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -142,7 +145,7 @@ Do not add any other text.`,
     if (!aiResponse.ok) {
       console.error('AI gateway error:', aiResponse.status);
       // Don't block the user if AI fails — mark as verified
-      await serviceClient.from('profiles').update({ age_verified: true, age_verification_status: 'verified' }).eq('user_id', user.id);
+      await serviceClient.from('profiles').update({ age_verified: true, age_verification_status: 'verified' }).eq('user_id', userId);
       return new Response(JSON.stringify({ status: 'ai_error', flagged: false }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -176,11 +179,11 @@ Do not add any other text.`,
       }
     }
 
-    console.log(`Age verify: user=${user.id}, declared=${declaredAge}, estimated=${estimatedAge}, confidence=${confidence}, face=${faceDetected}`);
+    console.log(`Age verify: user=${userId}, declared=${declaredAge}, estimated=${estimatedAge}, confidence=${confidence}, face=${faceDetected}`);
 
     // If no face detected, skip — don't flag
     if (!faceDetected) {
-      await serviceClient.from('profiles').update({ age_verified: true, age_verification_status: 'verified' }).eq('user_id', user.id);
+      await serviceClient.from('profiles').update({ age_verified: true, age_verification_status: 'verified' }).eq('user_id', userId);
       return new Response(JSON.stringify({ status: 'no_face', flagged: false }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -193,11 +196,11 @@ Do not add any other text.`,
       // 1. Flag profile
       await serviceClient.from('profiles').update({
         age_verification_status: 'flagged',
-      }).eq('user_id', user.id);
+      }).eq('user_id', userId);
 
       // 2. Activate parental controls
       await serviceClient.from('parental_controls').upsert({
-        user_id: user.id,
+        user_id: userId,
         is_active: true,
         is_minor: true,
         allowed_categories: ['education', 'sport', 'gaming', 'musique', 'art', 'humour'],
@@ -208,8 +211,8 @@ Do not add any other text.`,
       deadline.setHours(deadline.getHours() + 72);
 
       await serviceClient.from('identity_verifications').insert({
-        reported_user_id: user.id,
-        reporter_id: user.id, // Self-triggered by system
+        reported_user_id: userId,
+        reporter_id: userId, // Self-triggered by system
         reason: `Vérification d'âge automatique : l'IA estime ${estimatedAge} ans (confiance: ${confidence}) alors que l'utilisateur a déclaré ${declaredAge} ans.`,
         status: 'pending',
         deadline_at: deadline.toISOString(),
@@ -229,7 +232,7 @@ Do not add any other text.`,
     await serviceClient.from('profiles').update({
       age_verified: true,
       age_verification_status: 'verified',
-    }).eq('user_id', user.id);
+    }).eq('user_id', userId);
 
     return new Response(JSON.stringify({ status: 'verified', flagged: false }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
