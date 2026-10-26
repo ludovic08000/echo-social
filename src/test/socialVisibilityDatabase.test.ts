@@ -12,6 +12,7 @@ beforeAll(async()=>{
     grant usage on schema auth to anon,authenticated;
     create table posts(id uuid primary key,user_id uuid,body text,publish_at timestamptz,expires_at timestamptz);
     alter table posts enable row level security;create policy old_read on posts for select using(true);
+    create policy author_insert on posts for insert to authenticated with check(auth.uid()=user_id);
     create table profiles(user_id uuid primary key);
     create table privacy_settings(user_id uuid,profile_visibility text,posts_visibility text);
     create table friendships(requester_id uuid,addressee_id uuid,status text);
@@ -27,6 +28,7 @@ beforeAll(async()=>{
     grant all on all tables in schema public to anon,authenticated,service_role;
   `);
   await db.exec(readFileSync('supabase/migrations/20261018203727_secure_post_visibility_and_private_columns.sql','utf8'));
+  await db.exec(readFileSync('supabase/migrations/20261026215200_allow_post_author_insert_returning.sql','utf8'));
   await db.exec(readFileSync('supabase/migrations/20261018204251_revoke_sensitive_columns_after_client_rollout.sql','utf8'));
   await db.exec(`grant execute on function feed_eligible_post_ids_internal(uuid,uuid[]) to service_role;
     insert into live_streams values(1,'synthetic-secret','Public live');insert into ai_agents values(1,'private prompt','Zeus');
@@ -63,6 +65,12 @@ it.each(['blocked','scheduled','expired','friends-only'])('enforces %s in the di
 it('preserves author access to their own draft or subscriber-only post',async()=>{
   await db.exec('reset role');await db.query("update posts set subscriber_only=true,publish_at=now()+interval '1 day'");
   await login(1);expect((await visible()).rows).toHaveLength(1);
+});
+it('allows an authenticated author to insert a post with returning while preserving ownership checks',async()=>{
+  await login(2);
+  const inserted=await db.query<{id:string}>('insert into posts(id,user_id,body) values($1,$2,$3) returning id',[id(20),id(2),'new post']);
+  expect(inserted.rows).toEqual([{id:id(20)}]);
+  await expect(db.query('insert into posts(id,user_id,body) values($1,$2,$3) returning id',[id(21),id(1),'forged owner'])).rejects.toThrow(/row-level security/);
 });
 it('denies selecting the sensitive column even with old broad table grants',async()=>{
   await login(null);expect((await db.query('select title from live_streams')).rows).toHaveLength(1);
