@@ -9795,6 +9795,30 @@ export type Database = {
           total_calls: number
         }[]
       }
+      apply_admin_feed_config_update: {
+        Args: {
+          p_actor: string
+          p_expected: Json
+          p_key: string
+          p_reason: string
+          p_updates: Json
+        }
+        Returns: Json
+      }
+      apply_owned_content_moderation: {
+        Args: {
+          p_actor: string
+          p_category: string
+          p_content: string
+          p_expected_body: string
+          p_kind: string
+          p_reason: string
+          p_reasoning: string
+          p_reply: string
+          p_severity: string
+        }
+        Returns: Json
+      }
       apply_security_auto_mitigations: { Args: never; Returns: Json }
       approve_device_enrollment_decision:
         | {
@@ -10073,6 +10097,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      feed_api_session_active: { Args: never; Returns: boolean }
       feed_eligible_post_ids_internal: {
         Args: { p_post_ids: string[]; p_viewer_id: string }
         Returns: {

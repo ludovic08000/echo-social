@@ -260,6 +260,20 @@
       "when": 1793038963848,
       "tag": "0036_auth_verified_password_attempt_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793039003200,
+      "tag": "0037_harden_ai_action_and_moderation_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793039007116,
+      "tag": "0038_feed_api_active_session_authority",
+      "breakpoints": true
     }
   ]
 }
