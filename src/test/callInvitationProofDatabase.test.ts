@@ -75,6 +75,15 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
         is_active boolean DEFAULT true,created_at timestamptz DEFAULT now());
       CREATE FUNCTION aegis_verify_account_binding(text,text,text,text,integer) RETURNS boolean LANGUAGE sql AS $$ SELECT $4='valid' $$;
       CREATE FUNCTION aegis_verify_device_authorization(uuid,text,text,text,text,text,text) RETURNS boolean LANGUAGE sql AS $$ SELECT $5='valid' $$;
+      CREATE FUNCTION get_sesame_device_list(p_user_id uuid)
+      RETURNS TABLE(device_id text,is_routable boolean) LANGUAGE sql STABLE AS $$
+        SELECT d.device_id,
+          d.is_active AND d.approval_status='approved' AND d.revoked_at IS NULL
+          AND d.stale_at IS NULL AND d.crypto_invalid_at IS NULL
+          AND d.binding_status='bound' AND d.account_bound_at IS NOT NULL
+          AND d.routing_status='ready' AND d.device_authorization_signature='valid'
+        FROM user_devices d WHERE d.user_id=p_user_id
+      $$;
       CREATE FUNCTION aegis_decode_base64(text) RETURNS bytea LANGUAGE plpgsql AS $$ BEGIN RETURN decode($1,'base64'); EXCEPTION WHEN OTHERS THEN RETURN NULL; END $$;
       CREATE FUNCTION assert_current_login_session_approved() RETURNS void LANGUAGE plpgsql AS $$ BEGIN
         IF current_setting('test.approved',true) IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'LOGIN_SECURITY_APPROVAL_REQUIRED'; END IF; END $$;
@@ -90,6 +99,7 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
     await db.exec(original.slice(original.indexOf('-- Stage 5:'), original.indexOf('-- Stage 6:')));
     await db.exec(readFileSync('supabase/migrations/20261012115746_authenticate_call_invitations.sql', 'utf8'));
     await db.exec(readFileSync('supabase/migrations/20261013140030_fix_call_invitation_conversation_type.sql', 'utf8'));
+    await db.exec(readFileSync('supabase/migrations/20261026194142_align_call_fanout_with_canonical_routes.sql', 'utf8'));
     recipient = await crypto.subtle.generateKey('X25519', true, ['deriveBits']) as CryptoKeyPair;
     mediaKey = bytes(32);
     const wire = await sealCallKeyForDevice({ ...context, callerDeviceId: callerDevice,
@@ -146,6 +156,30 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
     expect(await counts()).toEqual({ calls: 1, invitations: 1 });
     expect((await db.query('SELECT status FROM active_calls')).rows[0]).toEqual({ status: 'ended' });
   });
+  it('uses the canonical Sesame set and ignores a repairing recipient route', async () => {
+    await db.exec('RESET ROLE');
+    await db.query(`INSERT INTO user_devices(user_id,device_id,device_signing_key,routing_status)
+      VALUES($1,'repairing-device',$2,'repairing')`, [uid(2), publicKey]);
+    await asUser();
+    expect((await create()).rows[0].result).toMatchObject({ ok: true, code: 'CALL_CREATED' });
+    expect(await counts()).toEqual({ calls: 1, invitations: 1 });
+  });
+  it('can roll back and reapply the canonical call fan-out without touching device rows', async () => {
+    await db.exec('RESET ROLE');
+    await db.query(`INSERT INTO user_devices(user_id,device_id,device_signing_key,routing_status)
+      VALUES($1,'repairing-device',$2,'repairing')`, [uid(2), publicKey]);
+    await db.exec(readFileSync('supabase/rollback/align_call_fanout_with_canonical_routes.sql', 'utf8'));
+    try {
+      await asUser();
+      expect((await create()).rows[0].result).toEqual({ ok: false, code: 'INCOMPLETE_CALL_DEVICE_FANOUT' });
+      expect(await counts()).toEqual({ calls: 0, invitations: 0 });
+    } finally {
+      await db.exec('RESET ROLE');
+      await db.exec(readFileSync('supabase/migrations/20261026194142_align_call_fanout_with_canonical_routes.sql', 'utf8'));
+    }
+    await asUser();
+    expect((await create()).rows[0].result).toMatchObject({ ok: true, code: 'CALL_CREATED' });
+  });
   it('rejects unsigned old calls atomically', async () => {
     await expect(create(envelope.split('.').slice(0, 4).join('.'))).rejects.toThrow('CALL_CLIENT_UPDATE_REQUIRED');
     expect(await counts()).toEqual({ calls: 0, invitations: 0 });
@@ -196,7 +230,7 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
     'rejects a caller that the old RPC accepted with %s', async (mutation) => {
       await db.exec(`RESET ROLE; UPDATE user_devices SET ${mutation} WHERE device_id='caller-device'`);
       await asUser();
-      await expect(create()).rejects.toThrow('CALL_DEVICE_NOT_AUTHORIZED');
+      expect((await create()).rows[0].result).toEqual({ ok: false, code: 'CALLER_DEVICE_NOT_AUTHORIZED' });
       expect(await counts()).toEqual({ calls: 0, invitations: 0 });
     });
   it('rejects an unapproved login even with a valid device signature', async () => {
