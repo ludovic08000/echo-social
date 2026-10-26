@@ -30,7 +30,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
 
 const features = [
   { icon: MessageCircle, title: 'Messagerie privée', desc: 'Échangez avec vos proches. Messages texte, vocaux et appels vidéo intégrés.' },
-  { icon: Video, title: 'Live streaming gratuit', desc: 'Lancez un live en un clic, interagissez avec votre audience en temps réel. Aucun abonnement requis.' },
+  { icon: Video, title: 'Live streaming créateur', desc: 'Les créateurs abonnés peuvent lancer un live et interagir avec leur audience en temps réel.' },
   { icon: Tv, title: 'Canaux TV personnalisés', desc: 'Créez votre propre chaîne, publiez du contenu vidéo et construisez votre communauté de fans.' },
   { icon: Store, title: 'Marketplace intégré', desc: 'Vendez et achetez directement sur la plateforme. Paiement sécurisé et suivi de livraison inclus.' },
   { icon: Shield, title: 'Vie privée respectée', desc: 'Pas de revente de données. La personnalisation publicitaire est facultative et distincte des recommandations du feed.' },
@@ -45,7 +45,7 @@ const advantages = [
 ];
 
 const faqItems = [
-  { q: 'Forsure est-il gratuit ?', a: 'Oui, Forsure est entièrement gratuit. L\'inscription, la messagerie, le live streaming, les jeux multijoueurs et toutes les fonctionnalités de base sont accessibles sans frais. Des options premium optionnelles sont disponibles pour les créateurs de contenu (abonnements, badge vérifié).' },
+  { q: 'Forsure est-il gratuit ?', a: 'L\'inscription, la messagerie, le visionnage des lives, les jeux multijoueurs et les fonctionnalités sociales de base sont accessibles sans frais. La diffusion d\'un live est réservée aux créateurs disposant d\'un abonnement actif.' },
   { q: 'En quoi Forsure est différent de Facebook ou Instagram ?', a: 'Forsure associe un fil d\'actualité réglable, des outils de bien-être et une messagerie privée chiffrée. La personnalisation publicitaire est facultative et séparée des recommandations. Le service comprend aussi un marketplace, des jeux, des lives, des défis et un assistant IA (Zeus).' },
   { q: 'Comment mes messages sont-ils protégés ?', a: 'Les conversations privées 1-à-1 utilisent Libsignal avec PQXDH + Double Ratchet. Une sauvegarde de continuité peut conserver un coffre chiffré contenant les clés, sans les transmettre en clair. Vous pouvez vérifier les empreintes de vos contacts et protéger l\'accès local par un PIN. N\'effacez pas le navigateur sans avoir vérifié la sauvegarde et la restauration.' },
   { q: 'Comment Forsure protège ma vie privée ?', a: 'Vous pouvez régler la visibilité de votre profil et de vos publications, ainsi que les choix de personnalisation. La session web utilise localStorage, accessible au JavaScript du site, et non un cookie HttpOnly. Les paramètres proposent l\'export et la demande de suppression ; les copies, médias et conservations légales nécessitent un suivi distinct. La politique de confidentialité décrit ces traitements.' },
@@ -116,7 +116,7 @@ export default function Landing() {
           
           <p className="text-base sm:text-xl text-muted-foreground mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
             Forsure est l'alternative française à Facebook, Instagram et TikTok. 
-            Messagerie privée, live streaming gratuit, marketplace et canaux TV — 
+            Messagerie privée, lives de créateurs, marketplace et canaux TV —
             le tout sans exploiter vos données personnelles.
           </p>
           
@@ -230,7 +230,7 @@ export default function Landing() {
                   ['Tracking', '❌ Aucun', '✅ Cookies & trackers'],
                   ['Vente de données', '❌ Jamais', '✅ Modèle économique'],
                   ['Messagerie privée', '✅ Intégrée', '✅ Intégrée'],
-                  ['Live streaming', '✅ Gratuit', '⚠️ Limité / payant'],
+                  ['Diffusion en direct', '✅ Créateurs abonnés', '⚠️ Limité / payant'],
                   ['Marketplace', '✅ Intégré', '⚠️ Séparé'],
                   ['Canaux TV', '✅ Inclus', '❌ Non disponible'],
                   ['Open & éthique', '✅ Oui', '❌ Non'],
@@ -255,7 +255,7 @@ export default function Landing() {
           </h2>
           <p className="text-muted-foreground mb-8 text-base sm:text-lg">
             Inscription gratuite en 30 secondes. Pas de carte bancaire requise. 
-            Commencez à partager, streamer et échanger en toute liberté.
+             Commencez à partager et échanger librement. Les créateurs abonnés peuvent aussi diffuser leurs lives.
           </p>
           <Link to="/signup">
             <Button size="lg" className="premium-button text-base px-10">
@@ -291,8 +291,8 @@ export default function Landing() {
             ForSure est une initiative française utilisant plusieurs prestataires cloud décrits dans sa politique de confidentialité.
             Notre modèle économique comprend des abonnements premium optionnels pour les créateurs de contenu et des publicités identifiées,
             et non sur la vente de vos données personnelles. Que vous soyez un particulier qui souhaite rester 
-            en contact avec ses proches, un créateur de contenu à la recherche d'une plateforme de live streaming 
-            gratuite, ou un vendeur qui veut lancer sa boutique en ligne sur un marketplace social — Forsure 
+             en contact avec ses proches, un créateur de contenu à la recherche d'une plateforme de live streaming,
+             ou un vendeur qui veut lancer sa boutique en ligne sur un marketplace social — Forsure
             est une plateforme pour vous retrouver. Rejoignez une communauté qui fait le choix
             d'un réseau social respectueux de leur vie privée.
           </p>

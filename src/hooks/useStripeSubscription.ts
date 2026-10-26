@@ -49,12 +49,18 @@ export function useStripeSubscription() {
       // Fallback: check creator_subscriptions table in DB
       const { data: dbSub } = await supabase
         .from('creator_subscriptions')
-        .select('status, plan, current_period_end')
+        .select('status, plan, current_period_end, stripe_subscription_id')
         .eq('user_id', user.id)
         .eq('status', 'active')
         .maybeSingle();
 
-      if (dbSub) {
+      const periodEnd = dbSub?.current_period_end ? new Date(dbSub.current_period_end).getTime() : 0;
+      if (
+        dbSub?.plan === 'creator_monthly'
+        && Boolean(dbSub.stripe_subscription_id)
+        && Number.isFinite(periodEnd)
+        && periodEnd > Date.now()
+      ) {
         setState({
           subscribed: true,
           productId: CREATOR_PLAN.product_id,

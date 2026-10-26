@@ -5,13 +5,14 @@ import { AppLayout } from '@/components/AppLayout';
 import { LiveCard } from '@/components/LiveCard';
 import { useLiveStreams, useStartLive } from '@/hooks/useLiveStreams';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useStripeSubscription } from '@/hooks/useStripeSubscription';
 
 const CATEGORIES = [
   { value: 'general', label: 'Général' },
@@ -28,6 +29,7 @@ export default function Lives() {
   const navigate = useNavigate();
   const { data: lives, isLoading } = useLiveStreams();
   const startLive = useStartLive();
+  const { isCreatorSubscriber, loading: creatorSubscriptionLoading } = useStripeSubscription();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -36,6 +38,12 @@ export default function Lives() {
   const [filter, setFilter] = useState<'all' | 'following'>('all');
 
   const handleStartLive = async () => {
+    if (!isCreatorSubscriber) {
+      setIsDialogOpen(false);
+      toast({ title: 'Abonnement Créateur requis', variant: 'destructive' });
+      navigate('/creator');
+      return;
+    }
     if (!title.trim()) {
       toast({ title: 'Donne un titre à ton live', variant: 'destructive' });
       return;
@@ -66,6 +74,19 @@ export default function Lives() {
     }
   };
 
+  const requestStartLive = () => {
+    if (creatorSubscriptionLoading) return;
+    if (!isCreatorSubscriber) {
+      toast({
+        title: 'Live réservé aux créateurs abonnés',
+        description: 'Active l’abonnement Créateur pour démarrer un live.',
+      });
+      navigate('/creator');
+      return;
+    }
+    setIsDialogOpen(true);
+  };
+
   const filteredLives = lives || [];
 
   return (
@@ -83,12 +104,15 @@ export default function Lives() {
         </div>
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="premium-button h-9 px-4 text-xs rounded-xl">
-              <Plus className="w-4 h-4 mr-1.5" />
-              Démarrer un live
-            </Button>
-          </DialogTrigger>
+          <Button
+            size="sm"
+            className="premium-button h-9 px-4 text-xs rounded-xl"
+            onClick={requestStartLive}
+            disabled={creatorSubscriptionLoading}
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            {isCreatorSubscriber ? 'Démarrer un live' : 'Live Créateur'}
+          </Button>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -219,9 +243,9 @@ export default function Lives() {
           <p className="text-sm text-muted-foreground max-w-xs mx-auto">
             Sois le premier à démarrer un live !
           </p>
-          <Button onClick={() => setIsDialogOpen(true)} size="sm" className="premium-button h-10 px-5 text-xs rounded-xl">
+          <Button onClick={requestStartLive} disabled={creatorSubscriptionLoading} size="sm" className="premium-button h-10 px-5 text-xs rounded-xl">
             <Plus className="w-4 h-4 mr-1.5" />
-            Démarrer un live
+            {isCreatorSubscriber ? 'Démarrer un live' : 'Devenir créateur'}
           </Button>
         </div>
       ) : (

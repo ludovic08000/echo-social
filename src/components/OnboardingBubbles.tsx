@@ -27,7 +27,7 @@ const STEPS: BubbleStep[] = [
   {
     icon: <Video className="w-5 h-5" />,
     title: 'Lives & Appels vidéo 🎥',
-    description: 'Lance un live avec chat en direct, ou passe des appels audio/vidéo chiffrés avec tes contacts.',
+    description: 'Regarde les lives avec chat en direct. Leur diffusion est réservée aux créateurs abonnés ; les appels audio/vidéo restent disponibles avec tes contacts.',
     position: 'bottom',
   },
   {

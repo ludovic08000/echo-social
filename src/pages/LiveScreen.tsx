@@ -21,6 +21,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { prefetchLiveKitToken } from '@/lib/livekit';
+import { useStripeSubscription } from '@/hooks/useStripeSubscription';
 
 const CATEGORIES = [
   { value: 'general', label: 'Général' },
@@ -346,6 +347,20 @@ export default function LiveScreen() {
   const [newCategory, setNewCategory] = useState('general');
   const [newHashtags, setNewHashtags] = useState('');
   const startLive = useStartLive();
+  const { isCreatorSubscriber, loading: creatorSubscriptionLoading } = useStripeSubscription();
+
+  const requestStartLive = () => {
+    if (creatorSubscriptionLoading) return;
+    if (!isCreatorSubscriber) {
+      toast({
+        title: 'Live réservé aux créateurs abonnés',
+        description: 'Active l’abonnement Créateur pour démarrer un live.',
+      });
+      navigate('/creator');
+      return;
+    }
+    setStartDialogOpen(true);
+  };
 
   // Filter by category
   const filteredLives = useMemo(() => {
@@ -385,6 +400,12 @@ export default function LiveScreen() {
   };
 
   const handleStartLive = async () => {
+    if (!isCreatorSubscriber) {
+      setStartDialogOpen(false);
+      toast({ title: 'Abonnement Créateur requis', variant: 'destructive' });
+      navigate('/creator');
+      return;
+    }
     if (!newTitle.trim()) {
       toast({ title: 'Donne un titre à ton live', variant: 'destructive' });
       return;
@@ -530,7 +551,9 @@ export default function LiveScreen() {
       <motion.button
         whileTap={{ scale: 0.9 }}
         whileHover={{ scale: 1.05 }}
-        onClick={() => setStartDialogOpen(true)}
+        onClick={requestStartLive}
+        disabled={creatorSubscriptionLoading}
+        aria-label={isCreatorSubscriber ? 'Démarrer un live' : 'Découvrir l’abonnement Créateur pour les lives'}
         className="absolute bottom-24 right-5 z-30 w-14 h-14 rounded-2xl flex items-center justify-center text-white border border-white/[0.1]"
         style={{
           background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.7))',

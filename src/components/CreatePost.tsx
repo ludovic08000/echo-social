@@ -12,6 +12,7 @@ import { isVideoCompatible } from '@/lib/videoCompat';
 import { createFeedImageVariants } from '@/lib/feedImageVariants';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { useStripeSubscription } from '@/hooks/useStripeSubscription';
 import { UserAvatar } from './UserAvatar';
 import { MoodPicker } from './MoodPicker';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,7 @@ export function CreatePost() {
   const createPost = useCreatePost();
   const postModeration = usePostModeration();
   const { data: ownClub } = useFanClub(user?.id);
+  const { isCreatorSubscriber } = useStripeSubscription();
   const [body, setBody] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [media, setMedia] = useState<File | null>(null);
@@ -306,7 +308,7 @@ export function CreatePost() {
       }
 
       // Reuse the same thumbnail for replay (no duplicate generation!)
-      if (publishAsReplay && mediaType === 'video' && imageUrl) {
+      if (publishAsReplay && isCreatorSubscriber && mediaType === 'video' && imageUrl) {
         await supabase.from('live_streams').insert({
           user_id: user.id,
           title: replayTitle.trim() || body.trim() || 'Replay',
@@ -553,7 +555,7 @@ export function CreatePost() {
                   )}
 
                   {/* Publish as Replay toggle — only for videos */}
-                  {mediaType === 'video' && mediaPreview && (
+                  {isCreatorSubscriber && mediaType === 'video' && mediaPreview && (
                     <motion.div
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}

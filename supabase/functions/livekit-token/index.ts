@@ -219,6 +219,18 @@ Deno.serve(async (req) => {
       }
       tokenTtl = "75m";
       if (live.user_id === userId) {
+        diagnostic.step("creator_subscription");
+        const { data: subscription, error: subscriptionError } = await adminClient
+          .from("creator_subscriptions")
+          .select("user_id")
+          .eq("user_id", userId)
+          .eq("status", "active")
+          .eq("plan", "creator_monthly")
+          .not("stripe_subscription_id", "is", null)
+          .gt("current_period_end", new Date().toISOString())
+          .maybeSingle();
+        if (subscriptionError) return json(503, { error: "CREATOR_SUBSCRIPTION_LOOKUP_FAILED" });
+        if (!subscription) return json(403, { error: "LIVE_CREATOR_SUBSCRIPTION_REQUIRED" });
         role = "host";
         canPublish = true;
       }
