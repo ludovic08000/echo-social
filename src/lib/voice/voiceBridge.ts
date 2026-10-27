@@ -54,7 +54,7 @@ export function parseVoiceProposalEvent(
   event: Pick<MessageEvent, 'origin' | 'source' | 'data'>,
   expected: { origin: string; source: Window | null; nonce: string },
 ): VoiceProposal | null {
-  if (event.origin !== normalizeVoiceOrigin(expected.origin) || event.source !== expected.source) return null;
+  if (!expected.source || event.origin !== normalizeVoiceOrigin(expected.origin) || event.source !== expected.source) return null;
   const parsed = voiceMessageSchema.safeParse(event.data);
   if (!parsed.success || parsed.data.nonce !== expected.nonce) return null;
   return parsed.data.proposal;

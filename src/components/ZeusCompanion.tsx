@@ -450,10 +450,19 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const voicePopupRef = useRef<Window | null>(null);
   const voiceNonceRef = useRef<string | null>(null);
+  const voiceExpiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagingConversationsRef = useRef(messagingConversations);
   const [openingVoice, setOpeningVoice] = useState(false);
 
   useEffect(() => { messagingConversationsRef.current = messagingConversations; }, [messagingConversations]);
+
+  const clearVoiceSession = useCallback(() => {
+    if (voiceExpiryTimerRef.current) clearTimeout(voiceExpiryTimerRef.current);
+    voiceExpiryTimerRef.current = null;
+    voiceNonceRef.current = null;
+    voicePopupRef.current?.close();
+    voicePopupRef.current = null;
+  }, []);
 
   const { data: conversations, refetch: refetchConversations } = useZeusConversations(zeusAgentId);
   const { data: loadedMessages } = useZeusMessages(conversationId);
@@ -486,6 +495,9 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         nonce,
       });
       if (!proposal) return;
+      // Consume the browser-side capability before any name resolution or UI work.
+      // A valid popup may submit at most one proposal, including an ambiguous one.
+      clearVoiceSession();
       let resolvedProposal = proposal;
       if (proposal.type === 'send_message' && !proposal.conversation_id) {
         const requestedName = proposal.recipient_name?.toLocaleLowerCase().trim();
@@ -503,19 +515,14 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       setMessages((current) => [...current, { role: 'assistant', content: voiceProposalToZeusContent(resolvedProposal) }]);
       setActiveTab('chat');
       setOpen(true);
-      voiceNonceRef.current = null;
-      voicePopupRef.current?.close();
-      voicePopupRef.current = null;
       toast.success('Proposition vocale reçue', { description: 'Vérifiez-la avant de confirmer.' });
     };
     window.addEventListener('message', onVoiceMessage);
     return () => {
       window.removeEventListener('message', onVoiceMessage);
-      voicePopupRef.current?.close();
-      voicePopupRef.current = null;
-      voiceNonceRef.current = null;
+      clearVoiceSession();
     };
-  }, []);
+  }, [clearVoiceSession]);
   // Ref to hold a pending message that should be auto-sent once Zeus opens
   const pendingSendRef = useRef<string | null>(null);
 
@@ -827,12 +834,12 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
   const openVoiceAssistant = useCallback(async () => {
     if (!user || openingVoice) return;
+    clearVoiceSession();
     const popup = window.open('about:blank', 'forsure-voice', 'popup,width=460,height=760');
     if (!popup) {
       toast.error('Autorisez les fenêtres contextuelles pour ouvrir la commande vocale.');
       return;
     }
-    voicePopupRef.current?.close();
     voicePopupRef.current = popup;
     setOpeningVoice(true);
     try {
@@ -853,16 +860,18 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         throw new Error('Commande vocale indisponible');
       }
       voiceNonceRef.current = result.nonce;
+      voiceExpiryTimerRef.current = setTimeout(() => {
+        clearVoiceSession();
+        toast.error('La session vocale a expiré. Relancez Zeus pour réessayer.');
+      }, 65_000);
       popup.location.replace(createVoiceLaunchUrl(origin, result.ticket, result.nonce));
     } catch (error) {
-      popup.close();
-      voicePopupRef.current = null;
-      voiceNonceRef.current = null;
+      clearVoiceSession();
       toast.error(error instanceof Error ? error.message : 'Commande vocale indisponible');
     } finally {
       setOpeningVoice(false);
     }
-  }, [openingVoice, user]);
+  }, [clearVoiceSession, openingVoice, user]);
 
   const guestCount = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
   const guestLimitReached = !user && guestCount >= 3;

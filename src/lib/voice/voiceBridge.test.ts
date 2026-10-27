@@ -43,6 +43,17 @@ describe('voiceBridge', () => {
     expect(proposal).toBeNull();
   });
 
+  it('never accepts a message when the expected popup is missing', () => {
+    expect(parseVoiceProposalEvent({
+      origin: 'https://voice.forsure.fans',
+      source: null,
+      data: {
+        type: 'forsure.voice.proposal', nonce: 'n'.repeat(32),
+        proposal: { type: 'publish_post', body: 'Bonjour' },
+      },
+    }, { origin: 'https://voice.forsure.fans', source: null, nonce: 'n'.repeat(32) })).toBeNull();
+  });
+
   it('creates a Zeus confirmation card instead of executing directly', () => {
     const content = voiceProposalToZeusContent({ type: 'send_message', conversation_id: crypto.randomUUID(), message_text: 'Salut' });
     expect(content).toContain('Vérifiez puis confirmez');
