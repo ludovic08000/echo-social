@@ -21,7 +21,14 @@ import { SafeMarkdown } from '@/components/SafeMarkdown';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
-import { CONTENT_PREFS_CHANGED_EVENT, saveFeedPrefs } from '@/lib/feedPreferences';
+import {
+  CONTENT_PREFS_CHANGED_EVENT,
+  applyFeedPreferenceCommand,
+  saveFeedPrefs,
+  syncFeedPrefsFromServer,
+  undoFeedPreferenceChange,
+} from '@/lib/feedPreferences';
+import { parseFeedControlAction, type FeedPreferenceCommand } from '@/lib/feedControlActions';
 
 
 type Msg = { role: string; content: string };
@@ -40,6 +47,8 @@ interface ActionBlock {
   conversation_id?: string;
   recipient_name?: string;
   message_text?: string;
+  summary?: string;
+  command?: FeedPreferenceCommand;
 }
 
 interface ProductItem {
@@ -71,8 +80,12 @@ function parseActionFromContent(content: string): { text: string; action: Action
     const match = content.match(regex);
     if (match) {
       try {
-        const action = JSON.parse(match[1].trim());
-        return { text: content.replace(match[0], '').trim(), action };
+        const candidate = JSON.parse(match[1].trim());
+        if (candidate?.type === 'update_feed_config') {
+          const parsed = parseFeedControlAction(candidate);
+          return { text: content.replace(match[0], '').trim(), action: parsed as ActionBlock | null };
+        }
+        return { text: content.replace(match[0], '').trim(), action: candidate };
       } catch { /* ignore */ }
     }
   }
@@ -135,7 +148,7 @@ function ActionCard({ action, onExecute, executing, executed }: {
     send_message: { icon: <MessageSquare className="w-3.5 h-3.5" />, label: `Envoyer à ${action.recipient_name || 'un ami'}` },
   };
   const info = labels[action.type] || { icon: <Zap className="w-3.5 h-3.5" />, label: 'Action' };
-  const preview = action.type === 'update_feed_config' ? '' : (action.message_text || action.body || action.caption || action.translated_text || action.prompt || '');
+  const preview = action.type === 'update_feed_config' ? (action.summary || '') : (action.message_text || action.body || action.caption || action.translated_text || action.prompt || '');
 
   return (
     <div className="mt-2.5 p-3 rounded-xl bg-accent/50 border border-border space-y-2">
@@ -541,8 +554,31 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       }
 
       if (action.type === 'update_feed_config') {
+        if (!action.summary || !action.command) {
+          toast.error('Réglage du feed invalide');
+          return;
+        }
+        const changeId = await applyFeedPreferenceCommand(action.summary, action.command);
+        await syncFeedPrefsFromServer(user.id);
+        await queryClient.invalidateQueries({ queryKey: ['posts'] });
         setExecutedActions(prev => new Set([...prev, msgIndex]));
-        toast.success('Configuration mise à jour ✓');
+        toast.success('Feed personnalisé ✓', {
+          description: action.summary,
+          duration: 10000,
+          action: {
+            label: 'Annuler',
+            onClick: async () => {
+              try {
+                await undoFeedPreferenceChange(changeId);
+                await syncFeedPrefsFromServer(user.id);
+                await queryClient.invalidateQueries({ queryKey: ['posts'] });
+                toast.success('Modification annulée');
+              } catch {
+                toast.error("L'annulation n'est plus disponible");
+              }
+            },
+          },
+        });
         return;
       }
 

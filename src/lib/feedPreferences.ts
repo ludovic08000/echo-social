@@ -8,6 +8,7 @@
 
 import { readFeedPreferences, writeFeedPreferences } from '@/lib/feedApi';
 import type { ContentPrefs, FeedWeights } from '@/lib/feedAlgorithm';
+import type { FeedPreferenceCommand } from '@/lib/feedControlActions';
 
 const PREFS_KEY = 'content-prefs';
 const WEIGHTS_KEY = 'feed-weights';
@@ -21,6 +22,7 @@ const DEFAULT_PREFS: ContentPrefs = {
   diversityBoost: 50,
   mutedKeywords: [],
   priorityTopics: [],
+  reducedTopics: [],
   viralContentReduce: false,
   sensitiveContentFilter: true,
   seenPostsHide: false,
@@ -40,6 +42,7 @@ type Row = {
   diversity_boost: number;
   muted_keywords: string[];
   priority_topics: string[];
+  reduced_topics?: string[];
   viral_content_reduce: boolean;
   sensitive_content_filter: boolean;
   seen_posts_hide: boolean;
@@ -58,6 +61,7 @@ function rowToPrefs(row: Row): { prefs: ContentPrefs; weights: FeedWeights } {
       diversityBoost: row.diversity_boost,
       mutedKeywords: row.muted_keywords ?? [],
       priorityTopics: row.priority_topics ?? [],
+      reducedTopics: row.reduced_topics ?? [],
       viralContentReduce: row.viral_content_reduce,
       sensitiveContentFilter: row.sensitive_content_filter,
       seenPostsHide: row.seen_posts_hide,
@@ -120,6 +124,7 @@ export async function syncFeedPrefsFromServer(userId: string): Promise<void> {
       diversity_boost: localPrefs.diversityBoost,
       muted_keywords: localPrefs.mutedKeywords,
       priority_topics: localPrefs.priorityTopics,
+      reduced_topics: localPrefs.reducedTopics,
       viral_content_reduce: localPrefs.viralContentReduce,
       sensitive_content_filter: localPrefs.sensitiveContentFilter,
       seen_posts_hide: localPrefs.seenPostsHide,
@@ -161,6 +166,7 @@ export async function saveFeedPrefs(
       diversity_boost: nextPrefs.diversityBoost,
       muted_keywords: nextPrefs.mutedKeywords,
       priority_topics: nextPrefs.priorityTopics,
+      reduced_topics: nextPrefs.reducedTopics,
       viral_content_reduce: nextPrefs.viralContentReduce,
       sensitive_content_filter: nextPrefs.sensitiveContentFilter,
       seen_posts_hide: nextPrefs.seenPostsHide,
@@ -177,4 +183,25 @@ export async function saveFeedPrefs(
   } else {
     writeCache(nextPrefs, nextWeights, userId);
   }
+}
+
+export async function applyFeedPreferenceCommand(
+  summary: string,
+  command: FeedPreferenceCommand,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('apply_feed_preference_command' as any, {
+    p_summary: summary,
+    p_command: command,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.change_id) throw new Error('FEED_CHANGE_NOT_APPLIED');
+  return String(row.change_id);
+}
+
+export async function undoFeedPreferenceChange(changeId: string): Promise<void> {
+  const { error } = await supabase.rpc('undo_feed_preference_change' as any, {
+    p_change_id: changeId,
+  });
+  if (error) throw error;
 }

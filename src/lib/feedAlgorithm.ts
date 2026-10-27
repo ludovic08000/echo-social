@@ -21,6 +21,7 @@ export interface ContentPrefs {
   diversityBoost: number; // 0-100
   mutedKeywords: string[];
   priorityTopics: string[];
+  reducedTopics: string[];
   viralContentReduce: boolean;
   sensitiveContentFilter: boolean;
   seenPostsHide: boolean;
@@ -40,6 +41,7 @@ const DEFAULT_PREFS: ContentPrefs = {
   diversityBoost: 50,
   mutedKeywords: [],
   priorityTopics: [],
+  reducedTopics: [],
   viralContentReduce: false,
   sensitiveContentFilter: true,
   seenPostsHide: false,
