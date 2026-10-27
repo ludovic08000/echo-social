@@ -36,7 +36,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// ../persist/node_modules/.deno/tslib@2.8.1/node_modules/tslib/tslib.es6.mjs
+// ../persist/node_modules/tslib/tslib.es6.mjs
 var tslib_es6_exports = {};
 __export(tslib_es6_exports, {
   __addDisposableResource: () => __addDisposableResource,
@@ -475,7 +475,7 @@ function __rewriteRelativeImportExtension(path, preserveJsx) {
 }
 var extendStatics, __assign, __createBinding, __setModuleDefault, ownKeys, _SuppressedError, tslib_es6_default;
 var init_tslib_es6 = __esm({
-  "../persist/node_modules/.deno/tslib@2.8.1/node_modules/tslib/tslib.es6.mjs"() {
+  "../persist/node_modules/tslib/tslib.es6.mjs"() {
     extendStatics = function(d, b) {
       extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
         d2.__proto__ = b2;
@@ -561,9 +561,9 @@ var init_tslib_es6 = __esm({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+functions-js@2.117.0/node_modules/@supabase/functions-js/dist/main/helper.js
+// ../persist/node_modules/@supabase/functions-js/dist/main/helper.js
 var require_helper = __commonJS({
-  "../persist/node_modules/.deno/@supabase+functions-js@2.117.0/node_modules/@supabase/functions-js/dist/main/helper.js"(exports) {
+  "../persist/node_modules/@supabase/functions-js/dist/main/helper.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.resolveFetch = void 0;
@@ -577,9 +577,9 @@ var require_helper = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+functions-js@2.117.0/node_modules/@supabase/functions-js/dist/main/types.js
+// ../persist/node_modules/@supabase/functions-js/dist/main/types.js
 var require_types = __commonJS({
-  "../persist/node_modules/.deno/@supabase+functions-js@2.117.0/node_modules/@supabase/functions-js/dist/main/types.js"(exports) {
+  "../persist/node_modules/@supabase/functions-js/dist/main/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionRegion = exports.FunctionsHttpError = exports.FunctionsRelayError = exports.FunctionsFetchError = exports.FunctionsError = void 0;
@@ -637,9 +637,9 @@ var require_types = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+functions-js@2.117.0/node_modules/@supabase/functions-js/dist/main/FunctionsClient.js
+// ../persist/node_modules/@supabase/functions-js/dist/main/FunctionsClient.js
 var require_FunctionsClient = __commonJS({
-  "../persist/node_modules/.deno/@supabase+functions-js@2.117.0/node_modules/@supabase/functions-js/dist/main/FunctionsClient.js"(exports) {
+  "../persist/node_modules/@supabase/functions-js/dist/main/FunctionsClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionsClient = void 0;
@@ -923,9 +923,9 @@ var require_FunctionsClient = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+functions-js@2.117.0/node_modules/@supabase/functions-js/dist/main/index.js
+// ../persist/node_modules/@supabase/functions-js/dist/main/index.js
 var require_main = __commonJS({
-  "../persist/node_modules/.deno/@supabase+functions-js@2.117.0/node_modules/@supabase/functions-js/dist/main/index.js"(exports) {
+  "../persist/node_modules/@supabase/functions-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionRegion = exports.FunctionsRelayError = exports.FunctionsHttpError = exports.FunctionsFetchError = exports.FunctionsError = exports.FunctionsClient = void 0;
@@ -952,9 +952,9 @@ var require_main = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js
 var require_websocket_factory = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebSocketFactory = void 0;
@@ -1063,9 +1063,9 @@ Suggested solution: ${env2.workaround}`;
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/version.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/version.js
 var require_version = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/version.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/version.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.version = void 0;
@@ -1073,9 +1073,9 @@ var require_version = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/constants.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/constants.js
 var require_constants = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/constants.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/constants.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CONNECTION_STATE = exports.TRANSPORTS = exports.CHANNEL_EVENTS = exports.CHANNEL_STATES = exports.SOCKET_STATES = exports.MAX_PUSH_BUFFER_SIZE = exports.WS_CLOSE_NORMAL = exports.POSTGRES_CHANGES_WAIT_ERROR_GRACE = exports.DEFAULT_POSTGRES_CHANGES_WAIT_TIMEOUT = exports.DEFAULT_TIMEOUT = exports.VERSION = exports.DEFAULT_VSN = exports.VSN_2_0_0 = exports.VSN_1_0_0 = exports.DEFAULT_VERSION = void 0;
@@ -1123,9 +1123,9 @@ var require_constants = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/serializer.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/serializer.js
 var require_serializer = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/serializer.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/serializer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var Serializer = class {
@@ -1277,9 +1277,9 @@ var require_serializer = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/transformers.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/transformers.js
 var require_transformers = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/transformers.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/transformers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.httpEndpointURL = exports.toTimestampString = exports.toArray = exports.toJson = exports.toNumber = exports.toBoolean = exports.convertCell = exports.convertColumn = exports.convertChangeData = exports.PostgresTypes = void 0;
@@ -1456,9 +1456,9 @@ var require_transformers = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+phoenix@0.4.5/node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js
+// ../persist/node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js
 var require_phoenix_cjs = __commonJS({
-  "../persist/node_modules/.deno/@supabase+phoenix@0.4.5/node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js"(exports, module) {
+  "../persist/node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js"(exports, module) {
     "use strict";
     var __defProp2 = Object.defineProperty;
     var __getOwnPropDesc2 = Object.getOwnPropertyDescriptor;
@@ -3308,9 +3308,9 @@ var require_phoenix_cjs = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js
 var require_presenceAdapter = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var phoenix_1 = require_phoenix_cjs();
@@ -3408,9 +3408,9 @@ var require_presenceAdapter = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js
 var require_RealtimePresence = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.REALTIME_PRESENCE_LISTEN_EVENTS = void 0;
@@ -3452,9 +3452,9 @@ var require_RealtimePresence = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js
 var require_normalizeChannelError = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.normalizeChannelError = normalizeChannelError;
@@ -3478,9 +3478,9 @@ var require_normalizeChannelError = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js
 var require_channelAdapter = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var constants_1 = require_constants();
@@ -3585,9 +3585,9 @@ var require_channelAdapter = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/RealtimePostgresFilterBuilder.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/RealtimePostgresFilterBuilder.js
 var require_RealtimePostgresFilterBuilder = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/RealtimePostgresFilterBuilder.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/RealtimePostgresFilterBuilder.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.postgresChangesFilter = exports.RealtimePostgresFilterBuilder = void 0;
@@ -3709,9 +3709,9 @@ var require_RealtimePostgresFilterBuilder = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js
 var require_RealtimeChannel = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.REALTIME_CHANNEL_STATES = exports.REALTIME_SUBSCRIBE_STATES = exports.REALTIME_LISTEN_TYPES = exports.REALTIME_POSTGRES_CHANGES_LISTEN_EVENT = exports.postgresChangesFilter = exports.RealtimePostgresFilterBuilder = void 0;
@@ -4464,9 +4464,9 @@ var require_RealtimeChannel = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js
 var require_socketAdapter = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var phoenix_1 = require_phoenix_cjs();
@@ -4585,9 +4585,9 @@ var require_socketAdapter = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js
 var require_RealtimeClient = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -4605,26 +4605,26 @@ var require_RealtimeClient = __commonJS({
     var RECONNECT_INTERVALS = [1e3, 2e3, 5e3, 1e4];
     var DEFAULT_RECONNECT_FALLBACK = 1e4;
     function createMemorySessionStorage() {
-      const store = /* @__PURE__ */ new Map();
+      const store2 = /* @__PURE__ */ new Map();
       return {
         get length() {
-          return store.size;
+          return store2.size;
         },
         clear() {
-          store.clear();
+          store2.clear();
         },
         getItem(key) {
-          return store.has(key) ? store.get(key) : null;
+          return store2.has(key) ? store2.get(key) : null;
         },
         key(index) {
           var _a3;
-          return (_a3 = Array.from(store.keys())[index]) !== null && _a3 !== void 0 ? _a3 : null;
+          return (_a3 = Array.from(store2.keys())[index]) !== null && _a3 !== void 0 ? _a3 : null;
         },
         removeItem(key) {
-          store.delete(key);
+          store2.delete(key);
         },
         setItem(key, value) {
-          store.set(key, String(value));
+          store2.set(key, String(value));
         }
       };
     }
@@ -5265,9 +5265,9 @@ var require_RealtimeClient = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/index.js
+// ../persist/node_modules/@supabase/realtime-js/dist/main/index.js
 var require_main2 = __commonJS({
-  "../persist/node_modules/.deno/@supabase+realtime-js@2.117.0/node_modules/@supabase/realtime-js/dist/main/index.js"(exports) {
+  "../persist/node_modules/@supabase/realtime-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebSocketFactory = exports.REALTIME_CHANNEL_STATES = exports.REALTIME_SUBSCRIBE_STATES = exports.REALTIME_PRESENCE_LISTEN_EVENTS = exports.REALTIME_POSTGRES_CHANGES_LISTEN_EVENT = exports.REALTIME_LISTEN_TYPES = exports.postgresChangesFilter = exports.RealtimePostgresFilterBuilder = exports.RealtimeClient = exports.RealtimeChannel = exports.RealtimePresence = void 0;
@@ -5304,9 +5304,9 @@ var require_main2 = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/version.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/version.js
 var require_version2 = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/version.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/version.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.version = void 0;
@@ -5314,9 +5314,9 @@ var require_version2 = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/constants.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/constants.js
 var require_constants2 = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/constants.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/constants.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.JWKS_TTL = exports.PKCE_MAX_CONCURRENT_FLOWS = exports.PKCE_FLOW_ID_PARAM = exports.BASE64URL_REGEX = exports.API_VERSIONS = exports.API_VERSION_HEADER_NAME = exports.NETWORK_FAILURE = exports.DEFAULT_HEADERS = exports.AUDIENCE = exports.STORAGE_KEY = exports.GOTRUE_URL = exports.REFRESH_FAILURE_COOLDOWN_MS = exports.EXPIRY_MARGIN_MS = exports.AUTO_REFRESH_TICK_THRESHOLD = exports.AUTO_REFRESH_TICK_DURATION_MS = void 0;
@@ -5348,9 +5348,9 @@ var require_constants2 = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/errors.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/errors.js
 var require_errors = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/errors.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/errors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AuthInvalidJwtError = exports.AuthWeakPasswordError = exports.AuthRefreshDiscardedError = exports.AuthRetryableFetchError = exports.AuthPKCECodeVerifierMissingError = exports.AuthPKCEGrantCodeExchangeError = exports.AuthImplicitGrantRedirectError = exports.AuthInvalidCredentialsError = exports.AuthInvalidTokenResponseError = exports.AuthSessionMissingError = exports.CustomAuthError = exports.AuthUnknownError = exports.AuthApiError = exports.AuthError = void 0;
@@ -5506,9 +5506,9 @@ var require_errors = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/base64url.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/base64url.js
 var require_base64url = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/base64url.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/base64url.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.byteToBase64URL = byteToBase64URL;
@@ -5696,9 +5696,9 @@ var require_base64url = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/helpers.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/helpers.js
 var require_helpers = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/helpers.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/helpers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.pkceVerifierSlotKey = exports.Deferred = exports.removeItemAsync = exports.getItemAsync = exports.setItemAsync = exports.looksLikeFetchResponse = exports.resolveFetch = exports.supportsLocalStorage = exports.isBrowser = void 0;
@@ -6112,9 +6112,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/fetch.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/fetch.js
 var require_fetch = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/fetch.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/fetch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.handleError = handleError2;
@@ -6299,9 +6299,9 @@ var require_fetch = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/types.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/types.js
 var require_types2 = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/types.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SIGN_OUT_SCOPES = void 0;
@@ -6309,9 +6309,9 @@ var require_types2 = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js
 var require_GoTrueAdminApi = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -7389,31 +7389,31 @@ var require_GoTrueAdminApi = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/local-storage.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/local-storage.js
 var require_local_storage = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/local-storage.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/local-storage.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.memoryLocalStorageAdapter = memoryLocalStorageAdapter;
-    function memoryLocalStorageAdapter(store = {}) {
+    function memoryLocalStorageAdapter(store2 = {}) {
       return {
         getItem: (key) => {
-          return store[key] || null;
+          return store2[key] || null;
         },
         setItem: (key, value) => {
-          store[key] = value;
+          store2[key] = value;
         },
         removeItem: (key) => {
-          delete store[key];
+          delete store2[key];
         }
       };
     }
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/locks.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/locks.js
 var require_locks = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/locks.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/locks.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ProcessLockAcquireTimeoutError = exports.NavigatorLockAcquireTimeoutError = exports.LockAcquireTimeoutError = exports.internals = void 0;
@@ -7587,9 +7587,9 @@ var require_locks = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/polyfills.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/polyfills.js
 var require_polyfills = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/polyfills.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/polyfills.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.polyfillGlobalThis = polyfillGlobalThis;
@@ -7614,9 +7614,9 @@ var require_polyfills = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js
 var require_ethereum = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getAddress = getAddress;
@@ -7692,9 +7692,9 @@ ${suffix}`;
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js
 var require_webauthn_errors = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebAuthnUnknownError = exports.WebAuthnError = void 0;
@@ -7883,9 +7883,9 @@ var require_webauthn_errors = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/webauthn.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/lib/webauthn.js
 var require_webauthn = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/lib/webauthn.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/lib/webauthn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebAuthnApi = exports.DEFAULT_REQUEST_OPTIONS = exports.DEFAULT_CREATION_OPTIONS = exports.webAuthnAbortService = exports.WebAuthnAbortService = exports.identifyAuthenticationError = exports.identifyRegistrationError = exports.isWebAuthnError = exports.WebAuthnError = void 0;
@@ -8442,9 +8442,9 @@ var require_webauthn = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js
 var require_GoTrueClient = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -13836,9 +13836,9 @@ var require_GoTrueClient = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js
 var require_AuthAdminApi = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -13848,9 +13848,9 @@ var require_AuthAdminApi = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/AuthClient.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/AuthClient.js
 var require_AuthClient = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/AuthClient.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/AuthClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -13860,9 +13860,9 @@ var require_AuthClient = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/index.js
+// ../persist/node_modules/@supabase/auth-js/dist/main/index.js
 var require_main3 = __commonJS({
-  "../persist/node_modules/.deno/@supabase+auth-js@2.117.0/node_modules/@supabase/auth-js/dist/main/index.js"(exports) {
+  "../persist/node_modules/@supabase/auth-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.processLock = exports.lockInternals = exports.NavigatorLockAcquireTimeoutError = exports.navigatorLock = exports.AuthClient = exports.AuthAdminApi = exports.GoTrueClient = exports.GoTrueAdminApi = void 0;
@@ -18530,8 +18530,8 @@ var require_multipleOf = __commonJS({
         const { gen, data, schemaCode, it } = cxt;
         const prec = it.opts.multipleOfPrecision;
         const res = gen.let("res");
-        const invalid2 = prec ? (0, codegen_1._)`Math.abs(Math.round(${res}) - ${res}) > 1e-${prec}` : (0, codegen_1._)`${res} !== parseInt(${res})`;
-        cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data}/${schemaCode}, ${invalid2}))`);
+        const invalid = prec ? (0, codegen_1._)`Math.abs(Math.round(${res}) - ${res}) > 1e-${prec}` : (0, codegen_1._)`${res} !== parseInt(${res})`;
+        cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data}/${schemaCode}, ${invalid}))`);
       }
     };
     exports.default = def;
@@ -20430,8 +20430,8 @@ var require_formats = __commonJS({
       email: /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i
     };
     exports.formatNames = Object.keys(exports.fullFormats);
-    function isLeapYear(year) {
-      return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    function isLeapYear(year2) {
+      return year2 % 4 === 0 && (year2 % 100 !== 0 || year2 % 400 === 0);
     }
     var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
     var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -20439,10 +20439,10 @@ var require_formats = __commonJS({
       const matches = DATE.exec(str);
       if (!matches)
         return false;
-      const year = +matches[1];
+      const year2 = +matches[1];
       const month = +matches[2];
-      const day = +matches[3];
-      return month >= 1 && month <= 12 && day >= 1 && day <= (month === 2 && isLeapYear(year) ? 29 : DAYS[month]);
+      const day2 = +matches[3];
+      return month >= 1 && month <= 12 && day2 >= 1 && day2 <= (month === 2 && isLeapYear(year2) ? 29 : DAYS[month]);
     }
     function compareDate(d1, d2) {
       if (!(d1 && d2))
@@ -20537,9 +20537,9 @@ var require_formats = __commonJS({
       return BYTE.test(str);
     }
     var MIN_INT32 = -(2 ** 31);
-    var MAX_INT32 = 2 ** 31 - 1;
+    var MAX_INT322 = 2 ** 31 - 1;
     function validateInt32(value) {
-      return Number.isInteger(value) && value <= MAX_INT32 && value >= MIN_INT32;
+      return Number.isInteger(value) && value <= MAX_INT322 && value >= MIN_INT32;
     }
     function validateInt64(value) {
       return Number.isInteger(value);
@@ -24428,8 +24428,8 @@ var require_multipleOf2 = __commonJS({
         const { gen, data, schemaCode, it } = cxt;
         const prec = it.opts.multipleOfPrecision;
         const res = gen.let("res");
-        const invalid2 = prec ? (0, codegen_1._)`Math.abs(Math.round(${res}) - ${res}) > 1e-${prec}` : (0, codegen_1._)`${res} !== parseInt(${res})`;
-        cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data}/${schemaCode}, ${invalid2}))`);
+        const invalid = prec ? (0, codegen_1._)`Math.abs(Math.round(${res}) - ${res}) > 1e-${prec}` : (0, codegen_1._)`${res} !== parseInt(${res})`;
+        cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data}/${schemaCode}, ${invalid}))`);
       }
     };
     exports.default = def;
@@ -26474,7 +26474,7 @@ var require_content_type = __commonJS({
   }
 });
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/logger-2OXtfiIW.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/logger-2OXtfiIW.js
 var DEFAULT_METRICS_ENDPOINT = "https://api.lovable.dev/v1/app-mcp-usage";
 var METRICS_API_KEY_ENV_VAR = "LOVABLE_API_KEY";
 function assertMetricsEndpoint(endpoint) {
@@ -26577,7 +26577,7 @@ function describeError(err) {
   return { value: String(err) };
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/context-CIpPzN7P.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/context-CIpPzN7P.js
 var ToolContext = class {
   #auth;
   constructor(auth2) {
@@ -26620,7 +26620,7 @@ var ToolContext = class {
   }
 };
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/index.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/index.js
 function assertUniqueNames(mcp) {
   const seen = /* @__PURE__ */ new Set();
   for (const tool of mcp.tools) {
@@ -26736,7 +26736,7 @@ function issuer(options) {
 var oauth = Object.freeze({ issuer });
 var auth = Object.freeze({ oauth });
 
-// ../persist/node_modules/.deno/@supabase+supabase-js@2.117.0/node_modules/@supabase/supabase-js/dist/index.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/index.mjs
 var dist_exports = {};
 __export(dist_exports, {
   FunctionRegion: () => import_functions_js.FunctionRegion,
@@ -26750,16 +26750,16 @@ __export(dist_exports, {
   createClient: () => createClient
 });
 
-// ../persist/node_modules/.deno/@supabase+supabase-js@2.117.0/node_modules/@supabase/supabase-js/dist/tracingRegistry.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/tracingRegistry.mjs
 var EXTRACTOR_KEY = Symbol.for("@supabase/supabase-js.traceContextExtractor");
 function getTraceContextExtractor() {
   return globalThis[EXTRACTOR_KEY];
 }
 
-// ../persist/node_modules/.deno/@supabase+supabase-js@2.117.0/node_modules/@supabase/supabase-js/dist/index.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/index.mjs
 var import_functions_js = __toESM(require_main(), 1);
 
-// ../persist/node_modules/.deno/@supabase+postgrest-js@2.117.0/node_modules/@supabase/postgrest-js/dist/index.mjs
+// ../persist/node_modules/@supabase/postgrest-js/dist/index.mjs
 var PostgrestError = class extends Error {
   /**
   * @example
@@ -30657,10 +30657,10 @@ var PostgrestClient = class PostgrestClient2 {
   }
 };
 
-// ../persist/node_modules/.deno/@supabase+supabase-js@2.117.0/node_modules/@supabase/supabase-js/dist/index.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/index.mjs
 var import_realtime_js = __toESM(require_main2(), 1);
 
-// ../persist/node_modules/.deno/iceberg-js@0.8.1/node_modules/iceberg-js/dist/index.mjs
+// ../persist/node_modules/iceberg-js/dist/index.mjs
 var IcebergError = class extends Error {
   constructor(message2, opts) {
     super(message2);
@@ -31193,7 +31193,7 @@ var IcebergRestCatalog = class {
   }
 };
 
-// ../persist/node_modules/.deno/@supabase+storage-js@2.117.0/node_modules/@supabase/storage-js/dist/index.mjs
+// ../persist/node_modules/@supabase/storage-js/dist/index.mjs
 function _typeof2(o) {
   "@babel/helpers - typeof";
   return _typeof2 = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
@@ -34164,7 +34164,7 @@ var StorageClient = class extends StorageBucketApi {
   }
 };
 
-// ../persist/node_modules/.deno/@supabase+supabase-js@2.117.0/node_modules/@supabase/supabase-js/dist/index.mjs
+// ../persist/node_modules/@supabase/supabase-js/dist/index.mjs
 var import_auth_js = __toESM(require_main3(), 1);
 __reExport(dist_exports, __toESM(require_main2(), 1));
 __reExport(dist_exports, __toESM(require_main3(), 1));
@@ -34954,7 +34954,7 @@ var get_my_profile_default = defineTool({
   }
 });
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/external.js
+// ../persist/node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
   $brand: () => $brand,
@@ -35217,7 +35217,7 @@ __export(external_exports, {
   xor: () => xor
 });
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/index.js
+// ../persist/node_modules/zod/v4/core/index.js
 var core_exports2 = {};
 __export(core_exports2, {
   $ZodAny: () => $ZodAny,
@@ -35534,7 +35534,7 @@ __export(core_exports2, {
   withParser: () => withParser
 });
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/util.js
+// ../persist/node_modules/zod/v4/core/util.js
 var util_exports = {};
 __export(util_exports, {
   BIGINT_FORMAT_RANGES: () => BIGINT_FORMAT_RANGES,
@@ -36390,7 +36390,7 @@ function constantCatch(value) {
   return fn;
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/core.js
+// ../persist/node_modules/zod/v4/core/core.js
 var _a;
 var NEVER = /* @__PURE__ */ Object.freeze({
   status: "aborted"
@@ -36512,7 +36512,7 @@ function config(newConfig) {
   return globalConfig;
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/errors.js
+// ../persist/node_modules/zod/v4/core/errors.js
 function _getMessage() {
   const internals = this._zod;
   internals.message ?? (internals.message = JSON.stringify(internals.def, jsonStringifyReplacer, 2));
@@ -36704,7 +36704,7 @@ function prettifyError(error62) {
   return lines.join("\n");
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/parse.js
+// ../persist/node_modules/zod/v4/core/parse.js
 function finalizeParams(callee, params) {
   return { callee: params?.callee ?? callee, Err: params?.Err };
 }
@@ -36864,7 +36864,7 @@ var _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
 };
 var safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync($ZodRealError);
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/regexes.js
+// ../persist/node_modules/zod/v4/core/regexes.js
 var regexes_exports = {};
 __export(regexes_exports, {
   anyString: () => anyString,
@@ -37036,7 +37036,7 @@ var sha512_hex = /^[0-9a-fA-F]{128}$/;
 var sha512_base64 = /* @__PURE__ */ fixedBase64(86, "==");
 var sha512_base64url = /* @__PURE__ */ fixedBase64url(86);
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/checks.js
+// ../persist/node_modules/zod/v4/core/checks.js
 var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   var _a3;
   inst._zod ?? (inst._zod = {});
@@ -37512,7 +37512,7 @@ var $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (ins
   };
 });
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/doc.js
+// ../persist/node_modules/zod/v4/core/doc.js
 var Doc = class {
   constructor(args = [], closed = {}) {
     this.content = [];
@@ -37553,14 +37553,14 @@ ${content.join("\n")}
   }
 };
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/versions.js
+// ../persist/node_modules/zod/v4/core/versions.js
 var version3 = {
   major: 4,
   minor: 6,
   patch: 7
 };
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/schemas.js
+// ../persist/node_modules/zod/v4/core/schemas.js
 var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a3;
   inst ?? (inst = {});
@@ -40002,7 +40002,7 @@ function handleRefineResult(result, payload, input2, inst) {
   }
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/memoizer.js
+// ../persist/node_modules/zod/v4/core/memoizer.js
 var $ZodCyclicError = class extends Error {
   constructor() {
     super(`Cannot parse a reference cycle that closes through a transform`);
@@ -40022,9 +40022,9 @@ var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
 function isRecursive(inst, stack, resolve) {
-  const cached2 = recursive.get(inst);
-  if (cached2 !== void 0)
-    return cached2 ? PROVEN : NONE;
+  const cached3 = recursive.get(inst);
+  if (cached3 !== void 0)
+    return cached3 ? PROVEN : NONE;
   if (stack.has(inst))
     return PROVEN;
   stack.add(inst);
@@ -40279,7 +40279,7 @@ function isBackEdge(ctx, value) {
   return backEdges !== void 0 && isRef(value) && backEdges.has(value);
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/index.js
+// ../persist/node_modules/zod/v4/locales/index.js
 var locales_exports = {};
 __export(locales_exports, {
   ar: () => ar_default,
@@ -40347,7 +40347,7 @@ __export(locales_exports, {
   zhTW: () => zh_TW_default
 });
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ar.js
+// ../persist/node_modules/zod/v4/locales/ar.js
 var error = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0641", verb: "\u0623\u0646 \u064A\u062D\u0648\u064A" },
@@ -40459,7 +40459,7 @@ function ar_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/az.js
+// ../persist/node_modules/zod/v4/locales/az.js
 var error2 = () => {
   const Sizable = {
     string: { unit: "simvol", verb: "olmal\u0131d\u0131r" },
@@ -40570,7 +40570,7 @@ function az_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/be.js
+// ../persist/node_modules/zod/v4/locales/be.js
 function getBelarusianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -40739,7 +40739,7 @@ function be_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/bg.js
+// ../persist/node_modules/zod/v4/locales/bg.js
 var error4 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0430", verb: "\u0434\u0430 \u0441\u044A\u0434\u044A\u0440\u0436\u0430" },
@@ -40865,7 +40865,7 @@ function bg_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/bn.js
+// ../persist/node_modules/zod/v4/locales/bn.js
 var error5 = () => {
   const Sizable = {
     string: { unit: "\u0985\u0995\u09CD\u09B7\u09B0", verb: "\u09A5\u09BE\u0995\u09A4\u09C7 \u09B9\u09AC\u09C7" },
@@ -40979,7 +40979,7 @@ function bn_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ca.js
+// ../persist/node_modules/zod/v4/locales/ca.js
 var error6 = () => {
   const Sizable = {
     string: { unit: "car\xE0cters", verb: "contenir" },
@@ -41093,7 +41093,7 @@ function ca_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ckb.js
+// ../persist/node_modules/zod/v4/locales/ckb.js
 var error7 = () => {
   const Sizable = {
     string: { unit: "\u067E\u06CC\u062A", verb: "\u0628\u06CE\u062A" },
@@ -41226,7 +41226,7 @@ function ckb_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/cs.js
+// ../persist/node_modules/zod/v4/locales/cs.js
 var error8 = () => {
   const Sizable = {
     string: { unit: "znak\u016F", verb: "m\xEDt" },
@@ -41343,7 +41343,7 @@ function cs_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/da.js
+// ../persist/node_modules/zod/v4/locales/da.js
 var error9 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "havde" },
@@ -41464,7 +41464,7 @@ function da_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/de.js
+// ../persist/node_modules/zod/v4/locales/de.js
 var error10 = () => {
   const Sizable = {
     string: { unit: "Zeichen", verb: "zu haben" },
@@ -41578,7 +41578,7 @@ function de_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/el.js
+// ../persist/node_modules/zod/v4/locales/el.js
 var error11 = () => {
   const Sizable = {
     string: { unit: "\u03C7\u03B1\u03C1\u03B1\u03BA\u03C4\u03AE\u03C1\u03B5\u03C2", verb: "\u03BD\u03B1 \u03AD\u03C7\u03B5\u03B9" },
@@ -41691,7 +41691,7 @@ function el_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/en.js
+// ../persist/node_modules/zod/v4/locales/en.js
 var error12 = () => {
   const Sizable = {
     string: { unit: "characters", verb: "to have" },
@@ -41816,7 +41816,7 @@ function en_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/eo.js
+// ../persist/node_modules/zod/v4/locales/eo.js
 var error13 = () => {
   const Sizable = {
     string: { unit: "karaktrojn", verb: "havi" },
@@ -41931,7 +41931,7 @@ function eo_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/es.js
+// ../persist/node_modules/zod/v4/locales/es.js
 var error14 = () => {
   const Sizable = {
     string: { unit: "caracteres", verb: "tener" },
@@ -42068,7 +42068,7 @@ function es_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/fa.js
+// ../persist/node_modules/zod/v4/locales/fa.js
 var error15 = () => {
   const Sizable = {
     string: { unit: "\u06A9\u0627\u0631\u0627\u06A9\u062A\u0631", verb: "\u062F\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u062F" },
@@ -42188,7 +42188,7 @@ function fa_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/fi.js
+// ../persist/node_modules/zod/v4/locales/fi.js
 var error16 = () => {
   const Sizable = {
     string: { unit: "merkki\xE4", subject: "merkkijonon" },
@@ -42306,7 +42306,7 @@ function fi_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/fr.js
+// ../persist/node_modules/zod/v4/locales/fr.js
 var error17 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -42436,7 +42436,7 @@ function fr_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/fr-CA.js
+// ../persist/node_modules/zod/v4/locales/fr-CA.js
 var error18 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -42549,7 +42549,7 @@ function fr_CA_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/gu.js
+// ../persist/node_modules/zod/v4/locales/gu.js
 var error19 = () => {
   const Sizable = {
     string: { unit: "\u0A85\u0A95\u0ACD\u0AB7\u0AB0", verb: "\u0AB9\u0ACB\u0AB5\u0ABE \u0A9C\u0ACB\u0A88\u0A8F" },
@@ -42663,7 +42663,7 @@ function gu_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/he.js
+// ../persist/node_modules/zod/v4/locales/he.js
 var error20 = () => {
   const TypeNames = {
     string: { label: "\u05DE\u05D7\u05E8\u05D5\u05D6\u05EA", gender: "f" },
@@ -42865,7 +42865,7 @@ function he_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/hi.js
+// ../persist/node_modules/zod/v4/locales/hi.js
 var error21 = () => {
   const Sizable = {
     string: { unit: "\u0905\u0915\u094D\u0937\u0930", verb: "\u0930\u0916\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F" },
@@ -42977,7 +42977,7 @@ function hi_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/hr.js
+// ../persist/node_modules/zod/v4/locales/hr.js
 var error22 = () => {
   const Sizable = {
     string: { unit: "znakova", verb: "imati" },
@@ -43104,7 +43104,7 @@ function hr_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/hu.js
+// ../persist/node_modules/zod/v4/locales/hu.js
 var error23 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "legyen" },
@@ -43218,7 +43218,7 @@ function hu_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/hy.js
+// ../persist/node_modules/zod/v4/locales/hy.js
 function getArmenianPlural(count, one, many) {
   return Math.abs(count) === 1 ? one : many;
 }
@@ -43377,7 +43377,7 @@ function hy_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/id.js
+// ../persist/node_modules/zod/v4/locales/id.js
 var error25 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "memiliki" },
@@ -43489,7 +43489,7 @@ function id_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/is.js
+// ../persist/node_modules/zod/v4/locales/is.js
 var error26 = () => {
   const Sizable = {
     string: { unit: "stafi", verb: "a\xF0 hafa" },
@@ -43604,7 +43604,7 @@ function is_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/it.js
+// ../persist/node_modules/zod/v4/locales/it.js
 var error27 = () => {
   const Sizable = {
     string: { unit: "caratteri", verb: "avere" },
@@ -43718,7 +43718,7 @@ function it_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ja.js
+// ../persist/node_modules/zod/v4/locales/ja.js
 var error28 = () => {
   const Sizable = {
     string: { unit: "\u6587\u5B57", verb: "\u3067\u3042\u308B" },
@@ -43831,7 +43831,7 @@ function ja_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ka.js
+// ../persist/node_modules/zod/v4/locales/ka.js
 var error29 = () => {
   const Sizable = {
     string: { unit: "\u10E1\u10D8\u10DB\u10D1\u10DD\u10DA\u10DD", verb: "\u10E3\u10DC\u10D3\u10D0 \u10E8\u10D4\u10D8\u10EA\u10D0\u10D5\u10D3\u10D4\u10E1" },
@@ -43949,7 +43949,7 @@ function ka_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/km.js
+// ../persist/node_modules/zod/v4/locales/km.js
 var error30 = () => {
   const Sizable = {
     string: { unit: "\u178F\u17BD\u17A2\u1780\u17D2\u179F\u179A", verb: "\u1782\u17BD\u179A\u1798\u17B6\u1793" },
@@ -44065,12 +44065,12 @@ function km_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/kh.js
+// ../persist/node_modules/zod/v4/locales/kh.js
 function kh_default() {
   return km_default();
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/kn.js
+// ../persist/node_modules/zod/v4/locales/kn.js
 var error31 = () => {
   const Sizable = {
     string: { unit: "\u0C85\u0C95\u0CCD\u0CB7\u0CB0\u0C97\u0CB3\u0CC1", verb: "\u0CB9\u0CCA\u0C82\u0CA6\u0CB2\u0CC1" },
@@ -44186,7 +44186,7 @@ function kn_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ko.js
+// ../persist/node_modules/zod/v4/locales/ko.js
 var error32 = () => {
   const Sizable = {
     string: { unit: "\uBB38\uC790", verb: "to have" },
@@ -44303,7 +44303,7 @@ function ko_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/lt.js
+// ../persist/node_modules/zod/v4/locales/lt.js
 var capitalizeFirstCharacter = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
@@ -44511,7 +44511,7 @@ function lt_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/mk.js
+// ../persist/node_modules/zod/v4/locales/mk.js
 var error34 = () => {
   const Sizable = {
     string: { unit: "\u0437\u043D\u0430\u0446\u0438", verb: "\u0434\u0430 \u0438\u043C\u0430\u0430\u0442" },
@@ -44626,7 +44626,7 @@ function mk_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ms.js
+// ../persist/node_modules/zod/v4/locales/ms.js
 var error35 = () => {
   const Sizable = {
     string: { unit: "aksara", verb: "mempunyai" },
@@ -44739,7 +44739,7 @@ function ms_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ne.js
+// ../persist/node_modules/zod/v4/locales/ne.js
 var error36 = () => {
   const Sizable = {
     string: { unit: "\u0905\u0915\u094D\u0937\u0930", verb: "\u0939\u0941\u0928\u0941\u092A\u0930\u094D\u091B" },
@@ -44851,7 +44851,7 @@ function ne_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/nl.js
+// ../persist/node_modules/zod/v4/locales/nl.js
 var error37 = () => {
   const Sizable = {
     string: { unit: "tekens", verb: "heeft" },
@@ -44967,7 +44967,7 @@ function nl_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/nn.js
+// ../persist/node_modules/zod/v4/locales/nn.js
 var error38 = () => {
   const Sizable = {
     string: { unit: "teikn", verb: "\xE5 ha" },
@@ -45081,7 +45081,7 @@ function nn_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/no.js
+// ../persist/node_modules/zod/v4/locales/no.js
 var error39 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "\xE5 ha" },
@@ -45195,7 +45195,7 @@ function no_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ota.js
+// ../persist/node_modules/zod/v4/locales/ota.js
 var error40 = () => {
   const Sizable = {
     string: { unit: "harf", verb: "olmal\u0131d\u0131r" },
@@ -45310,7 +45310,7 @@ function ota_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ps.js
+// ../persist/node_modules/zod/v4/locales/ps.js
 var error41 = () => {
   const Sizable = {
     string: { unit: "\u062A\u0648\u06A9\u064A", verb: "\u0648\u0644\u0631\u064A" },
@@ -45430,7 +45430,7 @@ function ps_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/pl.js
+// ../persist/node_modules/zod/v4/locales/pl.js
 var error42 = () => {
   const Sizable = {
     string: { unit: "znak\xF3w", verb: "mie\u0107" },
@@ -45545,7 +45545,7 @@ function pl_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/pt.js
+// ../persist/node_modules/zod/v4/locales/pt.js
 var error43 = () => {
   const Sizable = {
     string: { unit: "caracteres" },
@@ -45689,7 +45689,7 @@ function pt_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/pt-BR.js
+// ../persist/node_modules/zod/v4/locales/pt-BR.js
 var error44 = () => {
   const Sizable = {
     string: { unit: "caracteres" },
@@ -45834,7 +45834,7 @@ function pt_BR_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ro.js
+// ../persist/node_modules/zod/v4/locales/ro.js
 var error45 = () => {
   const Sizable = {
     string: { unit: "caractere", verb: "s\u0103 aib\u0103" },
@@ -45957,7 +45957,7 @@ function ro_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ru.js
+// ../persist/node_modules/zod/v4/locales/ru.js
 function getRussianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -46126,7 +46126,7 @@ function ru_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/sk.js
+// ../persist/node_modules/zod/v4/locales/sk.js
 var error47 = () => {
   const Sizable = {
     string: { unit: "znakov", verb: "ma\u0165" },
@@ -46243,7 +46243,7 @@ function sk_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/sl.js
+// ../persist/node_modules/zod/v4/locales/sl.js
 var error48 = () => {
   const Sizable = {
     string: { unit: "znakov", verb: "imeti" },
@@ -46358,7 +46358,7 @@ function sl_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/sv.js
+// ../persist/node_modules/zod/v4/locales/sv.js
 var error49 = () => {
   const Sizable = {
     string: { unit: "tecken", verb: "att ha" },
@@ -46474,7 +46474,7 @@ function sv_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ta.js
+// ../persist/node_modules/zod/v4/locales/ta.js
 var error50 = () => {
   const Sizable = {
     string: { unit: "\u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0B95\u0BCD\u0B95\u0BB3\u0BCD", verb: "\u0B95\u0BCA\u0BA3\u0BCD\u0B9F\u0BBF\u0BB0\u0BC1\u0B95\u0BCD\u0B95 \u0BB5\u0BC7\u0BA3\u0BCD\u0B9F\u0BC1\u0BAE\u0BCD" },
@@ -46590,7 +46590,7 @@ function ta_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/tg.js
+// ../persist/node_modules/zod/v4/locales/tg.js
 var error51 = () => {
   const Sizable = {
     string: { unit: "\u0430\u043B\u043E\u043C\u0430\u0442", verb: "\u0434\u043E\u0448\u0442\u0430 \u0431\u043E\u0448\u0430\u0434" },
@@ -46707,7 +46707,7 @@ function tg_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/th.js
+// ../persist/node_modules/zod/v4/locales/th.js
 var error52 = () => {
   const Sizable = {
     string: { unit: "\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23", verb: "\u0E04\u0E27\u0E23\u0E21\u0E35" },
@@ -46823,7 +46823,7 @@ function th_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/tk.js
+// ../persist/node_modules/zod/v4/locales/tk.js
 var error53 = () => {
   const Sizable = {
     string: { unit: "simwol", verb: "bolmaly" },
@@ -46931,7 +46931,7 @@ function tk_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/tr.js
+// ../persist/node_modules/zod/v4/locales/tr.js
 var error54 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "olmal\u0131" },
@@ -47042,7 +47042,7 @@ function tr_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/uk.js
+// ../persist/node_modules/zod/v4/locales/uk.js
 var error55 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0456\u0432", verb: "\u043C\u0430\u0442\u0438\u043C\u0435" },
@@ -47156,12 +47156,12 @@ function uk_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ua.js
+// ../persist/node_modules/zod/v4/locales/ua.js
 function ua_default() {
   return uk_default();
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/ur.js
+// ../persist/node_modules/zod/v4/locales/ur.js
 var error56 = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0648\u0641", verb: "\u06C1\u0648\u0646\u0627" },
@@ -47277,7 +47277,7 @@ function ur_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/uz.js
+// ../persist/node_modules/zod/v4/locales/uz.js
 var error57 = () => {
   const Sizable = {
     string: { unit: "belgi", verb: "bo\u2018lishi kerak" },
@@ -47391,7 +47391,7 @@ function uz_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/vi.js
+// ../persist/node_modules/zod/v4/locales/vi.js
 var error58 = () => {
   const Sizable = {
     string: { unit: "k\xFD t\u1EF1", verb: "c\xF3" },
@@ -47505,7 +47505,7 @@ function vi_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/zh-CN.js
+// ../persist/node_modules/zod/v4/locales/zh-CN.js
 var error59 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u7B26", verb: "\u5305\u542B" },
@@ -47620,7 +47620,7 @@ function zh_CN_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/zh-TW.js
+// ../persist/node_modules/zod/v4/locales/zh-TW.js
 var error60 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u5143", verb: "\u64C1\u6709" },
@@ -47733,7 +47733,7 @@ function zh_TW_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/locales/yo.js
+// ../persist/node_modules/zod/v4/locales/yo.js
 var error61 = () => {
   const Sizable = {
     string: { unit: "\xE0mi", verb: "n\xED" },
@@ -47846,7 +47846,7 @@ function yo_default() {
   };
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/registries.js
+// ../persist/node_modules/zod/v4/core/registries.js
 var _a2;
 var $output = /* @__PURE__ */ Symbol("ZodOutput");
 var $input = /* @__PURE__ */ Symbol("ZodInput");
@@ -47896,7 +47896,7 @@ function registry() {
 (_a2 = globalThis).__zod_globalRegistry ?? (_a2.__zod_globalRegistry = registry());
 var globalRegistry = globalThis.__zod_globalRegistry;
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/compile.js
+// ../persist/node_modules/zod/v4/core/compile.js
 var INVALID = Symbol.for("zod.compile.invalid");
 var FALLBACK_FLAG = Symbol.for("zod.compile.fallback");
 var ZodCompileAsyncError = class extends Error {
@@ -49506,7 +49506,7 @@ function generateTransformCheck(doc, ctx, schema, accessor) {
   return accessor;
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/api.js
+// ../persist/node_modules/zod/v4/core/api.js
 function snapshotChecks(def) {
   if (def.checks)
     def.checks = [...def.checks];
@@ -50565,7 +50565,7 @@ function _stringFormat(Class2, format, fnOrRegex, _params = {}) {
   return inst;
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/to-json-schema.js
+// ../persist/node_modules/zod/v4/core/to-json-schema.js
 function assignProps(target, ...sources) {
   for (const source of sources) {
     for (const key of Reflect.ownKeys(source)) {
@@ -51095,7 +51095,7 @@ var createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) =
   return finalize(ctx, schema);
 };
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/json-schema-processors.js
+// ../persist/node_modules/zod/v4/core/json-schema-processors.js
 var narrowMin = (agg, key, value) => {
   if (agg[key] === void 0 || value > agg[key])
     agg[key] = value;
@@ -51843,7 +51843,7 @@ function toJSONSchema(input2, params) {
   return finalize(ctx, input2);
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/json-schema-generator.js
+// ../persist/node_modules/zod/v4/core/json-schema-generator.js
 var JSONSchemaGenerator = class {
   /** @deprecated Access via ctx instead */
   get metadataRegistry() {
@@ -51921,10 +51921,10 @@ var JSONSchemaGenerator = class {
   }
 };
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/json-schema.js
+// ../persist/node_modules/zod/v4/core/json-schema.js
 var json_schema_exports = {};
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/schemas.js
+// ../persist/node_modules/zod/v4/classic/schemas.js
 var schemas_exports2 = {};
 __export(schemas_exports2, {
   ZodAny: () => ZodAny,
@@ -52105,7 +52105,7 @@ __export(schemas_exports2, {
   xor: () => xor
 });
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/checks.js
+// ../persist/node_modules/zod/v4/classic/checks.js
 var checks_exports2 = {};
 __export(checks_exports2, {
   endsWith: () => _endsWith,
@@ -52140,7 +52140,7 @@ __export(checks_exports2, {
   uppercase: () => _uppercase
 });
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/errors.js
+// ../persist/node_modules/zod/v4/classic/errors.js
 var _installedErrorProtos = /* @__PURE__ */ new WeakSet([Object.prototype, Error.prototype]);
 function _lazyMethod(proto, key, make) {
   Object.defineProperty(proto, key, {
@@ -52186,7 +52186,7 @@ var ZodRealError = /* @__PURE__ */ $constructor("ZodError", initializer2, void 0
   Parent: Error
 });
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/parse.js
+// ../persist/node_modules/zod/v4/classic/parse.js
 var parse2 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
@@ -52200,7 +52200,7 @@ var safeDecode2 = /* @__PURE__ */ _safeDecode(ZodRealError);
 var safeEncodeAsync2 = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
 var safeDecodeAsync2 = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/schemas.js
+// ../persist/node_modules/zod/v4/classic/schemas.js
 function _ensureDefaultLocale() {
   if (!globalConfig.localeError)
     config(en_default());
@@ -53665,7 +53665,7 @@ function preprocess(fn, schema) {
   });
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/compat.js
+// ../persist/node_modules/zod/v4/classic/compat.js
 var ZodIssueCode = {
   invalid_type: "invalid_type",
   too_big: "too_big",
@@ -53691,7 +53691,7 @@ var ZodFirstPartyTypeKind;
 /* @__PURE__ */ (function(ZodFirstPartyTypeKind3) {
 })(ZodFirstPartyTypeKind || (ZodFirstPartyTypeKind = {}));
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/iso.js
+// ../persist/node_modules/zod/v4/classic/iso.js
 var iso_exports = {};
 __export(iso_exports, {
   ZodISODate: () => ZodISODate,
@@ -53716,7 +53716,7 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/from-json-schema.js
+// ../persist/node_modules/zod/v4/classic/from-json-schema.js
 var z = {
   ...schemas_exports2,
   ...checks_exports2,
@@ -54449,7 +54449,7 @@ function fromJSONSchema(schema, params) {
   return convertSchema(normalized, ctx);
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/core/visit.js
+// ../persist/node_modules/zod/v4/core/visit.js
 var RESOLVING = Symbol("z.visit/resolving");
 function visit(schema, fnOrHandlers) {
   const fn = typeof fnOrHandlers === "function" ? fnOrHandlers : (node2, rewritten) => {
@@ -54458,15 +54458,15 @@ function visit(schema, fnOrHandlers) {
   };
   const cache2 = /* @__PURE__ */ new Map();
   function run(s) {
-    const cached2 = cache2.get(s);
-    if (cached2 === RESOLVING) {
+    const cached3 = cache2.get(s);
+    if (cached3 === RESOLVING) {
       return new $ZodLazy({
         type: "lazy",
         getter: () => cache2.get(s)
       });
     }
-    if (cached2 !== void 0)
-      return cached2;
+    if (cached3 !== void 0)
+      return cached3;
     cache2.set(s, RESOLVING);
     const inner = mapInner(s);
     const mapped = fn(inner, inner !== s);
@@ -54604,7 +54604,7 @@ function visit(schema, fnOrHandlers) {
   return run(schema);
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/deep-partial.js
+// ../persist/node_modules/zod/v4/classic/deep-partial.js
 function deepPartial(schema) {
   return visit(schema, {
     object: (s) => s.partial(),
@@ -54616,7 +54616,7 @@ function deepPartial(schema) {
   });
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/in-out.js
+// ../persist/node_modules/zod/v4/classic/in-out.js
 function withChecks(side, checks) {
   if (!checks?.length)
     return side;
@@ -54646,7 +54646,7 @@ function output(schema) {
   });
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/classic/coerce.js
+// ../persist/node_modules/zod/v4/classic/coerce.js
 var coerce_exports = {};
 __export(coerce_exports, {
   bigint: () => bigint3,
@@ -54780,60 +54780,95 @@ var mcp_default = defineMcp({
   tools: [get_my_profile_default, update_my_profile_default, list_my_posts_default, create_post_default, list_notifications_default]
 });
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/package-DudvPdrW.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/package-DudvPdrW.js
 var version4 = "0.24.0";
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/metadata-path-CAkNcfyY.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/metadata-path-CAkNcfyY.js
 var OAUTH_PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/lib/buffer_utils.js
+// ../persist/node_modules/jose/dist/webapi/lib/buffer_utils.js
 var encoder = new TextEncoder();
 var decoder = new TextDecoder();
 var strictDecoder = new TextDecoder("utf-8", { fatal: true });
-var UINT32_RANGE = 2 ** 32;
+var MAX_INT32 = 2 ** 32;
 function concat(...buffers) {
-  const size = buffers.reduce((acc, { length }) => acc + length, 0), buf = new Uint8Array(size);
+  const size = buffers.reduce((acc, { length }) => acc + length, 0);
+  const buf = new Uint8Array(size);
   let i = 0;
-  for (const buffer of buffers)
-    buf.set(buffer, i), i += buffer.length;
+  for (const buffer of buffers) {
+    buf.set(buffer, i);
+    i += buffer.length;
+  }
   return buf;
 }
-var NON_ASCII = /[^\x00-\x7f]/;
 function encode3(string4) {
-  if (typeof string4 == "string" && string4.length >= 128) {
-    if (NON_ASCII.test(string4))
-      throw new TypeError("non-ASCII string encountered in encode()");
-    return encoder.encode(string4);
-  }
   const bytes = new Uint8Array(string4.length);
   for (let i = 0; i < string4.length; i++) {
     const code = string4.charCodeAt(i);
-    if (code > 127)
+    if (code > 127) {
       throw new TypeError("non-ASCII string encountered in encode()");
+    }
     bytes[i] = code;
   }
   return bytes;
 }
-function decodeBase64(encoded, url2 = false) {
-  if (Uint8Array.fromBase64)
-    return Uint8Array.fromBase64(encoded, { alphabet: url2 ? "base64url" : "base64" });
-  if (url2) {
-    if (encoded.includes("+") || encoded.includes("/"))
-      throw new TypeError("Invalid base64url");
-    encoded = encoded.replace(/-/g, "+").replace(/_/g, "/");
+
+// ../persist/node_modules/jose/dist/webapi/lib/crypto_key.js
+var unusable = (name, prop = "algorithm.name") => new TypeError(`CryptoKey does not support this operation, its ${prop} must be ${name}`);
+function checkUsage(key, usage) {
+  if (usage && !key.usages.includes(usage)) {
+    throw new TypeError(`CryptoKey does not support this operation, its usages must include ${usage}.`);
   }
-  const binary = atob(encoded), bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++)
-    bytes[i] = binary.charCodeAt(i);
-  return bytes;
+}
+function checkCryptoKey(key, expected, usage) {
+  const algorithm = key.algorithm;
+  if (algorithm.name !== expected.name) {
+    throw unusable(expected.name);
+  }
+  if (expected.hash && algorithm.hash?.name !== expected.hash) {
+    throw unusable(expected.hash, "algorithm.hash");
+  }
+  if (expected.namedCurve && algorithm.namedCurve !== expected.namedCurve) {
+    throw unusable(expected.namedCurve, "algorithm.namedCurve");
+  }
+  if (expected.length !== void 0 && algorithm.length !== expected.length) {
+    throw unusable(expected.length, "algorithm.length");
+  }
+  checkUsage(key, usage);
 }
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/util/errors.js
+// ../persist/node_modules/jose/dist/webapi/lib/invalid_key_input.js
+function message(msg, actual, ...types) {
+  types = types.filter(Boolean);
+  if (types.length > 2) {
+    const last = types.pop();
+    msg += `one of type ${types.join(", ")}, or ${last}.`;
+  } else if (types.length === 2) {
+    msg += `one of type ${types[0]} or ${types[1]}.`;
+  } else {
+    msg += `of type ${types[0]}.`;
+  }
+  if (actual == null) {
+    msg += ` Received ${actual}`;
+  } else if (typeof actual === "function" && actual.name) {
+    msg += ` Received function ${actual.name}`;
+  } else if (typeof actual === "object" && actual != null) {
+    if (actual.constructor?.name) {
+      msg += ` Received an instance of ${actual.constructor.name}`;
+    }
+  }
+  return msg;
+}
+var withAlg = (alg, actual, ...types) => message(`Key for the ${alg} algorithm must be `, actual, ...types);
+
+// ../persist/node_modules/jose/dist/webapi/util/errors.js
 var JOSEError = class extends Error {
   static code = "ERR_JOSE_GENERIC";
   code = "ERR_JOSE_GENERIC";
   constructor(message2, options) {
-    super(message2, options), this.name = this.constructor.name, Error.captureStackTrace?.(this, this.constructor);
+    super(message2, options);
+    this.name = this.constructor.name;
+    Error.captureStackTrace?.(this, this.constructor);
   }
 };
 var JWTClaimValidationFailed = class extends JOSEError {
@@ -54843,7 +54878,10 @@ var JWTClaimValidationFailed = class extends JOSEError {
   reason;
   payload;
   constructor(message2, payload, claim2 = "unspecified", reason = "unspecified") {
-    super(message2, { cause: { claim: claim2, reason, payload } }), this.claim = claim2, this.reason = reason, this.payload = payload;
+    super(message2, { cause: { claim: claim2, reason, payload } });
+    this.claim = claim2;
+    this.reason = reason;
+    this.payload = payload;
   }
 };
 var JWTExpired = class extends JOSEError {
@@ -54853,7 +54891,10 @@ var JWTExpired = class extends JOSEError {
   reason;
   payload;
   constructor(message2, payload, claim2 = "unspecified", reason = "unspecified") {
-    super(message2, { cause: { claim: claim2, reason, payload } }), this.claim = claim2, this.reason = reason, this.payload = payload;
+    super(message2, { cause: { claim: claim2, reason, payload } });
+    this.claim = claim2;
+    this.reason = reason;
+    this.payload = payload;
   }
 };
 var JOSEAlgNotAllowed = class extends JOSEError {
@@ -54900,158 +54941,7 @@ var JWSSignatureVerificationFailed = class extends JOSEError {
   }
 };
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/util/base64url.js
-var invalid = "The input to be decoded is not correctly encoded.";
-function decode3(input2) {
-  try {
-    return decodeBase64(typeof input2 == "string" ? input2 : decoder.decode(input2), true);
-  } catch (cause) {
-    throw new TypeError(invalid, { cause });
-  }
-}
-
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/lib/validate.js
-function isObject2(input2) {
-  if (typeof input2 != "object" || input2 === null || Object.prototype.toString.call(input2) !== "[object Object]")
-    return false;
-  const prototype = Object.getPrototypeOf(input2);
-  return prototype === null || Object.getPrototypeOf(prototype) === null;
-}
-function isJwkSet(input2) {
-  return isObject2(input2) && Array.isArray(input2.keys) && Array.from(input2.keys).every(isObject2);
-}
-function isDisjoint(...headers) {
-  const parameters = /* @__PURE__ */ new Set();
-  for (const header of headers)
-    if (header)
-      for (const parameter of Object.keys(header)) {
-        if (parameters.has(parameter))
-          return false;
-        parameters.add(parameter);
-      }
-  return true;
-}
-function decodeBase64url(value, label, ErrorClass) {
-  try {
-    return decode3(value);
-  } catch (cause) {
-    throw new ErrorClass(`Failed to base64url decode the ${label}`, { cause });
-  }
-}
-function encodeAsciiMember(value, label, ErrorClass) {
-  try {
-    return encode3(value);
-  } catch (cause) {
-    throw new ErrorClass(`The ${label} is not a valid base64url string`, { cause });
-  }
-}
-function parseJoseHeader(encodedProtectedHeader, ErrorClass, message2) {
-  let parsed;
-  try {
-    parsed = JSON.parse(strictDecoder.decode(decode3(encodedProtectedHeader)));
-  } catch (cause) {
-    throw new ErrorClass(message2, { cause });
-  }
-  if (!isObject2(parsed))
-    throw new ErrorClass(message2);
-  return parsed;
-}
-var JWS_RECOGNIZED = { __proto__: null, b64: true };
-function validateAlgorithms(option, algorithms) {
-  if (algorithms !== void 0 && (!Array.isArray(algorithms) || algorithms.some((s) => typeof s != "string")))
-    throw new TypeError(`"${option}" option must be an array of strings`);
-  return algorithms === void 0 ? void 0 : new Set(algorithms);
-}
-function validateCrit(Err, recognizedDefault, recognizedOption, protectedHeader, joseHeader) {
-  if (joseHeader.crit !== void 0 && protectedHeader?.crit === void 0)
-    throw new Err('"crit" (Critical) Header Parameter MUST be integrity protected');
-  if (!protectedHeader || protectedHeader.crit === void 0)
-    return [];
-  if (!Array.isArray(protectedHeader.crit) || protectedHeader.crit.length === 0 || protectedHeader.crit.some((input2) => typeof input2 != "string" || input2.length === 0))
-    throw new Err('"crit" (Critical) Header Parameter MUST be an array of non-empty strings when present');
-  const recognized = recognizedOption === void 0 ? recognizedDefault : { __proto__: null, ...recognizedOption, ...recognizedDefault };
-  for (const parameter of protectedHeader.crit) {
-    if (!(parameter in recognized))
-      throw new JOSENotSupported(`Extension Header Parameter "${parameter}" is not recognized`);
-    if (!Object.hasOwn(joseHeader, parameter) || joseHeader[parameter] === void 0)
-      throw new Err(`Extension Header Parameter "${parameter}" is missing`);
-    if (recognized[parameter] && (!Object.hasOwn(protectedHeader, parameter) || protectedHeader[parameter] === void 0))
-      throw new Err(`Extension Header Parameter "${parameter}" MUST be integrity protected`);
-  }
-  return protectedHeader.crit;
-}
-function validateB64(protectedHeader, extensions) {
-  if (extensions.includes("b64")) {
-    const b64 = protectedHeader.b64;
-    if (typeof b64 != "boolean")
-      throw new JWSInvalid('The "b64" (base64url-encode payload) Header Parameter must be a boolean');
-    return b64;
-  }
-  return true;
-}
-
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/lib/key.js
-var tag = (key) => key[Symbol.toStringTag];
-var jwkMatchesOp = (entry, key, usage) => {
-  const { alg } = entry;
-  if (key.use !== void 0) {
-    const expected = usage === "sign" || usage === "verify" ? "sig" : "enc";
-    if (key.use !== expected)
-      throw new TypeError(`Invalid key for this operation, its "use" must be "${expected}" when present`);
-  }
-  if (key.alg !== void 0 && key.alg !== alg)
-    throw new TypeError(`Invalid key for this operation, its "alg" must be "${alg}" when present`);
-  if (Array.isArray(key.key_ops)) {
-    const expectedKeyOp = usage === "encrypt" || usage === "decrypt" ? entry.ops?.[usage === "encrypt" ? 0 : 1] : usage;
-    if (expectedKeyOp && !key.key_ops.includes(expectedKeyOp))
-      throw new TypeError(`Invalid key for this operation, its "key_ops" must include "${expectedKeyOp}" when present`);
-  }
-};
-async function prepareKey(entry, key, usage) {
-  const { alg, secret } = entry, requiresPrivateKey = usage === "decrypt" || usage === "sign";
-  if (secret && key instanceof Uint8Array)
-    return key;
-  let normalized, keyObject;
-  if (isObject2(key)) {
-    if (normalized = normalizeJwk(key), typeof normalized.kty != "string")
-      throw invalidKeyType(alg, key, secret);
-    if (!(secret ? normalized.kty === "oct" && typeof normalized.k == "string" : normalized.kty !== "oct" && (requiresPrivateKey ? normalized.kty === "AKP" && typeof normalized.priv == "string" || typeof normalized.d == "string" : normalized.d === void 0 && normalized.priv === void 0)))
-      throw new TypeError(secret ? 'JSON Web Key for symmetric algorithms must have JWK "kty" (Key Type) equal to "oct" and the JWK "k" (Key Value) present' : `JSON Web Key for this operation must be a ${requiresPrivateKey ? "private" : "public"} JWK`);
-    if (jwkMatchesOp(entry, normalized, usage), normalized.kty === "oct")
-      return decode3(normalized.k);
-    if (!Object.isFrozen(key)) {
-      const { key_ops } = key;
-      Array.isArray(key_ops) && Object.freeze(key_ops), Object.freeze(key);
-    }
-  } else {
-    if (!isKeyLike(key))
-      throw invalidKeyType(alg, key, secret);
-    const expectedType = secret ? "secret" : requiresPrivateKey ? "private" : "public";
-    if (key.type !== expectedType && (secret || ["secret", "public", "private"].includes(key.type)))
-      throw new TypeError(`${tag(key)} instances must be of type "${expectedType}" for the ${alg} algorithm`);
-    if (isCryptoKey(key))
-      return key;
-    if (keyObject = key, keyObject.type === "secret")
-      return keyObject.export();
-  }
-  cache ||= /* @__PURE__ */ new WeakMap();
-  const cacheKey = key;
-  let cached2 = cache.get(cacheKey);
-  if (cached2?.[alg])
-    return cached2[alg];
-  if (cached2 || cache.set(cacheKey, cached2 = {}), keyObject && typeof keyObject.toCryptoKey == "function") {
-    const isPublic = keyObject.type === "public", crv = nist[keyObject.asymmetricKeyDetails?.namedCurve], params = entry.resolve?.({ crv, asymmetricKeyType: keyObject.asymmetricKeyType }) ?? entry.subtle;
-    return cached2[alg] = keyObject.toCryptoKey(params, isPublic, entry.usages[isPublic ? 0 : 1]);
-  }
-  return normalized ??= keyObject.export({ format: "jwk" }), normalized.alg = alg, cached2[alg] = await jwkToKey(entry, normalized);
-}
-var cache;
-var nist = {
-  __proto__: null,
-  prime256v1: "P-256",
-  secp384r1: "P-384",
-  secp521r1: "P-521"
-};
+// ../persist/node_modules/jose/dist/webapi/lib/is_key_like.js
 var isCryptoKey = (key) => {
   if (key?.[Symbol.toStringTag] === "CryptoKey")
     return true;
@@ -55063,86 +54953,398 @@ var isCryptoKey = (key) => {
 };
 var isKeyObject = (key) => key?.[Symbol.toStringTag] === "KeyObject";
 var isKeyLike = (key) => isCryptoKey(key) || isKeyObject(key);
-function message(msg, actual, ...types) {
-  if (types.length > 2) {
-    const last = types.pop();
-    msg += `one of type ${types.join(", ")}, or ${last}.`;
-  } else types.length === 2 ? msg += `one of type ${types[0]} or ${types[1]}.` : msg += `of type ${types[0]}.`;
-  return actual == null ? msg += ` Received ${actual}` : typeof actual == "function" && actual.name ? msg += ` Received function ${actual.name}` : typeof actual == "object" && actual != null && actual.constructor?.name && (msg += ` Received an instance of ${actual.constructor.name}`), msg;
-}
-function invalidKeyType(alg, actual, secret) {
-  const types = ["CryptoKey", "KeyObject", "JSON Web Key"];
-  return secret && types.push("Uint8Array"), new TypeError(message(`Key for the ${alg} algorithm must be `, actual, ...types));
-}
-var unusable = (name, prop = "algorithm.name") => new TypeError(`CryptoKey does not support this operation, its ${prop} must be ${name}`);
-function checkUsage(key, usage) {
-  if (usage && !key.usages.includes(usage))
-    throw new TypeError(`CryptoKey does not support this operation, its usages must include ${usage}.`);
-}
-function checkModulusLength(alg, key) {
-  const { modulusLength } = key.algorithm;
-  if (typeof modulusLength != "number" || modulusLength < 2048)
-    throw new TypeError(`${alg} requires key modulusLength to be 2048 bits or larger`);
-}
-function checkCryptoKey(key, expected, usage) {
-  const algorithm = key.algorithm;
-  if (algorithm.name !== expected.name)
-    throw unusable(expected.name);
-  if (expected.hash && algorithm.hash?.name !== expected.hash)
-    throw unusable(expected.hash, "algorithm.hash");
-  if (expected.namedCurve && algorithm.namedCurve !== expected.namedCurve)
-    throw unusable(expected.namedCurve, "algorithm.namedCurve");
-  if (expected.length !== void 0 && algorithm.length !== expected.length)
-    throw unusable(expected.length, "algorithm.length");
-  checkUsage(key, usage);
-}
-function snapshotJwk(jwk) {
-  return { __proto__: null, ...jwk };
-}
-function normalizeJwk(jwk) {
-  const normalized = snapshotJwk(jwk);
-  if (normalized.ext !== void 0 && typeof normalized.ext != "boolean")
-    throw new TypeError('"ext" (Extractable) Parameter must be a boolean');
-  if (normalized.key_ops !== void 0) {
-    const value = normalized.key_ops, keyOps = Array.isArray(value) ? [...value] : void 0;
-    if (!keyOps || keyOps.some((operation) => typeof operation != "string") || new Set(keyOps).size !== keyOps.length)
-      throw new TypeError('"key_ops" (Key Operations) Parameter must be an array of unique strings');
-    normalized.key_ops = keyOps;
+
+// ../persist/node_modules/jose/dist/webapi/lib/base64.js
+function decodeBase64(encoded) {
+  if (Uint8Array.fromBase64) {
+    return Uint8Array.fromBase64(encoded);
   }
-  return normalized;
-}
-async function jwkToKey(entry, jwk, extractable) {
-  if (!entry.kty.includes(jwk.kty))
-    throw new JOSENotSupported('Invalid or unsupported JWK "alg" (Algorithm) Parameter value');
-  const algorithm = entry.resolve?.({ kty: jwk.kty, crv: jwk.crv }) ?? entry.subtle, isPrivate = !!(jwk.d || jwk.priv), keyData = { ...jwk, ext: extractable ?? jwk.ext };
-  return keyData.kty !== "AKP" && delete keyData.alg, delete keyData.use, crypto.subtle.importKey("jwk", keyData, algorithm, keyData.ext ?? !isPrivate, jwk.key_ops ?? entry.usages[isPrivate ? 1 : 0]);
-}
-async function rawKey(key, expected, usage, extractable = false) {
-  return key instanceof Uint8Array && (key = await crypto.subtle.importKey("raw", key, expected, extractable, [usage])), checkCryptoKey(key, expected, usage), key;
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/lib/key_descriptor.js
+// ../persist/node_modules/jose/dist/webapi/util/base64url.js
+function decode3(input2) {
+  if (Uint8Array.fromBase64) {
+    try {
+      return Uint8Array.fromBase64(typeof input2 === "string" ? input2 : decoder.decode(input2), {
+        alphabet: "base64url"
+      });
+    } catch (cause) {
+      throw new TypeError("The input to be decoded is not correctly encoded.", { cause });
+    }
+  }
+  let encoded = input2;
+  if (encoded instanceof Uint8Array) {
+    encoded = decoder.decode(encoded);
+  }
+  if (encoded.includes("+") || encoded.includes("/")) {
+    throw new TypeError("The input to be decoded is not correctly encoded.");
+  }
+  encoded = encoded.replace(/-/g, "+").replace(/_/g, "/");
+  try {
+    return decodeBase64(encoded);
+  } catch {
+    throw new TypeError("The input to be decoded is not correctly encoded.");
+  }
+}
+
+// ../persist/node_modules/jose/dist/webapi/lib/type_checks.js
+var isObjectLike = (value) => typeof value === "object" && value !== null;
+function isObject2(input2) {
+  if (!isObjectLike(input2) || Object.prototype.toString.call(input2) !== "[object Object]") {
+    return false;
+  }
+  if (Object.getPrototypeOf(input2) === null) {
+    return true;
+  }
+  let proto = input2;
+  while (Object.getPrototypeOf(proto) !== null) {
+    proto = Object.getPrototypeOf(proto);
+  }
+  return Object.getPrototypeOf(input2) === proto;
+}
+function isDisjoint(...headers) {
+  const sources = headers.filter(Boolean);
+  if (sources.length === 0 || sources.length === 1) {
+    return true;
+  }
+  let acc;
+  for (const header of sources) {
+    const parameters = Object.keys(header);
+    if (!acc || acc.size === 0) {
+      acc = new Set(parameters);
+      continue;
+    }
+    for (const parameter of parameters) {
+      if (acc.has(parameter)) {
+        return false;
+      }
+      acc.add(parameter);
+    }
+  }
+  return true;
+}
+var isJWK = (key) => isObject2(key) && typeof key.kty === "string";
+var isPrivateJWK = (key) => key.kty !== "oct" && (key.kty === "AKP" && typeof key.priv === "string" || typeof key.d === "string");
+var isPublicJWK = (key) => key.kty !== "oct" && key.d === void 0 && key.priv === void 0;
+var isSecretJWK = (key) => key.kty === "oct" && typeof key.k === "string";
+
+// ../persist/node_modules/jose/dist/webapi/lib/helpers.js
+var unprotected = Symbol();
+function decodeBase64url(value, label, ErrorClass) {
+  try {
+    return decode3(value);
+  } catch {
+    throw new ErrorClass(`Failed to base64url decode the ${label}`);
+  }
+}
+function encodeBase64url(value, label, ErrorClass) {
+  try {
+    return encode3(value);
+  } catch {
+    throw new ErrorClass(`The ${label} is not a valid base64url string`);
+  }
+}
+function parseJoseHeader(b64, ErrorClass, message2) {
+  let parsed;
+  try {
+    parsed = JSON.parse(strictDecoder.decode(decode3(b64)));
+  } catch {
+    throw new ErrorClass(message2);
+  }
+  if (!isObject2(parsed)) {
+    throw new ErrorClass(message2);
+  }
+  return parsed;
+}
+
+// ../persist/node_modules/jose/dist/webapi/lib/jwk_to_key.js
+var unsupportedAlg = 'Invalid or unsupported JWK "alg" (Algorithm) Parameter value';
+function subtleParams(entry, jwk) {
+  if (!entry.kty.includes(jwk.kty)) {
+    throw new JOSENotSupported(unsupportedAlg);
+  }
+  return entry.subtleFor?.({ kty: jwk.kty, crv: jwk.crv }) ?? entry.subtle;
+}
+async function jwkToKey(entry, jwk) {
+  if (jwk.kty === "RSA" && "oth" in jwk && jwk.oth !== void 0) {
+    throw new JOSENotSupported('RSA JWK "oth" (Other Primes Info) Parameter value is not supported');
+  }
+  const algorithm = subtleParams(entry, jwk);
+  const isPrivate = !!(jwk.d || jwk.priv);
+  const keyUsages = isPrivate ? entry.usages.private : entry.usages.public;
+  const keyData = { ...jwk };
+  if (keyData.kty !== "AKP") {
+    delete keyData.alg;
+  }
+  delete keyData.use;
+  return crypto.subtle.importKey("jwk", keyData, algorithm, jwk.ext ?? (isPrivate ? false : true), jwk.key_ops ?? keyUsages);
+}
+
+// ../persist/node_modules/jose/dist/webapi/lib/key.js
+var tag = (key) => key[Symbol.toStringTag];
+var jwkMatchesOp = (entry, key, usage) => {
+  const { alg } = entry;
+  if (key.use !== void 0) {
+    let expected;
+    switch (usage) {
+      case "sign":
+      case "verify":
+        expected = "sig";
+        break;
+      case "encrypt":
+      case "decrypt":
+        expected = "enc";
+        break;
+    }
+    if (key.use !== expected) {
+      throw new TypeError(`Invalid key for this operation, its "use" must be "${expected}" when present`);
+    }
+  }
+  if (key.alg !== void 0 && key.alg !== alg) {
+    throw new TypeError(`Invalid key for this operation, its "alg" must be "${alg}" when present`);
+  }
+  if (Array.isArray(key.key_ops)) {
+    const expectedKeyOp = usage === "encrypt" || usage === "decrypt" ? entry.keyOps?.[usage] : usage;
+    if (expectedKeyOp && key.key_ops?.includes?.(expectedKeyOp) === false) {
+      throw new TypeError(`Invalid key for this operation, its "key_ops" must include "${expectedKeyOp}" when present`);
+    }
+  }
+  return true;
+};
+var symmetricTypeCheck = (entry, key, usage) => {
+  const { alg } = entry;
+  if (key instanceof Uint8Array)
+    return { kind: BYTES, key };
+  if (isJWK(key)) {
+    if (isSecretJWK(key) && jwkMatchesOp(entry, key, usage))
+      return { kind: JWK, key };
+    throw new TypeError(`JSON Web Key for symmetric algorithms must have JWK "kty" (Key Type) equal to "oct" and the JWK "k" (Key Value) present`);
+  }
+  if (!isKeyLike(key)) {
+    throw new TypeError(withAlg(alg, key, "CryptoKey", "KeyObject", "JSON Web Key", "Uint8Array"));
+  }
+  if (key.type !== "secret") {
+    throw new TypeError(`${tag(key)} instances for symmetric algorithms must be of type "secret"`);
+  }
+  return isCryptoKey(key) ? { kind: CRYPTO, key } : { kind: KEYOBJECT, key };
+};
+var asymmetricTypeCheck = (entry, key, usage) => {
+  const { alg } = entry;
+  if (isJWK(key)) {
+    switch (usage) {
+      case "decrypt":
+      case "sign":
+        if (isPrivateJWK(key) && jwkMatchesOp(entry, key, usage))
+          return { kind: JWK, key };
+        throw new TypeError(`JSON Web Key for this operation must be a private JWK`);
+      case "encrypt":
+      case "verify":
+        if (isPublicJWK(key) && jwkMatchesOp(entry, key, usage))
+          return { kind: JWK, key };
+        throw new TypeError(`JSON Web Key for this operation must be a public JWK`);
+    }
+  }
+  if (!isKeyLike(key)) {
+    throw new TypeError(withAlg(alg, key, "CryptoKey", "KeyObject", "JSON Web Key"));
+  }
+  if (key.type === "secret") {
+    throw new TypeError(`${tag(key)} instances for asymmetric algorithms must not be of type "secret"`);
+  }
+  if (key.type === "public") {
+    switch (usage) {
+      case "sign":
+        throw new TypeError(`${tag(key)} instances for asymmetric algorithm signing must be of type "private"`);
+      case "decrypt":
+        throw new TypeError(`${tag(key)} instances for asymmetric algorithm decryption must be of type "private"`);
+    }
+  }
+  if (key.type === "private") {
+    switch (usage) {
+      case "verify":
+        throw new TypeError(`${tag(key)} instances for asymmetric algorithm verifying must be of type "public"`);
+      case "encrypt":
+        throw new TypeError(`${tag(key)} instances for asymmetric algorithm encryption must be of type "public"`);
+    }
+  }
+  return isCryptoKey(key) ? { kind: CRYPTO, key } : { kind: KEYOBJECT, key };
+};
+var BYTES = Symbol();
+var CRYPTO = Symbol();
+var KEYOBJECT = Symbol();
+var JWK = Symbol();
+function checkKeyType(entry, key, usage) {
+  return entry.symmetric ? symmetricTypeCheck(entry, key, usage) : asymmetricTypeCheck(entry, key, usage);
+}
+var cache;
+var nist = {
+  __proto__: null,
+  prime256v1: "P-256",
+  secp384r1: "P-384",
+  secp521r1: "P-521"
+};
+function cached2(key, alg) {
+  cache ||= /* @__PURE__ */ new WeakMap();
+  return cache.get(key)?.[alg];
+}
+function store(key, alg, cryptoKey) {
+  const entry = cache.get(key);
+  if (entry) {
+    entry[alg] = cryptoKey;
+  } else {
+    cache.set(key, { [alg]: cryptoKey });
+  }
+  return cryptoKey;
+}
+var handleJWK = async (key, jwk, entry) => {
+  const hit = cached2(key, entry.alg);
+  if (hit)
+    return hit;
+  const cryptoKey = await jwkToKey(entry, { ...jwk, alg: entry.alg });
+  return store(key, entry.alg, cryptoKey);
+};
+var handleKeyObject = (keyObject, entry) => {
+  const hit = cached2(keyObject, entry.alg);
+  if (hit)
+    return hit;
+  const isPublic = keyObject.type === "public";
+  const usages = isPublic ? entry.usages.public : entry.usages.private;
+  const { asymmetricKeyType } = keyObject;
+  const crv = nist[keyObject.asymmetricKeyDetails?.namedCurve];
+  const params = entry.subtleFor?.({ crv, asymmetricKeyType }) ?? entry.subtle;
+  return store(keyObject, entry.alg, keyObject.toCryptoKey(params, isPublic, usages));
+};
+async function prepareKey(entry, key, usage) {
+  const tagged = checkKeyType(entry, key, usage);
+  switch (tagged.kind) {
+    case BYTES:
+    case CRYPTO:
+      return tagged.key;
+    case JWK: {
+      if (tagged.key.k) {
+        return decode3(tagged.key.k);
+      }
+      if (!Object.isFrozen(tagged.key)) {
+        const { key_ops } = tagged.key;
+        if (Array.isArray(key_ops))
+          Object.freeze(key_ops);
+        Object.freeze(tagged.key);
+      }
+      return handleJWK(tagged.key, tagged.key, entry);
+    }
+    case KEYOBJECT: {
+      const keyObject = tagged.key;
+      if (keyObject.type === "secret") {
+        return keyObject.export();
+      }
+      if ("toCryptoKey" in keyObject && typeof keyObject.toCryptoKey === "function") {
+        return handleKeyObject(keyObject, entry);
+      }
+      return handleJWK(keyObject, keyObject.export({ format: "jwk" }), entry);
+    }
+  }
+}
+
+// ../persist/node_modules/jose/dist/webapi/lib/key_descriptor.js
 function table(entries) {
   const out = { __proto__: null };
-  for (const alg in entries)
+  for (const alg of Object.keys(entries)) {
     out[alg] = { ...entries[alg], alg };
+  }
   return out;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/lib/jws_algorithms.js
-var sig = [["verify"], ["sign"]];
+// ../persist/node_modules/jose/dist/webapi/lib/signing.js
+function checkModulusLength(alg, key) {
+  const { modulusLength } = key.algorithm;
+  if (typeof modulusLength !== "number" || modulusLength < 2048) {
+    throw new TypeError(`${alg} requires key modulusLength to be 2048 bits or larger`);
+  }
+}
+function checkSigCryptoKey(entry, key, usage) {
+  checkCryptoKey(key, entry.subtle, usage);
+  if (entry.minModulusLength) {
+    checkModulusLength(entry.alg, key);
+  }
+}
+async function getSigKey(entry, key, usage) {
+  if (key instanceof Uint8Array) {
+    return crypto.subtle.importKey("raw", key, entry.subtle, false, [
+      usage
+    ]);
+  }
+  checkSigCryptoKey(entry, key, usage);
+  return key;
+}
+async function verify(entry, key, signature, data) {
+  const cryptoKey = await getSigKey(entry, key, "verify");
+  try {
+    return await crypto.subtle.verify(entry.operation, cryptoKey, signature, data);
+  } catch {
+    return false;
+  }
+}
+
+// ../persist/node_modules/jose/dist/webapi/lib/options.js
+var JWS_RECOGNIZED = /* @__PURE__ */ new Map([["b64", true]]);
+function validateAlgorithms(option, algorithms) {
+  if (algorithms !== void 0 && (!Array.isArray(algorithms) || algorithms.some((s) => typeof s !== "string"))) {
+    throw new TypeError(`"${option}" option must be an array of strings`);
+  }
+  if (!algorithms) {
+    return void 0;
+  }
+  return new Set(algorithms);
+}
+function validateCrit(Err, recognizedDefault, recognizedOption, protectedHeader, joseHeader) {
+  if (joseHeader.crit !== void 0 && protectedHeader?.crit === void 0) {
+    throw new Err('"crit" (Critical) Header Parameter MUST be integrity protected');
+  }
+  if (!protectedHeader || protectedHeader.crit === void 0) {
+    return /* @__PURE__ */ new Set();
+  }
+  if (!Array.isArray(protectedHeader.crit) || protectedHeader.crit.length === 0 || protectedHeader.crit.some((input2) => typeof input2 !== "string" || input2.length === 0)) {
+    throw new Err('"crit" (Critical) Header Parameter MUST be an array of non-empty strings when present');
+  }
+  let recognized;
+  if (recognizedOption !== void 0) {
+    recognized = new Map([...Object.entries(recognizedOption), ...recognizedDefault.entries()]);
+  } else {
+    recognized = recognizedDefault;
+  }
+  for (const parameter of protectedHeader.crit) {
+    if (!recognized.has(parameter)) {
+      throw new JOSENotSupported(`Extension Header Parameter "${parameter}" is not recognized`);
+    }
+    if (joseHeader[parameter] === void 0) {
+      throw new Err(`Extension Header Parameter "${parameter}" is missing`);
+    }
+    if (recognized.get(parameter) && protectedHeader[parameter] === void 0) {
+      throw new Err(`Extension Header Parameter "${parameter}" MUST be integrity protected`);
+    }
+  }
+  return new Set(protectedHeader.crit);
+}
+
+// ../persist/node_modules/jose/dist/webapi/lib/jws_algorithms.js
+var sig = { public: ["verify"], private: ["sign"] };
 function hmac(bits) {
   const subtle = { name: "HMAC", hash: `SHA-${bits}` };
-  return { kty: ["oct"], secret: true, subtle, signing: subtle, usages: sig };
+  return { kty: ["oct"], symmetric: true, subtle, operation: subtle, usages: sig };
 }
-function rsa(bits, saltLength) {
-  const subtle = { name: saltLength ? "RSA-PSS" : "RSASSA-PKCS1-v1_5", hash: `SHA-${bits}` };
+function rsa(name, bits, saltLength) {
+  const subtle = { name, hash: `SHA-${bits}` };
   return {
     kty: ["RSA"],
     subtle,
-    signing: saltLength ? { ...subtle, saltLength } : subtle,
+    operation: saltLength ? { ...subtle, saltLength } : subtle,
     usages: sig,
-    minRsaBits: 2048
+    minModulusLength: 2048
   };
 }
 function ecdsa(crv, bits) {
@@ -55150,7 +55352,7 @@ function ecdsa(crv, bits) {
     kty: ["EC"],
     crv,
     subtle: { name: "ECDSA", namedCurve: crv },
-    signing: { name: "ECDSA", hash: `SHA-${bits}` },
+    operation: { name: "ECDSA", hash: `SHA-${bits}` },
     usages: sig
   };
 }
@@ -55160,16 +55362,16 @@ function eddsa() {
     kty: ["OKP"],
     crv: "Ed25519",
     subtle,
-    signing: subtle,
+    operation: subtle,
     usages: sig
   };
 }
-function mldsa(parameterSet) {
-  const subtle = { name: `ML-DSA-${parameterSet}` };
+function mldsa(name) {
+  const subtle = { name };
   return {
     kty: ["AKP"],
     subtle,
-    signing: subtle,
+    operation: subtle,
     usages: sig
   };
 }
@@ -55177,252 +55379,411 @@ var JWS = table({
   HS256: hmac(256),
   HS384: hmac(384),
   HS512: hmac(512),
-  RS256: rsa(256),
-  RS384: rsa(384),
-  RS512: rsa(512),
-  PS256: rsa(256, 32),
-  PS384: rsa(384, 48),
-  PS512: rsa(512, 64),
+  RS256: rsa("RSASSA-PKCS1-v1_5", 256),
+  RS384: rsa("RSASSA-PKCS1-v1_5", 384),
+  RS512: rsa("RSASSA-PKCS1-v1_5", 512),
+  PS256: rsa("RSA-PSS", 256, 32),
+  PS384: rsa("RSA-PSS", 384, 48),
+  PS512: rsa("RSA-PSS", 512, 64),
   ES256: ecdsa("P-256", 256),
   ES384: ecdsa("P-384", 384),
   ES512: ecdsa("P-521", 512),
   EdDSA: eddsa(),
   Ed25519: eddsa(),
-  "ML-DSA-44": mldsa(44),
-  "ML-DSA-65": mldsa(65),
-  "ML-DSA-87": mldsa(87)
+  "ML-DSA-44": mldsa("ML-DSA-44"),
+  "ML-DSA-65": mldsa("ML-DSA-65"),
+  "ML-DSA-87": mldsa("ML-DSA-87")
 });
 function jwsAlgorithm(alg) {
-  const entry = typeof alg == "string" ? JWS[alg] : void 0;
-  if (!entry)
+  const entry = JWS[alg];
+  if (!entry) {
     throw new JOSENotSupported(`alg ${alg} is not supported either by JOSE or your javascript runtime`);
+  }
   return entry;
 }
+function maybeJWSAlgorithm(alg) {
+  return JWS[alg];
+}
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/lib/jws_verify.js
+// ../persist/node_modules/jose/dist/webapi/lib/jws_verify.js
 function prepareVerify(options) {
-  return [options && validateAlgorithms("algorithms", options.algorithms), options?.crit];
+  return {
+    algorithms: options && validateAlgorithms("algorithms", options.algorithms),
+    crit: options?.crit
+  };
 }
-function parseProtectedHeader(encodedProtectedHeader) {
-  return encodedProtectedHeader === void 0 ? {} : parseJoseHeader(encodedProtectedHeader, JWSInvalid, "JWS Protected Header is invalid");
-}
-function encodeCompactUnencodedPayload(payload) {
-  try {
-    return encode3(payload);
-  } catch (cause) {
-    throw new JWSInvalid("JWS Compact Serialization payload must use only ASCII characters", {
-      cause
-    });
+async function verifySignature(jws, shared, key) {
+  let parsedProt = {};
+  if (jws.protected) {
+    parsedProt = parseJoseHeader(jws.protected, JWSInvalid, "JWS Protected Header is invalid");
   }
-}
-async function verifySignature(jws, shared, key, encodeUnencodedPayload, parsedProtected) {
-  const { protected: encodedProtectedHeader, header, payload: inputPayload } = jws, protectedHeader = parsedProtected ?? parseProtectedHeader(encodedProtectedHeader);
-  if (!isDisjoint(protectedHeader, header))
-    throw new JWSInvalid("JWS Protected and JWS Unprotected Header Parameter names must be disjoint");
-  const joseHeader = { ...protectedHeader, ...header }, b64 = validateB64(protectedHeader, validateCrit(JWSInvalid, JWS_RECOGNIZED, shared[1], protectedHeader, joseHeader)), { alg } = joseHeader;
-  if (typeof alg != "string" || !alg)
+  let joseHeader;
+  if (jws.header !== void 0) {
+    if (!isDisjoint(parsedProt, jws.header)) {
+      throw new JWSInvalid("JWS Protected and JWS Unprotected Header Parameter names must be disjoint");
+    }
+    joseHeader = { ...parsedProt, ...jws.header };
+  } else {
+    joseHeader = parsedProt;
+  }
+  const extensions = validateCrit(JWSInvalid, JWS_RECOGNIZED, shared.crit, parsedProt, joseHeader);
+  let b64 = true;
+  if (extensions.has("b64")) {
+    b64 = parsedProt.b64;
+    if (typeof b64 !== "boolean") {
+      throw new JWSInvalid('The "b64" (base64url-encode payload) Header Parameter must be a boolean');
+    }
+  }
+  const { alg } = joseHeader;
+  if (typeof alg !== "string" || !alg) {
     throw new JWSInvalid('JWS "alg" (Algorithm) Header Parameter missing or invalid');
-  if (shared[0] && !shared[0].has(alg))
-    throw new JOSEAlgNotAllowed('"alg" (Algorithm) Header Parameter value not allowed');
-  if (b64) {
-    if (typeof inputPayload != "string")
-      throw new JWSInvalid("JWS Payload must be a string");
-  } else if (typeof inputPayload != "string" && !(inputPayload instanceof Uint8Array))
-    throw new JWSInvalid("JWS Payload must be a string or an Uint8Array instance");
-  const signingPayload = b64 || typeof inputPayload != "string" ? inputPayload : encodeUnencodedPayload(inputPayload);
-  let resolvedKey = false;
-  typeof key == "function" && (key = await key(protectedHeader, jws), resolvedKey = true);
-  const entry = jwsAlgorithm(alg), signingInput = concat(encodedProtectedHeader !== void 0 ? encode3(encodedProtectedHeader) : new Uint8Array(), encode3("."), typeof signingPayload == "string" ? shared[2] ??= encodeAsciiMember(signingPayload, "payload", JWSInvalid) : signingPayload), signature = decodeBase64url(jws.signature, "signature", JWSInvalid), verificationKey = await prepareKey(entry, key, "verify"), cryptoKey = await rawKey(verificationKey, entry.subtle, "verify");
-  entry.minRsaBits && checkModulusLength(entry.alg, cryptoKey);
-  let verified = false;
-  try {
-    verified = await crypto.subtle.verify(entry.signing, cryptoKey, signature, signingInput);
-  } catch (cause) {
-    throw new JWSSignatureVerificationFailed(void 0, { cause });
   }
-  if (!verified)
+  if (shared.algorithms && !shared.algorithms.has(alg)) {
+    throw new JOSEAlgNotAllowed('"alg" (Algorithm) Header Parameter value not allowed');
+  }
+  if (b64) {
+    if (typeof jws.payload !== "string") {
+      throw new JWSInvalid("JWS Payload must be a string");
+    }
+  } else if (typeof jws.payload !== "string" && !(jws.payload instanceof Uint8Array)) {
+    throw new JWSInvalid("JWS Payload must be a string or an Uint8Array instance");
+  }
+  let resolvedKey = false;
+  if (typeof key === "function") {
+    key = await key(parsedProt, jws);
+    resolvedKey = true;
+  }
+  const entry = jwsAlgorithm(alg);
+  const data = concat(jws.protected !== void 0 ? encode3(jws.protected) : new Uint8Array(), encode3("."), typeof jws.payload === "string" ? b64 ? shared.b64p ??= encodeBase64url(jws.payload, "payload", JWSInvalid) : encoder.encode(jws.payload) : jws.payload);
+  const signature = decodeBase64url(jws.signature, "signature", JWSInvalid);
+  const k = await prepareKey(entry, key, "verify");
+  const verified = await verify(entry, k, signature, data);
+  if (!verified) {
     throw new JWSSignatureVerificationFailed();
-  const result = { payload: typeof signingPayload == "string" ? decodeBase64url(signingPayload, "payload", JWSInvalid) : signingPayload };
-  return encodedProtectedHeader !== void 0 && (result.protectedHeader = protectedHeader), header !== void 0 && (result.unprotectedHeader = header), resolvedKey ? [{ ...result, key: verificationKey }, b64] : [result, b64];
+  }
+  let payload;
+  if (b64) {
+    payload = decodeBase64url(jws.payload, "payload", JWSInvalid);
+  } else if (typeof jws.payload === "string") {
+    payload = encoder.encode(jws.payload);
+  } else {
+    payload = jws.payload;
+  }
+  return { payload, parsedProt, b64, key: k, resolvedKey };
 }
 async function verifyCompact(jws, shared, key) {
-  if (jws instanceof Uint8Array && (jws = decoder.decode(jws)), typeof jws != "string")
+  if (jws instanceof Uint8Array) {
+    jws = decoder.decode(jws);
+  }
+  if (typeof jws !== "string") {
     throw new JWSInvalid("Compact JWS must be a string or Uint8Array");
+  }
   const { 0: protectedHeader, 1: payload, 2: signature, length } = jws.split(".");
-  if (length !== 3)
+  if (length !== 3) {
     throw new JWSInvalid("Invalid Compact JWS");
-  return verifySignature({ payload, protected: protectedHeader, signature }, shared, key, encodeCompactUnencodedPayload);
+  }
+  return verifySignature({ payload, protected: protectedHeader, signature }, shared, key);
 }
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/lib/jwt_claims_set.js
+// ../persist/node_modules/jose/dist/webapi/lib/jwt_claims_set.js
 var epoch = (date5) => Math.floor(date5.getTime() / 1e3);
-var multipliers = {
-  s: 1,
-  m: 60,
-  h: 3600,
-  d: 86400,
-  w: 604800,
-  y: 31557600
-};
+var minute = 60;
+var hour = minute * 60;
+var day = hour * 24;
+var week = day * 7;
+var year = day * 365.25;
 var REGEX = /^(\+|\-)? ?(\d+|\d+\.\d+) ?(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)(?: (ago|from now))?$/i;
-var checkFailed = "check_failed";
-function invalidDuration() {
-  throw new TypeError("Invalid time period format");
-}
 function secs(str) {
-  typeof str != "string" && invalidDuration();
   const matched = REGEX.exec(str);
-  (!matched || matched[4] && matched[1]) && invalidDuration();
-  const value = parseFloat(matched[2]), durationSeconds = Math.round(value * multipliers[matched[3][0].toLowerCase()]);
-  return Number.isFinite(durationSeconds) || invalidDuration(), matched[1] === "-" || matched[4] === "ago" ? -durationSeconds : durationSeconds;
+  if (!matched || matched[4] && matched[1]) {
+    throw new TypeError("Invalid time period format");
+  }
+  const value = parseFloat(matched[2]);
+  const unit = matched[3].toLowerCase();
+  let numericDate;
+  switch (unit) {
+    case "sec":
+    case "secs":
+    case "second":
+    case "seconds":
+    case "s":
+      numericDate = Math.round(value);
+      break;
+    case "minute":
+    case "minutes":
+    case "min":
+    case "mins":
+    case "m":
+      numericDate = Math.round(value * minute);
+      break;
+    case "hour":
+    case "hours":
+    case "hr":
+    case "hrs":
+    case "h":
+      numericDate = Math.round(value * hour);
+      break;
+    case "day":
+    case "days":
+    case "d":
+      numericDate = Math.round(value * day);
+      break;
+    case "week":
+    case "weeks":
+    case "w":
+      numericDate = Math.round(value * week);
+      break;
+    default:
+      numericDate = Math.round(value * year);
+      break;
+  }
+  if (matched[1] === "-" || matched[4] === "ago") {
+    return -numericDate;
+  }
+  return numericDate;
 }
 function validateInput(label, input2) {
-  if (!Number.isFinite(input2))
+  if (!Number.isFinite(input2)) {
     throw new TypeError(`Invalid ${label} input`);
+  }
   return input2;
 }
 var normalizeTyp = (value) => {
-  const normalized = value.toLowerCase();
-  return value.includes("/") ? normalized : `application/${normalized}`;
+  if (value.includes("/")) {
+    return value.toLowerCase();
+  }
+  return `application/${value.toLowerCase()}`;
 };
-var checkAudiencePresence = (audPayload, audOption) => typeof audPayload == "string" ? audOption.includes(audPayload) : Array.isArray(audPayload) ? audOption.some((aud) => audPayload.includes(aud)) : false;
-function validateNumericDate(claimsSet, claim2, required2 = false) {
-  const value = claimsSet[claim2];
-  if (!(value === void 0 && !required2)) {
-    if (typeof value != "number")
-      throw new JWTClaimValidationFailed(`"${claim2}" claim must be a number`, claimsSet, claim2, "invalid");
-    return value;
+var checkAudiencePresence = (audPayload, audOption) => {
+  if (typeof audPayload === "string") {
+    return audOption.includes(audPayload);
   }
-}
-function unexpectedClaim(claimsSet, claim2) {
-  throw new JWTClaimValidationFailed(`unexpected "${claim2}" claim value`, claimsSet, claim2, checkFailed);
-}
-function validateClaimsSet(protectedHeader, claimsSetBytes, options = {}) {
-  let claimsSet;
+  if (Array.isArray(audPayload)) {
+    return audOption.some(Set.prototype.has.bind(new Set(audPayload)));
+  }
+  return false;
+};
+function validateClaimsSet(protectedHeader, encodedPayload, options = {}) {
+  let payload;
   try {
-    claimsSet = JSON.parse(strictDecoder.decode(claimsSetBytes));
-  } catch (cause) {
-    throw new JWTInvalid("JWT Claims Set must be a top-level JSON object", { cause });
+    payload = JSON.parse(strictDecoder.decode(encodedPayload));
+  } catch {
   }
-  if (!isObject2(claimsSet))
+  if (!isObject2(payload)) {
     throw new JWTInvalid("JWT Claims Set must be a top-level JSON object");
+  }
   const { typ } = options;
-  if (typ !== void 0 && (typeof protectedHeader.typ != "string" || normalizeTyp(protectedHeader.typ) !== normalizeTyp(typ)))
-    throw new JWTClaimValidationFailed('unexpected "typ" JWT header value', claimsSet, "typ", checkFailed);
-  const { requiredClaims = [], issuer: issuer2, subject, audience, maxTokenAge } = options, presenceCheck = [...requiredClaims];
-  maxTokenAge !== void 0 && presenceCheck.push("iat"), audience !== void 0 && presenceCheck.push("aud"), subject !== void 0 && presenceCheck.push("sub"), issuer2 !== void 0 && presenceCheck.push("iss");
-  for (const claim2 of new Set(presenceCheck.reverse()))
-    if (!Object.hasOwn(claimsSet, claim2))
-      throw new JWTClaimValidationFailed(`missing required "${claim2}" claim`, claimsSet, claim2, "missing");
-  issuer2 !== void 0 && !(Array.isArray(issuer2) ? issuer2 : [issuer2]).includes(claimsSet.iss) && unexpectedClaim(claimsSet, "iss"), subject !== void 0 && claimsSet.sub !== subject && unexpectedClaim(claimsSet, "sub"), audience !== void 0 && !checkAudiencePresence(claimsSet.aud, typeof audience == "string" ? [audience] : audience) && unexpectedClaim(claimsSet, "aud");
-  const { clockTolerance } = options;
-  let tolerance = 0;
-  if (typeof clockTolerance == "string")
-    tolerance = secs(clockTolerance);
-  else if (clockTolerance !== void 0) {
-    if (typeof clockTolerance != "number")
+  if (typ && (typeof protectedHeader.typ !== "string" || normalizeTyp(protectedHeader.typ) !== normalizeTyp(typ))) {
+    throw new JWTClaimValidationFailed('unexpected "typ" JWT header value', payload, "typ", "check_failed");
+  }
+  const { requiredClaims = [], issuer: issuer2, subject, audience, maxTokenAge } = options;
+  const presenceCheck = [...requiredClaims];
+  if (maxTokenAge !== void 0)
+    presenceCheck.push("iat");
+  if (audience !== void 0)
+    presenceCheck.push("aud");
+  if (subject !== void 0)
+    presenceCheck.push("sub");
+  if (issuer2 !== void 0)
+    presenceCheck.push("iss");
+  for (const claim2 of new Set(presenceCheck.reverse())) {
+    if (!(claim2 in payload)) {
+      throw new JWTClaimValidationFailed(`missing required "${claim2}" claim`, payload, claim2, "missing");
+    }
+  }
+  if (issuer2 !== void 0 && !(Array.isArray(issuer2) ? issuer2 : [issuer2]).includes(payload.iss)) {
+    throw new JWTClaimValidationFailed('unexpected "iss" claim value', payload, "iss", "check_failed");
+  }
+  if (subject !== void 0 && payload.sub !== subject) {
+    throw new JWTClaimValidationFailed('unexpected "sub" claim value', payload, "sub", "check_failed");
+  }
+  if (audience !== void 0 && !checkAudiencePresence(payload.aud, typeof audience === "string" ? [audience] : audience)) {
+    throw new JWTClaimValidationFailed('unexpected "aud" claim value', payload, "aud", "check_failed");
+  }
+  let tolerance;
+  switch (typeof options.clockTolerance) {
+    case "string":
+      tolerance = secs(options.clockTolerance);
+      break;
+    case "number":
+      tolerance = options.clockTolerance;
+      break;
+    case "undefined":
+      tolerance = 0;
+      break;
+    default:
       throw new TypeError("Invalid clockTolerance option type");
-    tolerance = clockTolerance;
   }
   validateInput("clockTolerance option", tolerance);
-  const { currentDate } = options, now = validateInput("currentDate option", epoch(currentDate === void 0 ? /* @__PURE__ */ new Date() : currentDate)), iat = validateNumericDate(claimsSet, "iat", maxTokenAge !== void 0), nbf = validateNumericDate(claimsSet, "nbf");
-  if (nbf !== void 0 && nbf > now + tolerance)
-    throw new JWTClaimValidationFailed('"nbf" claim timestamp check failed', claimsSet, "nbf", checkFailed);
-  const exp = validateNumericDate(claimsSet, "exp");
-  if (exp !== void 0 && exp <= now - tolerance)
-    throw new JWTExpired('"exp" claim timestamp check failed', claimsSet, "exp", checkFailed);
+  const { currentDate } = options;
+  const now = validateInput("currentDate option", epoch(currentDate || /* @__PURE__ */ new Date()));
+  if ((payload.iat !== void 0 || maxTokenAge !== void 0) && typeof payload.iat !== "number") {
+    throw new JWTClaimValidationFailed('"iat" claim must be a number', payload, "iat", "invalid");
+  }
+  if (payload.nbf !== void 0) {
+    if (typeof payload.nbf !== "number") {
+      throw new JWTClaimValidationFailed('"nbf" claim must be a number', payload, "nbf", "invalid");
+    }
+    if (payload.nbf > now + tolerance) {
+      throw new JWTClaimValidationFailed('"nbf" claim timestamp check failed', payload, "nbf", "check_failed");
+    }
+  }
+  if (payload.exp !== void 0) {
+    if (typeof payload.exp !== "number") {
+      throw new JWTClaimValidationFailed('"exp" claim must be a number', payload, "exp", "invalid");
+    }
+    if (payload.exp <= now - tolerance) {
+      throw new JWTExpired('"exp" claim timestamp check failed', payload, "exp", "check_failed");
+    }
+  }
   if (maxTokenAge !== void 0) {
-    const age = now - iat, max = validateInput("maxTokenAge option", typeof maxTokenAge == "number" ? maxTokenAge : secs(maxTokenAge));
-    if (age - tolerance > max)
-      throw new JWTExpired('"iat" claim timestamp check failed (too far in the past)', claimsSet, "iat", checkFailed);
-    if (age < -tolerance)
-      throw new JWTClaimValidationFailed('"iat" claim timestamp check failed (it should be in the past)', claimsSet, "iat", checkFailed);
+    const age = now - payload.iat;
+    const max = typeof maxTokenAge === "number" ? maxTokenAge : secs(maxTokenAge);
+    if (age - tolerance > max) {
+      throw new JWTExpired('"iat" claim timestamp check failed (too far in the past)', payload, "iat", "check_failed");
+    }
+    if (age < 0 - tolerance) {
+      throw new JWTClaimValidationFailed('"iat" claim timestamp check failed (it should be in the past)', payload, "iat", "check_failed");
+    }
   }
-  return claimsSet;
+  return payload;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/jwt/verify.js
+// ../persist/node_modules/jose/dist/webapi/jwt/verify.js
 async function jwtVerify(jwt2, key, options) {
-  const [verified, b64] = await verifyCompact(jwt2, prepareVerify(options), key);
-  if (!b64)
+  const verified = await verifyCompact(jwt2, prepareVerify(options), key);
+  if (!verified.b64) {
     throw new JWTInvalid("JWTs MUST NOT use unencoded payload");
-  const payload = validateClaimsSet(verified.protectedHeader, verified.payload, options);
-  return { ...verified, payload };
+  }
+  const payload = validateClaimsSet(verified.parsedProt, verified.payload, options);
+  const result = { payload, protectedHeader: verified.parsedProt };
+  if (typeof key === "function") {
+    return { ...result, key: verified.key };
+  }
+  return result;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/jwks/local.js
-function isUsableJWK(jwk, entry, alg, kid) {
-  const { kty, key_ops: keyOps, ext, kid: jwkKid, alg: jwkAlg, use, crv } = jwk;
-  return (ext === void 0 || typeof ext == "boolean") && (keyOps === void 0 || Array.isArray(keyOps) && keyOps.every((operation, index) => typeof operation == "string" && keyOps.indexOf(operation) === index) && keyOps.includes("verify")) && entry.kty.includes(kty) && (kid === void 0 || typeof kid == "string" && kid === jwkKid) && (jwkAlg === void 0 ? kty !== "AKP" : alg === jwkAlg) && (use === void 0 || use === "sig") && (!entry.crv || crv === entry.crv);
+// ../persist/node_modules/jose/dist/webapi/jwks/local.js
+function signatureAlgorithm(alg) {
+  const entry = typeof alg === "string" ? maybeJWSAlgorithm(alg) : void 0;
+  if (!entry || entry.symmetric) {
+    throw new JOSENotSupported('Unsupported "alg" value for a JSON Web Key Set');
+  }
+  return entry;
 }
-async function importWithAlgCache(cache2, jwk, entry) {
-  const cached2 = cache2.get(jwk) || cache2.set(jwk, {}).get(jwk), { alg } = entry;
-  if (cached2[alg] === void 0) {
-    const pending = jwkToKey(entry, jwk, true).then((key) => {
-      if (key.type !== "public")
-        throw new JWKSInvalid("JSON Web Key Set members must be public keys");
-      return cached2[alg] = key, key;
-    }).catch((error62) => {
-      throw cached2[alg] === pending && delete cached2[alg], error62;
+function isJWKSLike(jwks) {
+  if (!jwks || typeof jwks !== "object") {
+    return false;
+  }
+  const { keys } = jwks;
+  return Array.isArray(keys) && keys.every(isJWKLike);
+}
+function isJWKLike(key) {
+  return isObject2(key);
+}
+var LocalJWKSetImpl = class {
+  #jwks;
+  #cached = /* @__PURE__ */ new WeakMap();
+  constructor(jwks) {
+    if (!isJWKSLike(jwks)) {
+      throw new JWKSInvalid("JSON Web Key Set malformed");
+    }
+    this.#jwks = structuredClone(jwks);
+  }
+  jwks() {
+    return this.#jwks;
+  }
+  async getKey(protectedHeader, token) {
+    const { alg, kid } = { ...protectedHeader, ...token?.header };
+    const entry = signatureAlgorithm(alg);
+    const candidates = this.#jwks.keys.filter((jwk2) => {
+      let candidate = entry.kty.includes(jwk2.kty);
+      if (candidate && typeof kid === "string") {
+        candidate = kid === jwk2.kid;
+      }
+      if (candidate && (typeof jwk2.alg === "string" || jwk2.kty === "AKP")) {
+        candidate = alg === jwk2.alg;
+      }
+      if (candidate && typeof jwk2.use === "string") {
+        candidate = jwk2.use === "sig";
+      }
+      if (candidate && Array.isArray(jwk2.key_ops)) {
+        candidate = jwk2.key_ops.includes("verify");
+      }
+      if (candidate && entry.crv) {
+        candidate = jwk2.crv === entry.crv;
+      }
+      return candidate;
     });
-    cached2[alg] = pending;
-  }
-  return cached2[alg];
-}
-function createLocalJWKSet(jwks) {
-  let snapshot;
-  try {
-    snapshot = structuredClone(jwks);
-  } catch (cause) {
-    throw new JWKSInvalid("JSON Web Key Set malformed", { cause });
-  }
-  if (!isJwkSet(snapshot))
-    throw new JWKSInvalid("JSON Web Key Set malformed");
-  const metadata = snapshot.keys.map((jwk) => {
-    const normalized = snapshotJwk(jwk);
-    return Array.isArray(normalized.key_ops) && (normalized.key_ops = [...normalized.key_ops]), normalized;
-  }), cached2 = /* @__PURE__ */ new WeakMap();
-  return Object.defineProperty(async (protectedHeader, token) => {
-    const { alg, kid } = { ...protectedHeader, ...token?.header }, entry = typeof alg == "string" ? JWS[alg] : void 0;
-    if (!entry || entry.secret)
-      throw new JOSENotSupported('Unsupported "alg" value for a JSON Web Key Set');
-    const candidates = snapshot.keys.filter((_, index) => isUsableJWK(metadata[index], entry, alg, kid)), { 0: jwk, length } = candidates;
-    if (!length)
+    const { 0: jwk, length } = candidates;
+    if (length === 0) {
       throw new JWKSNoMatchingKey();
+    }
     if (length !== 1) {
       const error62 = new JWKSMultipleMatchingKeys();
-      throw error62[Symbol.asyncIterator] = async function* () {
-        for (const jwk2 of candidates)
+      const _cached = this.#cached;
+      error62[Symbol.asyncIterator] = async function* () {
+        for (const jwk2 of candidates) {
           try {
-            yield await importWithAlgCache(cached2, jwk2, entry);
+            yield await importWithAlgCache(_cached, jwk2, entry);
           } catch {
           }
-      }, error62;
+        }
+      };
+      throw error62;
     }
-    return importWithAlgCache(cached2, jwk, entry);
-  }, "jwks", {
-    value: () => structuredClone(snapshot)
+    return importWithAlgCache(this.#cached, jwk, entry);
+  }
+};
+async function importWithAlgCache(cache2, jwk, entry) {
+  const cached3 = cache2.get(jwk) || cache2.set(jwk, {}).get(jwk);
+  if (cached3[entry.alg] === void 0) {
+    const key = await jwkToKey(entry, { ...jwk, alg: entry.alg, ext: true });
+    if (key.type !== "public") {
+      throw new JWKSInvalid("JSON Web Key Set members must be public keys");
+    }
+    cached3[entry.alg] = key;
+  }
+  return cached3[entry.alg];
+}
+function createLocalJWKSet(jwks) {
+  const set2 = new LocalJWKSetImpl(jwks);
+  const localJWKSet = async (protectedHeader, token) => set2.getKey(protectedHeader, token);
+  Object.defineProperties(localJWKSet, {
+    jwks: {
+      value: () => structuredClone(set2.jwks()),
+      enumerable: false,
+      configurable: false,
+      writable: false
+    }
   });
+  return localJWKSet;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.13/node_modules/jose/dist/webapi/util/decode_protected_header.js
+// ../persist/node_modules/jose/dist/webapi/util/decode_protected_header.js
 function decodeProtectedHeader(token) {
-  let encodedProtectedHeader;
-  if (typeof token == "string") {
+  let protectedB64u;
+  if (typeof token === "string") {
     const parts = token.split(".");
-    (parts.length === 3 || parts.length === 5) && ([encodedProtectedHeader] = parts);
-  } else if (typeof token == "object" && token)
-    if ("protected" in token)
-      encodedProtectedHeader = token.protected;
-    else
+    if (parts.length === 3 || parts.length === 5) {
+      ;
+      [protectedB64u] = parts;
+    }
+  } else if (typeof token === "object" && token) {
+    if ("protected" in token) {
+      protectedB64u = token.protected;
+    } else {
       throw new TypeError("Token does not contain a Protected Header");
-  const invalid2 = "Invalid Token or Protected Header formatting";
-  if (typeof encodedProtectedHeader != "string" || !encodedProtectedHeader)
-    throw new TypeError(invalid2);
-  return parseJoseHeader(encodedProtectedHeader, TypeError, invalid2);
+    }
+  }
+  const invalid = "Invalid Token or Protected Header formatting";
+  if (typeof protectedB64u !== "string" || !protectedB64u) {
+    throw new TypeError(invalid);
+  }
+  return parseJoseHeader(protectedB64u, TypeError, invalid);
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/cors-Ftb-tw1d.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/cors-Ftb-tw1d.js
 var JSON_HEADERS = { "Content-Type": "application/json" };
 function headResponse(response) {
   return new Response(null, {
@@ -56221,14 +56582,14 @@ function corsPreflightResponse(allowMethods) {
   });
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/content-D5LJAHyM.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/content-D5LJAHyM.js
 function extractTextContent(content) {
   if (!content) return void 0;
   const text = content.filter((block) => block.type === "text").map((block) => block.text).join("\n").trim();
   return text.length > 0 ? text : void 0;
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v3/helpers/util.js
+// ../persist/node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -56362,7 +56723,7 @@ var getParsedType2 = (data) => {
   }
 };
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v3/ZodError.js
+// ../persist/node_modules/zod/v3/ZodError.js
 var ZodIssueCode2 = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -56491,7 +56852,7 @@ ZodError2.create = (issues) => {
   return error62;
 };
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v3/locales/en.js
+// ../persist/node_modules/zod/v3/locales/en.js
 var errorMap = (issue2, _ctx) => {
   let message2;
   switch (issue2.code) {
@@ -56594,13 +56955,13 @@ var errorMap = (issue2, _ctx) => {
 };
 var en_default2 = errorMap;
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v3/errors.js
+// ../persist/node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default2;
 function getErrorMap2() {
   return overrideErrorMap;
 }
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v3/helpers/parseUtil.js
+// ../persist/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -56709,14 +57070,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v3/helpers/errorUtil.js
+// ../persist/node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message2) => typeof message2 === "string" ? { message: message2 } : message2 || {};
   errorUtil2.toString = (message2) => typeof message2 === "string" ? message2 : message2?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v3/types.js
+// ../persist/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -60124,7 +60485,7 @@ var nullableType = ZodNullable2.create;
 var preprocessType = ZodEffects.createWithPreprocess;
 var pipelineType = ZodPipeline.create;
 
-// ../persist/node_modules/.deno/zod@4.6.7/node_modules/zod/v4/mini/schemas.js
+// ../persist/node_modules/zod/v4/mini/schemas.js
 var ZodMiniType = /* @__PURE__ */ $constructor("ZodMiniType", (inst, def) => {
   if (!inst._zod)
     throw new Error("Uninitialized schema in ZodMiniType.");
@@ -63459,13 +63820,13 @@ var Protocol = class {
     const capturedTransport = this._transport;
     const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
     const sessionId = capturedTransport?.sessionId;
-    const store = this._taskStore;
+    const store2 = this._taskStore;
     let relatedTaskFound = true;
     let relatedTaskLookup;
-    if (relatedTaskId && store && this._taskMessageQueue && sessionId !== void 0) {
+    if (relatedTaskId && store2 && this._taskMessageQueue && sessionId !== void 0) {
       relatedTaskFound = false;
       relatedTaskLookup = (async () => {
-        if (!await store.getTask(relatedTaskId, sessionId)) {
+        if (!await store2.getTask(relatedTaskId, sessionId)) {
           throw new McpError(ErrorCode.InvalidParams, `Task not found: ${relatedTaskId}`);
         }
         relatedTaskFound = true;
@@ -66619,7 +66980,7 @@ data:
   }
 };
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/mcp-BarAJ9N0.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/mcp-BarAJ9N0.js
 function adaptToolToSdkCallback(tool, auth2, recorder) {
   const endUserId = auth2?.principal.sub;
   return (async (first) => {
@@ -66724,7 +67085,7 @@ function createMcpProtocolHandler(mcp, options = {}) {
   };
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/protocols/oauth-metadata.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/protocols/oauth-metadata.js
 function notFound() {
   return withCors(new Response(JSON.stringify({ error: "not found" }), {
     status: 404,
@@ -66773,7 +67134,7 @@ function createOAuthProtectedResourceMetadataHandler(mcp, options = {}) {
   };
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/list-tools-BrSIMpBi.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/list-tools-BrSIMpBi.js
 function shapeToJsonSchema(shape) {
   if (!shape) return null;
   try {
@@ -66815,7 +67176,7 @@ function createListToolsHandler(mcp, options = {}) {
   };
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/rest-Be8uOb6r.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/rest-Be8uOb6r.js
 var MAX_REFLECTED_TOOL_NAME = 256;
 function safeReflectName(name) {
   const text = String(name);
@@ -66926,7 +67287,7 @@ function createInvokeToolHandler(mcp, options = {}) {
   };
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/forwarded--h4efJy-.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/forwarded--h4efJy-.js
 function applyForwardedOrigin(request, options) {
   const proto = options.trustForwardedProto ? firstForwardedValue(request, "x-forwarded-proto") : void 0;
   const host = options.trustForwardedHost ? firstForwardedValue(request, "x-forwarded-host") : void 0;
@@ -66948,13 +67309,13 @@ function firstForwardedValue(request, header) {
   return value ? value : void 0;
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/paths-IS65L6TA.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/paths-IS65L6TA.js
 var FUNCTIONS_MOUNT_PREFIX = "/functions/v1/";
 function assertFunctionName(value, label = "functionName") {
   if (!/^[a-zA-Z0-9_-]+$/.test(value)) throw new Error(`@lovable.dev/mcp-js: ${label} must be a single path segment matching [A-Za-z0-9_-], got ${JSON.stringify(value)}`);
 }
 
-// ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/stacks/supabase/index.js
+// ../persist/node_modules/@lovable.dev/mcp-js/dist/stacks/supabase/index.js
 function deriveResourcePath(options) {
   if (options.resourcePath !== void 0) return options.resourcePath;
   if (options.functionName === void 0) return void 0;
