@@ -531,7 +531,9 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       setOpen(true);
       setActiveTab('chat');
       const detail = (e as CustomEvent)?.detail;
-      if (detail?.action === 'translate' && detail?.text) {
+      if (typeof detail?.proactiveMessage === 'string' && detail.proactiveMessage.trim()) {
+        setMessages((current) => [...current, { role: 'assistant', content: detail.proactiveMessage.trim() }]);
+      } else if (detail?.action === 'translate' && detail?.text) {
         pendingSendRef.current = `Traduis ce texte : "${detail.text}"`;
         setInput(pendingSendRef.current);
       } else if (detail?.action === 'rewrite' && detail?.text) {

@@ -20,6 +20,7 @@ import { UXModeSwitchCompact } from '@/components/UXModeSwitch';
 import { useUXMode } from '@/hooks/useUXMode';
 import { FlowRadialMenu } from '@/components/flow/FlowRadialMenu';
 import { GuestBanner } from '@/components/GuestBanner';
+import { useZeusProactiveAssistant } from '@/hooks/useZeusProactiveAssistant';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -106,6 +107,7 @@ export function AppLayout({ children, fullWidth = false }: AppLayoutProps) {
   const { user, loading } = useAuth();
   const { isFlow } = useUXMode();
   useRealtimeNotifications();
+  useZeusProactiveAssistant();
 
   if (loading) {
     return (
