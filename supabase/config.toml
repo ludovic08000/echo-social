@@ -136,3 +136,6 @@ verify_jwt = false # Public image response; the server resolves only an eligible
 
 [functions.geoip-import]
 verify_jwt = false # Temporary operator import: disabled by default and guarded by a dedicated bearer token.
+
+[functions.voice-session]
+verify_jwt = false # The handler validates the bearer session and issues a short-lived, single-use ticket.

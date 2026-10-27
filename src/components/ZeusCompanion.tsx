@@ -4,7 +4,7 @@ import {
   X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2,
   Plus, History, ArrowLeft, ShoppingBag, Sliders, Brain, Users, Clock,
   Sparkles, ChevronRight, BarChart3, Radio, Cpu, Shield, Globe, MessageSquare,
-  Search
+  Search, Mic
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZeusCompanion';
 import { useZeusConversations, useZeusMessages } from '@/hooks/useZeusConversations';
-import { useSendMessage } from '@/hooks/useMessages';
+import { useConversations as useMessagingConversations, useSendMessage } from '@/hooks/useMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { SafeMarkdown } from '@/components/SafeMarkdown';
@@ -29,6 +29,12 @@ import {
   undoFeedPreferenceChange,
 } from '@/lib/feedPreferences';
 import { parseFeedControlAction, type FeedPreferenceCommand } from '@/lib/feedControlActions';
+import {
+  createVoiceLaunchUrl,
+  normalizeVoiceOrigin,
+  parseVoiceProposalEvent,
+  voiceProposalToZeusContent,
+} from '@/lib/voice/voiceBridge';
 
 
 type Msg = { role: string; content: string };
@@ -425,6 +431,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const secureSendMessage = useSendMessage();
+  const { data: messagingConversations = [] } = useMessagingConversations();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
   const { unacknowledged, acknowledge, acknowledgeAll } = useContentStrikes();
@@ -441,6 +448,12 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const voicePopupRef = useRef<Window | null>(null);
+  const voiceNonceRef = useRef<string | null>(null);
+  const messagingConversationsRef = useRef(messagingConversations);
+  const [openingVoice, setOpeningVoice] = useState(false);
+
+  useEffect(() => { messagingConversationsRef.current = messagingConversations; }, [messagingConversations]);
 
   const { data: conversations, refetch: refetchConversations } = useZeusConversations(zeusAgentId);
   const { data: loadedMessages } = useZeusMessages(conversationId);
@@ -460,6 +473,49 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { if (open && inputRef.current && activeTab === 'chat') inputRef.current.focus(); }, [open, activeTab]);
+
+  useEffect(() => {
+    const onVoiceMessage = (event: MessageEvent) => {
+      const nonce = voiceNonceRef.current;
+      if (!nonce) return;
+      let origin: string;
+      try { origin = normalizeVoiceOrigin(import.meta.env.VITE_VOICE_APP_URL); } catch { return; }
+      const proposal = parseVoiceProposalEvent(event, {
+        origin,
+        source: voicePopupRef.current,
+        nonce,
+      });
+      if (!proposal) return;
+      let resolvedProposal = proposal;
+      if (proposal.type === 'send_message' && !proposal.conversation_id) {
+        const requestedName = proposal.recipient_name?.toLocaleLowerCase().trim();
+        const matches = messagingConversationsRef.current.filter((conversation) => (
+          conversation.participant.name.toLocaleLowerCase().trim() === requestedName
+        ));
+        if (matches.length !== 1) {
+          toast.error(matches.length > 1
+            ? `Plusieurs contacts correspondent à ${proposal.recipient_name}. Précisez le nom complet.`
+            : `Aucune conversation avec ${proposal.recipient_name}. Ouvrez d’abord une conversation avec cette personne.`);
+          return;
+        }
+        resolvedProposal = { ...proposal, conversation_id: matches[0].id };
+      }
+      setMessages((current) => [...current, { role: 'assistant', content: voiceProposalToZeusContent(resolvedProposal) }]);
+      setActiveTab('chat');
+      setOpen(true);
+      voiceNonceRef.current = null;
+      voicePopupRef.current?.close();
+      voicePopupRef.current = null;
+      toast.success('Proposition vocale reçue', { description: 'Vérifiez-la avant de confirmer.' });
+    };
+    window.addEventListener('message', onVoiceMessage);
+    return () => {
+      window.removeEventListener('message', onVoiceMessage);
+      voicePopupRef.current?.close();
+      voicePopupRef.current = null;
+      voiceNonceRef.current = null;
+    };
+  }, []);
   // Ref to hold a pending message that should be auto-sent once Zeus opens
   const pendingSendRef = useRef<string | null>(null);
 
@@ -769,6 +825,45 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     setEditingName(false);
   };
 
+  const openVoiceAssistant = useCallback(async () => {
+    if (!user || openingVoice) return;
+    const popup = window.open('about:blank', 'forsure-voice', 'popup,width=460,height=760');
+    if (!popup) {
+      toast.error('Autorisez les fenêtres contextuelles pour ouvrir la commande vocale.');
+      return;
+    }
+    voicePopupRef.current?.close();
+    voicePopupRef.current = popup;
+    setOpeningVoice(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Session expirée');
+      const origin = normalizeVoiceOrigin(import.meta.env.VITE_VOICE_APP_URL);
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/voice-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ action: 'issue' }),
+      });
+      const result = await response.json();
+      if (!response.ok || typeof result.ticket !== 'string' || typeof result.nonce !== 'string' || result.origin !== origin) {
+        throw new Error('Commande vocale indisponible');
+      }
+      voiceNonceRef.current = result.nonce;
+      popup.location.replace(createVoiceLaunchUrl(origin, result.ticket, result.nonce));
+    } catch (error) {
+      popup.close();
+      voicePopupRef.current = null;
+      voiceNonceRef.current = null;
+      toast.error(error instanceof Error ? error.message : 'Commande vocale indisponible');
+    } finally {
+      setOpeningVoice(false);
+    }
+  }, [openingVoice, user]);
+
   const guestCount = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
   const guestLimitReached = !user && guestCount >= 3;
 
@@ -847,6 +942,17 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                   )}
                 </div>
                 <div className="flex items-center gap-1">
+                  {user && (
+                    <button
+                      onClick={openVoiceAssistant}
+                      disabled={openingVoice}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all disabled:opacity-50"
+                      title="Commande vocale sécurisée"
+                      aria-label="Ouvrir la commande vocale sécurisée"
+                    >
+                      {openingVoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+                    </button>
+                  )}
                   <button onClick={startNewConversation} className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all" title="Nouvelle conversation">
                     <Plus className="w-4 h-4" />
                   </button>
