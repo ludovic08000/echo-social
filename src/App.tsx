@@ -9,6 +9,7 @@ import { ParentalGateProvider } from "@/components/ParentalGate";
 import { I18nProvider } from "@/lib/i18n";
 import { ChatWidgetProvider, useChatWidget } from "@/components/ChatWidgetContext";
 import { CreatorOnlyRoute, ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
+import { AdminRoute } from "@/components/AdminRoute";
 import { RecoveryFlowGuard } from "@/components/RecoveryFlowGuard";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { useSettingsInit } from "@/hooks/useSettingsInit";
@@ -362,11 +363,11 @@ function AppContent() {
                     <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
                     <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
                     <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
-                    <Route path="/ai-engine" element={<ProtectedRoute><AIEngine /></ProtectedRoute>} />
+                    <Route path="/ai-engine" element={<ProtectedRoute><AdminRoute><AIEngine /></AdminRoute></ProtectedRoute>} />
                     <Route path="/ads" element={<CreatorOnlyRoute><AdsManager /></CreatorOnlyRoute>} />
                     <Route path="/publicites" element={<CreatorOnlyRoute><AdsManager /></CreatorOnlyRoute>} />
                     <Route path="/ai-agents" element={<CreatorOnlyRoute><AIAgents /></CreatorOnlyRoute>} />
-                    <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+                    <Route path="/admin" element={<ProtectedRoute><AdminRoute><Admin /></AdminRoute></ProtectedRoute>} />
                     <Route path="/settings/transparence-cles" element={<ProtectedRoute><KeyTransparencyAudit /></ProtectedRoute>} />
                     <Route path="/creator" element={<ProtectedRoute><CreatorUpgrade /></ProtectedRoute>} />
                     <Route path="/creator/quality" element={<ProtectedRoute><CreatorQuality /></ProtectedRoute>} />

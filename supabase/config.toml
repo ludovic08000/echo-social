@@ -16,7 +16,7 @@ project_id = "vkpmoqfzrihcijjochks"
   [functions.ai-content]
     verify_jwt = false
   [functions.ai-engine]
-    verify_jwt = false
+    verify_jwt = true
   [functions.anti-abuse]
     verify_jwt = false
   [functions.auth-email-hook]

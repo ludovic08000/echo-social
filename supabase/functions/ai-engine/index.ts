@@ -101,6 +101,32 @@ async function handle(req: Request): Promise<Response> {
       return new Response(JSON.stringify({ error: "Missing 'action' parameter" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Public product features (moderation, sentiment, recommendations, smart
+    // replies and content enhancement) remain available to authenticated
+    // users. Platform diagnostics and global learning controls are internal.
+    const adminOnlyActions = new Set([
+      "profile_risk",
+      "detect_intrusion",
+      "analyze_ip",
+      "inspect_packet",
+      "scan_vulnerabilities",
+      "analyze_session",
+      "learn_feedback",
+      "get_feedback_history",
+    ]);
+    if (adminOnlyActions.has(action)) {
+      const { data: isAdmin, error: roleError } = await userClient.rpc("has_role", {
+        _user_id: authUser.id,
+        _role: "admin",
+      });
+      if (roleError || !isAdmin) {
+        return new Response(JSON.stringify({ error: "Accès interne requis" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     if (action === "moderate" && safeText) {
       const contentHash = await hashContent(safeText.trim().toLowerCase());
       const { data: cached } = await supabase

@@ -10,6 +10,7 @@ import { useFriendships } from '@/hooks/useFriendships';
 import { useScrollHideNav } from '@/hooks/useScrollHideNav';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useProfile } from '@/hooks/useProfile';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 
 import { cn } from '@/lib/utils';
 
@@ -20,6 +21,7 @@ export function MobileNav() {
   const { t } = useTranslation();
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
+  const { data: isAdmin = false } = useIsAdmin();
   const navHidden = useScrollHideNav();
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
@@ -106,7 +108,10 @@ export function MobileNav() {
                    { path: '/notifications', icon: Bell, label: 'Notifs', badge: unreadCount },
                    { path: '/admin', icon: Shield, label: 'Admin' },
                    { path: '/settings', icon: Settings, label: 'Réglages' },
-                ].filter((item) => profile?.is_creator || item.path !== '/ads').map((item) => (
+                ]
+                  .filter((item) => profile?.is_creator || item.path !== '/ads')
+                  .filter((item) => isAdmin || item.path !== '/admin')
+                  .map((item) => (
                   item.path === '#zeus' ? (
                     <button
                       key="zeus"
@@ -191,6 +196,7 @@ export function DesktopSidebar() {
   const { data: unreadCount } = useUnreadCount();
   const { data: conversations } = useConversations();
   const { data: friendships } = useFriendships();
+  const { data: isAdmin = false } = useIsAdmin();
   
 
   const unreadMessages = conversations?.reduce((sum, c) => sum + c.unread_count, 0) || 0;
@@ -215,9 +221,9 @@ export function DesktopSidebar() {
     { path: '/friends', icon: Users, label: t('nav.friends'), badge: friendRequests },
     { path: '/channels', icon: Tv, label: 'Canaux TV' },
     { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
-    { path: '/ai-engine', icon: Brain, label: 'Moteur IA' },
+    ...(isAdmin ? [{ path: '/ai-engine', icon: Brain, label: 'Moteur IA' }] : []),
     { path: '#zeus', icon: Bot, label: 'Assistant IA', isZeus: true },
-    { path: '/admin', icon: Shield, label: 'Administration' },
+    ...(isAdmin ? [{ path: '/admin', icon: Shield, label: 'Administration' }] : []),
     { path: `/profile/${user.id}`, icon: User, label: t('nav.profile') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
   ];
