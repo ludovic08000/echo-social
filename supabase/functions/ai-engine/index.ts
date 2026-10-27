@@ -115,16 +115,8 @@ async function handle(req: Request): Promise<Response> {
       "get_feedback_history",
     ]);
     if (adminOnlyActions.has(action)) {
-      const { data: isAdmin, error: roleError } = await userClient.rpc("has_role", {
-        _user_id: authUser.id,
-        _role: "admin",
-      });
-      if (roleError || !isAdmin) {
-        return new Response(JSON.stringify({ error: "Accès interne requis" }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      const admin = await requireAdmin(req, corsHeaders);
+      if (!admin.ok) return admin.response;
     }
 
     if (action === "moderate" && safeText) {
@@ -261,8 +253,6 @@ Focus on defensive fixes: RLS, auth, CSP, upload validation, rate limit, secrets
         break;
       }
       case "learn_feedback": {
-        const admin=await requireAdmin(req,corsHeaders);
-        if(!admin.ok)return admin.response;
         if (feedback && user_id) {
           const { data: insertedFeedback } = await supabase.from("ai_feedback").insert({ user_id, original_text: feedback.originalText || "", ai_decision: feedback.aiDecision || "", human_decision: feedback.humanDecision || "", reason: feedback.reason || "" }).select("id").single();
           const { data: recentFeedback } = await supabase.from("ai_feedback").select("original_text, ai_decision, human_decision, reason").order("created_at", { ascending: false }).limit(20);

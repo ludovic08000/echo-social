@@ -32,8 +32,8 @@ describe('internal consoles architecture', () => {
     ]) {
       expect(edgeFunction).toContain(`"${action}"`);
     }
-    expect(edgeFunction).toContain('status: 403');
-    expect(edgeFunction).toContain('Accès interne requis');
+    expect(edgeFunction).toContain('const admin = await requireAdmin(req, corsHeaders)');
+    expect(edgeFunction).toContain('if (!admin.ok) return admin.response');
   });
 
   it('requires a valid user JWT at the Edge Function gateway', () => {
