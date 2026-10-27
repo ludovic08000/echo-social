@@ -108,7 +108,7 @@ it.each(['page', 'events', 'preferences.read', 'preferences.write', 'preferences
       ? { action, events: [{ event_id: id, post_id: id, exposure_id: id, event_type: 'view' }] }
       : action === 'preferences.write' || action === 'preferences.seed'
       ? { action, preferences: { feed_algorithm: 'smart', ai_summaries_enabled: true, auto_translate_enabled: false,
-        diversity_boost: 50, muted_keywords: [], priority_topics: [], viral_content_reduce: true,
+        diversity_boost: 50, muted_keywords: [], priority_topics: [], reduced_topics: [], viral_content_reduce: true,
         sensitive_content_filter: true, seen_posts_hide: false, weight_friends: 50, weight_discovery: 50,
         weight_news: 50, weight_marketplace: 50 } }
       : { action };

@@ -7,7 +7,7 @@ const id = '00000000-0000-4000-8000-000000000001';
 const cursor = '00000000-0000-4000-8000-000000000002';
 const preferences: FeedPreferences = {
   feed_algorithm: 'friends_first', ai_summaries_enabled: true, auto_translate_enabled: false,
-  diversity_boost: 50, muted_keywords: ['spam'], priority_topics: ['science'], viral_content_reduce: true,
+  diversity_boost: 50, muted_keywords: ['spam'], priority_topics: ['science'], reduced_topics: [], viral_content_reduce: true,
   sensitive_content_filter: true, seen_posts_hide: false, weight_friends: 60, weight_discovery: 30,
   weight_news: 40, weight_marketplace: 10,
 };

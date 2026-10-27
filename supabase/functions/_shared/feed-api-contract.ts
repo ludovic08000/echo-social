@@ -6,6 +6,7 @@ export interface FeedPreferences {
   diversity_boost: number;
   muted_keywords: string[];
   priority_topics: string[];
+  reduced_topics: string[];
   viral_content_reduce: boolean;
   sensitive_content_filter: boolean;
   seen_posts_hide: boolean;
@@ -31,7 +32,7 @@ export type FeedRequest =
 
 export const PREFERENCE_FIELDS = [
   'feed_algorithm', 'ai_summaries_enabled', 'auto_translate_enabled', 'diversity_boost',
-  'muted_keywords', 'priority_topics', 'viral_content_reduce', 'sensitive_content_filter',
+  'muted_keywords', 'priority_topics', 'reduced_topics', 'viral_content_reduce', 'sensitive_content_filter',
   'seen_posts_hide', 'weight_friends', 'weight_discovery', 'weight_news', 'weight_marketplace',
 ] as const;
 
@@ -62,7 +63,7 @@ export function parseFeedPreferences(value: unknown): FeedPreferences {
   for (const key of ['ai_summaries_enabled', 'auto_translate_enabled', 'viral_content_reduce', 'sensitive_content_filter', 'seen_posts_hide']) {
     if (typeof p[key] !== 'boolean') throw new Error('INVALID_REQUEST');
   }
-  for (const key of ['muted_keywords', 'priority_topics']) {
+  for (const key of ['muted_keywords', 'priority_topics', 'reduced_topics']) {
     if (!Array.isArray(p[key]) || p[key].length > 100 || p[key].some((s: unknown) => typeof s !== 'string' || s.length > 100)) {
       throw new Error('INVALID_REQUEST');
     }

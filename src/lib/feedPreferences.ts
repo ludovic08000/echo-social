@@ -7,6 +7,7 @@
 // ────────────────────────────────────────────────────────
 
 import { readFeedPreferences, writeFeedPreferences } from '@/lib/feedApi';
+import { supabase } from '@/integrations/supabase/client';
 import type { ContentPrefs, FeedWeights } from '@/lib/feedAlgorithm';
 import type { FeedPreferenceCommand } from '@/lib/feedControlActions';
 
