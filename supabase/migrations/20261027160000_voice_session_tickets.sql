@@ -1,7 +1,10 @@
 create table if not exists public.voice_session_tickets (
   id uuid primary key default gen_random_uuid(),
   ticket_hash text not null unique,
-  user_id uuid not null references auth.users(id) on delete cascade,
+  -- The issuer authenticates the user with auth.getUser() before inserting.
+  -- Keep this ephemeral, service-role-only table independent from the reserved
+  -- auth schema so the migration is compatible with Lovable Cloud.
+  user_id uuid not null,
   nonce text not null,
   allowed_origin text not null,
   audience text not null default 'forsure-voice',
