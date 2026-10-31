@@ -2,6 +2,7 @@ import { Bell, Heart, MessageCircle, UserPlus, Mail, Eye, Users, Volume2, Volume
 import { useNotificationSettings, useUpdateNotificationSettings } from '@/hooks/useNotificationSettings';
 import { useVoiceSettings, VOICE_LANG_OPTIONS } from '@/hooks/useVoiceSettings';
 import { speakNotification } from '@/hooks/useNotificationSounds';
+import { unlockZeusVoiceForSession } from '@/lib/zeusVoice';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
@@ -74,6 +75,25 @@ export function NotificationSettingsPanel() {
   const updateSettings = useUpdateNotificationSettings();
   const { voiceSettings, updateVoiceSettings } = useVoiceSettings();
   const push = usePushNotifications();
+
+  const previewVoice = (category: 'message' | 'live' | 'comment') => {
+    // This handler is a direct user gesture, which is the only reliable way
+    // to start speech on Safari/iOS. It also authorizes later, private-free
+    // notification announcements for this browser session.
+    unlockZeusVoiceForSession();
+    const started = speakNotification(category, {
+      volume: voiceSettings.voice_volume,
+      speed: voiceSettings.voice_speed,
+      lang: voiceSettings.voice_lang,
+    });
+    if (!started) {
+      toast({
+        title: 'Voix indisponible',
+        description: 'Vérifiez le son et les autorisations de ce navigateur.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const handleToggle = async (key: keyof NotificationSettings, value: boolean) => {
     try {
@@ -193,7 +213,7 @@ export function NotificationSettingsPanel() {
           <SettingItem
             icon={Mic}
             label="Activer la voix"
-            description="Annonce vocale lors des nouvelles notifications"
+            description="Les annonces démarrent après un test, requis par les navigateurs mobiles"
             checked={voiceSettings.voice_enabled}
             onCheckedChange={(v) => updateVoiceSettings({ voice_enabled: v })}
           />
@@ -295,13 +315,13 @@ export function NotificationSettingsPanel() {
                   <p className="font-medium">Tester la voix</p>
                   <p className="text-sm text-muted-foreground mt-0.5">Écouter un aperçu de l'annonce vocale</p>
                   <div className="mt-2 flex gap-2 flex-wrap">
-                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => speakNotification('message', { volume: voiceSettings.voice_volume, speed: voiceSettings.voice_speed, lang: voiceSettings.voice_lang })}>
+                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => previewVoice('message')}>
                       💬 Message
                     </Button>
-                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => speakNotification('live', { volume: voiceSettings.voice_volume, speed: voiceSettings.voice_speed, lang: voiceSettings.voice_lang })}>
+                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => previewVoice('live')}>
                       📡 Live
                     </Button>
-                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => speakNotification('comment', { volume: voiceSettings.voice_volume, speed: voiceSettings.voice_speed, lang: voiceSettings.voice_lang })}>
+                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => previewVoice('comment')}>
                       💬 Commentaire
                     </Button>
                   </div>

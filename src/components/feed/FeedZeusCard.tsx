@@ -1,8 +1,17 @@
-import { Zap, MessageSquare, Sparkles, PenLine, Search, Globe, Lock } from 'lucide-react';
+import { Zap, MessageSquare, Sparkles, PenLine, Search, Globe, Lock, Volume2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
+import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import { useAuth } from '@/lib/auth';
+import {
+  getPendingZeusAnnouncement,
+  isBrowserVoiceSupported,
+  isZeusVoiceUnlockedForSession,
+  speakWithBrowserVoice,
+  unlockZeusVoiceForSession,
+} from '@/lib/zeusVoice';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 const ZEUS_ACTIONS = [
   { icon: PenLine, label: 'Créer un post', action: 'create-post' },
@@ -14,12 +23,33 @@ const ZEUS_ACTIONS = [
 export function FeedZeusCard() {
   const { user } = useAuth();
   const { zeusName } = useZeusSettings();
+  const { voiceSettings, updateVoiceSettings } = useVoiceSettings();
 
   const guestCount = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
   const guestLimitReached = !user && guestCount >= 3;
 
   const openZeus = (action?: string) => {
     window.dispatchEvent(new CustomEvent('open-zeus', { detail: action ? { action } : undefined }));
+  };
+
+  const activateVoice = () => {
+    if (!isBrowserVoiceSupported()) {
+      toast.error('La synthèse vocale n’est pas disponible dans ce navigateur.');
+      return;
+    }
+
+    updateVoiceSettings({ voice_enabled: true });
+    unlockZeusVoiceForSession();
+    const announcement = getPendingZeusAnnouncement()
+      || `Bonjour, je suis ${zeusName}. Je suis prêt à vous aider.`;
+    const started = speakWithBrowserVoice(announcement, {
+      lang: voiceSettings.voice_lang,
+      rate: voiceSettings.voice_speed,
+      volume: voiceSettings.voice_volume,
+    });
+    if (!started) {
+      toast.error('La voix de Zeus n’a pas pu démarrer. Vérifiez le son du navigateur.');
+    }
   };
 
   return (
@@ -99,6 +129,24 @@ export function FeedZeusCard() {
             </button>
           ))}
         </div>
+
+        {user && (
+          <div className="px-4 pb-4">
+            <button
+              type="button"
+              onClick={activateVoice}
+              className="w-full flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <Volume2 className="h-4 w-4" aria-hidden="true" />
+              {voiceSettings.voice_enabled && isZeusVoiceUnlockedForSession()
+                ? `Réécouter ${zeusName}`
+                : `Activer la voix de ${zeusName}`}
+            </button>
+            <p className="mt-1.5 text-center text-[10px] leading-snug text-muted-foreground">
+              La voix fonctionne après votre toucher et ne lit jamais le contenu des messages.
+            </p>
+          </div>
+        )}
       </div>
     </motion.div>
   );

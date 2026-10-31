@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 export interface VoiceSettings {
   voice_enabled: boolean;
+  /** Set only by an explicit user interaction; older defaults do not count as consent. */
+  voice_consent_version: 1;
   voice_messages_only: boolean;
   voice_live_only: boolean;
   voice_never_read_private: boolean;
@@ -11,9 +13,11 @@ export interface VoiceSettings {
 }
 
 const STORAGE_KEY = 'forsure-voice-settings';
+const SETTINGS_EVENT = 'forsure:voice-settings-changed';
 
 const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
-  voice_enabled: true,
+  voice_enabled: false,
+  voice_consent_version: 1,
   voice_messages_only: false,
   voice_live_only: false,
   voice_never_read_private: true,
@@ -22,28 +26,71 @@ const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voice_lang: 'fr-FR',
 };
 
+let cachedRaw: string | null | undefined;
+let cachedSettings: VoiceSettings = DEFAULT_VOICE_SETTINGS;
+
 function loadVoiceSettings(): VoiceSettings {
+  if (typeof window === 'undefined') return DEFAULT_VOICE_SETTINGS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULT_VOICE_SETTINGS, ...JSON.parse(raw) };
-  } catch {}
-  return { ...DEFAULT_VOICE_SETTINGS };
+    if (raw === cachedRaw) return cachedSettings;
+    cachedRaw = raw;
+    if (raw) {
+      const stored = JSON.parse(raw) as Partial<VoiceSettings>;
+      // Releases before this setting used an implicit `true` default. Audio is
+      // now opt-in because Safari/iOS requires a real tap and private alerts
+      // must never start speaking merely after an upgrade.
+      const hasExplicitConsent = stored.voice_consent_version === 1;
+      cachedSettings = {
+        ...DEFAULT_VOICE_SETTINGS,
+        ...stored,
+        voice_enabled: hasExplicitConsent ? stored.voice_enabled === true : false,
+        voice_consent_version: 1,
+      };
+      return cachedSettings;
+    }
+    cachedSettings = DEFAULT_VOICE_SETTINGS;
+    return cachedSettings;
+  } catch {
+    cachedRaw = undefined;
+    cachedSettings = DEFAULT_VOICE_SETTINGS;
+    return cachedSettings;
+  }
 }
 
 function saveVoiceSettings(s: VoiceSettings) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  } catch {}
+    const raw = JSON.stringify(s);
+    localStorage.setItem(STORAGE_KEY, raw);
+    cachedRaw = raw;
+    cachedSettings = s;
+    window.dispatchEvent(new Event(SETTINGS_EVENT));
+  } catch {
+    // Local preferences are optional; the default remains safe.
+  }
+}
+
+function subscribe(listener: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY) listener();
+  };
+  window.addEventListener(SETTINGS_EVENT, listener);
+  window.addEventListener('storage', onStorage);
+  return () => {
+    window.removeEventListener(SETTINGS_EVENT, listener);
+    window.removeEventListener('storage', onStorage);
+  };
 }
 
 export function useVoiceSettings() {
-  const [settings, setSettings] = useState<VoiceSettings>(loadVoiceSettings);
+  const settings = useSyncExternalStore(subscribe, loadVoiceSettings, () => DEFAULT_VOICE_SETTINGS);
 
   const update = useCallback((partial: Partial<VoiceSettings>) => {
-    setSettings(prev => {
-      const next = { ...prev, ...partial };
-      saveVoiceSettings(next);
-      return next;
+    saveVoiceSettings({
+      ...loadVoiceSettings(),
+      ...partial,
+      voice_consent_version: 1,
     });
   }, []);
 

@@ -3,6 +3,7 @@ import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 import { useVoiceSettings, shouldSpeak } from '@/hooks/useVoiceSettings';
 import { readLocalWellbeingPrefs } from '@/hooks/useWellbeingPreferences';
 import { installNotificationAudioUnlock, resumeNotificationAudio } from '@/lib/notificationAudio';
+import { isZeusVoiceUnlockedForSession, speakWithBrowserVoice } from '@/lib/zeusVoice';
 
 type SoundType = 'default' | 'soft' | 'bright' | 'bubble' | 'chime';
 
@@ -102,14 +103,6 @@ function getPhrasesForLang(lang: string): Record<string, string> {
   return VOICE_PHRASES;
 }
 
-let voiceSynthAvailable: boolean | null = null;
-
-function isVoiceAvailable(): boolean {
-  if (voiceSynthAvailable !== null) return voiceSynthAvailable;
-  voiceSynthAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  return voiceSynthAvailable;
-}
-
 export interface SpeakOptions {
   volume?: number;
   speed?: number;
@@ -150,32 +143,13 @@ export function speakNotification(
   category?: string,
   options?: SpeakOptions
 ) {
-  if (!isVoiceAvailable()) return;
-
-  try {
-    const synth = window.speechSynthesis;
-    synth.cancel();
-
-    const lang = options?.lang || 'fr-FR';
-    const phrase = buildPhrase(category, lang, options?.senderName, options?.count);
-    const utterance = new SpeechSynthesisUtterance(phrase);
-    utterance.lang = lang;
-    utterance.rate = options?.speed ?? 1.1;
-    utterance.pitch = 1.0;
-    utterance.volume = options?.volume ?? 0.7;
-
-    // Pick best voice for the language
-    const voices = synth.getVoices();
-    const langPrefix = lang.split('-')[0];
-    const matchVoice = voices.find(v => v.lang === lang)
-      || voices.find(v => v.lang.startsWith(langPrefix))
-      || voices[0];
-    if (matchVoice) utterance.voice = matchVoice;
-
-    synth.speak(utterance);
-  } catch {
-    // Silent fail
-  }
+  const lang = options?.lang || 'fr-FR';
+  const phrase = buildPhrase(category, lang, options?.senderName, options?.count);
+  return speakWithBrowserVoice(phrase, {
+    lang,
+    rate: options?.speed ?? 1.1,
+    volume: options?.volume ?? 0.7,
+  });
 }
 
 // ─── Tab visibility helper ───
@@ -225,7 +199,7 @@ export function useRealtimeNotificationSound() {
 
   // Pre-load voices
   useEffect(() => {
-    if (isVoiceAvailable()) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.getVoices();
     }
   }, []);
@@ -252,7 +226,7 @@ export function useRealtimeNotificationSound() {
     playNotificationSound(firstCat);
 
     // Speak only if tab is NOT active (or sound is enabled and voice is on)
-    if (settings?.sound_enabled !== false && shouldSpeak(voiceSettings)) {
+    if (settings?.sound_enabled !== false && isZeusVoiceUnlockedForSession() && shouldSpeak(voiceSettings)) {
       setTimeout(() => {
         // Announce each category group
         for (const [cat, group] of groups) {
