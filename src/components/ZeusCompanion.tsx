@@ -31,6 +31,7 @@ import {
 import { parseFeedControlAction, type FeedPreferenceCommand } from '@/lib/feedControlActions';
 import {
   isBrowserVoiceSupported,
+  prepareSpokenAssistantReply,
   speakWithBrowserVoice,
   unlockZeusVoiceForSession,
 } from '@/lib/zeusVoice';
@@ -769,7 +770,10 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         }
       }
       if (options.fromVoice && isBrowserVoiceSupported()) {
-        speakWithBrowserVoice('Votre demande est prête. Vérifiez la réponse et confirmez toute action à l’écran.', {
+        speakWithBrowserVoice(prepareSpokenAssistantReply(
+          assistantContent,
+          'J’ai préparé une proposition. Vérifiez-la et confirmez toute action à l’écran.',
+        ), {
           lang: voiceSettings.voice_lang,
           rate: voiceSettings.voice_speed,
           volume: voiceSettings.voice_volume,

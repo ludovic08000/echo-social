@@ -46,20 +46,21 @@ describe('ForSureVoiceHud', () => {
     expect(screen.getByText('Pas d’audio stocké')).toBeInTheDocument();
   });
 
-  it('starts recognition only after a direct tap and lets the user review the transcript', () => {
+  it('starts recognition only after a direct tap and sends the final transcript directly to Zeus', async () => {
     (window as Window & { webkitSpeechRecognition?: typeof FakeRecognition }).webkitSpeechRecognition = FakeRecognition;
     renderHud();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dicter une demande' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Parler à Zeus' }));
 
     expect(callbacks.onSpeakIntro).toHaveBeenCalledTimes(1);
     expect(FakeRecognition.current?.start).toHaveBeenCalledTimes(1);
 
-    act(() => {
+    await act(async () => {
       FakeRecognition.current?.onresult?.({ results: [[{ transcript: 'Prépare une publication' }]] });
     });
 
     expect(screen.getByRole('textbox', { name: 'Votre demande à Zeus' })).toHaveValue('Prépare une publication');
+    expect(callbacks.onSubmitCommand).toHaveBeenCalledWith('Prépare une publication');
   });
 
   it('keeps a typed fallback when browser dictation is unavailable', () => {

@@ -107,6 +107,15 @@ export function ForSureVoiceHud({
     else if (status === 'processing') setStatus('ready');
   }, [processing, status]);
 
+  const submit = async (rawCommand = command) => {
+    const text = rawCommand.trim();
+    if (!text || processing) return;
+    stopRecognition();
+    setStatus('processing');
+    setLocalError(null);
+    await onSubmitCommand(text);
+  };
+
   const startListening = () => {
     if (processing) return;
     setLocalError(null);
@@ -130,8 +139,17 @@ export function ForSureVoiceHud({
         .map((result) => result[0]?.transcript || '')
         .join(' ')
         .trim();
-      if (transcript) setCommand(transcript.slice(0, 2_000));
-      setStatus('ready');
+      if (!transcript) {
+        setStatus('ready');
+        return;
+      }
+
+      const normalizedTranscript = transcript.slice(0, 2_000);
+      setCommand(normalizedTranscript);
+      // A voice turn is a private request to the assistant, not an external
+      // side effect. Any proposal to publish, message someone, or change a
+      // setting remains behind its existing explicit confirmation card.
+      void submit(normalizedTranscript);
     };
     recognition.onerror = (event) => {
       recognitionRef.current = null;
@@ -153,27 +171,18 @@ export function ForSureVoiceHud({
     }
   };
 
-  const submit = async () => {
-    const text = command.trim();
-    if (!text || processing) return;
-    stopRecognition();
-    setStatus('processing');
-    setLocalError(null);
-    await onSubmitCommand(text);
-  };
-
   const stateCopy: Record<VoiceHudStatus, { eyebrow: string; title: string; detail: string }> = {
     ready: {
       eyebrow: 'Commande vocale',
       title: `Parlez à ${assistantName}`,
       detail: speechSupported
-        ? 'Touchez le micro, dictez votre demande, puis vérifiez-la avant l’envoi.'
+        ? `Touchez le micro : votre demande sera envoyée directement à ${assistantName}, puis sa réponse sera lue.`
         : `La dictée n’est pas disponible ici. Écrivez votre demande : ${assistantName} la traitera de la même manière.`,
     },
     listening: {
       eyebrow: 'Microphone actif',
       title: 'Je vous écoute',
-      detail: 'Dites votre demande naturellement. Vous pourrez toujours la vérifier et la modifier.',
+      detail: `Dites votre demande naturellement. ${assistantName} vous répondra à voix haute.`,
     },
     processing: {
       eyebrow: 'Demande transmise',
@@ -254,7 +263,7 @@ export function ForSureVoiceHud({
             type="button"
           >
             {status === 'listening' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic2 className="h-4 w-4" />}
-            {speechSupported ? 'Dicter une demande' : `Tester la voix de ${assistantName}`}
+            {speechSupported ? 'Parler à ' + assistantName : `Tester la voix de ${assistantName}`}
           </button>
 
           <label className="sr-only" htmlFor="forsure-voice-command">Votre demande à {assistantName}</label>
@@ -270,7 +279,7 @@ export function ForSureVoiceHud({
           <button
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-blue-300/25 bg-white/10 px-5 text-xs font-semibold text-blue-50 transition hover:border-blue-200/60 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-45"
             disabled={!command.trim() || processing}
-            onClick={submit}
+            onClick={() => void submit()}
             type="button"
           >
             {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Keyboard className="h-4 w-4" />}

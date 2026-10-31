@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getPendingZeusAnnouncement,
   isZeusVoiceUnlockedForSession,
+  prepareSpokenAssistantReply,
   savePendingZeusAnnouncement,
   speakWithBrowserVoice,
   unlockZeusVoiceForSession,
@@ -67,5 +68,13 @@ describe('Zeus browser voice', () => {
       rate: 1.1,
       volume: 0.6,
     }));
+  });
+
+  it('keeps assistant speech human-readable and never narrates action payloads', () => {
+    expect(prepareSpokenAssistantReply(
+      'Voici une idée.\n```forsure-action\n{"type":"publish_post","body":"x"}\n```',
+      'fallback',
+    )).toBe('Voici une idée.');
+    expect(prepareSpokenAssistantReply('```json\n{}\n```', 'fallback')).toBe('fallback');
   });
 });

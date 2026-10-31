@@ -13,9 +13,10 @@ describe('local Zeus voice architecture', () => {
     expect(companion).not.toContain('voice.forsure.fans');
   });
 
-  it('keeps the microphone gesture-driven and command reviewable before processing', () => {
+  it('keeps the microphone gesture-driven while sending a completed voice turn to Zeus', () => {
     expect(hud).toContain('onClick={startListening}');
     expect(hud).toContain('onSubmitCommand(text)');
+    expect(hud).toContain('void submit(normalizedTranscript)');
     expect(hud).toContain('Confirmation requise');
     expect(hud).toContain('Aucune publication, aucun message et aucun réglage ne seront exécutés sans votre confirmation.');
   });

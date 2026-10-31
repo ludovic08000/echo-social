@@ -1,5 +1,6 @@
 const VOICE_UNLOCKED_SESSION_KEY = 'forsure:zeus-voice-unlocked:v1';
 const PENDING_ANNOUNCEMENT_SESSION_KEY = 'forsure:zeus-voice-pending-announcement:v1';
+const MAX_SPOKEN_REPLY_LENGTH = 1_100;
 
 export interface BrowserVoiceOptions {
   lang?: string;
@@ -63,6 +64,28 @@ export function getPendingZeusAnnouncement(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Keeps spoken AI answers natural and bounded. Tool/action payloads are UI-only
+ * and must never be narrated as JSON or executable instructions.
+ */
+export function prepareSpokenAssistantReply(content: string, fallback: string): string {
+  const cleaned = content
+    .replace(/```(?:forsure-action|forsure-products|json)?\s*[\s\S]*?```/gi, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[`*_>#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return fallback;
+  if (cleaned.length <= MAX_SPOKEN_REPLY_LENGTH) return cleaned;
+
+  const prefix = cleaned.slice(0, MAX_SPOKEN_REPLY_LENGTH);
+  const lastSentence = Math.max(prefix.lastIndexOf('.'), prefix.lastIndexOf('!'), prefix.lastIndexOf('?'));
+  const bounded = (lastSentence > 500 ? prefix.slice(0, lastSentence + 1) : prefix).trim();
+  return `${bounded} La suite est affichée à l’écran.`;
 }
 
 export function speakWithBrowserVoice(text: string, options: BrowserVoiceOptions = {}): boolean {
