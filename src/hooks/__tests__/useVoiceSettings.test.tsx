@@ -28,4 +28,17 @@ describe('useVoiceSettings', () => {
     expect(first.result.current.voiceSettings.voice_enabled).toBe(true);
     expect(second.result.current.voiceSettings.voice_enabled).toBe(true);
   });
+
+  it('persists an explicit activation until the user changes the choice', () => {
+    const { result, unmount } = renderHook(() => useVoiceSettings());
+
+    act(() => result.current.updateVoiceSettings({ voice_enabled: true }));
+    unmount();
+
+    expect(JSON.parse(localStorage.getItem('forsure-voice-settings') || '{}')).toMatchObject({
+      voice_enabled: true,
+      voice_consent_version: 1,
+    });
+    expect(renderHook(() => useVoiceSettings()).result.current.voiceSettings.voice_enabled).toBe(true);
+  });
 });

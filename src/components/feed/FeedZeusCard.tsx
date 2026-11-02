@@ -38,7 +38,9 @@ export function FeedZeusCard() {
       return;
     }
 
-    updateVoiceSettings({ voice_enabled: true });
+    if (!voiceSettings.voice_enabled) {
+      updateVoiceSettings({ voice_enabled: true });
+    }
     unlockZeusVoiceForSession();
     const announcement = getPendingZeusAnnouncement()
       || `Bonjour, je suis ${zeusName}. Je suis prêt à vous aider.`;
@@ -138,8 +140,10 @@ export function FeedZeusCard() {
               className="w-full flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <Volume2 className="h-4 w-4" aria-hidden="true" />
-              {voiceSettings.voice_enabled && isZeusVoiceUnlockedForSession()
-                ? `Réécouter ${zeusName}`
+              {voiceSettings.voice_enabled
+                ? (isZeusVoiceUnlockedForSession()
+                  ? `Réécouter ${zeusName}`
+                  : `Réactiver le son de ${zeusName}`)
                 : `Activer la voix de ${zeusName}`}
             </button>
             <p className="mt-1.5 text-center text-[10px] leading-snug text-muted-foreground">

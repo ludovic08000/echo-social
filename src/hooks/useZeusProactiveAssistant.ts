@@ -84,9 +84,11 @@ export function useZeusProactiveAssistant() {
       description: content,
       duration: 12_000,
       action: {
-        label: 'Activer la voix',
+        label: voiceSettings.voice_enabled ? 'Lire l’annonce' : 'Activer la voix',
         onClick: () => {
-          updateVoiceSettings({ voice_enabled: true });
+          if (!voiceSettings.voice_enabled) {
+            updateVoiceSettings({ voice_enabled: true });
+          }
           unlockZeusVoiceForSession();
           const started = speakWithBrowserVoice(content, {
             lang: voiceSettings.voice_lang,
