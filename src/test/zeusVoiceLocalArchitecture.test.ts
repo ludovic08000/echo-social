@@ -27,6 +27,13 @@ describe('local Zeus voice architecture', () => {
     expect(companion).toContain('confirmez toute action à l’écran');
   });
 
+  it('opens the visual voice assistant above the clipped chat shell', () => {
+    expect(companion).toContain("import { createPortal } from 'react-dom'");
+    expect(companion).toContain('createPortal(');
+    expect(companion).toContain('document.body');
+    expect(hud).toContain('fixed inset-0 z-[100]');
+  });
+
   it('uses the user-selected assistant name for the connection briefing', () => {
     expect(proactive).toContain('useZeusSettings');
     expect(proactive).toContain('readyAnnouncement(zeusName)');

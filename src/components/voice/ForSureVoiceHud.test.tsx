@@ -40,7 +40,7 @@ describe('ForSureVoiceHud', () => {
   it('explains the confirmation boundary before a voice command can act', () => {
     renderHud();
 
-    expect(screen.getByRole('dialog', { name: 'Parlez à Zeus' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Parlez à Zeus' })).toHaveClass('fixed', 'inset-0', 'z-[100]');
     expect(screen.getByText('Confirmation requise')).toBeInTheDocument();
     expect(screen.getByText('Micro sur demande')).toBeInTheDocument();
     expect(screen.getByText('Pas d’audio stocké')).toBeInTheDocument();

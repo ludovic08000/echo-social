@@ -202,7 +202,7 @@ export function ForSureVoiceHud({
       aria-describedby={descriptionId}
       aria-labelledby={titleId}
       aria-modal="true"
-      className="absolute inset-0 z-50 isolate flex min-h-0 flex-col overflow-hidden bg-[#030914] text-white"
+      className="fixed inset-0 z-[100] isolate flex min-h-0 flex-col overflow-hidden bg-[#030914] text-white"
       role="dialog"
     >
       <div

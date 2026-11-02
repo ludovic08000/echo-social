@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Send, Loader2, Pencil, Check, Zap, AlertTriangle, CheckCircle2,
@@ -922,17 +923,6 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                 : "fixed bottom-[80px] right-5 z-[55] w-[390px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-120px)] md:right-8 rounded-2xl"
             )}
           >
-            {voiceHudOpen ? (
-              <ForSureVoiceHud
-                assistantName={zeusName}
-                errorMessage={voiceHudError}
-                onClose={closeVoiceAssistant}
-                onSpeakIntro={speakVoiceIntro}
-                onSubmitCommand={submitVoiceCommand}
-                processing={voiceProcessing}
-              />
-            ) : null}
-
             {/* Header */}
             <div className="px-4 py-3 border-b border-border bg-card">
               <div className="flex items-center justify-between">
@@ -1195,6 +1185,21 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* The voice interface must escape the transformed, clipped chat panel.
+          Rendering it at the document root makes the microphone entry point
+          consistently open the full-screen assistant on desktop and mobile. */}
+      {voiceHudOpen && typeof document !== 'undefined' && createPortal(
+        <ForSureVoiceHud
+          assistantName={zeusName}
+          errorMessage={voiceHudError}
+          onClose={closeVoiceAssistant}
+          onSpeakIntro={speakVoiceIntro}
+          onSubmitCommand={submitVoiceCommand}
+          processing={voiceProcessing}
+        />,
+        document.body,
+      )}
     </>
   );
 }
