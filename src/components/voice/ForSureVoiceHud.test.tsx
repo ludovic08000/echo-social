@@ -40,7 +40,7 @@ describe('ForSureVoiceHud', () => {
   it('explains the confirmation boundary before a voice command can act', () => {
     renderHud();
 
-    expect(screen.getByRole('dialog', { name: 'Parlez à Zeus' })).toHaveClass('fixed', 'inset-0', 'z-[100]');
+    expect(screen.getByRole('dialog', { name: 'Bonjour, je suis Zeus' })).toHaveClass('fixed', 'inset-0', 'z-[100]');
     expect(screen.getByText('Confirmation requise')).toBeInTheDocument();
     expect(screen.getByText('Micro sur demande')).toBeInTheDocument();
     expect(screen.getByText('Pas d’audio stocké')).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('ForSureVoiceHud', () => {
 
   it('starts recognition only after a direct tap and sends the final transcript directly to Zeus', async () => {
     (window as Window & { webkitSpeechRecognition?: typeof FakeRecognition }).webkitSpeechRecognition = FakeRecognition;
-    renderHud();
+    renderHud({ voiceAllowed: true });
 
     fireEvent.click(screen.getByRole('button', { name: 'Parler à Zeus' }));
 
@@ -60,7 +60,7 @@ describe('ForSureVoiceHud', () => {
     });
 
     expect(screen.getByRole('textbox', { name: 'Votre demande à Zeus' })).toHaveValue('Prépare une publication');
-    expect(callbacks.onSubmitCommand).toHaveBeenCalledWith('Prépare une publication');
+    expect(callbacks.onSubmitCommand).toHaveBeenCalledWith('Prépare une publication', 'voice');
   });
 
   it('keeps a typed fallback when browser dictation is unavailable', () => {
@@ -72,7 +72,27 @@ describe('ForSureVoiceHud', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Envoyer à Zeus' }));
 
-    expect(onSubmitCommand).toHaveBeenCalledWith('Montre-moi plus de science');
+    expect(onSubmitCommand).toHaveBeenCalledWith('Montre-moi plus de science', 'text');
+  });
+
+  it('does not open the microphone for a non-creator and keeps text available', () => {
+    (window as Window & { webkitSpeechRecognition?: typeof FakeRecognition }).webkitSpeechRecognition = FakeRecognition;
+    const onUpgrade = vi.fn();
+    renderHud({ voiceAllowed: false, onUpgrade });
+    fireEvent.click(screen.getByRole('button', { name: 'Découvrir les commandes vocales Créateur' }));
+    expect(onUpgrade).toHaveBeenCalledOnce();
+    expect(FakeRecognition.current).toBeNull();
+    expect(callbacks.onSpeakIntro).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox')).toBeEnabled();
+  });
+
+  it('releases an active microphone when the subscription is lost', () => {
+    (window as Window & { webkitSpeechRecognition?: typeof FakeRecognition }).webkitSpeechRecognition = FakeRecognition;
+    const { rerender } = renderHud({ voiceAllowed: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Parler à Zeus' }));
+    const recognition = FakeRecognition.current;
+    rerender(<ForSureVoiceHud assistantName="Zeus" {...callbacks} voiceAllowed={false} />);
+    expect(recognition?.abort).toHaveBeenCalledOnce();
   });
 
   it('se ferme au clavier avec Échap', () => {

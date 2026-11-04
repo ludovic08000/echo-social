@@ -11,6 +11,7 @@ import { toast } from '@/hooks/use-toast';
 import { LiveStream } from '@/hooks/useLiveStreams';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { LIVE_MAX_DURATION_MS, LIVE_END_WARNING_MS } from '../../../supabase/functions/_shared/live-policy';
 
 interface HostLiveViewProps {
   live: LiveStream;
@@ -32,6 +33,7 @@ export function HostLiveView({ live }: HostLiveViewProps) {
   const sendMessage = useSendLiveChatMessage();
   const endLive = useEndLive();
   const autoEndRef = useRef<(() => void) | null>(null);
+  const endingRef = useRef(false);
 
   // Auto-start recording when stream is ready
   const startRecording = (stream: MediaStream) => {
@@ -84,10 +86,11 @@ export function HostLiveView({ live }: HostLiveViewProps) {
       const { uploadToR2 } = await import('@/lib/r2');
       const { url } = await uploadToR2(blob, 'lives', `live-${live.id}-${Date.now()}.${ext}`);
 
-      await supabase
+      const { error } = await supabase
         .from('live_streams')
         .update({ recording_url: url } as any)
         .eq('id', live.id);
+      if (error) throw error;
 
       return url;
     } catch (err) {
@@ -105,12 +108,12 @@ export function HostLiveView({ live }: HostLiveViewProps) {
     }
   }, [chatMessages]);
 
-  // Limite de durée : alerte à 5 min de la fin, arrêt automatique à 60 min
+  // Same deadline as the server; warn five minutes before the four-hour cap.
   useEffect(() => {
     if (!live.started_at) return;
     const startedAt = new Date(live.started_at).getTime();
-    const WARN_MS = 55 * 60 * 1000;
-    const MAX_MS = 60 * 60 * 1000;
+    const WARN_MS = LIVE_MAX_DURATION_MS - LIVE_END_WARNING_MS;
+    const MAX_MS = LIVE_MAX_DURATION_MS;
     let warned = false;
     let ended = false;
     const tick = () => {
@@ -149,14 +152,19 @@ export function HostLiveView({ live }: HostLiveViewProps) {
   };
 
   const handleEndLive = async (auto = false) => {
+    if (endingRef.current) return;
     if (!auto && !confirm('Terminer le live ?')) return;
 
+    endingRef.current = true;
     setIsEnding(true);
     try {
       // Stop recording first
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
+      // Stop broadcasting at the deadline, before any slow archive upload.
+      playerRef.current?.stopStream();
+      await endLive.mutateAsync(live.id);
 
       // Wait a moment for the last chunks
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -164,30 +172,16 @@ export function HostLiveView({ live }: HostLiveViewProps) {
       // Save the recording
       const recordingUrl = await saveRecording();
 
-      playerRef.current?.stopStream();
-      await endLive.mutateAsync(live.id);
-
-      // Auto-publish a post with the recording in the feed
-      if (recordingUrl && user) {
-        const hashtagsText = live.hashtags?.length 
-          ? '\n' + live.hashtags.map(t => `#${t}`).join(' ') 
-          : '';
-        await supabase.from('posts').insert({
-          user_id: user.id,
-          body: `🔴 ${live.title}${hashtagsText}`,
-          image_url: recordingUrl,
-        });
-      }
-      
       toast({
         title: auto
-          ? 'Live terminé : durée maximale atteinte (1 h) ⏳'
-          : recordingUrl ? 'Live terminé et publié dans le feed ! 🎬' : 'Live terminé !'
+          ? 'Live terminé : durée maximale atteinte (4 h) ⏳'
+          : recordingUrl ? 'Live terminé, replay conservé 30 jours 🎬' : 'Live terminé !'
       });
       navigate('/feed');
     } catch (error) {
       toast({ title: 'Erreur', variant: 'destructive' });
       setIsEnding(false);
+      endingRef.current = false;
     }
   };
 

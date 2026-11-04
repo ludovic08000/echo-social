@@ -3,6 +3,7 @@ import { AccessToken } from "npm:livekit-server-sdk@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit as checkRateLimitDB } from "../_shared/rate-limit.ts";
 import { createAegisDiagnostic } from "../_shared/aegisDiagnostics.mjs";
+import { liveDeadline } from "../_shared/live-policy.ts";
 
 type Role = "viewer" | "host" | "moderator";
 
@@ -120,7 +121,7 @@ Deno.serve(async (req) => {
     let tokenIdentity = userId;
     let auditConversationId: string | null = null;
     let auditLiveId: string | null = null;
-    // Durée du jeton : 10 min pour les appels, 75 min pour les lives (limite 1 h + marge)
+    // Calls stay at 10 minutes; live tokens are bounded by the server deadline below.
     let tokenTtl = "10m";
 
     diagnostic.step("room_lookup");
@@ -213,11 +214,11 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (liveError) return json(503, { error: "CALL_SERVICE_UNAVAILABLE" });
       if (!live || live.is_active !== true) return json(403, { error: "CALL_NOT_JOINABLE" });
-      // Limite de durée : un live ne peut pas dépasser 60 minutes (fail-closed côté jeton)
-      if (live.started_at && Date.now() - new Date(live.started_at).getTime() > 60 * 60 * 1000) {
+      const remainingMs = liveDeadline(live.started_at) - Date.now();
+      if (remainingMs <= 0) {
         return json(403, { error: "LIVE_DURATION_EXCEEDED" });
       }
-      tokenTtl = "75m";
+      tokenTtl = `${Math.max(1, Math.floor(remainingMs / 1_000))}s`;
       if (live.user_id === userId) {
         diagnostic.step("creator_subscription");
         const { data: subscription, error: subscriptionError } = await adminClient

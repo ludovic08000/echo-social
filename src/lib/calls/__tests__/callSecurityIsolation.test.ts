@@ -28,11 +28,12 @@ describe('call hardening isolation and rollback', () => {
 
   it('issues short-lived call tokens only after device and invitation checks', () => {
     const edge = read('supabase/functions/livekit-token/index.ts');
-    // Appels : 10 minutes. Lives : 75 minutes (60 minutes de direct + marge de clôture).
+    // Calls retain their ten-minute cap; live tokens cannot outlive the broadcast.
     expect(edge).toContain('tokenTtl = "10m"');
-    expect(edge).toContain('tokenTtl = "75m"');
+    expect(edge).toContain('liveDeadline(live.started_at) - Date.now()');
+    expect(edge).toContain('Math.floor(remainingMs / 1_000)');
     expect(edge).toContain('ttl: tokenTtl');
-    // Aucun jeton ne peut dépasser la fenêtre de live de 75 minutes.
+    // No unbounded fixed-duration live token.
     expect(edge).not.toMatch(/tokenTtl\s*=\s*"\d{3,}m"/);
     expect(edge).toContain('CALL_DEVICE_NOT_AUTHORIZED');
     expect(edge).toContain('CALL_DEVICE_NOT_INVITED');

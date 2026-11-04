@@ -62,7 +62,7 @@ const baseLive = {
   recording_url: null,
 } as any;
 
-describe('HostLiveView — limite de durée 1 h', () => {
+describe('HostLiveView — limite de durée 4 h', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     endLiveMutateAsync.mockClear();
@@ -75,8 +75,8 @@ describe('HostLiveView — limite de durée 1 h', () => {
     vi.unstubAllGlobals();
   });
 
-  it('termine automatiquement un live démarré il y a plus de 60 minutes', async () => {
-    const live = { ...baseLive, started_at: new Date(Date.now() - 61 * 60 * 1000).toISOString() };
+  it('termine automatiquement un live démarré il y a plus de 4 heures', async () => {
+    const live = { ...baseLive, started_at: new Date(Date.now() - 241 * 60 * 1000).toISOString() };
     render(<HostLiveView live={live} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -84,8 +84,8 @@ describe('HostLiveView — limite de durée 1 h', () => {
     expect(endLiveMutateAsync).toHaveBeenCalledWith(live.id);
   });
 
-  it('ne termine pas un live récent et alerte à 55 minutes', async () => {
-    const live = { ...baseLive, started_at: new Date(Date.now() - 54 * 60 * 1000).toISOString() };
+  it('ne termine pas un live récent et alerte à 3 h 55', async () => {
+    const live = { ...baseLive, started_at: new Date(Date.now() - 234 * 60 * 1000).toISOString() };
     render(<HostLiveView live={live} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(70_000); // passe le seuil des 55 min

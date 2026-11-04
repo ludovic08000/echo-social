@@ -237,7 +237,7 @@ async function handleR2Upload(req: Request) {
       if (!path || typeof path !== "string") throw new Error("No path provided");
 
       const cleanPath = sanitizePath(path);
-      if (!cleanPath.startsWith(`${userFolder}/`)) {
+      if (!cleanPath.startsWith(`${userFolder}/`) && !cleanPath.startsWith(`${userId}/lives/`)) {
         return new Response(JSON.stringify({ error: "Unauthorized: can only delete own files" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -305,7 +305,7 @@ async function handleR2Upload(req: Request) {
     // ─── Build secure file path ───
     const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
     const safeExt = ext.replace(/[^a-z0-9]/g, "").substring(0, 5);
-    const fileName = `${userFolder}/${cleanFolder}/${Date.now()}.${safeExt}`;
+    const fileName = `${cleanFolder === 'lives' ? userId : userFolder}/${cleanFolder}/${Date.now()}.${safeExt}`;
 
     const url = `${endpoint}/${bucketName}/${fileName}`;
     const fileBuffer = await file.arrayBuffer();

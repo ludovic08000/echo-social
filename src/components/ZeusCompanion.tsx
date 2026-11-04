@@ -37,6 +37,7 @@ import {
   unlockZeusVoiceForSession,
 } from '@/lib/zeusVoice';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
+import { useStripeSubscription } from '@/hooks/useStripeSubscription';
 import { ForSureVoiceHud } from '@/components/voice/ForSureVoiceHud';
 
 
@@ -454,6 +455,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const [voiceHudError, setVoiceHudError] = useState<string | null>(null);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const { voiceSettings, updateVoiceSettings } = useVoiceSettings();
+  const { isCreatorSubscriber, loading: subscriptionLoading } = useStripeSubscription();
 
   const { data: conversations, refetch: refetchConversations } = useZeusConversations(zeusAgentId);
   const { data: loadedMessages } = useZeusMessages(conversationId);
@@ -472,7 +474,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   }, [open, conversations, conversationId, isNewConversation]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-  useEffect(() => { if (open && inputRef.current && activeTab === 'chat') inputRef.current.focus(); }, [open, activeTab]);
+  useEffect(() => { if (open && !voiceHudOpen && inputRef.current && activeTab === 'chat') inputRef.current.focus(); }, [open, activeTab, voiceHudOpen]);
 
   // Ref to hold a pending message that should be auto-sent once Zeus opens
   const pendingSendRef = useRef<string | null>(null);
@@ -482,6 +484,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       setOpen(true);
       setActiveTab('chat');
       const detail = (e as CustomEvent)?.detail;
+      setVoiceHudOpen(!detail?.action);
       if (typeof detail?.proactiveMessage === 'string' && detail.proactiveMessage.trim()) {
         setMessages((current) => [...current, { role: 'assistant', content: detail.proactiveMessage.trim() }]);
       } else if (detail?.action === 'translate' && detail?.text) {
@@ -653,6 +656,10 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   ): Promise<boolean> => {
     const text = overrideText || input.trim();
     if (!text || loading) return false;
+    if (options.fromVoice && (subscriptionLoading || !isCreatorSubscriber)) {
+      setVoiceHudError('Les commandes vocales sont réservées aux créateurs avec un abonnement actif.');
+      return false;
+    }
 
     // Guest mode: check 3-question limit
     if (!user) {
@@ -694,7 +701,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       const resp = await fetch(`${supabaseUrl}/functions/v1/agent-chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ agent_id: zeusAgentId, conversation_id: user ? conversationId : null, message: userMsg.content }),
+        body: JSON.stringify({ agent_id: zeusAgentId, conversation_id: user ? conversationId : null, message: userMsg.content, input_mode: options.fromVoice ? 'voice' : 'text' }),
       });
 
       if (user) {
@@ -805,6 +812,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     voiceSettings.voice_lang,
     voiceSettings.voice_speed,
     voiceSettings.voice_volume,
+    isCreatorSubscriber,
+    subscriptionLoading,
   ]);
 
   // Auto-send pending translate/rewrite messages
@@ -828,6 +837,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   }, [user]);
 
   const speakVoiceIntro = useCallback(() => {
+    if (!isCreatorSubscriber || subscriptionLoading) return;
     updateVoiceSettings({ voice_enabled: true });
     if (!isBrowserVoiceSupported() || !unlockZeusVoiceForSession()) {
       setVoiceHudError('La synthèse vocale n’est pas disponible dans ce navigateur. La saisie reste utilisable.');
@@ -847,15 +857,16 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     voiceSettings.voice_speed,
     voiceSettings.voice_volume,
     zeusName,
+    isCreatorSubscriber,
+    subscriptionLoading,
   ]);
 
-  const submitVoiceCommand = useCallback(async (command: string) => {
+  const submitVoiceCommand = useCallback(async (command: string, source: 'voice' | 'text' = 'voice') => {
     setVoiceHudError(null);
     setVoiceProcessing(true);
-    const completed = await sendMessage(command, { fromVoice: true });
+    const completed = await sendMessage(command, { fromVoice: source === 'voice' });
     setVoiceProcessing(false);
     if (completed) {
-      setVoiceHudOpen(false);
       setOpen(true);
       return;
     }
@@ -866,6 +877,16 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     setVoiceHudOpen(false);
     setVoiceHudError(null);
   }, []);
+
+  const closeAssistant = useCallback(() => {
+    closeVoiceAssistant();
+    setOpen(false);
+  }, [closeVoiceAssistant]);
+
+  const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant');
+  const latestReply = latestAssistantMessage
+    ? parseActionFromContent(parseProductsFromContent(latestAssistantMessage.content).text).text
+    : '';
 
   const guestCount = parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
   const guestLimitReached = !user && guestCount >= 3;
@@ -888,7 +909,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
             animate={{ scale: 1 }}
             exit={{ scale: 0 }}
             transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-            onClick={() => setOpen(true)}
+            onClick={() => { setOpen(true); setVoiceHudOpen(true); }}
             className={cn(
               "fixed bottom-[80px] right-4 z-[55] flex h-12 items-center justify-center gap-2 rounded-full px-4",
               "bg-primary text-primary-foreground shadow-lg hover:shadow-xl active:scale-95 transition-all group md:hidden",
@@ -912,6 +933,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       <AnimatePresence>
         {open && (
           <motion.div
+            aria-hidden={voiceHudOpen || undefined}
             initial={{ opacity: 0, y: 20, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
@@ -1193,10 +1215,14 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         <ForSureVoiceHud
           assistantName={zeusName}
           errorMessage={voiceHudError}
-          onClose={closeVoiceAssistant}
+          onClose={closeAssistant}
           onSpeakIntro={speakVoiceIntro}
           onSubmitCommand={submitVoiceCommand}
           processing={voiceProcessing}
+          voiceAllowed={isCreatorSubscriber && !subscriptionLoading}
+          onUpgrade={() => { closeVoiceAssistant(); navigate('/creator'); }}
+          onShowChat={closeVoiceAssistant}
+          reply={latestReply}
         />,
         document.body,
       )}

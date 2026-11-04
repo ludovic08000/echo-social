@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Keyboard, Loader2, Mic2, ShieldCheck, Volume2, X, Zap } from 'lucide-react';
+import { Keyboard, Loader2, Mic2, ShieldCheck, Volume2, X, Zap, MessageSquare, Lock } from 'lucide-react';
 
 export type VoiceHudStatus = 'ready' | 'listening' | 'processing' | 'error';
 
@@ -9,8 +9,12 @@ interface ForSureVoiceHudProps {
   errorMessage?: string | null;
   onClose: () => void;
   onSpeakIntro: () => void;
-  onSubmitCommand: (command: string) => void | Promise<void>;
+  onSubmitCommand: (command: string, source: 'voice' | 'text') => void | Promise<void>;
   processing?: boolean;
+  voiceAllowed?: boolean;
+  onUpgrade?: () => void;
+  onShowChat?: () => void;
+  reply?: string;
 }
 
 interface SpeechRecognitionResultLike { transcript: string; }
@@ -68,11 +72,16 @@ export function ForSureVoiceHud({
   onSpeakIntro,
   onSubmitCommand,
   processing = false,
+  voiceAllowed = false,
+  onUpgrade,
+  onShowChat,
+  reply,
 }: ForSureVoiceHudProps) {
   const titleId = useId();
   const descriptionId = useId();
   const reduceMotion = useReducedMotion();
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
   const [status, setStatus] = useState<VoiceHudStatus>('ready');
   const [command, setCommand] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -92,32 +101,57 @@ export function ForSureVoiceHud({
   };
 
   useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
+      if (event.key === 'Tab') {
+        const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled)') ?? []);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       stopRecognition();
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
     };
   }, [onClose]);
+
+  useEffect(() => {
+    if (!voiceAllowed) {
+      stopRecognition();
+      setStatus(current => current === 'listening' ? 'ready' : current);
+    }
+  }, [voiceAllowed]);
 
   useEffect(() => {
     if (processing) setStatus('processing');
     else if (status === 'processing') setStatus('ready');
   }, [processing, status]);
 
-  const submit = async (rawCommand = command) => {
+  const submit = async (rawCommand = command, source: 'voice' | 'text' = 'text') => {
     const text = rawCommand.trim();
-    if (!text || processing) return;
+    if (!text || processing || (source === 'voice' && !voiceAllowed)) return;
     stopRecognition();
     setStatus('processing');
     setLocalError(null);
-    await onSubmitCommand(text);
+    try {
+      await onSubmitCommand(text, source);
+    } catch {
+      setLocalError('La demande n’a pas pu être transmise. Réessayez.');
+    } finally {
+      setStatus('ready');
+    }
   };
 
   const startListening = () => {
-    if (processing) return;
+    if (processing || !voiceAllowed) return;
     setLocalError(null);
     onSpeakIntro();
 
@@ -149,7 +183,7 @@ export function ForSureVoiceHud({
       // A voice turn is a private request to the assistant, not an external
       // side effect. Any proposal to publish, message someone, or change a
       // setting remains behind its existing explicit confirmation card.
-      void submit(normalizedTranscript);
+      void submit(normalizedTranscript, 'voice');
     };
     recognition.onerror = (event) => {
       recognitionRef.current = null;
@@ -173,9 +207,11 @@ export function ForSureVoiceHud({
 
   const stateCopy: Record<VoiceHudStatus, { eyebrow: string; title: string; detail: string }> = {
     ready: {
-      eyebrow: 'Commande vocale',
-      title: `Parlez à ${assistantName}`,
-      detail: speechSupported
+      eyebrow: voiceAllowed ? 'Commandes vocales Créateur' : 'Votre assistant',
+      title: `Bonjour, je suis ${assistantName}`,
+      detail: !voiceAllowed
+        ? 'Écrivez votre demande. Les commandes vocales sont incluses avec l’abonnement Créateur.'
+        : speechSupported
         ? `Touchez le micro : votre demande sera envoyée directement à ${assistantName}, puis sa réponse sera lue.`
         : `La dictée n’est pas disponible ici. Écrivez votre demande : ${assistantName} la traitera de la même manière.`,
     },
@@ -190,19 +226,20 @@ export function ForSureVoiceHud({
       detail: 'Aucune publication, aucun message et aucun réglage ne seront exécutés sans votre confirmation.',
     },
     error: {
-      eyebrow: 'Microphone indisponible',
-      title: 'Utilisez la saisie',
+      eyebrow: 'Demande interrompue',
+      title: 'Réessayez votre demande',
       detail: activeError || 'Écrivez votre demande pour continuer avec Zeus.',
     },
   };
-  const copy = stateCopy[status];
+  const copy = stateCopy[activeError ? 'error' : status];
 
   return (
     <section
+      ref={dialogRef}
       aria-describedby={descriptionId}
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-0 z-[100] isolate flex min-h-0 flex-col overflow-hidden bg-[#030914] text-white"
+      className="fixed inset-0 z-[100] isolate flex min-h-0 flex-col overflow-y-auto bg-[#030914] text-white"
       role="dialog"
     >
       <div
@@ -220,9 +257,11 @@ export function ForSureVoiceHud({
 
       <header className="relative z-10 flex items-start justify-between px-4 pb-2 pt-4">
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-[0.34em] text-blue-200/60">ForSure Voice</p>
+          <p className="font-mono text-[9px] uppercase tracking-[0.34em] text-blue-200/60">ForSure Assistant</p>
           <p className="mt-1 text-sm font-semibold tracking-[0.12em] text-blue-50">{assistantName.toUpperCase()}</p>
         </div>
+        <div className="flex gap-2">
+        {onShowChat && <button type="button" onClick={onShowChat} aria-label="Ouvrir le chat et les confirmations" className="grid h-9 w-9 place-items-center rounded-full border border-blue-300/20 text-blue-100"><MessageSquare className="h-4 w-4" /></button>}
         <button
           aria-label="Fermer l’interface vocale"
           autoFocus
@@ -232,9 +271,10 @@ export function ForSureVoiceHud({
         >
           <X className="h-4 w-4" />
         </button>
+        </div>
       </header>
 
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center px-5 pb-3">
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-5 pb-3">
         <div className="relative grid h-36 w-36 max-h-[30vh] max-w-[56vw] shrink-0 place-items-center sm:h-40 sm:w-40">
           <div aria-hidden="true" className="absolute inset-[14%] rounded-full bg-blue-400/15 blur-3xl" />
           <Orbit className="absolute inset-0 rounded-full border border-dashed border-blue-300/25" duration={26} />
@@ -255,15 +295,17 @@ export function ForSureVoiceHud({
           <p className="mt-1.5 text-xs leading-relaxed text-blue-100/60" id={descriptionId}>{copy.detail}</p>
         </div>
 
+        {reply && <div role="status" className="mt-4 max-h-32 w-full max-w-lg overflow-y-auto rounded-xl border border-blue-200/20 bg-white/5 px-4 py-3 text-sm leading-relaxed text-blue-50 whitespace-pre-wrap">{reply}</div>}
+
         <div className="mt-4 flex w-full max-w-sm flex-col gap-2">
           <button
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-blue-300/35 bg-blue-400/15 px-5 text-xs font-semibold text-blue-50 transition hover:border-blue-200/70 hover:bg-blue-300/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-wait disabled:opacity-55"
             disabled={processing || status === 'listening'}
-            onClick={startListening}
+            onClick={voiceAllowed ? startListening : onUpgrade}
             type="button"
           >
-            {status === 'listening' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic2 className="h-4 w-4" />}
-            {speechSupported ? 'Parler à ' + assistantName : `Tester la voix de ${assistantName}`}
+            {!voiceAllowed ? <Lock className="h-4 w-4" /> : status === 'listening' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic2 className="h-4 w-4" />}
+            {!voiceAllowed ? 'Découvrir les commandes vocales Créateur' : speechSupported ? 'Parler à ' + assistantName : `Tester la voix de ${assistantName}`}
           </button>
 
           <label className="sr-only" htmlFor="forsure-voice-command">Votre demande à {assistantName}</label>

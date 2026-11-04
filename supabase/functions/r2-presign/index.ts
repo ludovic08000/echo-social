@@ -109,7 +109,7 @@ async function handleR2Presign(req: Request) {
     const { data: profile } = await serviceClient.from("profiles").select("name").eq("user_id", userId).single();
     const rawName = profile?.name || "user";
     const sanitizedName = rawName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "user";
-    const userFolder = `${sanitizedName}-${userId.substring(0, 8)}`;
+    const userFolder = cleanFolder === 'lives' ? userId : `${sanitizedName}-${userId.substring(0, 8)}`;
 
     const ext = filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 5) || "bin";
     const filePath = `${userFolder}/${cleanFolder}/${Date.now()}.${ext}`;

@@ -14,15 +14,15 @@ describe('local Zeus voice architecture', () => {
   });
 
   it('keeps the microphone gesture-driven while sending a completed voice turn to Zeus', () => {
-    expect(hud).toContain('onClick={startListening}');
-    expect(hud).toContain('onSubmitCommand(text)');
-    expect(hud).toContain('void submit(normalizedTranscript)');
+    expect(hud).toContain('onClick={voiceAllowed ? startListening : onUpgrade}');
+    expect(hud).toContain('onSubmitCommand(text, source)');
+    expect(hud).toContain("void submit(normalizedTranscript, 'voice')");
     expect(hud).toContain('Confirmation requise');
     expect(hud).toContain('Aucune publication, aucun message et aucun réglage ne seront exécutés sans votre confirmation.');
   });
 
   it('routes a voice command through the existing Zeus action confirmation path', () => {
-    expect(companion).toContain('sendMessage(command, { fromVoice: true })');
+    expect(companion).toContain("sendMessage(command, { fromVoice: source === 'voice' })");
     expect(companion).toContain('onSubmitCommand={submitVoiceCommand}');
     expect(companion).toContain('confirmez toute action à l’écran');
   });

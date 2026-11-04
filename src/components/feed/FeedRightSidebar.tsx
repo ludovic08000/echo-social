@@ -6,12 +6,11 @@ import { useConversations } from '@/hooks/useMessages';
 import { useLiveStreams } from '@/hooks/useLiveStreams';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useAuth } from '@/lib/auth';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useScreenSize } from '@/hooks/useScreenSize';
 import { useChatWidget } from '@/components/ChatWidgetContext';
 import { useOnlinePresence } from '@/hooks/useOnlinePresence';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
-import { ZeusCompanion } from '@/components/ZeusCompanion';
 import { cn } from '@/lib/utils';
 
 export function FeedRightSidebar() {
@@ -27,13 +26,6 @@ export function FeedRightSidebar() {
   const { zeusName } = useZeusSettings();
   const friends = friendships?.friends || [];
   const requests = friendships?.requests || [];
-  const [zeusOpen, setZeusOpen] = useState(false);
-
-  useEffect(() => {
-    const handler = () => setZeusOpen(true);
-    window.addEventListener('open-zeus', handler);
-    return () => window.removeEventListener('open-zeus', handler);
-  }, []);
 
   const sortedFriends = useMemo(() => {
     return [...friends].sort((a, b) => {
@@ -388,9 +380,8 @@ export function FeedRightSidebar() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, delay: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
         >
-          {!zeusOpen ? (
             <button
-              onClick={() => setZeusOpen(true)}
+              onClick={() => window.dispatchEvent(new CustomEvent('open-zeus'))}
               className="w-full relative rounded-2xl border border-border/40 bg-card overflow-hidden transition-all duration-300 group cursor-pointer text-left hover:border-primary/30"
               style={{ boxShadow: 'var(--shadow-md)' }}
             >
@@ -413,9 +404,6 @@ export function FeedRightSidebar() {
                 </div>
               </div>
             </button>
-          ) : (
-            <ZeusCompanion inline />
-          )}
         </motion.div>
       </div>
     </aside>

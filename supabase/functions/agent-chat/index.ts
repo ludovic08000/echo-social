@@ -4,6 +4,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { aiDataSharingEnabled } from "../_shared/ai-privacy.ts";
 import { ownsAgentConversation, reserveAgentUsage, type AgentUsageLease } from "../_shared/ai-agent-authority.ts";
 import { checkRateLimit } from "../_shared/rate-limit.ts";
+import { hasCreatorVoiceAccess } from "../_shared/creator-access.ts";
 
 const ACTION_SYSTEM_PROMPT = `
 
@@ -173,6 +174,16 @@ serve(async (req) => {
       });
     }
     const { agent_id, conversation_id, message, context } = body;
+    if (body.input_mode !== undefined && !['text', 'voice'].includes(body.input_mode)) {
+      return new Response(JSON.stringify({ error: 'INVALID_INPUT_MODE' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (body.input_mode === 'voice' && !await hasCreatorVoiceAccess(supabase, userId)) {
+      return new Response(JSON.stringify({ error: 'CREATOR_VOICE_REQUIRED', message: 'Les commandes vocales nécessitent un abonnement Créateur actif.' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Validate UUID format for agent_id
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

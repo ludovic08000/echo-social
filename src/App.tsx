@@ -352,6 +352,7 @@ function AppContent() {
                     <Route path="/search" element={<Search />} />
                     <Route path="/videos" element={<Videos />} />
                     <Route path="/lives" element={<LiveScreen />} />
+                    <Route path="/live" element={<Navigate to="/lives" replace />} />
                     <Route path="/live/:id" element={<LiveWatch />} />
                     <Route path="/marketplace" element={<Marketplace />} />
                     <Route path="/marketplace/product/:id" element={<ProductDetailPage />} />

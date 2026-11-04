@@ -113,6 +113,9 @@ project_id = "vkpmoqfzrihcijjochks"
 [functions.identity-reset]
 verify_jwt = true
 
+[functions.live-maintenance]
+verify_jwt = false # Handler requires an administrator or the exact server service credential.
+
 [functions.login-security]
 verify_jwt = false
 

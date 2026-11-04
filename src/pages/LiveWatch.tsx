@@ -417,7 +417,7 @@ export default function LiveWatch() {
     >
       {orderedItems.map((item, index) => (
         <div key={item.id} className="w-full h-screen snap-start snap-always">
-          <LiveSlide item={item} isVisible={index === currentIndex} backTo="/live" />
+          <LiveSlide item={item} isVisible={index === currentIndex} backTo="/lives" />
         </div>
       ))}
     </div>
