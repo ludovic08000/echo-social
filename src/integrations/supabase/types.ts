@@ -9058,6 +9058,30 @@ export type Database = {
           },
         ]
       }
+      voice_command_grants: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          reason: string
+          revoked_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          reason?: string
+          revoked_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          reason?: string
+          revoked_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       wellbeing_preferences: {
         Row: {
           bedtime_hour: number
@@ -9464,7 +9488,6 @@ export type Database = {
       }
     }
     Functions: {
-      voice_command_access: { Args: never; Returns: boolean }
       ack_sealed_sender_wakeups: {
         Args: { p_message_ids: string[] }
         Returns: number
@@ -11188,6 +11211,7 @@ export type Database = {
           wellbeing_score: number
         }[]
       }
+      voice_command_access: { Args: never; Returns: boolean }
       write_aegis_recovery_vault: {
         Args: {
           p_ciphertext: string
