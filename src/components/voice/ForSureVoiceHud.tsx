@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Keyboard, Loader2, Mic2, ShieldCheck, Volume2, X, Zap, MessageSquare, Lock } from 'lucide-react';
+import { createSpeechTurn, type BrowserRecognition } from '@/lib/voice/speechTurn';
 
 export type VoiceHudStatus = 'ready' | 'listening' | 'processing' | 'error';
 
@@ -9,6 +10,8 @@ interface ForSureVoiceHudProps {
   errorMessage?: string | null;
   onClose: () => void;
   onSpeakIntro: () => void;
+  onPrepareListening?: () => void;
+  language?: string;
   onSubmitCommand: (command: string, source: 'voice' | 'text') => void | Promise<void>;
   processing?: boolean;
   voiceAllowed?: boolean;
@@ -17,22 +20,7 @@ interface ForSureVoiceHudProps {
   reply?: string;
 }
 
-interface SpeechRecognitionResultLike { transcript: string; }
-interface SpeechRecognitionEventLike { results: ArrayLike<ArrayLike<SpeechRecognitionResultLike>>; }
-
-interface BrowserSpeechRecognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  maxAlternatives: number;
-  onend: (() => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  abort: () => void;
-  start: () => void;
-}
-
-type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+type BrowserSpeechRecognitionConstructor = new () => BrowserRecognition;
 
 function getSpeechRecognitionConstructor(): BrowserSpeechRecognitionConstructor | null {
   if (typeof window === 'undefined') return null;
@@ -49,6 +37,9 @@ function readableRecognitionError(code?: string): string {
   }
   if (code === 'no-speech') return 'Je n’ai rien entendu. Réessayez ou écrivez votre demande.';
   if (code === 'audio-capture') return 'Aucun microphone n’est disponible sur cet appareil.';
+  if (code === 'network') return 'La connexion au service de dictée a été interrompue. Votre demande reste affichée ; réessayez ou envoyez-la par écrit.';
+  if (code === 'incomplete') return 'La fin de votre phrase n’a pas été confirmée. La demande reste affichée : corrigez-la ou réessayez.';
+  if (code === 'too-long') return 'La demande dépasse 2 000 caractères. Raccourcissez-la avant de l’envoyer.';
   return 'La dictée vocale est indisponible. Vous pouvez écrire votre demande.';
 }
 
@@ -70,6 +61,8 @@ export function ForSureVoiceHud({
   errorMessage,
   onClose,
   onSpeakIntro,
+  onPrepareListening,
+  language = 'fr-FR',
   onSubmitCommand,
   processing = false,
   voiceAllowed = false,
@@ -80,7 +73,8 @@ export function ForSureVoiceHud({
   const titleId = useId();
   const descriptionId = useId();
   const reduceMotion = useReducedMotion();
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const recognitionRef = useRef<ReturnType<typeof createSpeechTurn> | null>(null);
+  const submittingRef = useRef(false);
   const dialogRef = useRef<HTMLElement | null>(null);
   const [status, setStatus] = useState<VoiceHudStatus>('ready');
   const [command, setCommand] = useState('');
@@ -92,12 +86,7 @@ export function ForSureVoiceHud({
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     if (!recognition) return;
-    recognition.onend = null;
-    recognition.onerror = null;
-    recognition.onresult = null;
-    try { recognition.abort(); } catch {
-      // The recognition implementation may already be stopped.
-    }
+    recognition.abort();
   };
 
   useEffect(() => {
@@ -137,7 +126,8 @@ export function ForSureVoiceHud({
 
   const submit = async (rawCommand = command, source: 'voice' | 'text' = 'text') => {
     const text = rawCommand.trim();
-    if (!text || processing || (source === 'voice' && !voiceAllowed)) return;
+    if (!text || processing || submittingRef.current || (source === 'voice' && !voiceAllowed)) return;
+    submittingRef.current = true;
     stopRecognition();
     setStatus('processing');
     setLocalError(null);
@@ -146,68 +136,50 @@ export function ForSureVoiceHud({
     } catch {
       setLocalError('La demande n’a pas pu être transmise. Réessayez.');
     } finally {
+      submittingRef.current = false;
       setStatus('ready');
     }
   };
 
   const startListening = () => {
-    if (processing || !voiceAllowed) return;
+    if (processing || submittingRef.current || !voiceAllowed) return;
+    if (recognitionRef.current) { recognitionRef.current.finish(); return; }
     setLocalError(null);
-    onSpeakIntro();
 
     const Recognition = getSpeechRecognitionConstructor();
     if (!Recognition) {
-      setStatus('error');
-      setLocalError('La dictée vocale n’est pas proposée par ce navigateur. Écrivez votre demande ci-dessous.');
+      onSpeakIntro();
       return;
     }
 
+    // Stop speech before opening the microphone: Zeus must not transcribe itself.
+    onPrepareListening?.();
     stopRecognition();
     const recognition = new Recognition();
-    recognition.lang = navigator.language || 'fr-FR';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((result) => result[0]?.transcript || '')
-        .join(' ')
-        .trim();
-      if (!transcript) {
-        setStatus('ready');
-        return;
-      }
-
-      const normalizedTranscript = transcript.slice(0, 2_000);
-      setCommand(normalizedTranscript);
-      // A voice turn is a private request to the assistant, not an external
-      // side effect. Any proposal to publish, message someone, or change a
-      // setting remains behind its existing explicit confirmation card.
-      void submit(normalizedTranscript, 'voice');
-    };
-    recognition.onerror = (event) => {
-      recognitionRef.current = null;
-      setStatus('error');
-      setLocalError(readableRecognitionError(event.error));
-    };
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      setStatus((current) => current === 'listening' ? 'ready' : current);
-    };
-    recognitionRef.current = recognition;
+    const turn = createSpeechTurn(recognition, {
+      language,
+      onTranscript: setCommand,
+      onComplete: transcript => {
+        if (recognitionRef.current !== turn) return;
+        recognitionRef.current = null;
+        void submit(transcript, 'voice');
+      },
+      onError: code => {
+        if (recognitionRef.current !== turn) return;
+        recognitionRef.current = null;
+        setStatus('error');
+        setLocalError(readableRecognitionError(code));
+      },
+    });
+    recognitionRef.current = turn;
+    setCommand('');
     setStatus('listening');
-    try {
-      recognition.start();
-    } catch {
-      recognitionRef.current = null;
-      setStatus('error');
-      setLocalError('La dictée ne peut pas démarrer. Réessayez ou écrivez votre demande.');
-    }
+    turn.start();
   };
 
   const stateCopy: Record<VoiceHudStatus, { eyebrow: string; title: string; detail: string }> = {
     ready: {
-      eyebrow: voiceAllowed ? 'Commandes vocales Créateur' : 'Votre assistant',
+      eyebrow: voiceAllowed ? 'Commandes vocales' : 'Votre assistant',
       title: `Bonjour, je suis ${assistantName}`,
       detail: !voiceAllowed
         ? 'Écrivez votre demande. Les commandes vocales sont incluses avec l’abonnement Créateur.'
@@ -300,12 +272,12 @@ export function ForSureVoiceHud({
         <div className="mt-4 flex w-full max-w-sm flex-col gap-2">
           <button
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-blue-300/35 bg-blue-400/15 px-5 text-xs font-semibold text-blue-50 transition hover:border-blue-200/70 hover:bg-blue-300/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-wait disabled:opacity-55"
-            disabled={processing || status === 'listening'}
+            disabled={processing}
             onClick={voiceAllowed ? startListening : onUpgrade}
             type="button"
           >
             {!voiceAllowed ? <Lock className="h-4 w-4" /> : status === 'listening' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic2 className="h-4 w-4" />}
-            {!voiceAllowed ? 'Découvrir les commandes vocales Créateur' : speechSupported ? 'Parler à ' + assistantName : `Tester la voix de ${assistantName}`}
+            {!voiceAllowed ? 'Découvrir les commandes vocales Créateur' : status === 'listening' ? 'Terminer et envoyer' : speechSupported ? 'Parler à ' + assistantName : `Tester la voix de ${assistantName}`}
           </button>
 
           <label className="sr-only" htmlFor="forsure-voice-command">Votre demande à {assistantName}</label>

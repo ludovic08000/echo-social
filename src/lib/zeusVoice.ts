@@ -24,6 +24,11 @@ export function isBrowserVoiceSupported(): boolean {
     && 'SpeechSynthesisUtterance' in window;
 }
 
+export function stopBrowserVoice(): void {
+  if (!isBrowserVoiceSupported()) return;
+  try { window.speechSynthesis.cancel(); } catch { /* Browser audio may already be closed. */ }
+}
+
 /**
  * iOS only permits reliable speech after a direct user gesture. This marker is
  * deliberately session-scoped: it does not pretend that a past tap gives the

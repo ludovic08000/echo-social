@@ -1,5 +1,5 @@
 import { act,fireEvent,render,screen,within,waitFor } from '@testing-library/react';
-import { beforeEach,describe,expect,it,vi } from 'vitest';
+import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 const state=vi.hoisted(()=>({ creator:false }));
 vi.mock('@/lib/auth',()=>({useAuth:()=>({user:{id:'test-account'}})}));
@@ -18,7 +18,32 @@ beforeEach(()=>{
   state.creator=false;
   Object.defineProperty(HTMLElement.prototype,'scrollIntoView',{configurable:true,value:vi.fn()});
 });
+afterEach(()=>{
+  vi.unstubAllGlobals();
+  localStorage.removeItem('forsure-voice-settings');
+});
 describe('Zeus primary entry',()=>{
+  it('cancels the spoken reply before opening the microphone and uses the chosen voice language',()=>{
+    state.creator=true;
+    const cancel=vi.fn(),speak=vi.fn(),start=vi.fn(()=>expect(cancel).toHaveBeenCalledOnce());
+    let chosenLanguage='';
+    vi.stubGlobal('SpeechSynthesisUtterance',class {});
+    vi.stubGlobal('speechSynthesis',{cancel,speak,getVoices:()=>[]});
+    vi.stubGlobal('webkitSpeechRecognition',class {
+      continuous=false;interimResults=false;maxAlternatives=1;
+      set lang(value:string){chosenLanguage=value;}
+      onend=null;onresult=null;onerror=null;
+      start=start;stop=vi.fn();abort=vi.fn();
+    });
+    localStorage.setItem('forsure-voice-settings',JSON.stringify({voice_lang:'de-DE',voice_consent_version:1}));
+    render(<MemoryRouter><ZeusCompanion /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button',{name:'Ouvrir Zeus'}));
+    fireEvent.click(screen.getByRole('button',{name:'Parler à Zeus'}));
+    expect(start).toHaveBeenCalledOnce();
+    expect(chosenLanguage).toBe('de-DE');
+    expect(speak).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'Fermer l’interface vocale'}));
+  });
   it('opens Jarvis directly from the Zeus button without asking for microphone access',async()=>{
     render(<MemoryRouter><ZeusCompanion /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button',{name:'Ouvrir Zeus'}));

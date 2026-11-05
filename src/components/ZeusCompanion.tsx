@@ -34,6 +34,7 @@ import {
   isBrowserVoiceSupported,
   prepareSpokenAssistantReply,
   speakWithBrowserVoice,
+  stopBrowserVoice,
   unlockZeusVoiceForSession,
 } from '@/lib/zeusVoice';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
@@ -836,6 +837,13 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     setVoiceHudOpen(true);
   }, [user]);
 
+  const prepareVoiceListening = useCallback(() => {
+    if (!voiceAllowed || voiceAccessLoading) return;
+    updateVoiceSettings({ voice_enabled: true });
+    unlockZeusVoiceForSession();
+    stopBrowserVoice();
+  }, [voiceAllowed, voiceAccessLoading, updateVoiceSettings]);
+
   const speakVoiceIntro = useCallback(() => {
     if (!voiceAllowed || voiceAccessLoading) return;
     updateVoiceSettings({ voice_enabled: true });
@@ -1217,6 +1225,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           errorMessage={voiceHudError}
           onClose={closeAssistant}
           onSpeakIntro={speakVoiceIntro}
+          onPrepareListening={prepareVoiceListening}
+          language={voiceSettings.voice_lang}
           onSubmitCommand={submitVoiceCommand}
           processing={voiceProcessing}
           voiceAllowed={voiceAllowed && !voiceAccessLoading}

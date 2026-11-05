@@ -56,7 +56,7 @@ Quand tu utilises des résultats web, **cite toujours les sources** avec des lie
 
 Quand l'utilisateur veut EXPLICITEMENT publier, poster, traduire, ou partager, tu DOIS inclure un bloc JSON.
 
-DÉTECTION : si le message contient "publie", "poste", "post", "écris un post", "partage sur mon mur", "fais un post", "traduis", "translate", "en anglais", "en espagnol", "en arabe" → génère un bloc action.
+DÉTECTION : interprète l'intention de la phrase entière et les derniers échanges. Un mot isolé comme "post", une négation ("ne publie pas") ou une question sur une fonctionnalité ne constitue pas un ordre.
 
 ⚠️ NE génère PAS de bloc action si l'utilisateur :
 - Discute normalement
@@ -84,10 +84,16 @@ Pour MODIFIER LA CONFIG DU FEED (admin uniquement) :
 
 RÈGLES :
 1. NE DEMANDE JAMAIS confirmation — l'interface a un bouton pour ça
-2. Si l'utilisateur dit juste "publie" sans sujet → invente un post motivant/inspirant
-3. AMÉLIORE toujours le texte : ajoute des emojis, rends-le accrocheur
+2. Si l'utilisateur dit juste "publie", utilise le brouillon explicitement choisi dans les échanges récents. Sans brouillon ni sujet, demande une précision ; n'invente pas de contenu à sa place.
+3. Respecte le texte dicté, les noms et les nombres. Reformule ou ajoute des emojis seulement si l'utilisateur le demande.
 4. UN SEUL bloc action par message
 5. Le bloc DOIT contenir du JSON valide
+
+## COMPRÉHENSION DES DEMANDES
+- Suis la dernière correction de l'utilisateur et les références aux échanges récents ("cela", "ce texte", "non, je voulais dire").
+- Si la demande est incomplète ou si un destinataire est ambigu, pose une seule question courte et précise. Ne devine jamais une personne ni un identifiant de conversation.
+- Pour un message privé explicitement demandé, propose send_message avec recipient_name (nom complet fourni) et message_text (texte demandé). Ne prétends pas l'avoir envoyé : la confirmation et les droits sont vérifiés par l'interface et le serveur.
+- Pour une commande non disponible, explique simplement la limite au lieu d'annoncer une action exécutée.
 
 ## 🧠 NEURAL ENGINE — PILOTAGE (admin uniquement)
 
@@ -257,23 +263,29 @@ serve(async (req) => {
     usageLease=reservation.lease;
     const personalSharingAllowed=await aiDataSharingEnabled(userId);
     if (!convId) {
-      const { data: conv } = await supabase
+      const { data: conv, error: convError } = await supabase
         .from("ai_agent_conversations")
         .insert({ user_id: userId, agent_id, title: sanitizedMessage.substring(0, 60) })
         .select("id").single();
       convId = conv?.id;
+      if (convError || !convId) throw new Error('CONVERSATION_CREATE_FAILED');
     }
 
-    await supabase.from("ai_agent_messages").insert({
-      conversation_id: convId, role: "user", content: sanitizedMessage,
-    });
-
-    const { data: history } = await supabase
+    // Read the latest previous turns, then append this request exactly once.
+    // Selecting the oldest 20 rows dropped the current request in long chats.
+    const { data: history, error: historyError } = await supabase
       .from("ai_agent_messages")
       .select("role, content")
       .eq("conversation_id", convId)
-      .order("created_at", { ascending: true })
-      .limit(20);
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(19);
+    if (historyError) throw new Error('CONVERSATION_CONTEXT_UNAVAILABLE');
+
+    const { error: messageError } = await supabase.from("ai_agent_messages").insert({
+      conversation_id: convId, role: "user", content: sanitizedMessage,
+    });
+    if (messageError) throw new Error('CONVERSATION_MESSAGE_NOT_SAVED');
 
     // ── Fetch user context for Zeus (recent posts, profile, neural engine, MEMORY) ──
     let userContext = "";
@@ -505,12 +517,16 @@ Tu es le conseiller en chef pour la GESTION DE LA PLATEFORME. Tes domaines :
       : agent.system_prompt + "\n\n" + ACTION_SYSTEM_PROMPT;
 
     // Combine with date/time, user context, and admin data
-    const fullSystemPrompt = baseSystemPrompt + dateTimeContext + userContext + adminDataContext;
+    const voiceTurnPrompt = body.input_mode === 'voice'
+      ? "\n\nMODE VOCAL : la demande est une transcription. Réponds dans la langue de l'utilisateur, brièvement et naturellement. Utilise le contexte récent pour comprendre ses reprises et corrections. Si la dictée est ambiguë ou incomplète, demande une précision au lieu d'inventer. Ne confonds pas une question avec un ordre. Ne parle jamais d'une action comme exécutée avant la confirmation réelle."
+      : "";
+    const fullSystemPrompt = baseSystemPrompt + dateTimeContext + userContext + adminDataContext + voiceTurnPrompt;
 
     const aiMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
-      ...(history || []).filter((m:any)=>["user","assistant"].includes(m.role)&&typeof m.content==="string")
+      ...(history || []).slice().reverse().filter((m:any)=>["user","assistant"].includes(m.role)&&typeof m.content==="string")
         .map((m: any) => ({ role: m.role, content: m.content.slice(0,10000) })),
+      { role: "user", content: sanitizedMessage },
     ];
 
     // Tool definitions

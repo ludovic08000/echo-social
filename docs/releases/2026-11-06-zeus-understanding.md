@@ -1,0 +1,11 @@
+# Zeus voice comprehension correction
+
+The current request was lost after long conversations because the handler selected the oldest 20 stored messages. It now loads the most recent 19 preceding messages, restores chronological order, then appends the current request exactly once. Ownership checks and usage reservations remain authoritative. Unavailable history or a failed user-message insert stops generation rather than silently losing context.
+
+Voice capture uses the selected voice language, cancels assistant speech before listening, shows interim hypotheses, and sends only finalized text once. Multiple phrase segments are combined without duplication. A 1.5-second quiet interval after a final result permits short pauses; the browser may independently end recognition earlier. A visible finish button requests finalization. Unconfirmed or interrupted text remains a draft. Each microphone turn is bounded to 45 seconds plus at most two seconds for finalization; closing or losing voice access aborts it. No audio files or transcripts are newly recorded by this capture controller; submitted text continues through the existing assistant conversation history.
+
+The assistant instructions now distinguish negations, questions, corrections, missing content and ambiguous recipients. Supported actions still require existing confirmation and server authorization. The model remains google/gemini-3-flash-preview; no provider, billing entitlement, encryption, device trust or key changes.
+
+Deploy only agent-chat with its existing _shared dependencies, then publish the matching client. No database migration is required. Verify the served commit and anonymous refusal. Rollback by redeploying the preceding agent-chat and republishing the preceding client; preserve voice grants and existing conversations. New tests cover speech pauses, interim results, interruption, duplicate callbacks, bounded capture and an 80-message conversation. Real iOS microphone accuracy and model interpretation need an authenticated user test; mocked recognition cannot certify either.
+
+Official references: https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognitionEvent/results ; https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/continuous ; https://supabase.com/docs/reference/javascript/order .

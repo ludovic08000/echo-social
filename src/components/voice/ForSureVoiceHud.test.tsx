@@ -13,6 +13,7 @@ class FakeRecognition {
   onerror: ((event: { error?: string }) => void) | null = null;
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null = null;
   abort = vi.fn();
+  stop = vi.fn();
   start = vi.fn();
 
   constructor() {
@@ -23,6 +24,7 @@ class FakeRecognition {
 const callbacks = {
   onClose: vi.fn(),
   onSpeakIntro: vi.fn(),
+  onPrepareListening: vi.fn(),
   onSubmitCommand: vi.fn(),
 };
 
@@ -34,6 +36,7 @@ afterEach(() => {
   delete (window as Window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
   FakeRecognition.current = null;
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe('ForSureVoiceHud', () => {
@@ -47,16 +50,21 @@ describe('ForSureVoiceHud', () => {
   });
 
   it('starts recognition only after a direct tap and sends the final transcript directly to Zeus', async () => {
+    vi.useFakeTimers();
     (window as Window & { webkitSpeechRecognition?: typeof FakeRecognition }).webkitSpeechRecognition = FakeRecognition;
-    renderHud({ voiceAllowed: true });
+    renderHud({ voiceAllowed: true, language: 'fr-FR' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Parler à Zeus' }));
 
-    expect(callbacks.onSpeakIntro).toHaveBeenCalledTimes(1);
+    expect(callbacks.onSpeakIntro).not.toHaveBeenCalled();
+    expect(callbacks.onPrepareListening).toHaveBeenCalledOnce();
     expect(FakeRecognition.current?.start).toHaveBeenCalledTimes(1);
+    expect(FakeRecognition.current?.lang).toBe('fr-FR');
 
     await act(async () => {
-      FakeRecognition.current?.onresult?.({ results: [[{ transcript: 'Prépare une publication' }]] });
+      FakeRecognition.current?.onresult?.({ results: [Object.assign([{ transcript: 'Prépare une publication' }], { isFinal: true })] });
+      expect(callbacks.onSubmitCommand).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_500);
     });
 
     expect(screen.getByRole('textbox', { name: 'Votre demande à Zeus' })).toHaveValue('Prépare une publication');
