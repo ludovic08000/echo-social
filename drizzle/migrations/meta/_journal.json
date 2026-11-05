@@ -309,6 +309,13 @@
       "when": 1793052458393,
       "tag": "0043_require_paid_creator_subscription_for_ads",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793868685634,
+      "tag": "0044_live_archive_lifecycle",
+      "breakpoints": true
     }
   ]
 }

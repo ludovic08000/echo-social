@@ -4010,6 +4010,7 @@ export type Database = {
       }
       live_streams: {
         Row: {
+          archive_expires_at: string | null
           category: string | null
           created_at: string
           description: string | null
@@ -4028,6 +4029,7 @@ export type Database = {
           viewer_count: number
         }
         Insert: {
+          archive_expires_at?: string | null
           category?: string | null
           created_at?: string
           description?: string | null
@@ -4046,6 +4048,7 @@ export type Database = {
           viewer_count?: number
         }
         Update: {
+          archive_expires_at?: string | null
           category?: string | null
           created_at?: string
           description?: string | null
@@ -10073,6 +10076,7 @@ export type Database = {
         Returns: undefined
       }
       email_queue_dispatch: { Args: never; Returns: undefined }
+      end_overdue_live_broadcasts: { Args: never; Returns: number }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
