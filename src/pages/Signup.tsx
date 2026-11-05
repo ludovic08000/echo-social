@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Phone } from 'lucide-react';
-import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
