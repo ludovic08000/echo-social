@@ -309,7 +309,7 @@ Deno.serve(async (req) => {
             TTL: "60",
             Urgency: kind === "call_incoming" ? "high" : "normal",
           },
-          body: cipher,
+          body: cipher as Uint8Array<ArrayBuffer>,
         });
         if (response.status === 200 || response.status === 201) sent += 1;
         else if (response.status === 404 || response.status === 410) expired.push(subscription.id);
