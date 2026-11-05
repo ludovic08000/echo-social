@@ -9464,7 +9464,6 @@ export type Database = {
       }
     }
     Functions: {
-      voice_command_access: { Args: never; Returns: boolean }
       ack_sealed_sender_wakeups: {
         Args: { p_message_ids: string[] }
         Returns: number
