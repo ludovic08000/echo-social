@@ -17,6 +17,14 @@ Deno.serve(async req => {
     if (!['https:', 'wss:'].includes(url.protocol)) throw new Error('LIVEKIT_CONFIGURATION_INVALID');
     url.protocol = 'https:';
     const rooms = new RoomServiceClient(url.origin, Deno.env.get('LIVEKIT_API_KEY')!, Deno.env.get('LIVEKIT_API_SECRET')!);
+    const body = await req.json().catch(() => ({}));
+    if (body?.dry_run === true) {
+      const { count: expired, error } = await db.from('live_streams').select('id', { count: 'exact', head: true })
+        .eq('is_active', false).lte('archive_expires_at', new Date().toISOString());
+      if (error) throw error;
+      const activeRooms = (await rooms.listRooms()).filter(room => room.name.startsWith('live-')).length;
+      return new Response(JSON.stringify({ dry_run: true, expired_archives: expired, live_rooms: activeRooms, purged: 0 }), { headers });
+    }
     const stats = await maintainLives(db, rooms, (url, owner, id) => removeLiveArchiveAsset(db, url, owner, id));
     console.log('LIVE_MAINTENANCE', stats);
     return new Response(JSON.stringify(stats), { status: stats.errors ? 503 : 200, headers });

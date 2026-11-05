@@ -69,25 +69,25 @@ END $$;
 REVOKE ALL ON FUNCTION public.live_feed_bundle(uuid,integer,integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.live_feed_bundle(uuid,integer,integer) TO anon,authenticated;
 
--- Store this function's service credential in Vault during the Cloud release.
--- No credential is written into source code or cron.job.
-CREATE OR REPLACE FUNCTION public.live_maintenance_cron_tick() RETURNS void
+-- Cloud-compatible database clock: no secret access or outbound HTTP.
+-- Physical storage cleanup is a separately authenticated operator job.
+CREATE OR REPLACE FUNCTION public.end_overdue_live_broadcasts() RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE credential text;
+DECLARE ended_count integer;
 BEGIN
-  SELECT decrypted_secret INTO credential FROM vault.decrypted_secrets
-    WHERE name='live_maintenance_service_role_key' LIMIT 1;
-  IF credential IS NULL THEN RAISE WARNING 'LIVE_MAINTENANCE_CREDENTIAL_MISSING'; RETURN; END IF;
-  PERFORM net.http_post(url:='https://vkpmoqfzrihcijjochks.supabase.co/functions/v1/live-maintenance',
-    headers:=jsonb_build_object('Authorization','Bearer '||credential,'Content-Type','application/json'),
-    body:='{}'::jsonb,timeout_milliseconds:=10000);
+  WITH overdue AS (
+    SELECT id FROM public.live_streams WHERE is_active AND started_at + interval '4 hours' <= now()
+    ORDER BY started_at LIMIT 1000 FOR UPDATE SKIP LOCKED
+  ) UPDATE public.live_streams SET is_active=false WHERE id IN (SELECT id FROM overdue);
+  GET DIAGNOSTICS ended_count = ROW_COUNT;
+  RETURN ended_count;
 END $$;
-REVOKE ALL ON FUNCTION public.live_maintenance_cron_tick() FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.live_maintenance_cron_tick() TO service_role;
+REVOKE ALL ON FUNCTION public.end_overdue_live_broadcasts() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.end_overdue_live_broadcasts() TO service_role;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_cron') THEN
-    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname='live-maintenance') THEN PERFORM cron.unschedule('live-maintenance'); END IF;
-    PERFORM cron.schedule('live-maintenance','* * * * *','SELECT public.live_maintenance_cron_tick()');
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname='live-broadcast-deadline') THEN PERFORM cron.unschedule('live-broadcast-deadline'); END IF;
+    PERFORM cron.schedule('live-broadcast-deadline','* * * * *','SELECT public.end_overdue_live_broadcasts()');
   ELSE RAISE EXCEPTION 'LIVE_MAINTENANCE_PG_CRON_REQUIRED'; END IF;
 END $$;
 COMMIT;
