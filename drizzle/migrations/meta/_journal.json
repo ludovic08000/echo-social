@@ -316,6 +316,13 @@
       "when": 1793868685634,
       "tag": "0044_live_archive_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1793900283875,
+      "tag": "0045_voice_command_grants",
+      "breakpoints": true
     }
   ]
 }
