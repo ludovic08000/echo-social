@@ -37,7 +37,7 @@ import {
   unlockZeusVoiceForSession,
 } from '@/lib/zeusVoice';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
-import { useStripeSubscription } from '@/hooks/useStripeSubscription';
+import { useVoiceCommandAccess } from '@/hooks/useVoiceCommandAccess';
 import { ForSureVoiceHud } from '@/components/voice/ForSureVoiceHud';
 
 
@@ -455,7 +455,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const [voiceHudError, setVoiceHudError] = useState<string | null>(null);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const { voiceSettings, updateVoiceSettings } = useVoiceSettings();
-  const { isCreatorSubscriber, loading: subscriptionLoading } = useStripeSubscription();
+  const { data: voiceAllowed = false, isPending: voiceAccessLoading } = useVoiceCommandAccess();
 
   const { data: conversations, refetch: refetchConversations } = useZeusConversations(zeusAgentId);
   const { data: loadedMessages } = useZeusMessages(conversationId);
@@ -656,7 +656,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   ): Promise<boolean> => {
     const text = overrideText || input.trim();
     if (!text || loading) return false;
-    if (options.fromVoice && (subscriptionLoading || !isCreatorSubscriber)) {
+    if (options.fromVoice && (voiceAccessLoading || !voiceAllowed)) {
       setVoiceHudError('Les commandes vocales sont réservées aux créateurs avec un abonnement actif.');
       return false;
     }
@@ -812,8 +812,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     voiceSettings.voice_lang,
     voiceSettings.voice_speed,
     voiceSettings.voice_volume,
-    isCreatorSubscriber,
-    subscriptionLoading,
+    voiceAllowed,
+    voiceAccessLoading,
   ]);
 
   // Auto-send pending translate/rewrite messages
@@ -837,7 +837,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   }, [user]);
 
   const speakVoiceIntro = useCallback(() => {
-    if (!isCreatorSubscriber || subscriptionLoading) return;
+    if (!voiceAllowed || voiceAccessLoading) return;
     updateVoiceSettings({ voice_enabled: true });
     if (!isBrowserVoiceSupported() || !unlockZeusVoiceForSession()) {
       setVoiceHudError('La synthèse vocale n’est pas disponible dans ce navigateur. La saisie reste utilisable.');
@@ -857,8 +857,8 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     voiceSettings.voice_speed,
     voiceSettings.voice_volume,
     zeusName,
-    isCreatorSubscriber,
-    subscriptionLoading,
+    voiceAllowed,
+    voiceAccessLoading,
   ]);
 
   const submitVoiceCommand = useCallback(async (command: string, source: 'voice' | 'text' = 'voice') => {
@@ -1219,7 +1219,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           onSpeakIntro={speakVoiceIntro}
           onSubmitCommand={submitVoiceCommand}
           processing={voiceProcessing}
-          voiceAllowed={isCreatorSubscriber && !subscriptionLoading}
+          voiceAllowed={voiceAllowed && !voiceAccessLoading}
           onUpgrade={() => { closeVoiceAssistant(); navigate('/creator'); }}
           onShowChat={closeVoiceAssistant}
           reply={latestReply}

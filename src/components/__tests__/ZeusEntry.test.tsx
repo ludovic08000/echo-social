@@ -3,7 +3,7 @@ import { beforeEach,describe,expect,it,vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 const state=vi.hoisted(()=>({ creator:false }));
 vi.mock('@/lib/auth',()=>({useAuth:()=>({user:{id:'test-account'}})}));
-vi.mock('@/hooks/useStripeSubscription',()=>({useStripeSubscription:()=>({isCreatorSubscriber:state.creator,loading:false})}));
+vi.mock('@/hooks/useVoiceCommandAccess',()=>({useVoiceCommandAccess:()=>({data:state.creator,isPending:false})}));
 vi.mock('@/hooks/useZeusCompanion',()=>({
   useZeusSettings:()=>({zeusName:'Zeus',updateName:{mutate:vi.fn()}}),
   useZeusAgentId:()=>({data:'test-agent'}),
