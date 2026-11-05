@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Phone } from 'lucide-react';
-import BrandLogo from '@/components/BrandLogo';
 import { useAuth } from '@/lib/auth';
 import { useTranslation } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -203,10 +202,6 @@ export default function Signup() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <Link to="/" className="flex items-center justify-center mb-8">
-          <BrandLogo className="h-12 sm:h-14 w-auto drop-shadow-[0_0_20px_hsl(220,70%,50%,0.3)]" />
-        </Link>
-
         <div className="pulse-card p-6 sm:p-8">
           <h1 className="text-2xl font-bold text-center mb-6">{t('signup.title')}</h1>
 
