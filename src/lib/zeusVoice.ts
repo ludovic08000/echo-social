@@ -24,9 +24,18 @@ export function isBrowserVoiceSupported(): boolean {
     && 'SpeechSynthesisUtterance' in window;
 }
 
-export function stopBrowserVoice(): void {
+export function prepareBrowserVoiceInput(): void {
   if (!isBrowserVoiceSupported()) return;
-  try { window.speechSynthesis.cancel(); } catch { /* Browser audio may already be closed. */ }
+  try {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    // WebKit requires speak() inside the real tap to allow the later reply.
+    // Prime with no audible text, then cancel before opening the microphone.
+    const activation = new SpeechSynthesisUtterance('');
+    activation.volume = 0;
+    synth.speak(activation);
+    synth.cancel();
+  } catch { /* Dictation stays available if synthesis cannot initialize. */ }
 }
 
 /**

@@ -25,9 +25,9 @@ afterEach(()=>{
 describe('Zeus primary entry',()=>{
   it('cancels the spoken reply before opening the microphone and uses the chosen voice language',()=>{
     state.creator=true;
-    const cancel=vi.fn(),speak=vi.fn(),start=vi.fn(()=>expect(cancel).toHaveBeenCalledOnce());
+    const cancel=vi.fn(),speak=vi.fn(),start=vi.fn(()=>expect(cancel).toHaveBeenCalledTimes(2));
     let chosenLanguage='';
-    vi.stubGlobal('SpeechSynthesisUtterance',class {});
+    vi.stubGlobal('SpeechSynthesisUtterance',class { volume=1;constructor(public text:string){} });
     vi.stubGlobal('speechSynthesis',{cancel,speak,getVoices:()=>[]});
     vi.stubGlobal('webkitSpeechRecognition',class {
       continuous=false;interimResults=false;maxAlternatives=1;
@@ -41,7 +41,7 @@ describe('Zeus primary entry',()=>{
     fireEvent.click(screen.getByRole('button',{name:'Parler à Zeus'}));
     expect(start).toHaveBeenCalledOnce();
     expect(chosenLanguage).toBe('de-DE');
-    expect(speak).not.toHaveBeenCalled();
+    expect(speak).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({text:'',volume:0}));
     fireEvent.click(screen.getByRole('button',{name:'Fermer l’interface vocale'}));
   });
   it('opens Jarvis directly from the Zeus button without asking for microphone access',async()=>{
