@@ -54786,7 +54786,7 @@ var version4 = "0.24.0";
 // ../persist/node_modules/.deno/@lovable.dev+mcp-js@0.24.0/node_modules/@lovable.dev/mcp-js/dist/metadata-path-CAkNcfyY.js
 var OAUTH_PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/lib/buffer_utils.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/lib/buffer_utils.js
 var encoder = new TextEncoder();
 var decoder = new TextDecoder();
 var strictDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -54828,7 +54828,7 @@ function decodeBase64(encoded, url2 = false) {
   return bytes;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/util/errors.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/util/errors.js
 var JOSEError = class extends Error {
   static code = "ERR_JOSE_GENERIC";
   code = "ERR_JOSE_GENERIC";
@@ -54900,7 +54900,7 @@ var JWSSignatureVerificationFailed = class extends JOSEError {
   }
 };
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/util/base64url.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/util/base64url.js
 var invalid = "The input to be decoded is not correctly encoded.";
 function decode3(input2) {
   try {
@@ -54910,7 +54910,7 @@ function decode3(input2) {
   }
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/lib/validate.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/lib/validate.js
 function isObject2(input2) {
   if (typeof input2 != "object" || input2 === null || Object.prototype.toString.call(input2) !== "[object Object]")
     return false;
@@ -54990,7 +54990,7 @@ function validateB64(protectedHeader, extensions) {
   return true;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/lib/key.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/lib/key.js
 var tag = (key) => key[Symbol.toStringTag];
 var jwkMatchesOp = (entry, key, usage) => {
   const { alg } = entry;
@@ -55121,7 +55121,7 @@ async function rawKey(key, expected, usage, extractable = false) {
   return key instanceof Uint8Array && (key = await crypto.subtle.importKey("raw", key, expected, extractable, [usage])), checkCryptoKey(key, expected, usage), key;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/lib/key_descriptor.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/lib/key_descriptor.js
 function table(entries) {
   const out = { __proto__: null };
   for (const alg in entries)
@@ -55129,7 +55129,7 @@ function table(entries) {
   return out;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/lib/jws_algorithms.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/lib/jws_algorithms.js
 var sig = [["verify"], ["sign"]];
 function hmac(bits) {
   const subtle = { name: "HMAC", hash: `SHA-${bits}` };
@@ -55199,7 +55199,7 @@ function jwsAlgorithm(alg) {
   return entry;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/lib/jws_verify.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/lib/jws_verify.js
 function prepareVerify(options) {
   return [options && validateAlgorithms("algorithms", options.algorithms), options?.crit];
 }
@@ -55254,7 +55254,7 @@ async function verifyCompact(jws, shared, key) {
   return verifySignature({ payload, protected: protectedHeader, signature }, shared, key, encodeCompactUnencodedPayload);
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/lib/jwt_claims_set.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/lib/jwt_claims_set.js
 var epoch = (date5) => Math.floor(date5.getTime() / 1e3);
 var multipliers = {
   s: 1,
@@ -55334,6 +55334,8 @@ function validateClaimsSet(protectedHeader, claimsSetBytes, options = {}) {
     throw new JWTExpired('"exp" claim timestamp check failed', claimsSet, "exp", checkFailed);
   if (maxTokenAge !== void 0) {
     const age = now - iat, max = validateInput("maxTokenAge option", typeof maxTokenAge == "number" ? maxTokenAge : secs(maxTokenAge));
+    if (max < 0)
+      throw new TypeError("Invalid maxTokenAge option input");
     if (age - tolerance > max)
       throw new JWTExpired('"iat" claim timestamp check failed (too far in the past)', claimsSet, "iat", checkFailed);
     if (age < -tolerance)
@@ -55342,7 +55344,7 @@ function validateClaimsSet(protectedHeader, claimsSetBytes, options = {}) {
   return claimsSet;
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/jwt/verify.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/jwt/verify.js
 async function jwtVerify(jwt2, key, options) {
   const [verified, b64] = await verifyCompact(jwt2, prepareVerify(options), key);
   if (!b64)
@@ -55351,7 +55353,7 @@ async function jwtVerify(jwt2, key, options) {
   return { ...verified, payload };
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/jwks/local.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/jwks/local.js
 function isUsableJWK(jwk, entry, alg, kid) {
   const { kty, key_ops: keyOps, ext, kid: jwkKid, alg: jwkAlg, use, crv } = jwk;
   return (ext === void 0 || typeof ext == "boolean") && (keyOps === void 0 || Array.isArray(keyOps) && keyOps.every((operation, index) => typeof operation == "string" && keyOps.indexOf(operation) === index) && keyOps.includes("verify")) && entry.kty.includes(kty) && (kid === void 0 || typeof kid == "string" && kid === jwkKid) && (jwkAlg === void 0 ? kty !== "AKP" : alg === jwkAlg) && (use === void 0 || use === "sig") && (!entry.crv || crv === entry.crv);
@@ -55406,7 +55408,7 @@ function createLocalJWKSet(jwks) {
   });
 }
 
-// ../persist/node_modules/.deno/jose@6.2.15/node_modules/jose/dist/webapi/util/decode_protected_header.js
+// ../persist/node_modules/.deno/jose@6.2.17/node_modules/jose/dist/webapi/util/decode_protected_header.js
 function decodeProtectedHeader(token) {
   let encodedProtectedHeader;
   if (typeof token == "string") {
