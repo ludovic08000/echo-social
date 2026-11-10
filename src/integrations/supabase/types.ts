@@ -9488,16 +9488,6 @@ export type Database = {
       }
     }
     Functions: {
-      zeus_activity_summary: { Args: never; Returns: Json }
-      zeus_capability_state: { Args: {p_capability:string;p_from_voice?:boolean}; Returns: Json }
-      zeus_claim_command: { Args: {p_key:string;p_capability:string;p_fingerprint:string;p_prepared_at:string;p_from_voice?:boolean;p_confirmed?:boolean}; Returns: Json }
-      zeus_execute_personal_command: { Args: {p_key:string;p_action:Json;p_prepared_at:string;p_from_voice?:boolean;p_confirmed?:boolean}; Returns: Json }
-      zeus_pending_friend_requests: { Args: {p_name?:string}; Returns: {friendship_id:string;requester_id:string;name:string;avatar_url:string|null}[] }
-      zeus_respond_friend_request: { Args: {p_friendship_id:string;p_accept:boolean}; Returns: Json }
-      zeus_capability_policies: { Args: never; Returns: Json }
-      zeus_set_capability_policy: { Args: {p_capability:string;p_enabled:boolean;p_required_role:'admin'|'moderator'|'user'|null;p_paid_only:boolean;p_confirmation:boolean;p_revision:number}; Returns: Json }
-      zeus_dispatch_post_command: { Args: {p_key:string;p_fingerprint:string}; Returns: boolean }
-      zeus_find_contacts: { Args: {p_name:string}; Returns: {user_id:string;name:string;avatar_url:string|null}[] }
       ack_sealed_sender_wakeups: {
         Args: { p_message_ids: string[] }
         Returns: number
