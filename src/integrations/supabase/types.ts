@@ -3296,6 +3296,71 @@ export type Database = {
         }
         Relationships: []
       }
+      feed_preference_change_history: {
+        Row: {
+          after_state: Json
+          before_state: Json
+          command: Json
+          created_at: string
+          id: string
+          source: string
+          summary: string
+          undone_at: string | null
+          user_id: string
+        }
+        Insert: {
+          after_state: Json
+          before_state: Json
+          command: Json
+          created_at?: string
+          id?: string
+          source?: string
+          summary: string
+          undone_at?: string | null
+          user_id: string
+        }
+        Update: {
+          after_state?: Json
+          before_state?: Json
+          command?: Json
+          created_at?: string
+          id?: string
+          source?: string
+          summary?: string
+          undone_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feed_preference_change_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "feed_preference_change_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "feed_preference_change_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_safe"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "feed_preference_change_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       feed_rank_cursors: {
         Row: {
           created_at: string
@@ -8567,6 +8632,7 @@ export type Database = {
           feed_algorithm: string
           muted_keywords: string[]
           priority_topics: string[]
+          reduced_topics: string[]
           seen_posts_hide: boolean
           sensitive_content_filter: boolean
           updated_at: string
@@ -8585,6 +8651,7 @@ export type Database = {
           feed_algorithm?: string
           muted_keywords?: string[]
           priority_topics?: string[]
+          reduced_topics?: string[]
           seen_posts_hide?: boolean
           sensitive_content_filter?: boolean
           updated_at?: string
@@ -8603,6 +8670,7 @@ export type Database = {
           feed_algorithm?: string
           muted_keywords?: string[]
           priority_topics?: string[]
+          reduced_topics?: string[]
           seen_posts_hide?: boolean
           sensitive_content_filter?: boolean
           updated_at?: string
@@ -9832,6 +9900,13 @@ export type Database = {
         }
         Returns: Json
       }
+      apply_feed_preference_command: {
+        Args: { p_command: Json; p_summary: string }
+        Returns: {
+          applied_state: Json
+          change_id: string
+        }[]
+      }
       apply_owned_content_moderation: {
         Args: {
           p_actor: string
@@ -10136,8 +10211,20 @@ export type Database = {
         Args: { p_as_of?: string; p_limit?: number }
         Returns: Json
       }
+      feed_explicit_preference_scores: {
+        Args: { p_post_ids: string[] }
+        Returns: {
+          hidden: boolean
+          post_id: string
+          score_delta: number
+        }[]
+      }
       feed_ml_health: { Args: never; Returns: Json }
       feed_normalize_topic: { Args: { p_topic: string }; Returns: string }
+      feed_normalize_topics: {
+        Args: { p_limit?: number; p_value: Json }
+        Returns: string[]
+      }
       feed_post_is_eligible_internal: {
         Args: { p_post_id: string; p_viewer_id: string }
         Returns: boolean
@@ -11199,6 +11286,10 @@ export type Database = {
           attempts_remaining: number
           locked_until: string
         }[]
+      }
+      undo_feed_preference_change: {
+        Args: { p_change_id: string }
+        Returns: Json
       }
       update_own_profile: { Args: { p_updates: Json }; Returns: Json }
       video_score_batch: {
