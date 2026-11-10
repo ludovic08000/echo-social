@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { zeusCommandFingerprint } from "../_shared/zeus-capabilities.ts";
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -30,6 +31,22 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Action requise" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    if (['publish_post','schedule_post','create_story','generate_image'].includes(action.type)) {
+      const actorClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader! } } });
+      const state = await actorClient.rpc('zeus_capability_state', { p_capability: 'posts.publish', p_from_voice: body.from_voice === true });
+      if (state.error || state.data?.allowed !== true) return new Response(JSON.stringify({ error: 'Commande non autorisée' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      // Les anciens clients gardent leur chemin ; le nouveau moteur réserve puis consomme une seule commande.
+      if (action.type === 'publish_post' && body.command_key !== undefined) {
+        if (typeof body.command_key !== 'string' || typeof action.body !== 'string' || !action.body.trim() || action.body.length > 5000 ||
+          (action.image_prompt != null && (typeof action.image_prompt !== 'string' || action.image_prompt.length > 1000))) {
+          return new Response(JSON.stringify({ error: 'Commande invalide' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const normalized = { type: 'publish_post', body: action.body.trim(), ...(action.image_prompt !== undefined ? { image_prompt: action.image_prompt } : {}) };
+        const dispatched = await actorClient.rpc('zeus_dispatch_post_command', { p_key: body.command_key, p_fingerprint: await zeusCommandFingerprint(normalized) });
+        if (dispatched.error || dispatched.data !== true) return new Response(JSON.stringify({ error: 'Commande déjà lancée ou non confirmée' }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     let result: any = {};

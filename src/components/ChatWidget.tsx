@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { IS_MESSENGER_APP } from '@/lib/applicationVariant';
+import { launchOutgoingCall } from '@/lib/calls/launchOutgoingCall';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Send, Search, Plus, X, Phone, Video, Mic, MicOff,
@@ -450,7 +451,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { goBack, closeChat, minimizeChat, state: chatState, openNegotiation: setNegotiationContext } = useChatWidget();
+  const { goBack, closeChat, minimizeChat, state: chatState, openNegotiation: setNegotiationContext, pendingCall, settleCall } = useChatWidget();
   const conversation = conversations?.find(c => c.id === conversationId);
   const peerUserId = conversation?.participant?.user_id;
   const isZeusConversation = peerUserId === '00000000-0000-0000-0000-000000000001';
@@ -674,6 +675,41 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
   });
   const callState = call.callState;
   const endCall = call.endCall;
+
+  const outgoingBusyRef=useRef(false);
+  const startOutgoingCall=useCallback(async(type:'audio'|'video',cancelled?:()=>boolean):Promise<boolean>=>{
+    const participantId=conversation?.participant?.user_id;
+    if(!participantId||!user?.id||conversation?.is_group){toast.error('Choisissez une conversation avec une personne précise.');return false;}
+    if(outgoingBusyRef.current||call.callState!=='idle'){toast.error(callErrorUserMessage('CALL_ALREADY_ACTIVE'));return false;}
+    outgoingBusyRef.current=true;setIsStartingCall(true);
+    try{
+      return await launchOutgoingCall({conversationId,callerId:user.id,recipientId:participantId,type,
+        createKey:generateCallE2EEKey,signal:signalOutgoingCall,start:call.startCall,end:endActiveCall,
+        active:id=>{activeCallIdRef.current=id;},cancelled,
+      });
+    }catch(error){toast.error(callErrorUserMessage(error));return false;}
+    finally{outgoingBusyRef.current=false;setIsStartingCall(false);}
+  },[conversation?.participant?.user_id,conversation?.is_group,conversationId,user?.id,call.callState,call.startCall]);
+  const startOutgoingRef=useRef(startOutgoingCall);startOutgoingRef.current=startOutgoingCall;
+  const endOutgoingRef=useRef(endCall);endOutgoingRef.current=endCall;
+  const processedCallRef=useRef<string|null>(null);
+  const callConversationReady=Boolean(conversation);
+  const callRecipientId=conversation?.participant?.user_id;
+  const callIsGroup=conversation?.is_group;
+  useEffect(()=>{
+    if(!pendingCall||pendingCall.conversationId!==conversationId||!callConversationReady)return;
+    if(processedCallRef.current===pendingCall.id)return;
+    processedCallRef.current=pendingCall.id;
+    if(pendingCall.actorId!==user?.id||pendingCall.recipientId!==callRecipientId||callIsGroup){
+      settleCall(pendingCall.id,'Le destinataire de l’appel n’a pas été confirmé.');return;
+    }
+    let current=true;
+    void startOutgoingRef.current(pendingCall.type,()=>!current).then(async started=>{
+      if(!current){if(started)await endOutgoingRef.current();return;}
+      settleCall(pendingCall.id,started?undefined:'L’appel n’a pas pu démarrer. Vérifiez les autorisations et la fenêtre d’appel.');
+    });
+    return()=>{current=false;};
+  },[pendingCall,conversationId,callConversationReady,callRecipientId,callIsGroup,user?.id,settleCall]);
 
   // Listen for callee declining/cancelling the call → auto-end on caller side
   useEffect(() => {
@@ -1164,36 +1200,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
         <div className="flex items-center gap-1">
           <button
             disabled={isStartingCall}
-            onClick={async () => {
-              const participantId = conversation?.participant?.user_id;
-              if (!participantId || !user?.id) {
-                toast.error("Aucun contact à appeler dans cette conversation.");
-                return;
-              }
-              if (call.callState !== 'idle') {
-                toast.error(callErrorUserMessage('CALL_ALREADY_ACTIVE'));
-                return;
-              }
-              setIsStartingCall(true);
-              try {
-                const callKey = generateCallE2EEKey();
-                const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'audio', callKey);
-                if (!callId) {
-                  toast.error("Impossible de signaler l'appel. Réessayez.");
-                  return;
-                }
-                activeCallIdRef.current = callId;
-                const started = await call.startCall(callId, 'audio', callKey);
-                if (!started && activeCallIdRef.current === callId) {
-                  activeCallIdRef.current = null;
-                  await endActiveCall(callId).catch(() => undefined);
-                }
-              } catch (err) {
-                toast.error(callErrorUserMessage(err));
-              } finally {
-                setIsStartingCall(false);
-              }
-            }}
+            onClick={() => void startOutgoingCall('audio')}
             className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
             title="Appel audio"
           >
@@ -1201,36 +1208,7 @@ function WidgetConversationPane({ conversationId }: { conversationId: string }) 
           </button>
           <button
             disabled={isStartingCall}
-            onClick={async () => {
-              const participantId = conversation?.participant?.user_id;
-              if (!participantId || !user?.id) {
-                toast.error("Aucun contact à appeler dans cette conversation.");
-                return;
-              }
-              if (call.callState !== 'idle') {
-                toast.error(callErrorUserMessage('CALL_ALREADY_ACTIVE'));
-                return;
-              }
-              setIsStartingCall(true);
-              try {
-                const callKey = generateCallE2EEKey();
-                const callId = await signalOutgoingCall(conversationId, user.id, participantId, 'video', callKey);
-                if (!callId) {
-                  toast.error("Impossible de signaler l'appel. Réessayez.");
-                  return;
-                }
-                activeCallIdRef.current = callId;
-                const started = await call.startCall(callId, 'video', callKey);
-                if (!started && activeCallIdRef.current === callId) {
-                  activeCallIdRef.current = null;
-                  await endActiveCall(callId).catch(() => undefined);
-                }
-              } catch (err) {
-                toast.error(callErrorUserMessage(err));
-              } finally {
-                setIsStartingCall(false);
-              }
-            }}
+            onClick={() => void startOutgoingCall('video')}
             className="w-8 h-8 rounded-full flex items-center justify-center bg-primary-foreground/10 hover:bg-primary-foreground/25 active:scale-95 transition-all disabled:opacity-50 backdrop-blur-sm"
             title="Visio"
           >

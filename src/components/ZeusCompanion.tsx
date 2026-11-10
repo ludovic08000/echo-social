@@ -15,7 +15,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useZeusSettings, useZeusAgentId, useContentStrikes } from '@/hooks/useZeusCompanion';
 import { useZeusConversations, useZeusMessages } from '@/hooks/useZeusConversations';
-import { useSendMessage } from '@/hooks/useMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { SafeMarkdown } from '@/components/SafeMarkdown';
@@ -24,10 +23,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { loadFeedWeights, type FeedWeights } from '@/lib/feedAlgorithm';
 import {
   CONTENT_PREFS_CHANGED_EVENT,
-  applyFeedPreferenceCommand,
   saveFeedPrefs,
   syncFeedPrefsFromServer,
-  undoFeedPreferenceChange,
 } from '@/lib/feedPreferences';
 import { parseFeedControlAction, type FeedPreferenceCommand } from '@/lib/feedControlActions';
 import {
@@ -39,15 +36,25 @@ import {
 } from '@/lib/zeusVoice';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import { useVoiceCommandAccess } from '@/hooks/useVoiceCommandAccess';
+import { useZeusCommands, type ZeusCommandReceipt } from '@/hooks/useZeusCommands';
+import { loadZeusActivity, formatZeusActivity, isZeusActivityQuestion } from '@/lib/zeusActivity';
+import { findZeusRecipients, selectZeusRecipients, type ZeusRecipient } from '@/lib/zeusRecipients';
+import { zeusCommandSchema, voiceConfirmation } from '@/lib/zeusCommands';
+import { isZeusCapabilityCommand } from '@/lib/zeusCapabilities';
+import { requireZeusCapability } from '@/lib/zeusRuntime';
+import { findZeusFriendRequests } from '@/lib/zeusFriendRequests';
+import { FONT_OPTIONS,TEXT_COLOR_OPTIONS,BG_COLOR_OPTIONS } from '@/hooks/useFeedCustomization';
+import { speakAndWaitWithBrowserVoice } from '@/lib/zeusVoice';
 import { ForSureVoiceHud } from '@/components/voice/ForSureVoiceHud';
 
 
-type Msg = { role: string; content: string };
+type Msg = { role: string; content: string; id?: string };
 type ActiveTab = 'chat' | 'algo' | 'history';
 type FeedAlgorithm = 'smart' | 'chronological' | 'friends_first';
 
 interface ActionBlock {
-  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate' | 'update_feed_config' | 'send_message';
+  type: 'publish_post' | 'schedule_post' | 'create_story' | 'generate_image' | 'translate' | 'update_feed_config' | 'send_message' | 'start_call' | 'read_activity' | 'list_friend_requests' | 'show_friend_request_profile' | 'respond_friend_request' | 'update_feed_appearance';
+  call_type?: 'audio'|'video';
   body?: string;
   caption?: string;
   publish_at?: string;
@@ -58,6 +65,11 @@ interface ActionBlock {
   conversation_id?: string;
   recipient_name?: string;
   message_text?: string;
+  requester_name?: string;
+  decision?: 'accept' | 'reject';
+  font_family?: 'system' | 'inter' | 'georgia' | 'comic' | 'mono' | 'poppins' | 'playfair';
+  text_color?: '' | '#FFFFFF' | '#1a1a2e' | '#e0c3fc' | '#ffd6e0' | '#c9f0ff' | '#d4fc79' | '#ffeaa7';
+  background_color?: '' | '#0d0d1a' | '#1a1025' | '#f8f0ff' | '#fff0f5' | '#f0f9ff' | '#fefce8' | '#f5f5f4' | '#1c1917';
   summary?: string;
   command?: FeedPreferenceCommand;
 }
@@ -92,6 +104,10 @@ function parseActionFromContent(content: string): { text: string; action: Action
     if (match) {
       try {
         const candidate = JSON.parse(match[1].trim());
+        if(isZeusCapabilityCommand(candidate?.type)){
+          const parsed=zeusCommandSchema.safeParse(candidate);
+          return {text:content.replace(match[0],'').trim(),action:parsed.success?parsed.data:null};
+        }
         if (candidate?.type === 'update_feed_config') {
           const parsed = parseFeedControlAction(candidate);
           return { text: content.replace(match[0], '').trim(), action: parsed as ActionBlock | null };
@@ -157,6 +173,9 @@ function ActionCard({ action, onExecute, executing, executed }: {
     translate: { icon: <Globe className="w-3.5 h-3.5" />, label: 'Traduction' },
     update_feed_config: { icon: <Sliders className="w-3.5 h-3.5" />, label: 'Ajuster algorithme' },
     send_message: { icon: <MessageSquare className="w-3.5 h-3.5" />, label: `Envoyer à ${action.recipient_name || 'un ami'}` },
+    start_call: { icon: <Radio className="w-3.5 h-3.5" />, label: `Appel ${action.call_type==='video'?'vidéo':'audio'}` },
+    respond_friend_request: { icon: <Users className="w-3.5 h-3.5" />, label: `${action.decision==='accept'?'Accepter':'Refuser'} la demande d’ami` },
+    update_feed_appearance: { icon: <Sliders className="w-3.5 h-3.5" />, label: 'Personnaliser l’apparence du feed' },
   };
   const info = labels[action.type] || { icon: <Zap className="w-3.5 h-3.5" />, label: 'Action' };
   const preview = action.type === 'update_feed_config' ? (action.summary || '') : (action.message_text || action.body || action.caption || action.translated_text || action.prompt || '');
@@ -435,7 +454,6 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const secureSendMessage = useSendMessage();
   const { zeusName, updateName } = useZeusSettings();
   const { data: zeusAgentId } = useZeusAgentId();
   const { unacknowledged, acknowledge, acknowledgeAll } = useContentStrikes();
@@ -455,18 +473,44 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const [voiceHudOpen, setVoiceHudOpen] = useState(false);
   const [voiceHudError, setVoiceHudError] = useState<string | null>(null);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
+  const [voiceSpeaking,setVoiceSpeaking]=useState(false);
+  const voiceAbortRef=useRef<AbortController|null>(null);
+  const {execute:executeCommand}=useZeusCommands();
+  const messagesRef=useRef(messages);messagesRef.current=messages;
+  const hydratedConversationRef=useRef<string|null>(null);
+  const conversationEpochRef=useRef(0);
+  const [pendingAction,setPendingAction]=useState<{action:ActionBlock;messageId:string;createdAt:number;serverPreparedAt:number;choices:ZeusRecipient[];recipient?:ZeusRecipient;requiresConfirmation:boolean;preview:string}|null>(null);
+  const pendingActionRef=useRef(pendingAction);pendingActionRef.current=pendingAction;
   const { voiceSettings, updateVoiceSettings } = useVoiceSettings();
   const { data: voiceAllowed = false, isPending: voiceAccessLoading } = useVoiceCommandAccess();
+  const pauseVoiceReply=useCallback(()=>{voiceAbortRef.current?.abort();setVoiceSpeaking(false);},[]);
+  const speakReply=useCallback(async(text:string,signal?:AbortSignal)=>{
+    if(signal?.aborted)return;
+    setVoiceSpeaking(true);
+    try{
+      const played=await speakAndWaitWithBrowserVoice(prepareSpokenAssistantReply(text,'Vérifie la proposition à l’écran.'),{
+        lang:voiceSettings.voice_lang,rate:voiceSettings.voice_speed,volume:voiceSettings.voice_volume,
+      },signal);
+      if(!played&&!signal?.aborted)throw new Error('La lecture vocale n’a pas été confirmée. Relance le micro ou lis la réponse à l’écran.');
+    }finally{setVoiceSpeaking(false);}
+  },[voiceSettings.voice_lang,voiceSettings.voice_speed,voiceSettings.voice_volume]);
+  useEffect(()=>()=>voiceAbortRef.current?.abort(),[]);
+  const previousActorRef=useRef(user?.id);
+  useEffect(()=>{
+    if(previousActorRef.current===user?.id)return;
+    previousActorRef.current=user?.id;conversationEpochRef.current++;hydratedConversationRef.current=null;pauseVoiceReply();setLoading(false);setVoiceProcessing(false);setPendingAction(null);setMessages([]);setConversationId(null);setVoiceHudOpen(false);setOpen(false);setExecutedActions(new Set());
+  },[user?.id,pauseVoiceReply]);
 
   const { data: conversations, refetch: refetchConversations } = useZeusConversations(zeusAgentId);
   const { data: loadedMessages } = useZeusMessages(conversationId);
 
   useEffect(() => {
-    if (loadedMessages && loadedMessages.length > 0) {
+    if (conversationId && loadedMessages && loadedMessages.length > 0 && hydratedConversationRef.current!==conversationId) {
+      hydratedConversationRef.current=conversationId;
       setMessages(loadedMessages);
       setActiveTab('chat');
     }
-  }, [loadedMessages]);
+  }, [loadedMessages,conversationId]);
 
   useEffect(() => {
     if (open && !conversationId && !isNewConversation && conversations && conversations.length > 0) {
@@ -542,26 +586,53 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   }, [unacknowledged.length]);
 
   const startNewConversation = useCallback(() => {
+    conversationEpochRef.current++;hydratedConversationRef.current=null;pauseVoiceReply();setLoading(false);setVoiceProcessing(false);
+    setPendingAction(null);
     setConversationId(null);
     setMessages([]);
     setExecutedActions(new Set());
     setIsNewConversation(true);
     setActiveTab('chat');
-  }, []);
+  }, [pauseVoiceReply]);
 
   const selectConversation = useCallback((id: string) => {
+    conversationEpochRef.current++;hydratedConversationRef.current=null;pauseVoiceReply();setLoading(false);setVoiceProcessing(false);
+    setPendingAction(null);
     setConversationId(id);
     setExecutedActions(new Set());
     setIsNewConversation(false);
     setActiveTab('chat');
-  }, []);
+  }, [pauseVoiceReply]);
 
-  const executeAction = useCallback(async (action: ActionBlock, msgIndex: number) => {
-    if (!user) return;
+  const executeAction = useCallback(async (action: ActionBlock, msgIndex: number, recipient?:ZeusRecipient, fromVoice=false):Promise<ZeusCommandReceipt> => {
+    if (!user) return {ok:false,message:'Reconnectez-vous.'};
+    const actionEpoch=conversationEpochRef.current;
     setExecutingAction(msgIndex);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Non authentifié');
+      if(isZeusCapabilityCommand(action.type)){
+        const proposal=pendingActionRef.current;
+        if(!proposal||proposal.messageId!==messagesRef.current[msgIndex]?.id||Date.now()-proposal.createdAt>5*60_000){
+          throw new Error('Cette proposition n’est plus active. Redonne-moi ta demande avant de confirmer.');
+        }
+        const command=zeusCommandSchema.parse(action);
+        if(action.type==='send_message'||action.type==='start_call'||action.type==='respond_friend_request'||action.type==='show_friend_request_profile'){
+          const pending=pendingActionRef.current;
+          const selected=recipient??(pending?.messageId===messagesRef.current[msgIndex]?.id?pending?.recipient:undefined);
+          const candidates=selected?[selected]:[];
+          if(candidates.length!==1)throw new Error('Précisez la personne à contacter avant de confirmer.');
+          recipient=candidates[0];
+        }
+        if(action.type==='start_call'){pauseVoiceReply();setVoiceHudOpen(false);setOpen(false);}
+        const receipt=await executeCommand(command,recipient,proposal.messageId,fromVoice,proposal.serverPreparedAt,true);
+        if(!receipt.ok)throw new Error(receipt.message);
+        if(actionEpoch!==conversationEpochRef.current)return receipt;
+        setExecutedActions(prev=>new Set([...prev,msgIndex]));setPendingAction(null);
+        toast.success(receipt.message,receipt.undo?{duration:10000,action:{label:'Annuler',onClick:()=>{void receipt.undo!().then(()=>toast.success('Modification annulée')).catch(()=>toast.error('L’annulation n’est plus disponible.'));}}}:undefined);
+        if(receipt.navigateTo){pauseVoiceReply();setVoiceHudOpen(false);setOpen(false);navigate(receipt.navigateTo);}
+        return receipt;
+      }
 
       if (action.type === 'translate') {
         // Translate is client-only: copy to clipboard
@@ -570,55 +641,15 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           toast.success('Traduction copiée ! 📋');
         }
         setExecutedActions(prev => new Set([...prev, msgIndex]));
-        return;
+        return {ok:true,message:'La traduction est copiée.'};
       }
 
-      if (action.type === 'update_feed_config') {
-        if (!action.summary || !action.command) {
-          toast.error('Réglage du feed invalide');
-          return;
-        }
-        const changeId = await applyFeedPreferenceCommand(action.summary, action.command);
-        await syncFeedPrefsFromServer(user.id);
-        await queryClient.invalidateQueries({ queryKey: ['posts'] });
-        setExecutedActions(prev => new Set([...prev, msgIndex]));
-        toast.success('Feed personnalisé ✓', {
-          description: action.summary,
-          duration: 10000,
-          action: {
-            label: 'Annuler',
-            onClick: async () => {
-              try {
-                await undoFeedPreferenceChange(changeId);
-                await syncFeedPrefsFromServer(user.id);
-                await queryClient.invalidateQueries({ queryKey: ['posts'] });
-                toast.success('Modification annulée');
-              } catch {
-                toast.error("L'annulation n'est plus disponible");
-              }
-            },
-          },
-        });
-        return;
+      // Les outils de contenu historiques partagent le droit de publication et une proposition encore active.
+      if(['schedule_post','create_story','generate_image'].includes(action.type)){
+        const proposal=pendingActionRef.current;
+        if(!proposal||proposal.messageId!==messagesRef.current[msgIndex]?.id||Date.now()-proposal.createdAt>5*60_000)throw new Error('Cette proposition n’est plus active. Redonne-moi ta demande.');
+        await requireZeusCapability('publish_post',fromVoice);
       }
-
-      if (action.type === 'send_message') {
-        if (!action.conversation_id || !action.message_text) {
-          toast.error('Données de message incomplètes');
-          return;
-        }
-        await secureSendMessage.mutateAsync({
-          conversationId: action.conversation_id,
-          body: action.message_text,
-        });
-        queryClient.invalidateQueries({ queryKey: ['messages', action.conversation_id] });
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-        setExecutedActions(prev => new Set([...prev, msgIndex]));
-        toast.success(`Message envoyé à ${action.recipient_name || 'votre ami'} ✉️`);
-        return;
-      }
-
-      // Use agent-actions edge function for publish_post, schedule_post, create_story, generate_image
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const resp = await fetch(`${supabaseUrl}/functions/v1/agent-actions`, {
         method: 'POST',
@@ -627,14 +658,14 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           Authorization: `Bearer ${session.access_token}`,
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action,from_voice:fromVoice }),
       });
 
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Erreur');
 
       // Refresh feed after post/story
-      if (action.type === 'publish_post' || action.type === 'schedule_post') {
+      if (action.type === 'schedule_post') {
         queryClient.invalidateQueries({ queryKey: ['posts'] });
       }
       if (action.type === 'create_story') {
@@ -643,13 +674,56 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
       toast.success(result.message || 'Action exécutée ! 🎉');
       setExecutedActions(prev => new Set([...prev, msgIndex]));
+      return {ok:true,message:result.message||'Action exécutée.'};
     } catch (err: any) {
+      if(actionEpoch!==conversationEpochRef.current)return {ok:false,message:'La conversation a changé.'};
       console.error('Zeus action error:', err);
       toast.error(err.message || 'Erreur lors de l\'action');
+      return {ok:false,message:err.message||'Le résultat n’a pas été confirmé.'};
     } finally {
-      setExecutingAction(null);
+      if(actionEpoch===conversationEpochRef.current)setExecutingAction(null);
     }
-  }, [user, queryClient, secureSendMessage]);
+  }, [user, queryClient, executeCommand, conversationId,pauseVoiceReply,navigate]);
+
+  const preparePendingAction=useCallback(async(content:string,messageId:string,sourceEpoch=conversationEpochRef.current):Promise<string>=>{
+    if(sourceEpoch!==conversationEpochRef.current)return '';
+    const {action}=parseActionFromContent(content);
+    if(!action){setPendingAction(null);return content;}
+    if(!isZeusCapabilityCommand(action.type)){
+      setPendingAction({action,messageId,createdAt:Date.now(),serverPreparedAt:Date.now(),choices:[],requiresConfirmation:true,preview:action.body||action.prompt||'La proposition est prête.'});return content;
+    }
+    const command=zeusCommandSchema.parse(action);
+    const capability=await requireZeusCapability(command.type);
+    if(sourceEpoch!==conversationEpochRef.current)return '';
+    const friendTarget=command.type==='respond_friend_request'||command.type==='show_friend_request_profile';
+    const choices:ZeusRecipient[]=(command.type==='send_message'||command.type==='start_call')?await findZeusRecipients(command.recipient_name):friendTarget?
+      (await findZeusFriendRequests(command.requester_name)).map(request=>({user_id:request.requester_id,name:request.name,avatar_url:request.avatar_url,friendship_id:request.friendship_id})):[];
+    if(sourceEpoch!==conversationEpochRef.current)return '';
+    if(choices.length>50)throw new Error('Précise le nom complet de la personne.');
+    if((friendTarget||command.type==='send_message'||command.type==='start_call')&&!choices.length){setPendingAction(null);return friendTarget?'Je ne trouve aucune demande d’ami en attente avec ce nom.':'Je ne trouve pas cette personne. Peux-tu préciser son nom complet ?';}
+    const recipient=choices.length===1?choices[0]:undefined;
+    if(!capability.requiresConfirmation&&choices.length<=1){
+      setPendingAction(null);const receipt=await executeCommand(command,recipient,messageId,false,Date.now(),false);
+      if(!receipt.ok)throw new Error(receipt.message);
+      if(sourceEpoch!==conversationEpochRef.current)return '';
+      if(receipt.navigateTo){pauseVoiceReply();setVoiceHudOpen(false);setOpen(false);navigate(receipt.navigateTo);}
+      return receipt.message;
+    }
+    let question='La proposition est prête. Dis « je confirme » pour la valider, ou « annule ».';
+    if(choices.length>1)question='Plusieurs personnes correspondent : '+choices.map(person=>person.name).join(', ')+'. Qui veux-tu contacter ?';
+    else if(action.type==='send_message')question='Envoyer à '+recipient!.name+' : « '+action.message_text+' ». Tu confirmes ?';
+    else if(action.type==='start_call')question='Lancer un appel '+(action.call_type==='video'?'vidéo':'audio')+' à '+recipient!.name+' ? Tu confirmes ?';
+    else if(action.type==='publish_post')question='Publier sur ton feed : « '+action.body+' ». Tu confirmes ?';
+    else if(action.type==='respond_friend_request')question=(action.decision==='accept'?'Accepter':'Refuser')+' la demande d’ami de '+recipient!.name+' ? Tu confirmes ?';
+    else if(action.type==='update_feed_config')question='Modifier ton feed : '+action.summary+' Tu confirmes ?';
+    else if(action.type==='update_feed_appearance')question='Modifier l’apparence de ton feed : '+[
+      action.font_family!==undefined?'police '+FONT_OPTIONS.find(option=>option.id===action.font_family)?.label:undefined,
+      action.text_color!==undefined?'texte '+TEXT_COLOR_OPTIONS.find(option=>option.id===action.text_color)?.label:undefined,
+      action.background_color!==undefined?'fond '+BG_COLOR_OPTIONS.find(option=>option.id===action.background_color)?.label:undefined,
+    ].filter(Boolean).join(', ')+'. Tu confirmes ?';
+    setPendingAction({action,messageId,createdAt:Date.now(),serverPreparedAt:capability.serverPreparedAt,choices,recipient,requiresConfirmation:capability.requiresConfirmation,preview:question});
+    return question+'\n\n```forsure-action\n'+JSON.stringify(action)+'\n```';
+  },[executeCommand,navigate,pauseVoiceReply]);
 
   const sendMessage = useCallback(async (
     overrideText?: string,
@@ -661,6 +735,43 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       setVoiceHudError('Les commandes vocales sont réservées aux créateurs avec un abonnement actif.');
       return false;
     }
+    const voiceSignal=voiceAbortRef.current?.signal;
+    const sourceEpoch=conversationEpochRef.current;
+    const isCurrent=()=>sourceEpoch===conversationEpochRef.current;
+    const pending=pendingActionRef.current;
+    const decision=voiceConfirmation(text);
+    const choice=pending&&pending.choices.length>1?selectZeusRecipients(pending.choices,text):[];
+    if(user&&(isZeusActivityQuestion(text)||(pending&&(decision||choice.length)))){
+      setLoading(true);
+      try{
+        let reply:string;
+        let skipSpeech=false;
+        const replyId=crypto.randomUUID();
+        if(isZeusActivityQuestion(text)){
+          reply=await preparePendingAction('```forsure-action\n{"type":"read_activity"}\n```',replyId,sourceEpoch);
+        }else if(Date.now()-pending!.createdAt>5*60_000){setPendingAction(null);reply='Cette proposition a expiré. Redonne-moi ta demande.';}
+        else if(decision==='cancel'){setPendingAction(null);reply='D’accord, j’annule la proposition.';}
+        else if(choice.length===1&&!decision){
+          if(!pending!.requiresConfirmation){
+            const index=messagesRef.current.findIndex(message=>message.id===pending!.messageId);
+            const receipt=await executeAction(pending!.action,index,choice[0],options.fromVoice);reply=receipt.message;skipSpeech=!!receipt.navigateTo;
+          }else{setPendingAction({...pending!,recipient:choice[0]});reply='Tu as choisi '+choice[0].name+'. Dis « je confirme » pour continuer, ou « annule ».';}
+        }
+        else if(!pending!.recipient&&pending!.choices.length>1){reply='Précise le nom complet de la personne avant de confirmer.';}
+        else{
+          const index=messagesRef.current.findIndex(message=>message.id===pending!.messageId);
+          if(index<0)throw new Error('La proposition n’est plus disponible. Redonne-moi ta demande.');
+          const receipt=await executeAction(pending!.action,index,pending!.recipient,options.fromVoice);
+          reply=receipt.message;skipSpeech=pending!.action.type==='start_call'||!!receipt.navigateTo;setPendingAction(null);
+        }
+        if(!isCurrent())return false;
+        setMessages(previous=>[...previous,{role:'user',content:text},{role:'assistant',content:reply,id:replyId}]);setInput('');
+        if(options.fromVoice&&!skipSpeech)await speakReply(reply,voiceSignal);
+        return true;
+      }catch(error){if(!isCurrent())return false;const message=error instanceof Error?error.message:'Le bilan n’a pas pu être vérifié.';setMessages(previous=>[...previous,{role:'assistant',content:message}]);setVoiceHudError(message);return false;}
+      finally{if(isCurrent())setLoading(false);}
+    }
+    setPendingAction(null);
 
     // Guest mode: check 3-question limit
     if (!user) {
@@ -704,10 +815,14 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         headers,
         body: JSON.stringify({ agent_id: zeusAgentId, conversation_id: user ? conversationId : null, message: userMsg.content, input_mode: options.fromVoice ? 'voice' : 'text' }),
       });
+      if(!isCurrent())return false;
 
       if (user) {
         const convId = resp.headers.get('X-Conversation-Id');
-        if (convId && convId !== conversationId) { setConversationId(convId); setIsNewConversation(false); refetchConversations(); }
+        if (convId && convId !== conversationId) {
+          // L’historique de la nouvelle conversation ne doit pas écraser la réponse en cours ni son identifiant de confirmation.
+          hydratedConversationRef.current=convId;setConversationId(convId);setIsNewConversation(false);refetchConversations();
+        }
       }
 
       if (!resp.ok) {
@@ -724,12 +839,14 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
       const reader = resp.body?.getReader();
       const decoder = new TextDecoder();
       let assistantContent = '';
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+      const assistantId=crypto.randomUUID();
+      setMessages(prev => [...prev, { role: 'assistant', content: '',id:assistantId }]);
 
       if (reader) {
         let buffer = '';
         while (true) {
           const { done, value } = await reader.read();
+          if(!isCurrent()){await reader.cancel();return false;}
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           let nlIndex;
@@ -744,7 +861,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
                 assistantContent += content;
                 setMessages(prev => {
                   const copy = [...prev];
-                  copy[copy.length - 1] = { role: 'assistant', content: assistantContent };
+                  copy[copy.length - 1] = { role: 'assistant', content: assistantContent,id:assistantId };
                   return copy;
                 });
               }
@@ -759,12 +876,17 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           assistantContent = json.result || json.error || 'Pas de réponse';
           setMessages(prev => {
             const copy = [...prev];
-            copy[copy.length - 1] = { role: 'assistant', content: assistantContent };
+            copy[copy.length - 1] = { role: 'assistant', content: assistantContent,id:assistantId };
             return copy;
           });
         } catch {}
       }
 
+      if(user){
+        assistantContent=await preparePendingAction(assistantContent,assistantId,sourceEpoch);
+        if(!isCurrent())return false;
+        setMessages(previous=>previous.map(message=>message.id===assistantId?{...message,content:assistantContent}:message));
+      }
       // After guest response, show remaining count
       if (!user) {
         const remaining = 3 - parseInt(localStorage.getItem('forsure-zeus-guest-count') || '0', 10);
@@ -779,28 +901,21 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
         }
       }
       if (options.fromVoice && isBrowserVoiceSupported()) {
-        speakWithBrowserVoice(prepareSpokenAssistantReply(
+        await speakReply(prepareSpokenAssistantReply(
           assistantContent,
           'J’ai préparé une proposition. Vérifiez-la et confirmez toute action à l’écran.',
-        ), {
-          lang: voiceSettings.voice_lang,
-          rate: voiceSettings.voice_speed,
-          volume: voiceSettings.voice_volume,
-        });
+        ),voiceSignal);
       }
       return true;
     } catch (err: any) {
+      if(!isCurrent())return false;
       setMessages(prev => [...prev, { role: 'assistant', content: `❌ ${err.message}` }]);
       if (options.fromVoice && isBrowserVoiceSupported()) {
-        speakWithBrowserVoice('Je n’ai pas pu traiter cette demande. Vérifiez le message affiché.', {
-          lang: voiceSettings.voice_lang,
-          rate: voiceSettings.voice_speed,
-          volume: voiceSettings.voice_volume,
-        });
+        await speakReply('Je n’ai pas pu traiter cette demande. Vérifiez le message affiché.',voiceSignal).catch(()=>undefined);
       }
       return false;
     } finally {
-      setLoading(false);
+      if(isCurrent())setLoading(false);
     }
   }, [
     input,
@@ -810,11 +925,9 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
     refetchConversations,
     user,
     navigate,
-    voiceSettings.voice_lang,
-    voiceSettings.voice_speed,
-    voiceSettings.voice_volume,
     voiceAllowed,
     voiceAccessLoading,
+    queryClient,executeAction,preparePendingAction,speakReply,
   ]);
 
   // Auto-send pending translate/rewrite messages
@@ -839,6 +952,7 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
 
   const prepareVoiceListening = useCallback(() => {
     if (!voiceAllowed || voiceAccessLoading) return;
+    voiceAbortRef.current?.abort();voiceAbortRef.current=new AbortController();
     updateVoiceSettings({ voice_enabled: true });
     unlockZeusVoiceForSession();
     prepareBrowserVoiceInput();
@@ -872,19 +986,42 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
   const submitVoiceCommand = useCallback(async (command: string, source: 'voice' | 'text' = 'voice') => {
     setVoiceHudError(null);
     setVoiceProcessing(true);
+    const signal=voiceAbortRef.current?.signal;
+    const sourceEpoch=conversationEpochRef.current;
     const completed = await sendMessage(command, { fromVoice: source === 'voice' });
+    if(sourceEpoch!==conversationEpochRef.current)return;
     setVoiceProcessing(false);
+    if(signal?.aborted)return;
     if (completed) {
+      if(signal?.aborted)return;
       setOpen(true);
       return;
     }
     setVoiceHudError('La demande n’a pas pu être traitée. Réessayez ou envoyez-la dans le chat.');
+    throw new Error('La demande n’a pas été confirmée.');
   }, [sendMessage]);
 
+  const readActivityAloud=useCallback(async()=>{
+    if(!user?.id){setVoiceHudError('Reconnecte-toi pour lire ton bilan.');return;}
+    const sourceEpoch=conversationEpochRef.current;
+    pauseVoiceReply();voiceAbortRef.current=new AbortController();prepareBrowserVoiceInput();unlockZeusVoiceForSession();updateVoiceSettings({voice_enabled:true});
+    const signal=voiceAbortRef.current.signal;
+    setVoiceProcessing(true);setVoiceHudError(null);
+    try{
+      const activity=await loadZeusActivity(user.id);
+      if(sourceEpoch!==conversationEpochRef.current||signal.aborted)return;
+      queryClient.setQueryData(['zeus-activity',user.id],activity);
+      const reply=formatZeusActivity(activity);setMessages(previous=>[...previous,{role:'assistant',content:reply,id:crypto.randomUUID()}]);
+      await speakReply(reply,signal);
+    }catch(error){if(sourceEpoch===conversationEpochRef.current&&!signal.aborted)setVoiceHudError(error instanceof Error?error.message:'Le bilan n’est pas disponible.');}
+    finally{if(sourceEpoch===conversationEpochRef.current)setVoiceProcessing(false);}
+  },[pauseVoiceReply,queryClient,user?.id,speakReply,updateVoiceSettings]);
+
   const closeVoiceAssistant = useCallback(() => {
+    pauseVoiceReply();
     setVoiceHudOpen(false);
     setVoiceHudError(null);
-  }, []);
+  }, [pauseVoiceReply]);
 
   const closeAssistant = useCallback(() => {
     closeVoiceAssistant();
@@ -1226,6 +1363,15 @@ export function ZeusCompanion({ inline = false }: { inline?: boolean } = {}) {
           onClose={closeAssistant}
           onSpeakIntro={speakVoiceIntro}
           onPrepareListening={prepareVoiceListening}
+          onPauseListening={pauseVoiceReply}
+          onReadActivity={readActivityAloud}
+          speaking={voiceSpeaking}
+          confirmation={pendingAction?{
+            preview:pendingAction.preview,
+            choices:pendingAction.choices,
+            selected:pendingAction.recipient?.user_id,
+          }:undefined}
+          onChooseRecipient={id=>{if(pendingAction){const recipient=pendingAction.choices.find(person=>person.user_id===id);if(recipient)void sendMessage(recipient.name);}}}
           language={voiceSettings.voice_lang}
           onSubmitCommand={submitVoiceCommand}
           processing={voiceProcessing}

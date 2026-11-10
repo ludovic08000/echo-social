@@ -36,6 +36,7 @@ afterEach(() => {
   delete (window as Window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
   FakeRecognition.current = null;
   vi.clearAllMocks();
+  callbacks.onSubmitCommand.mockReset();
   vi.useRealTimers();
 });
 
@@ -51,6 +52,8 @@ describe('ForSureVoiceHud', () => {
 
   it('starts recognition only after a direct tap and sends the final transcript directly to Zeus', async () => {
     vi.useFakeTimers();
+    let finishReply!:()=>void;
+    callbacks.onSubmitCommand.mockImplementation(()=>new Promise<void>(resolve=>{finishReply=resolve;}));
     (window as Window & { webkitSpeechRecognition?: typeof FakeRecognition }).webkitSpeechRecognition = FakeRecognition;
     renderHud({ voiceAllowed: true, language: 'fr-FR' });
 
@@ -60,6 +63,7 @@ describe('ForSureVoiceHud', () => {
     expect(callbacks.onPrepareListening).toHaveBeenCalledOnce();
     expect(FakeRecognition.current?.start).toHaveBeenCalledTimes(1);
     expect(FakeRecognition.current?.lang).toBe('fr-FR');
+    const firstTurn=FakeRecognition.current;
 
     await act(async () => {
       FakeRecognition.current?.onresult?.({ results: [Object.assign([{ transcript: 'Prépare une publication' }], { isFinal: true })] });
@@ -69,6 +73,10 @@ describe('ForSureVoiceHud', () => {
 
     expect(screen.getByRole('textbox', { name: 'Votre demande à Zeus' })).toHaveValue('Prépare une publication');
     expect(callbacks.onSubmitCommand).toHaveBeenCalledWith('Prépare une publication', 'voice');
+    expect(FakeRecognition.current).toBe(firstTurn);
+    await act(async()=>finishReply());
+    expect(FakeRecognition.current).not.toBe(firstTurn);
+    expect(screen.getByText('Je vous écoute')).toBeInTheDocument();
   });
 
   it('keeps a typed fallback when browser dictation is unavailable', () => {

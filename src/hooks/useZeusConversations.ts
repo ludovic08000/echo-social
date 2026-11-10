@@ -25,17 +25,18 @@ export function useZeusConversations(agentId: string | null) {
 }
 
 export function useZeusMessages(conversationId: string | null) {
+  const { user } = useAuth();
   return useQuery({
-    queryKey: ['zeus-messages', conversationId],
+    queryKey: ['zeus-messages', user?.id, conversationId],
     queryFn: async () => {
-      if (!conversationId) return [];
+      if (!user || !conversationId) return [];
       const { data } = await supabase
         .from('ai_agent_messages')
-        .select('role, content, created_at')
+        .select('id, role, content, created_at')
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
-      return (data || []).map((m: any) => ({ role: m.role, content: m.content }));
+      return (data || []).map(m => ({ id:m.id,role: m.role, content: m.content }));
     },
-    enabled: !!conversationId,
+    enabled: !!user && !!conversationId,
   });
 }

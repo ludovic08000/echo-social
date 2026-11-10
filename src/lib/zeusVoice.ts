@@ -1,12 +1,16 @@
 const VOICE_UNLOCKED_SESSION_KEY = 'forsure:zeus-voice-unlocked:v1';
 const PENDING_ANNOUNCEMENT_SESSION_KEY = 'forsure:zeus-voice-pending-announcement:v1';
 const MAX_SPOKEN_REPLY_LENGTH = 1_100;
+let microphoneActive=false;
+export function setZeusMicrophoneActive(active:boolean):void { microphoneActive=active; }
 
 export interface BrowserVoiceOptions {
   lang?: string;
   rate?: number;
   volume?: number;
   pitch?: number;
+  onEnd?: () => void;
+  onError?: () => void;
 }
 
 function getSessionStorage(): Storage | null {
@@ -104,13 +108,15 @@ export function prepareSpokenAssistantReply(content: string, fallback: string): 
 
 export function speakWithBrowserVoice(text: string, options: BrowserVoiceOptions = {}): boolean {
   const phrase = text.trim();
-  if (!phrase || !isBrowserVoiceSupported()) return false;
+  if (!phrase || microphoneActive || !isBrowserVoiceSupported()) return false;
 
   try {
     const synth = window.speechSynthesis;
     synth.cancel();
 
     const utterance = new SpeechSynthesisUtterance(phrase);
+    utterance.onend = () => options.onEnd?.();
+    utterance.onerror = () => options.onError?.();
     const lang = options.lang || 'fr-FR';
     utterance.lang = lang;
     utterance.rate = options.rate ?? 1;
@@ -128,4 +134,18 @@ export function speakWithBrowserVoice(text: string, options: BrowserVoiceOptions
   } catch {
     return false;
   }
+}
+
+export function speakAndWaitWithBrowserVoice(text: string, options: BrowserVoiceOptions = {}, signal?: AbortSignal): Promise<boolean> {
+  if(signal?.aborted) return Promise.resolve(false);
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=(played:boolean)=>{
+      if(settled)return;settled=true;clearTimeout(timeout);signal?.removeEventListener('abort',cancel);resolve(played);
+    };
+    const cancel=()=>{try{window.speechSynthesis?.cancel();}catch{/* Already closed. */}finish(false);};
+    const timeout=setTimeout(cancel,120_000);
+    signal?.addEventListener('abort',cancel,{once:true});
+    if(!speakWithBrowserVoice(text,{...options,onEnd:()=>finish(true),onError:()=>finish(false)}))finish(false);
+  });
 }

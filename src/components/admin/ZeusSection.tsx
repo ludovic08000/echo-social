@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Zap, ChevronRight, RefreshCw, Users, MessageSquare, Plus, Trash2, ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SafeMarkdown } from '@/components/SafeMarkdown';
+import { ZeusCapabilitiesPanel } from '@/components/admin/ZeusCapabilitiesPanel';
 
 type ZMsg = { role: 'user' | 'assistant' | 'system'; content: string };
 type ZConv = { id: string; title: string; updated_at: string; messages: ZMsg[] };
@@ -303,6 +304,7 @@ export function ZeusSection() {
 
       {/* Main chat */}
       <div className="flex-1 flex flex-col min-w-0">
+        <ZeusCapabilitiesPanel />
         <div className="flex items-center gap-3 mb-4 px-2">
           <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}

@@ -19,6 +19,7 @@ interface VoiceTurnOptions {
   onTranscript: (text: string) => void;
   onComplete: (text: string) => void;
   onError: (code: string) => void;
+  onCaptureChange?: (active:boolean) => void;
 }
 
 /** One gesture, one bounded turn. Interim hypotheses are never sent automatically. */
@@ -41,6 +42,7 @@ export function createSpeechTurn(recognition: BrowserRecognition, options: Voice
     recognition.onresult = null;
     recognition.onerror = null;
     recognition.onend = null;
+    options.onCaptureChange?.(false);
     try { recognition.abort(); } catch { /* Already stopped by the browser. */ }
   };
   const fail = (code: string) => {
@@ -69,6 +71,7 @@ export function createSpeechTurn(recognition: BrowserRecognition, options: Voice
     start: () => {
       if (!active || started) return;
       started = true;
+      options.onCaptureChange?.(true);
       recognition.lang = options.language || 'fr-FR';
       recognition.continuous = true;
       recognition.interimResults = true;

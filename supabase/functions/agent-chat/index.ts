@@ -77,9 +77,9 @@ Pour TRADUIRE :
 {"type": "translate", "translated_text": "Translated text here", "target_language": "en"}
 \`\`\`
 
-Pour MODIFIER LA CONFIG DU FEED (admin uniquement) :
+Pour PERSONNALISER LE PROPRE FEED DE L’UTILISATEUR :
 \`\`\`forsure-action
-{"type": "update_feed_config", "key": "nom_de_la_clé", "value": valeur}
+{"type":"update_feed_config","summary":"Voir davantage de science","command":{"more_topics":["science"]}}
 \`\`\`
 
 RÈGLES :
@@ -90,9 +90,16 @@ RÈGLES :
 5. Le bloc DOIT contenir du JSON valide
 
 ## COMPRÉHENSION DES DEMANDES
+- Pour lister les demandes d’amis : propose {"type":"list_friend_requests"}. Les noms et les demandes sont recherchés par l’application, pas inventés.
+- Pour afficher le profil d’une personne qui a demandé à être amie : propose {"type":"show_friend_request_profile","requester_name":"nom indiqué"}. Pour accepter ou refuser : {"type":"respond_friend_request","requester_name":"nom indiqué","decision":"accept"} ou decision "reject". N’invente jamais d’identifiant et n’annonce pas une acceptation avant le reçu serveur.
+- Pour l’apparence personnelle du feed : propose update_feed_appearance avec font_family parmi system/inter/georgia/comic/mono/poppins/playfair, text_color parmi "", #FFFFFF, #1a1a2e, #e0c3fc, #ffd6e0, #c9f0ff, #d4fc79, #ffeaa7, background_color parmi "", #0d0d1a, #1a1025, #f8f0ff, #fff0f5, #f0f9ff, #fefce8, #f5f5f4, #1c1917. Ne modifie que les champs demandés. Ce réglage concerne son appareil, pas l’apparence globale du réseau.
+- Ces commandes sont des propositions. Le moteur vérifie les capacités actives, le rôle, l’abonnement et la confirmation avant l’exécution. Aucune commande utilisateur ne modifie la configuration globale du réseau.
+- Pour connaître les messages non lus, notifications, réponses aux publications ou demandes d’amis : propose uniquement un bloc forsure-action de type read_activity. Les compteurs sont lus par l’application après ta réponse. N’invente jamais de nombre et ne déduis pas un zéro de l’absence de données.
+- Pour un appel explicitement demandé, propose un bloc forsure-action {"type":"start_call","recipient_name":"nom complet donné","call_type":"audio"}. Utilise call_type "video" pour une visio. Ne dis pas que l’appel est lancé avant le résultat réel.
 - Suis la dernière correction de l'utilisateur et les références aux échanges récents ("cela", "ce texte", "non, je voulais dire").
 - Si la demande est incomplète ou si un destinataire est ambigu, pose une seule question courte et précise. Ne devine jamais une personne ni un identifiant de conversation.
 - Pour un message privé explicitement demandé, propose send_message avec recipient_name (nom complet fourni) et message_text (texte demandé). Ne prétends pas l'avoir envoyé : la confirmation et les droits sont vérifiés par l'interface et le serveur.
+- Exemple de demande de message : {"type":"send_message","recipient_name":"Nadège Loynet","message_text":"Salut, ça va ?"}, dans le bloc forsure-action. Ces exemples de noms sont des formats, jamais des destinataires à ajouter à la place d’une personne non précisée.
 - Pour une commande non disponible, explique simplement la limite au lieu d'annoncer une action exécutée.
 
 ## 🧠 NEURAL ENGINE — PILOTAGE (admin uniquement)
@@ -379,8 +386,7 @@ serve(async (req) => {
         feedConfig.forEach((c: any) => {
           userContext += `- ${c.key}: ${JSON.stringify(c.value)}${c.description ? ` (${c.description})` : ''}\n`;
         });
-        userContext += `\nSi l'utilisateur (admin) demande de modifier la config du feed, propose un ajustement via un bloc action :\n`;
-        userContext += '```forsure-action\n{"type": "update_feed_config", "key": "...", "value": ...}\n```\n';
+        userContext += `\nCes configurations globales sont consultatives ici. Une modification globale doit être proposée et validée dans le panneau d’administration dédié ; ne la transforme jamais en réglage personnel du feed.\n`;
       }
 
       const reports = reportsRes.data || [];
