@@ -330,6 +330,13 @@
       "when": 1794331412113,
       "tag": "0046_feed_explicit_control",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794331443364,
+      "tag": "0047_zeus_activity_notification_retention",
+      "breakpoints": true
     }
   ]
 }

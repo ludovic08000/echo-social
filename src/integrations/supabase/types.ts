@@ -6121,6 +6121,7 @@ export type Database = {
       notifications: {
         Row: {
           actor_id: string
+          archived_at: string | null
           created_at: string
           id: string
           metadata: Json | null
@@ -6131,6 +6132,7 @@ export type Database = {
         }
         Insert: {
           actor_id: string
+          archived_at?: string | null
           created_at?: string
           id?: string
           metadata?: Json | null
@@ -6141,6 +6143,7 @@ export type Database = {
         }
         Update: {
           actor_id?: string
+          archived_at?: string | null
           created_at?: string
           id?: string
           metadata?: Json | null
@@ -11020,6 +11023,7 @@ export type Database = {
       purge_old_audit_logs: { Args: never; Returns: undefined }
       purge_old_crypto_error_logs: { Args: never; Returns: number }
       purge_old_feed_score_tamper_events: { Args: never; Returns: undefined }
+      purge_old_notifications: { Args: { p_dry_run?: boolean }; Returns: Json }
       purge_old_threat_decisions: { Args: never; Returns: undefined }
       push_my_fingerprint_to_peers: { Args: never; Returns: number }
       quality_metrics_summary: {
@@ -11313,6 +11317,19 @@ export type Database = {
           p_protocol_version: number
         }
         Returns: number
+      }
+      zeus_activity_summary: { Args: never; Returns: Json }
+      zeus_find_contacts: {
+        Args: { p_name: string }
+        Returns: {
+          avatar_url: string
+          name: string
+          user_id: string
+        }[]
+      }
+      zeus_respond_friend_request: {
+        Args: { p_accept: boolean; p_friendship_id: string }
+        Returns: Json
       }
     }
     Enums: {
