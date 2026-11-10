@@ -5,12 +5,14 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 
 const owner='11111111-1111-4111-8111-111111111111', other='22222222-2222-4222-8222-222222222222';
 let db:PGlite;
+let inheritedAnonymousGrant=false;
 beforeAll(async()=>{
   db=new PGlite();
   await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;
     create schema auth;create table auth.users(id uuid primary key);
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;
     grant usage on schema auth to authenticated;
+    alter default privileges in schema public grant execute on functions to anon,authenticated,service_role;
     create table profiles(user_id uuid primary key references auth.users(id) on delete cascade);
     insert into auth.users values('${owner}'),('${other}');insert into profiles select id from auth.users;
     create table user_feed_preferences(user_id uuid primary key,feed_algorithm text not null default 'smart',
@@ -24,8 +26,19 @@ beforeAll(async()=>{
     create policy own_preferences on user_feed_preferences for select to authenticated using(user_id=auth.uid());
     grant select on user_feed_preferences to authenticated;`);
   await db.exec(readFileSync('supabase/migrations/20261027120000_feed_explicit_control.sql','utf8'));
+  inheritedAnonymousGrant=(await db.query<{allowed:boolean}>("select has_function_privilege('anon','public.apply_feed_preference_command(text,jsonb)','execute') allowed")).rows[0].allowed;
+  await db.exec(readFileSync('supabase/migrations/20261110172628_zeus_feed_acl_hardening.sql','utf8'));
 },30000);
 afterAll(async()=>db?.close());
+it('removes explicit Cloud default grants without disabling authenticated feed commands',async()=>{
+  expect(inheritedAnonymousGrant).toBe(true);
+  for(const signature of ['apply_feed_preference_command(text,jsonb)','undo_feed_preference_change(uuid)','feed_explicit_preference_scores(uuid[])','feed_normalize_topics(jsonb,integer)']){
+    expect((await db.query<{allowed:boolean}>("select has_function_privilege('anon',$1,'execute') allowed",['public.'+signature])).rows[0].allowed).toBe(false);
+  }
+  await db.exec('set role anon');
+  await expect(db.query('select * from apply_feed_preference_command($1,$2)',['Test',{more_topics:['science']}])).rejects.toThrow(/permission denied/);
+  await db.exec('reset role');
+});
 it('applies the actual feed RPC, reads only own history and reverses the change',async()=>{
   await db.exec(`select set_config('test.uid','${owner}',false);set role authenticated`);
   const result=await db.query<{change_id:string;applied_state:{priority_topics:string[]}}>(
