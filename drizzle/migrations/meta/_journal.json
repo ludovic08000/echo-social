@@ -344,6 +344,13 @@
       "when": 1794331495296,
       "tag": "0048_zeus_capability_execution",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794331843199,
+      "tag": "0049_zeus_feed_acl_hardening",
+      "breakpoints": true
     }
   ]
 }
