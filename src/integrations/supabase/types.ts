@@ -11319,6 +11319,36 @@ export type Database = {
         Returns: number
       }
       zeus_activity_summary: { Args: never; Returns: Json }
+      zeus_capability_policies: { Args: never; Returns: Json }
+      zeus_capability_state: {
+        Args: { p_capability: string; p_from_voice?: boolean }
+        Returns: Json
+      }
+      zeus_claim_command: {
+        Args: {
+          p_capability: string
+          p_confirmed?: boolean
+          p_fingerprint: string
+          p_from_voice?: boolean
+          p_key: string
+          p_prepared_at: string
+        }
+        Returns: Json
+      }
+      zeus_dispatch_post_command: {
+        Args: { p_fingerprint: string; p_key: string }
+        Returns: boolean
+      }
+      zeus_execute_personal_command: {
+        Args: {
+          p_action: Json
+          p_confirmed?: boolean
+          p_from_voice?: boolean
+          p_key: string
+          p_prepared_at: string
+        }
+        Returns: Json
+      }
       zeus_find_contacts: {
         Args: { p_name: string }
         Returns: {
@@ -11327,8 +11357,28 @@ export type Database = {
           user_id: string
         }[]
       }
+      zeus_pending_friend_requests: {
+        Args: { p_name?: string }
+        Returns: {
+          avatar_url: string
+          friendship_id: string
+          name: string
+          requester_id: string
+        }[]
+      }
       zeus_respond_friend_request: {
         Args: { p_accept: boolean; p_friendship_id: string }
+        Returns: Json
+      }
+      zeus_set_capability_policy: {
+        Args: {
+          p_capability: string
+          p_confirmation: boolean
+          p_enabled: boolean
+          p_paid_only: boolean
+          p_required_role: Database["public"]["Enums"]["app_role"]
+          p_revision: number
+        }
         Returns: Json
       }
     }

@@ -337,6 +337,13 @@
       "when": 1794331443364,
       "tag": "0047_zeus_activity_notification_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794331495296,
+      "tag": "0048_zeus_capability_execution",
+      "breakpoints": true
     }
   ]
 }
