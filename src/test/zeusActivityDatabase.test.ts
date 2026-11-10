@@ -21,7 +21,7 @@ beforeAll(async()=>{
     grant usage on schema auth to authenticated,service_role;
     create table notifications(id uuid primary key default gen_random_uuid(),user_id uuid,type text,post_id uuid,actor_id uuid,read_at timestamptz,created_at timestamptz default now());
     create table posts(id uuid primary key,user_id uuid);
-    create table profiles(user_id uuid,name text,avatar_url text);
+    create table profiles(user_id uuid primary key references auth.users(id) on delete cascade,name text,avatar_url text);
     grant select on profiles to authenticated;
     create type public.friendship_status as enum ('pending','accepted','rejected');
     create table friendships(id uuid primary key default gen_random_uuid(),requester_id uuid,addressee_id uuid,status public.friendship_status,created_at timestamptz default now());
@@ -47,6 +47,7 @@ beforeAll(async()=>{
 beforeEach(async()=>{
   await db.exec(`reset role;truncate notifications,posts,profiles,friendships,test_conversations,creator_subscriptions,test_feed_changes,zeus_private.command_receipts,zeus_private.policy_audit;
     update zeus_private.capability_policies set enabled=true,require_confirmation=minimum_confirmation,required_role=null,paid_only=false,revision=1;
+    insert into profiles values('${owner}','Owner',null),('${other}','Other',null);
     select set_config('test.uid','${owner}',false),set_config('test.admin','',false),set_config('test.voice','true',false);`);
 });
 afterAll(async()=>db?.close());
@@ -56,7 +57,7 @@ it('counts beyond 50 notifications and binds messages, replies and friend reques
   await db.query(`insert into notifications(user_id,type,post_id) select $1,'comment',$1 from generate_series(1,65)`,[owner]);
   await db.query(`insert into notifications(user_id,type,post_id) values($1,'comment',$2),($2,'comment',$2)`,[owner,other]);
   await db.query('insert into test_conversations values($1,2),($1,4),($2,100)',[owner,other]);
-  await db.query(`insert into profiles values($1,'Alice',null),($2,'Bob',null)`,[owner,other]);
+  await db.query(`insert into profiles values($1,'Alice',null),($2,'Bob',null) on conflict(user_id) do update set name=excluded.name`,[owner,other]);
   await db.query(`insert into friendships(requester_id,addressee_id,status) values
     ($2,$1,'pending'),($2,$1,'pending'),($2,$1,'accepted'),($1,$2,'pending')`,[owner,other]);
   await db.exec('set role authenticated');
@@ -199,9 +200,16 @@ it('responds only to a pending request addressed to the authenticated account',a
   await expect(db.query('select zeus_respond_friend_request($1,true)',[notMine])).rejects.toThrow(/NOT_PENDING/);
 });
 it('finds accented contacts without exposing other profile columns or choosing a homonym',async()=>{
-  await db.query(`insert into profiles values($1,'Nadège Loynet',null),($2,'Nadège Dupont',null)`,[owner,other]);
+  await db.query(`insert into profiles values($1,'Nadège Loynet',null),($2,'Nadège Dupont',null) on conflict(user_id) do update set name=excluded.name`,[owner,other]);
   await db.exec('set role authenticated');
   const rows=(await db.query('select * from zeus_find_contacts($1)',['nadege'])).rows;
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({user_id:other,name:'Nadège Dupont'});
+});
+it('removes command receipts with the profile through the canonical account deletion chain',async()=>{
+  await db.exec('set role authenticated');
+  await claim('profile-cleanup');
+  await db.exec('reset role');
+  await db.query('delete from profiles where user_id=$1',[owner]);
+  expect((await db.query('select * from zeus_private.command_receipts where user_id=$1',[owner])).rows).toHaveLength(0);
 });

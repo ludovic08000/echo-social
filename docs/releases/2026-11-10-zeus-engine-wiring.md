@@ -2,7 +2,7 @@
 
 ## État du lot
 
-Les neuf capacités sont raccordées dans la branche `codex/zeus-conversation-actions`. Ce document remplace les constats de câblage incomplet de l’audit du 9 novembre. Aucun changement de ce lot n’est confirmé appliqué à Lovable Cloud ou publié : le connecteur renvoie toujours « not available to the model », et le navigateur local était désactivé dans les réglages Work. Les essais sur appareils physiques et les planificateurs de production restent à vérifier après activation.
+Les neuf capacités sont raccordées dans la branche `codex/zeus-conversation-actions`, intégrée dans `codex/zeus-publication-20261110` avec les changements d’éditeur Lovable. Ce document remplace les constats de câblage incomplet de l’audit du 9 novembre. L’éditeur Cloud est maintenant accessible par navigateur. L’application des migrations, le déploiement et la publication doivent encore être prouvés séparément. Les essais sur appareils physiques restent à vérifier après activation.
 
 ## Parcours raccordés
 
@@ -56,7 +56,7 @@ Le registre ne conserve ni audio ni texte privé, ni empreinte du texte d’un m
 ## Activation dans Lovable Cloud
 
 1. Vérifier le projet `14bf9f2a-b211-4bff-8f3c-1cd3d8a0a907`, son schéma réel et sa sauvegarde. Vérifier que `zeus_private` n’est pas exposé dans la Data API.
-2. Appliquer, dans l’ordre, `20261109175107_zeus_activity_notification_retention.sql` puis `20261109212104_zeus_capability_execution.sql`. Ne pas rejouer les anciennes migrations. Les fonctions natives d’amitiés et de feed doivent être présentes.
+2. Le préflight Cloud du 10 novembre confirme l’absence de `reduced_topics`, `feed_preference_change_history` et `apply_feed_preference_command`. Appliquer d’abord la migration manquante `20261027120000_feed_explicit_control.sql`, puis `20261109175107_zeus_activity_notification_retention.sql` et `20261109212104_zeus_capability_execution.sql`. Les deux nouvelles références utilisateur ciblent `public.profiles(user_id)` pour respecter Lovable Cloud et conserver la suppression en cascade avec le compte. La lecture de l’historique est accordée à `authenticated`, sous RLS. Ne rejouer aucune autre ancienne migration. Le journal Cloud `drizzle/migrations` reste distinct des sources `supabase/migrations` ; ne pas exécuter les deux historiques sur la même base.
 3. Vérifier les conseillers de sécurité, les permissions et les RPC avec des comptes de test autorisés. Contrôler aussi les schémas/types et le runtime Edge. Aucun diagnostic simulé ne remplace ces étapes de production.
 4. Pour les notifications, exécuter d’abord `purge_old_notifications(true)`, vérifier les nombres puis l’archivage autorisé. La rétention est de 30 jours pour les notifications lues, 90 pour les non lues, avec sept jours avant suppression physique. Aucune archive de message n’est concernée.
 5. Vérifier les deux jobs dans `cron.job` et leurs exécutions dans `cron.job_run_details`. Si `pg_cron` est absent, un avertissement est émis : les purges ne sont pas actives.

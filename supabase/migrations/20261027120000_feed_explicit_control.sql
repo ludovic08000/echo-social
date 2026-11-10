@@ -27,7 +27,7 @@ FOR EACH ROW EXECUTE FUNCTION public.validate_reduced_feed_topics();
 
 CREATE TABLE IF NOT EXISTS public.feed_preference_change_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(user_id) ON DELETE CASCADE,
   source text NOT NULL DEFAULT 'assistant' CHECK (source IN ('assistant', 'settings')),
   summary text NOT NULL CHECK (char_length(summary) BETWEEN 1 AND 180),
   command jsonb NOT NULL,
@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS public.feed_preference_change_history (
 );
 
 ALTER TABLE public.feed_preference_change_history ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.feed_preference_change_history FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.feed_preference_change_history TO authenticated;
+GRANT ALL ON public.feed_preference_change_history TO service_role;
 
 DROP POLICY IF EXISTS "Users read own feed preference history" ON public.feed_preference_change_history;
 CREATE POLICY "Users read own feed preference history"

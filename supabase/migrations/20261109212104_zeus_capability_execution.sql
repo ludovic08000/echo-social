@@ -22,7 +22,7 @@ create table zeus_private.policy_audit (
   capability text not null,previous_policy jsonb not null,next_policy jsonb not null
 );
 create table zeus_private.command_receipts (
-  user_id uuid not null references auth.users(id) on delete cascade,command_key text not null check(length(command_key) between 1 and 160),
+  user_id uuid not null references public.profiles(user_id) on delete cascade,command_key text not null check(length(command_key) between 1 and 160),
   capability text not null references zeus_private.capability_policies(capability),
   fingerprint text not null check(fingerprint ~ '^[a-f0-9]{64}$'),
   prepared_at timestamptz not null,claimed_at timestamptz not null default now(),
