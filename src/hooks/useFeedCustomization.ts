@@ -14,6 +14,7 @@ const DEFAULTS: FeedCustomization = {
 };
 
 const BASE_KEY = 'feed-customization';
+export const FEED_CUSTOMIZATION_CHANGED_EVENT = 'forsure:feed-customization-changed';
 
 function storageKey(mode: string) {
   return `${mode}-${BASE_KEY}`;
@@ -52,13 +53,19 @@ export const BG_COLOR_OPTIONS = [
   { id: '#1c1917', label: 'Charbon', preview: 'bg-[#1c1917]' },
 ];
 
-function load(mode: string): FeedCustomization {
+export function readFeedCustomization(mode: string): FeedCustomization {
   try {
     const raw = localStorage.getItem(storageKey(mode)) || localStorage.getItem(BASE_KEY);
     return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
   } catch {
     return DEFAULTS;
   }
+}
+
+export function writeFeedCustomization(mode: string, prefs: FeedCustomization) {
+  localStorage.setItem(storageKey(mode), JSON.stringify(prefs));
+  applyFeedCustomization(prefs);
+  window.dispatchEvent(new CustomEvent(FEED_CUSTOMIZATION_CHANGED_EVENT, { detail: { mode } }));
 }
 
 /** Apply feed customization CSS variables to :root */
@@ -72,11 +79,19 @@ export function applyFeedCustomization(c: FeedCustomization) {
 
 export function useFeedCustomization() {
   const { mode } = useUXMode();
-  const [prefs, setPrefs] = useState<FeedCustomization>(() => load(mode));
+  const [prefs, setPrefs] = useState<FeedCustomization>(() => readFeedCustomization(mode));
 
   // Re-load when mode changes
   useEffect(() => {
-    setPrefs(load(mode));
+    setPrefs(readFeedCustomization(mode));
+  }, [mode]);
+
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent<{mode:string}>).detail?.mode === mode) setPrefs(readFeedCustomization(mode));
+    };
+    window.addEventListener(FEED_CUSTOMIZATION_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(FEED_CUSTOMIZATION_CHANGED_EVENT, refresh);
   }, [mode]);
 
   useEffect(() => {
@@ -91,8 +106,11 @@ export function useFeedCustomization() {
     return () => window.removeEventListener('forsure:appearance-reset', onReset);
   }, []);
 
-  const update = (patch: Partial<FeedCustomization>) =>
-    setPrefs(prev => ({ ...prev, ...patch }));
+  const update = (patch: Partial<FeedCustomization>) => {
+    const next = { ...prefs, ...patch };
+    writeFeedCustomization(mode, next);
+    setPrefs(next);
+  };
 
   const feedStyle = useMemo(() => {
     const style: React.CSSProperties = {};

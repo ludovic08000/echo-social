@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getPendingZeusAnnouncement,
   isZeusVoiceUnlockedForSession,
   prepareSpokenAssistantReply,
   savePendingZeusAnnouncement,
   speakWithBrowserVoice,
+  speakAndWaitWithBrowserVoice,
+  setZeusMicrophoneActive,
   unlockZeusVoiceForSession,
 } from '@/lib/zeusVoice';
 
@@ -23,6 +25,7 @@ describe('Zeus browser voice', () => {
   const cancel = vi.fn();
 
   beforeEach(() => {
+    setZeusMicrophoneActive(false);
     sessionStorage.clear();
     speak.mockReset();
     cancel.mockReset();
@@ -38,6 +41,38 @@ describe('Zeus browser voice', () => {
       configurable: true,
       value: TestUtterance,
     });
+  });
+  afterEach(() => { setZeusMicrophoneActive(false); vi.useRealTimers(); });
+
+  it('waits for the real speech end event before allowing the next turn', async () => {
+    vi.useFakeTimers();
+    const done = vi.fn();
+    const result = speakAndWaitWithBrowserVoice('Bonjour.').then(done);
+    await Promise.resolve();
+    expect(done).not.toHaveBeenCalled();
+    const utterance = speak.mock.calls[0][0] as SpeechSynthesisUtterance;
+    utterance.onend?.({} as SpeechSynthesisEvent);
+    await result;
+    expect(done).toHaveBeenCalledWith(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('stops a reply when the user pauses and ignores a late end event', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const result = speakAndWaitWithBrowserVoice('Bonjour.', {}, controller.signal);
+    const utterance = speak.mock.calls[0][0] as SpeechSynthesisUtterance;
+    controller.abort();
+    utterance.onend?.({} as SpeechSynthesisEvent);
+    expect(await result).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not play proactive speech into an active dictation microphone', async () => {
+    setZeusMicrophoneActive(true);
+    expect(speakWithBrowserVoice('Vous avez un message.')).toBe(false);
+    expect(await speakAndWaitWithBrowserVoice('Bonjour.')).toBe(false);
+    expect(speak).not.toHaveBeenCalled();
   });
 
   it('keeps the audio unlock scoped to the current browser session', () => {

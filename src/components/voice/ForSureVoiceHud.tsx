@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Keyboard, Loader2, Mic2, ShieldCheck, Volume2, X, Zap, MessageSquare, Lock } from 'lucide-react';
 import { createSpeechTurn, type BrowserRecognition } from '@/lib/voice/speechTurn';
+import { setZeusMicrophoneActive } from '@/lib/zeusVoice';
 
 export type VoiceHudStatus = 'ready' | 'listening' | 'processing' | 'error';
 
@@ -11,6 +12,9 @@ interface ForSureVoiceHudProps {
   onClose: () => void;
   onSpeakIntro: () => void;
   onPrepareListening?: () => void;
+  onPauseListening?: () => void;
+  onReadActivity?: () => Promise<void>;
+  speaking?: boolean;
   language?: string;
   onSubmitCommand: (command: string, source: 'voice' | 'text') => void | Promise<void>;
   processing?: boolean;
@@ -18,6 +22,8 @@ interface ForSureVoiceHudProps {
   onUpgrade?: () => void;
   onShowChat?: () => void;
   reply?: string;
+  confirmation?: {preview:string;choices:{user_id:string;name:string}[];selected?:string};
+  onChooseRecipient?: (id:string)=>void;
 }
 
 type BrowserSpeechRecognitionConstructor = new () => BrowserRecognition;
@@ -62,6 +68,9 @@ export function ForSureVoiceHud({
   onClose,
   onSpeakIntro,
   onPrepareListening,
+  onPauseListening,
+  onReadActivity,
+  speaking = false,
   language = 'fr-FR',
   onSubmitCommand,
   processing = false,
@@ -69,12 +78,16 @@ export function ForSureVoiceHud({
   onUpgrade,
   onShowChat,
   reply,
+  confirmation,
+  onChooseRecipient,
 }: ForSureVoiceHudProps) {
   const titleId = useId();
   const descriptionId = useId();
   const reduceMotion = useReducedMotion();
   const recognitionRef = useRef<ReturnType<typeof createSpeechTurn> | null>(null);
   const submittingRef = useRef(false);
+  const conversationActiveRef = useRef(false);
+  const listenAgainRef = useRef<() => void>(() => {});
   const dialogRef = useRef<HTMLElement | null>(null);
   const [status, setStatus] = useState<VoiceHudStatus>('ready');
   const [command, setCommand] = useState('');
@@ -105,24 +118,39 @@ export function ForSureVoiceHud({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      conversationActiveRef.current = false;
+      onPauseListening?.();
       window.removeEventListener('keydown', handleKeyDown);
       stopRecognition();
       document.body.style.overflow = previousOverflow;
       previousFocus?.focus();
     };
-  }, [onClose]);
+  }, [onClose, onPauseListening]);
 
   useEffect(() => {
     if (!voiceAllowed) {
+      conversationActiveRef.current = false;
       stopRecognition();
       setStatus(current => current === 'listening' ? 'ready' : current);
     }
   }, [voiceAllowed]);
 
+  useEffect(()=>{
+    const pause=()=>{
+      if(document.visibilityState==='visible')return;
+      conversationActiveRef.current=false;stopRecognition();onPauseListening?.();setStatus('ready');
+    };
+    document.addEventListener('visibilitychange',pause);
+    return()=>document.removeEventListener('visibilitychange',pause);
+  },[onPauseListening]);
+
   useEffect(() => {
     if (processing) setStatus('processing');
-    else if (status === 'processing') setStatus('ready');
+    else if (status === 'processing' && !submittingRef.current) setStatus('ready');
   }, [processing, status]);
+  useEffect(()=>{
+    if(!processing&&!speaking&&status==='ready'&&conversationActiveRef.current&&!submittingRef.current&&!recognitionRef.current)listenAgainRef.current();
+  },[processing,speaking,status]);
 
   const submit = async (rawCommand = command, source: 'voice' | 'text' = 'text') => {
     const text = rawCommand.trim();
@@ -134,6 +162,7 @@ export function ForSureVoiceHud({
     try {
       await onSubmitCommand(text, source);
     } catch {
+      conversationActiveRef.current = false;
       setLocalError('La demande n’a pas pu être transmise. Réessayez.');
     } finally {
       submittingRef.current = false;
@@ -144,10 +173,12 @@ export function ForSureVoiceHud({
   const startListening = () => {
     if (processing || submittingRef.current || !voiceAllowed) return;
     if (recognitionRef.current) { recognitionRef.current.finish(); return; }
+    conversationActiveRef.current = true;
     setLocalError(null);
 
     const Recognition = getSpeechRecognitionConstructor();
     if (!Recognition) {
+      conversationActiveRef.current = false;
       onSpeakIntro();
       return;
     }
@@ -158,6 +189,7 @@ export function ForSureVoiceHud({
     const recognition = new Recognition();
     const turn = createSpeechTurn(recognition, {
       language,
+      onCaptureChange:setZeusMicrophoneActive,
       onTranscript: setCommand,
       onComplete: transcript => {
         if (recognitionRef.current !== turn) return;
@@ -167,6 +199,7 @@ export function ForSureVoiceHud({
       onError: code => {
         if (recognitionRef.current !== turn) return;
         recognitionRef.current = null;
+        conversationActiveRef.current = false;
         setStatus('error');
         setLocalError(readableRecognitionError(code));
       },
@@ -175,6 +208,11 @@ export function ForSureVoiceHud({
     setCommand('');
     setStatus('listening');
     turn.start();
+  };
+  listenAgainRef.current=startListening;
+
+  const pauseConversation=()=>{
+    conversationActiveRef.current=false;stopRecognition();onPauseListening?.();setStatus('ready');
   };
 
   const stateCopy: Record<VoiceHudStatus, { eyebrow: string; title: string; detail: string }> = {
@@ -263,13 +301,24 @@ export function ForSureVoiceHud({
 
         <div aria-live="polite" className="mt-1 max-w-sm text-center">
           <p className="font-mono text-[9px] uppercase tracking-[0.32em] text-cyan-200/65">{copy.eyebrow}</p>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight text-white" id={titleId}>{copy.title}</h2>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight text-white" id={titleId}>{speaking ? `${assistantName} vous répond` : copy.title}</h2>
           <p className="mt-1.5 text-xs leading-relaxed text-blue-100/60" id={descriptionId}>{copy.detail}</p>
         </div>
 
         {reply && <div role="status" className="mt-4 max-h-32 w-full max-w-lg overflow-y-auto rounded-xl border border-blue-200/20 bg-white/5 px-4 py-3 text-sm leading-relaxed text-blue-50 whitespace-pre-wrap">{reply}</div>}
 
+        {confirmation&&<div className="mt-3 w-full max-w-lg rounded-xl border border-blue-200/30 p-3 text-sm">
+          <p className="max-h-32 overflow-y-auto whitespace-pre-wrap">{confirmation.preview}</p>
+          {confirmation.choices.map(person=><button key={person.user_id} type="button" aria-pressed={confirmation.selected===person.user_id} disabled={processing} onClick={()=>onChooseRecipient?.(person.user_id)} className="m-1 rounded-full border border-blue-200/30 px-3 py-2">{person.name}{confirmation.selected===person.user_id?' ✓':''}</button>)}
+          <div className="mt-2 flex gap-2">
+            <button type="button" disabled={processing||(confirmation.choices.length>0&&!confirmation.selected)} onClick={()=>{onPrepareListening?.();void submit('je confirme',voiceAllowed?'voice':'text');}} className="rounded-full bg-blue-600 px-4 py-2">Confirmer la proposition</button>
+            <button type="button" disabled={processing} onClick={()=>void submit('annule','text')} className="rounded-full border border-blue-200/30 px-4 py-2">Annuler</button>
+          </div>
+        </div>}
+
         <div className="mt-4 flex w-full max-w-sm flex-col gap-2">
+          {onReadActivity && <button type="button" disabled={processing} onClick={()=>{pauseConversation();void onReadActivity();}} className="min-h-10 rounded-full border border-blue-300/25 px-4 text-xs">Lire mon bilan : messages et notifications</button>}
+          {(status==='listening'||processing||speaking) && <button type="button" onClick={pauseConversation} className="min-h-10 rounded-full border border-blue-300/25 px-4 text-xs">Mettre la conversation vocale en pause</button>}
           <button
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-blue-300/35 bg-blue-400/15 px-5 text-xs font-semibold text-blue-50 transition hover:border-blue-200/70 hover:bg-blue-300/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-wait disabled:opacity-55"
             disabled={processing}

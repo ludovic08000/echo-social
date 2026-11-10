@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, ReactNode, useCallback, useRef, useEffect } from 'react';
 import { IS_MESSENGER_APP } from '@/lib/applicationVariant';
 
 export interface NegotiationProduct {
@@ -17,6 +17,9 @@ interface ChatWidgetState {
 }
 
 interface ChatWidgetContextType {
+  pendingCall: ZeusCallRequest | null;
+  requestCall: (request: Omit<ZeusCallRequest,'id'>) => Promise<string>;
+  settleCall: (id:string, error?:string) => void;
   state: ChatWidgetState;
   openChat: (conversationId?: string) => void;
   closeChat: () => void;
@@ -27,9 +30,32 @@ interface ChatWidgetContextType {
   goBack: () => void;
 }
 
+export interface ZeusCallRequest { id:string; actorId:string; recipientId:string; conversationId:string; type:'audio'|'video'; }
+
 const ChatWidgetContext = createContext<ChatWidgetContextType | undefined>(undefined);
 
 export function ChatWidgetProvider({ children }: { children: ReactNode }) {
+  const [pendingCall,setPendingCall]=useState<ZeusCallRequest|null>(null);
+  const callReceipt=useRef<{id:string;resolve:(message:string)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}|null>(null);
+  const settleCall=useCallback((id:string,error?:string)=>{
+    const pending=callReceipt.current;if(!pending||pending.id!==id)return;
+    clearTimeout(pending.timer);callReceipt.current=null;setPendingCall(null);
+    if(error)pending.reject(new Error(error));else pending.resolve('L’appel a été lancé.');
+  },[]);
+  const requestCall=useCallback((request:Omit<ZeusCallRequest,'id'>):Promise<string>=>{
+    if(callReceipt.current)return Promise.reject(new Error('Un appel est déjà en cours de lancement.'));
+    const id=crypto.randomUUID();
+    return new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>settleCall(id,'Le lancement de l’appel n’a pas été confirmé. Vérifiez la fenêtre d’appel avant de réessayer.'),60_000);
+      callReceipt.current={id,resolve,reject,timer};
+      setState({isOpen:true,conversationId:request.conversationId,isMinimized:false,negotiationProduct:null});
+      setPendingCall({...request,id});
+    });
+  },[settleCall]);
+  useEffect(()=>()=>{
+    const pending=callReceipt.current;if(!pending)return;
+    clearTimeout(pending.timer);pending.reject(new Error('Le lancement de l’appel a été interrompu.'));callReceipt.current=null;
+  },[]);
   const [state, setState] = useState<ChatWidgetState>({
     isOpen: false,
     conversationId: null,
@@ -42,8 +68,9 @@ export function ChatWidgetProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const closeChat = useCallback(() => {
+    if(callReceipt.current)settleCall(callReceipt.current.id,'Le lancement de l’appel est annulé.');
     setState({ isOpen: IS_MESSENGER_APP, conversationId: null, isMinimized: false, negotiationProduct: null });
-  }, []);
+  }, [settleCall]);
 
   const minimizeChat = useCallback(() => {
     setState(prev => ({ ...prev, isMinimized: !IS_MESSENGER_APP }));
@@ -66,7 +93,7 @@ export function ChatWidgetProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ChatWidgetContext.Provider value={{ state, openChat, closeChat, minimizeChat, restoreChat, openConversation, openNegotiation, goBack }}>
+    <ChatWidgetContext.Provider value={{ state, openChat, closeChat, minimizeChat, restoreChat, openConversation, openNegotiation, goBack, pendingCall, requestCall, settleCall }}>
       {children}
     </ChatWidgetContext.Provider>
   );

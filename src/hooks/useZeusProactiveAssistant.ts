@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
-import { useConversations } from '@/hooks/useMessages';
-import { useNotifications } from '@/hooks/useNotifications';
+import { useZeusActivity } from '@/hooks/useZeusActivity';
+import { formatZeusActivity } from '@/lib/zeusActivity';
 import { useWellbeingPreferences } from '@/hooks/useWellbeingPreferences';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import { useZeusSettings } from '@/hooks/useZeusCompanion';
-import { buildZeusBreakReminder, buildZeusLoginBriefing } from '@/lib/zeusProactive';
+import { buildZeusBreakReminder } from '@/lib/zeusProactive';
 import {
   isZeusVoiceUnlockedForSession,
   savePendingZeusAnnouncement,
@@ -27,8 +27,7 @@ function openZeusWithMessage(content: string) {
 
 export function useZeusProactiveAssistant() {
   const { user, session } = useAuth();
-  const { data: conversations, isSuccess: conversationsReady } = useConversations();
-  const { data: notifications, isSuccess: notificationsReady } = useNotifications();
+  const { data: activity, isSuccess: activityReady, isFetching: activityFetching } = useZeusActivity();
   const { prefs, loaded: preferencesReady } = useWellbeingPreferences();
   const { voiceSettings, updateVoiceSettings } = useVoiceSettings();
   const { zeusName } = useZeusSettings();
@@ -36,18 +35,9 @@ export function useZeusProactiveAssistant() {
   const briefingDeliveredRef = useRef<string | null>(null);
   const previousUserRef = useRef<string | null>(null);
 
-  const unreadMessages = useMemo(
-    () => conversations?.reduce((sum, conversation) => sum + conversation.unread_count, 0) ?? 0,
-    [conversations],
-  );
-  const unreadNotifications = useMemo(
-    () => notifications?.filter((notification) => notification.read_at === null) ?? [],
-    [notifications],
-  );
-
   // One briefing per authenticated session. No notification is marked as read.
   useEffect(() => {
-    if (!user?.id || !session?.access_token || !conversationsReady || !notificationsReady) return;
+    if (!user?.id || !session?.access_token || !activityReady || activityFetching || !activity) return;
     const marker = `forsure:zeus-briefing:${user.id}`;
     if (briefingDeliveredRef.current === user.id) return;
     try {
@@ -59,8 +49,7 @@ export function useZeusProactiveAssistant() {
     }
     briefingDeliveredRef.current = user.id;
 
-    const content = buildZeusLoginBriefing({ unreadMessages, unreadNotifications })
-      ?? readyAnnouncement(zeusName);
+    const content = `${readyAnnouncement(zeusName)} ${formatZeusActivity(activity)}`;
     savePendingZeusAnnouncement(content);
 
     // An earlier explicit gesture in this browser session can safely allow a
@@ -102,11 +91,10 @@ export function useZeusProactiveAssistant() {
       },
     });
   }, [
-    conversationsReady,
-    notificationsReady,
+    activityReady,
+    activityFetching,
+    activity,
     session?.access_token,
-    unreadMessages,
-    unreadNotifications,
     updateVoiceSettings,
     user?.id,
     zeusName,
