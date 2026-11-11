@@ -10,6 +10,7 @@ const compile = (file: string) => ts.transpileModule(
 ).outputText;
 const quiet = { log: () => {}, warn: () => {}, error: () => {} };
 const env = { env: { get: () => 'synthetic-config' } };
+const payment = new Function('exports','Deno',compile('_shared/payment-authority.ts')+';return exports;')({},env);
 function limiter(rpc: ReturnType<typeof vi.fn>) {
   return new Function('exports', 'Deno', 'createClient', 'console',
     compile('_shared/rate-limit.ts') + ';return exports.checkRateLimit;',
@@ -44,11 +45,13 @@ it.each(definitions)('the actual %s handler stops before external spending when 
   const user = { id: 'synthetic-user', email: 'user@example.invalid' };
   const client = {
     auth: { getUser: async () => ({ data: { user }, error: null }) },
-    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_creator: true }, error: null }) }) }) }),
+    from: (table:string) => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: table==='creator_subscriptions'
+      ? {status:'active',plan:'creator_pro',stripe_subscription_id:'synthetic-subscription',current_period_end:new Date(Date.now()+86400000).toISOString()}
+      : { is_creator: true }, error: null }) }) }) }),
   };
-  new Function('Deno', 'serve', 'createClient', 'getCorsHeaders', 'checkRateLimitDB', 'fetch', 'console', compile(`${name}/index.ts`))(
+  new Function('Deno', 'serve', 'createClient', 'getCorsHeaders', 'checkRateLimitDB', 'fetch', 'console', 'hasActiveCreatorSubscription', compile(`${name}/index.ts`))(
     { ...env, serve: (fn: typeof handler) => { handler = fn; } },
-    (fn: typeof handler) => { handler = fn; }, () => client, () => ({}), quota, fetch, quiet,
+    (fn: typeof handler) => { handler = fn; }, () => client, () => ({}), quota, fetch, quiet, payment.hasActiveCreatorSubscription,
   );
   const response = await handler(new Request('https://local.invalid', {
     method: 'POST', headers: { Authorization: 'Bearer synthetic', 'Content-Type': 'application/json' },

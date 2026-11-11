@@ -2,6 +2,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+// Les migrations servies utilisent LF ; Git peut les extraire en CRLF sous Windows.
+const readSql=(path:string)=>readFileSync(path,'utf8').replace(/\r\n/g,'\n');
 const client = vi.hoisted(() => ({ load: vi.fn(), identity: vi.fn(), pin: vi.fn() }));
 vi.mock('@/integrations/supabase/client', () => ({ supabase: {} }));
 vi.mock('@/lib/crypto/deviceIdentity', () => ({ loadDeviceIdentity: vi.fn() }));
@@ -95,11 +97,11 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
       CREATE FUNCTION aegis_verify_ed25519(text,text,bytea) RETURNS boolean LANGUAGE sql AS $$
         SELECT EXISTS(SELECT 1 FROM test_valid_signatures WHERE key=$1 AND signature=$2 AND payload=$3) $$;
     `);
-    const original = readFileSync('supabase/migrations/20260730090000_aegis_clean_rebuild.sql', 'utf8');
+    const original = readSql('supabase/migrations/20260730090000_aegis_clean_rebuild.sql');
     await db.exec(original.slice(original.indexOf('-- Stage 5:'), original.indexOf('-- Stage 6:')));
-    await db.exec(readFileSync('supabase/migrations/20261012115746_authenticate_call_invitations.sql', 'utf8'));
-    await db.exec(readFileSync('supabase/migrations/20261013140030_fix_call_invitation_conversation_type.sql', 'utf8'));
-    await db.exec(readFileSync('supabase/migrations/20261026194142_align_call_fanout_with_canonical_routes.sql', 'utf8'));
+    await db.exec(readSql('supabase/migrations/20261012115746_authenticate_call_invitations.sql'));
+    await db.exec(readSql('supabase/migrations/20261013140030_fix_call_invitation_conversation_type.sql'));
+    await db.exec(readSql('supabase/migrations/20261026194142_align_call_fanout_with_canonical_routes.sql'));
     recipient = await crypto.subtle.generateKey('X25519', true, ['deriveBits']) as CryptoKeyPair;
     mediaKey = bytes(32);
     const wire = await sealCallKeyForDevice({ ...context, callerDeviceId: callerDevice,
@@ -131,14 +133,14 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
   });
   it('reproduces the production failure on rollback and recovers without changing keys or rows', async () => {
     await db.exec('RESET ROLE');
-    await db.exec(readFileSync('supabase/rollback/fix_call_invitation_conversation_type.sql', 'utf8'));
+    await db.exec(readSql('supabase/rollback/fix_call_invitation_conversation_type.sql'));
     try {
       await asUser();
       await expect(create()).rejects.toThrow('aegis_call_invitation_proof_payload(uuid, text');
       expect(await counts()).toEqual({ calls: 0, invitations: 0 });
     } finally {
       await db.exec('RESET ROLE');
-      await db.exec(readFileSync('supabase/migrations/20261013140030_fix_call_invitation_conversation_type.sql', 'utf8'));
+      await db.exec(readSql('supabase/migrations/20261013140030_fix_call_invitation_conversation_type.sql'));
     }
     await asUser();
     expect((await create()).rows[0].result.ok).toBe(true);
@@ -168,14 +170,14 @@ describe('signed call invitations through the actual PostgreSQL RPCs', () => {
     await db.exec('RESET ROLE');
     await db.query(`INSERT INTO user_devices(user_id,device_id,device_signing_key,routing_status)
       VALUES($1,'repairing-device',$2,'repairing')`, [uid(2), publicKey]);
-    await db.exec(readFileSync('supabase/rollback/align_call_fanout_with_canonical_routes.sql', 'utf8'));
+    await db.exec(readSql('supabase/rollback/align_call_fanout_with_canonical_routes.sql'));
     try {
       await asUser();
       expect((await create()).rows[0].result).toEqual({ ok: false, code: 'INCOMPLETE_CALL_DEVICE_FANOUT' });
       expect(await counts()).toEqual({ calls: 0, invitations: 0 });
     } finally {
       await db.exec('RESET ROLE');
-      await db.exec(readFileSync('supabase/migrations/20261026194142_align_call_fanout_with_canonical_routes.sql', 'utf8'));
+      await db.exec(readSql('supabase/migrations/20261026194142_align_call_fanout_with_canonical_routes.sql'));
     }
     await asUser();
     expect((await create()).rows[0].result).toMatchObject({ ok: true, code: 'CALL_CREATED' });

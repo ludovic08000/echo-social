@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { liveDeadline } from '../../supabase/functions/_shared/live-policy';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const code = ts.transpileModule(readFileSync('supabase/functions/livekit-token/index.ts', 'utf8'), {
@@ -65,6 +66,7 @@ beforeEach(() => {
       if (name === 'npm:livekit-server-sdk@2') return { AccessToken: class { addGrant = grant; toJwt = mint; } };
       if (name === '../_shared/cors.ts') return { getCorsHeaders: () => ({}) };
       if (name === '../_shared/rate-limit.ts') return { checkRateLimit: async () => null };
+      if (name === '../_shared/live-policy.ts') return { liveDeadline };
       if (name === '../_shared/aegisDiagnostics.mjs') return { createAegisDiagnostic: () => ({ id: 'test-id', step: vi.fn(), finish: vi.fn() }) };
       throw new Error(`Unexpected dependency: ${name}`);
     },
