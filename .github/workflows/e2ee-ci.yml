@@ -212,7 +212,26 @@ jobs:
       - name: Start isolated Supabase stack
         # Migration and pgTAP checks only need Postgres. The database-only
         # command avoids pulling unrelated service images on shared runners.
-        run: supabase db start
+        run: |
+          set +e
+          supabase db start > "$RUNNER_TEMP/isolated-db-start.log" 2>&1
+          db_start_status=$?
+          cat "$RUNNER_TEMP/isolated-db-start.log"
+          if [ "$db_start_status" -ne 0 ]; then
+            python3 - "$RUNNER_TEMP/isolated-db-start.log" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          errors = [line for line in lines
+                    if re.search(r'error|failed|manifest|denied|not found|invalid|fatal', line, re.I)
+                    and not re.search(r'password|secret|token|jwt|postgresql://|bearer|apikey|authorization', line, re.I)]
+          for line in errors[-5:]:
+              safe = line[:500].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=Isolated database startup::' + safe)
+          PY
+          fi
+          exit "$db_start_status"
         env:
           SUPABASE_INTERNAL_IMAGE_REGISTRY: docker.io
       - name: Apply every migration from scratch
